@@ -1,0 +1,1599 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#070d18">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="description" content="Summit Whiteout — an endless procedural alpine descent steered by phone tilt.">
+<title>Summit Whiteout</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* ---------------------------------------------------------------
+   Single committed visual world: an expedition instrument panel
+   floating over a backlit alpine gully. Painted explicitly so it
+   holds on any host ground.
+   --------------------------------------------------------------- */
+:root{
+  --abyss:#070d18;
+  --panel:rgba(7,13,24,.60);
+  --hair:rgba(186,212,248,.26);
+  --ink:#eaf1fb;
+  --ink-dim:#93a7c6;
+  --ember:#ff6a2b;
+  --ember-soft:#ffb079;
+  --vital:#ff4a5e;
+  --frost:#6ec8ff;
+  --snow:#f4f8ff;
+  --disp:"Archivo","Helvetica Neue",Helvetica,Arial,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --pad-t:max(12px,env(safe-area-inset-top));
+  --pad-b:max(14px,env(safe-area-inset-bottom));
+  --pad-x:max(16px,env(safe-area-inset-left),env(safe-area-inset-right));
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--abyss);color:var(--ink)}
+body{
+  font-family:var(--disp);
+  touch-action:none;overscroll-behavior:none;
+  -webkit-user-select:none;user-select:none;
+  -webkit-text-size-adjust:100%;
+}
+#stage{position:fixed;inset:0;width:100%;height:100dvh;background:var(--abyss)}
+canvas#c{display:block;width:100%;height:100%;touch-action:none}
+
+/* ---------- shared atoms ---------- */
+.k{font:600 9px/1 var(--mono);letter-spacing:.16em;color:var(--ink-dim);text-transform:uppercase}
+.bar{position:relative;height:10px;border:1px solid var(--hair);background:rgba(10,18,32,.55);overflow:hidden}
+.bar .fill{position:absolute;top:0;bottom:0;left:0;width:100%;transform-origin:left center}
+.bar .segs{position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(90deg,rgba(0,0,0,0) 0 6px,var(--abyss) 6px 8px)}
+.digits{font:600 clamp(26px,8.4vw,40px)/.9 var(--mono);letter-spacing:-.02em;font-variant-numeric:tabular-nums;
+  text-shadow:0 2px 14px rgba(0,0,0,.55)}
+.digits small{font-size:.36em;letter-spacing:.14em;margin-left:.35em;color:var(--ink-dim);vertical-align:.55em}
+
+/* ---------- HUD ---------- */
+#hud{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:space-between;
+  padding:var(--pad-t) var(--pad-x) var(--pad-b);pointer-events:none;opacity:0;transition:opacity .35s ease}
+#hud.live{opacity:1}
+/* instrument text sits over bright snow — the scrims keep it readable */
+.hud-top{display:flex;flex-direction:column;gap:10px;
+  margin:calc(var(--pad-t) * -1) calc(var(--pad-x) * -1) 0;
+  padding:var(--pad-t) var(--pad-x) 30px;
+  background:linear-gradient(180deg,rgba(6,11,21,.72),rgba(6,11,21,.26) 62%,rgba(6,11,21,0))}
+.slide-gauge{display:flex;flex-direction:column;gap:5px}
+.slide-head{display:flex;justify-content:space-between;align-items:baseline}
+.slide-head .k{color:var(--ember-soft)}
+#avaDist{font:600 10px/1 var(--mono);letter-spacing:.1em;color:var(--ember-soft);font-variant-numeric:tabular-nums}
+#avaFill{background:linear-gradient(90deg,#7a2b12,var(--ember) 70%,#ffd07a);width:20%}
+.slide-gauge.critical #avaFill{background:linear-gradient(90deg,#7a1220,var(--vital) 60%,#ffdfe2);animation:throb .5s steps(2) infinite}
+@keyframes throb{50%{opacity:.45}}
+.readouts{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.readouts .right{text-align:right}
+.readouts .k{margin-bottom:4px}
+
+.hud-mid{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:0}
+#warn{font:800 13px/1 var(--disp);font-stretch:120%;letter-spacing:.28em;text-transform:uppercase;
+  padding:7px 14px;border:1px solid var(--ember);color:var(--ember-soft);background:rgba(24,9,2,.5);
+  opacity:0;transition:opacity .18s ease}
+#warn.on{opacity:1;animation:throb .7s steps(2) infinite}
+#popups{display:flex;flex-direction:column;align-items:center;gap:6px}
+.pop{font:800 15px/1 var(--disp);font-stretch:115%;letter-spacing:.14em;text-transform:uppercase;
+  text-shadow:0 2px 10px rgba(0,0,0,.6);animation:pop 1.15s cubic-bezier(.2,.8,.3,1) forwards}
+.pop b{font-family:var(--mono);font-weight:600;margin-left:.5em}
+.pop.heat{color:var(--ember-soft)} .pop.air{color:var(--snow)} .pop.near{color:var(--frost)}
+@keyframes pop{0%{opacity:0;transform:translateY(14px) scale(.9)}18%{opacity:1;transform:none}
+  70%{opacity:1}100%{opacity:0;transform:translateY(-22px)}}
+
+.hud-bot{display:flex;flex-direction:column;gap:9px;
+  margin:0 calc(var(--pad-x) * -1) calc(var(--pad-b) * -1);
+  padding:34px var(--pad-x) var(--pad-b);
+  background:linear-gradient(0deg,rgba(6,11,21,.78),rgba(6,11,21,.3) 58%,rgba(6,11,21,0))}
+.gauges{display:flex;gap:12px}
+.gauge{flex:1;display:flex;flex-direction:column;gap:4px}
+.gauge .row{display:flex;justify-content:space-between;align-items:baseline}
+.gauge .pct{font:600 9px/1 var(--mono);color:var(--ink-dim);font-variant-numeric:tabular-nums}
+#heatFill{background:linear-gradient(90deg,#8e3a12,var(--ember) 55%,var(--ember-soft));transition:width .1s linear}
+#condFill{background:linear-gradient(90deg,#6d1a27,var(--vital) 55%,#ff9aa6);transition:width .1s linear}
+.gauge.low .pct{color:var(--vital)}
+.score-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;pointer-events:auto}
+#score{font:600 19px/1 var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+#score::after{content:" PTS";font-size:.5em;letter-spacing:.16em;color:var(--ink-dim)}
+.tools{display:flex;gap:7px}
+.tool{font:600 9px/1 var(--mono);letter-spacing:.12em;color:var(--ink-dim);background:var(--panel);
+  border:1px solid var(--hair);padding:7px 9px;cursor:pointer;pointer-events:auto;
+  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.tool:active{color:var(--ink);border-color:var(--ember)}
+.tool.off{color:#55637c;text-decoration:line-through}
+
+/* ---------- full-screen effects ---------- */
+#haze{position:absolute;inset:0;pointer-events:none;opacity:0;background:#c9d7ea}
+#vig{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .25s ease;
+  background:radial-gradient(120% 78% at 50% 42%,transparent 38%,rgba(120,6,18,.55) 100%)}
+#surge{position:absolute;inset:0;pointer-events:none;opacity:0;
+  background:radial-gradient(130% 85% at 50% 118%,rgba(255,255,255,.96) 0%,rgba(226,238,252,.55) 40%,transparent 72%)}
+#flash{position:absolute;inset:0;pointer-events:none;opacity:0;background:#fff}
+
+/* ---------- overlays ---------- */
+.screen{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;
+  padding:calc(var(--pad-t) + 8px) var(--pad-x) calc(var(--pad-b) + 8px);
+  background:linear-gradient(180deg,rgba(4,8,16,.90),rgba(4,8,16,.62) 45%,rgba(4,8,16,.93));
+  -webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+  overflow-y:auto;transition:opacity .4s ease}
+.screen[hidden]{display:none}
+.screen.fade{opacity:0}
+.wrap{width:100%;max-width:440px;margin:auto}
+.eyebrow{font:600 9px/1.4 var(--mono);letter-spacing:.3em;color:var(--ember);text-transform:uppercase;
+  display:flex;align-items:center;gap:9px}
+.eyebrow::after{content:"";flex:1;height:1px;background:var(--hair)}
+h1{font-family:var(--disp);font-stretch:125%;font-weight:800;text-transform:uppercase;
+  font-size:clamp(38px,13.5vw,62px);line-height:.86;letter-spacing:-.018em;margin:14px 0 0;text-wrap:balance}
+h1 .ln2{display:block;color:var(--ember)}
+.lede{margin:14px 0 0;font-size:14.5px;line-height:1.5;color:#c3d1e6;max-width:34em}
+h2{font-family:var(--disp);font-stretch:125%;font-weight:800;text-transform:uppercase;
+  font-size:clamp(34px,11vw,52px);line-height:.88;letter-spacing:-.015em;margin:10px 0 0}
+.cause{color:var(--ember)}
+
+.brief{margin:22px 0 0;border-top:1px solid var(--hair)}
+.brief div{display:flex;gap:12px;align-items:baseline;padding:9px 0;border-bottom:1px solid rgba(186,212,248,.12)}
+.brief dt{flex:0 0 74px;font:600 9px/1.5 var(--mono);letter-spacing:.14em;color:var(--ember-soft);text-transform:uppercase}
+.brief dd{margin:0;font-size:13px;line-height:1.45;color:#b9c8de}
+
+.stats{margin:20px 0 0;display:grid;grid-template-columns:1fr 1fr;gap:1px;background:rgba(186,212,248,.16);
+  border:1px solid rgba(186,212,248,.16)}
+.stat{background:#070d18;padding:11px 12px 12px}
+.stat .k{margin-bottom:6px}
+.stat .v{font:600 20px/1 var(--mono);font-variant-numeric:tabular-nums}
+.stat .v small{font-size:.5em;letter-spacing:.1em;color:var(--ink-dim);margin-left:.35em}
+.stat.hero{grid-column:1/-1}
+.stat.hero .v{font-size:32px;color:var(--ember)}
+
+.actions{margin:22px 0 0;display:flex;flex-direction:column;gap:10px}
+button.go{font-family:var(--disp);font-stretch:118%;font-weight:800;text-transform:uppercase;letter-spacing:.12em;
+  font-size:15px;color:#120600;background:var(--ember);border:0;padding:17px 18px;cursor:pointer;width:100%;
+  box-shadow:0 10px 34px -14px rgba(255,106,43,.95)}
+button.go:active{transform:translateY(1px);background:#ff8248}
+button.go.ghost{background:transparent;color:var(--ink);border:1px solid var(--hair);box-shadow:none}
+button.go.ghost:active{border-color:var(--ember);color:var(--ember-soft)}
+button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-offset:2px}
+.fine{margin:14px 0 0;font:500 11px/1.6 var(--mono);color:#7186a4;letter-spacing:.02em}
+.fine b{color:var(--ink-dim);font-weight:600}
+
+/* tilt diagram */
+.tiltviz{display:flex;align-items:center;gap:12px;margin:20px 0 0}
+.phone{width:34px;height:56px;border:2px solid var(--ink-dim);border-radius:6px;flex:none;position:relative;
+  animation:tilt 3.4s ease-in-out infinite}
+.phone::after{content:"";position:absolute;left:50%;top:7px;width:11px;height:2px;background:var(--ink-dim);
+  transform:translateX(-50%);border-radius:2px}
+@keyframes tilt{0%,100%{transform:rotate(-21deg)}50%{transform:rotate(21deg)}}
+.tiltviz p{margin:0;font:500 12px/1.5 var(--mono);color:#9db0cd}
+@media (prefers-reduced-motion:reduce){.phone{animation:none}.pop{animation-duration:.01s}
+  #warn.on,.slide-gauge.critical #avaFill{animation:none}}
+
+#boot{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:32px;
+  text-align:center;font:500 13px/1.7 var(--mono);color:var(--ink-dim);background:var(--abyss)}
+#boot.gone{display:none}
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="c"></canvas>
+
+  <div id="haze"></div>
+  <div id="surge"></div>
+  <div id="vig"></div>
+  <div id="flash"></div>
+
+  <div id="hud">
+    <div class="hud-top">
+      <div class="slide-gauge" id="slideGauge">
+        <div class="slide-head"><span class="k">Slide</span><span id="avaDist">—</span></div>
+        <div class="bar"><div class="fill" id="avaFill"></div><div class="segs"></div></div>
+      </div>
+      <div class="readouts">
+        <div><div class="k">Descent</div><div class="digits" id="dist">0<small>M</small></div></div>
+        <div class="right"><div class="k">Speed</div><div class="digits" id="spd">0<small>KM/H</small></div></div>
+      </div>
+    </div>
+
+    <div class="hud-mid">
+      <div id="popups"></div>
+      <div id="warn">Off piste</div>
+    </div>
+
+    <div class="hud-bot">
+      <div class="gauges">
+        <div class="gauge" id="heatGauge">
+          <div class="row"><span class="k">Body heat</span><span class="pct" id="heatPct">100%</span></div>
+          <div class="bar"><div class="fill" id="heatFill"></div><div class="segs"></div></div>
+        </div>
+        <div class="gauge" id="condGauge">
+          <div class="row"><span class="k">Condition</span><span class="pct" id="condPct">100%</span></div>
+          <div class="bar"><div class="fill" id="condFill"></div><div class="segs"></div></div>
+        </div>
+      </div>
+      <div class="score-row">
+        <span id="score">0</span>
+        <span class="tools">
+          <button class="tool" id="btnCal" type="button">Re-centre</button>
+          <button class="tool" id="btnSnd" type="button">Sound</button>
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------------- start ---------------- -->
+  <section class="screen" id="startScreen" hidden>
+    <div class="wrap">
+      <p class="eyebrow">Endless procedural descent</p>
+      <h1>Summit<span class="ln2">Whiteout</span></h1>
+      <p class="lede">The cornice let go above you at 3,180&nbsp;m. There is one gully down, it was never groomed,
+        and the slide is already moving. Ride it out.</p>
+
+      <div class="tiltviz">
+        <div class="phone" aria-hidden="true"></div>
+        <p>Tilt the handset to<br>carve. Hold portrait.</p>
+      </div>
+
+      <dl class="brief">
+        <div><dt>Carve</dt><dd>Turning across the fall line scrubs speed. Straight-lining is fast and stupid.</dd></div>
+        <div><dt>Fires</dt><dd>Ride through a bonfire to reload body heat. Frostbite eats your condition.</dd></div>
+        <div><dt>Kickers</dt><dd>Snow ramps launch you clean over whatever is next. Air pays.</dd></div>
+        <div><dt>Slide</dt><dd>Every crash bleeds speed and the wall behind you takes back the metres.</dd></div>
+      </dl>
+
+      <div class="actions">
+        <button class="go" id="btnStart" type="button">Drop in</button>
+      </div>
+      <p class="fine" id="startFine">No motion sensor? <b>Drag left / right</b> anywhere, or use the <b>arrow keys</b>.</p>
+    </div>
+  </section>
+
+  <!-- ---------------- game over ---------------- -->
+  <section class="screen" id="overScreen" hidden>
+    <div class="wrap">
+      <p class="eyebrow" id="overEyebrow">Run ended</p>
+      <h2 class="cause" id="overCause">Buried</h2>
+      <p class="lede" id="overLine">The slide caught you at the narrows.</p>
+      <div class="stats">
+        <div class="stat hero"><div class="k">Score</div><div class="v" id="sScore">0</div></div>
+        <div class="stat"><div class="k">Descent</div><div class="v" id="sDist">0<small>M</small></div></div>
+        <div class="stat"><div class="k">Top speed</div><div class="v" id="sSpd">0<small>KM/H</small></div></div>
+        <div class="stat"><div class="k">Longest air</div><div class="v" id="sAir">0<small>S</small></div></div>
+        <div class="stat"><div class="k">Close passes</div><div class="v" id="sNear">0</div></div>
+        <div class="stat hero" id="bestRow"><div class="k">Best</div><div class="v" id="sBest">0</div></div>
+      </div>
+      <div class="actions">
+        <button class="go" id="btnAgain" type="button">Drop in again</button>
+      </div>
+      <p class="fine" id="overFine">Tilt further to hold a tighter line through the narrows.</p>
+    </div>
+  </section>
+
+  <!-- ---------------- paused ---------------- -->
+  <section class="screen" id="pauseScreen" hidden>
+    <div class="wrap">
+      <p class="eyebrow">Holding</p>
+      <h2>Paused</h2>
+      <p class="lede">The mountain waits. Nothing else does.</p>
+      <div class="actions"><button class="go" id="btnResume" type="button">Resume descent</button></div>
+    </div>
+  </section>
+
+  <div id="boot">Loading the mountain…</div>
+</div>
+
+<script type="module">
+(async () => {
+'use strict';
+
+const $ = (id) => document.getElementById(id);
+const bootEl = $('boot');
+
+let THREE;
+try {
+  THREE = await import('https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js');
+} catch (err) {
+  bootEl.innerHTML = 'Could not load the 3D engine.<br>Check your connection and reload.';
+  return;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   1 · MATH & TERRAIN FIELD
+   The whole mountain is one pure function of (x, z): a meandering
+   gully cut into a constant fall line, with rock banks either side.
+   Nothing about the world is stored, so it is infinite and stable.
+   ══════════════════════════════════════════════════════════════ */
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const lerp = (a, b, t) => a + (b - a) * t;
+const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const rand = (a, b) => a + Math.random() * (b - a);
+
+function hash2(ix, iy) {
+  let h = Math.imul(ix, 374761393) + Math.imul(iy, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+function noise2(x, y) {
+  const x0 = Math.floor(x), y0 = Math.floor(y);
+  const fx = x - x0, fy = y - y0;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const a = hash2(x0, y0), b = hash2(x0 + 1, y0), c = hash2(x0, y0 + 1), d = hash2(x0 + 1, y0 + 1);
+  return lerp(lerp(a, b, sx), lerp(c, d, sx), sy);
+}
+
+const FALL = 0.205;                       // metres of drop per metre of run
+
+/** Centre line of the gully at a given z. */
+function gullyX(z) {
+  return 24 * Math.sin(z * 0.0035) + 11 * Math.sin(z * 0.0090 + 2.1) + 5 * Math.sin(z * 0.0190 + 0.7);
+}
+/** Half-width of the rideable snow at a given z. */
+function gullyW(z) {
+  return 24 + 8 * Math.sin(z * 0.0016 + 1.1) + 3 * Math.sin(z * 0.0054 - 0.4);
+}
+/** How far outside the gully a point sits (0 = on piste). */
+function bankOut(x, z) { return Math.abs(x - gullyX(z)) - gullyW(z); }
+
+function height(x, z) {
+  let y = z * FALL;
+  const t = bankOut(x, z);
+  if (t > 0) y += Math.min(t * t * 0.035, 40) + noise2(x * 0.05, z * 0.05) * Math.min(t, 9) * 0.5;
+  y += noise2(x * 0.031, z * 0.031) * 2.2;
+  y += noise2(x * 0.098, z * 0.098) * 0.8;
+  return y;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   2 · RENDERER, SCENE, SKY
+   ══════════════════════════════════════════════════════════════ */
+const canvas = $('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+renderer.setClearColor(0x0a1222, 1);
+
+const scene = new THREE.Scene();
+const FOG = new THREE.Color(0xc9d7ea);
+scene.fog = new THREE.Fog(FOG.getHex(), 55, 300);
+scene.background = FOG.clone();
+
+const camera = new THREE.PerspectiveCamera(62, 1, 0.6, 3000);
+
+const hemi = new THREE.HemisphereLight(0x7593d6, 0xb9cde8, 0.82);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff1d8, 1.15);
+sun.position.set(-150, 180, -136);           // ahead, left, high — we ski into the light
+scene.add(sun, sun.target);
+
+/* sky dome: a vertical gradient whose horizon band is exactly the fog colour */
+function skyTexture() {
+  const cv = document.createElement('canvas'); cv.width = 8; cv.height = 256;
+  const g = cv.getContext('2d'), grd = g.createLinearGradient(0, 0, 0, 256);
+  grd.addColorStop(0.00, '#0d1730');
+  grd.addColorStop(0.24, '#2b4677');
+  grd.addColorStop(0.40, '#7093c6');
+  grd.addColorStop(0.465, '#e7cba9');      // alpenglow, just above the skyline
+  grd.addColorStop(0.50, '#c9d7ea');       // skyline == fog colour
+  grd.addColorStop(1.00, '#bfcde1');       // below it: haze, so distant gaps melt away
+  g.fillStyle = grd; g.fillRect(0, 0, 8, 256);
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const sky = new THREE.Mesh(
+  new THREE.SphereGeometry(1, 18, 14),
+  new THREE.MeshBasicMaterial({ map: skyTexture(), side: THREE.BackSide, fog: false, depthWrite: false })
+);
+sky.scale.setScalar(1600); sky.renderOrder = -10; scene.add(sky);
+
+function glowSprite(hex, softness) {
+  const cv = document.createElement('canvas'); cv.width = cv.height = 128;
+  const g = cv.getContext('2d');
+  const grd = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  const c = new THREE.Color(hex);
+  const rgb = `${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)}`;
+  grd.addColorStop(0, `rgba(${rgb},1)`);
+  grd.addColorStop(softness, `rgba(${rgb},.34)`);
+  grd.addColorStop(1, `rgba(${rgb},0)`);
+  g.fillStyle = grd; g.fillRect(0, 0, 128, 128);
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const sunDir = sun.position.clone().normalize();
+const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+  map: glowSprite(0xffe6b8, 0.16), blending: THREE.AdditiveBlending, depthWrite: false, fog: false, opacity: 0.9
+}));
+sunGlow.scale.setScalar(420); sunGlow.renderOrder = -9; scene.add(sunGlow);
+
+/* distant ridge line — held at a fixed offset so it never parallaxes */
+const ridge = new THREE.InstancedMesh(
+  new THREE.ConeGeometry(1, 1, 5, 1),
+  new THREE.MeshBasicMaterial({ color: 0xb4c4dc, fog: false, transparent: true, opacity: 1 }),
+  16
+);
+ridge.frustumCulled = false;
+{
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2;
+    const r = 900 + hash2(i, 7) * 340;
+    const w = 180 + hash2(i, 11) * 240, h = 150 + hash2(i, 13) * 260;
+    p.set(Math.sin(a) * r, h * 0.5 - 120, -Math.cos(a) * r);
+    s.set(w, h, w);
+    m.compose(p, q, s);
+    ridge.setMatrixAt(i, m);
+  }
+}
+scene.add(ridge);
+
+/* ══════════════════════════════════════════════════════════════
+   3 · GEOMETRY BAKING  (many parts → one vertex-coloured mesh)
+   ══════════════════════════════════════════════════════════════ */
+function bake(parts) {
+  let total = 0;
+  const gs = parts.map(p => {
+    const g = (p.geo.index ? p.geo.toNonIndexed() : p.geo.clone());
+    if (p.m) g.applyMatrix4(p.m);
+    total += g.attributes.position.count;
+    return g;
+  });
+  const pos = new Float32Array(total * 3), nor = new Float32Array(total * 3), col = new Float32Array(total * 3);
+  let o = 0;
+  gs.forEach((g, i) => {
+    const n = g.attributes.position.count;
+    pos.set(g.attributes.position.array, o * 3);
+    nor.set(g.attributes.normal.array, o * 3);
+    const c = new THREE.Color(parts[i].color);
+    for (let k = 0; k < n; k++) { col[(o + k) * 3] = c.r; col[(o + k) * 3 + 1] = c.g; col[(o + k) * 3 + 2] = c.b; }
+    o += n;
+    g.dispose();
+  });
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  out.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  out.computeBoundingSphere();
+  return out;
+}
+const mat4 = (x, y, z, rx, ry, rz, sx, sy, sz) => new THREE.Matrix4()
+  .compose(new THREE.Vector3(x, y, z),
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(rx || 0, ry || 0, rz || 0)),
+    new THREE.Vector3(sx === undefined ? 1 : sx, sy === undefined ? 1 : sy, sz === undefined ? 1 : sz));
+
+const litMat = (extra) => new THREE.MeshLambertMaterial(Object.assign({ vertexColors: true, flatShading: true }, extra || {}));
+
+/* ---- pine ---- */
+const TREE_GEO = bake([
+  { geo: new THREE.CylinderGeometry(0.26, 0.38, 2.4, 5), color: 0x4a3527, m: mat4(0, 1.2, 0) },
+  { geo: new THREE.ConeGeometry(2.15, 3.9, 7), color: 0x1d4034, m: mat4(0, 3.5, 0) },
+  { geo: new THREE.ConeGeometry(1.62, 3.4, 7), color: 0x25503f, m: mat4(0, 5.5, 0) },
+  { geo: new THREE.ConeGeometry(1.0, 2.6, 7), color: 0x2d5c48, m: mat4(0, 7.4, 0) },
+  { geo: new THREE.ConeGeometry(1.72, 0.85, 7), color: 0xe9f1fb, m: mat4(0, 4.35, 0) },   // snow load
+  { geo: new THREE.ConeGeometry(1.06, 0.7, 7), color: 0xf1f7ff, m: mat4(0, 6.5, 0) }
+]);
+/* ---- boulder ---- */
+const ROCK_GEO = bake([
+  { geo: new THREE.IcosahedronGeometry(1.55, 0), color: 0x5d5a63, m: mat4(0, 0.85, 0, 0.3, 0.7, 0.2, 1.25, 0.9, 1.05) },
+  { geo: new THREE.IcosahedronGeometry(0.95, 0), color: 0x6b6771, m: mat4(0.9, 0.5, -0.5, 0.9, 0.2, 0.4) },
+  { geo: new THREE.SphereGeometry(1.2, 7, 4, 0, Math.PI * 2, 0, Math.PI * 0.42), color: 0xeef4fd, m: mat4(-0.1, 1.42, 0.05, 0.18, 0, 0.1, 1.15, 0.55, 1.0) }
+]);
+/* ---- kicker ---- */
+const RAMP_GEO = bake([
+  { geo: new THREE.CylinderGeometry(3.1, 3.1, 6.4, 10, 1, false, 0, Math.PI * 0.52), color: 0xdfeaf9, m: mat4(0, -0.35, 2.2, 0, 0, -Math.PI / 2, 1, 1, 1) },
+  { geo: new THREE.BoxGeometry(6.4, 0.5, 1.1), color: 0x9fb4d2, m: mat4(0, 1.62, -0.55) }
+]);
+/* ---- slalom wand ---- */
+const POLE_GEO = bake([
+  { geo: new THREE.CylinderGeometry(0.075, 0.075, 3.0, 5), color: 0x2a3444, m: mat4(0, 1.5, 0) },
+  { geo: new THREE.BoxGeometry(0.9, 0.62, 0.05), color: 0xff6a2b, m: mat4(0.45, 2.55, 0) }
+]);
+
+/* ---- the rider ---- */
+const RIDER_GEO = bake([
+  { geo: new THREE.BoxGeometry(0.52, 0.1, 3.3), color: 0xd8451c, m: mat4(0, 0.09, 0) },            // deck
+  { geo: new THREE.BoxGeometry(0.54, 0.11, 1.15), color: 0x16202f, m: mat4(0, 0.17, -0.05) },       // inserts
+  { geo: new THREE.BoxGeometry(0.3, 0.5, 0.52), color: 0x131c29, m: mat4(-0.02, 0.44, 0.62) },      // back boot+leg
+  { geo: new THREE.BoxGeometry(0.3, 0.5, 0.52), color: 0x131c29, m: mat4(0.02, 0.44, -0.5) },       // front boot+leg
+  { geo: new THREE.BoxGeometry(0.56, 0.72, 0.78), color: 0x1d3450, m: mat4(0, 1.03, 0.05, 0.22, 0, 0) }, // torso
+  { geo: new THREE.BoxGeometry(0.58, 0.14, 0.8), color: 0xff6a2b, m: mat4(0, 0.86, 0.06, 0.22, 0, 0) },  // jacket band
+  { geo: new THREE.BoxGeometry(0.19, 0.66, 0.19), color: 0x1d3450, m: mat4(-0.4, 0.96, 0.3, 0.25, 0, 0.42) },
+  { geo: new THREE.BoxGeometry(0.19, 0.66, 0.19), color: 0x1d3450, m: mat4(0.4, 0.96, -0.18, -0.2, 0, -0.34) },
+  { geo: new THREE.BoxGeometry(0.42, 0.4, 0.44), color: 0xe9eef7, m: mat4(0, 1.56, 0.02) },         // helmet
+  { geo: new THREE.BoxGeometry(0.44, 0.13, 0.1), color: 0x101722, m: mat4(0, 1.56, -0.2) }          // goggles
+]);
+const rider = new THREE.Mesh(RIDER_GEO, litMat());
+scene.add(rider);
+
+/* contact shadow */
+const shadow = new THREE.Mesh(
+  new THREE.PlaneGeometry(4.4, 5.6),
+  new THREE.MeshBasicMaterial({ map: glowSprite(0x21304a, 0.4), transparent: true, opacity: 0.42, depthWrite: false, fog: false })
+);
+shadow.rotation.x = -Math.PI / 2; scene.add(shadow);
+
+/* ══════════════════════════════════════════════════════════════
+   4 · TERRAIN MESH  (a rolling window rebuilt from the field)
+   ══════════════════════════════════════════════════════════════ */
+const TW = 156, TL = 430, SX = 38, SZ = 102, BACK = 72;
+const terrainGeo = new THREE.BufferGeometry();
+{
+  const vc = (SX + 1) * (SZ + 1);
+  terrainGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vc * 3), 3));
+  terrainGeo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(vc * 3), 3));
+  terrainGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(vc * 3), 3));
+  const idx = new Uint32Array(SX * SZ * 6);
+  let k = 0;
+  for (let j = 0; j < SZ; j++) for (let i = 0; i < SX; i++) {
+    const a = j * (SX + 1) + i, b = a + 1, c = a + SX + 1, d = c + 1;
+    idx[k++] = a; idx[k++] = b; idx[k++] = c;   // wound so the faces look up
+    idx[k++] = b; idx[k++] = d; idx[k++] = c;
+  }
+  terrainGeo.setIndex(new THREE.BufferAttribute(idx, 1));
+}
+const terrain = new THREE.Mesh(terrainGeo, litMat());
+terrain.frustumCulled = false;
+scene.add(terrain);
+
+const C_SNOW = new THREE.Color(0xdde8f8);
+const C_SHADE = new THREE.Color(0xa9c0e2);
+const C_PISTE = new THREE.Color(0xeef5ff);
+const C_ROCK = new THREE.Color(0x585462);
+const C_SCREE = new THREE.Color(0x6e6a75);
+const _c = new THREE.Color();
+
+let tileX = 1e9, tileZ = 1e9;
+function rebuildTerrain(px, pz) {
+  const ox = Math.round(px / 8) * 8, oz = Math.round(pz / 8) * 8;
+  if (ox === tileX && oz === tileZ) return;
+  tileX = ox; tileZ = oz;
+  const pos = terrainGeo.attributes.position.array;
+  const col = terrainGeo.attributes.color.array;
+  let v = 0;
+  for (let j = 0; j <= SZ; j++) {
+    const z = oz + BACK - (j / SZ) * TL;
+    const cx = gullyX(z), hw = gullyW(z);
+    for (let i = 0; i <= SX; i++, v++) {
+      const x = ox + (i / SX - 0.5) * TW;
+      const y = height(x, z);
+      pos[v * 3] = x; pos[v * 3 + 1] = y; pos[v * 3 + 2] = z;
+      const t = Math.abs(x - cx) - hw;
+      const grain = noise2(x * 0.07, z * 0.07);
+      if (t > 0) {
+        _c.copy(noise2(x * 0.21, z * 0.21) > 0.52 ? C_ROCK : C_SCREE)
+          .lerp(C_SHADE, 1 - smoothstep(0, 11, t));
+      } else {
+        _c.copy(C_SNOW).lerp(C_PISTE, smoothstep(-6, -20, t) * 0.85);
+        _c.lerp(C_SHADE, grain * 0.46);
+      }
+      col[v * 3] = _c.r; col[v * 3 + 1] = _c.g; col[v * 3 + 2] = _c.b;
+    }
+  }
+  terrainGeo.attributes.position.needsUpdate = true;
+  terrainGeo.attributes.color.needsUpdate = true;
+  terrainGeo.computeVertexNormals();
+  terrainGeo.computeBoundingSphere();
+}
+
+/* ══════════════════════════════════════════════════════════════
+   5 · OBJECT POOLS
+   ══════════════════════════════════════════════════════════════ */
+const ZERO = new THREE.Matrix4().makeScale(0.0001, 0.0001, 0.0001);
+function makePool(geo, cap, colourJitter) {
+  const mesh = new THREE.InstancedMesh(geo, litMat(), cap);
+  mesh.frustumCulled = false;
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  for (let i = 0; i < cap; i++) mesh.setMatrixAt(i, ZERO);
+  if (colourJitter) {
+    for (let i = 0; i < cap; i++) {
+      const t = 0.84 + hash2(i, 91) * 0.3;
+      mesh.setColorAt(i, _c.setRGB(t, t * 0.99, t * 1.02));
+    }
+    mesh.instanceColor.needsUpdate = true;
+  }
+  scene.add(mesh);
+  const free = []; for (let i = cap - 1; i >= 0; i--) free.push(i);
+  return { mesh, free, dirty: false, cap };
+}
+const pools = {
+  tree: makePool(TREE_GEO, 300, true),
+  rock: makePool(ROCK_GEO, 120, true),
+  ramp: makePool(RAMP_GEO, 14, false),
+  pole: makePool(POLE_GEO, 80, false)
+};
+const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3();
+
+let props = [];          // everything alive in the world window
+function addProp(kind, x, z, opts) {
+  const pool = pools[kind];
+  if (!pool.free.length) return null;
+  const o = Object.assign({
+    kind, x, z, y: height(x, z), slot: pool.free.pop(),
+    r: 1.4, tall: 9, scale: 1, spin: rand(0, Math.PI * 2),
+    hazard: false, scenery: false, dead: false, passed: false
+  }, opts || {});
+  _e.set(0, o.spin, 0);
+  _q.setFromEuler(_e);
+  _v.set(o.x, o.y, o.z);
+  _s.set(o.scale, o.scale, o.scale);
+  pool.mesh.setMatrixAt(o.slot, _m.compose(_v, _q, _s));
+  pool.dirty = true;
+  props.push(o);
+  return o;
+}
+function killProp(o, hide) {
+  const pool = pools[o.kind];
+  if (hide) { pool.mesh.setMatrixAt(o.slot, ZERO); pool.dirty = true; }
+  pool.free.push(o.slot);
+  o.slot = -1;
+}
+function clearProps() {
+  for (const o of props) if (o.slot >= 0) killProp(o, true);
+  props = [];
+}
+
+/* ---- bonfires: few enough to be real objects, with real light ---- */
+const FIRE_N = 4;
+const fires = [];
+for (let i = 0; i < FIRE_N; i++) {
+  const g = new THREE.Group();
+  const base = new THREE.Mesh(bake([
+    { geo: new THREE.CylinderGeometry(2.5, 2.9, 0.34, 9), color: 0x3b3740, m: mat4(0, 0.17, 0) },
+    { geo: new THREE.BoxGeometry(0.42, 0.42, 3.3), color: 0x4a3526, m: mat4(0, 0.5, 0, 0, 0.5, 0.1) },
+    { geo: new THREE.BoxGeometry(0.42, 0.42, 3.3), color: 0x40301f, m: mat4(0, 0.5, 0, 0, -0.6, -0.1) },
+    { geo: new THREE.BoxGeometry(0.38, 2.2, 0.38), color: 0x55402d, m: mat4(0.5, 1.1, 0.3, 0.4, 0, 0.35) },
+    { geo: new THREE.BoxGeometry(0.38, 2.2, 0.38), color: 0x4a3526, m: mat4(-0.5, 1.1, -0.2, -0.4, 0, -0.35) }
+  ]), litMat());
+  const flame = new THREE.Mesh(
+    new THREE.ConeGeometry(1.45, 4.6, 7),
+    new THREE.MeshBasicMaterial({ color: 0xff8c2a, fog: false })
+  );
+  flame.position.y = 2.6;
+  const core = new THREE.Mesh(
+    new THREE.ConeGeometry(0.72, 2.8, 6),
+    new THREE.MeshBasicMaterial({ color: 0xfff0c2, fog: false })
+  );
+  core.position.y = 2.1;
+  const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: glowSprite(0xff8a24, 0.24), blending: THREE.AdditiveBlending, depthWrite: false, fog: false, opacity: 0.95
+  }));
+  halo.scale.setScalar(26); halo.position.y = 3;
+  /* the smoke is the part you actually spot from three hundred metres out */
+  const smoke = new THREE.Mesh(
+    new THREE.CylinderGeometry(3.4, 0.7, 17, 7, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0x5d6675, transparent: true, opacity: 0.28, depthWrite: false, side: THREE.DoubleSide })
+  );
+  smoke.position.y = 12; smoke.rotation.z = 0.12;
+  const light = new THREE.PointLight(0xff9646, 0, 52, 2);
+  light.position.y = 2.4;
+  g.add(base, flame, core, halo, smoke, light);
+  g.visible = false;
+  scene.add(g);
+  fires.push({ g, flame, core, halo, smoke, light, x: 0, z: 0, active: false, used: false, spent: 0 });
+}
+let fireCursor = 0;
+function lightFire(x, z) {
+  const f = fires[fireCursor % FIRE_N]; fireCursor++;
+  f.x = x; f.z = z; f.active = true; f.used = false; f.spent = 0;
+  f.g.position.set(x, height(x, z), z);
+  f.g.visible = true;
+  return f;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   6 · PARTICLES  (falling snow · board spray · the slide itself)
+   ══════════════════════════════════════════════════════════════ */
+function pointsCloud(count, size, opacity, colour) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+  const m = new THREE.PointsMaterial({
+    size, map: glowSprite(colour, 0.34), transparent: true, opacity,
+    depthWrite: false, sizeAttenuation: true, fog: true, color: 0xffffff
+  });
+  const p = new THREE.Points(g, m);
+  p.frustumCulled = false;
+  scene.add(p);
+  return p;
+}
+
+const SNOW_N = 620;
+const snowfall = pointsCloud(SNOW_N, 0.5, 0.85, 0xffffff);
+const snowP = snowfall.geometry.attributes.position.array;
+const snowV = new Float32Array(SNOW_N * 3);
+for (let i = 0; i < SNOW_N; i++) {
+  snowP[i * 3] = rand(-60, 60); snowP[i * 3 + 1] = rand(0, 60); snowP[i * 3 + 2] = rand(-60, 60);
+  snowV[i * 3] = rand(-1.5, 1.5); snowV[i * 3 + 1] = rand(-7, -3.5); snowV[i * 3 + 2] = rand(-2, 2);
+}
+
+const SPRAY_N = 180;
+const spray = pointsCloud(SPRAY_N, 0.85, 0.95, 0xffffff);
+const sprayP = spray.geometry.attributes.position.array;
+const sprayV = new Float32Array(SPRAY_N * 3);
+const sprayL = new Float32Array(SPRAY_N);
+let sprayHead = 0;
+function emitSpray(x, y, z, n, power) {
+  for (let k = 0; k < n; k++) {
+    const i = sprayHead = (sprayHead + 1) % SPRAY_N;
+    sprayP[i * 3] = x + rand(-0.5, 0.5); sprayP[i * 3 + 1] = y + rand(0, 0.4); sprayP[i * 3 + 2] = z + rand(-0.6, 0.6);
+    sprayV[i * 3] = rand(-1, 1) * power; sprayV[i * 3 + 1] = rand(1.2, 4.2) * (0.4 + power * 0.1);
+    sprayV[i * 3 + 2] = rand(0.5, 3.2) * power * 0.6;
+    sprayL[i] = rand(0.45, 1.0);
+  }
+}
+for (let i = 0; i < SPRAY_N; i++) { sprayP[i * 3 + 1] = -9999; sprayL[i] = 0; }
+
+/* the slide: a churning slab that lives behind the rider */
+const slide = new THREE.Group(); scene.add(slide);
+const SLIDE_N = 320;
+const slideCloud = pointsCloud(SLIDE_N, 12, 0.95, 0xf4f9ff);
+scene.remove(slideCloud); slide.add(slideCloud);
+const slideP = slideCloud.geometry.attributes.position.array;
+const slidePhase = new Float32Array(SLIDE_N);
+for (let i = 0; i < SLIDE_N; i++) {
+  slideP[i * 3] = rand(-105, 105);
+  slideP[i * 3 + 1] = Math.pow(Math.random(), 1.5) * 40;
+  slideP[i * 3 + 2] = rand(-16, 20);
+  slidePhase[i] = rand(0, 6.28);
+}
+const slideWall = new THREE.Mesh(
+  new THREE.PlaneGeometry(320, 150),
+  new THREE.MeshBasicMaterial({ color: 0xdce8f8, fog: true, transparent: true, opacity: 0.96, depthWrite: false })
+);
+slideWall.position.set(0, 30, 16);
+slide.add(slideWall);
+
+/* ══════════════════════════════════════════════════════════════
+   7 · CARVE TRAIL
+   ══════════════════════════════════════════════════════════════ */
+const TRAIL_N = 72;
+const trailGeo = new THREE.BufferGeometry();
+trailGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_N * 2 * 3), 3));
+{
+  /* static RGBA ramp: opaque under the board, gone by the time it reaches the camera */
+  const col = new Float32Array(TRAIL_N * 2 * 4);
+  for (let i = 0; i < TRAIL_N; i++) {
+    const a = 0.34 * Math.pow(1 - i / (TRAIL_N - 1), 1.6);
+    for (let e = 0; e < 2; e++) {
+      const o = (i * 2 + e) * 4;
+      col[o] = 0.10; col[o + 1] = 0.14; col[o + 2] = 0.22; col[o + 3] = a;
+    }
+  }
+  trailGeo.setAttribute('color', new THREE.BufferAttribute(col, 4));
+}
+{
+  const idx = new Uint16Array((TRAIL_N - 1) * 6);
+  let k = 0;
+  for (let i = 0; i < TRAIL_N - 1; i++) {
+    const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
+    idx[k++] = a; idx[k++] = c; idx[k++] = b;
+    idx[k++] = b; idx[k++] = c; idx[k++] = d;
+  }
+  trailGeo.setIndex(new THREE.BufferAttribute(idx, 1));
+}
+const trail = new THREE.Mesh(trailGeo, new THREE.MeshBasicMaterial({
+  vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: true
+}));
+trail.frustumCulled = false;
+scene.add(trail);
+const trailP = trailGeo.attributes.position.array;
+let trailInit = false, trailClock = 0;
+function pushTrail(x, y, z, h, w) {
+  for (let i = TRAIL_N - 1; i > 0; i--) {
+    const d = i * 6, s = (i - 1) * 6;
+    for (let k = 0; k < 6; k++) trailP[d + k] = trailP[s + k];
+  }
+  const nx = Math.cos(h) * w, nz = Math.sin(h) * w;
+  trailP[0] = x - nx; trailP[1] = y + 0.09; trailP[2] = z + nz;
+  trailP[3] = x + nx; trailP[4] = y + 0.09; trailP[5] = z - nz;
+  trailGeo.attributes.position.needsUpdate = true;
+}
+function resetTrail(x, y, z) {
+  for (let i = 0; i < TRAIL_N; i++) {
+    trailP[i * 6] = x - 0.34; trailP[i * 6 + 1] = y + 0.09; trailP[i * 6 + 2] = z;
+    trailP[i * 6 + 3] = x + 0.34; trailP[i * 6 + 4] = y + 0.09; trailP[i * 6 + 5] = z;
+  }
+  trailGeo.attributes.position.needsUpdate = true;
+  trailInit = true;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   8 · SOUND  (entirely synthesised — no assets)
+   ══════════════════════════════════════════════════════════════ */
+const Snd = (() => {
+  let ctx = null, master, wind, carve, rumble, ready = false;
+  let enabled = true;
+  try { enabled = localStorage.getItem('sw_sound') !== '0'; } catch (e) {}
+  function noiseBuffer() {
+    const n = ctx.sampleRate * 2, b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < n; i++) { const w = Math.random() * 2 - 1; last = (last + 0.022 * w) / 1.022; d[i] = w * 0.32 + last * 2.6; }
+    return b;
+  }
+  function chain(src, type, freq, q, out) {
+    const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; if (q) f.Q.value = q;
+    const g = ctx.createGain(); g.gain.value = 0;
+    src.connect(f); f.connect(g); g.connect(out);
+    return g;
+  }
+  function boot() {
+    if (ready) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    ctx = new AC();
+    master = ctx.createGain(); master.gain.value = enabled ? 0.85 : 0; master.connect(ctx.destination);
+    const src = ctx.createBufferSource(); src.buffer = noiseBuffer(); src.loop = true; src.start();
+    wind = chain(src, 'bandpass', 640, 0.7, master);
+    carve = chain(src, 'bandpass', 2500, 1.5, master);
+    rumble = chain(src, 'lowpass', 105, 0.9, master);
+    ready = true;
+  }
+  const set = (g, v) => { if (ready) g.gain.setTargetAtTime(v, ctx.currentTime, 0.09); };
+  return {
+    boot() { boot(); if (ctx && ctx.state === 'suspended') ctx.resume(); },
+    get on() { return enabled; },
+    toggle() {
+      enabled = !enabled;
+      try { localStorage.setItem('sw_sound', enabled ? '1' : '0'); } catch (e) {}
+      if (ready) master.gain.setTargetAtTime(enabled ? 0.85 : 0, ctx.currentTime, 0.05);
+      return enabled;
+    },
+    bed(w, c, r) { set(wind, w); set(carve, c); set(rumble, r); },
+    hit(power) {
+      if (!ready || !enabled) return;
+      const t = ctx.currentTime;
+      const s = ctx.createBufferSource(); s.buffer = noiseBuffer();
+      const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.setValueAtTime(1400, t); f.frequency.exponentialRampToValueAtTime(120, t + 0.3);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.9 * power, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.42);
+      s.connect(f); f.connect(g); g.connect(master); s.start(t); s.stop(t + 0.45);
+      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(130, t); o.frequency.exponentialRampToValueAtTime(38, t + 0.3);
+      const og = ctx.createGain(); og.gain.setValueAtTime(0.8 * power, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+      o.connect(og); og.connect(master); o.start(t); o.stop(t + 0.36);
+    },
+    tone(freq, dur, type, vol) {
+      if (!ready || !enabled) return;
+      const t = ctx.currentTime;
+      const o = ctx.createOscillator(); o.type = type || 'triangle';
+      o.frequency.setValueAtTime(freq, t);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol || 0.3, t + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.02);
+    },
+    whoosh() {
+      if (!ready || !enabled) return;
+      const t = ctx.currentTime;
+      const s = ctx.createBufferSource(); s.buffer = noiseBuffer();
+      const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 2.2;
+      f.frequency.setValueAtTime(500, t); f.frequency.exponentialRampToValueAtTime(3200, t + 0.4);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.5, t + 0.08); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+      s.connect(f); f.connect(g); g.connect(master); s.start(t); s.stop(t + 0.52);
+    }
+  };
+})();
+
+/* ══════════════════════════════════════════════════════════════
+   9 · INPUT  (gyroscope first, drag and keys as fallbacks)
+   ══════════════════════════════════════════════════════════════ */
+const TILT_RANGE = 26;                       // degrees of tilt for full lock
+const input = { steer: 0, gyro: false, raw: 0, zero: 0, seeded: false, touching: false, keys: 0 };
+
+function screenAngle() {
+  if (screen.orientation && typeof screen.orientation.angle === 'number') return screen.orientation.angle;
+  return typeof window.orientation === 'number' ? window.orientation : 0;
+}
+function onOrientation(e) {
+  if (e.gamma === null || e.gamma === undefined || e.beta === null) return;
+  const a = ((screenAngle() % 360) + 360) % 360;
+  let t;
+  if (a === 90) t = -e.beta;
+  else if (a === 270) t = e.beta;
+  else if (a === 180) t = -e.gamma;
+  else t = e.gamma;
+  input.raw = t;
+  if (!input.seeded) { input.seeded = true; input.zero = t; }
+  input.gyro = true;
+}
+function recentre() { input.zero = input.raw; flashWarn('Re-centred', 700); }
+
+async function enableGyro() {
+  try {
+    const DOE = window.DeviceOrientationEvent;
+    if (DOE && typeof DOE.requestPermission === 'function') {
+      const res = await DOE.requestPermission();
+      if (res !== 'granted') return false;
+    }
+    window.addEventListener('deviceorientation', onOrientation, true);
+    return true;
+  } catch (e) { return false; }
+}
+
+/* drag steering */
+let dragX = null;
+function dragStart(x) { dragX = x; input.touching = true; }
+function dragMove(x) {
+  if (dragX === null) return;
+  const span = Math.max(90, window.innerWidth * 0.24);
+  input.steer = clamp((x - dragX) / span, -1, 1);
+}
+function dragEnd() { dragX = null; input.touching = false; }
+canvas.addEventListener('touchstart', e => { dragStart(e.touches[0].clientX); }, { passive: true });
+canvas.addEventListener('touchmove', e => { dragMove(e.touches[0].clientX); }, { passive: true });
+canvas.addEventListener('touchend', dragEnd, { passive: true });
+canvas.addEventListener('touchcancel', dragEnd, { passive: true });
+canvas.addEventListener('mousedown', e => dragStart(e.clientX));
+window.addEventListener('mousemove', e => dragMove(e.clientX));
+window.addEventListener('mouseup', dragEnd);
+window.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') input.keys = -1;
+  else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') input.keys = 1;
+  else return;
+  e.preventDefault();
+}, { passive: false });
+window.addEventListener('keyup', e => {
+  if (['ArrowLeft', 'ArrowRight', 'a', 'A', 'd', 'D'].includes(e.key)) input.keys = 0;
+});
+document.addEventListener('gesturestart', e => e.preventDefault());
+
+function readSteer(dt) {
+  let s;
+  if (input.keys) s = input.keys;
+  else if (input.touching) s = input.steer;
+  else if (input.gyro) {
+    let d = input.raw - input.zero;
+    if (d > 180) d -= 360; else if (d < -180) d += 360;
+    const dead = 1.6;
+    d = Math.abs(d) < dead ? 0 : d - Math.sign(d) * dead;
+    s = clamp(d / TILT_RANGE, -1, 1);
+    s = Math.sign(s) * Math.pow(Math.abs(s), 1.3);
+  } else s = 0;
+  if (!input.touching && !input.keys) input.steer = s;
+  return s;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   10 · GAME STATE
+   ══════════════════════════════════════════════════════════════ */
+const P = {
+  x: 0, y: 0, z: 0, speed: 0, heading: 0, camHeading: 0,
+  vy: 0, air: false, airT: 0, bestAir: 0,
+  health: 100, heat: 100, hurt: 0,
+  dist: 0, score: 0, topSpeed: 0, near: 0, combo: 0, comboT: 0
+};
+let mode = 'menu';                 // menu | play | dying | over | paused
+let genZ = 0, poleZ = 0, nextFireZ = 0, nextRampZ = 0;
+let slideZ = 0, slideGap = 190;
+let weather = 0, weatherT = 22, weatherLen = 0;
+let shake = 0, menuT = 0, deathT = 0, deathCause = null, buried = 0;
+let best = 0;
+try { best = parseInt(localStorage.getItem('sw_best') || '0', 10) || 0; } catch (e) {}
+
+const GEN_AHEAD = 345, CULL_BEHIND = 52;
+const diffAt = () => clamp(P.dist / 3500, 0, 1);
+
+function seedWorld() {
+  clearProps();
+  for (const f of fires) { f.active = false; f.g.visible = false; f.light.intensity = 0; }
+  genZ = -30; poleZ = 0; nextFireZ = -420; nextRampZ = -220;
+  while (genZ > P.z - GEN_AHEAD) generate();
+}
+
+function generate() {
+  const d = diffAt();
+  const gap = lerp(26, 13.5, d);
+  genZ -= gap;
+  const z = genZ, cx = gullyX(z), hw = gullyW(z);
+
+  /* wands mark the rideable line — the run must stay readable at distance */
+  while (poleZ > z) {
+    poleZ -= 26;
+    const pz2 = poleZ, pcx = gullyX(pz2), phw = gullyW(pz2);
+    addProp('pole', pcx - phw + 1.1, pz2, { scale: rand(0.95, 1.05), spin: 0.35, r: 0 });
+    addProp('pole', pcx + phw - 1.1, pz2, { scale: rand(0.95, 1.05), spin: -0.35 + Math.PI, r: 0 });
+  }
+
+  /* one lane is always guaranteed open */
+  const lane = cx + rand(-1, 1) * Math.max(2, hw - 8);
+
+  if (z < nextRampZ) {
+    nextRampZ = z - rand(190, 330);
+    addProp('ramp', lane, z, { r: 3.4, spin: 0, scale: rand(0.95, 1.15), hazard: false });
+  } else {
+    const n = 1 + Math.floor(Math.random() * (1.35 + 2.3 * d));
+    for (let i = 0; i < n; i++) {
+      for (let t = 0; t < 8; t++) {
+        const x = cx + rand(-1, 1) * (hw - 2.2);
+        if (Math.abs(x - lane) < 7.2) continue;
+        const rock = Math.random() < 0.34;
+        addProp(rock ? 'rock' : 'tree', x, z + rand(-4, 4), {
+          hazard: true, r: rock ? 1.9 : 1.55, tall: rock ? 2.6 : 9,
+          scale: rock ? rand(0.75, 1.45) : rand(0.8, 1.35)
+        });
+        break;
+      }
+    }
+  }
+
+  if (z < nextFireZ) {
+    nextFireZ = z - rand(430, 620);
+    lightFire(clamp(lane + rand(-4, 4), cx - hw + 4, cx + hw - 4), z - 6);
+  }
+
+  /* forest beyond the banks, framing the gully */
+  for (let i = 0; i < 3; i++) {
+    const side = Math.random() < 0.5 ? -1 : 1;
+    const off = hw + 2.5 + Math.pow(Math.random(), 0.7) * 34;
+    addProp('tree', cx + side * off, z + rand(-gap / 2, gap / 2), { scenery: true, scale: rand(0.75, 1.5) });
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   11 · HUD PLUMBING
+   ══════════════════════════════════════════════════════════════ */
+const hud = $('hud'), popups = $('popups'), warnEl = $('warn');
+const elDist = $('dist'), elSpd = $('spd'), elScore = $('score');
+const elHeat = $('heatFill'), elCond = $('condFill'), elHeatP = $('heatPct'), elCondP = $('condPct');
+const elAva = $('avaFill'), elAvaD = $('avaDist'), slideGauge = $('slideGauge');
+const heatGauge = $('heatGauge'), condGauge = $('condGauge');
+const vig = $('vig'), surge = $('surge'), flash = $('flash'), haze = $('haze');
+const fmt = n => Math.round(n).toLocaleString('en-US');
+
+let warnTimer = 0, warnText = '';
+function flashWarn(text, ms) { warnText = text; warnEl.textContent = text; warnEl.classList.add('on'); warnTimer = (ms || 900) / 1000; }
+function popup(text, value, cls) {
+  const d = document.createElement('div');
+  d.className = 'pop ' + cls;
+  d.innerHTML = text + (value ? '<b>' + value + '</b>' : '');
+  popups.appendChild(d);
+  setTimeout(() => d.remove(), 1200);
+}
+
+let hudT = 0;
+function updateHUD(dt) {
+  hudT -= dt;
+  if (hudT > 0) return;
+  hudT = 0.066;
+  elDist.innerHTML = fmt(P.dist) + '<small>M</small>';
+  elSpd.innerHTML = fmt(P.speed * 3.6) + '<small>KM/H</small>';
+  elScore.textContent = fmt(P.score);
+  elHeat.style.width = P.heat + '%';
+  elCond.style.width = P.health + '%';
+  elHeatP.textContent = Math.round(P.heat) + '%';
+  elCondP.textContent = Math.round(P.health) + '%';
+  heatGauge.classList.toggle('low', P.heat < 30);
+  condGauge.classList.toggle('low', P.health < 34);
+  const close = clamp(1 - slideGap / 190, 0, 1);
+  elAva.style.width = (8 + close * 92) + '%';
+  elAvaD.textContent = Math.round(slideGap) + ' M BACK';
+  slideGauge.classList.toggle('critical', slideGap < 55);
+  vig.style.opacity = clamp(Math.max((1 - P.health / 100) * 0.85, (1 - P.heat / 100) * 0.5, close * close * 0.9), 0, 1);
+  surge.style.opacity = clamp((1 - slideGap / 70), 0, 1) * 0.8;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   12 · SIMULATION
+   ══════════════════════════════════════════════════════════════ */
+const MAX_HEADING = 0.62;
+const GRAV = 30;
+
+function resetRun() {
+  P.x = gullyX(0); P.y = height(P.x, 0); P.z = 0;
+  P.speed = 13; P.heading = 0; P.camHeading = 0;
+  P.vy = 0; P.air = false; P.airT = 0; P.bestAir = 0;
+  P.health = 100; P.heat = 100; P.hurt = 0;
+  P.dist = 0; P.score = 0; P.topSpeed = 0; P.near = 0; P.combo = 0; P.comboT = 0;
+  slideGap = 190; slideZ = P.z + slideGap;
+  weather = 0; weatherT = 24; weatherLen = 0;
+  shake = 0; buried = 0; deathCause = null;
+  seedWorld();
+  resetTrail(P.x, P.y, P.z);
+  trailClock = 0;
+}
+
+function step(dt) {
+  const d = diffAt();
+
+  /* ---- steering & carve physics ---- */
+  const steer = readSteer(dt);
+  const target = steer * MAX_HEADING;
+  const auth = P.air ? 2.0 : 5.6;
+  P.heading += (target - P.heading) * Math.min(1, dt * auth);
+
+  const accel = lerp(17, 23.5, d);
+  const carveDrag = 0.58 * Math.abs(Math.sin(P.heading)) * P.speed;
+  P.speed += (accel * Math.cos(P.heading) - 0.0118 * P.speed * P.speed - carveDrag - (P.air ? 0 : 0.6)) * dt;
+  P.speed = clamp(P.speed, 2.5, 62);
+  P.topSpeed = Math.max(P.topSpeed, P.speed);
+
+  const dx = Math.sin(P.heading) * P.speed * dt;
+  const dz = -Math.cos(P.heading) * P.speed * dt;
+  P.x += dx; P.z += dz;
+  P.dist += -dz;
+  P.score += -dz * (1 + P.combo * 0.12);
+
+  /* ---- banks: the gully pushes back, hard ---- */
+  const out = bankOut(P.x, P.z);
+  if (out > 0) {
+    const side = Math.sign(P.x - gullyX(P.z));
+    P.x -= side * Math.min(out, dt * (16 + out * 5));
+    P.speed -= out * 11 * dt;
+    P.health -= out * 9 * dt;
+    shake = Math.max(shake, Math.min(0.45, out * 0.09));
+    if (out > 0.6) { flashWarn('Off piste', 420); emitSpray(P.x, P.y, P.z, 2, 1.6); }
+  }
+
+  /* ---- air & ground ---- */
+  const gy = height(P.x, P.z);
+  if (P.air) {
+    P.vy -= GRAV * dt;
+    P.y += P.vy * dt;
+    P.airT += dt;
+    if (P.y <= gy) {
+      P.y = gy; P.air = false;
+      P.bestAir = Math.max(P.bestAir, P.airT);
+      if (P.airT > 0.42) {
+        const bonus = Math.round(P.airT * 150 + P.speed * 4);
+        P.score += bonus;
+        popup(P.airT > 1.5 ? 'Enormous' : 'Air', '+' + bonus, 'air');
+        Snd.tone(340, 0.18, 'triangle', 0.22);
+      }
+      emitSpray(P.x, P.y, P.z, 16, 2.4);
+      resetTrail(P.x, P.y, P.z);
+      Snd.hit(0.22);
+      P.speed *= 1 - Math.min(0.2, Math.abs(P.heading) * 0.28);
+      P.airT = 0;
+    }
+  } else {
+    P.y += (gy - P.y) * Math.min(1, dt * 16);
+    if (P.y - gy > 1.3) { P.air = true; P.vy = 0; }        // rolled off a lip
+  }
+
+  /* ---- props: collision, pickups, near misses ---- */
+  P.hurt = Math.max(0, P.hurt - dt);
+  P.comboT -= dt;
+  if (P.comboT <= 0 && P.combo > 0) P.combo = 0;
+
+  for (let i = props.length - 1; i >= 0; i--) {
+    const o = props[i];
+    if (o.z > P.z + CULL_BEHIND) { killProp(o, true); props.splice(i, 1); continue; }
+    if (o.scenery || o.dead) continue;
+    const ddz = o.z - P.z;
+    if (ddz > 9 || ddz < -7) continue;
+    const ddx = o.x - P.x;
+    const rad = o.r * o.scale;
+
+    if (o.kind === 'ramp') {
+      if (!o.used && Math.abs(ddx) < 3.4 * o.scale && ddz > -1.5 && ddz < 2.0 && !P.air) {
+        o.used = true;
+        P.air = true; P.vy = 6.4 + P.speed * 0.30;
+        P.speed *= 1.05;
+        emitSpray(P.x, P.y, P.z, 14, 2.0);
+        Snd.whoosh();
+        popup('Kicker', '', 'air');
+      }
+      continue;
+    }
+
+    const hit = Math.abs(ddx) < rad + 1.0 && Math.abs(ddz) < rad + 1.1;
+    const cleared = P.air && (P.y - o.y) > o.tall * o.scale * 0.55;
+    if (hit && !cleared && P.hurt <= 0) {
+      const tree = o.kind === 'tree';
+      P.health -= tree ? 30 : 24;
+      P.speed *= tree ? 0.40 : 0.5;
+      P.heading *= 0.3;
+      P.hurt = 0.7;
+      P.combo = 0;
+      o.dead = true;
+      killProp(o, true); props.splice(i, 1);
+      shake = 1;
+      flash.style.opacity = '0.55';
+      emitSpray(P.x, P.y + 0.6, P.z, 26, 3);
+      Snd.hit(1);
+      flashWarn(tree ? 'Timber' : 'Rock', 600);
+      continue;
+    }
+    if (!o.passed && ddz > 0) {
+      o.passed = true;
+      const miss = Math.abs(ddx);
+      if (miss < rad + 3.6 && P.speed > 14) {
+        P.combo = Math.min(9, P.combo + 1); P.comboT = 3.2; P.near++;
+        const bonus = 30 * P.combo;
+        P.score += bonus;
+        popup(P.combo > 1 ? 'Close ×' + P.combo : 'Close pass', '+' + bonus, 'near');
+        Snd.tone(720 + P.combo * 90, 0.09, 'square', 0.1);
+      }
+    }
+  }
+
+  /* ---- fires ---- */
+  let nearFire = 0;
+  for (const f of fires) {
+    if (!f.active) continue;
+    if (f.z > P.z + CULL_BEHIND + 30) { f.active = false; f.g.visible = false; f.light.intensity = 0; continue; }
+    const fd = Math.hypot(f.x - P.x, f.z - P.z);
+    nearFire = Math.max(nearFire, 1 - clamp(fd / 30, 0, 1));
+    if (fd < 7.5 && P.heat < 100) {
+      P.heat = Math.min(100, P.heat + 78 * dt);
+      if (!f.used) {
+        f.used = true; P.score += 180;
+        popup('Body heat', '+180', 'heat');
+        Snd.tone(520, 0.22, 'sine', 0.3); Snd.tone(780, 0.3, 'sine', 0.22);
+      }
+    }
+  }
+
+  /* ---- weather: whiteouts roll through ---- */
+  weatherT -= dt;
+  if (weatherT <= 0) {
+    if (weatherLen > 0) { weatherLen -= dt; if (weatherLen <= 0) { weatherT = rand(34, 62); flashWarn('Clearing', 900); } }
+    else { weatherLen = rand(9, 15); flashWarn('Whiteout', 2200); Snd.tone(120, 1.4, 'sawtooth', 0.12); }
+  }
+  weather += ((weatherLen > 0 ? 1 : 0) - weather) * Math.min(1, dt * 0.5);
+
+  /* ---- body heat ---- */
+  P.heat -= (0.75 + P.speed * 0.042) * (1 + weather * 1.3) * (1 + d * 0.35) * dt;
+  P.heat = clamp(P.heat, 0, 100);
+  if (P.heat <= 0) {
+    P.health -= 9 * dt;
+    if (Math.random() < dt * 2.2) flashWarn('Hypothermic', 700);
+  }
+  P.health = clamp(P.health, 0, 100);
+
+  /* ---- the slide ----
+     It runs at a floor pace and hauls in hard whenever it falls a long
+     way back, so it settles ~120 m behind a clean rider and is on top of
+     you within seconds of a crash. */
+  const slideSpeed = 19 + d * 5.5 + P.dist * 0.0003 + Math.max(0, slideGap - 40) * 0.16;
+  slideZ -= slideSpeed * dt;
+  slideGap = slideZ - P.z;
+  if (slideGap > 190) { slideGap = 190; slideZ = P.z + slideGap; }
+  if (slideGap < 62 && Math.random() < dt * 0.8) flashWarn('It is on you', 700);
+
+  /* ---- world streaming ---- */
+  while (genZ > P.z - GEN_AHEAD) generate();
+  rebuildTerrain(P.x, P.z);
+
+  /* ---- carve trail ---- */
+  trailClock += dt;
+  if (!P.air && trailClock > 0.035) {
+    trailClock = 0;
+    pushTrail(P.x, P.y, P.z, P.heading, 0.34);
+  }
+
+  /* ---- spray while carving ---- */
+  const bite = Math.abs(Math.sin(P.heading)) * P.speed;
+  if (!P.air && bite > 6 && Math.random() < dt * 40) emitSpray(P.x, P.y, P.z, 2, bite * 0.1);
+
+  shake = Math.max(0, shake - dt * 2.2);
+
+  /* ---- death ---- */
+  if (P.health <= 0) die(P.heat <= 0 ? 'frozen' : 'wrecked');
+  else if (slideGap <= 0) die('buried');
+}
+
+function die(cause) {
+  if (mode !== 'play') return;
+  mode = 'dying';
+  deathCause = cause; deathT = 0;
+  P.combo = 0;
+  Snd.bed(0.04, 0, cause === 'buried' ? 0.9 : 0.2);
+  Snd.hit(1);
+  if (cause !== 'buried') Snd.tone(90, 1.2, 'sawtooth', 0.25);
+  warnEl.classList.remove('on');
+}
+
+/* ══════════════════════════════════════════════════════════════
+   13 · PRESENTATION
+   ══════════════════════════════════════════════════════════════ */
+const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
+let fov = 62, hazeShown = -1;
+
+function present(dt, t) {
+  /* rider */
+  rider.position.set(P.x, P.y, P.z);
+  rider.rotation.set(0, P.heading, 0);
+  const lean = -P.heading * 0.72;
+  rider.rotation.z = lean;
+  const crouch = 1 - clamp(P.speed / 60, 0, 1) * 0.16;
+  rider.scale.set(1, crouch, 1);
+  if (mode === 'dying') {
+    rider.rotation.x = deathT * 7;
+    rider.rotation.z = lean + deathT * 4.5;
+    rider.position.y = P.y + Math.max(0, Math.sin(deathT * 3.1)) * 2.2;
+  } else rider.rotation.x = P.air ? clamp(-P.vy * 0.02, -0.5, 0.5) : 0;
+
+  const ground = height(P.x, P.z);
+  shadow.position.set(P.x, ground + 0.07, P.z);
+  shadow.material.opacity = 0.5 * clamp(1 - (P.y - ground) / 9, 0.08, 1);
+
+  /* camera */
+  P.camHeading += (P.heading - P.camHeading) * Math.min(1, dt * 3.2);
+  const back = 13.4, up = 5.3;
+  if (mode === 'menu') {
+    const a = menuT * 0.22;
+    camPos.set(P.x + Math.sin(a) * 24, P.y + 9.5 + Math.sin(menuT * 0.5) * 1.4, P.z + Math.cos(a) * 24);
+    camLook.set(P.x, P.y + 2.2, P.z - 6);
+    fov += (64 - fov) * Math.min(1, dt * 2);
+  } else if (mode === 'dying' || mode === 'over') {
+    const a = 0.7 + deathT * 0.9;
+    const r = 12 + deathT * 5;
+    camPos.set(P.x + Math.sin(a) * r, P.y + 3.6 + deathT * 2.2, P.z + Math.cos(a) * r);
+    camLook.set(P.x, P.y + 1.4, P.z);
+    fov += (56 - fov) * Math.min(1, dt * 1.6);
+  } else {
+    camPos.set(
+      P.x - Math.sin(P.camHeading) * back - Math.sin(P.heading) * 2.4,
+      Math.max(P.y, ground) + up + clamp((P.y - ground) * 0.32, 0, 6),
+      P.z + Math.cos(P.camHeading) * back
+    );
+    const gh = height(camPos.x, camPos.z) + 2.6;
+    if (camPos.y < gh) camPos.y = gh;
+    camLook.set(P.x + Math.sin(P.heading) * 13, P.y + 1.5, P.z - Math.cos(P.heading) * 19);
+    fov += ((58 + clamp(P.speed / 42, 0, 1) * 19) - fov) * Math.min(1, dt * 2.4);
+  }
+  camera.position.lerp(camPos, mode === 'play' ? Math.min(1, dt * 11) : Math.min(1, dt * 3.4));
+  if (shake > 0.001 || slideGap < 90) {
+    const q = shake * 0.9 + Math.max(0, 1 - slideGap / 90) * 0.22;
+    camera.position.x += Math.sin(t * 61) * q * 0.6;
+    camera.position.y += Math.sin(t * 47) * q * 0.5;
+  }
+  camera.lookAt(camLook);
+  camera.rotation.z += -P.camHeading * 0.14;
+  if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
+
+  /* sky follows */
+  sky.position.copy(camera.position);
+  sunGlow.position.copy(camera.position).addScaledVector(sunDir, 1200);
+  ridge.position.set(camera.position.x, P.y, camera.position.z);
+
+  /* fog & weather */
+  const far = lerp(300, 96, weather);
+  scene.fog.far += (far - scene.fog.far) * Math.min(1, dt * 0.8);
+  scene.fog.near = scene.fog.far * 0.16;
+  ridge.material.opacity = lerp(1, 0.05, weather);
+  if (Math.abs(weather - hazeShown) > 0.01) { hazeShown = weather; haze.style.opacity = String(weather * 0.5); }
+  hemi.intensity = lerp(0.82, 1.15, weather);
+  sun.intensity = lerp(1.15, 0.42, weather);
+
+  /* snowfall follows the camera, wrapping in a box */
+  const fallSpeed = 1 + weather * 2.2;
+  for (let i = 0; i < SNOW_N; i++) {
+    const k = i * 3;
+    snowP[k] += (snowV[k] * fallSpeed) * dt;
+    snowP[k + 1] += (snowV[k + 1] * fallSpeed) * dt;
+    snowP[k + 2] += (snowV[k + 2] * fallSpeed + P.speed * 0.55) * dt;
+    const rx = snowP[k] - camera.position.x, ry = snowP[k + 1] - camera.position.y, rz = snowP[k + 2] - camera.position.z;
+    if (rx > 45) snowP[k] -= 90; else if (rx < -45) snowP[k] += 90;
+    if (rz > 40) snowP[k + 2] -= 90; else if (rz < -50) snowP[k + 2] += 90;
+    if (ry < -12) snowP[k + 1] += 50; else if (ry > 38) snowP[k + 1] -= 50;
+  }
+  snowfall.geometry.attributes.position.needsUpdate = true;
+  snowfall.material.opacity = lerp(0.55, 1, weather);
+  snowfall.material.size = lerp(0.45, 0.75, weather);
+
+  /* spray */
+  for (let i = 0; i < SPRAY_N; i++) {
+    if (sprayL[i] <= 0) continue;
+    const k = i * 3;
+    sprayL[i] -= dt;
+    sprayV[k + 1] -= 16 * dt;
+    sprayP[k] += sprayV[k] * dt;
+    sprayP[k + 1] += sprayV[k + 1] * dt;
+    sprayP[k + 2] += sprayV[k + 2] * dt;
+    if (sprayL[i] <= 0) sprayP[k + 1] = -9999;
+  }
+  spray.geometry.attributes.position.needsUpdate = true;
+
+  /* fires breathe */
+  for (const f of fires) {
+    if (!f.active) continue;
+    const fl = 1 + Math.sin(t * 11 + f.x) * 0.14 + Math.sin(t * 27.3) * 0.07;
+    f.flame.scale.set(fl, 1 + (fl - 1) * 2.1, fl);
+    f.core.scale.setScalar(0.9 + (fl - 1) * 1.4);
+    f.halo.scale.setScalar(23 + fl * 5);
+    f.smoke.rotation.y = t * 0.35;
+    f.smoke.rotation.z = 0.1 + Math.sin(t * 0.7 + f.x) * 0.09;
+    f.light.intensity = 300 * fl;
+  }
+
+  /* the slide */
+  slide.position.set(gullyX(slideZ + 8), height(gullyX(slideZ), slideZ) - 14, slideZ);
+  for (let i = 0; i < SLIDE_N; i++) {
+    const k = i * 3;
+    slideP[k + 1] += Math.sin(t * 2.4 + slidePhase[i]) * dt * 5;
+    slideP[k] += Math.sin(t * 1.7 + slidePhase[i] * 2) * dt * 4;
+  }
+  slideCloud.geometry.attributes.position.needsUpdate = true;
+  slideWall.rotation.y = 0;
+
+  /* flush instanced pools */
+  for (const key in pools) {
+    const p = pools[key];
+    if (p.dirty) { p.mesh.instanceMatrix.needsUpdate = true; p.dirty = false; }
+  }
+
+  /* audio bed */
+  const sp = clamp(P.speed / 45, 0, 1);
+  if (mode === 'play') {
+    Snd.bed(0.035 + sp * 0.22 + weather * 0.09,
+      clamp(Math.abs(Math.sin(P.heading)) * sp * 0.5, 0, 0.32),
+      clamp(1 - slideGap / 150, 0, 1) * 0.55);
+  } else if (mode === 'menu') Snd.bed(0.05, 0, 0.04);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   14 · SCREENS
+   ══════════════════════════════════════════════════════════════ */
+const startScreen = $('startScreen'), overScreen = $('overScreen'), pauseScreen = $('pauseScreen');
+function show(el) { el.hidden = false; el.classList.remove('fade'); }
+function hide(el) {
+  el.classList.add('fade');
+  setTimeout(() => { el.hidden = true; }, 380);
+}
+
+const CAUSES = {
+  buried: { word: 'Buried', eyebrow: 'The slide won', line: 'It came over the lip behind you and took the whole gully. Speed was the only answer.' },
+  wrecked: { word: 'Wrecked', eyebrow: 'Run ended', line: 'Too many hard contacts. The mountain keeps a tab and it always collects.' },
+  frozen: { word: 'Frozen', eyebrow: 'Run ended', line: 'Body heat ran out somewhere above the treeline. The fires were not optional.' }
+};
+
+function endRun() {
+  mode = 'over';
+  const c = CAUSES[deathCause] || CAUSES.wrecked;
+  $('overCause').textContent = c.word;
+  $('overEyebrow').textContent = c.eyebrow;
+  $('overLine').textContent = c.line;
+  const sc = Math.round(P.score);
+  $('sScore').textContent = fmt(sc);
+  $('sDist').innerHTML = fmt(P.dist) + '<small>M</small>';
+  $('sSpd').innerHTML = fmt(P.topSpeed * 3.6) + '<small>KM/H</small>';
+  $('sAir').innerHTML = P.bestAir.toFixed(1) + '<small>S</small>';
+  $('sNear').textContent = fmt(P.near);
+  const record = sc > best;
+  if (record) { best = sc; try { localStorage.setItem('sw_best', String(best)); } catch (e) {} }
+  $('sBest').textContent = fmt(best);
+  $('bestRow').querySelector('.k').textContent = record ? 'New best' : 'Best';
+  $('overFine').textContent = record
+    ? 'New best. The gully gets tighter and the slide gets faster the longer you last.'
+    : 'Fires every few hundred metres. Carve early, straighten late, and never trade speed for a tree.';
+  hud.classList.remove('live');
+  show(overScreen);
+}
+
+async function beginRun() {
+  Snd.boot();
+  if (!input.gyro) {
+    const ok = await enableGyro();
+    if (!ok) $('startFine').innerHTML = 'No motion access — steering with <b>drag</b> and the <b>arrow keys</b> instead.';
+  }
+  input.seeded = false;
+  hide(startScreen); hide(overScreen); hide(pauseScreen);
+  resetRun();
+  flash.style.opacity = '0';
+  mode = 'play';
+  hud.classList.add('live');
+  Snd.tone(300, 0.12, 'sine', 0.2);
+  setTimeout(() => Snd.tone(450, 0.18, 'sine', 0.22), 110);
+}
+
+$('btnStart').addEventListener('click', beginRun);
+$('btnAgain').addEventListener('click', beginRun);
+$('btnResume').addEventListener('click', () => { hide(pauseScreen); mode = 'play'; last = performance.now(); });
+$('btnCal').addEventListener('click', recentre);
+const btnSnd = $('btnSnd');
+btnSnd.classList.toggle('off', !Snd.on);
+btnSnd.addEventListener('click', () => { Snd.boot(); btnSnd.classList.toggle('off', !Snd.toggle()); });
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && mode === 'play') { mode = 'paused'; Snd.bed(0, 0, 0); show(pauseScreen); }
+});
+
+/* ══════════════════════════════════════════════════════════════
+   15 · RESIZE & ADAPTIVE RESOLUTION
+   ══════════════════════════════════════════════════════════════ */
+let quality = Math.min(window.devicePixelRatio || 1, 1.75);
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setPixelRatio(quality);
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 220));
+resize();
+
+let fpsAcc = 0, fpsN = 0;
+function watchPerf(dt) {
+  fpsAcc += dt; fpsN++;
+  if (fpsAcc < 2.5) return;
+  const fps = fpsN / fpsAcc;
+  fpsAcc = 0; fpsN = 0;
+  if (fps < 42 && quality > 0.7) { quality = Math.max(0.7, quality - 0.35); resize(); }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   16 · LOOP
+   ══════════════════════════════════════════════════════════════ */
+let last = performance.now(), clockT = 0;
+
+function frame(now) {
+  requestAnimationFrame(frame);
+  let dt = (now - last) / 1000;
+  last = now;
+  if (!(dt > 0)) dt = 0.016;
+  dt = Math.min(dt, 0.05);
+  clockT += dt;
+
+  if (mode === 'menu') {
+    menuT += dt;
+    P.z -= dt * 2.4; P.y = height(P.x, P.z);
+    while (genZ > P.z - GEN_AHEAD) generate();
+    rebuildTerrain(P.x, P.z);
+    slideZ = P.z + 190;
+  } else if (mode === 'play') {
+    step(dt);
+    updateHUD(dt);
+    if (warnTimer > 0) { warnTimer -= dt; if (warnTimer <= 0) warnEl.classList.remove('on'); }
+    const f = parseFloat(flash.style.opacity || '0');
+    if (f > 0) flash.style.opacity = String(Math.max(0, f - dt * 2.4));
+  } else if (mode === 'dying') {
+    deathT += dt;
+    P.speed *= Math.pow(0.12, dt);
+    P.z -= P.speed * dt;
+    P.y = height(P.x, P.z);
+    if (deathCause === 'buried') {
+      slideZ -= 26 * dt;
+      buried = clamp((P.z + 14 - slideZ) / 26, 0, 1);
+      flash.style.opacity = String(buried);
+      surge.style.opacity = String(clamp(buried * 1.4, 0, 1));
+    } else {
+      const f = parseFloat(flash.style.opacity || '0');
+      if (f > 0) flash.style.opacity = String(Math.max(0, f - dt * 1.4));
+    }
+    rebuildTerrain(P.x, P.z);
+    if (deathT > 1.45) endRun();
+  } else if (mode === 'over') {
+    deathT += dt;
+    if (deathCause === 'buried') {
+      const f = parseFloat(flash.style.opacity || '0');
+      if (f > 0) flash.style.opacity = String(Math.max(0, f - dt * 0.9));
+      surge.style.opacity = String(Math.max(0, parseFloat(surge.style.opacity || '0') - dt * 0.9));
+    }
+  }
+
+  present(dt, clockT);
+  watchPerf(dt);
+  renderer.render(scene, camera);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   17 · BOOT
+   ══════════════════════════════════════════════════════════════ */
+function boot(saved) {
+  if (saved && typeof saved.best === 'number' && saved.best > best) best = saved.best;
+  P.x = gullyX(0); P.z = 0; P.y = height(P.x, 0);
+  seedWorld();
+  rebuildTerrain(P.x, P.z);
+  resetTrail(P.x, P.y, P.z);
+  camera.position.set(P.x + 20, P.y + 10, P.z + 20);
+  present(0.016, 0);
+  renderer.render(scene, camera);
+  bootEl.classList.add('gone');
+  show(startScreen);
+  if (best > 0) $('startFine').innerHTML = 'Best so far <b>' + fmt(best) + ' pts</b>. No motion sensor? <b>Drag</b> or use the <b>arrow keys</b>.';
+  requestAnimationFrame(frame);
+}
+
+try {
+  if (window.claude && window.claude.hot && window.claude.hot.ready) window.claude.hot.ready(boot);
+  else boot((window.claude && window.claude.hot && window.claude.hot.data) || {});
+  if (window.claude && window.claude.hot && window.claude.hot.snapshot) window.claude.hot.snapshot(() => ({ best }));
+} catch (e) { boot({}); }
+
+})();
+</script>
+</body>
+</html>
