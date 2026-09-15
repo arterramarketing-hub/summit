@@ -1991,6 +1991,8 @@ const GRAV_Y = 26;
 const FLIP_RATE = 6.0;
 /* the impact a landing has to beat before it throws any snow about */
 const LAND_FREE = 17;
+/* below this the rider skates rather than sits there; m/s and m/s squared */
+const STALL_SPD = 7, SKATE = 9;
 /* Every can detonates a boost: a hard surge, double points, and enough speed
    that the next roller throws you properly. Taking them back to back down a
    trail stacks the timer rather than restarting it, so a whole line of cans is
@@ -2806,11 +2808,25 @@ function step(dt) {
     if (tucking) { if (!P.grabName) P.grabName = grabName(); P.grabT += dt; }
     else if (P.grabT > 0 && P.grabT < 0.12) { P.grabT = 0; P.grabName = ''; }
   } else if (P.wipe <= 0) {
+    /* The board cannot be held more than about eighty degrees off the way you
+       are actually moving. On snow it would wash out long before that, and
+       without the limit a crash can leave the edge gripping a backwards drift
+       and driving it wherever the board happens to point — which, coming out
+       of a spin, is sometimes straight back up the mountain. */
+    const sp0 = Math.hypot(P.vx, P.vz);
+    if (sp0 > 1.5) {
+      const vy0 = Math.atan2(P.vx, -P.vz);
+      const off0 = wrapPi(P.heading - vy0);
+      if (Math.abs(off0) > 1.45) P.heading = vy0 + clamp(off0, -1.45, 1.45);
+    }
     /* tucked, the board is locked straight: no steering at all, which is the
-       price of the speed and of the pop you are winding up */
+       price of the speed and of the pop you are winding up. wrapPi, because
+       an unwrapped heading unwinds the long way round — 4.75 rad back to zero
+       rather than the 1.5 forward — and passes through facing uphill on the way. */
     const target = tucking ? 0 : steer * R.maxYaw;
-    P.heading += (target - P.heading) * Math.min(1, dt * (tucking ? 4.4 : 6.2));
+    P.heading += wrapPi(target - P.heading) * Math.min(1, dt * (tucking ? 4.4 : 6.2));
   }
+  P.heading = wrapPi(P.heading);      // spins are counted by P.spin, not by this
 
   /* ---------- forces ---------- */
   const gx = gradX(P.x, P.z), gz = gradZ(P.x, P.z);
@@ -2842,6 +2858,21 @@ function step(dt) {
   }
   P.vx = fx * vf + sx * vs;
   P.vz = fz * vf + sz * vs;
+
+  /* ---- never stuck ----
+     Hollows, the back of a wind lip and the aftermath of a crash can all leave
+     a rider sitting still with nothing to start them again. A real one points
+     it downhill and skates. The assist is at full strength at a standstill and
+     gone by 25 km/h, which is a speed this game never otherwise sees. */
+  if (!P.air && P.wipe <= 0) {
+    const sp = Math.hypot(P.vx, P.vz);
+    if (sp < STALL_SPD) {
+      const k = 1 - sp / STALL_SPD;
+      P.heading += wrapPi(-P.heading) * Math.min(1, dt * 2.4 * k);
+      P.vx += Math.sin(P.heading) * SKATE * k * dt;
+      P.vz -= Math.cos(P.heading) * SKATE * k * dt;
+    }
+  }
 
   P.x += P.vx * dt;
   P.z += P.vz * dt;

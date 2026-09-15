@@ -80,6 +80,12 @@ npx http-server -p 8080 .      # then http://localhost:8080
   and **twelve to fourteen metres off a lip**, because the terrain is already
   throwing you and the pop adds to it. The ring round the button is the charge.
   Hold, aim, release at the lip.
+- **Nothing leaves you stuck.** The board cannot be held more than about eighty
+  degrees off the way you are actually travelling — on snow it would wash out
+  long before that — and below 25 km/h the rider points it downhill and skates,
+  at full strength from a standstill and gone by the time there is any speed to
+  speak of. Hollows, the back of a wind lip and the aftermath of a crash all
+  used to be places a run could simply stop.
 - **Carving costs speed.** The board keeps what points forward and scrubs what
   does not — though a carve *redirects* most of that sideways speed down the new
   line rather than deleting it. Holding a turn costs you; slamming edge to edge
@@ -165,6 +171,14 @@ everything else is generated at runtime.
   running on forever. A rolling 300 × 470 m mesh window re-samples it as you
   descend, so nothing about the world is ever stored. Hazards are generated in a
   band around wherever the rider actually is, not around a fixed course line.
+- **Heading is wrapped, every frame.** It was not, and a crash could leave it
+  at 4.75 radians; the recovery then eased `target - heading` on the raw
+  difference and unwound the long way round — 4.75 radians back to zero rather
+  than the 1.5 forward — passing through *facing directly uphill* on the way.
+  The rider was sliding backwards along the board at 14 m/s at the time, the
+  edge held it, and that speed got rotated into 18 m/s straight back up the
+  mountain, for five seconds at a stretch. Spins are counted by their own
+  accumulator, so wrapping the facing costs the trick system nothing.
 - **Physics** runs off the real surface gradient. Gravity is resolved along the
   slope, so bowls hold you and spines shed you; the board's edge grip decomposes
   velocity into along-board and across-board components and scrubs the second.
