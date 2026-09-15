@@ -29,18 +29,21 @@ or **Endless**.
 | Control | On the snow | In the air |
 | --- | --- | --- |
 | Tilt left / right, **or hold either side of the screen** | Carve | Spin |
-| **TUCK** button | Tuck for speed | Grab |
+| **TUCK** button | Hold to run straight and fast; **let go to pop** | Grab |
 | **FLIP** button | — | Backflip |
 
 **Controls** on the start screen (and the pause screen) switches between
 **Tilt to steer** and **Touch only**. Touch-only steers by holding a side of the
 screen — anywhere on the left half turns left, anywhere on the right turns
-right, and the edge lights up while held. The turn eases in rather than jumping
-to full lock, so a stab is a correction and a long hold is a committed carve.
-The two action buttons sit outboard in the bottom corners, clear of the
-steering, so a steering thumb and an action thumb never collide. The choice is
-remembered, and if motion access is refused the game switches to touch-only on
-its own.
+right. Nothing lights up when you do: the rider leaning into the carve is the
+feedback. The turn eases in rather than jumping to full lock, so a stab is a
+correction and a long hold is a committed carve. The two action buttons sit
+outboard in the bottom corners, clear of the steering, so a steering thumb and
+an action thumb never collide. The choice is remembered, and if motion access is
+refused the game switches to touch-only on its own.
+
+The first time you play, five prompts walk you through it — each one clears when
+you actually do the thing, not on a timer.
 
 **Re-centre** rezeros the tilt to however you happen to be holding the phone.
 On a desktop: arrow keys to steer, space or down to tuck and grab, F or up to flip.
@@ -54,16 +57,31 @@ npx http-server -p 8080 .      # then http://localhost:8080
 
 ## The run
 
+- **The tuck is the jump.** Holding **TUCK** locks the board dead straight —
+  you cannot steer at all — and presses you into the snow, so the rollers stop
+  throwing you and you just accumulate speed. Around 180 km/h against 100 for a
+  rider who never tucks. Letting go springs you off: a metre or so on flat snow,
+  and **twelve to fourteen metres off a lip**, because the terrain is already
+  throwing you and the pop adds to it. The ring round the button is the charge.
+  Hold, aim, release at the lip.
 - **Carving costs speed.** The board keeps what points forward and scrubs what
   does not — though a carve *redirects* most of that sideways speed down the new
   line rather than deleting it. Holding a turn costs you; slamming edge to edge
   costs you a lot. It is your only brake, and your biggest liability.
-- **Nothing fences you in.** There is no corridor and no out-of-bounds — the
-  mountain is open in every direction and you pick your own line across it.
-  What shapes a run instead are **cliff bands** you either huck for air or ride
-  around, and **rock buttresses** you go around, dropped in every few hundred
-  metres with open ends so neither is ever a wall. Wandering far off the fall
-  line is punished by the only thing that should punish it: the slide catches up.
+- **Nothing fences you in, and going wide pays.** There is no corridor and no
+  out-of-bounds. What shapes a run instead are **forks**, about three per
+  kilometre, each marked by an orange gate you can see from 300 m up the hill
+  and each sitting 40–110 m off the fall line, so you have to commit to go and
+  get one. A fork is either a **cliff band** you huck or a **rock spine** with a
+  long ramp up its face and a short drop off the back — a gap jump. Riding the
+  line pays cans, points and a big push to the chain; going round is perfectly
+  safe and pays nothing at all. That is the whole trade, and it is the only
+  reason an open mountain is worth having. Wandering *aimlessly* off the fall
+  line is still punished by the only thing that should punish it: the slide
+  catches up.
+- **The face has furniture.** Summit spires, serac towers and huts sit at real
+  coordinates out to 300 m either side. They come out of the haze, hold still
+  while you ride past, and are how you know you have actually travelled.
 - **The mountain launches you.** Wind lips every ~85 m are shaped so their
   curvature beats gravity *above* a certain speed. Ride slowly and you roll over
   them; carry speed and you are airborne roughly a quarter of the time.
@@ -88,14 +106,27 @@ npx http-server -p 8080 .      # then http://localhost:8080
   appear in the first 600 m.
 - **The slide** sits about 120 m back while you ride clean and hauls in when a
   crash bleeds your speed — though it stops gaining for two and a half seconds
-  after a wipeout, so one mistake does not cascade into three. **Clearing a
-  sector shoves it 80 m back down the hill.**
+  after a wipeout, so one mistake does not cascade into three, and it comes up
+  to speed over the first 260 m rather than being at full pace before a rider
+  dropping in from a standstill is. **Clearing a sector shoves it 80 m back
+  down the hill.**
 
 The first 400 m are deliberately quiet, hazards in a row are never closer than
 a rider can thread, and you are untouchable while you are picking yourself up.
 
+- **Your ghost calls the time.** If you have a best run saved, the HUD shows a
+  live **±seconds against it** — green when you are up, red when you are down.
+- **The music tightens with the chain.** A drone in the sector's key, whose
+  filter opens, upper voices arrive and pulse quickens the more you have to lose.
+
 Sectors change every 1,350 m of descent — glacier, couloir, treeline, forest —
-each with its own hazards, colour and iciness, and each cycle steeper than the last.
+each with its own hazards, colour, iciness and **light**: alpenglow on the
+glacier, flat cold blue down the couloir, low warm sun once the valley walls are
+above you. The sun itself drops towards the rim as you descend. Each cycle is
+steeper than the last.
+
+Every run banks into a **career total** — all the vertical you have ever ridden,
+counted in Everests.
 
 ## How it is built
 
@@ -130,7 +161,15 @@ everything else is generated at runtime.
   vertex-coloured buffer, so a forest is one draw call.
 - **Audio** is synthesised in the Web Audio API — one looping noise buffer
   through three filter chains for wind, carve and avalanche rumble, plus impact
-  and pickup transients.
+  and pickup transients, plus a five-voice drone through one lowpass and a
+  square-wave tremolo that the chain drives.
+- **The light** is one 8 × 256 gradient strip repainted only when the palette has
+  moved enough to see — about once a second over a four-minute descent, which
+  costs 0.02 ms, and far less than cross-fading two sky spheres. Fog, both
+  directional lights, the hemisphere and the sun's own position lerp with it.
+- **Empty prop pools do not draw.** A pool hides its instanced mesh when nothing
+  is in it, which is most of them most of the time — no seracs in the forest, no
+  trees on the glacier.
 - **Resolution** adapts: if the frame rate sits under 42 fps the renderer drops
   its pixel ratio rather than dropping frames. The terrain rebuild skips vertex
   normals (the material is flat-shaded, so they come from screen-space
