@@ -4,8 +4,8 @@ An open-face alpine freeride run for phones — tilt to steer, or touch-only if
 you would rather not. One self-contained `index.html`, rendered with three.js.
 
 A helicopter puts you on the summit at 4,208 m, the cornice goes behind you,
-and you ride 2.6 km down to the valley floor at 1,000 m — through all four
-faces of the mountain. There is no jump button: the terrain launches you, and
+and you ride 3.9 km down to the valley floor at 1,000 m — through all six faces
+of the mountain, out of the bottom of a cloud deck, and under a finish banner. There is no jump button: the terrain launches you, and
 holding **TUCK** and letting go at a lip throws you properly. Spin, flip and
 grab on the way over; land pointing where you are actually going.
 
@@ -13,6 +13,14 @@ Everything you do feeds one **chain multiplier**, and a wipeout takes all of it.
 
 The mountain is seeded by the day, so everyone rides the same face until
 midnight, and your best run is saved as a **ghost** you race on the next one.
+
+## Getting to the bottom
+
+Crossing the finish altitude does not stop the game and put a menu on the
+screen — which reads exactly like dying, and was read exactly like dying. You
+ride through a banner, coast out onto the flat throwing a wall of snow, and the
+camera comes round in front of you and settles before anything is asked of you.
+Then a screen that is green where the losing ones are ember, and says so.
 
 ## The drop-in
 
@@ -42,7 +50,7 @@ or **Endless**.
 
 | Control | On the snow | In the air |
 | --- | --- | --- |
-| Tilt left / right, **or hold either side of the screen** | Carve | Spin |
+| Tilt left / right, **or hold either side of the screen** | Carve | **Steer the flight** and spin |
 | **TUCK** button | Hold to run straight and fast; **let go to pop** | Grab |
 | **FLIP** button | — | Backflip |
 
@@ -113,6 +121,10 @@ npx http-server -p 8080 .      # then http://localhost:8080
   where you are going. What a big one costs is nothing and what it pays is
   **fourteen points a metre dropped**, times the chain — and a wave of snow
   that runs out from under the board across the whole face.
+- **You can steer in the air.** Leaning pushes the whole arc sideways — about
+  thirty metres over two seconds of air — so a landing is something you pick
+  rather than something that was decided the moment you left the ground. It
+  winds up the spin at the same time, which is the trade.
 - **Land it.** The board has to be pointing within about 60° of your direction
   of travel, and flips have to finish — but let go of the steering in the air
   and the board settles back towards where you are going, and a half-finished
@@ -149,12 +161,15 @@ a rider can thread, and you are untouchable while you are picking yourself up.
 - **The music tightens with the chain.** A drone in the sector's key, whose
   filter opens, upper voices arrive and pulse quickens the more you have to lose.
 
-Sectors change every 650 m — glacier, couloir, treeline, forest — each with its
-own hazards, colour, iciness and **light**: alpenglow on the glacier, flat cold
+Sectors change every 650 m — glacier, couloir, treeline, forest, **the cloud
+deck** and **the valley floor** — each with its own hazards, colour, iciness and
+**light**: alpenglow on the glacier, flat cold
 blue down the couloir, low warm sun once the valley walls are above you. The sun
-itself drops towards the valley rim as you descend. The **Descent** is exactly
-one cycle of the four, so you finish in the trees where a valley ought to be,
-and the bar at the top of the screen tells you how much of it is left.
+itself drops towards the valley rim as you descend. The **Descent** is exactly one cycle of
+the six. Somewhere around 2,000 m you ride down into a sea of cloud, lose the
+world for a few seconds and come out of the bottom of it with the valley
+underneath you; the bar at the top of the screen turns green for the last
+stretch, and the run ends by crossing a line rather than by a panel appearing.
 
 Every run banks into a **career total** — all the vertical you have ever ridden,
 counted in Everests.
@@ -232,6 +247,15 @@ everything else is generated at runtime.
   moved enough to see — about once a second over a four-minute descent, which
   costs 0.02 ms, and far less than cross-fading two sky spheres. Fog, both
   directional lights, the hemisphere and the sun's own position lerp with it.
+- **The summit.** The fall line used to rise for ever, so there was no peak and
+  no sense of scale. Above the drop-in the face now rolls over — the gradient
+  eases to nothing and then goes negative — and the flanks fall away from the
+  crest so it is a peak and not a ridge. Every metre the rider ever touches is
+  below it, where the height field is exactly what it always was.
+- **Below the horizon the sky is the fog colour, to the byte.** Distant terrain
+  fades to the fog colour, and if the sky there is anything else the far ridges
+  read as a pale slab pasted over it. Invisible while the weather only let you
+  see 338 m; glaring the moment a title screen looked two thousand metres.
 - **The far field.** The playable window is 300 x 470 m, which is plenty to ride
   and nowhere near enough to look at: any wide shot swings past its edge. So the
   title screen and the drop-in get a second, much coarser mesh — 1.6 km square
