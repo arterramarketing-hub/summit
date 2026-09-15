@@ -1433,6 +1433,117 @@ function emitSpray(x, y, z, n, power, dx, dz) {
 }
 for (let i = 0; i < SPRAY_N; i++) { sprayP[i * 3 + 1] = -9999; sprayL[i] = 0; }
 
+/* ══════════════════════════════════════════════════════════════
+   7b · THE SLAM
+   Height costs you nothing, so coming down hard had better look
+   like something. A wave of displaced snow runs out from under the
+   board: a raised crest between two edges pinned to the real
+   surface, resampled every frame so it rides the bumps instead of
+   cutting through them, with powder thrown out along it.
+   ══════════════════════════════════════════════════════════════ */
+const SLAM_SEG = 40;
+const slamGeo = new THREE.BufferGeometry();
+{
+  const n = (SLAM_SEG + 1) * 3;
+  slamGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+  const col = new Float32Array(n * 3);
+  for (let i = 0; i <= SLAM_SEG; i++) {
+    const k = i * 9;
+    col[k] = 0.30; col[k + 1] = 0.39; col[k + 2] = 0.56;      // the trough it scoops out
+    col[k + 3] = 1.00; col[k + 4] = 1.00; col[k + 5] = 1.00;  // the wall it throws up
+    col[k + 6] = 0.74; col[k + 7] = 0.84; col[k + 8] = 0.97;  // and its far face
+  }
+  slamGeo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const idx = new Uint16Array(SLAM_SEG * 12);
+  let k = 0;
+  for (let i = 0; i < SLAM_SEG; i++) {
+    const a = i * 3, b = a + 1, c = a + 2, d = a + 3, ee = a + 4, f = a + 5;
+    idx[k++] = a; idx[k++] = d; idx[k++] = b;
+    idx[k++] = b; idx[k++] = d; idx[k++] = ee;
+    idx[k++] = b; idx[k++] = ee; idx[k++] = c;
+    idx[k++] = c; idx[k++] = ee; idx[k++] = f;
+  }
+  slamGeo.setIndex(new THREE.BufferAttribute(idx, 1));
+  slamGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
+}
+const slamRing = new THREE.Mesh(slamGeo, new THREE.MeshBasicMaterial({
+  vertexColors: true, transparent: true, opacity: 0, depthWrite: false,
+  side: THREE.DoubleSide, fog: true,
+  polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6
+}));
+slamRing.frustumCulled = false;
+slamRing.visible = false;
+scene.add(slamRing);
+const slam = { t: 0, life: 0, x: 0, z: 0, reach: 0, lift: 0, p: 0 };
+/* a fixed per-segment wobble, so the wave is never a perfect circle */
+const slamWob = new Float32Array(SLAM_SEG + 1);
+for (let i = 0; i < SLAM_SEG; i++) slamWob[i] = 0.86 + hash2(i, 17) * 0.28;
+slamWob[SLAM_SEG] = slamWob[0];
+let fovKick = 0;
+
+/** Powder thrown outward in a full ring, the way a landing really moves it. */
+function emitBlast(x, y, z, n, power) {
+  for (let k = 0; k < n; k++) {
+    const i = sprayHead = (sprayHead + 1) % SPRAY_N;
+    const a = rand(0, Math.PI * 2), sp = power * rand(0.45, 1.3);
+    sprayP[i * 3] = x + Math.cos(a) * 0.8;
+    sprayP[i * 3 + 1] = y + rand(0.05, 0.55);
+    sprayP[i * 3 + 2] = z + Math.sin(a) * 0.8;
+    sprayV[i * 3] = Math.cos(a) * sp;
+    sprayV[i * 3 + 1] = rand(1.6, 5.8) + power * 0.24;
+    sprayV[i * 3 + 2] = Math.sin(a) * sp;
+    sprayL[i] = rand(0.6, 1.5);
+  }
+}
+
+/** Fire the wave. `impact` is how hard, `drop` is how far it fell to get there. */
+function slamFx(x, y, z, impact, drop) {
+  const p = clamp(clamp((impact - LAND_FREE) / 42, 0, 1) + clamp(drop / 130, 0, 1) * 0.55, 0, 1.45);
+  Snd.hit(clamp(0.2 + p * 0.8, 0.2, 1));
+  if (p < 0.13) return;                      // an ordinary landing just goes thump
+  slam.x = x; slam.z = z; slam.p = p;
+  slam.t = 0;
+  slam.life = 0.5 + p * 0.5;
+  slam.reach = 6 + p * 26;
+  slam.lift = 0.55 + p * 1.5;
+  slamRing.visible = true;
+  shake = Math.max(shake, clamp(0.3 + p * 0.85, 0, 1.4));
+  fovKick = Math.max(fovKick, p * 8);
+  emitBlast(x, y, z, Math.round(12 + p * 42), 3.5 + p * 12);
+  emitSpray(x, y + 0.2, z, Math.round(6 + p * 18), 1.6 + p * 4.5);
+  if (p > 0.55) Snd.tone(46, 0.5 + p * 0.4, 'sine', 0.1 + p * 0.14);
+}
+
+/** Walk the wave outward, keeping every vertex on the snow. */
+function stepSlam(dt) {
+  if (slam.life <= 0) return;
+  slam.t += dt;
+  const u = clamp(slam.t / slam.life, 0, 1);
+  if (u >= 1) { slam.life = 0; slamRing.visible = false; return; }
+  const ease = 1 - Math.pow(1 - u, 2.3);
+  const mid0 = 1.6 + ease * slam.reach;
+  /* the band has to stay a fraction of its own radius or it is a disc, not a
+     wave — and it is never a clean circle, because snow is not */
+  const half0 = Math.min(1.5 + slam.p * 2.4, mid0 * 0.34);
+  const h0 = slam.lift * Math.pow(1 - u, 1.5);
+  const pos = slamGeo.attributes.position.array;
+  for (let i = 0; i <= SLAM_SEG; i++) {
+    const a = (i / SLAM_SEG) * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
+    const w = slamWob[i];
+    const mid = mid0 * w, half = half0 * w, h = h0 * (2 - w);
+    const rIn = Math.max(0.3, mid - half), rOut = mid + half;
+    const k = i * 9;
+    const xi = slam.x + ca * rIn, zi = slam.z + sa * rIn;
+    const xm = slam.x + ca * mid, zm = slam.z + sa * mid;
+    const xo = slam.x + ca * rOut, zo = slam.z + sa * rOut;
+    pos[k] = xi;     pos[k + 1] = groundAt(xi, zi) + 0.12;       pos[k + 2] = zi;
+    pos[k + 3] = xm; pos[k + 4] = groundAt(xm, zm) + 0.12 + h;   pos[k + 5] = zm;
+    pos[k + 6] = xo; pos[k + 7] = groundAt(xo, zo) + 0.12;       pos[k + 8] = zo;
+  }
+  slamGeo.attributes.position.needsUpdate = true;
+  slamRing.material.opacity = Math.min(1, (1 - u) * 1.5) * clamp(0.48 + slam.p * 0.32, 0, 0.88);
+}
+
 const slide = new THREE.Group(); scene.add(slide);
 const SLIDE_N = 340;
 const slideCloud = pointsCloud(SLIDE_N, 13, 0.95, 0xf4f9ff);
@@ -1878,8 +1989,8 @@ const RIDER_R = 0.5, RIDER_H = 1.8;
 const GACC = 30;            // gravity resolved along the surface
 const GRAV_Y = 26;
 const FLIP_RATE = 6.0;
-/* landing: what the legs absorb for free, and the most one can ever cost */
-const LAND_FREE = 32, LAND_MAX = 40;
+/* the impact a landing has to beat before it throws any snow about */
+const LAND_FREE = 17;
 /* Every can detonates a boost: a hard surge, double points, and enough speed
    that the next roller throws you properly. Taking them back to back down a
    trail stacks the timer rather than restarting it, so a whole line of cans is
@@ -1890,7 +2001,7 @@ const boostAmt = () => P.boostT <= 0 ? 0 : Math.min(1, P.boostT / 0.7);
 const P = {
   x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, heading: 0, camYaw: 0,
   air: false, airT: 0, bestAir: 0, launchY: 0,
-  tuckT: 0, wasTuck: false, popT: 0, lines: 0, slam: false,
+  tuckT: 0, wasTuck: false, popT: 0, lines: 0,
   spin: 0, flip: 0, grabT: 0, grabName: '', trickBase: 0,
   wipe: 0, hurt: 0, slideGrace: 0, boostT: 0, boosts: 0,
   health: 100,
@@ -2329,7 +2440,7 @@ function resetRun() {
   P.vx = 0; P.vz = -14; P.vy = 0;
   P.heading = 0; P.camYaw = 0;
   P.air = false; P.airT = 0; P.bestAir = 0;
-  P.tuckT = 0; P.wasTuck = false; P.popT = 0; P.lines = 0; P.slam = false;
+  P.tuckT = 0; P.wasTuck = false; P.popT = 0; P.lines = 0;
   P.spin = 0; P.flip = 0; P.grabT = 0; P.grabName = ''; P.trickBase = 0;
   P.wipe = 0; P.hurt = 0; P.slideGrace = 0; P.boostT = 0; P.boosts = 0;
   P.health = 100;
@@ -2348,6 +2459,7 @@ function resetRun() {
   trailClock = 0;
   ridgeLag.set(P.x, 0, P.z);
   skyPainted = -1;
+  slam.life = 0; slamRing.visible = false; fovKick = 0;
   buildDescentTicks();
 }
 
@@ -2470,9 +2582,7 @@ function introStep(dt) {
         P.grabT = 0; P.grabName = '';
         P.vy = gradX(P.x, P.z) * P.vx + gradZ(P.x, P.z) * P.vz;
         P.vz = Math.min(P.vz, -15);
-        shake = Math.max(shake, 0.85);
-        emitSpray(P.x, P.y, P.z, 42, 4.6);
-        Snd.hit(0.75);
+        slamFx(P.x, P.y, P.z, 34, 26);
         resetTrail(P.x, P.y, P.z);
       }
     } else {
@@ -2621,24 +2731,13 @@ function land(impact) {
     }
   }
   /* ---- coming back down ----
-     Impact used to scale without a ceiling: a genuinely big drop — six seconds
-     and a hundred and seventy metres of it, which this mountain can produce
-     off a cliff with a pop — arrived as eighty points of damage in one frame
-     and simply ended the run, however well it was ridden out. Now the board
-     takes what it can. A clean landing absorbs most of it and pays for the
-     nerve; a sloppy one takes it in the legs; and no single landing can take
-     more than forty, so a full-condition rider always walks away from one. */
+     Height never hurts you. The only thing a landing asks is that the board is
+     pointing where you are going, which is checked above; how far you fell to
+     get there is between you and the snow. A big one lands as spectacle and as
+     score — the deeper the drop, the more of the mountain it throws. */
   const drop = Math.max(0, P.launchY - P.y);
-  if (impact > LAND_FREE) {
-    const dmg = Math.min(LAND_MAX, (impact - LAND_FREE) * 1.15 * (clean ? 0.34 : 1));
-    P.health -= dmg;
-    shake = Math.max(shake, clamp(0.5 + dmg / 55, 0, 1.3));
-    Snd.hit(clamp(0.45 + dmg / 90, 0, 1));
-    if (dmg > 6) popup(clean ? 'Took the hit' : 'Slammed', '−' + Math.round(dmg), 'bad');
-    P.slam = P.health <= 0;
-  } else Snd.hit(0.22);
-  /* and a big one ridden out is the best thing that can happen to you */
-  if (clean && drop > 26 && P.health > 0) {
+  slamFx(P.x, P.y, P.z, impact, drop);
+  if (clean && drop > 22) {
     const pts = Math.round(drop * 14 * P.chain);
     P.score += pts;
     bumpChain(drop > 60 ? 3 : 2, 'Stomped');
@@ -2933,7 +3032,7 @@ function step(dt) {
   shake = Math.max(0, shake - dt * 2.2);
 
   P.health = clamp(P.health, 0, 100);
-  if (P.health <= 0) die(P.slam ? 'slammed' : 'wrecked');
+  if (P.health <= 0) die('wrecked');
   else if (slideGap <= 0) die('buried');
 }
 
@@ -3077,7 +3176,7 @@ function present(dt, t) {
     const gh = height(camPos.x, camPos.z) + 2.4;
     if (camPos.y < gh) camPos.y = gh;
     camLook.set(P.x + Math.sin(P.camYaw) * 15, P.y + 1.6, P.z - Math.cos(P.camYaw) * 21);
-    fov += ((58 + clamp(spd / 44, 0, 1) * 20 + bst * 10) - fov) * Math.min(1, dt * 2.4);
+    fov += ((58 + clamp(spd / 44, 0, 1) * 20 + bst * 10 + fovKick) - fov) * Math.min(1, dt * 2.4);
   }
   camera.position.lerp(camPos,
     mode === 'play' ? Math.min(1, dt * 11)
@@ -3146,6 +3245,9 @@ function present(dt, t) {
   snowfall.material.opacity = lerp(0.55, 1, weather);
   snowfall.material.size = lerp(0.45, 0.75, weather);
 
+  stepSlam(dt);
+  fovKick = Math.max(0, fovKick - dt * 17);
+
   /* spray */
   for (let i = 0; i < SPRAY_N; i++) {
     if (sprayL[i] <= 0) continue;
@@ -3212,8 +3314,7 @@ const CAUSES = {
   buried:   { word: 'Buried',   eyebrow: 'The slide won',  line: 'It came over the roll behind you and took the whole face. Speed was the only answer.' },
   wrecked:  { word: 'Wrecked',  eyebrow: 'Run ended',      line: 'Too many hard contacts. The mountain keeps a tab and it always collects.' },
   crevasse: { word: 'Crevasse', eyebrow: 'The glacier won', line: 'You rode onto a snow bridge that was not there. That is what the kickers are for.' },
-  lost:     { word: 'Off route', eyebrow: 'Run ended',     line: 'You left the face and kept going. Nothing out there but cliffs and a long wait.' },
-  slammed:  { word: 'Slammed',  eyebrow: 'Run ended',      line: 'You came down from a very long way up and the mountain kept all of it. Land those pointing where you are going and it pays instead.' }
+  lost:     { word: 'Off route', eyebrow: 'Run ended',     line: 'You left the face and kept going. Nothing out there but cliffs and a long wait.' }
 };
 
 /** Everything you rode this run, added to everything you have ever ridden. */

@@ -101,14 +101,12 @@ npx http-server -p 8080 .      # then http://localhost:8080
 - **The mountain launches you.** Wind lips every ~85 m are shaped so their
   curvature beats gravity *above* a certain speed. Ride slowly and you roll over
   them; carry speed and you are airborne roughly a quarter of the time.
-- **Big air is a prize, not a sentence.** This mountain can throw you a hundred
-  and seventy metres off a cliff with a pop, and impact damage used to scale
-  without a ceiling — so the best air in the game arrived as eighty points of
-  damage on touchdown and simply ended the run, however well it was ridden out.
-  Now the board takes what it can: a clean landing absorbs two thirds of it and
-  **pays by the metre dropped**, a sloppy one takes it in the legs, and no
-  single landing can cost more than forty, so a rider in full condition always
-  walks away. **Brace** flashes when a heavy one is coming.
+- **Height never hurts you.** There is no fall damage at all: this mountain can
+  throw you three hundred metres off a cliff with a pop and you will land on
+  full condition. The only thing a landing asks is that the board is pointing
+  where you are going. What a big one costs is nothing and what it pays is
+  **fourteen points a metre dropped**, times the chain — and a wave of snow
+  that runs out from under the board across the whole face.
 - **Land it.** The board has to be pointing within about 60° of your direction
   of travel, and flips have to finish — but let go of the steering in the air
   and the board settles back towards where you are going, and a half-finished
@@ -178,6 +176,14 @@ everything else is generated at runtime.
   frame — no tunnelling at 40 m/s — with a real vertical extent, so anything you
   cleared is cleared. Radii match the visible geometry: a pine is a 0.46 m trunk
   that wrecks you inside a 1.95 m canopy that only slows you.
+- **The slam** is a ring of displaced snow: a raised crest between two edges
+  pinned to the real surface, every vertex resampled off `groundAt` each frame
+  so it rides the bumps instead of cutting through them. The band is held to a
+  third of its own radius — any wider and it reads as a disc rather than a wave
+  — with a per-segment wobble so it is never a clean circle, a shadowed trough
+  behind the crest, powder thrown outward in a full ring, and a kick on the
+  lens. It scales with the drop, so a hop does nothing and a cliff moves the
+  mountain.
 - **The track** is one trench, not a stripe: three vertices per sample give a
   dark groove with snow pushed up either side, widening as the edge goes over.
   Airborne samples are written with zero intensity, so the track breaks at the
