@@ -14,6 +14,15 @@ Everything you do feeds one **chain multiplier**, and a wipeout takes all of it.
 The mountain is seeded by the day, so everyone rides the same face until
 midnight, and your best run is saved as a **ghost** you race on the next one.
 
+## The drop-in
+
+The title screen is a slow drone circuit of the face, and tapping **Drop in**
+flies the same camera out of that orbit into the cutscene rather than cutting
+to it: a wide look down the fall line, the ship crossing the mountain, a step
+out of the door, a ballistic fall onto the snow, and the cornice letting go
+behind you. Seven seconds, skippable with a tap, and the short version — just
+the door and the drop — after the first one.
+
 ## Playing it
 
 Open `index.html` on a phone **over HTTPS** — iOS only exposes motion sensors on
@@ -92,6 +101,14 @@ npx http-server -p 8080 .      # then http://localhost:8080
 - **The mountain launches you.** Wind lips every ~85 m are shaped so their
   curvature beats gravity *above* a certain speed. Ride slowly and you roll over
   them; carry speed and you are airborne roughly a quarter of the time.
+- **Big air is a prize, not a sentence.** This mountain can throw you a hundred
+  and seventy metres off a cliff with a pop, and impact damage used to scale
+  without a ceiling — so the best air in the game arrived as eighty points of
+  damage on touchdown and simply ended the run, however well it was ridden out.
+  Now the board takes what it can: a clean landing absorbs two thirds of it and
+  **pays by the metre dropped**, a sloppy one takes it in the legs, and no
+  single landing can cost more than forty, so a rider in full condition always
+  walks away. **Brace** flashes when a heavy one is coming.
 - **Land it.** The board has to be pointing within about 60° of your direction
   of travel, and flips have to finish — but let go of the steering in the air
   and the board settles back towards where you are going, and a half-finished
@@ -190,6 +207,15 @@ everything else is generated at runtime.
   moved enough to see — about once a second over a four-minute descent, which
   costs 0.02 ms, and far less than cross-fading two sky spheres. Fog, both
   directional lights, the hemisphere and the sun's own position lerp with it.
+- **The far field.** The playable window is 300 x 470 m, which is plenty to ride
+  and nowhere near enough to look at: any wide shot swings past its edge. So the
+  title screen and the drop-in get a second, much coarser mesh — 1.6 km square
+  at 36 m a quad, sampled from the same height field and sunk two metres so the
+  real one always wins where they overlap. It is 2,025 vertices, one draw call,
+  and it is hidden the moment you are riding. The title screen also renders at
+  0.58 of the pixel ratio, because it looks at the whole mountain from a hundred
+  metres up — two to three times the fill of riding it — and all of it sits
+  behind a scrim.
 - **Empty prop pools do not draw.** A pool hides its instanced mesh when nothing
   is in it, which is most of them most of the time — no seracs in the forest, no
   trees on the glacier.

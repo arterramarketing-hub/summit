@@ -227,6 +227,11 @@ body:not(.touchmode) .touch-only{display:none}
   background:linear-gradient(180deg,rgba(4,8,16,.90),rgba(4,8,16,.62) 45%,rgba(4,8,16,.93));
   -webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
   overflow-y:auto;transition:opacity .4s ease}
+/* the title screen sits over a live drone circuit of the face, so it lets more
+   of it through than the screens you read after a run do */
+#startScreen{background:linear-gradient(180deg,rgba(4,8,16,.84),rgba(4,8,16,.40) 42%,rgba(4,8,16,.88));
+  -webkit-backdrop-filter:blur(1.5px);backdrop-filter:blur(1.5px)}
+#startScreen .lede,#startScreen .fine,#startScreen .brief dd{text-shadow:0 1px 10px rgba(4,8,16,.9)}
 .screen[hidden]{display:none}
 .screen.fade{opacity:0}
 .wrap{width:100%;max-width:440px;margin:auto}
@@ -1186,6 +1191,59 @@ const C_ICE = new THREE.Color(0x9fc9e8);
 const _c = new THREE.Color(), _c2 = new THREE.Color();
 
 let tileX = 1e9, tileZ = 1e9;
+/* ---- the far field ----
+   The playable window is 300 x 470 m, which is plenty to ride and nowhere near
+   enough to look at: any wide shot swings past its edge. So the title screen
+   and the drop-in get a second, much coarser mesh — 1.6 km square at 36 m a
+   quad — sampled from the same height field and shown only while the camera is
+   somewhere the seam cannot be seen. It is 2,025 vertices and one draw call. */
+const FAR_W = 1600, FAR_N = 44;
+const farGeo = new THREE.BufferGeometry();
+{
+  const vc = (FAR_N + 1) * (FAR_N + 1);
+  farGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vc * 3), 3));
+  farGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(vc * 3), 3));
+  const idx = new Uint32Array(FAR_N * FAR_N * 6);
+  let k = 0;
+  for (let j = 0; j < FAR_N; j++) for (let i = 0; i < FAR_N; i++) {
+    const a = j * (FAR_N + 1) + i, b = a + 1, c = a + FAR_N + 1, d = c + 1;
+    idx[k++] = a; idx[k++] = b; idx[k++] = c;
+    idx[k++] = b; idx[k++] = d; idx[k++] = c;
+  }
+  farGeo.setIndex(new THREE.BufferAttribute(idx, 1));
+  farGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
+}
+const farMesh = new THREE.Mesh(farGeo, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
+farMesh.frustumCulled = false;
+farMesh.visible = false;
+farMesh.renderOrder = -1;
+scene.add(farMesh);
+let farX = 1e9, farZ = 1e9;
+function rebuildFar(px, pz, force) {
+  const ox = Math.round(px / 90) * 90, oz = Math.round(pz / 90) * 90;
+  if (!force && ox === farX && oz === farZ) return;
+  farX = ox; farZ = oz;
+  const pos = farGeo.attributes.position.array, col = farGeo.attributes.color.array;
+  let v = 0;
+  for (let j = 0; j <= FAR_N; j++) {
+    const z = oz + (0.5 - j / FAR_N) * FAR_W;
+    const bi = biomeOf(Math.max(0, -z));
+    C_SNOW.set(bi.snow); C_SHADE.set(bi.shade); C_ROCK.set(bi.rock);
+    for (let i = 0; i <= FAR_N; i++, v++) {
+      const x = ox + (i / FAR_N - 0.5) * FAR_W;
+      /* a shade under the fine mesh, so where they overlap the real one wins */
+      pos[v * 3] = x; pos[v * 3 + 1] = heightBase(x, z) - 2.2; pos[v * 3 + 2] = z;
+      const e = featRockAmt;
+      if (e > 0.12) _c.copy(C_ROCK).lerp(C_SHADE, 1 - smoothstep(0.12, 0.62, e));
+      else _c.copy(C_SNOW).lerp(C_SHADE, nz(x * 0.012, z * 0.012) * 0.62);
+      col[v * 3] = _c.r; col[v * 3 + 1] = _c.g; col[v * 3 + 2] = _c.b;
+    }
+  }
+  farGeo.attributes.position.needsUpdate = true;
+  farGeo.attributes.color.needsUpdate = true;
+  farGeo.computeVertexNormals();
+}
+
 function rebuildTerrain(px, pz, force) {
   const ox = Math.round(px / 12) * 12, oz = Math.round(pz / 12) * 12;
   if (!force && ox === tileX && oz === tileZ) return;
@@ -1820,6 +1878,8 @@ const RIDER_R = 0.5, RIDER_H = 1.8;
 const GACC = 30;            // gravity resolved along the surface
 const GRAV_Y = 26;
 const FLIP_RATE = 6.0;
+/* landing: what the legs absorb for free, and the most one can ever cost */
+const LAND_FREE = 32, LAND_MAX = 40;
 /* Every can detonates a boost: a hard surge, double points, and enough speed
    that the next roller throws you properly. Taking them back to back down a
    trail stacks the timer rather than restarting it, so a whole line of cans is
@@ -1830,7 +1890,7 @@ const boostAmt = () => P.boostT <= 0 ? 0 : Math.min(1, P.boostT / 0.7);
 const P = {
   x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, heading: 0, camYaw: 0,
   air: false, airT: 0, bestAir: 0, launchY: 0,
-  tuckT: 0, wasTuck: false, popT: 0, lines: 0,
+  tuckT: 0, wasTuck: false, popT: 0, lines: 0, slam: false,
   spin: 0, flip: 0, grabT: 0, grabName: '', trickBase: 0,
   wipe: 0, hurt: 0, slideGrace: 0, boostT: 0, boosts: 0,
   health: 100,
@@ -2269,7 +2329,7 @@ function resetRun() {
   P.vx = 0; P.vz = -14; P.vy = 0;
   P.heading = 0; P.camYaw = 0;
   P.air = false; P.airT = 0; P.bestAir = 0;
-  P.tuckT = 0; P.wasTuck = false; P.popT = 0; P.lines = 0;
+  P.tuckT = 0; P.wasTuck = false; P.popT = 0; P.lines = 0; P.slam = false;
   P.spin = 0; P.flip = 0; P.grabT = 0; P.grabName = ''; P.trickBase = 0;
   P.wipe = 0; P.hurt = 0; P.slideGrace = 0; P.boostT = 0; P.boosts = 0;
   P.health = 100;
@@ -2337,7 +2397,10 @@ let introT = 0, introOff = 0, introDropped = false, introLanded = false, introAv
 let introSeen = false;
 const introHint = $('introHint');
 const heliPos = new THREE.Vector3();
+const introFromPos = new THREE.Vector3(), introFromLook = new THREE.Vector3();
+const _camP = new THREE.Vector3(), _camL = new THREE.Vector3();
 let dropX = 0, dropZ = 0, dropGround = 0;
+const IN_MATCH = 1.25;                     // seconds spent flying out of the drone shot
 
 function heliAt(tt) {
   /* comes in high and right, crosses the face, slows over the drop point */
@@ -2356,8 +2419,11 @@ function startIntro(full) {
   introOff = full ? 0 : IN_SHORT_OFF;
   introDropped = introLanded = introAva = false;
   dropX = P.x; dropZ = P.z; dropGround = P.y;
+  /* no cut: hold whatever the drone was looking at and fly from there */
+  introFromPos.copy(camera.position);
+  introFromLook.copy(camLook);
   heli.visible = true;
-  scene.fog.far = 520; scene.fog.near = 520 * 0.24;
+  scene.fog.far = 700; scene.fog.near = 700 * 0.24;
   slideZ = P.z + 900;                        // still up on the summit, not yet moving
   hud.classList.remove('live');
   padLayer.classList.remove('live');
@@ -2554,12 +2620,32 @@ function land(impact) {
       setTimeout(() => Snd.tone(630 + Math.min(20, P.chain) * 34, 0.18, 'triangle', 0.2), 80);
     }
   }
-  /* hard flat landings still cost you */
-  if (impact > 26) {
-    P.health -= (impact - 26) * 1.5;
-    shake = Math.max(shake, 0.7);
-    Snd.hit(0.6);
+  /* ---- coming back down ----
+     Impact used to scale without a ceiling: a genuinely big drop — six seconds
+     and a hundred and seventy metres of it, which this mountain can produce
+     off a cliff with a pop — arrived as eighty points of damage in one frame
+     and simply ended the run, however well it was ridden out. Now the board
+     takes what it can. A clean landing absorbs most of it and pays for the
+     nerve; a sloppy one takes it in the legs; and no single landing can take
+     more than forty, so a full-condition rider always walks away from one. */
+  const drop = Math.max(0, P.launchY - P.y);
+  if (impact > LAND_FREE) {
+    const dmg = Math.min(LAND_MAX, (impact - LAND_FREE) * 1.15 * (clean ? 0.34 : 1));
+    P.health -= dmg;
+    shake = Math.max(shake, clamp(0.5 + dmg / 55, 0, 1.3));
+    Snd.hit(clamp(0.45 + dmg / 90, 0, 1));
+    if (dmg > 6) popup(clean ? 'Took the hit' : 'Slammed', '−' + Math.round(dmg), 'bad');
+    P.slam = P.health <= 0;
   } else Snd.hit(0.22);
+  /* and a big one ridden out is the best thing that can happen to you */
+  if (clean && drop > 26 && P.health > 0) {
+    const pts = Math.round(drop * 14 * P.chain);
+    P.score += pts;
+    bumpChain(drop > 60 ? 3 : 2, 'Stomped');
+    popup('Stomped ' + Math.round(drop) + ' m', '+' + fmt(pts), 'air');
+    Snd.tone(300, 0.16, 'sine', 0.26);
+    setTimeout(() => Snd.tone(450, 0.3, 'sine', 0.22), 110);
+  }
 }
 
 function wipeout(reason, damage) {
@@ -2707,6 +2793,13 @@ function step(dt) {
   } else P.fastT = Math.max(0, P.fastT - dt * 0.5);
   P.canChainT -= dt; if (P.canChainT <= 0) P.canChain = 0;
 
+  /* ---------- brace ----------
+     A long fall is survivable, but only if you know it is a long fall. */
+  if (P.air && P.wipe <= 0 && P.vy < -30) {
+    const toGround = P.y - groundAt(P.x, P.z);
+    if (toGround < Math.abs(P.vy) * 0.85) flashWarn('Brace', 420);
+  }
+
   /* ---------- a gash you cannot see over the roller ---------- */
   crevWarn -= dt;
   if (crevWarn <= 0) {
@@ -2840,7 +2933,7 @@ function step(dt) {
   shake = Math.max(0, shake - dt * 2.2);
 
   P.health = clamp(P.health, 0, 100);
-  if (P.health <= 0) die('wrecked');
+  if (P.health <= 0) die(P.slam ? 'slammed' : 'wrecked');
   else if (slideGap <= 0) die('buried');
 }
 
@@ -2927,10 +3020,15 @@ function present(dt, t) {
   const want = P.air || P.wipe > 0 ? velYaw : P.heading;
   P.camYaw += wrapPi(want - P.camYaw) * Math.min(1, dt * (P.air ? 2.2 : 3.4));
   if (mode === 'menu') {
-    const a = menuT * 0.22;
-    camPos.set(P.x + Math.sin(a) * 26, P.y + 10 + Math.sin(menuT * 0.5) * 1.5, P.z + Math.cos(a) * 26);
-    camLook.set(P.x, P.y + 2.2, P.z - 8);
-    fov += (64 - fov) * Math.min(1, dt * 2);
+    /* a slow drone circuit of the face, all the way round, with the altitude
+       breathing so it never reads as a turntable */
+    const a = menuT * 0.072;
+    const cx = P.x, cz = P.z - 110;
+    const rad = 232 + Math.sin(menuT * 0.13) * 30;
+    camPos.set(cx + Math.sin(a) * rad, P.y + 96 + Math.sin(menuT * 0.17) * 20,
+               cz + Math.cos(a) * rad * 0.86);
+    camLook.set(cx, P.y - 96, cz - 30);
+    fov += (54 - fov) * Math.min(1, dt * 2);
   } else if (mode === 'intro') {
     /* three shots: the whole face, the ship, and then you — the last of them
        easing into the chase position so control begins where it always does */
@@ -2939,14 +3037,20 @@ function present(dt, t) {
       /* down the fall line, which is the long axis of the world: nearly four
          hundred metres of face running away into the weather */
       const u = tt / IN_WIDE;
-      camPos.set(dropX + 44 - u * 11, dropGround + 112 - u * 15, dropZ + 196 - u * 32);
-      camLook.set(dropX - 4, dropGround - 140, dropZ - 330);
+      _camP.set(dropX + 44 - u * 11, dropGround + 112 - u * 15, dropZ + 196 - u * 32);
+      _camL.set(dropX - 4, dropGround - 140, dropZ - 330);
+      const m = smoothstep(0, IN_MATCH, introT);
+      camPos.lerpVectors(introFromPos, _camP, m);
+      camLook.lerpVectors(introFromLook, _camL, m);
       fov += (66 - fov) * Math.min(1, dt * 1.5);
     } else if (tt < IN_DROP) {
       const u = clamp((tt - IN_WIDE) / (IN_DROP - IN_WIDE), 0, 1);
       const h = heliPos;
-      camPos.set(h.x + lerp(34, 12, u), h.y + lerp(13, 2.4, u), h.z + lerp(46, 21, u));
-      camLook.set(h.x + 0.8, h.y - lerp(1.2, 2.6, u), h.z - 2);
+      _camP.set(h.x + lerp(34, 12, u), h.y + lerp(13, 2.4, u), h.z + lerp(46, 21, u));
+      _camL.set(h.x + 0.8, h.y - lerp(1.2, 2.6, u), h.z - 2);
+      const m = smoothstep(0, IN_MATCH, introT);
+      camPos.lerpVectors(introFromPos, _camP, m);
+      camLook.lerpVectors(introFromLook, _camL, m);
       fov += (54 - fov) * Math.min(1, dt * 2);
     } else {
       /* stay on the rider all the way down, then ease into the chase seat */
@@ -2975,7 +3079,10 @@ function present(dt, t) {
     camLook.set(P.x + Math.sin(P.camYaw) * 15, P.y + 1.6, P.z - Math.cos(P.camYaw) * 21);
     fov += ((58 + clamp(spd / 44, 0, 1) * 20 + bst * 10) - fov) * Math.min(1, dt * 2.4);
   }
-  camera.position.lerp(camPos, mode === 'play' ? Math.min(1, dt * 11) : Math.min(1, dt * 3.4));
+  camera.position.lerp(camPos,
+    mode === 'play' ? Math.min(1, dt * 11)
+    : mode === 'intro' ? Math.min(1, dt * (introT < IN_MATCH ? 6 : 9))
+    : Math.min(1, dt * 3.4));
   if (shake > 0.001 || slideGap < 90) {
     const q = shake * 0.9 + Math.max(0, 1 - slideGap / 90) * 0.22;
     camera.position.x += Math.sin(t * 61) * q * 0.6;
@@ -2984,6 +3091,17 @@ function present(dt, t) {
   camera.lookAt(camLook);
   camera.rotation.z += -wrapPi(P.heading - P.camYaw) * 0.12;
   if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
+
+  /* The coarse field only has to hold up while the camera is high enough that
+     its seam with the fine mesh is far away and deep in the weather. On the
+     title screen it also stands in for the fine mesh entirely — from a hundred
+     metres up the extra detail is invisible, and drawing both fills the screen
+     twice, which on a soft renderer costs two thirds of the frame rate. */
+  const wantFar = mode === 'menu' || mode === 'intro';
+  if (wantFar) rebuildFar(camera.position.x, camera.position.z);
+  if (farMesh.visible !== wantFar) farMesh.visible = wantFar;
+  const wantFine = mode !== 'menu';
+  if (terrain.visible !== wantFine) terrain.visible = wantFine;
 
   sky.position.copy(camera.position);
   sunGlow.position.copy(camera.position).addScaledVector(sunDir, 1200);
@@ -2996,7 +3114,8 @@ function present(dt, t) {
   /* light: altitude first, then whatever the weather is doing to it */
   applyLight(P.dist, dt);
   const far = mode === 'intro'
-    ? lerp(520, 338, clamp((introT + introOff) / IN_END, 0, 1))
+    ? lerp(700, 338, clamp((introT + introOff) / IN_END, 0, 1))
+    : mode === 'menu' ? 720
     : lerp(338, 104, weather);
   scene.fog.far += (far - scene.fog.far) * Math.min(1, dt * 0.8);
   scene.fog.near = scene.fog.far * 0.24;
@@ -3093,7 +3212,8 @@ const CAUSES = {
   buried:   { word: 'Buried',   eyebrow: 'The slide won',  line: 'It came over the roll behind you and took the whole face. Speed was the only answer.' },
   wrecked:  { word: 'Wrecked',  eyebrow: 'Run ended',      line: 'Too many hard contacts. The mountain keeps a tab and it always collects.' },
   crevasse: { word: 'Crevasse', eyebrow: 'The glacier won', line: 'You rode onto a snow bridge that was not there. That is what the kickers are for.' },
-  lost:     { word: 'Off route', eyebrow: 'Run ended',     line: 'You left the face and kept going. Nothing out there but cliffs and a long wait.' }
+  lost:     { word: 'Off route', eyebrow: 'Run ended',     line: 'You left the face and kept going. Nothing out there but cliffs and a long wait.' },
+  slammed:  { word: 'Slammed',  eyebrow: 'Run ended',      line: 'You came down from a very long way up and the mountain kept all of it. Land those pointing where you are going and it pays instead.' }
 };
 
 /** Everything you rode this run, added to everything you have ever ridden. */
@@ -3179,9 +3299,23 @@ document.addEventListener('visibilitychange', () => {
    18 · RESIZE & ADAPTIVE RESOLUTION
    ══════════════════════════════════════════════════════════════ */
 let quality = Math.min(window.devicePixelRatio || 1, 1.75);
+/* The title screen looks at the whole mountain from a hundred metres up, which
+   is two to three times the fill of riding it, and all of it sits behind a
+   scrim. So it renders at a fraction of the resolution and nobody can tell. */
+const MENU_SCALE = 0.58;
+let ratioNow = -1;
+function applyRatio() {
+  const r = quality * (mode === 'menu' ? MENU_SCALE : 1);
+  if (Math.abs(r - ratioNow) < 0.001) return;
+  ratioNow = r;
+  renderer.setPixelRatio(r);
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+}
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
-  renderer.setPixelRatio(quality);
+  ratioNow = -1;
+  renderer.setPixelRatio(quality * (mode === 'menu' ? MENU_SCALE : 1));
+  ratioNow = quality * (mode === 'menu' ? MENU_SCALE : 1);
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
@@ -3196,6 +3330,7 @@ function watchPerf(dt) {
   if (fpsAcc < 2.5) return;
   const fps = fpsN / fpsAcc;
   fpsAcc = 0; fpsN = 0;
+  if (mode === 'menu') return;                     // the title screen is already cheap
   if (fps < 42 && quality > 0.7) { quality = Math.max(0.7, quality - 0.35); resize(); }
 }
 
@@ -3258,6 +3393,7 @@ function frame(now) {
     if (s > 0) surge.style.opacity = String(Math.max(0, s - dt * 0.9));
   }
 
+  applyRatio();
   present(dt, clockT);
   watchPerf(dt);
   renderer.render(scene, camera);
