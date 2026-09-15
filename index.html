@@ -529,14 +529,15 @@ function crevAt(cell) {
   let c = crevCache.get(cell);
   if (c !== undefined) return c;
   const amt = BIOMES[Math.floor(Math.max(0, cell * CREV_CELL) / SECTOR_LEN) % BIOMES.length].crevasse;
-  if (amt <= 0 || hash2(cell + SEED, 41) > amt * 0.7) c = null;
+  /* nothing lethal in the first 600 m — you need room to find the controls */
+  if (cell * CREV_CELL < 600 || amt <= 0 || hash2(cell + SEED, 41) > amt * 0.7) c = null;
   else {
     const cz = -(cell * CREV_CELL + 30 + hash2(cell + SEED, 77) * (CREV_CELL - 60));
     c = {
       z: cz,
       x: faceX(cz) + (hash2(cell + SEED, 91) * 2 - 1) * (FACE_W - 26),
-      halfW: 15 + hash2(cell + SEED, 23) * 17,
-      halfL: 8 + hash2(cell + SEED, 59) * 7,
+      halfW: 12 + hash2(cell + SEED, 23) * 13,
+      halfL: 5 + hash2(cell + SEED, 59) * 4.5,
       ang: (hash2(cell + SEED, 13) - 0.5) * 0.44,
       ramped: false
     };
@@ -595,7 +596,7 @@ const gradZ = (x, z) => clamp((groundAt(x, z + GD) - groundAt(x, z - GD)) / (2 *
 const SECTOR_LEN = 1350;
 const BIOMES = [
   { key: 'glacier',  name: 'Glacier du Géant',  snow: 0xd6e5f8, shade: 0x82a3d0, rock: 0x5b6474,
-    trees: 0,   rocks: 0.30, seracs: 1.0, spires: 0,   crevasse: 0.85, ice: 0.55 },
+    trees: 0,   rocks: 0.45, seracs: 0.75, spires: 0,  crevasse: 0.75, ice: 0.45 },
   { key: 'couloir',  name: 'Couloir Noir',      snow: 0xdae6f8, shade: 0x8ca6cf, rock: 0x4b4750,
     trees: 0.1, rocks: 1.00, seracs: 0.2, spires: 1.0, crevasse: 0.30, ice: 0.34 },
   { key: 'treeline', name: 'La Lisière',        snow: 0xe0eafa, shade: 0x96b1db, rock: 0x5a5560,
@@ -1447,7 +1448,7 @@ const P = {
   x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, heading: 0, camYaw: 0,
   air: false, airT: 0, bestAir: 0, launchY: 0,
   spin: 0, flip: 0, grabT: 0, grabName: '', trickBase: 0,
-  wipe: 0, hurt: 0, boostT: 0, boosts: 0,
+  wipe: 0, hurt: 0, slideGrace: 0, boostT: 0, boosts: 0,
   health: 100,
   dist: 0, alt: START_ALT, lowAlt: START_ALT, y0: 0,
   score: 0, topSpeed: 0, cans: 0, canChain: 0, canChainT: 0,
@@ -1457,7 +1458,7 @@ let mode = 'menu';
 let genZ = 0, nextRampZ = 0, nextCanZ = 0;
 let slideZ = 0, slideGap = 190;
 let weather = 0, weatherT = 24, weatherLen = 0;
-let shake = 0, menuT = 0, deathT = 0, deathCause = null, curSector = -1;
+let shake = 0, menuT = 0, deathT = 0, deathCause = null, curSector = -1, crevWarn = 0;
 const FINISH_ALT = 1000;
 let route = 'descent';
 let best = 0, bestTime = 0, bestDist = 0;
@@ -1518,9 +1519,13 @@ function generate() {
   const cv = crevAt(Math.floor(-z / CREV_CELL));
   if (cv && !cv.ramped && z <= cv.z + cv.halfL + 26 && z > cv.z) {
     cv.ramped = true;
-    const rx = clamp(cv.x + rand(-6, 6), cv.x - cv.halfW + 4, cv.x + cv.halfW - 4);
-    addProp('ramp', rx, cv.z + cv.halfL + 11, { r: 3.6, h: 2.2, scale: 1.25, spin: 0 });
-    canArc(rx, cv.z + cv.halfL + 4, 0, 6, cv.halfL * 2 + 34, 7);
+    /* three kickers across the lip, not one — the crossing should be findable
+       from wherever you happen to be on the face */
+    for (let k = -1; k <= 1; k++) {
+      const rx = cv.x + k * (cv.halfW * 0.62);
+      addProp('ramp', rx, cv.z + cv.halfL + 11, { r: 3.6, h: 2.2, scale: 1.25, spin: 0 });
+      if (k === 0) canArc(rx, cv.z + cv.halfL + 4, 0, 6, cv.halfL * 2 + 34, 7);
+    }
   }
 
   /* kickers */
@@ -1532,9 +1537,19 @@ function generate() {
   }
 
   /* the field itself */
-  const hazards = 1 + Math.floor(Math.random() * (1.4 + 2.6 * d));
+  /* the first 400 m are quiet, and no two hazards in a row may sit closer
+     than a rider can thread, so a row is never a wall */
+  const warmup = clamp(dist / 400, 0.25, 1);
+  const hazards = Math.round((1 + Math.random() * (1.2 + 1.9 * d)) * warmup);
+  const taken = [];
   for (let i = 0; i < hazards; i++) {
-    const x = cx + rand(-1, 1) * span;
+    let x = 0, ok = false;
+    for (let t = 0; t < 10 && !ok; t++) {
+      x = cx + rand(-1, 1) * span;
+      ok = taken.every(v => Math.abs(v - x) > 11);
+    }
+    if (!ok) continue;
+    taken.push(x);
     const zz = z + rand(-gap / 2, gap / 2);
     const roll = Math.random() * (bi.trees + bi.rocks + bi.seracs + bi.spires);
     let acc = bi.trees;
@@ -1704,12 +1719,12 @@ function resetRun() {
   P.heading = 0; P.camYaw = 0;
   P.air = false; P.airT = 0; P.bestAir = 0;
   P.spin = 0; P.flip = 0; P.grabT = 0; P.grabName = ''; P.trickBase = 0;
-  P.wipe = 0; P.hurt = 0; P.boostT = 0; P.boosts = 0;
+  P.wipe = 0; P.hurt = 0; P.slideGrace = 0; P.boostT = 0; P.boosts = 0;
   P.health = 100;
   P.dist = 0; P.alt = START_ALT; P.lowAlt = START_ALT;
   P.score = 0; P.topSpeed = 0; P.cans = 0; P.canChain = 0; P.canChainT = 0;
   P.chain = 1; P.chainBest = 1; P.fastT = 0; P.near = 0; P.bestTrick = 0; P.tricks = 0; P.time = 0; P.switches = 0;
-  slideGap = 190; slideZ = P.z + slideGap;
+  slideGap = 165; slideZ = P.z + slideGap;
   weather = 0; weatherT = 26; weatherLen = 0;
   shake = 0; deathCause = null; curSector = -1;
   ghostRec = []; ghostClock = 0; ghostData = loadGhost();
@@ -1765,11 +1780,11 @@ function land(impact) {
   const flipOff = Math.abs(wrapPi(P.flip));
   const grabbed = P.grabT > 0.12;
   const words = trickWords(P.spin, P.flip, P.grabName, grabbed);
-  const rotated = Math.abs(P.spin) > 1.2 || Math.abs(P.flip) > 1.2;
+  const rotated = Math.abs(P.spin) > 2.2 || Math.abs(P.flip) > 2.2;
 
   P.air = false;
   trickEl.classList.remove('on');
-  if (P.airT < 0.22 && !rotated) {          // a pop off a roller is not a landing
+  if (P.airT < 0.45 && !rotated) {          // a pop off a roller is not a landing
     P.vy = Math.min(P.vy, 0);
     return;
   }
@@ -1777,10 +1792,10 @@ function land(impact) {
 
   /* landing quality: point where you are going — or exactly backwards, which
      is a switch landing and pays for the nerve */
-  const backwards = off > Math.PI - 0.72;
-  const clean = (off < 0.72 || backwards) && flipOff < 0.95;
-  if (!clean && (rotated || off > 1.0)) {
-    wipeout(off > 1.4 ? 'Caught an edge' : 'Landed sideways', 14);
+  const backwards = off > Math.PI - 0.95;
+  const clean = (off < 1.05 || backwards) && flipOff < 1.15;
+  if (!clean && (rotated || off > 1.35)) {
+    wipeout(off > 1.7 ? 'Caught an edge' : 'Landed sideways', 9);
     return;
   }
   P.heading = velYaw + wrapPi(P.heading - velYaw) * (backwards ? 0 : 0.35);
@@ -1814,7 +1829,9 @@ function land(impact) {
 function wipeout(reason, damage) {
   if (P.wipe > 0) return;
   P.air = false;
-  P.wipe = 1.35;
+  P.wipe = 1.0;
+  P.hurt = 1.6;             // nothing else may hit you while you are helpless
+  P.slideGrace = 2.5;       // and the slide stops gaining for a moment
   P.health -= damage;
   breakChain();
   P.canChain = 0; P.boostT = 0;
@@ -1843,6 +1860,18 @@ function step(dt) {
     P.spin += steer * R.spin * dt;
     P.heading += steer * R.spin * dt;
     if (P.wipe <= 0 && ctrl.flip) P.flip -= FLIP_RATE * dt;      // hold to backflip
+    /* Let go and the board settles back towards where you are actually going,
+       and a half-finished flip rotates out to the nearest whole one. Steering
+       over a roller should not quietly wind up a trick you then have to land. */
+    if (Math.abs(steer) < 0.15) {
+      const vy = Math.atan2(P.vx, -P.vz);
+      const turn = wrapPi(vy - P.heading) * Math.min(1, dt * 2.6);
+      P.heading += turn; P.spin += turn;
+    }
+    if (!ctrl.flip && Math.abs(P.flip) > 0.02) {
+      const whole = Math.round(P.flip / (Math.PI * 2)) * Math.PI * 2;
+      P.flip += (whole - P.flip) * Math.min(1, dt * 2.4);
+    }
     P.airT += dt;
     if (tucking) { if (!P.grabName) P.grabName = grabName(); P.grabT += dt; }
     else if (P.grabT > 0 && P.grabT < 0.12) { P.grabT = 0; P.grabName = ''; }
@@ -1917,12 +1946,28 @@ function step(dt) {
 
   P.wipe = Math.max(0, P.wipe - dt);
   P.hurt = Math.max(0, P.hurt - dt);
+  P.slideGrace = Math.max(0, P.slideGrace - dt);
   /* holding it flat out feeds the chain too */
   if (!P.air && P.wipe <= 0 && speedOf() > 33) {
     P.fastT += dt;
     if (P.fastT >= 3) { P.fastT = 0; bumpChain(1, 'Flat out'); }
   } else P.fastT = Math.max(0, P.fastT - dt * 0.5);
   P.canChainT -= dt; if (P.canChainT <= 0) P.canChain = 0;
+
+  /* ---------- a gash you cannot see over the roller ---------- */
+  crevWarn -= dt;
+  if (crevWarn <= 0) {
+    crevWarn = 0.5;
+    for (let k = 0; k <= 1; k++) {
+      const c = crevAt(Math.floor(-(P.z - 40 - k * CREV_CELL) / CREV_CELL));
+      if (!c) continue;
+      const ahead = P.z - c.z;
+      if (ahead > 25 && ahead < 135 && Math.abs(P.x - c.x) < c.halfW + 24) {
+        flashWarn('Crevasse ahead', 900);
+        break;
+      }
+    }
+  }
 
   /* ---------- into the gash ---------- */
   if (heightBase(P.x, P.z) - P.y > 5.5) { die('crevasse'); return; }
@@ -1984,7 +2029,7 @@ function step(dt) {
       P.hurt = 0.8;
       P.vx *= heavy ? 0.28 : 0.42;
       P.vz *= heavy ? 0.28 : 0.42;
-      wipeout(o.kind === 'tree' ? 'Timber' : heavy ? 'Hit ice' : 'Hit rock', heavy ? 32 : 26);
+      wipeout(o.kind === 'tree' ? 'Timber' : heavy ? 'Hit ice' : 'Hit rock', heavy ? 22 : 17);
     }
   }
 
@@ -1997,10 +2042,11 @@ function step(dt) {
   weather += ((weatherLen > 0 ? 1 : 0) - weather) * Math.min(1, dt * 0.5);
 
   /* ---------- the slide ---------- */
-  const slideSpeed = 19 + d * 5.5 + P.dist * 0.0003 + Math.max(0, slideGap - 40) * 0.16;
+  const chase = P.slideGrace > 0 ? 0 : Math.min(13, Math.max(0, slideGap - 55) * 0.11);
+  const slideSpeed = 19 + d * 5.5 + P.dist * 0.0003 + chase;
   slideZ -= slideSpeed * dt;
   slideGap = slideZ - P.z;
-  if (slideGap > 190) { slideGap = 190; slideZ = P.z + slideGap; }
+  if (slideGap > 200) { slideGap = 200; slideZ = P.z + slideGap; }
   if (slideGap < 62 && Math.random() < dt * 0.8) flashWarn('It is on you', 700);
 
   /* ---------- streaming & trail ---------- */

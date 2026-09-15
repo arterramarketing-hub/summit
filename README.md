@@ -61,9 +61,11 @@ npx http-server -p 8080 .      # then http://localhost:8080
 - **The mountain launches you.** Wind lips every ~85 m are shaped so their
   curvature beats gravity *above* a certain speed. Ride slowly and you roll over
   them; carry speed and you are airborne roughly a quarter of the time.
-- **Land it.** The board has to be pointing within about 40° of your direction
-  of travel, and flips have to finish. Sideways is a wipeout: no control, no
-  speed, and the avalanche takes back the metres.
+- **Land it.** The board has to be pointing within about 60° of your direction
+  of travel, and flips have to finish — but let go of the steering in the air
+  and the board settles back towards where you are going, and a half-finished
+  flip rotates out to the nearest whole one. Steering over a roller never winds
+  up a trick you then have to land. Genuinely sideways is still a wipeout.
 - **The chain is the whole game.** Landing a trick, taking a can, threading a
   tree by a couple of metres, holding it above 120 km/h — all of it pushes one
   multiplier that never times out and multiplies everything you score. A wipeout
@@ -74,11 +76,17 @@ npx http-server -p 8080 .      # then http://localhost:8080
   roller throws you properly.
 - **Landing switch** — backwards, within about 40° of straight — pays 1.6× and
   pushes the chain harder than landing forwards.
-- **Crevasses** are cut into the terrain itself. Every one has a kicker on its
-  near lip — the gap is always makeable, but only if you use it.
-- **The slide** sits about 120 m back while you ride clean and hauls in hard the
-  moment a crash bleeds your speed. It never stops — but **clearing a sector
-  shoves it 80 m back down the hill**, which is the run's only moment of relief.
+- **Crevasses** are cut into the terrain itself, with **three kickers across the
+  lip** so the crossing is findable from wherever you are on the face, and a
+  warning when one is coming that you cannot yet see over the roller. None
+  appear in the first 600 m.
+- **The slide** sits about 120 m back while you ride clean and hauls in when a
+  crash bleeds your speed — though it stops gaining for two and a half seconds
+  after a wipeout, so one mistake does not cascade into three. **Clearing a
+  sector shoves it 80 m back down the hill.**
+
+The first 400 m are deliberately quiet, hazards in a row are never closer than
+a rider can thread, and you are untouchable while you are picking yourself up.
 
 Sectors change every 1,350 m of descent — glacier, couloir, treeline, forest —
 each with its own hazards, colour and iciness, and each cycle steeper than the last.
