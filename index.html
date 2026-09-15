@@ -118,7 +118,7 @@ canvas#c{display:block;width:100%;height:100%;touch-action:none}
 #heatFill{background:linear-gradient(90deg,#8e3a12,var(--ember) 55%,var(--ember-soft))}
 #condFill{background:linear-gradient(90deg,#6d1a27,var(--vital) 55%,#ff9aa6)}
 .gauge.low .pct{color:var(--vital)}
-.score-row{display:flex;align-items:center;justify-content:space-between;gap:10px;pointer-events:auto}
+.score-row{display:flex;align-items:center;gap:12px}
 .score-left{display:flex;align-items:baseline;gap:12px;min-width:0}
 #score{font:600 19px/1 var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
 #score::after{content:" PTS";font-size:.5em;letter-spacing:.16em;color:var(--ink-dim)}
@@ -132,7 +132,7 @@ canvas#c{display:block;width:100%;height:100%;touch-action:none}
 .score-row.boosting #cans{text-shadow:0 0 12px rgba(182,255,63,.9)}
 .digits.boosting{color:var(--volt);text-shadow:0 0 18px rgba(182,255,63,.55)}
 .pop.boost{color:var(--volt);font-size:19px;letter-spacing:.2em}
-.tools{display:flex;gap:7px;flex:none}
+.tools{display:flex;gap:7px;justify-content:flex-end}
 .tool{font:600 9px/1 var(--mono);letter-spacing:.12em;color:var(--ink-dim);background:var(--panel);
   border:1px solid var(--hair);padding:7px 9px;cursor:pointer;pointer-events:auto;
   -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
@@ -141,29 +141,45 @@ canvas#c{display:block;width:100%;height:100%;touch-action:none}
 
 /* ---------- full-screen effects ---------- */
 #haze{position:absolute;inset:0;pointer-events:none;opacity:0;background:#c9d7ea}
-/* on-screen controls — visible, holdable, and they light up when held so
-   there is never a question about whether the input registered */
+/* On-screen controls. Steering is the whole screen split down the middle —
+   hold a side, the edge lights up, and the turn eases in rather than slamming
+   to full lock. The two actions live outboard in the bottom corners so a
+   steering thumb and an action thumb never fight over the same pixels. */
 #pad{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .3s ease}
 #pad.live{opacity:1}
-#steerPad{display:none;position:absolute;left:var(--pad-x);bottom:calc(var(--pad-b) + 104px);
-  width:min(46vw,215px);height:86px;border:1px solid var(--hair);background:rgba(7,13,24,.5);
-  pointer-events:auto;touch-action:none;-webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px)}
-body.touchmode #steerPad{display:block}
-#steerKnob{position:absolute;top:34px;left:50%;width:52px;height:52px;margin:-26px 0 0 -26px;
-  background:rgba(234,241,251,.15);border:1px solid rgba(234,241,251,.55);transition:left .05s linear}
-#steerPad em{position:absolute;left:0;right:0;bottom:7px;text-align:center;font:600 8px/1 var(--mono);
-  letter-spacing:.24em;color:var(--ink-dim);font-style:normal}
-#steerPad.held{border-color:var(--ember)}
-#steerPad.held #steerKnob{background:rgba(255,106,43,.3);border-color:var(--ember)}
-.act{position:absolute;right:var(--pad-x);width:84px;height:84px;border:1px solid var(--hair);
-  border-radius:50%;background:rgba(7,13,24,.5);color:var(--ink);
-  font:800 12px/1 var(--disp);font-stretch:118%;letter-spacing:.14em;text-transform:uppercase;
-  pointer-events:auto;touch-action:none;cursor:pointer;
-  -webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px)}
-#btnTuck{bottom:calc(var(--pad-b) + 100px)}
-#btnFlip{bottom:calc(var(--pad-b) + 196px)}
-.act.held{background:var(--ember);color:#120600;border-color:var(--ember)}
-.act.off{opacity:.28}
+.zone{position:absolute;top:0;bottom:0;width:50%;pointer-events:none;touch-action:none}
+body.touchmode #pad.live .zone{pointer-events:auto}
+#zoneL{left:0} #zoneR{right:0}
+.zone::before{content:"";position:absolute;inset:0;opacity:0;transition:opacity .12s ease}
+#zoneL::before{background:linear-gradient(90deg,rgba(255,106,43,.30),rgba(255,106,43,0) 42%)}
+#zoneR::before{background:linear-gradient(270deg,rgba(255,106,43,.30),rgba(255,106,43,0) 42%)}
+.zone.held::before{opacity:1}
+.zone i{position:absolute;top:50%;width:26px;height:26px;margin-top:-13px;
+  border-left:3px solid var(--ink);border-bottom:3px solid var(--ink);
+  opacity:.18;transition:opacity .12s ease,transform .12s ease}
+#zoneL i{left:16px;transform:rotate(45deg)}
+#zoneR i{right:16px;transform:rotate(-135deg)}
+.zone.held i{opacity:.95}
+#zoneL.held i{transform:rotate(45deg) translate(3px,-3px)}
+#zoneR.held i{transform:rotate(-135deg) translate(3px,-3px)}
+body:not(.touchmode) .zone i{display:none}
+
+.act{position:absolute;bottom:calc(var(--pad-b) + 96px);width:78px;height:78px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  border:2px solid rgba(186,212,248,.4);border-radius:50%;background:rgba(7,13,24,.46);
+  color:var(--ink);pointer-events:auto;touch-action:none;cursor:pointer;padding:0;
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  transition:transform .09s ease,background .09s ease,border-color .09s ease}
+#btnFlip{left:var(--pad-x)} #btnTuck{right:var(--pad-x)}
+.act svg{width:27px;height:27px;display:block}
+.act .g-grab{display:none}
+.act.airborne .g-tuck{display:none}
+.act.airborne .g-grab{display:block}
+.act em{font:800 8.5px/1 var(--disp);font-stretch:118%;letter-spacing:.18em;
+  text-transform:uppercase;font-style:normal;color:var(--ink-dim)}
+.act.held{background:var(--ember);border-color:var(--ember);color:#120600;transform:scale(.94)}
+.act.held em{color:#120600}
+.act.off{opacity:.24}
 .chainv{font:600 21px/1 var(--mono);color:var(--volt);letter-spacing:-.02em;
   text-shadow:0 0 14px rgba(182,255,63,.35);transform-origin:left center;
   transition:transform .13s ease,color .13s ease}
@@ -260,11 +276,32 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
   <div id="vig"></div>
   <div id="flash"></div>
 
+  <div id="pad">
+    <div class="zone" id="zoneL"><i></i></div>
+    <div class="zone" id="zoneR"><i></i></div>
+    <button id="btnFlip" class="act" type="button" aria-label="Flip">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+           stroke-linecap="round"><path d="M20.5 12a8.5 8.5 0 1 1-3.2-6.6"/><path d="M17.3 1.6v4.2h-4.2" /></svg>
+      <em>Flip</em>
+    </button>
+    <button id="btnTuck" class="act" type="button" aria-label="Tuck or grab">
+      <svg class="g-tuck" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+           stroke-linecap="round" stroke-linejoin="round"><path d="M5 7.5 12 14l7-6.5"/><path d="M5 14 12 20.5l7-6.5" opacity=".5"/></svg>
+      <svg class="g-grab" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+           stroke-linecap="round"><circle cx="12" cy="12" r="8.4"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg>
+      <em>Tuck</em>
+    </button>
+  </div>
+
   <div id="hud">
     <div class="hud-top">
       <div class="slide-gauge" id="slideGauge">
         <div class="slide-head"><span class="k">Slide</span><span id="avaDist">—</span></div>
         <div class="bar"><div class="fill" id="avaFill"></div><div class="segs"></div></div>
+      </div>
+      <div class="tools">
+        <button class="tool" id="btnCal" type="button">Re-centre</button>
+        <button class="tool" id="btnSnd" type="button">Sound</button>
       </div>
       <div class="readouts">
         <div>
@@ -300,19 +337,11 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
       <div class="score-row">
         <span class="score-left"><span id="score">0</span><span id="cans">0</span><span id="pips"
           ><i></i><i></i><i></i><i></i><i></i></span></span>
-        <span class="tools">
-          <button class="tool" id="btnCal" type="button">Re-centre</button>
-          <button class="tool" id="btnSnd" type="button">Sound</button>
-        </span>
       </div>
     </div>
   </div>
 
-  <div id="pad">
-    <div id="steerPad"><span id="steerKnob"></span><em>Steer</em></div>
-    <button id="btnFlip" class="act" type="button">Flip</button>
-    <button id="btnTuck" class="act" type="button">Tuck</button>
-  </div>
+
 
   <div id="sector"><u></u><b></b><span></span></div>
 
@@ -348,7 +377,7 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
         <div class="phone tilt-only" aria-hidden="true"></div>
         <p><span class="tilt-only"><b>Tilt</b> the handset to carve — and to spin in the air.
            That is all the gyroscope does.<br></span>
-           <span class="touch-only"><b>Drag the steer pad</b> to carve — and to spin in the air.<br></span>
+           <span class="touch-only"><b>Hold either side of the screen</b> to carve that way — and to spin in the air.<br></span>
            <b>TUCK</b> holds a tuck for speed; in the air the same button <b>grabs</b>.<br>
            <b>FLIP</b> backflips while you are airborne.</p>
       </div>
@@ -358,7 +387,7 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
       <div class="actions">
         <button class="go" id="btnStart" type="button">Drop in</button>
       </div>
-      <p class="fine" id="startFine">Tilt only ever steers. Pick <b>Touch only</b> above to steer with a pad instead. On a desktop: <b>arrow keys</b>, <b>space</b> to tuck or grab, <b>F</b> to flip.</p>
+      <p class="fine" id="startFine">Tilt only ever steers. Pick <b>Touch only</b> above to steer by holding either side of the screen. On a desktop: <b>arrow keys</b>, <b>space</b> to tuck or grab, <b>F</b> to flip.</p>
 
       <dl class="brief">
         <div><dt>Terrain</dt><dd>Every roller is a takeoff. The mountain launches you — there is no jump button.</dd></div>
@@ -1253,6 +1282,7 @@ try { const m = localStorage.getItem('sw_ctrl'); if (m === 'touch' || m === 'til
 const ctrl = { steer: 0, tuck: false, flip: false };
 const gyro = { ok: false, raw: 0, zero: 0, seeded: false };
 let padSteer = 0, keySteer = 0, keyTuck = false, keyFlip = false;
+let zoneL = false, zoneR = false;
 let heldTuck = false, heldFlip = false;
 
 function screenAngle() {
@@ -1289,7 +1319,13 @@ function axis(raw, zero, range, dead) {
   const v = clamp(d / range, -1, 1);
   return Math.sign(v) * Math.pow(Math.abs(v), 1.3);
 }
-function readCtrl() {
+function readCtrl(dt) {
+  /* a held side eases into the turn instead of slamming to full lock, so a
+     stab is a correction and a long hold is a committed carve */
+  const want = (zoneR ? 1 : 0) + (zoneL ? -1 : 0);
+  const rate = want === 0 ? 9 : 5.5;
+  padSteer += (want - padSteer) * Math.min(1, (dt || 0.016) * rate);
+  if (Math.abs(padSteer) < 0.004) padSteer = 0;
   const tilting = ctrlMode === 'tilt' && gyro.ok;
   ctrl.steer = keySteer || (tilting ? axis(gyro.raw, gyro.zero, TILT_RANGE, 1.6) : padSteer);
   ctrl.tuck = keyTuck || heldTuck;
@@ -1297,7 +1333,7 @@ function readCtrl() {
 }
 
 /* ---- the on-screen controls ---- */
-const padLayer = $('pad'), steerPad = $('steerPad'), steerKnob = $('steerKnob');
+const padLayer = $('pad'), zoneLeft = $('zoneL'), zoneRight = $('zoneR');
 const btnTuck = $('btnTuck'), btnFlip = $('btnFlip');
 
 function holdable(el, set) {
@@ -1316,33 +1352,39 @@ function holdable(el, set) {
 holdable(btnTuck, v => { heldTuck = v; });
 holdable(btnFlip, v => { heldFlip = v; });
 
-let padId = null;
-function padTo(clientX) {
-  const r = steerPad.getBoundingClientRect();
-  padSteer = clamp((clientX - r.left) / r.width * 2 - 1, -1, 1);
-  steerKnob.style.left = (50 + padSteer * 34) + '%';
+/* hold either half of the screen to turn that way */
+function steerZone(el, set) {
+  const ids = new Set();
+  const down = (e) => {
+    e.preventDefault();
+    ids.add(e.pointerId);
+    if (el.setPointerCapture) { try { el.setPointerCapture(e.pointerId); } catch (err) {} }
+    el.classList.add('held'); set(true);
+  };
+  const up = (e) => {
+    ids.delete(e.pointerId);
+    if (!ids.size) { el.classList.remove('held'); set(false); }
+  };
+  el.addEventListener('pointerdown', down);
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointercancel', up);
+  el.addEventListener('lostpointercapture', up);
 }
-function padRelease() {
-  padId = null; padSteer = 0;
-  steerKnob.style.left = '50%';
-  steerPad.classList.remove('held');
+steerZone(zoneLeft, v => { zoneL = v; });
+steerZone(zoneRight, v => { zoneR = v; });
+function releaseZones() {
+  zoneL = zoneR = false;
+  zoneLeft.classList.remove('held');
+  zoneRight.classList.remove('held');
 }
-steerPad.addEventListener('pointerdown', e => {
-  e.preventDefault(); padId = e.pointerId;
-  if (steerPad.setPointerCapture) { try { steerPad.setPointerCapture(e.pointerId); } catch (err) {} }
-  steerPad.classList.add('held'); padTo(e.clientX);
-});
-steerPad.addEventListener('pointermove', e => { if (padId === e.pointerId) padTo(e.clientX); });
-steerPad.addEventListener('pointerup', padRelease);
-steerPad.addEventListener('pointercancel', padRelease);
-steerPad.addEventListener('lostpointercapture', padRelease);
 
 /* ---- which scheme is live ---- */
 function setCtrlMode(m) {
   ctrlMode = m;
   try { localStorage.setItem('sw_ctrl', m); } catch (e) {}
   document.body.classList.toggle('touchmode', m === 'touch');
-  padRelease();
+  releaseZones();
+  padSteer = 0;
   for (const b of document.querySelectorAll('[data-mode]')) b.classList.toggle('sel', b.dataset.mode === m);
   const cal = $('btnCal');
   if (cal) cal.hidden = (m !== 'tilt');
@@ -1594,7 +1636,8 @@ function updateHUD(dt) {
   const lit = P.boostT > 0 ? BOOST_EVERY : P.cans % BOOST_EVERY;
   for (let i = 0; i < pips.length; i++) pips[i].classList.toggle('on', i < lit);
   scoreRow.classList.toggle('boosting', P.boostT > 0);
-  btnTuck.textContent = P.air ? 'Grab' : 'Tuck';
+  btnTuck.classList.toggle('airborne', P.air);
+  btnTuck.querySelector('em').textContent = P.air ? 'Grab' : 'Tuck';
   btnFlip.classList.toggle('off', !P.air);
   elSpd.classList.toggle('boosting', P.boostT > 0);
   chainV.textContent = P.chain;
@@ -1790,7 +1833,7 @@ function step(dt) {
   const bst = boostAmt();
   P.time += dt;
   const bi = biomeOf(P.dist);
-  readCtrl();
+  readCtrl(dt);
   const steer = P.wipe > 0 ? 0 : ctrl.steer;
   const tucking = P.wipe > 0 ? false : ctrl.tuck;
   const x0 = P.x, z0 = P.z;
@@ -2009,6 +2052,7 @@ function finishRun() {
   $('winFine').textContent = 'Your ghost is saved — next run you race it down.';
   hud.classList.remove('live');
   padLayer.classList.remove('live');
+  releaseZones();
   trickEl.classList.remove('on');
   Snd.bed(0.03, 0, 0);
   Snd.tone(523, 0.3, 'triangle', 0.26);
@@ -2221,6 +2265,7 @@ function endRun() {
         : 'Land facing your direction of travel — the spin has to finish before the snow does.');
   hud.classList.remove('live');
   padLayer.classList.remove('live');
+  releaseZones();
   show(overScreen);
 }
 
@@ -2230,7 +2275,7 @@ async function beginRun() {
     const ok = await enableGyro();
     if (!ok) {
       setCtrlMode('touch');
-      $('startFine').innerHTML = 'No motion access — switched to <b>touch only</b>. Drag the steer pad to carve.';
+      $('startFine').innerHTML = 'No motion access — switched to <b>touch only</b>. Hold either side of the screen to carve.';
     }
   }
   gyro.seeded = false;

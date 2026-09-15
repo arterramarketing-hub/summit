@@ -28,14 +28,19 @@ or **Endless**.
 
 | Control | On the snow | In the air |
 | --- | --- | --- |
-| Tilt left / right (or the steer pad) | Carve | Spin |
+| Tilt left / right, **or hold either side of the screen** | Carve | Spin |
 | **TUCK** button | Tuck for speed | Grab |
 | **FLIP** button | — | Backflip |
 
 **Controls** on the start screen (and the pause screen) switches between
-**Tilt to steer** and **Touch only**. Touch-only replaces the tilt with a steer
-pad at the bottom left and changes nothing else; the choice is remembered. If
-motion access is refused, the game switches to touch-only on its own.
+**Tilt to steer** and **Touch only**. Touch-only steers by holding a side of the
+screen — anywhere on the left half turns left, anywhere on the right turns
+right, and the edge lights up while held. The turn eases in rather than jumping
+to full lock, so a stab is a correction and a long hold is a committed carve.
+The two action buttons sit outboard in the bottom corners, clear of the
+steering, so a steering thumb and an action thumb never collide. The choice is
+remembered, and if motion access is refused the game switches to touch-only on
+its own.
 
 **Re-centre** rezeros the tilt to however you happen to be holding the phone.
 On a desktop: arrow keys to steer, space or down to tuck and grab, F or up to flip.
