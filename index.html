@@ -125,6 +125,13 @@ canvas#c{display:block;width:100%;height:100%;touch-action:none}
 #cans{font:600 13px/1 var(--mono);color:var(--volt);font-variant-numeric:tabular-nums;white-space:nowrap}
 #cans::before{content:"";display:inline-block;width:7px;height:12px;margin-right:6px;vertical-align:-1px;
   background:linear-gradient(180deg,#d7e2ef 0 2px,var(--volt) 2px 10px,#d7e2ef 10px);border-radius:1px}
+#pips{display:inline-flex;gap:3px;margin-left:8px}
+#pips i{width:7px;height:7px;border:1px solid rgba(182,255,63,.4);display:block}
+#pips i.on{background:var(--volt);border-color:var(--volt)}
+.score-row.boosting #pips i{background:var(--volt);border-color:var(--volt);animation:throb .28s steps(2) infinite}
+.score-row.boosting #cans{text-shadow:0 0 12px rgba(182,255,63,.9)}
+.digits.boosting{color:var(--volt);text-shadow:0 0 18px rgba(182,255,63,.55)}
+.pop.boost{color:var(--volt);font-size:19px;letter-spacing:.2em}
 .tools{display:flex;gap:7px;flex:none}
 .tool{font:600 9px/1 var(--mono);letter-spacing:.12em;color:var(--ink-dim);background:var(--panel);
   border:1px solid var(--hair);padding:7px 9px;cursor:pointer;pointer-events:auto;
@@ -134,6 +141,8 @@ canvas#c{display:block;width:100%;height:100%;touch-action:none}
 
 /* ---------- full-screen effects ---------- */
 #haze{position:absolute;inset:0;pointer-events:none;opacity:0;background:#c9d7ea}
+#boostfx{position:absolute;inset:0;pointer-events:none;opacity:0;
+  background:radial-gradient(64% 48% at 50% 56%,rgba(182,255,63,0) 42%,rgba(150,240,40,.34) 100%)}
 #rush{position:absolute;inset:0;pointer-events:none;opacity:0;
   background:radial-gradient(58% 42% at 50% 52%,transparent 42%,rgba(8,16,30,.66) 100%)}
 #vig{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .25s ease;
@@ -208,6 +217,7 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
 
   <div id="haze"></div>
   <div id="rush"></div>
+  <div id="boostfx"></div>
   <div id="surge"></div>
   <div id="vig"></div>
   <div id="flash"></div>
@@ -250,7 +260,8 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
         </div>
       </div>
       <div class="score-row">
-        <span class="score-left"><span id="score">0</span><span id="cans">0</span></span>
+        <span class="score-left"><span id="score">0</span><span id="cans">0</span><span id="pips"
+          ><i></i><i></i><i></i><i></i><i></i></span></span>
         <span class="tools">
           <button class="tool" id="btnCal" type="button">Re-centre</button>
           <button class="tool" id="btnSnd" type="button">Sound</button>
@@ -279,7 +290,7 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
       <dl class="brief">
         <div><dt>Terrain</dt><dd>Every roller is a takeoff. The mountain launches you — there is no jump button.</dd></div>
         <div><dt>Tricks</dt><dd>Spin, flip and grab, then land pointing where you are going. Sideways is a wipeout.</dd></div>
-        <div><dt>Cans</dt><dd>Collect the green cans. They chain, and the arcs over the kickers are worth the air.</dd></div>
+        <div><dt>Cans</dt><dd>Every fifth can fires a boost: a hard surge and double points until you crash.</dd></div>
         <div><dt>Slide</dt><dd>The avalanche never stops. Crash and it takes back the metres you bought.</dd></div>
       </dl>
 
@@ -302,7 +313,7 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
         <div class="stat"><div class="k">Low point</div><div class="v" id="sAlt">0<small>M</small></div></div>
         <div class="stat"><div class="k">Top speed</div><div class="v" id="sSpd">0<small>KM/H</small></div></div>
         <div class="stat"><div class="k">Best trick</div><div class="v" id="sTrick">0</div></div>
-        <div class="stat dew"><div class="k">Cans</div><div class="v" id="sCans">0</div></div>
+        <div class="stat dew"><div class="k">Cans</div><div class="v" id="sCans">0<small>· 0 BOOSTS</small></div></div>
         <div class="stat"><div class="k">Longest air</div><div class="v" id="sAir">0<small>S</small></div></div>
         <div class="stat hero" id="bestRow"><div class="k">Best</div><div class="v" id="sBest">0</div></div>
       </div>
@@ -898,17 +909,27 @@ for (let i = 0; i < SNOW_N; i++) {
   snowV[i * 3] = rand(-1.5, 1.5); snowV[i * 3 + 1] = rand(-7, -3.5); snowV[i * 3 + 2] = rand(-2, 2);
 }
 const SPRAY_N = 220;
-const spray = pointsCloud(SPRAY_N, 0.9, 0.95, 0xffffff);
+const spray = pointsCloud(SPRAY_N, 0.55, 0.95, 0xffffff);
 const sprayP = spray.geometry.attributes.position.array;
 const sprayV = new Float32Array(SPRAY_N * 3);
 const sprayL = new Float32Array(SPRAY_N);
 let sprayHead = 0;
-function emitSpray(x, y, z, n, power) {
+/** dx/dz aim the throw — a carving edge sprays to the outside of the turn. */
+function emitSpray(x, y, z, n, power, dx, dz) {
+  const aimed = dx !== undefined;
   for (let k = 0; k < n; k++) {
     const i = sprayHead = (sprayHead + 1) % SPRAY_N;
     sprayP[i * 3] = x + rand(-0.5, 0.5); sprayP[i * 3 + 1] = y + rand(0, 0.4); sprayP[i * 3 + 2] = z + rand(-0.6, 0.6);
-    sprayV[i * 3] = rand(-1, 1) * power; sprayV[i * 3 + 1] = rand(1.2, 4.4) * (0.4 + power * 0.1);
-    sprayV[i * 3 + 2] = rand(0.4, 3.2) * power * 0.6;
+    if (aimed) {
+      const j = rand(0.55, 1.45) * power;
+      sprayV[i * 3] = dx * j + rand(-0.7, 0.7);
+      sprayV[i * 3 + 1] = rand(1.8, 5.2) * (0.5 + power * 0.12);
+      sprayV[i * 3 + 2] = dz * j + rand(-0.4, 2.2);
+    } else {
+      sprayV[i * 3] = rand(-1, 1) * power;
+      sprayV[i * 3 + 1] = rand(1.2, 4.4) * (0.4 + power * 0.1);
+      sprayV[i * 3 + 2] = rand(0.4, 3.2) * power * 0.6;
+    }
     sprayL[i] = rand(0.45, 1.05);
   }
 }
@@ -936,25 +957,30 @@ slide.add(slideWall);
 /* ══════════════════════════════════════════════════════════════
    8 · CARVE TRAIL
    ══════════════════════════════════════════════════════════════ */
-const TRAIL_N = 72;
+/* A snowboard leaves one trench, not a flat stripe: a dark groove with snow
+   pushed up into a bright lip either side, widening as you lay the edge over.
+   Three vertices per sample (lip / groove / lip) give that section for free,
+   and airborne samples are pushed with zero intensity so the track breaks at
+   the takeoff and picks up again at the landing instead of being wiped. */
+const TRAIL_N = 132, TRAIL_V = TRAIL_N * 3;
 const trailGeo = new THREE.BufferGeometry();
-trailGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_N * 2 * 3), 3));
+const trailP = new Float32Array(TRAIL_V * 3);
+const trailC = new Float32Array(TRAIL_V * 4);
+const trailI = new Float32Array(TRAIL_N);          // per-sample intensity, 0 = gap
+const TRAIL_AGE = new Float32Array(TRAIL_N);       // index is age, so the fade is static
+for (let i = 0; i < TRAIL_N; i++) TRAIL_AGE[i] = Math.pow(1 - i / (TRAIL_N - 1), 1.25);
+const GROOVE = [0.055, 0.075, 0.125], LIP = [0.42, 0.50, 0.64];
 {
-  const col = new Float32Array(TRAIL_N * 2 * 4);
-  for (let i = 0; i < TRAIL_N; i++) {
-    const a = 0.34 * Math.pow(1 - i / (TRAIL_N - 1), 1.6);
-    for (let e = 0; e < 2; e++) {
-      const o = (i * 2 + e) * 4;
-      col[o] = 0.10; col[o + 1] = 0.14; col[o + 2] = 0.22; col[o + 3] = a;
-    }
-  }
-  trailGeo.setAttribute('color', new THREE.BufferAttribute(col, 4));
-  const idx = new Uint16Array((TRAIL_N - 1) * 6);
+  trailGeo.setAttribute('position', new THREE.BufferAttribute(trailP, 3));
+  trailGeo.setAttribute('color', new THREE.BufferAttribute(trailC, 4));
+  const idx = new Uint16Array((TRAIL_N - 1) * 12);
   let k = 0;
   for (let i = 0; i < TRAIL_N - 1; i++) {
-    const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
-    idx[k++] = a; idx[k++] = c; idx[k++] = b;
-    idx[k++] = b; idx[k++] = c; idx[k++] = d;
+    const a = i * 3, b = (i + 1) * 3;
+    idx[k++] = a;     idx[k++] = b;     idx[k++] = a + 1;   // left lip panel
+    idx[k++] = a + 1; idx[k++] = b;     idx[k++] = b + 1;
+    idx[k++] = a + 1; idx[k++] = b + 1; idx[k++] = a + 2;   // right lip panel
+    idx[k++] = a + 2; idx[k++] = b + 1; idx[k++] = b + 2;
   }
   trailGeo.setIndex(new THREE.BufferAttribute(idx, 1));
 }
@@ -963,24 +989,46 @@ const trail = new THREE.Mesh(trailGeo, new THREE.MeshBasicMaterial({
 }));
 trail.frustumCulled = false;
 scene.add(trail);
-const trailP = trailGeo.attributes.position.array;
 let trailClock = 0;
-function pushTrail(x, y, z, h, w) {
-  for (let i = TRAIL_N - 1; i > 0; i--) {
-    const d = i * 6, s = (i - 1) * 6;
-    for (let k = 0; k < 6; k++) trailP[d + k] = trailP[s + k];
+
+function trailShade() {
+  for (let i = 0; i < TRAIL_N; i++) {
+    const a = TRAIL_AGE[i] * trailI[i];
+    const o = i * 12;
+    for (let e = 0; e < 3; e++) {
+      const src = e === 1 ? GROOVE : LIP;
+      const v = o + e * 4;
+      trailC[v] = src[0]; trailC[v + 1] = src[1]; trailC[v + 2] = src[2];
+      trailC[v + 3] = a * (e === 1 ? 0.66 : 0.22);
+    }
   }
-  const nx = Math.cos(h) * w, nz = Math.sin(h) * w;
-  trailP[0] = x - nx; trailP[1] = y + 0.09; trailP[2] = z + nz;
-  trailP[3] = x + nx; trailP[4] = y + 0.09; trailP[5] = z - nz;
+  trailGeo.attributes.color.needsUpdate = true;
+}
+/** edge: 0 straight-lining, 1 fully on edge. on: 0 while airborne. */
+function pushTrail(x, y, z, h, edge, on) {
+  for (let i = TRAIL_N - 1; i > 0; i--) {
+    const d = i * 9, sr = (i - 1) * 9;
+    for (let k = 0; k < 9; k++) trailP[d + k] = trailP[sr + k];
+    trailI[i] = trailI[i - 1];
+  }
+  const w = 0.17 + edge * 0.31;
+  const px = Math.cos(h) * w, pz = Math.sin(h) * w;      // board's lateral axis
+  const yy = y + 0.085;
+  trailP[0] = x - px; trailP[1] = yy + edge * 0.035; trailP[2] = z - pz;
+  trailP[3] = x;      trailP[4] = yy - 0.03 - edge * 0.05; trailP[5] = z;
+  trailP[6] = x + px; trailP[7] = yy + edge * 0.035; trailP[8] = z + pz;
+  trailI[0] = on ? 0.55 + edge * 0.45 : 0;
   trailGeo.attributes.position.needsUpdate = true;
+  trailShade();
 }
 function resetTrail(x, y, z) {
   for (let i = 0; i < TRAIL_N; i++) {
-    trailP[i * 6] = x - 0.34; trailP[i * 6 + 1] = y + 0.09; trailP[i * 6 + 2] = z;
-    trailP[i * 6 + 3] = x + 0.34; trailP[i * 6 + 4] = y + 0.09; trailP[i * 6 + 5] = z;
+    const o = i * 9;
+    for (let e = 0; e < 3; e++) { trailP[o + e * 3] = x; trailP[o + e * 3 + 1] = y; trailP[o + e * 3 + 2] = z; }
+    trailI[i] = 0;
   }
   trailGeo.attributes.position.needsUpdate = true;
+  trailShade();
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -1167,12 +1215,16 @@ const GACC = 30;            // gravity resolved along the surface
 const GRAV_Y = 26;
 const MAX_YAW = 0.74;
 const SPIN_RATE = 8.5, FLIP_RATE = 6.0;
+/* Every fifth can detonates a boost: a hard surge, double points, and enough
+   speed that the next roller throws you properly. Crashing kills it. */
+const BOOST_EVERY = 5, BOOST_TIME = 3.4, BOOST_MAX = 7;
+const boostAmt = () => P.boostT <= 0 ? 0 : Math.min(1, P.boostT / 0.7);
 
 const P = {
   x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, heading: 0, camYaw: 0,
   air: false, airT: 0, bestAir: 0, launchY: 0,
   spin: 0, flip: 0, grabT: 0, grabName: '', trickBase: 0,
-  wipe: 0, hurt: 0, boost: 0,
+  wipe: 0, hurt: 0, boostT: 0, boosts: 0,
   health: 100, heat: 100,
   dist: 0, alt: START_ALT, lowAlt: START_ALT, y0: 0,
   score: 0, topSpeed: 0, cans: 0, canChain: 0, canChainT: 0,
@@ -1300,6 +1352,7 @@ const elHeat = $('heatFill'), elCond = $('condFill'), elHeatP = $('heatPct'), el
 const elAva = $('avaFill'), elAvaD = $('avaDist'), slideGauge = $('slideGauge');
 const heatGauge = $('heatGauge'), condGauge = $('condGauge');
 const vig = $('vig'), surge = $('surge'), flash = $('flash'), haze = $('haze'), rush = $('rush');
+const boostfx = $('boostfx'), pips = $('pips').children, scoreRow = document.querySelector('.score-row');
 const fmt = n => Math.round(n).toLocaleString('en-US');
 
 let warnTimer = 0;
@@ -1336,6 +1389,10 @@ function updateHUD(dt) {
   elSpd.innerHTML = fmt(speedOf() * 3.6) + '<small>KM/H</small>';
   elScore.textContent = fmt(P.score);
   elCans.textContent = P.cans;
+  const lit = P.boostT > 0 ? BOOST_EVERY : P.cans % BOOST_EVERY;
+  for (let i = 0; i < pips.length; i++) pips[i].classList.toggle('on', i < lit);
+  scoreRow.classList.toggle('boosting', P.boostT > 0);
+  elSpd.classList.toggle('boosting', P.boostT > 0);
   elHeat.style.width = P.heat + '%';
   elCond.style.width = P.health + '%';
   elHeatP.textContent = Math.round(P.heat) + '%';
@@ -1399,7 +1456,7 @@ function resetRun() {
   P.heading = 0; P.camYaw = 0;
   P.air = false; P.airT = 0; P.bestAir = 0;
   P.spin = 0; P.flip = 0; P.grabT = 0; P.grabName = ''; P.trickBase = 0;
-  P.wipe = 0; P.hurt = 0; P.boost = 0;
+  P.wipe = 0; P.hurt = 0; P.boostT = 0; P.boosts = 0;
   P.health = 100; P.heat = 100;
   P.dist = 0; P.alt = START_ALT; P.lowAlt = START_ALT;
   P.score = 0; P.topSpeed = 0; P.cans = 0; P.canChain = 0; P.canChainT = 0;
@@ -1412,6 +1469,18 @@ function resetRun() {
   resetTrail(P.x, P.y, P.z);
   trailClock = 0;
   announceSector();
+}
+
+function fireBoost() {
+  P.boostT = Math.min(BOOST_MAX, P.boostT + BOOST_TIME);
+  P.boosts++;
+  popup('Boost', '×2 SCORE', 'boost');
+  shake = Math.max(shake, 0.5);
+  emitSpray(P.x, P.y + 0.3, P.z, 22, 3.0);
+  Snd.whoosh(true);
+  Snd.tone(220, 0.45, 'sawtooth', 0.20);
+  setTimeout(() => Snd.tone(440, 0.38, 'sawtooth', 0.16), 90);
+  setTimeout(() => Snd.tone(660, 0.34, 'triangle', 0.15), 185);
 }
 
 function launch(vy) {
@@ -1437,7 +1506,6 @@ function land(impact) {
     return;
   }
   emitSpray(P.x, P.y, P.z, 18, 2.6);
-  resetTrail(P.x, P.y, P.z);
 
   /* landing quality: point the board where you are actually going */
   const clean = off < 0.72 && flipOff < 0.95;
@@ -1476,7 +1544,7 @@ function wipeout(reason, damage) {
   P.air = false;
   P.wipe = 1.35;
   P.health -= damage;
-  P.combo = 0; P.canChain = 0;
+  P.combo = 0; P.canChain = 0; P.boostT = 0;
   shake = 1;
   flash.style.opacity = '0.5';
   emitSpray(P.x, P.y + 0.5, P.z, 30, 3.2);
@@ -1488,6 +1556,8 @@ function wipeout(reason, damage) {
 
 function step(dt) {
   const d = diffAt();
+  P.boostT = Math.max(0, P.boostT - dt);
+  const bst = boostAmt();
   const bi = biomeOf(P.dist);
   const steer = P.wipe > 0 ? 0 : readSteer();
   const pitch = P.wipe > 0 ? 0 : readPitch();
@@ -1521,11 +1591,19 @@ function step(dt) {
   let vs = P.vx * sx + P.vz * sz;
   const ice = P.air ? 0 : iceAt(P.x, P.z, bi);
   const grip = P.air ? 0.12 : (P.wipe > 0 ? 1.1 : lerp(6.6, 2.2, ice));
+  const vs0 = vs;
   vs *= Math.exp(-grip * dt);
+  /* A carve redirects speed, it does not delete it. Most of what the edge
+     takes out of the sideways component comes back as drive down the new
+     line — so holding a turn still costs you, but three turns no longer
+     leave you standing still. */
+  if (!P.air && P.wipe <= 0)
+    vf += (Math.abs(vs0) - Math.abs(vs)) * 0.75 * (vf >= 0 ? 1 : -1);
   if (!P.air) {
     const tuck = clamp(pitch, 0, 1);
-    const drag = (P.wipe > 0 ? 0.055 : 0.0112 * (1 - tuck * 0.35)) * (1 - P.boost * 0.45);
+    const drag = (P.wipe > 0 ? 0.055 : 0.0112 * (1 - tuck * 0.35)) * (1 - bst * 0.44);
     vf -= (drag * vf * Math.abs(vf) + (P.wipe > 0 ? 9 : 0.45) * Math.sign(vf)) * dt;
+    if (bst > 0 && P.wipe <= 0) vf += 5.5 * bst * dt;
   }
   P.vx = fx * vf + sx * vs;
   P.vz = fz * vf + sz * vs;
@@ -1553,10 +1631,9 @@ function step(dt) {
   if (moved > 0) P.dist += moved;
   P.alt = START_ALT + (P.y - P.y0);
   P.lowAlt = Math.min(P.lowAlt, P.alt);
-  P.score += Math.max(0, moved) * (1 + P.combo * 0.1);
+  P.score += Math.max(0, moved) * (1 + P.combo * 0.1) * (bst > 0 ? 2 : 1);
   announceSector();
 
-  P.boost = Math.max(0, P.boost - dt * 0.55);
   P.wipe = Math.max(0, P.wipe - dt);
   P.hurt = Math.max(0, P.hurt - dt);
   P.comboT -= dt; if (P.comboT <= 0 && P.combo > 0) P.combo = 0;
@@ -1585,11 +1662,11 @@ function step(dt) {
       if (Math.abs(P.y + 0.9 - o.y) < 2.2 && sweptHit(x0, z0, P.x, P.z, o.x, o.z, o.r + RIDER_R)) {
         o.gone = true; killProp(o); props.splice(i, 1);
         P.cans++; P.canChain++; P.canChainT = 2.2;
-        P.boost = Math.min(1, P.boost + 0.34);
         const pts = 60 * Math.min(8, P.canChain);
         P.score += pts;
-        if (P.canChain % 4 === 0) popup('Chain ×' + P.canChain, '+' + pts, 'can');
         Snd.tone(560 + Math.min(10, P.canChain) * 55, 0.09, 'square', 0.13);
+        if (P.cans % BOOST_EVERY === 0) fireBoost();
+        else if (P.canChain % 4 === 0) popup('Chain ×' + P.canChain, '+' + pts, 'can');
       }
       continue;
     }
@@ -1663,10 +1740,21 @@ function step(dt) {
   while (genZ > P.z - GEN_AHEAD) generate();
   rebuildTerrain(P.x, P.z);
 
+  const bite = Math.abs(vs);
+  const edge = clamp(bite / 11, 0, 1);
   trailClock += dt;
-  if (!P.air && trailClock > 0.035) { trailClock = 0; pushTrail(P.x, P.y, P.z, P.heading, 0.34); }
-  const bite = Math.abs(vs) ;
-  if (!P.air && bite > 4 && Math.random() < dt * 45) emitSpray(P.x, P.y, P.z, 2, clamp(bite * 0.12, 0.6, 3));
+  if (trailClock > 0.032) {
+    trailClock = 0;
+    pushTrail(P.x, P.air ? height(P.x, P.z) : P.y, P.z, P.heading, edge,
+              (P.air || P.wipe > 0) ? 0 : 1);
+  }
+  /* the edge shoves snow out to the side it is sliding towards */
+  if (!P.air && P.wipe <= 0 && bite > 3.2 && Math.random() < dt * (16 + edge * 60)) {
+    const sgn = Math.sign(vs) || 1;
+    emitSpray(P.x + sx * sgn * 0.35, P.y, P.z + sz * sgn * 0.35,
+              2, 0.8 + edge * 2.8, sx * sgn, sz * sgn);
+  }
+  if (bst > 0 && !P.air && Math.random() < dt * 55) emitSpray(P.x, P.y, P.z, 2, 2.4);
   shake = Math.max(0, shake - dt * 2.2);
 
   if (P.health <= 0) die(P.heat <= 0 ? 'frozen' : 'wrecked');
@@ -1689,10 +1777,11 @@ function die(cause) {
    16 · PRESENTATION
    ══════════════════════════════════════════════════════════════ */
 const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
-let fov = 62, hazeShown = -1, rushShown = -1;
+let fov = 62, hazeShown = -1, rushShown = -1, boostShown = -1;
 
 function present(dt, t) {
   const spd = speedOf();
+  const bst = boostAmt();
   const ground = groundAt(P.x, P.z);
 
   /* rider */
@@ -1710,7 +1799,7 @@ function present(dt, t) {
     const bank = -P.heading * 0.72;
     riderTilt.rotation.set(0, 0, riderTilt.rotation.z + (bank - riderTilt.rotation.z) * Math.min(1, dt * 9));
   }
-  const tuck = P.air ? (P.grabT > 0.12 ? 0.3 : 0) : clamp(readPitch(), 0, 1) * 0.2;
+  const tuck = P.air ? (P.grabT > 0.12 ? 0.3 : 0) : clamp(readPitch(), 0, 1) * 0.2 + bst * 0.16;
   rider.scale.set(1, 1 - tuck - clamp(spd / 70, 0, 1) * 0.12, 1);
 
   shadow.position.set(P.x, ground + 0.07, P.z);
@@ -1740,7 +1829,7 @@ function present(dt, t) {
     const gh = height(camPos.x, camPos.z) + 2.4;
     if (camPos.y < gh) camPos.y = gh;
     camLook.set(P.x + Math.sin(P.camYaw) * 15, P.y + 1.6, P.z - Math.cos(P.camYaw) * 21);
-    fov += ((58 + clamp(spd / 44, 0, 1) * 20 + P.boost * 6) - fov) * Math.min(1, dt * 2.4);
+    fov += ((58 + clamp(spd / 44, 0, 1) * 20 + bst * 10) - fov) * Math.min(1, dt * 2.4);
   }
   camera.position.lerp(camPos, mode === 'play' ? Math.min(1, dt * 11) : Math.min(1, dt * 3.4));
   if (shake > 0.001 || slideGap < 90) {
@@ -1767,8 +1856,9 @@ function present(dt, t) {
   fill.intensity = lerp(0.55, 0.80, weather);
 
   /* speed tunnel */
-  const rushAmt = clamp((spd - 26) / 22, 0, 1) * 0.75 + P.boost * 0.2;
+  const rushAmt = clamp((spd - 26) / 22, 0, 1) * 0.75 + bst * 0.22;
   if (Math.abs(rushAmt - rushShown) > 0.02) { rushShown = rushAmt; rush.style.opacity = String(rushAmt); }
+  if (Math.abs(bst - boostShown) > 0.02) { boostShown = bst; boostfx.style.opacity = String(bst * 0.9); }
 
   /* snowfall */
   const fallSpeed = 1 + weather * 2.2;
@@ -1867,7 +1957,7 @@ function endRun() {
   $('sAlt').innerHTML = fmt(P.lowAlt) + '<small>M</small>';
   $('sSpd').innerHTML = fmt(P.topSpeed * 3.6) + '<small>KM/H</small>';
   $('sTrick').textContent = fmt(P.bestTrick);
-  $('sCans').textContent = fmt(P.cans);
+  $('sCans').innerHTML = fmt(P.cans) + '<small>· ' + P.boosts + ' BOOST' + (P.boosts === 1 ? '' : 'S') + '</small>';
   $('sAir').innerHTML = P.bestAir.toFixed(1) + '<small>S</small>';
   const record = sc > best;
   if (record) { best = sc; try { localStorage.setItem('sw_best', String(best)); } catch (e) {} }
