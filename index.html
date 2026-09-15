@@ -1649,12 +1649,23 @@ const Snd = (() => {
   let musGain, musFilt, musTrem, musPulse, musVoices = null;
   let enabled = true;
   try { enabled = localStorage.getItem('sw_sound') !== '0'; } catch (e) {}
+  /* Two seconds of noise is 88,200 samples of JS loop — 1.35 ms of blocked
+     main thread — and this used to run again for every impact and every
+     whoosh. A trail of cans fired one per can and the audio thread starved.
+     One buffer is generated, and every voice reads it from a random offset,
+     so they still all sound different. */
+  let noiseBuf = null;
   function noiseBuffer() {
+    if (noiseBuf) return noiseBuf;
     const n = ctx.sampleRate * 2, b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
     let last = 0;
     for (let i = 0; i < n; i++) { const w = Math.random() * 2 - 1; last = (last + 0.022 * w) / 1.022; d[i] = w * 0.32 + last * 2.6; }
-    return b;
+    return (noiseBuf = b);
   }
+  const noiseAt = () => Math.random() * 1.4;
+  /* two transients inside forty milliseconds are one transient to the ear,
+     and only the second one's worth of nodes to the graph */
+  let lastHit = -9, lastWhoosh = -9;
   function chain(src, type, freq, q, out) {
     const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; if (q) f.Q.value = q;
     const g = ctx.createGain(); g.gain.value = 0;
@@ -1699,7 +1710,14 @@ const Snd = (() => {
     musVoices.pulse = pg;
     ready = true;
   }
-  const set = (g, v) => { if (ready) g.gain.setTargetAtTime(v, ctx.currentTime, 0.09); };
+  /* every one of these crosses to the audio thread, so a value that has not
+     moved is not worth sending */
+  const set = (g, v) => {
+    if (!ready || (g._v !== undefined && Math.abs(g._v - v) < 0.004)) return;
+    g._v = v;
+    g.gain.setTargetAtTime(v, ctx.currentTime, 0.09);
+  };
+  let musLast = [-1, -1, -1];
   return {
     boot() { boot(); if (ctx && ctx.state === 'suspended') ctx.resume(); },
     get on() { return enabled; },
@@ -1714,6 +1732,9 @@ const Snd = (() => {
     /** root: Hz. drive: 0..1, how hard the run is going. vol: 0..1. */
     music(root, drive, vol) {
       if (!ready) return;
+      if (Math.abs(musLast[0] - root) < 0.01 && Math.abs(musLast[1] - drive) < 0.012
+          && Math.abs(musLast[2] - vol) < 0.012) return;
+      musLast = [root, drive, vol];
       const t = ctx.currentTime;
       set(musGain, vol * 0.30);
       for (const v of musVoices) {
@@ -1729,11 +1750,13 @@ const Snd = (() => {
     hit(power) {
       if (!ready || !enabled) return;
       const t = ctx.currentTime;
+      if (t - lastHit < 0.045) return;
+      lastHit = t;
       const s = ctx.createBufferSource(); s.buffer = noiseBuffer();
       const f = ctx.createBiquadFilter(); f.type = 'lowpass';
       f.frequency.setValueAtTime(1400, t); f.frequency.exponentialRampToValueAtTime(120, t + 0.3);
       const g = ctx.createGain(); g.gain.setValueAtTime(0.9 * power, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.42);
-      s.connect(f); f.connect(g); g.connect(master); s.start(t); s.stop(t + 0.45);
+      s.connect(f); f.connect(g); g.connect(master); s.start(t, noiseAt()); s.stop(t + 0.45);
       const o = ctx.createOscillator(); o.type = 'sine';
       o.frequency.setValueAtTime(130, t); o.frequency.exponentialRampToValueAtTime(38, t + 0.3);
       const og = ctx.createGain(); og.gain.setValueAtTime(0.8 * power, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
@@ -1752,13 +1775,15 @@ const Snd = (() => {
     whoosh(up) {
       if (!ready || !enabled) return;
       const t = ctx.currentTime;
+      if (t - lastWhoosh < 0.055) return;
+      lastWhoosh = t;
       const s = ctx.createBufferSource(); s.buffer = noiseBuffer();
       const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 2.2;
       f.frequency.setValueAtTime(up ? 500 : 2800, t);
       f.frequency.exponentialRampToValueAtTime(up ? 3200 : 420, t + 0.4);
       const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t);
       g.gain.exponentialRampToValueAtTime(0.5, t + 0.08); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
-      s.connect(f); f.connect(g); g.connect(master); s.start(t); s.stop(t + 0.52);
+      s.connect(f); f.connect(g); g.connect(master); s.start(t, noiseAt()); s.stop(t + 0.52);
     }
   };
 })();
@@ -3117,7 +3142,7 @@ function die(cause) {
    16 · PRESENTATION
    ══════════════════════════════════════════════════════════════ */
 const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
-let fov = 62, hazeShown = -1, rushShown = -1, boostShown = -1;
+let fov = 62, hazeShown = -1, rushShown = -1, boostShown = -1, audioT = 0;
 
 function present(dt, t) {
   const spd = speedOf();
@@ -3316,6 +3341,13 @@ function present(dt, t) {
     if (p.dirty) { p.mesh.instanceMatrix.needsUpdate = true; p.dirty = false; }
   }
 
+  /* The mix does not need a new value sixty times a second — every one of
+     those crosses to the audio thread, and the bed and the drone together were
+     sending five hundred a second. Twelve times a second is under the ear's
+     resolution and a fortieth of the traffic. */
+  audioT -= dt;
+  if (audioT > 0) return;
+  audioT = 0.083;
   const sp = clamp(spd / 46, 0, 1);
   if (mode === 'play') {
     Snd.bed(0.035 + sp * 0.24 + weather * 0.09,

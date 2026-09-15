@@ -222,7 +222,12 @@ everything else is generated at runtime.
 - **Audio** is synthesised in the Web Audio API — one looping noise buffer
   through three filter chains for wind, carve and avalanche rumble, plus impact
   and pickup transients, plus a five-voice drone through one lowpass and a
-  square-wave tremolo that the chain drives.
+  square-wave tremolo that the chain drives. Two seconds of noise is 88,200
+  samples of JavaScript loop, so it is generated **once** and every transient
+  reads it from a random offset — they still all sound different, and nothing
+  synthesises a buffer mid-run. The mix is sent twelve times a second rather
+  than sixty, and only values that actually moved are sent at all, which took
+  the automation traffic from 529 messages a second to 18.
 - **The light** is one 8 × 256 gradient strip repainted only when the palette has
   moved enough to see — about once a second over a four-minute descent, which
   costs 0.02 ms, and far less than cross-fading two sky spheres. Fog, both
