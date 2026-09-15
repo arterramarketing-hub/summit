@@ -75,6 +75,16 @@ canvas#c{display:block;width:100%;height:100%;touch-action:none}
 #avaFill{background:linear-gradient(90deg,#7a2b12,var(--ember) 70%,#ffd07a);width:20%}
 .slide-gauge.critical #avaFill{background:linear-gradient(90deg,#7a1220,var(--vital) 60%,#ffdfe2);animation:throb .5s steps(2) infinite}
 @keyframes throb{50%{opacity:.45}}
+.descent{display:flex;flex-direction:column;gap:5px}
+.descent .k{color:var(--frost)}
+#descentPct{font:600 10px/1 var(--mono);letter-spacing:.1em;color:var(--frost);font-variant-numeric:tabular-nums}
+#descentFill{background:linear-gradient(90deg,#1d4f74,var(--frost) 78%,#d8f1ff);width:0%;
+  transition:width .25s linear}
+.descent .ticks{position:absolute;inset:0;pointer-events:none}
+.descent .ticks i{position:absolute;top:0;bottom:0;width:1px;background:rgba(7,13,24,.85)}
+.descent .ticks i.done{background:rgba(255,255,255,.75)}
+.descent.home #descentFill{background:linear-gradient(90deg,#4d7a1d,var(--volt) 78%,#eaffc4)}
+.descent.home .k,.descent.home #descentPct{color:var(--volt)}
 .readouts{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .readouts .right{text-align:right}
 .readouts .k{margin-bottom:4px}
@@ -256,6 +266,16 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
 .fine{margin:14px 0 0;font:500 11px/1.6 var(--mono);color:#7186a4;letter-spacing:.02em}
 .fine b{color:var(--ink-dim);font-weight:600}
 
+.tiltmeter{flex:0 0 100%;position:relative;height:34px;margin-top:8px;
+  border:1px solid var(--hair);background:rgba(10,18,32,.55);overflow:hidden}
+.tiltmeter i.mid{position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--hair)}
+.tiltmeter b{position:absolute;top:50%;left:50%;width:16px;height:16px;margin:-8px 0 0 -8px;
+  background:var(--ember);border-radius:50%;transition:transform .07s linear;
+  box-shadow:0 0 16px -2px rgba(255,106,43,.9)}
+.tiltmeter u{position:absolute;top:50%;transform:translateY(-50%);text-decoration:none;
+  font:600 8.5px/1 var(--mono);letter-spacing:.16em;color:#55637c;text-transform:uppercase}
+.tiltmeter u.l{left:9px} .tiltmeter u.r{right:9px}
+.tiltmeter.dead b{background:#55637c;box-shadow:none}
 .tiltviz{display:flex;align-items:center;gap:14px;margin:20px 0 0}
 .phone{width:34px;height:56px;border:2px solid var(--ink-dim);border-radius:6px;flex:none;position:relative;
   animation:tilt 3.4s ease-in-out infinite}
@@ -266,6 +286,10 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
 @media (prefers-reduced-motion:reduce){.phone{animation:none}.pop{animation-duration:.01s}
   #warn.on,.slide-gauge.critical #avaFill{animation:none}#sector.on{animation-duration:2s}}
 
+#introHint{position:absolute;left:0;right:0;bottom:calc(var(--pad-b) + 26px);text-align:center;
+  font:600 10px/1 var(--mono);letter-spacing:.26em;text-transform:uppercase;color:var(--ink-dim);
+  pointer-events:none;text-shadow:0 2px 10px rgba(0,0,0,.8);animation:throb 1.9s ease-in-out infinite}
+#introHint[hidden]{display:none}
 #boot{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:32px;
   text-align:center;font:500 13px/1.7 var(--mono);color:var(--ink-dim);background:var(--abyss)}
 #boot.gone{display:none}
@@ -310,6 +334,12 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
         <button class="tool" id="btnCal" type="button">Re-centre</button>
         <button class="tool" id="btnSnd" type="button">Sound</button>
       </div>
+      <div class="descent" id="descentBox">
+        <div class="slide-head"><span class="k" id="descentK">To the valley</span><span id="descentPct">0%</span></div>
+        <div class="bar"><div class="fill" id="descentFill"></div>
+          <div class="ticks" id="descentTicks"></div>
+          <div class="segs"></div></div>
+      </div>
       <div class="readouts">
         <div>
           <div class="k">Altitude</div>
@@ -352,6 +382,8 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
 
 
 
+  <div id="introHint" hidden>Tap to skip</div>
+
   <div id="sector"><u></u><b></b><span></span></div>
 
   <!-- ---------------- start ---------------- -->
@@ -380,6 +412,18 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
         <button type="button" data-route="descent">Descent</button>
         <button type="button" data-route="endless">Endless</button>
         <span class="note" id="routeNote"></span>
+      </div>
+
+      <div class="seg tilt-only" id="tiltSeg">
+        <span class="k">Tilt direction</span>
+        <button type="button" data-tilt="0">Normal</button>
+        <button type="button" data-tilt="1">Reversed</button>
+        <span class="note">Tilt the handset now — the marker below should run
+          the way you lean. If it fights you, pick <b>Reversed</b>.</span>
+        <div class="tiltmeter" id="tiltMeter" aria-hidden="true">
+          <i class="mid"></i><b id="tiltDot"></b>
+          <u class="lbl l">Left</u><u class="lbl r">Right</u>
+        </div>
       </div>
 
       <div class="tiltviz">
@@ -676,8 +720,12 @@ const GD = 2.2, GMAX = 1.45;
 const gradX = (x, z) => clamp((groundAt(x + GD, z) - groundAt(x - GD, z)) / (2 * GD), -GMAX, GMAX);
 const gradZ = (x, z) => clamp((groundAt(x, z + GD) - groundAt(x, z - GD)) / (2 * GD), -GMAX, GMAX);
 
-/* ---- sectors: each face of the descent has its own character ---- */
-const SECTOR_LEN = 1350;
+/* ---- sectors: each face of the descent has its own character ----
+   Measured: a good run covers around 1.8 km. At 1,350 m a sector, that meant
+   almost every run ended on the glacier and the other three faces — their
+   hazards, their colour, their light, their key — were content nobody saw.
+   At 650 m a median run sees two and a strong one sees all four. */
+const SECTOR_LEN = 650;
 /* one root note per sector, so the descent changes key as well as colour */
 const ROOTS = [55.00, 48.99, 58.27, 43.65];
 const BIOMES = [
@@ -932,6 +980,44 @@ const RAMP_GEO = bake([
   { geo: new THREE.BoxGeometry(0.30, 1.5, 0.30), color: 0xff6a2b, m: mat4(-RAMP_W / 2 - 0.12, RAMP_H + 0.75, 0.2) },
   { geo: new THREE.BoxGeometry(0.30, 1.5, 0.30), color: 0xff6a2b, m: mat4(RAMP_W / 2 + 0.12, RAMP_H + 0.75, 0.2) }
 ]);
+/* ---- the ship ----
+   Only ever one of these, only during the drop-in, so it is a plain group
+   rather than a pool: a baked airframe plus two rotors that have to turn
+   independently of it. */
+const HELI_BODY = bake([
+  { geo: new THREE.BoxGeometry(2.4, 2.0, 5.0), color: 0x1b2942, m: mat4(0, 0, 0) },
+  { geo: new THREE.BoxGeometry(2.2, 1.5, 1.9), color: 0x7fc4f0, m: mat4(0, 0.1, -2.9, 0.16, 0, 0) },
+  { geo: new THREE.BoxGeometry(2.46, 0.5, 4.6), color: 0xff6a2b, m: mat4(0, -0.15, 0.1) },
+  { geo: new THREE.BoxGeometry(0.62, 0.62, 4.6), color: 0x1b2942, m: mat4(0, 0.5, 4.0) },
+  { geo: new THREE.BoxGeometry(0.22, 1.9, 1.1), color: 0xff6a2b, m: mat4(0, 1.2, 5.9) },
+  { geo: new THREE.BoxGeometry(0.2, 0.9, 1.5), color: 0x1b2942, m: mat4(0, -0.3, 6.0) },
+  { geo: new THREE.CylinderGeometry(0.42, 0.42, 0.7, 8), color: 0x2c3c58, m: mat4(0, 1.32, -0.2) },
+  { geo: new THREE.BoxGeometry(0.18, 0.18, 4.6), color: 0x9fb0c8, m: mat4(-1.05, -1.55, -0.2) },
+  { geo: new THREE.BoxGeometry(0.18, 0.18, 4.6), color: 0x9fb0c8, m: mat4(1.05, -1.55, -0.2) },
+  { geo: new THREE.BoxGeometry(0.16, 1.0, 0.16), color: 0x9fb0c8, m: mat4(-0.9, -1.1, -1.5, 0, 0, -0.2) },
+  { geo: new THREE.BoxGeometry(0.16, 1.0, 0.16), color: 0x9fb0c8, m: mat4(0.9, -1.1, -1.5, 0, 0, 0.2) },
+  { geo: new THREE.BoxGeometry(0.16, 1.0, 0.16), color: 0x9fb0c8, m: mat4(-0.9, -1.1, 1.4, 0, 0, -0.2) },
+  { geo: new THREE.BoxGeometry(0.16, 1.0, 0.16), color: 0x9fb0c8, m: mat4(0.9, -1.1, 1.4, 0, 0, 0.2) }
+]);
+const HELI_ROTOR = bake([
+  { geo: new THREE.BoxGeometry(11.6, 0.09, 0.44), color: 0x28374f, m: mat4(0, 0, 0) },
+  { geo: new THREE.BoxGeometry(0.44, 0.09, 11.6), color: 0x28374f, m: mat4(0, 0, 0) },
+  { geo: new THREE.CylinderGeometry(0.3, 0.3, 0.34, 8), color: 0x9fb0c8, m: mat4(0, 0.1, 0) }
+]);
+const HELI_TAIL = bake([
+  { geo: new THREE.BoxGeometry(0.16, 2.6, 0.22), color: 0x28374f, m: mat4(0, 0, 0) },
+  { geo: new THREE.BoxGeometry(0.16, 0.22, 2.6), color: 0x28374f, m: mat4(0, 0, 0) }
+]);
+const heli = new THREE.Group();
+const heliRotor = new THREE.Mesh(HELI_ROTOR, litMat());
+heliRotor.position.set(0, 1.75, -0.2);
+const heliTail = new THREE.Mesh(HELI_TAIL, litMat());
+heliTail.position.set(0.28, 1.2, 5.9);
+heli.add(new THREE.Mesh(HELI_BODY, litMat()), heliRotor, heliTail);
+heli.scale.setScalar(1.35);            // it has to read at a hundred metres
+heli.visible = false;
+scene.add(heli);
+
 /* ---- landmarks ----
    The skyline is a backdrop. These are objects: they sit at real coordinates,
    they come out of the haze, they slide past, and they are how you know you
@@ -1206,6 +1292,7 @@ function addProp(kind, x, z, opts) {
     lift: 0, gone: false, used: false, passed: false, scenery: false
   }, opts || {});
   if (o.lift) o.y += o.lift;
+  o.y0 = o.y;
   pool.live++; pool.mesh.visible = true;
   placeProp(o);
   props.push(o);
@@ -1214,7 +1301,10 @@ function addProp(kind, x, z, opts) {
 }
 function placeProp(o) {
   const pool = pools[o.kind];
-  _e.set(o.tiltX || 0, o.spin, 0);
+  /* default XYZ order tilts the spin axis with the object; YXZ keeps the spin
+     about world up and the tilt in the object's own frame, which is what makes
+     a tipped can gyrate instead of just turning on the spot */
+  _e.set(o.tiltX || 0, o.spin, 0, o.order || 'XYZ');
   _q.setFromEuler(_e);
   _v.set(o.x, o.y, o.z);
   _s.set(o.sx || o.scale, o.sy || o.scale, o.sz || o.scale);
@@ -1386,6 +1476,7 @@ function resetTrail(x, y, z) {
    ══════════════════════════════════════════════════════════════ */
 const Snd = (() => {
   let ctx = null, master, wind, carve, rumble, ready = false;
+  let rotor;
   let musGain, musFilt, musTrem, musPulse, musVoices = null;
   let enabled = true;
   try { enabled = localStorage.getItem('sw_sound') !== '0'; } catch (e) {}
@@ -1411,6 +1502,11 @@ const Snd = (() => {
     wind = chain(src, 'bandpass', 640, 0.7, master);
     carve = chain(src, 'bandpass', 2500, 1.5, master);
     rumble = chain(src, 'lowpass', 105, 0.9, master);
+    /* the ship: filtered noise chopped by a blade-rate square wave */
+    rotor = chain(src, 'lowpass', 340, 1.2, master);
+    const rlfo = ctx.createOscillator(); rlfo.type = 'square'; rlfo.frequency.value = 12.5;
+    const rg = ctx.createGain(); rg.gain.value = 0.55;
+    rlfo.connect(rg); rg.connect(rotor.gain); rlfo.start();
     /* ---- the drone ----
        A root, its fifth and two octaves, through one lowpass and a square-wave
        tremolo. Nothing plays a tune: the chain opens the filter, brings in the
@@ -1445,6 +1541,7 @@ const Snd = (() => {
       return enabled;
     },
     bed(w, c, r) { set(wind, w); set(carve, c); set(rumble, r); },
+    rotor(v) { if (ready) rotor.gain.setTargetAtTime(v, ctx.currentTime, 0.16); },
     /** root: Hz. drive: 0..1, how hard the run is going. vol: 0..1. */
     music(root, drive, vol) {
       if (!ready) return;
@@ -1504,12 +1601,16 @@ const Snd = (() => {
    held — so there is never any doubt about whether it registered.
    Touch-only mode swaps the tilt for a steer pad and changes nothing else.
    ══════════════════════════════════════════════════════════════ */
-const TILT_RANGE = 26;
+const TILT_RANGE = 19;          // degrees of real wrist roll for full lock
 let ctrlMode = 'tilt';
 try { const m = localStorage.getItem('sw_ctrl'); if (m === 'touch' || m === 'tilt') ctrlMode = m; } catch (e) {}
 
 const ctrl = { steer: 0, tuck: false, flip: false };
-const gyro = { ok: false, raw: 0, zero: 0, seeded: false };
+const gyro = { ok: false, live: false, raw: 0, zero: 0, seeded: false };
+/* Which way round the handset reads. I cannot hold a phone, so this is a
+   setting rather than an assumption, and the start screen shows it moving. */
+let tiltInvert = false;
+try { tiltInvert = localStorage.getItem('sw_tiltinv') === '1'; } catch (e) {}
 let padSteer = 0, keySteer = 0, keyTuck = false, keyFlip = false;
 let zoneL = false, zoneR = false;
 let heldTuck = false, heldFlip = false;
@@ -1518,16 +1619,39 @@ function screenAngle() {
   if (screen.orientation && typeof screen.orientation.angle === 'number') return screen.orientation.angle;
   return typeof window.orientation === 'number' ? window.orientation : 0;
 }
+/* ---- reading the tilt ----
+   Raw `gamma` is the wrong number to steer with. The orientation angles are
+   intrinsic Z-X'-Y'', so gamma measures rotation about an axis that has
+   already been pitched by beta: at the 60-70 degrees people actually hold a
+   phone, cos(beta) is 0.5 to 0.34, so gamma reads two to three times the
+   physical roll, saturates at |gamma| = 90 after only 20 degrees of real tilt,
+   and past that the representation hands the rotation to beta and FLIPS
+   gamma's sign — which is felt as the steering suddenly working backwards.
+
+   So reconstruct gravity in the handset's own frame and take the true roll:
+   the angle of gravity out of the plane containing the screen's up axis and
+   its normal. That is zero whenever the handset is level left-to-right at ANY
+   pitch, it is continuous through the pole, and it is the angle the hand is
+   actually making. Positive means the right-hand edge has dropped. */
+const D2R = Math.PI / 180;
+function deviceRoll(beta, gamma) {
+  const b = beta * D2R, g = gamma * D2R;
+  const cb = Math.cos(b);
+  const gx = cb * Math.sin(g);                 // gravity along the handset's +X (right)
+  const gy = -Math.sin(b);                     // along +Y (up the screen)
+  const gz = -cb * Math.cos(g);                // along +Z (out of the screen)
+  return Math.atan2(gx, Math.hypot(gy, gz)) / D2R;
+}
 function onOrientation(e) {
   if (e.gamma === null || e.gamma === undefined || e.beta === null) return;
   const a = ((screenAngle() % 360) + 360) % 360;
-  let v;
-  if (a === 90) v = -e.beta;
-  else if (a === 270) v = e.beta;
-  else if (a === 180) v = -e.gamma;
-  else v = e.gamma;
-  gyro.raw = v;
-  if (!gyro.seeded) { gyro.seeded = true; gyro.zero = v; }
+  /* held sideways, the screen's "right" is the handset's top or bottom */
+  const roll = a === 90 || a === 270
+    ? deviceRoll(e.gamma * (a === 90 ? 1 : -1), e.beta * (a === 90 ? -1 : 1))
+    : deviceRoll(e.beta, a === 180 ? -e.gamma : e.gamma);
+  gyro.raw = roll;
+  gyro.live = true;
+  if (!gyro.seeded) { gyro.seeded = true; gyro.zero = roll; }
   gyro.ok = true;
 }
 function recentre() { gyro.zero = gyro.raw; flashWarn('Re-centred', 700); }
@@ -1556,7 +1680,8 @@ function readCtrl(dt) {
   padSteer += (want - padSteer) * Math.min(1, (dt || 0.016) * rate);
   if (Math.abs(padSteer) < 0.004) padSteer = 0;
   const tilting = ctrlMode === 'tilt' && gyro.ok;
-  ctrl.steer = keySteer || (tilting ? axis(gyro.raw, gyro.zero, TILT_RANGE, 1.6) : padSteer);
+  ctrl.steer = keySteer ||
+    (tilting ? axis(gyro.raw, gyro.zero, TILT_RANGE, 1.4) * (tiltInvert ? -1 : 1) : padSteer);
   ctrl.tuck = keyTuck || heldTuck;
   ctrl.flip = keyFlip || heldFlip;
 }
@@ -1615,7 +1740,35 @@ function setCtrlMode(m) {
   if (cal) cal.hidden = (m !== 'tilt');
 }
 for (const b of document.querySelectorAll('[data-mode]')) {
-  b.addEventListener('click', () => setCtrlMode(b.dataset.mode));
+  b.addEventListener('click', async () => {
+    setCtrlMode(b.dataset.mode);
+    if (b.dataset.mode === 'tilt' && !gyro.ok) {
+      const ok = await enableGyro();
+      if (!ok) { setCtrlMode('touch');
+        $('startFine').innerHTML = 'No motion access — staying on <b>touch only</b>. Hold either side of the screen to carve.'; }
+    }
+  });
+}
+function setTiltInvert(v) {
+  tiltInvert = !!v;
+  try { localStorage.setItem('sw_tiltinv', tiltInvert ? '1' : '0'); } catch (err) {}
+  for (const b of document.querySelectorAll('[data-tilt]'))
+    b.classList.toggle('sel', (b.dataset.tilt === '1') === tiltInvert);
+}
+for (const b of document.querySelectorAll('[data-tilt]')) {
+  b.addEventListener('click', () => setTiltInvert(b.dataset.tilt === '1'));
+}
+/* the marker on the start screen, so the direction is something you can see
+   rather than something you discover halfway down the mountain */
+const tiltDot = $('tiltDot'), tiltMeter = $('tiltMeter');
+function pollTilt() {
+  if (tiltMeter && !startScreen.hidden) {
+    const on = gyro.ok && gyro.live;
+    tiltMeter.classList.toggle('dead', !on);
+    const v = on ? axis(gyro.raw, gyro.zero, TILT_RANGE, 1.4) * (tiltInvert ? -1 : 1) : 0;
+    tiltDot.style.transform = 'translateX(' + (v * 46).toFixed(1) + 'vw)';
+  }
+  requestAnimationFrame(pollTilt);
 }
 function setRider(k) {
   if (!RIDERS[k]) return;
@@ -1632,7 +1785,7 @@ function setRoute(k) {
   for (const b of document.querySelectorAll('[data-route]')) b.classList.toggle('sel', b.dataset.route === k);
   const n = $('routeNote');
   if (n) n.textContent = k === 'descent'
-    ? 'Ride from 4,208 m to the valley floor at 1,000 m. About four minutes if you hold it together.'
+    ? 'Ride from 4,208 m to the valley floor at 1,000 m — about 3.2 km of snow, and all four faces of the mountain.'
     : 'No finish line. Ride until the mountain takes you.';
 }
 for (const b of document.querySelectorAll('[data-rider]')) b.addEventListener('click', () => setRider(b.dataset.rider));
@@ -1655,6 +1808,10 @@ window.addEventListener('keyup', e => {
   else if (['ArrowUp', 'w', 'W', 'f', 'F'].includes(e.key)) keyFlip = false;
 });
 document.addEventListener('gesturestart', e => e.preventDefault());
+/* the drop-in is a cutscene, so it can always be walked out of */
+const skipIntro = () => { if (mode === 'intro') endIntro(); };
+window.addEventListener('pointerdown', skipIntro, true);
+window.addEventListener('keydown', skipIntro, true);
 
 /* ══════════════════════════════════════════════════════════════
    11 · STATE
@@ -1663,9 +1820,11 @@ const RIDER_R = 0.5, RIDER_H = 1.8;
 const GACC = 30;            // gravity resolved along the surface
 const GRAV_Y = 26;
 const FLIP_RATE = 6.0;
-/* Every fifth can detonates a boost: a hard surge, double points, and enough
-   speed that the next roller throws you properly. Crashing kills it. */
-const BOOST_EVERY = 5, BOOST_TIME = 3.4, BOOST_MAX = 7;
+/* Every can detonates a boost: a hard surge, double points, and enough speed
+   that the next roller throws you properly. Taking them back to back down a
+   trail stacks the timer rather than restarting it, so a whole line of cans is
+   one long surge. Crashing kills it. */
+const BOOST_TIME = 2.6, BOOST_MAX = 7;
 const boostAmt = () => P.boostT <= 0 ? 0 : Math.min(1, P.boostT / 0.7);
 
 const P = {
@@ -1684,7 +1843,18 @@ let genZ = 0, nextRampZ = 0, nextCanZ = 0, nextMarkZ = 0;
 let slideZ = 0, slideGap = 190;
 let weather = 0, weatherT = 24, weatherLen = 0;
 let shake = 0, menuT = 0, deathT = 0, deathCause = null, curSector = -1, crevWarn = 0;
+/* ---- the length of the descent ----
+   The valley is 3,208 m of altitude below the summit. The terrain's real fall
+   line only sheds 0.40 m of height per metre ridden, which put the valley
+   8,025 m away — five times further than anybody got, so the finish, the best
+   time and the race to the bottom were all unreachable. The mountain is not
+   rescaled; the altimeter is. One full cycle of the four faces — glacier,
+   couloir, treeline, forest — now puts you on the valley floor, you finish in
+   the trees where a valley ought to be, and the number on the HUD moves at a
+   rate you can feel. */
 const FINISH_ALT = 1000;
+const DESCENT_M = 2600;          // metres ridden: exactly one cycle of the four faces
+const ALT_SCALE = (START_ALT - FINISH_ALT) / (DESCENT_M * FALL);
 let route = 'descent';
 let best = 0, bestTime = 0, bestDist = 0;
 /* career: everything you have ever ridden down, kept across runs */
@@ -1712,7 +1882,7 @@ const fmtTime = (t) => Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).pad
                        '.' + Math.floor((t * 10) % 10);
 
 const GEN_AHEAD = 370, CULL_BEHIND = 55;
-const diffAt = () => clamp(P.dist / 4200, 0, 1);
+const diffAt = () => clamp(P.dist / (DESCENT_M * 0.98), 0, 1);
 const speedOf = () => Math.hypot(P.vx, P.vz);
 
 /* ══════════════════════════════════════════════════════════════
@@ -1733,7 +1903,8 @@ function canArc(x, z, dir, n, reach, peak) {
     const zz = z - t * reach;
     const xx = x + dir * t * reach * 0.10;
     addProp('can', xx, zz, {
-      r: 1.55, h: 1.2, scale: 1, lift: 1.5 + Math.sin(t * Math.PI) * peak, spin: rand(0, 6.28)
+      r: 1.55, h: 1.2, scale: 1, lift: 1.5 + Math.sin(t * Math.PI) * peak,
+      spin: rand(0, 6.28), tiltX: 1.05, order: 'YXZ', bob: rand(0, 6.28)
     });
   }
 }
@@ -1743,7 +1914,8 @@ function canTrail(x, z, n) {
   for (let i = 0; i < n; i++) {
     const zz = z - i * 7.5;
     cx += curve * 7.5;
-    addProp('can', cx, zz, { r: 1.55, h: 1.2, lift: 1.35, spin: rand(0, 6.28) });
+    addProp('can', cx, zz, { r: 1.55, h: 1.2, lift: 1.35,
+      spin: rand(0, 6.28), tiltX: 1.05, order: 'YXZ', bob: rand(0, 6.28) });
   }
 }
 
@@ -1868,6 +2040,16 @@ const hud = $('hud'), popups = $('popups'), warnEl = $('warn'), trickEl = $('tri
 const elAlt = $('alt'), elDist = $('dist'), elSpd = $('spd'), elScore = $('score'), elCans = $('cans');
 const elSectorTag = $('sectorTag'), sectorEl = $('sector');
 const elCond = $('condFill'), elCondP = $('condPct');
+const descentBox = $('descentBox'), descentFill = $('descentFill'),
+      descentPct = $('descentPct'), descentK = $('descentK'), descentTicks = $('descentTicks');
+/* one tick per face, so the bar reads as four places rather than one number */
+function buildDescentTicks() {
+  const n = route === 'descent' ? Math.max(1, Math.round(DESCENT_M / SECTOR_LEN)) : 4;
+  let html = '';
+  for (let i = 1; i < n; i++) html += '<i style="left:' + ((i / n) * 100).toFixed(2) + '%"></i>';
+  descentTicks.innerHTML = html;
+  descentK.textContent = route === 'descent' ? 'To the valley' : 'Faces ridden';
+}
 const elAva = $('avaFill'), elAvaD = $('avaDist'), slideGauge = $('slideGauge');
 const condGauge = $('condGauge'), chainBox = $('chainBox'), chainV = $('chainV'), chainWhy = $('chainWhy');
 let chainFx = null;
@@ -1990,8 +2172,8 @@ function updateHUD(dt) {
   elSpd.innerHTML = fmt(speedOf() * 3.6) + '<small>KM/H</small>';
   elScore.textContent = fmt(P.score);
   elCans.textContent = P.cans;
-  const lit = P.boostT > 0 ? BOOST_EVERY : P.cans % BOOST_EVERY;
-  for (let i = 0; i < pips.length; i++) pips[i].classList.toggle('on', i < lit);
+  const burn = Math.ceil(clamp(P.boostT / BOOST_MAX, 0, 1) * pips.length - 0.0001);
+  for (let i = 0; i < pips.length; i++) pips[i].classList.toggle('on', i < burn);
   scoreRow.classList.toggle('boosting', P.boostT > 0);
   btnTuck.classList.toggle('airborne', P.air);
   const chg = P.air ? 0 : tuckCharge();
@@ -2016,6 +2198,18 @@ function updateHUD(dt) {
   elCond.style.width = P.health + '%';
   elCondP.textContent = Math.round(P.health) + '%';
   condGauge.classList.toggle('low', P.health < 34);
+  /* how far down the mountain you actually are */
+  const prog = route === 'descent'
+    ? clamp((START_ALT - P.alt) / (START_ALT - FINISH_ALT), 0, 1)
+    : clamp((P.dist % (SECTOR_LEN * 4)) / (SECTOR_LEN * 4), 0, 1);
+  descentFill.style.width = (prog * 100).toFixed(1) + '%';
+  descentPct.textContent = route === 'descent'
+    ? Math.round(prog * 100) + '%'
+    : 'FACE ' + ((sectorOf(P.dist) % 4) + 1) + ' · ' + fmt(P.dist) + ' M';
+  descentBox.classList.toggle('home', route === 'descent' && prog > 0.82);
+  const faces = Math.floor(prog * descentTicks.children.length + 0.0001);
+  for (let i = 0; i < descentTicks.children.length; i++)
+    descentTicks.children[i].classList.toggle('done', i < faces);
   const close = clamp(1 - slideGap / 190, 0, 1);
   elAva.style.width = (8 + close * 92) + '%';
   elAvaD.textContent = Math.round(slideGap) + ' M BACK';
@@ -2088,14 +2282,13 @@ function resetRun() {
   ghostRec = []; ghostClock = 0; ghostData = loadGhost();
   ghostCur = 0; ghostShown = -999; ghostDEl.hidden = true;
   ghostMesh.visible = false;
-  coachStart();
   seedWorld();
   rebuildTerrain(P.x, P.z, true);
   resetTrail(P.x, P.y, P.z);
   trailClock = 0;
   ridgeLag.set(P.x, 0, P.z);
   skyPainted = -1;
-  announceSector();
+  buildDescentTicks();
 }
 
 /* One chain. Tricks, cans, close passes and sustained speed all feed it, it
@@ -2117,15 +2310,158 @@ function breakChain() {
 }
 
 function fireBoost() {
+  /* topping up a surge you are already in should not restage the fanfare —
+     a trail of eight cans would be eight popups and twenty-four tones */
+  const fresh = P.boostT <= 0.35;
   P.boostT = Math.min(BOOST_MAX, P.boostT + BOOST_TIME);
   P.boosts++;
+  emitSpray(P.x, P.y + 0.3, P.z, fresh ? 22 : 8, fresh ? 3.0 : 1.7);
+  if (!fresh) { Snd.tone(760, 0.09, 'triangle', 0.10); return; }
   popup('Boost', '×2 SCORE', 'boost');
   shake = Math.max(shake, 0.5);
-  emitSpray(P.x, P.y + 0.3, P.z, 22, 3.0);
   Snd.whoosh(true);
   Snd.tone(220, 0.45, 'sawtooth', 0.20);
   setTimeout(() => Snd.tone(440, 0.38, 'sawtooth', 0.16), 90);
   setTimeout(() => Snd.tone(660, 0.34, 'triangle', 0.15), 185);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   15b · THE DROP-IN
+   A ship, a wide look at what you are about to ride, a step out of
+   the door, and the cornice above letting go behind you. Runs on its
+   own clock with no input except the one that skips it.
+   ══════════════════════════════════════════════════════════════ */
+const IN_WIDE = 2.3, IN_PUSH = 3.9, IN_DROP = 3.9, IN_SETTLE = 5.9, IN_AVA = 6.2, IN_END = 7.3;
+const IN_SHORT_OFF = IN_DROP - 0.5;          // the quick version starts at the door
+let introT = 0, introOff = 0, introDropped = false, introLanded = false, introAva = false;
+let introSeen = false;
+const introHint = $('introHint');
+const heliPos = new THREE.Vector3();
+let dropX = 0, dropZ = 0, dropGround = 0;
+
+function heliAt(tt) {
+  /* comes in high and right, crosses the face, slows over the drop point */
+  const u = clamp(tt / IN_DROP, 0, 1);
+  const ease = 1 - Math.pow(1 - u, 2.2);
+  heliPos.set(
+    dropX + lerp(70, 4, ease),
+    dropGround + lerp(80, 24, ease),
+    dropZ + lerp(108, 15, ease)
+  );
+  return heliPos;
+}
+function startIntro(full) {
+  mode = 'intro';
+  introT = 0;
+  introOff = full ? 0 : IN_SHORT_OFF;
+  introDropped = introLanded = introAva = false;
+  dropX = P.x; dropZ = P.z; dropGround = P.y;
+  heli.visible = true;
+  scene.fog.far = 520; scene.fog.near = 520 * 0.24;
+  slideZ = P.z + 900;                        // still up on the summit, not yet moving
+  hud.classList.remove('live');
+  padLayer.classList.remove('live');
+  if (introHint) introHint.hidden = false;
+  Snd.rotor(0.0);
+}
+
+function introStep(dt) {
+  introT += dt;
+  const tt = introT + introOff;
+
+  /* the ship */
+  const h = heliAt(tt);
+  heli.position.copy(h);
+  heli.rotation.set(tt < IN_DROP ? -0.10 : -0.02, Math.PI, 0);
+  heliRotor.rotation.y += dt * 46;
+  heliTail.rotation.x += dt * 58;
+  const near = clamp(1 - (h.distanceTo(camera.position) - 28) / 150, 0, 1);
+  Snd.rotor(tt > IN_END - 0.6 ? 0 : 0.14 + near * 0.5);
+
+  if (tt < IN_DROP) {
+    /* still in the door */
+    P.x = h.x + 1.7; P.y = h.y - 3.3; P.z = h.z + 0.7;
+    P.vx = 0; P.vy = 0; P.vz = 0;
+    P.air = true; P.airT = 0.3;
+    P.heading = 0;
+  } else {
+    if (!introDropped) {
+      introDropped = true;
+      P.vx = 0; P.vy = -1.5; P.vz = -9;
+      P.air = true; P.airT = 0;
+      P.grabName = grabName(); P.grabT = 0.4;      // a grab on the way down
+      Snd.whoosh(false);
+    }
+    if (!introLanded) {
+      P.vy -= GRAV_Y * dt;
+      P.vz -= 5.5 * dt;                            // lean into the fall line
+      P.x += P.vx * dt; P.y += P.vy * dt; P.z += P.vz * dt;
+      P.airT += dt;
+      const g = groundAt(P.x, P.z);
+      if (P.y <= g) {
+        introLanded = true;
+        P.y = g; P.air = false; P.airT = 0;
+        P.grabT = 0; P.grabName = '';
+        P.vy = gradX(P.x, P.z) * P.vx + gradZ(P.x, P.z) * P.vz;
+        P.vz = Math.min(P.vz, -15);
+        shake = Math.max(shake, 0.85);
+        emitSpray(P.x, P.y, P.z, 42, 4.6);
+        Snd.hit(0.75);
+        resetTrail(P.x, P.y, P.z);
+      }
+    } else {
+      /* rolling out, under no control yet */
+      const gx = gradX(P.x, P.z), gz = gradZ(P.x, P.z);
+      P.vx -= GACC * gx * dt; P.vz -= GACC * gz * dt;
+      P.x += P.vx * dt; P.z += P.vz * dt;
+      P.y = groundAt(P.x, P.z);
+    }
+  }
+
+  /* the cornice goes */
+  if (!introAva && tt >= IN_AVA) {
+    introAva = true;
+    slideGap = 165; slideZ = P.z + slideGap;
+    flash.style.opacity = '0.55';
+    shake = Math.max(shake, 1.0);
+    flashWarn('The cornice has gone', 2000);
+    Snd.tone(52, 2.4, 'sawtooth', 0.26);
+    Snd.hit(1);
+  }
+
+  rebuildTerrain(P.x, P.z);
+  while (genZ > P.z - GEN_AHEAD) generate();
+  if (tt >= IN_END) endIntro();
+}
+
+function endIntro() {
+  if (mode !== 'intro') return;
+  mode = 'play';
+  introSeen = true;
+  heli.visible = false;
+  Snd.rotor(0);
+  if (introHint) introHint.hidden = true;
+  /* whatever the cutscene did to you does not count */
+  P.health = 100; P.wipe = 0; P.hurt = 0; P.air = false;
+  if (!introLanded) { P.y = groundAt(P.x, P.z); P.vz = Math.min(P.vz, -15); }
+  /* the run's clock, its altimeter and its scoreboard all start here, at the
+     bottom of the drop — nothing the cutscene did counts for or against you */
+  P.time = 0; P.dist = 0; P.y0 = P.y;
+  P.score = 0; P.topSpeed = 0; P.bestAir = 0; P.airT = 0;
+  P.grabT = 0; P.grabName = ''; P.spin = 0; P.flip = 0;
+  if (!introAva) { slideGap = 165; slideZ = P.z + slideGap; }
+  /* the drop earns you a running start, not a flying one */
+  const sp = Math.hypot(P.vx, P.vz);
+  if (sp > 21) { const k = 21 / sp; P.vx *= k; P.vz *= k; }
+  P.alt = START_ALT;
+  P.lowAlt = START_ALT;
+  ghostRec = []; ghostClock = 0;
+  resetTrail(P.x, P.y, P.z);
+  hud.classList.add('live');
+  padLayer.classList.add('live');
+  curSector = -1;
+  announceSector();
+  coachStart();
 }
 
 /* ---- the tuck, and the pop that ends it ----
@@ -2350,7 +2686,7 @@ function step(dt) {
   P.topSpeed = Math.max(P.topSpeed, spd);
   const moved = -(P.z - z0);
   if (moved > 0) P.dist += moved;
-  P.alt = START_ALT + (P.y - P.y0);
+  P.alt = START_ALT + (P.y - P.y0) * ALT_SCALE;
   P.lowAlt = Math.min(P.lowAlt, P.alt);
   ghostClock += dt;
   if (ghostClock >= GHOST_STEP && ghostRec.length < GHOST_MAX * 4) {
@@ -2423,8 +2759,8 @@ function step(dt) {
         P.score += canPts;
         taught('can');
         Snd.tone(560 + Math.min(10, P.canChain) * 55, 0.09, 'square', 0.13);
-        if (P.cans % BOOST_EVERY === 0) fireBoost();
-        else if (P.canChain % 4 === 0) popup('Chain ×' + P.canChain, '+' + fmt(canPts), 'can');
+        fireBoost();
+        if (P.canChain % 4 === 0) popup('Chain ×' + P.canChain, '+' + fmt(canPts), 'can');
       }
       continue;
     }
@@ -2595,6 +2931,33 @@ function present(dt, t) {
     camPos.set(P.x + Math.sin(a) * 26, P.y + 10 + Math.sin(menuT * 0.5) * 1.5, P.z + Math.cos(a) * 26);
     camLook.set(P.x, P.y + 2.2, P.z - 8);
     fov += (64 - fov) * Math.min(1, dt * 2);
+  } else if (mode === 'intro') {
+    /* three shots: the whole face, the ship, and then you — the last of them
+       easing into the chase position so control begins where it always does */
+    const tt = introT + introOff;
+    if (tt < IN_WIDE) {
+      /* down the fall line, which is the long axis of the world: nearly four
+         hundred metres of face running away into the weather */
+      const u = tt / IN_WIDE;
+      camPos.set(dropX + 44 - u * 11, dropGround + 112 - u * 15, dropZ + 196 - u * 32);
+      camLook.set(dropX - 4, dropGround - 140, dropZ - 330);
+      fov += (66 - fov) * Math.min(1, dt * 1.5);
+    } else if (tt < IN_DROP) {
+      const u = clamp((tt - IN_WIDE) / (IN_DROP - IN_WIDE), 0, 1);
+      const h = heliPos;
+      camPos.set(h.x + lerp(34, 12, u), h.y + lerp(13, 2.4, u), h.z + lerp(46, 21, u));
+      camLook.set(h.x + 0.8, h.y - lerp(1.2, 2.6, u), h.z - 2);
+      fov += (54 - fov) * Math.min(1, dt * 2);
+    } else {
+      /* stay on the rider all the way down, then ease into the chase seat */
+      const u = clamp((tt - IN_DROP) / (IN_END - IN_DROP), 0, 1);
+      const k = smoothstep(0, 0.62, u);
+      camPos.set(P.x + lerp(6.5, 0, k), P.y + lerp(4.2, 5.6, k), P.z + lerp(15, 13, k));
+      const gh = height(camPos.x, camPos.z) + 2.4;
+      if (camPos.y < gh) camPos.y = gh;
+      camLook.set(P.x, P.y + lerp(0.2, 1.6, k), P.z - lerp(9, 21, k));
+      fov += (58 - fov) * Math.min(1, dt * 2.2);
+    }
   } else if (mode === 'dying' || mode === 'over' || mode === 'won') {
     const a = 0.7 + deathT * 0.9, r = 12 + deathT * 5;
     camPos.set(P.x + Math.sin(a) * r, P.y + 3.6 + deathT * 2.2, P.z + Math.cos(a) * r);
@@ -2632,7 +2995,9 @@ function present(dt, t) {
 
   /* light: altitude first, then whatever the weather is doing to it */
   applyLight(P.dist, dt);
-  const far = lerp(338, 104, weather);
+  const far = mode === 'intro'
+    ? lerp(520, 338, clamp((introT + introOff) / IN_END, 0, 1))
+    : lerp(338, 104, weather);
   scene.fog.far += (far - scene.fog.far) * Math.min(1, dt * 0.8);
   scene.fog.near = scene.fog.far * 0.24;
   ridge.material.opacity = lerp(1, 0.05, weather);
@@ -2677,10 +3042,11 @@ function present(dt, t) {
 
   updateGhost();
 
-  /* cans turn on the spot */
+  /* cans: tipped over, gyrating about world up, floating on the spot */
   for (const o of props) {
     if (o.kind !== 'can' || o.slot < 0) continue;
-    o.spin += dt * 2.4;
+    o.spin += dt * 3.4;
+    o.y = o.y0 + Math.sin(t * 2.4 + o.bob) * 0.26;
     placeProp(o);
   }
 
@@ -2792,9 +3158,7 @@ async function beginRun() {
   hide(startScreen); hide(overScreen); hide(pauseScreen); hide(winScreen);
   resetRun();
   flash.style.opacity = '0';
-  mode = 'play';
-  hud.classList.add('live');
-  padLayer.classList.add('live');
+  startIntro(!introSeen);
   Snd.tone(300, 0.12, 'sine', 0.2);
   setTimeout(() => Snd.tone(450, 0.18, 'sine', 0.22), 110);
 }
@@ -2853,6 +3217,11 @@ function frame(now) {
     while (genZ > P.z - GEN_AHEAD) generate();
     rebuildTerrain(P.x, P.z);
     slideZ = P.z + 190;
+  } else if (mode === 'intro') {
+    introStep(dt);
+    const f = parseFloat(flash.style.opacity || '0');
+    if (f > 0) flash.style.opacity = String(Math.max(0, f - dt * 1.2));
+    if (warnTimer > 0) { warnTimer -= dt; if (warnTimer <= 0) warnEl.classList.remove('on'); }
   } else if (mode === 'play') {
     if (P.air) P.bestAir = Math.max(P.bestAir, P.airT);
     step(dt);
@@ -2907,8 +3276,10 @@ function boot(saved) {
   present(0.016, 0);
   renderer.render(scene, camera);
   setCtrlMode(ctrlMode);
+  setTiltInvert(tiltInvert);
   setRider(R.key);
   setRoute(route);
+  requestAnimationFrame(pollTilt);
   ghostData = loadGhost();
   bootEl.classList.add('gone');
   show(startScreen);

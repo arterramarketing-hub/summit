@@ -3,9 +3,10 @@
 An open-face alpine freeride run for phones — tilt to steer, or touch-only if
 you would rather not. One self-contained `index.html`, rendered with three.js.
 
-You drop in at 4,208 m and ride down to the valley floor at 1,000 m — about
-four minutes if you hold it together. There is no jump button: the terrain
-launches you. Carry speed into a wind lip and it throws you; spin, flip and
+A helicopter puts you on the summit at 4,208 m, the cornice goes behind you,
+and you ride 2.6 km down to the valley floor at 1,000 m — through all four
+faces of the mountain. There is no jump button: the terrain launches you, and
+holding **TUCK** and letting go at a lip throws you properly. Spin, flip and
 grab on the way over; land pointing where you are actually going.
 
 Everything you do feeds one **chain multiplier**, and a wipeout takes all of it.
@@ -21,6 +22,10 @@ is what the *Drop in* button does.
 
 The gyroscope does exactly one thing: it steers. Everything else is an
 on-screen button you hold, and which lights up while held.
+
+**Tilt direction** on the start screen has a live marker under it. Tilt the
+handset and watch it: if it runs the way you lean, you are set; if it fights
+you, pick **Reversed**. The choice is remembered.
 
 Pick **Snowboard** (loose edge, spins easily) or **Skis** (holds a line, carries
 more speed) on the start screen, along with the route: **Descent** to the valley,
@@ -46,6 +51,8 @@ The first time you play, five prompts walk you through it — each one clears wh
 you actually do the thing, not on a timer.
 
 **Re-centre** rezeros the tilt to however you happen to be holding the phone.
+It does not matter how steeply you hold it — the steering reads true roll, not
+raw `gamma`, so it behaves the same flat on a table or held upright.
 On a desktop: arrow keys to steer, space or down to tuck and grab, F or up to flip.
 
 Locally, any static server works (a plain `file://` open will not — the ES module
@@ -95,9 +102,11 @@ npx http-server -p 8080 .      # then http://localhost:8080
   multiplier that never times out and multiplies everything you score. A wipeout
   resets it to ×1, which is the only punishment the game really needs.
 - **Cans** sit in trails across the open snow and in ballistic arcs over every
-  kicker, so the line that pays is the line with air on it. **Every fifth can
-  fires a boost**: a hard surge, double points, and enough speed that the next
-  roller throws you properly.
+  kicker, so the line that pays is the line with air on it. **Every can fires a
+  boost**: a hard surge, double points, and enough speed that the next roller
+  throws you properly. Taking them back to back stacks the timer rather than
+  restarting it, so a whole trail of cans is one long surge — the five pips by
+  the score are how much of it you have left.
 - **Landing switch** — backwards, within about 40° of straight — pays 1.6× and
   pushes the chain harder than landing forwards.
 - **Crevasses** are cut into the terrain itself, with **three kickers across the
@@ -119,11 +128,12 @@ a rider can thread, and you are untouchable while you are picking yourself up.
 - **The music tightens with the chain.** A drone in the sector's key, whose
   filter opens, upper voices arrive and pulse quickens the more you have to lose.
 
-Sectors change every 1,350 m of descent — glacier, couloir, treeline, forest —
-each with its own hazards, colour, iciness and **light**: alpenglow on the
-glacier, flat cold blue down the couloir, low warm sun once the valley walls are
-above you. The sun itself drops towards the rim as you descend. Each cycle is
-steeper than the last.
+Sectors change every 650 m — glacier, couloir, treeline, forest — each with its
+own hazards, colour, iciness and **light**: alpenglow on the glacier, flat cold
+blue down the couloir, low warm sun once the valley walls are above you. The sun
+itself drops towards the valley rim as you descend. The **Descent** is exactly
+one cycle of the four, so you finish in the trees where a valley ought to be,
+and the bar at the top of the screen tells you how much of it is left.
 
 Every run banks into a **career total** — all the vertical you have ever ridden,
 counted in Everests.
@@ -159,6 +169,19 @@ everything else is generated at runtime.
 - **Props** are instanced meshes drawn from slot pools, generated ahead of you
   and recycled behind. Each prop type is baked from several primitives into one
   vertex-coloured buffer, so a forest is one draw call.
+- **The drop-in** is a seven-second cutscene on its own clock: a wide look down
+  the fall line with the view pushed out to 520 m, the ship crossing the face,
+  a step out of the door, a ballistic fall onto the snow, and the cornice
+  letting go behind you. A tap skips it, and after the first one you get the
+  short version — just the door and the drop.
+- **The tilt** is reconstructed rather than read. Browser orientation angles are
+  intrinsic Z-X'-Y'', so raw `gamma` measures rotation about an axis that has
+  already been pitched by `beta`: at the 60-75 degrees people actually hold a
+  handset it reads roughly two to four times the real roll, saturates after
+  about twenty degrees of wrist, and past that hands the rotation to `beta` and
+  flips sign — which is felt as the steering suddenly working backwards. So the
+  gravity vector is rebuilt in the handset frame and the true roll taken from
+  it, which is measured exact and sign-stable from 10 to 88 degrees of pitch.
 - **Audio** is synthesised in the Web Audio API — one looping noise buffer
   through three filter chains for wind, carve and avalanche rumble, plus impact
   and pickup transients, plus a five-voice drone through one lowpass and a
