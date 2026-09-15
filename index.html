@@ -511,15 +511,63 @@ const SX0 = SEED * 137.31, SZ0 = SEED * 91.77, SPH = (SEED % 628) / 100;
 const nz = (x, y) => noise2(x + SX0, y + SZ0);
 
 const FALL = 0.40;                 // mean gradient of the fall line
-const FACE_W = 88;                 // half-width of rideable face before the ridges rise
+const ROAM = 115;                  // how wide a band of mountain is kept stocked around you
 const START_ALT = 4208;
 
-/** Centre of the face — the whole bowl drifts across the mountain. */
-function faceX(z) {
+/** The lazy line the mountain drifts along. Nothing is fenced to it — it only
+    decides roughly where the big features get laid down. */
+function driftX(z) {
   return 30 * Math.sin(z * 0.00210 + SPH) + 14 * Math.sin(z * 0.00530 + 2.1 + SPH * 1.7);
 }
-/** How far outside the face shoulders a point lies. */
-function faceOut(x, z) { return Math.abs(x - faceX(z)) - FACE_W; }
+
+/* ---- strategic features ----
+   No continuous ridges. Instead the mountain drops the occasional cliff band
+   you huck or ride around, and the occasional rock buttress you go around.
+   Both have open ends, so neither is ever a fence. */
+const FEAT_CELL = 260;
+const featCache = new Map();
+let featRockAmt = 0;
+function featAt(cell) {
+  let f = featCache.get(cell);
+  if (f !== undefined) return f;
+  if (cell * FEAT_CELL < 500 || hash2(cell + SEED, 301) > 0.62) f = null;
+  else {
+    const fz = -(cell * FEAT_CELL + 40 + hash2(cell + SEED, 307) * (FEAT_CELL - 80));
+    const cliff = hash2(cell + SEED, 311) < 0.58;
+    f = {
+      z: fz, cliff,
+      x: driftX(fz) + (hash2(cell + SEED, 313) * 2 - 1) * 95,
+      halfW: cliff ? 42 + hash2(cell + SEED, 317) * 44 : 28 + hash2(cell + SEED, 317) * 34,
+      size: cliff ? 9 + hash2(cell + SEED, 319) * 10 : 15 + hash2(cell + SEED, 319) * 16
+    };
+  }
+  if (featCache.size > 400) featCache.clear();
+  featCache.set(cell, f);
+  return f;
+}
+function featHeight(x, z) {
+  let dy = 0, rock = 0;
+  const cell = Math.floor(-z / FEAT_CELL);
+  for (let k = -1; k <= 1; k++) {
+    const f = featAt(cell + k);
+    if (!f) continue;
+    const dx = Math.abs(x - f.x);
+    if (dx > f.halfW + 26) continue;
+    const win = 1 - smoothstep(f.halfW - 18, f.halfW + 14, dx);   // open ends
+    if (win <= 0.001) continue;
+    if (f.cliff) {
+      const past = smoothstep(f.z + 6, f.z - 6, z);
+      dy -= f.size * win * past;
+      rock = Math.max(rock, win * (1 - Math.abs(past - 0.5) * 2) * 1.6);
+    } else {
+      const zw = 1 - smoothstep(10, 58, Math.abs(z - f.z));
+      dy += f.size * win * zw;
+      rock = Math.max(rock, win * zw * 1.25);
+    }
+  }
+  featRockAmt = Math.min(1, rock);
+  return dy;
+}
 
 /* Crevasses are cut into the field itself, so the mesh, the physics and the
    kill test all agree on exactly where the hole is. */
@@ -535,8 +583,8 @@ function crevAt(cell) {
     const cz = -(cell * CREV_CELL + 30 + hash2(cell + SEED, 77) * (CREV_CELL - 60));
     c = {
       z: cz,
-      x: faceX(cz) + (hash2(cell + SEED, 91) * 2 - 1) * (FACE_W - 26),
-      halfW: 12 + hash2(cell + SEED, 23) * 13,
+      x: driftX(cz) + (hash2(cell + SEED, 91) * 2 - 1) * 70,
+      halfW: 20 + hash2(cell + SEED, 23) * 22,
       halfL: 5 + hash2(cell + SEED, 59) * 4.5,
       ang: (hash2(cell + SEED, 13) - 0.5) * 0.44,
       ramped: false
@@ -576,8 +624,12 @@ function heightBase(x, z) {
   y += lip > 0 ? lip * lip * lip * 5.2                 // the takeoff
                : -Math.pow(-lip, 1.6) * 2.9;           // and the hollow you land in
   /* the ridges that close the face in */
-  const e = faceOut(x, z);
-  if (e > 0) y += Math.min(e * e * 0.05, 90) + nz(x * 0.05, z * 0.05) * Math.min(e, 10) * 0.6;
+  /* broad cross-slope shape — ridges and bowls you can traverse at will,
+     rather than shoulders that fence you in */
+  y += Math.sin(x * 0.00420 + SPH * 2) * 15;
+  y += Math.sin(x * 0.01050 - z * 0.0016 + 1.1) * 5.5;
+  y += (nz(x * 0.0046, z * 0.0039) - 0.5) * 22;
+  y += featHeight(x, z);
   return y;
 }
 function height(x, z) {
@@ -889,7 +941,7 @@ shadow.rotation.x = -Math.PI / 2; scene.add(shadow);
 /* ══════════════════════════════════════════════════════════════
    5 · TERRAIN MESH — a rolling window re-sampled from the field
    ══════════════════════════════════════════════════════════════ */
-const TW = 210, TL = 470, SX = 46, SZ = 108, BACK = 76;
+const TW = 300, TL = 470, SX = 52, SZ = 108, BACK = 76;
 const terrainGeo = new THREE.BufferGeometry();
 {
   const vc = (SX + 1) * (SZ + 1);
@@ -905,6 +957,10 @@ const terrainGeo = new THREE.BufferGeometry();
   }
   terrainGeo.setIndex(new THREE.BufferAttribute(idx, 1));
 }
+/* flat shading takes its normals from screen-space derivatives and the mesh is
+   never culled, so neither the normal attribute nor the bounding sphere needs
+   recomputing on every rebuild */
+terrainGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
 const terrain = new THREE.Mesh(terrainGeo, litMat());
 terrain.frustumCulled = false;
 scene.add(terrain);
@@ -915,7 +971,7 @@ const _c = new THREE.Color(), _c2 = new THREE.Color();
 
 let tileX = 1e9, tileZ = 1e9;
 function rebuildTerrain(px, pz, force) {
-  const ox = Math.round(px / 8) * 8, oz = Math.round(pz / 8) * 8;
+  const ox = Math.round(px / 12) * 12, oz = Math.round(pz / 12) * 12;
   if (!force && ox === tileX && oz === tileZ) return;
   tileX = ox; tileZ = oz;
   const pos = terrainGeo.attributes.position.array;
@@ -933,12 +989,12 @@ function rebuildTerrain(px, pz, force) {
       const x = ox + (i / SX - 0.5) * TW;
       const y = height(x, z);
       pos[v * 3] = x; pos[v * 3 + 1] = y; pos[v * 3 + 2] = z;
-      const e = faceOut(x, z);
       const grain = nz(x * 0.07, z * 0.07);
       const notch = crevNotch(x, z);
-      if (e > 2) {
+      const e = featRockAmt;          // set by the height() call above
+      if (e > 0.12) {
         _c.copy(nz(x * 0.21, z * 0.21) > 0.52 ? C_ROCK : _c2.copy(C_ROCK).lerp(C_SHADE, 0.35))
-          .lerp(C_SHADE, 1 - smoothstep(2, 14, e));
+          .lerp(C_SHADE, 1 - smoothstep(0.12, 0.62, e));
       } else {
         _c.copy(C_SNOW).lerp(C_SHADE, grain * 0.58);
         const ice = iceAmt > 0.02 ? smoothstep(0.56, 0.72, nz(x * 0.026, z * 0.022)) * iceAmt : 0;
@@ -953,8 +1009,6 @@ function rebuildTerrain(px, pz, force) {
   }
   terrainGeo.attributes.position.needsUpdate = true;
   terrainGeo.attributes.color.needsUpdate = true;
-  terrainGeo.computeVertexNormals();
-  terrainGeo.computeBoundingSphere();
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -1481,6 +1535,7 @@ const speedOf = () => Math.hypot(P.vx, P.vz);
 function seedWorld() {
   clearProps();
   crevCache.clear();
+  featCache.clear();
   genZ = -40; nextRampZ = -150; nextCanZ = -90;
   while (genZ > P.z - GEN_AHEAD) generate();
 }
@@ -1512,8 +1567,8 @@ function generate() {
   genZ -= gap;
   const z = genZ, dist = Math.max(0, -z);
   const bi = biomeOf(dist);
-  const cx = faceX(z);
-  const span = FACE_W - 8;
+  const cx = P.x;                    // keep the band stocked wherever the rider is
+  const span = ROAM;
 
   /* every crevasse gets a kicker on its near lip — the gap is always makeable */
   const cv = crevAt(Math.floor(-z / CREV_CELL));
@@ -1540,7 +1595,7 @@ function generate() {
   /* the first 400 m are quiet, and no two hazards in a row may sit closer
      than a rider can thread, so a row is never a wall */
   const warmup = clamp(dist / 400, 0.25, 1);
-  const hazards = Math.round((1 + Math.random() * (1.2 + 1.9 * d)) * warmup);
+  const hazards = Math.round((1 + Math.random() * (1.8 + 2.6 * d)) * warmup);
   const taken = [];
   for (let i = 0; i < hazards; i++) {
     let x = 0, ok = false;
@@ -1577,7 +1632,7 @@ function generate() {
   if (bi.trees > 0) {
     for (let i = 0; i < 3; i++) {
       const side = Math.random() < 0.5 ? -1 : 1;
-      const off = FACE_W + 2 + Math.pow(Math.random(), 0.7) * 40;
+      const off = span * 0.75 + Math.pow(Math.random(), 0.7) * 90;
       addProp('tree', cx + side * off, z + rand(-gap / 2, gap / 2), { scenery: true, scale: rand(0.75, 1.5) });
     }
   }
@@ -1714,7 +1769,7 @@ const vOverlap = (y, oy, oh) => y < oy + oh && y + RIDER_H > oy;
    15 · SIMULATION
    ══════════════════════════════════════════════════════════════ */
 function resetRun() {
-  P.x = faceX(0); P.z = 0; P.y = height(P.x, 0); P.y0 = P.y;
+  P.x = driftX(0); P.z = 0; P.y = height(P.x, 0); P.y0 = P.y;
   P.vx = 0; P.vz = -14; P.vy = 0;
   P.heading = 0; P.camYaw = 0;
   P.air = false; P.airT = 0; P.bestAir = 0;
@@ -1971,14 +2026,6 @@ function step(dt) {
 
   /* ---------- into the gash ---------- */
   if (heightBase(P.x, P.z) - P.y > 5.5) { die('crevasse'); return; }
-
-  /* ---------- off the face ---------- */
-  const out = faceOut(P.x, P.z);
-  if (out > 14) {
-    P.health -= (out - 14) * 2.4 * dt;
-    if (Math.random() < dt * 3) flashWarn('Off the face', 600);
-    if (out > 46) die('lost');
-  }
 
   /* ---------- props ---------- */
   for (let i = props.length - 1; i >= 0; i--) {
@@ -2244,7 +2291,7 @@ function present(dt, t) {
   }
 
   /* the slide */
-  slide.position.set(faceX(slideZ + 8), height(faceX(slideZ), slideZ) - 16, slideZ);
+  slide.position.set(P.x, height(P.x, slideZ) - 16, slideZ);
   for (let i = 0; i < SLIDE_N; i++) {
     const k = i * 3;
     slideP[k + 1] += Math.sin(t * 2.4 + slidePhase[i]) * dt * 5;
@@ -2434,7 +2481,7 @@ function frame(now) {
    ══════════════════════════════════════════════════════════════ */
 function boot(saved) {
   if (saved && typeof saved.best === 'number' && saved.best > best) best = saved.best;
-  P.x = faceX(0); P.z = 0; P.y = height(P.x, 0); P.y0 = P.y;
+  P.x = driftX(0); P.z = 0; P.y = height(P.x, 0); P.y0 = P.y;
   seedWorld();
   rebuildTerrain(P.x, P.z, true);
   resetTrail(P.x, P.y, P.z);

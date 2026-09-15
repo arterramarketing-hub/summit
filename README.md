@@ -58,6 +58,12 @@ npx http-server -p 8080 .      # then http://localhost:8080
   does not — though a carve *redirects* most of that sideways speed down the new
   line rather than deleting it. Holding a turn costs you; slamming edge to edge
   costs you a lot. It is your only brake, and your biggest liability.
+- **Nothing fences you in.** There is no corridor and no out-of-bounds — the
+  mountain is open in every direction and you pick your own line across it.
+  What shapes a run instead are **cliff bands** you either huck for air or ride
+  around, and **rock buttresses** you go around, dropped in every few hundred
+  metres with open ends so neither is ever a wall. Wandering far off the fall
+  line is punished by the only thing that should punish it: the slide catches up.
 - **The mountain launches you.** Wind lips every ~85 m are shaped so their
   curvature beats gravity *above* a certain speed. Ride slowly and you roll over
   them; carry speed and you are airborne roughly a quarter of the time.
@@ -96,11 +102,13 @@ each with its own hazards, colour and iciness, and each cycle steeper than the l
 Single file, no build step, no assets. three.js is pinned and loaded from a CDN;
 everything else is generated at runtime.
 
-- **Terrain** is `height(x, z)`: a fall line, spines and bowls, three octaves of
-  value noise, asymmetric wind lips, rising shoulder ridges, and crevasses cut
-  straight into the field so the mesh, the physics and the kill test all agree
-  on exactly where the hole is. A rolling 210 × 470 m mesh window re-samples it
-  as you descend, so nothing about the world is ever stored.
+- **Terrain** is `height(x, z)`: a fall line, broad cross-slope ridges and bowls,
+  four octaves of value noise, asymmetric wind lips, and — cut straight into the
+  same field, so the mesh, the physics and the kill test can never disagree —
+  crevasses, cliff bands and buttresses, each windowed to open ends rather than
+  running on forever. A rolling 300 × 470 m mesh window re-samples it as you
+  descend, so nothing about the world is ever stored. Hazards are generated in a
+  band around wherever the rider actually is, not around a fixed course line.
 - **Physics** runs off the real surface gradient. Gravity is resolved along the
   slope, so bowls hold you and spines shed you; the board's edge grip decomposes
   velocity into along-board and across-board components and scrubs the second.
@@ -124,4 +132,7 @@ everything else is generated at runtime.
   through three filter chains for wind, carve and avalanche rumble, plus impact
   and pickup transients.
 - **Resolution** adapts: if the frame rate sits under 42 fps the renderer drops
-  its pixel ratio rather than dropping frames.
+  its pixel ratio rather than dropping frames. The terrain rebuild skips vertex
+  normals (the material is flat-shaded, so they come from screen-space
+  derivatives) and bounding spheres (the mesh is never culled), which is most of
+  the reason a 43% wider window costs less CPU than the old narrow one.
