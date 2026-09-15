@@ -1,7 +1,7 @@
 # Summit Whiteout
 
-An open-face alpine freeride run for phones, steered entirely by the handset's
-gyroscope. One self-contained `index.html`, rendered with three.js.
+An open-face alpine freeride run for phones — tilt to steer, or touch-only if
+you would rather not. One self-contained `index.html`, rendered with three.js.
 
 You drop in at 4,208 m and ride down a mountain generated from a pure function
 of position. There is no jump button — the terrain launches you. Carry speed
@@ -15,15 +15,22 @@ Open `index.html` on a phone **over HTTPS** — iOS only exposes motion sensors 
 a secure origin, and iOS 13+ additionally requires a tap to grant access, which
 is what the *Drop in* button does.
 
+The gyroscope does exactly one thing: it steers. Everything else is an
+on-screen button you hold, and which lights up while held.
+
 | Control | On the snow | In the air |
 | --- | --- | --- |
-| Tilt left / right | Carve | Spin |
-| Tilt forward / back | Tuck for speed | Front / back flip |
-| Hold the screen | — | Grab (left / centre / right = method / indy / stalefish) |
+| Tilt left / right (or the steer pad) | Carve | Spin |
+| **TUCK** button | Tuck for speed | Grab |
+| **FLIP** button | — | Backflip |
 
-**Re-centre** rezeros both tilt axes to however you happen to be holding the
-phone. Without a gyroscope: drag to steer and flip, tap and hold to grab, or use
-the arrow keys and space.
+**Controls** on the start screen (and the pause screen) switches between
+**Tilt to steer** and **Touch only**. Touch-only replaces the tilt with a steer
+pad at the bottom left and changes nothing else; the choice is remembered. If
+motion access is refused, the game switches to touch-only on its own.
+
+**Re-centre** rezeros the tilt to however you happen to be holding the phone.
+On a desktop: arrow keys to steer, space or down to tuck and grab, F or up to flip.
 
 Locally, any static server works (a plain `file://` open will not — the ES module
 import needs an origin):

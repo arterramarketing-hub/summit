@@ -141,6 +141,36 @@ canvas#c{display:block;width:100%;height:100%;touch-action:none}
 
 /* ---------- full-screen effects ---------- */
 #haze{position:absolute;inset:0;pointer-events:none;opacity:0;background:#c9d7ea}
+/* on-screen controls — visible, holdable, and they light up when held so
+   there is never a question about whether the input registered */
+#pad{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .3s ease}
+#pad.live{opacity:1}
+#steerPad{display:none;position:absolute;left:var(--pad-x);bottom:calc(var(--pad-b) + 104px);
+  width:min(46vw,215px);height:86px;border:1px solid var(--hair);background:rgba(7,13,24,.5);
+  pointer-events:auto;touch-action:none;-webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px)}
+body.touchmode #steerPad{display:block}
+#steerKnob{position:absolute;top:34px;left:50%;width:52px;height:52px;margin:-26px 0 0 -26px;
+  background:rgba(234,241,251,.15);border:1px solid rgba(234,241,251,.55);transition:left .05s linear}
+#steerPad em{position:absolute;left:0;right:0;bottom:7px;text-align:center;font:600 8px/1 var(--mono);
+  letter-spacing:.24em;color:var(--ink-dim);font-style:normal}
+#steerPad.held{border-color:var(--ember)}
+#steerPad.held #steerKnob{background:rgba(255,106,43,.3);border-color:var(--ember)}
+.act{position:absolute;right:var(--pad-x);width:84px;height:84px;border:1px solid var(--hair);
+  border-radius:50%;background:rgba(7,13,24,.5);color:var(--ink);
+  font:800 12px/1 var(--disp);font-stretch:118%;letter-spacing:.14em;text-transform:uppercase;
+  pointer-events:auto;touch-action:none;cursor:pointer;
+  -webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px)}
+#btnTuck{bottom:calc(var(--pad-b) + 100px)}
+#btnFlip{bottom:calc(var(--pad-b) + 196px)}
+.act.held{background:var(--ember);color:#120600;border-color:var(--ember)}
+.act.off{opacity:.28}
+.seg{margin:20px 0 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.seg .k{flex:0 0 100%;margin-bottom:2px}
+.seg button{flex:1;min-width:120px;font:600 11px/1 var(--mono);letter-spacing:.1em;color:var(--ink-dim);
+  background:transparent;border:1px solid var(--hair);padding:12px 10px;cursor:pointer}
+.seg button.sel{color:#120600;background:var(--ember);border-color:var(--ember)}
+body.touchmode .tilt-only{display:none}
+body:not(.touchmode) .touch-only{display:none}
 #boostfx{position:absolute;inset:0;pointer-events:none;opacity:0;
   background:radial-gradient(64% 48% at 50% 56%,rgba(182,255,63,0) 42%,rgba(150,240,40,.34) 100%)}
 #rush{position:absolute;inset:0;pointer-events:none;opacity:0;
@@ -270,6 +300,12 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
     </div>
   </div>
 
+  <div id="pad">
+    <div id="steerPad"><span id="steerKnob"></span><em>Steer</em></div>
+    <button id="btnFlip" class="act" type="button">Flip</button>
+    <button id="btnTuck" class="act" type="button">Tuck</button>
+  </div>
+
   <div id="sector"><u></u><b></b><span></span></div>
 
   <!-- ---------------- start ---------------- -->
@@ -280,16 +316,24 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
       <p class="lede">Four thousand two hundred metres, no lift back up, and the cornice above you
         has already gone. Read the face, hit the rollers, land it clean.</p>
 
+      <div class="seg" id="ctrlSeg">
+        <span class="k">Controls</span>
+        <button type="button" data-mode="tilt">Tilt to steer</button>
+        <button type="button" data-mode="touch">Touch only</button>
+      </div>
+
       <div class="tiltviz">
-        <div class="phone" aria-hidden="true"></div>
-        <p><b>Tilt left / right</b> — carve, and spin in the air.<br>
-           <b>Tilt forward / back</b> — tuck, and flip in the air.<br>
-           <b>Hold the screen</b> — grab.</p>
+        <div class="phone tilt-only" aria-hidden="true"></div>
+        <p><span class="tilt-only"><b>Tilt</b> the handset to carve — and to spin in the air.
+           That is all the gyroscope does.<br></span>
+           <span class="touch-only"><b>Drag the steer pad</b> to carve — and to spin in the air.<br></span>
+           <b>TUCK</b> holds a tuck for speed; in the air the same button <b>grabs</b>.<br>
+           <b>FLIP</b> backflips while you are airborne.</p>
       </div>
 
       <dl class="brief">
         <div><dt>Terrain</dt><dd>Every roller is a takeoff. The mountain launches you — there is no jump button.</dd></div>
-        <div><dt>Tricks</dt><dd>Spin, flip and grab, then land pointing where you are going. Sideways is a wipeout.</dd></div>
+        <div><dt>Tricks</dt><dd>Steer to spin, hold FLIP to backflip, hold TUCK to grab. Land pointing where you are going — sideways is a wipeout.</dd></div>
         <div><dt>Cans</dt><dd>Every fifth can fires a boost: a hard surge and double points until you crash.</dd></div>
         <div><dt>Slide</dt><dd>The avalanche never stops. Crash and it takes back the metres you bought.</dd></div>
       </dl>
@@ -297,7 +341,7 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
       <div class="actions">
         <button class="go" id="btnStart" type="button">Drop in</button>
       </div>
-      <p class="fine" id="startFine">No motion sensor? <b>Drag</b> to steer and flip, <b>tap</b> to grab, or use the <b>arrow keys</b> and <b>space</b>.</p>
+      <p class="fine" id="startFine">Tilt only ever steers. Pick <b>Touch only</b> above to steer with a pad instead. On a desktop: <b>arrow keys</b>, <b>space</b> to tuck or grab, <b>F</b> to flip.</p>
     </div>
   </section>
 
@@ -330,6 +374,11 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
       <p class="eyebrow">Holding</p>
       <h2>Paused</h2>
       <p class="lede">The mountain waits. Nothing else does.</p>
+      <div class="seg" id="ctrlSeg2">
+        <span class="k">Controls</span>
+        <button type="button" data-mode="tilt">Tilt to steer</button>
+        <button type="button" data-mode="touch">Touch only</button>
+      </div>
       <div class="actions"><button class="go" id="btnResume" type="button">Resume descent</button></div>
     </div>
   </section>
@@ -1111,13 +1160,21 @@ const Snd = (() => {
 })();
 
 /* ══════════════════════════════════════════════════════════════
-   10 · INPUT — two tilt axes, plus a grab
+   10 · INPUT
+   The gyroscope does exactly one thing: it steers. Everything else is
+   an on-screen button you can see and hold, and which lights up while
+   held — so there is never any doubt about whether it registered.
+   Touch-only mode swaps the tilt for a steer pad and changes nothing else.
    ══════════════════════════════════════════════════════════════ */
-const TILT_RANGE = 26, PITCH_RANGE = 21;
-const input = {
-  gyro: false, rawS: 0, rawP: 0, zeroS: 0, zeroP: 0, seeded: false,
-  dragS: 0, dragP: 0, touching: false, keyS: 0, keyP: 0, grab: false, grabX: 0.5
-};
+const TILT_RANGE = 26;
+let ctrlMode = 'tilt';
+try { const m = localStorage.getItem('sw_ctrl'); if (m === 'touch' || m === 'tilt') ctrlMode = m; } catch (e) {}
+
+const ctrl = { steer: 0, tuck: false, flip: false };
+const gyro = { ok: false, raw: 0, zero: 0, seeded: false };
+let padSteer = 0, keySteer = 0, keyTuck = false, keyFlip = false;
+let heldTuck = false, heldFlip = false;
+
 function screenAngle() {
   if (screen.orientation && typeof screen.orientation.angle === 'number') return screen.orientation.angle;
   return typeof window.orientation === 'number' ? window.orientation : 0;
@@ -1125,16 +1182,16 @@ function screenAngle() {
 function onOrientation(e) {
   if (e.gamma === null || e.gamma === undefined || e.beta === null) return;
   const a = ((screenAngle() % 360) + 360) % 360;
-  let s, p;
-  if (a === 90) { s = -e.beta; p = e.gamma; }
-  else if (a === 270) { s = e.beta; p = -e.gamma; }
-  else if (a === 180) { s = -e.gamma; p = -e.beta; }
-  else { s = e.gamma; p = e.beta; }
-  input.rawS = s; input.rawP = p;
-  if (!input.seeded) { input.seeded = true; input.zeroS = s; input.zeroP = p; }
-  input.gyro = true;
+  let v;
+  if (a === 90) v = -e.beta;
+  else if (a === 270) v = e.beta;
+  else if (a === 180) v = -e.gamma;
+  else v = e.gamma;
+  gyro.raw = v;
+  if (!gyro.seeded) { gyro.seeded = true; gyro.zero = v; }
+  gyro.ok = true;
 }
-function recentre() { input.zeroS = input.rawS; input.zeroP = input.rawP; flashWarn('Re-centred', 700); }
+function recentre() { gyro.zero = gyro.raw; flashWarn('Re-centred', 700); }
 async function enableGyro() {
   try {
     const DOE = window.DeviceOrientationEvent;
@@ -1149,61 +1206,86 @@ function axis(raw, zero, range, dead) {
   let d = raw - zero;
   if (d > 180) d -= 360; else if (d < -180) d += 360;
   d = Math.abs(d) < dead ? 0 : d - Math.sign(d) * dead;
-  const s = clamp(d / range, -1, 1);
-  return Math.sign(s) * Math.pow(Math.abs(s), 1.3);
+  const v = clamp(d / range, -1, 1);
+  return Math.sign(v) * Math.pow(Math.abs(v), 1.3);
 }
-function readSteer() {
-  if (input.keyS) return input.keyS;
-  if (input.touching) return input.dragS;
-  if (input.gyro) return axis(input.rawS, input.zeroS, TILT_RANGE, 1.6);
-  return 0;
-}
-function readPitch() {
-  if (input.keyP) return input.keyP;
-  if (input.touching) return input.dragP;
-  /* beta climbs as the handset comes upright, so invert: pushing it away = forward */
-  if (input.gyro) return -axis(input.rawP, input.zeroP, PITCH_RANGE, 1.6);
-  return 0;
+function readCtrl() {
+  const tilting = ctrlMode === 'tilt' && gyro.ok;
+  ctrl.steer = keySteer || (tilting ? axis(gyro.raw, gyro.zero, TILT_RANGE, 1.6) : padSteer);
+  ctrl.tuck = keyTuck || heldTuck;
+  ctrl.flip = keyFlip || heldFlip;
 }
 
-/* touch: a still finger is a grab, a moving finger steers */
-let dragX = null, dragY = null, moved = false;
-function pointerDown(x, y) {
-  dragX = x; dragY = y; moved = false;
-  input.grab = true; input.grabX = x / Math.max(1, window.innerWidth);
+/* ---- the on-screen controls ---- */
+const padLayer = $('pad'), steerPad = $('steerPad'), steerKnob = $('steerKnob');
+const btnTuck = $('btnTuck'), btnFlip = $('btnFlip');
+
+function holdable(el, set) {
+  const down = (e) => {
+    e.preventDefault();
+    if (el.setPointerCapture) { try { el.setPointerCapture(e.pointerId); } catch (err) {} }
+    el.classList.add('held'); set(true);
+  };
+  const up = () => { el.classList.remove('held'); set(false); };
+  el.addEventListener('pointerdown', down);
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointercancel', up);
+  el.addEventListener('lostpointercapture', up);
+  el.addEventListener('contextmenu', e => e.preventDefault());
 }
-function pointerMove(x, y) {
-  if (dragX === null) return;
-  if (!moved && Math.hypot(x - dragX, y - dragY) > 18) { moved = true; input.touching = true; input.grab = false; }
-  if (!moved) return;
-  const spanX = Math.max(90, window.innerWidth * 0.24);
-  const spanY = Math.max(90, window.innerHeight * 0.18);
-  input.dragS = clamp((x - dragX) / spanX, -1, 1);
-  input.dragP = clamp((dragY - y) / spanY, -1, 1) * -1;
+holdable(btnTuck, v => { heldTuck = v; });
+holdable(btnFlip, v => { heldFlip = v; });
+
+let padId = null;
+function padTo(clientX) {
+  const r = steerPad.getBoundingClientRect();
+  padSteer = clamp((clientX - r.left) / r.width * 2 - 1, -1, 1);
+  steerKnob.style.left = (50 + padSteer * 34) + '%';
 }
-function pointerUp() { dragX = null; input.touching = false; input.grab = false; input.dragS = 0; input.dragP = 0; }
-canvas.addEventListener('touchstart', e => pointerDown(e.touches[0].clientX, e.touches[0].clientY), { passive: true });
-canvas.addEventListener('touchmove', e => pointerMove(e.touches[0].clientX, e.touches[0].clientY), { passive: true });
-canvas.addEventListener('touchend', pointerUp, { passive: true });
-canvas.addEventListener('touchcancel', pointerUp, { passive: true });
-canvas.addEventListener('mousedown', e => pointerDown(e.clientX, e.clientY));
-window.addEventListener('mousemove', e => pointerMove(e.clientX, e.clientY));
-window.addEventListener('mouseup', pointerUp);
+function padRelease() {
+  padId = null; padSteer = 0;
+  steerKnob.style.left = '50%';
+  steerPad.classList.remove('held');
+}
+steerPad.addEventListener('pointerdown', e => {
+  e.preventDefault(); padId = e.pointerId;
+  if (steerPad.setPointerCapture) { try { steerPad.setPointerCapture(e.pointerId); } catch (err) {} }
+  steerPad.classList.add('held'); padTo(e.clientX);
+});
+steerPad.addEventListener('pointermove', e => { if (padId === e.pointerId) padTo(e.clientX); });
+steerPad.addEventListener('pointerup', padRelease);
+steerPad.addEventListener('pointercancel', padRelease);
+steerPad.addEventListener('lostpointercapture', padRelease);
+
+/* ---- which scheme is live ---- */
+function setCtrlMode(m) {
+  ctrlMode = m;
+  try { localStorage.setItem('sw_ctrl', m); } catch (e) {}
+  document.body.classList.toggle('touchmode', m === 'touch');
+  padRelease();
+  for (const b of document.querySelectorAll('[data-mode]')) b.classList.toggle('sel', b.dataset.mode === m);
+  const cal = $('btnCal');
+  if (cal) cal.hidden = (m !== 'tilt');
+}
+for (const b of document.querySelectorAll('[data-mode]')) {
+  b.addEventListener('click', () => setCtrlMode(b.dataset.mode));
+}
+
+/* ---- keyboard, for desktop ---- */
 window.addEventListener('keydown', e => {
   switch (e.key) {
-    case 'ArrowLeft': case 'a': case 'A': input.keyS = -1; break;
-    case 'ArrowRight': case 'd': case 'D': input.keyS = 1; break;
-    case 'ArrowDown': case 's': case 'S': input.keyP = 1; break;
-    case 'ArrowUp': case 'w': case 'W': input.keyP = -1; break;
-    case ' ': input.grab = true; input.grabX = 0.5; break;
+    case 'ArrowLeft': case 'a': case 'A': keySteer = -1; break;
+    case 'ArrowRight': case 'd': case 'D': keySteer = 1; break;
+    case 'ArrowDown': case 's': case 'S': case ' ': keyTuck = true; break;
+    case 'ArrowUp': case 'w': case 'W': case 'f': case 'F': keyFlip = true; break;
     default: return;
   }
   e.preventDefault();
 }, { passive: false });
 window.addEventListener('keyup', e => {
-  if (['ArrowLeft', 'ArrowRight', 'a', 'A', 'd', 'D'].includes(e.key)) input.keyS = 0;
-  else if (['ArrowUp', 'ArrowDown', 'w', 'W', 's', 'S'].includes(e.key)) input.keyP = 0;
-  else if (e.key === ' ') input.grab = false;
+  if (['ArrowLeft', 'ArrowRight', 'a', 'A', 'd', 'D'].includes(e.key)) keySteer = 0;
+  else if (['ArrowDown', 's', 'S', ' '].includes(e.key)) keyTuck = false;
+  else if (['ArrowUp', 'w', 'W', 'f', 'F'].includes(e.key)) keyFlip = false;
 });
 document.addEventListener('gesturestart', e => e.preventDefault());
 
@@ -1392,6 +1474,8 @@ function updateHUD(dt) {
   const lit = P.boostT > 0 ? BOOST_EVERY : P.cans % BOOST_EVERY;
   for (let i = 0; i < pips.length; i++) pips[i].classList.toggle('on', i < lit);
   scoreRow.classList.toggle('boosting', P.boostT > 0);
+  btnTuck.textContent = P.air ? 'Grab' : 'Tuck';
+  btnFlip.classList.toggle('off', !P.air);
   elSpd.classList.toggle('boosting', P.boostT > 0);
   elHeat.style.width = P.heat + '%';
   elCond.style.width = P.health + '%';
@@ -1408,8 +1492,10 @@ function updateHUD(dt) {
 }
 
 /* ---- trick naming ---- */
-const GRABS = ['Method', 'Indy', 'Stalefish'];
-function grabName() { return GRABS[clamp(Math.floor(input.grabX * 3), 0, 2)]; }
+function grabName() {
+  if (P.flip < -0.5) return 'Melon';
+  return P.spin > 0.4 ? 'Indy' : P.spin < -0.4 ? 'Stalefish' : 'Tail';
+}
 function trickWords(spin, flip, grab, grabbed) {
   const spinDeg = Math.round(Math.abs(spin) * 180 / Math.PI / 90) * 90;
   const flips = Math.round(Math.abs(flip) / (Math.PI * 2));
@@ -1559,21 +1645,22 @@ function step(dt) {
   P.boostT = Math.max(0, P.boostT - dt);
   const bst = boostAmt();
   const bi = biomeOf(P.dist);
-  const steer = P.wipe > 0 ? 0 : readSteer();
-  const pitch = P.wipe > 0 ? 0 : readPitch();
+  readCtrl();
+  const steer = P.wipe > 0 ? 0 : ctrl.steer;
+  const tucking = P.wipe > 0 ? false : ctrl.tuck;
   const x0 = P.x, z0 = P.z;
 
   /* ---------- board attitude ---------- */
   if (P.air) {
     P.spin += steer * SPIN_RATE * dt;
-    P.flip += pitch * FLIP_RATE * dt;
     P.heading += steer * SPIN_RATE * dt;
+    if (P.wipe <= 0 && ctrl.flip) P.flip -= FLIP_RATE * dt;      // hold to backflip
     P.airT += dt;
-    if (input.grab) { if (!P.grabName) P.grabName = grabName(); P.grabT += dt; }
+    if (tucking) { if (!P.grabName) P.grabName = grabName(); P.grabT += dt; }
     else if (P.grabT > 0 && P.grabT < 0.12) { P.grabT = 0; P.grabName = ''; }
   } else if (P.wipe <= 0) {
-    const tuck = clamp(pitch, 0, 1);
-    const target = steer * MAX_YAW * (1 - tuck * 0.45);
+    const tuck = tucking ? 1 : 0;
+    const target = steer * MAX_YAW * (1 - tuck * 0.55);
     P.heading += (target - P.heading) * Math.min(1, dt * 6.2);
   }
 
@@ -1600,8 +1687,8 @@ function step(dt) {
   if (!P.air && P.wipe <= 0)
     vf += (Math.abs(vs0) - Math.abs(vs)) * 0.75 * (vf >= 0 ? 1 : -1);
   if (!P.air) {
-    const tuck = clamp(pitch, 0, 1);
-    const drag = (P.wipe > 0 ? 0.055 : 0.0112 * (1 - tuck * 0.35)) * (1 - bst * 0.44);
+    const tuck = tucking ? 1 : 0;
+    const drag = (P.wipe > 0 ? 0.055 : 0.0112 * (1 - tuck * 0.50)) * (1 - bst * 0.44);
     vf -= (drag * vf * Math.abs(vf) + (P.wipe > 0 ? 9 : 0.45) * Math.sign(vf)) * dt;
     if (bst > 0 && P.wipe <= 0) vf += 5.5 * bst * dt;
   }
@@ -1799,7 +1886,7 @@ function present(dt, t) {
     const bank = -P.heading * 0.72;
     riderTilt.rotation.set(0, 0, riderTilt.rotation.z + (bank - riderTilt.rotation.z) * Math.min(1, dt * 9));
   }
-  const tuck = P.air ? (P.grabT > 0.12 ? 0.3 : 0) : clamp(readPitch(), 0, 1) * 0.2 + bst * 0.16;
+  const tuck = P.air ? (P.grabT > 0.12 ? 0.3 : 0) : (ctrl.tuck ? 0.2 : 0) + bst * 0.16;
   rider.scale.set(1, 1 - tuck - clamp(spd / 70, 0, 1) * 0.12, 1);
 
   shadow.position.set(P.x, ground + 0.07, P.z);
@@ -1967,21 +2054,26 @@ function endRun() {
     ? 'New best. Every sector down, the face steepens and the slide gets hungrier.'
     : 'Land facing your direction of travel — the spin has to finish before the snow does.';
   hud.classList.remove('live');
+  padLayer.classList.remove('live');
   show(overScreen);
 }
 
 async function beginRun() {
   Snd.boot();
-  if (!input.gyro) {
+  if (ctrlMode === 'tilt' && !gyro.ok) {
     const ok = await enableGyro();
-    if (!ok) $('startFine').innerHTML = 'No motion access — <b>drag</b> to steer and flip, <b>tap and hold</b> to grab.';
+    if (!ok) {
+      setCtrlMode('touch');
+      $('startFine').innerHTML = 'No motion access — switched to <b>touch only</b>. Drag the steer pad to carve.';
+    }
   }
-  input.seeded = false;
+  gyro.seeded = false;
   hide(startScreen); hide(overScreen); hide(pauseScreen);
   resetRun();
   flash.style.opacity = '0';
   mode = 'play';
   hud.classList.add('live');
+  padLayer.classList.add('live');
   Snd.tone(300, 0.12, 'sine', 0.2);
   setTimeout(() => Snd.tone(450, 0.18, 'sine', 0.22), 110);
 }
@@ -2091,9 +2183,10 @@ function boot(saved) {
   camera.position.set(P.x + 22, P.y + 11, P.z + 22);
   present(0.016, 0);
   renderer.render(scene, camera);
+  setCtrlMode(ctrlMode);
   bootEl.classList.add('gone');
   show(startScreen);
-  if (best > 0) $('startFine').innerHTML = 'Best so far <b>' + fmt(best) + ' pts</b>. No motion sensor? <b>Drag</b> to steer and flip, <b>tap</b> to grab.';
+  if (best > 0) $('startFine').innerHTML = 'Best so far <b>' + fmt(best) + ' pts</b>. Switch to <b>Touch only</b> above if you would rather not tilt.';
   requestAnimationFrame(frame);
 }
 try {
