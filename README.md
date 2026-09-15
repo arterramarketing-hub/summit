@@ -3,11 +3,15 @@
 An open-face alpine freeride run for phones — tilt to steer, or touch-only if
 you would rather not. One self-contained `index.html`, rendered with three.js.
 
-You drop in at 4,208 m and ride down a mountain generated from a pure function
-of position. There is no jump button — the terrain launches you. Carry speed
-into a wind lip and it throws you; spin, flip and grab on the way over; land
-pointing where you are actually going. Three things are trying to end the run:
-the mountain, the cold, and the avalanche behind you.
+You drop in at 4,208 m and ride down to the valley floor at 1,000 m — about
+four minutes if you hold it together. There is no jump button: the terrain
+launches you. Carry speed into a wind lip and it throws you; spin, flip and
+grab on the way over; land pointing where you are actually going.
+
+Everything you do feeds one **chain multiplier**, and a wipeout takes all of it.
+
+The mountain is seeded by the day, so everyone rides the same face until
+midnight, and your best run is saved as a **ghost** you race on the next one.
 
 ## Playing it
 
@@ -17,6 +21,10 @@ is what the *Drop in* button does.
 
 The gyroscope does exactly one thing: it steers. Everything else is an
 on-screen button you hold, and which lights up while held.
+
+Pick **Snowboard** (loose edge, spins easily) or **Skis** (holds a line, carries
+more speed) on the start screen, along with the route: **Descent** to the valley,
+or **Endless**.
 
 | Control | On the snow | In the air |
 | --- | --- | --- |
@@ -51,16 +59,21 @@ npx http-server -p 8080 .      # then http://localhost:8080
 - **Land it.** The board has to be pointing within about 40° of your direction
   of travel, and flips have to finish. Sideways is a wipeout: no control, no
   speed, and the avalanche takes back the metres.
+- **The chain is the whole game.** Landing a trick, taking a can, threading a
+  tree by a couple of metres, holding it above 120 km/h — all of it pushes one
+  multiplier that never times out and multiplies everything you score. A wipeout
+  resets it to ×1, which is the only punishment the game really needs.
 - **Cans** sit in trails across the open snow and in ballistic arcs over every
-  kicker, so the line that pays is the line with air on it. They chain, and
-  **every fifth can fires a boost**: a hard surge, double points, and enough
-  speed that the next roller throws you properly. Crashing ends it early.
+  kicker, so the line that pays is the line with air on it. **Every fifth can
+  fires a boost**: a hard surge, double points, and enough speed that the next
+  roller throws you properly.
+- **Landing switch** — backwards, within about 40° of straight — pays 1.6× and
+  pushes the chain harder than landing forwards.
 - **Crevasses** are cut into the terrain itself. Every one has a kicker on its
   near lip — the gap is always makeable, but only if you use it.
-- **Body heat** drains with wind chill and drains faster in a whiteout. Ride
-  through a bonfire to reload it; at zero you start losing condition.
 - **The slide** sits about 120 m back while you ride clean and hauls in hard the
-  moment a crash bleeds your speed. It never stops.
+  moment a crash bleeds your speed. It never stops — but **clearing a sector
+  shoves it 80 m back down the hill**, which is the run's only moment of relief.
 
 Sectors change every 1,350 m of descent — glacier, couloir, treeline, forest —
 each with its own hazards, colour and iciness, and each cycle steeper than the last.

@@ -164,6 +164,14 @@ body.touchmode #steerPad{display:block}
 #btnFlip{bottom:calc(var(--pad-b) + 196px)}
 .act.held{background:var(--ember);color:#120600;border-color:var(--ember)}
 .act.off{opacity:.28}
+.chainv{font:600 21px/1 var(--mono);color:var(--volt);letter-spacing:-.02em;
+  text-shadow:0 0 14px rgba(182,255,63,.35);transform-origin:left center;
+  transition:transform .13s ease,color .13s ease}
+.gauge.bump .chainv{transform:scale(1.3);color:#fff}
+.gauge.lost .chainv{color:var(--vital);text-shadow:0 0 16px rgba(255,74,94,.65)}
+#chainWhy{color:var(--volt)}
+.gauge.lost #chainWhy{color:var(--vital)}
+.seg .note{flex:0 0 100%;font:500 10px/1.5 var(--mono);color:#7186a4;margin-top:2px}
 .seg{margin:20px 0 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .seg .k{flex:0 0 100%;margin-bottom:2px}
 .seg button{flex:1;min-width:120px;font:600 11px/1 var(--mono);letter-spacing:.1em;color:var(--ink-dim);
@@ -182,7 +190,7 @@ body:not(.touchmode) .touch-only{display:none}
 #flash{position:absolute;inset:0;pointer-events:none;opacity:0;background:#fff}
 
 /* ---------- overlays ---------- */
-.screen{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;
+.screen{position:absolute;inset:0;display:flex;flex-direction:column;
   padding:calc(var(--pad-t) + 8px) var(--pad-x) calc(var(--pad-b) + 8px);
   background:linear-gradient(180deg,rgba(4,8,16,.90),rgba(4,8,16,.62) 45%,rgba(4,8,16,.93));
   -webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
@@ -280,9 +288,9 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
 
     <div class="hud-bot">
       <div class="gauges">
-        <div class="gauge" id="heatGauge">
-          <div class="row"><span class="k">Body heat</span><span class="pct" id="heatPct">100%</span></div>
-          <div class="bar"><div class="fill" id="heatFill"></div><div class="segs"></div></div>
+        <div class="gauge" id="chainBox">
+          <div class="row"><span class="k">Chain</span><span class="pct" id="chainWhy"></span></div>
+          <div class="chainv">×<b id="chainV">1</b></div>
         </div>
         <div class="gauge" id="condGauge">
           <div class="row"><span class="k">Condition</span><span class="pct" id="condPct">100%</span></div>
@@ -322,6 +330,20 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
         <button type="button" data-mode="touch">Touch only</button>
       </div>
 
+      <div class="seg" id="riderSeg">
+        <span class="k">Rider</span>
+        <button type="button" data-rider="board">Snowboard</button>
+        <button type="button" data-rider="ski">Skis</button>
+        <span class="note" id="riderNote"></span>
+      </div>
+
+      <div class="seg" id="routeSeg">
+        <span class="k">Route</span>
+        <button type="button" data-route="descent">Descent</button>
+        <button type="button" data-route="endless">Endless</button>
+        <span class="note" id="routeNote"></span>
+      </div>
+
       <div class="tiltviz">
         <div class="phone tilt-only" aria-hidden="true"></div>
         <p><span class="tilt-only"><b>Tilt</b> the handset to carve — and to spin in the air.
@@ -331,17 +353,20 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
            <b>FLIP</b> backflips while you are airborne.</p>
       </div>
 
-      <dl class="brief">
-        <div><dt>Terrain</dt><dd>Every roller is a takeoff. The mountain launches you — there is no jump button.</dd></div>
-        <div><dt>Tricks</dt><dd>Steer to spin, hold FLIP to backflip, hold TUCK to grab. Land pointing where you are going — sideways is a wipeout.</dd></div>
-        <div><dt>Cans</dt><dd>Every fifth can fires a boost: a hard surge and double points until you crash.</dd></div>
-        <div><dt>Slide</dt><dd>The avalanche never stops. Crash and it takes back the metres you bought.</dd></div>
-      </dl>
+
 
       <div class="actions">
         <button class="go" id="btnStart" type="button">Drop in</button>
       </div>
       <p class="fine" id="startFine">Tilt only ever steers. Pick <b>Touch only</b> above to steer with a pad instead. On a desktop: <b>arrow keys</b>, <b>space</b> to tuck or grab, <b>F</b> to flip.</p>
+
+      <dl class="brief">
+        <div><dt>Terrain</dt><dd>Every roller is a takeoff. The mountain launches you — there is no jump button.</dd></div>
+        <div><dt>Tricks</dt><dd>Steer to spin, hold FLIP to backflip, hold TUCK to grab. Land pointing where you are going — sideways is a wipeout.</dd></div>
+        <div><dt>Cans</dt><dd>Every fifth can fires a boost: a hard surge and double points until you crash.</dd></div>
+        <div><dt>Chain</dt><dd>Tricks, cans, close passes and flat-out speed all build one multiplier. It never times out. A wipeout takes all of it.</dd></div>
+        <div><dt>Slide</dt><dd>The avalanche never stops — but clearing a sector shoves it 80 m back down the hill.</dd></div>
+      </dl>
     </div>
   </section>
 
@@ -356,7 +381,7 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
         <div class="stat"><div class="k">Descent</div><div class="v" id="sDist">0<small>M</small></div></div>
         <div class="stat"><div class="k">Low point</div><div class="v" id="sAlt">0<small>M</small></div></div>
         <div class="stat"><div class="k">Top speed</div><div class="v" id="sSpd">0<small>KM/H</small></div></div>
-        <div class="stat"><div class="k">Best trick</div><div class="v" id="sTrick">0</div></div>
+        <div class="stat"><div class="k">Best chain</div><div class="v" id="sTrick">0</div></div>
         <div class="stat dew"><div class="k">Cans</div><div class="v" id="sCans">0<small>· 0 BOOSTS</small></div></div>
         <div class="stat"><div class="k">Longest air</div><div class="v" id="sAir">0<small>S</small></div></div>
         <div class="stat hero" id="bestRow"><div class="k">Best</div><div class="v" id="sBest">0</div></div>
@@ -365,6 +390,25 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
         <button class="go" id="btnAgain" type="button">Drop in again</button>
       </div>
       <p class="fine" id="overFine">Land facing your direction of travel — the spin has to finish before the snow does.</p>
+    </div>
+  </section>
+
+  <!-- ---------------- valley reached ---------------- -->
+  <section class="screen" id="winScreen" hidden>
+    <div class="wrap">
+      <p class="eyebrow">Valley floor · 1,000 m</p>
+      <h2 style="color:var(--volt)">Down</h2>
+      <p class="lede" id="winLine">You rode the whole face. The slide is still up there somewhere.</p>
+      <div class="stats">
+        <div class="stat hero"><div class="k">Time</div><div class="v" id="wTime">0:00</div></div>
+        <div class="stat"><div class="k">Score</div><div class="v" id="wScore">0</div></div>
+        <div class="stat"><div class="k">Best chain</div><div class="v" id="wChain">×1</div></div>
+        <div class="stat"><div class="k">Cans</div><div class="v" id="wCans">0</div></div>
+        <div class="stat"><div class="k">Tricks</div><div class="v" id="wTricks">0</div></div>
+        <div class="stat hero" id="wBestRow"><div class="k">Best time</div><div class="v" id="wBest">—</div></div>
+      </div>
+      <div class="actions"><button class="go" id="btnWinAgain" type="button">Ride it again</button></div>
+      <p class="fine" id="winFine">Your ghost is saved. Next run you race it.</p>
     </div>
   </section>
 
@@ -430,13 +474,20 @@ function noise2(x, y) {
    all of it one pure function of (x, z). The rider is held on the
    face by the terrain's own cross-slope, not by invisible walls.
    ══════════════════════════════════════════════════════════════ */
+/* One mountain per day: everybody riding today gets the same face, and
+   tomorrow's is different. Seeded by the day number, so no server needed. */
+const DAY = Math.floor(Date.now() / 86400000);
+const SEED = DAY % 9973;
+const SX0 = SEED * 137.31, SZ0 = SEED * 91.77, SPH = (SEED % 628) / 100;
+const nz = (x, y) => noise2(x + SX0, y + SZ0);
+
 const FALL = 0.40;                 // mean gradient of the fall line
 const FACE_W = 88;                 // half-width of rideable face before the ridges rise
 const START_ALT = 4208;
 
 /** Centre of the face — the whole bowl drifts across the mountain. */
 function faceX(z) {
-  return 30 * Math.sin(z * 0.00210) + 14 * Math.sin(z * 0.00530 + 2.1);
+  return 30 * Math.sin(z * 0.00210 + SPH) + 14 * Math.sin(z * 0.00530 + 2.1 + SPH * 1.7);
 }
 /** How far outside the face shoulders a point lies. */
 function faceOut(x, z) { return Math.abs(x - faceX(z)) - FACE_W; }
@@ -449,15 +500,15 @@ function crevAt(cell) {
   let c = crevCache.get(cell);
   if (c !== undefined) return c;
   const amt = BIOMES[Math.floor(Math.max(0, cell * CREV_CELL) / SECTOR_LEN) % BIOMES.length].crevasse;
-  if (amt <= 0 || hash2(cell, 41) > amt * 0.7) c = null;
+  if (amt <= 0 || hash2(cell + SEED, 41) > amt * 0.7) c = null;
   else {
-    const cz = -(cell * CREV_CELL + 30 + hash2(cell, 77) * (CREV_CELL - 60));
+    const cz = -(cell * CREV_CELL + 30 + hash2(cell + SEED, 77) * (CREV_CELL - 60));
     c = {
       z: cz,
-      x: faceX(cz) + (hash2(cell, 91) * 2 - 1) * (FACE_W - 26),
-      halfW: 15 + hash2(cell, 23) * 17,
-      halfL: 8 + hash2(cell, 59) * 7,
-      ang: (hash2(cell, 13) - 0.5) * 0.44,
+      x: faceX(cz) + (hash2(cell + SEED, 91) * 2 - 1) * (FACE_W - 26),
+      halfW: 15 + hash2(cell + SEED, 23) * 17,
+      halfL: 8 + hash2(cell + SEED, 59) * 7,
+      ang: (hash2(cell + SEED, 13) - 0.5) * 0.44,
       ramped: false
     };
   }
@@ -488,15 +539,15 @@ function heightBase(x, z) {
   y += Math.sin(x * 0.0180 + z * 0.0042) * 6.5;
   y += Math.sin(x * 0.0410 - z * 0.0075 + 1.7) * 2.4;
   /* rollers: these are what launch you, so they carry real amplitude */
-  y += (noise2(x * 0.0115, z * 0.0105) - 0.5) * 17;
-  y += (noise2(x * 0.0340, z * 0.0290) - 0.5) * 5.6;
-  y += (noise2(x * 0.0980, z * 0.0980) - 0.5) * 1.3;
-  const lip = Math.sin(z * 0.0740 + noise2(x * 0.0040, z * 0.0030) * 6.0);
+  y += (nz(x * 0.0115, z * 0.0105) - 0.5) * 17;
+  y += (nz(x * 0.0340, z * 0.0290) - 0.5) * 5.6;
+  y += (nz(x * 0.0980, z * 0.0980) - 0.5) * 1.3;
+  const lip = Math.sin(z * 0.0740 + SPH + nz(x * 0.0040, z * 0.0030) * 6.0);
   y += lip > 0 ? lip * lip * lip * 5.2                 // the takeoff
                : -Math.pow(-lip, 1.6) * 2.9;           // and the hollow you land in
   /* the ridges that close the face in */
   const e = faceOut(x, z);
-  if (e > 0) y += Math.min(e * e * 0.05, 90) + noise2(x * 0.05, z * 0.05) * Math.min(e, 10) * 0.6;
+  if (e > 0) y += Math.min(e * e * 0.05, 90) + nz(x * 0.05, z * 0.05) * Math.min(e, 10) * 0.6;
   return y;
 }
 function height(x, z) {
@@ -533,7 +584,7 @@ function biomeBlend(dist) {
 /** Iciness at a point: slick blue ice you can feel through the edges. */
 function iceAt(x, z, bi) {
   if (bi.ice <= 0.02) return 0;
-  return smoothstep(0.56, 0.72, noise2(x * 0.026, z * 0.022)) * bi.ice;
+  return smoothstep(0.56, 0.72, nz(x * 0.026, z * 0.022)) * bi.ice;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -710,23 +761,94 @@ const CAN_GEO = bake([
   { geo: new THREE.CylinderGeometry(0.30, 0.27, 0.10, 10), color: 0xb9c6d6, m: mat4(0, -0.39, 0) }
 ]);
 
-/* ---- the rider ---- */
-const RIDER_GEO = bake([
+/* ---- the riders ---- */
+/* Shared parts, then a board stance (body turned across the deck) or a ski
+   stance (square to the fall line, poles out). */
+function bodyParts(turn) {
+  const c = Math.cos(turn), sn = Math.sin(turn);
+  const at = (x, y, z, rx, ry, rz) => mat4(x * c + z * sn, y, z * c - x * sn, rx || 0, (ry || 0) + turn, rz || 0);
+  return [
+    { geo: new THREE.BoxGeometry(0.56, 0.72, 0.78), color: 0x1d3450, m: at(0, 1.03, 0.05, 0.22) },
+    { geo: new THREE.BoxGeometry(0.58, 0.14, 0.80), color: 0xff6a2b, m: at(0, 0.86, 0.06, 0.22) },
+    { geo: new THREE.BoxGeometry(0.18, 0.70, 0.18), color: 0x1d3450, m: at(-0.36, 0.92, 0.26, 0.34, 0, 0.26) },
+    { geo: new THREE.BoxGeometry(0.18, 0.70, 0.18), color: 0x1d3450, m: at(0.36, 0.92, -0.14, -0.30, 0, -0.20) },
+    { geo: new THREE.BoxGeometry(0.42, 0.40, 0.44), color: 0xe9eef7, m: at(0, 1.56, 0.02) },
+    { geo: new THREE.BoxGeometry(0.44, 0.13, 0.10), color: 0x101722, m: at(0, 1.56, -0.20) }
+  ];
+}
+const BOARD_GEO = bake([
   { geo: new THREE.BoxGeometry(0.52, 0.10, 3.3), color: 0xd8451c, m: mat4(0, 0.09, 0) },
   { geo: new THREE.BoxGeometry(0.54, 0.11, 1.15), color: 0x16202f, m: mat4(0, 0.17, -0.05) },
-  { geo: new THREE.BoxGeometry(0.30, 0.50, 0.52), color: 0x131c29, m: mat4(-0.02, 0.44, 0.62) },
-  { geo: new THREE.BoxGeometry(0.30, 0.50, 0.52), color: 0x131c29, m: mat4(0.02, 0.44, -0.50) },
-  { geo: new THREE.BoxGeometry(0.56, 0.72, 0.78), color: 0x1d3450, m: mat4(0, 1.03, 0.05, 0.22, 0, 0) },
-  { geo: new THREE.BoxGeometry(0.58, 0.14, 0.80), color: 0xff6a2b, m: mat4(0, 0.86, 0.06, 0.22, 0, 0) },
-  { geo: new THREE.BoxGeometry(0.18, 0.70, 0.18), color: 0x1d3450, m: mat4(-0.36, 0.92, 0.26, 0.34, 0, 0.26) },
-  { geo: new THREE.BoxGeometry(0.18, 0.70, 0.18), color: 0x1d3450, m: mat4(0.36, 0.92, -0.14, -0.30, 0, -0.20) },
-  { geo: new THREE.BoxGeometry(0.42, 0.40, 0.44), color: 0xe9eef7, m: mat4(0, 1.56, 0.02) },
-  { geo: new THREE.BoxGeometry(0.44, 0.13, 0.10), color: 0x101722, m: mat4(0, 1.56, -0.20) }
-]);
+  { geo: new THREE.BoxGeometry(0.34, 0.50, 0.46), color: 0x131c29, m: mat4(-0.02, 0.44, 0.62, 0, 0.9, 0) },
+  { geo: new THREE.BoxGeometry(0.34, 0.50, 0.46), color: 0x131c29, m: mat4(0.02, 0.44, -0.50, 0, 0.9, 0) }
+].concat(bodyParts(0.95)));
+const SKI_GEO = bake([
+  { geo: new THREE.BoxGeometry(0.19, 0.08, 3.1), color: 0x2f86cc, m: mat4(-0.31, 0.06, 0) },
+  { geo: new THREE.BoxGeometry(0.19, 0.08, 3.1), color: 0x2f86cc, m: mat4(0.31, 0.06, 0) },
+  { geo: new THREE.BoxGeometry(0.21, 0.10, 0.5), color: 0xffd23f, m: mat4(-0.31, 0.13, -1.34, -0.34, 0, 0) },
+  { geo: new THREE.BoxGeometry(0.21, 0.10, 0.5), color: 0xffd23f, m: mat4(0.31, 0.13, -1.34, -0.34, 0, 0) },
+  { geo: new THREE.BoxGeometry(0.26, 0.46, 0.42), color: 0x131c29, m: mat4(-0.31, 0.33, 0.02) },
+  { geo: new THREE.BoxGeometry(0.26, 0.46, 0.42), color: 0x131c29, m: mat4(0.31, 0.33, 0.02) },
+  { geo: new THREE.CylinderGeometry(0.035, 0.035, 1.6, 5), color: 0x2a3444, m: mat4(-0.58, 0.85, 0.55, 0.42, 0, 0.12) },
+  { geo: new THREE.CylinderGeometry(0.035, 0.035, 1.6, 5), color: 0x2a3444, m: mat4(0.58, 0.85, 0.55, 0.42, 0, -0.12) },
+  { geo: new THREE.CylinderGeometry(0.16, 0.16, 0.05, 6), color: 0x8a97ab, m: mat4(-0.58, 0.18, 0.88) },
+  { geo: new THREE.CylinderGeometry(0.16, 0.16, 0.05, 6), color: 0x8a97ab, m: mat4(0.58, 0.18, 0.88) }
+].concat(bodyParts(0)));
+
+const RIDERS = {
+  board: { key: 'board', name: 'Snowboard', geo: BOARD_GEO, grip: 6.6, spin: 9.2,
+           drag: 0.0112, tuckDrag: 0.50, maxYaw: 0.74, trickBonus: 1.15,
+           grabs: ['Indy', 'Stalefish', 'Melon', 'Tail'], blurb: 'Loose edge, spins easy' },
+  ski:   { key: 'ski',   name: 'Skis',      geo: SKI_GEO,   grip: 8.4, spin: 6.6,
+           drag: 0.0103, tuckDrag: 0.58, maxYaw: 0.82, trickBonus: 1.0,
+           grabs: ['Iron Cross', 'Safety', 'Mute', 'Zudnick'], blurb: 'Holds a line, carries speed' }
+};
+let R = RIDERS.board;
+try { const k = localStorage.getItem('sw_rider'); if (RIDERS[k]) R = RIDERS[k]; } catch (e) {}
+
 const riderPivot = new THREE.Group();          // yaw + world position
 const riderTilt = new THREE.Group();           // flip / bank / tumble
-const rider = new THREE.Mesh(RIDER_GEO, litMat());
+const rider = new THREE.Mesh(R.geo, litMat());
 riderTilt.add(rider); riderPivot.add(riderTilt); scene.add(riderPivot);
+
+/* the ghost of your best run, raced in real time */
+const GHOST_STEP = 0.12, GHOST_MAX = 6000;
+const ghostMesh = new THREE.Mesh(R.geo, new THREE.MeshBasicMaterial({
+  vertexColors: true, transparent: true, opacity: 0.30, depthWrite: false, fog: true
+}));
+ghostMesh.visible = false;
+scene.add(ghostMesh);
+let ghostRec = [], ghostClock = 0, ghostData = null;
+function saveGhost() {
+  try {
+    const f = new Float32Array(ghostRec), b = new Uint8Array(f.buffer);
+    let str = '';
+    for (let i = 0; i < b.length; i += 8192) str += String.fromCharCode.apply(null, b.subarray(i, i + 8192));
+    localStorage.setItem('sw_ghost', btoa(str));
+  } catch (e) {}
+}
+function loadGhost() {
+  try {
+    const raw = localStorage.getItem('sw_ghost');
+    if (!raw) return null;
+    const bin = atob(raw), b = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
+    return new Float32Array(b.buffer);
+  } catch (e) { return null; }
+}
+function updateGhost() {
+  if (!ghostData || mode !== 'play') { ghostMesh.visible = false; return; }
+  const n = (ghostData.length / 4) | 0;
+  const f = P.time / GHOST_STEP, i = f | 0;
+  if (i >= n - 1) { ghostMesh.visible = false; return; }
+  const t = f - i, a = i * 4, b = a + 4;
+  ghostMesh.visible = true;
+  ghostMesh.position.set(
+    lerp(ghostData[a], ghostData[b], t),
+    lerp(ghostData[a + 1], ghostData[b + 1], t),
+    lerp(ghostData[a + 2], ghostData[b + 2], t));
+  ghostMesh.rotation.y = ghostData[a + 3] + wrapPi(ghostData[b + 3] - ghostData[a + 3]) * t;
+}
 
 const shadow = new THREE.Mesh(
   new THREE.PlaneGeometry(4.4, 5.6),
@@ -782,14 +904,14 @@ function rebuildTerrain(px, pz, force) {
       const y = height(x, z);
       pos[v * 3] = x; pos[v * 3 + 1] = y; pos[v * 3 + 2] = z;
       const e = faceOut(x, z);
-      const grain = noise2(x * 0.07, z * 0.07);
+      const grain = nz(x * 0.07, z * 0.07);
       const notch = crevNotch(x, z);
       if (e > 2) {
-        _c.copy(noise2(x * 0.21, z * 0.21) > 0.52 ? C_ROCK : _c2.copy(C_ROCK).lerp(C_SHADE, 0.35))
+        _c.copy(nz(x * 0.21, z * 0.21) > 0.52 ? C_ROCK : _c2.copy(C_ROCK).lerp(C_SHADE, 0.35))
           .lerp(C_SHADE, 1 - smoothstep(2, 14, e));
       } else {
         _c.copy(C_SNOW).lerp(C_SHADE, grain * 0.58);
-        const ice = iceAmt > 0.02 ? smoothstep(0.56, 0.72, noise2(x * 0.026, z * 0.022)) * iceAmt : 0;
+        const ice = iceAmt > 0.02 ? smoothstep(0.56, 0.72, nz(x * 0.026, z * 0.022)) * iceAmt : 0;
         if (ice > 0.01) _c.lerp(C_ICE, ice * 0.85);
       }
       if (notch > 0.0005) {
@@ -890,48 +1012,6 @@ function killProp(o) {
 function clearProps() {
   for (const o of props) if (o.slot >= 0) killProp(o);
   props = []; ramps = [];
-}
-
-/* ---- bonfires ---- */
-const FIRE_N = 4;
-const fires = [];
-for (let i = 0; i < FIRE_N; i++) {
-  const g = new THREE.Group();
-  const base = new THREE.Mesh(bake([
-    { geo: new THREE.CylinderGeometry(2.5, 2.9, 0.34, 9), color: 0x3b3740, m: mat4(0, 0.17, 0) },
-    { geo: new THREE.BoxGeometry(0.42, 0.42, 3.3), color: 0x4a3526, m: mat4(0, 0.5, 0, 0, 0.5, 0.1) },
-    { geo: new THREE.BoxGeometry(0.42, 0.42, 3.3), color: 0x40301f, m: mat4(0, 0.5, 0, 0, -0.6, -0.1) },
-    { geo: new THREE.BoxGeometry(0.38, 2.2, 0.38), color: 0x55402d, m: mat4(0.5, 1.1, 0.3, 0.4, 0, 0.35) },
-    { geo: new THREE.BoxGeometry(0.38, 2.2, 0.38), color: 0x4a3526, m: mat4(-0.5, 1.1, -0.2, -0.4, 0, -0.35) }
-  ]), litMat());
-  const flame = new THREE.Mesh(new THREE.ConeGeometry(1.45, 4.6, 7),
-    new THREE.MeshBasicMaterial({ color: 0xff8c2a, fog: false }));
-  flame.position.y = 2.6;
-  const core = new THREE.Mesh(new THREE.ConeGeometry(0.72, 2.8, 6),
-    new THREE.MeshBasicMaterial({ color: 0xfff0c2, fog: false }));
-  core.position.y = 2.1;
-  const halo = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: glowSprite(0xff8a24, 0.24), blending: THREE.AdditiveBlending, depthWrite: false, fog: false, opacity: 0.95
-  }));
-  halo.scale.setScalar(26); halo.position.y = 3;
-  const smoke = new THREE.Mesh(
-    new THREE.CylinderGeometry(3.4, 0.7, 17, 7, 1, true),
-    new THREE.MeshBasicMaterial({ color: 0x5d6675, transparent: true, opacity: 0.28, depthWrite: false, side: THREE.DoubleSide })
-  );
-  smoke.position.y = 12; smoke.rotation.z = 0.12;
-  const light = new THREE.PointLight(0xff9646, 0, 52, 2);
-  light.position.y = 2.4;
-  g.add(base, flame, core, halo, smoke, light);
-  g.visible = false;
-  scene.add(g);
-  fires.push({ g, flame, core, halo, smoke, light, x: 0, z: 0, active: false, used: false });
-}
-let fireCursor = 0;
-function lightFire(x, z) {
-  const f = fires[fireCursor++ % FIRE_N];
-  f.x = x; f.z = z; f.active = true; f.used = false;
-  f.g.position.set(x, height(x, z), z);
-  f.g.visible = true;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -1270,6 +1350,26 @@ function setCtrlMode(m) {
 for (const b of document.querySelectorAll('[data-mode]')) {
   b.addEventListener('click', () => setCtrlMode(b.dataset.mode));
 }
+function setRider(k) {
+  if (!RIDERS[k]) return;
+  R = RIDERS[k];
+  try { localStorage.setItem('sw_rider', k); } catch (e) {}
+  rider.geometry = R.geo;
+  ghostMesh.geometry = R.geo;
+  for (const b of document.querySelectorAll('[data-rider]')) b.classList.toggle('sel', b.dataset.rider === k);
+  const n = $('riderNote'); if (n) n.textContent = R.blurb + '.';
+}
+function setRoute(k) {
+  route = k;
+  try { localStorage.setItem('sw_route', k); } catch (e) {}
+  for (const b of document.querySelectorAll('[data-route]')) b.classList.toggle('sel', b.dataset.route === k);
+  const n = $('routeNote');
+  if (n) n.textContent = k === 'descent'
+    ? 'Ride from 4,208 m to the valley floor at 1,000 m. About four minutes if you hold it together.'
+    : 'No finish line. Ride until the mountain takes you.';
+}
+for (const b of document.querySelectorAll('[data-rider]')) b.addEventListener('click', () => setRider(b.dataset.rider));
+for (const b of document.querySelectorAll('[data-route]')) b.addEventListener('click', () => setRoute(b.dataset.route));
 
 /* ---- keyboard, for desktop ---- */
 window.addEventListener('keydown', e => {
@@ -1295,8 +1395,7 @@ document.addEventListener('gesturestart', e => e.preventDefault());
 const RIDER_R = 0.5, RIDER_H = 1.8;
 const GACC = 30;            // gravity resolved along the surface
 const GRAV_Y = 26;
-const MAX_YAW = 0.74;
-const SPIN_RATE = 8.5, FLIP_RATE = 6.0;
+const FLIP_RATE = 6.0;
 /* Every fifth can detonates a boost: a hard surge, double points, and enough
    speed that the next roller throws you properly. Crashing kills it. */
 const BOOST_EVERY = 5, BOOST_TIME = 3.4, BOOST_MAX = 7;
@@ -1307,18 +1406,27 @@ const P = {
   air: false, airT: 0, bestAir: 0, launchY: 0,
   spin: 0, flip: 0, grabT: 0, grabName: '', trickBase: 0,
   wipe: 0, hurt: 0, boostT: 0, boosts: 0,
-  health: 100, heat: 100,
+  health: 100,
   dist: 0, alt: START_ALT, lowAlt: START_ALT, y0: 0,
   score: 0, topSpeed: 0, cans: 0, canChain: 0, canChainT: 0,
-  combo: 0, comboT: 0, bestTrick: 0, tricks: 0
+  chain: 1, chainBest: 1, fastT: 0, near: 0, bestTrick: 0, tricks: 0, time: 0, switches: 0
 };
 let mode = 'menu';
-let genZ = 0, nextFireZ = 0, nextRampZ = 0, nextCanZ = 0;
+let genZ = 0, nextRampZ = 0, nextCanZ = 0;
 let slideZ = 0, slideGap = 190;
 let weather = 0, weatherT = 24, weatherLen = 0;
 let shake = 0, menuT = 0, deathT = 0, deathCause = null, curSector = -1;
-let best = 0;
-try { best = parseInt(localStorage.getItem('sw_best') || '0', 10) || 0; } catch (e) {}
+const FINISH_ALT = 1000;
+let route = 'descent';
+let best = 0, bestTime = 0, bestDist = 0;
+try {
+  best = parseInt(localStorage.getItem('sw_best') || '0', 10) || 0;
+  bestTime = parseFloat(localStorage.getItem('sw_btime') || '0') || 0;
+  bestDist = parseFloat(localStorage.getItem('sw_bdist') || '0') || 0;
+  const rt = localStorage.getItem('sw_route'); if (rt === 'endless' || rt === 'descent') route = rt;
+} catch (e) {}
+const fmtTime = (t) => Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0') +
+                       '.' + Math.floor((t * 10) % 10);
 
 const GEN_AHEAD = 370, CULL_BEHIND = 55;
 const diffAt = () => clamp(P.dist / 4200, 0, 1);
@@ -1330,8 +1438,7 @@ const speedOf = () => Math.hypot(P.vx, P.vz);
 function seedWorld() {
   clearProps();
   crevCache.clear();
-  for (const f of fires) { f.active = false; f.g.visible = false; f.light.intensity = 0; }
-  genZ = -40; nextFireZ = -430; nextRampZ = -150; nextCanZ = -90;
+  genZ = -40; nextRampZ = -150; nextCanZ = -90;
   while (genZ > P.z - GEN_AHEAD) generate();
 }
 
@@ -1409,11 +1516,6 @@ function generate() {
     canTrail(cx + rand(-1, 1) * span * 0.8, z, 5 + Math.floor(Math.random() * 4));
   }
 
-  if (z < nextFireZ) {
-    nextFireZ = z - rand(440, 640);
-    lightFire(cx + rand(-1, 1) * span * 0.6, z - 6);
-  }
-
   /* the forest beyond the shoulders, framing the face */
   if (bi.trees > 0) {
     for (let i = 0; i < 3; i++) {
@@ -1430,9 +1532,18 @@ function generate() {
 const hud = $('hud'), popups = $('popups'), warnEl = $('warn'), trickEl = $('trick');
 const elAlt = $('alt'), elDist = $('dist'), elSpd = $('spd'), elScore = $('score'), elCans = $('cans');
 const elSectorTag = $('sectorTag'), sectorEl = $('sector');
-const elHeat = $('heatFill'), elCond = $('condFill'), elHeatP = $('heatPct'), elCondP = $('condPct');
+const elCond = $('condFill'), elCondP = $('condPct');
 const elAva = $('avaFill'), elAvaD = $('avaDist'), slideGauge = $('slideGauge');
-const heatGauge = $('heatGauge'), condGauge = $('condGauge');
+const condGauge = $('condGauge'), chainBox = $('chainBox'), chainV = $('chainV'), chainWhy = $('chainWhy');
+let chainFx = null;
+function flashChain(why, lost) {
+  chainBox.classList.remove('bump', 'lost');
+  void chainBox.offsetWidth;
+  chainBox.classList.add(lost ? 'lost' : 'bump');
+  chainWhy.textContent = why || '';
+  clearTimeout(chainFx);
+  chainFx = setTimeout(() => { chainBox.classList.remove('bump', 'lost'); chainWhy.textContent = ''; }, lost ? 1100 : 480);
+}
 const vig = $('vig'), surge = $('surge'), flash = $('flash'), haze = $('haze'), rush = $('rush');
 const boostfx = $('boostfx'), pips = $('pips').children, scoreRow = document.querySelector('.score-row');
 const fmt = n => Math.round(n).toLocaleString('en-US');
@@ -1458,7 +1569,16 @@ function announceSector() {
   sectorEl.classList.remove('on');
   void sectorEl.offsetWidth;
   sectorEl.classList.add('on');
-  if (s > 0) { Snd.tone(300, 0.2, 'sine', 0.22); setTimeout(() => Snd.tone(400, 0.3, 'sine', 0.2), 130); }
+  if (s > 0) {
+    /* the payoff for getting here: the slide loses ground */
+    slideGap = Math.min(210, slideGap + 80);
+    slideZ = P.z + slideGap;
+    popup('Sector clear', 'SLIDE −80 M', 'near');
+    bumpChain(2, 'Sector');
+    Snd.tone(300, 0.2, 'sine', 0.22);
+    setTimeout(() => Snd.tone(400, 0.3, 'sine', 0.2), 130);
+    setTimeout(() => Snd.tone(600, 0.35, 'sine', 0.18), 260);
+  }
 }
 
 let hudT = 0;
@@ -1466,7 +1586,7 @@ function updateHUD(dt) {
   hudT -= dt;
   if (hudT > 0) return;
   hudT = 0.066;
-  elAlt.innerHTML = fmt(P.alt) + '<small>M</small>';
+  elAlt.innerHTML = fmt(Math.max(0, P.alt)) + '<small>M</small>';
   elDist.textContent = fmt(P.dist) + ' M DESCENDED';
   elSpd.innerHTML = fmt(speedOf() * 3.6) + '<small>KM/H</small>';
   elScore.textContent = fmt(P.score);
@@ -1477,24 +1597,23 @@ function updateHUD(dt) {
   btnTuck.textContent = P.air ? 'Grab' : 'Tuck';
   btnFlip.classList.toggle('off', !P.air);
   elSpd.classList.toggle('boosting', P.boostT > 0);
-  elHeat.style.width = P.heat + '%';
+  chainV.textContent = P.chain;
   elCond.style.width = P.health + '%';
-  elHeatP.textContent = Math.round(P.heat) + '%';
   elCondP.textContent = Math.round(P.health) + '%';
-  heatGauge.classList.toggle('low', P.heat < 30);
   condGauge.classList.toggle('low', P.health < 34);
   const close = clamp(1 - slideGap / 190, 0, 1);
   elAva.style.width = (8 + close * 92) + '%';
   elAvaD.textContent = Math.round(slideGap) + ' M BACK';
   slideGauge.classList.toggle('critical', slideGap < 55);
-  vig.style.opacity = clamp(Math.max((1 - P.health / 100) * 0.85, (1 - P.heat / 100) * 0.5, close * close * 0.9), 0, 1);
+  vig.style.opacity = clamp(Math.max((1 - P.health / 100) * 0.85, close * close * 0.9), 0, 1);
   surge.style.opacity = String(clamp(1 - slideGap / 70, 0, 1) * 0.8);
 }
 
 /* ---- trick naming ---- */
 function grabName() {
-  if (P.flip < -0.5) return 'Melon';
-  return P.spin > 0.4 ? 'Indy' : P.spin < -0.4 ? 'Stalefish' : 'Tail';
+  const g = R.grabs;
+  if (P.flip < -0.5) return g[2];
+  return P.spin > 0.4 ? g[0] : P.spin < -0.4 ? g[1] : g[3];
 }
 function trickWords(spin, flip, grab, grabbed) {
   const spinDeg = Math.round(Math.abs(spin) * 180 / Math.PI / 90) * 90;
@@ -1513,7 +1632,7 @@ function liveTrick() {
   const w = trickWords(P.spin, P.flip, P.grabName, P.grabT > 0.12);
   if (!w) { trickEl.classList.remove('on'); return; }
   trickEl.classList.add('on');
-  trickEl.innerHTML = w.replace(/·/g, '<em>·</em>') + (P.combo > 1 ? '<i>CHAIN ×' + P.combo + '</i>' : '');
+  trickEl.innerHTML = w.replace(/·/g, '<em>·</em>') + (P.chain > 1 ? '<i>CHAIN ×' + P.chain + '</i>' : '');
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -1543,18 +1662,38 @@ function resetRun() {
   P.air = false; P.airT = 0; P.bestAir = 0;
   P.spin = 0; P.flip = 0; P.grabT = 0; P.grabName = ''; P.trickBase = 0;
   P.wipe = 0; P.hurt = 0; P.boostT = 0; P.boosts = 0;
-  P.health = 100; P.heat = 100;
+  P.health = 100;
   P.dist = 0; P.alt = START_ALT; P.lowAlt = START_ALT;
   P.score = 0; P.topSpeed = 0; P.cans = 0; P.canChain = 0; P.canChainT = 0;
-  P.combo = 0; P.comboT = 0; P.bestTrick = 0; P.tricks = 0;
+  P.chain = 1; P.chainBest = 1; P.fastT = 0; P.near = 0; P.bestTrick = 0; P.tricks = 0; P.time = 0; P.switches = 0;
   slideGap = 190; slideZ = P.z + slideGap;
   weather = 0; weatherT = 26; weatherLen = 0;
   shake = 0; deathCause = null; curSector = -1;
+  ghostRec = []; ghostClock = 0; ghostData = loadGhost();
+  ghostMesh.visible = false;
   seedWorld();
   rebuildTerrain(P.x, P.z, true);
   resetTrail(P.x, P.y, P.z);
   trailClock = 0;
   announceSector();
+}
+
+/* One chain. Tricks, cans, close passes and sustained speed all feed it, it
+   never times out, and a wipeout takes the lot. Everything you score is
+   multiplied by it, so the number on screen is what you stand to lose. */
+const CHAIN_MAX = 40;
+function bumpChain(n, why) {
+  if (P.chain >= CHAIN_MAX) { if (why) flashChain(why, false); return; }
+  P.chain = Math.min(CHAIN_MAX, P.chain + n);
+  P.chainBest = Math.max(P.chainBest, P.chain);
+  flashChain(why, false);
+  Snd.tone(300 + Math.min(30, P.chain) * 26, 0.07, 'square', 0.09);
+}
+function breakChain() {
+  if (P.chain <= 1) return;
+  popup('Chain lost', '×' + P.chain, 'bad');
+  flashChain('Lost', true);
+  P.chain = 1;
 }
 
 function fireBoost() {
@@ -1593,28 +1732,32 @@ function land(impact) {
   }
   emitSpray(P.x, P.y, P.z, 18, 2.6);
 
-  /* landing quality: point the board where you are actually going */
-  const clean = off < 0.72 && flipOff < 0.95;
+  /* landing quality: point where you are going — or exactly backwards, which
+     is a switch landing and pays for the nerve */
+  const backwards = off > Math.PI - 0.72;
+  const clean = (off < 0.72 || backwards) && flipOff < 0.95;
   if (!clean && (rotated || off > 1.0)) {
     wipeout(off > 1.4 ? 'Caught an edge' : 'Landed sideways', 14);
     return;
   }
-  P.heading = velYaw + wrapPi(P.heading - velYaw) * 0.35;
+  P.heading = velYaw + wrapPi(P.heading - velYaw) * (backwards ? 0 : 0.35);
 
   if (P.airT > 0.35) {
     const spinDeg = Math.abs(P.spin) * 180 / Math.PI;
     const flips = Math.abs(P.flip) / (Math.PI * 2);
     let pts = Math.round(spinDeg / 180) * 95 + Math.floor(flips) * 240 + Math.round(P.airT * 90);
     if (grabbed) pts = Math.round(pts * (1 + Math.min(0.6, P.grabT * 0.35)) + 60);
-    pts = Math.round(pts * (1 - Math.min(0.35, off * 0.4)));      // sloppy landings pay less
+    pts = Math.round(pts * R.trickBonus);
+    if (backwards) { pts = Math.round(pts * 1.6); P.switches++; }
+    else pts = Math.round(pts * (1 - Math.min(0.35, off * 0.4)));  // sloppy landings pay less
     if (pts > 0) {
-      P.combo = Math.min(9, P.combo + 1); P.comboT = 4.0;
-      const total = pts * P.combo;
+      bumpChain((Math.abs(P.spin) > 3 || flips >= 1 ? 2 : 1) + (backwards ? 1 : 0), backwards ? 'Switch' : 'Trick');
+      const total = Math.round(pts * P.chain);
       P.score += total; P.tricks++;
       P.bestTrick = Math.max(P.bestTrick, total);
-      popup(words || 'Air', '+' + fmt(total), 'air');
-      Snd.tone(420 + P.combo * 60, 0.12, 'triangle', 0.26);
-      setTimeout(() => Snd.tone(630 + P.combo * 70, 0.18, 'triangle', 0.2), 80);
+      popup((backwards ? 'Switch ' : '') + (words || 'Air'), '+' + fmt(total), 'air');
+      Snd.tone(420 + Math.min(20, P.chain) * 30, 0.12, 'triangle', 0.26);
+      setTimeout(() => Snd.tone(630 + Math.min(20, P.chain) * 34, 0.18, 'triangle', 0.2), 80);
     }
   }
   /* hard flat landings still cost you */
@@ -1630,7 +1773,8 @@ function wipeout(reason, damage) {
   P.air = false;
   P.wipe = 1.35;
   P.health -= damage;
-  P.combo = 0; P.canChain = 0; P.boostT = 0;
+  breakChain();
+  P.canChain = 0; P.boostT = 0;
   shake = 1;
   flash.style.opacity = '0.5';
   emitSpray(P.x, P.y + 0.5, P.z, 30, 3.2);
@@ -1644,6 +1788,7 @@ function step(dt) {
   const d = diffAt();
   P.boostT = Math.max(0, P.boostT - dt);
   const bst = boostAmt();
+  P.time += dt;
   const bi = biomeOf(P.dist);
   readCtrl();
   const steer = P.wipe > 0 ? 0 : ctrl.steer;
@@ -1652,15 +1797,15 @@ function step(dt) {
 
   /* ---------- board attitude ---------- */
   if (P.air) {
-    P.spin += steer * SPIN_RATE * dt;
-    P.heading += steer * SPIN_RATE * dt;
+    P.spin += steer * R.spin * dt;
+    P.heading += steer * R.spin * dt;
     if (P.wipe <= 0 && ctrl.flip) P.flip -= FLIP_RATE * dt;      // hold to backflip
     P.airT += dt;
     if (tucking) { if (!P.grabName) P.grabName = grabName(); P.grabT += dt; }
     else if (P.grabT > 0 && P.grabT < 0.12) { P.grabT = 0; P.grabName = ''; }
   } else if (P.wipe <= 0) {
     const tuck = tucking ? 1 : 0;
-    const target = steer * MAX_YAW * (1 - tuck * 0.55);
+    const target = steer * R.maxYaw * (1 - tuck * 0.55);
     P.heading += (target - P.heading) * Math.min(1, dt * 6.2);
   }
 
@@ -1677,7 +1822,7 @@ function step(dt) {
   let vf = P.vx * fx + P.vz * fz;
   let vs = P.vx * sx + P.vz * sz;
   const ice = P.air ? 0 : iceAt(P.x, P.z, bi);
-  const grip = P.air ? 0.12 : (P.wipe > 0 ? 1.1 : lerp(6.6, 2.2, ice));
+  const grip = P.air ? 0.12 : (P.wipe > 0 ? 1.1 : lerp(R.grip, R.grip * 0.33, ice));
   const vs0 = vs;
   vs *= Math.exp(-grip * dt);
   /* A carve redirects speed, it does not delete it. Most of what the edge
@@ -1688,7 +1833,7 @@ function step(dt) {
     vf += (Math.abs(vs0) - Math.abs(vs)) * 0.75 * (vf >= 0 ? 1 : -1);
   if (!P.air) {
     const tuck = tucking ? 1 : 0;
-    const drag = (P.wipe > 0 ? 0.055 : 0.0112 * (1 - tuck * 0.50)) * (1 - bst * 0.44);
+    const drag = (P.wipe > 0 ? 0.055 : R.drag * (1 - tuck * R.tuckDrag)) * (1 - bst * 0.44);
     vf -= (drag * vf * Math.abs(vf) + (P.wipe > 0 ? 9 : 0.45) * Math.sign(vf)) * dt;
     if (bst > 0 && P.wipe <= 0) vf += 5.5 * bst * dt;
   }
@@ -1718,12 +1863,22 @@ function step(dt) {
   if (moved > 0) P.dist += moved;
   P.alt = START_ALT + (P.y - P.y0);
   P.lowAlt = Math.min(P.lowAlt, P.alt);
-  P.score += Math.max(0, moved) * (1 + P.combo * 0.1) * (bst > 0 ? 2 : 1);
+  ghostClock += dt;
+  if (ghostClock >= GHOST_STEP && ghostRec.length < GHOST_MAX * 4) {
+    ghostClock -= GHOST_STEP;
+    ghostRec.push(P.x, P.y, P.z, P.heading);
+  }
+  if (route === 'descent' && P.alt <= FINISH_ALT) { finishRun(); return; }
+  P.score += Math.max(0, moved) * 0.55 * P.chain * (bst > 0 ? 2 : 1);
   announceSector();
 
   P.wipe = Math.max(0, P.wipe - dt);
   P.hurt = Math.max(0, P.hurt - dt);
-  P.comboT -= dt; if (P.comboT <= 0 && P.combo > 0) P.combo = 0;
+  /* holding it flat out feeds the chain too */
+  if (!P.air && P.wipe <= 0 && speedOf() > 33) {
+    P.fastT += dt;
+    if (P.fastT >= 3) { P.fastT = 0; bumpChain(1, 'Flat out'); }
+  } else P.fastT = Math.max(0, P.fastT - dt * 0.5);
   P.canChainT -= dt; if (P.canChainT <= 0) P.canChain = 0;
 
   /* ---------- into the gash ---------- */
@@ -1749,8 +1904,8 @@ function step(dt) {
       if (Math.abs(P.y + 0.9 - o.y) < 2.2 && sweptHit(x0, z0, P.x, P.z, o.x, o.z, o.r + RIDER_R)) {
         o.gone = true; killProp(o); props.splice(i, 1);
         P.cans++; P.canChain++; P.canChainT = 2.2;
-        const pts = 60 * Math.min(8, P.canChain);
-        P.score += pts;
+        bumpChain(1, 'Can');
+        P.score += 40 * P.chain;
         Snd.tone(560 + Math.min(10, P.canChain) * 55, 0.09, 'square', 0.13);
         if (P.cans % BOOST_EVERY === 0) fireBoost();
         else if (P.canChain % 4 === 0) popup('Chain ×' + P.canChain, '+' + pts, 'can');
@@ -1773,6 +1928,11 @@ function step(dt) {
         }
       }
     }
+    if (!o.passed && dz > 0 && (o.kind === 'tree' || o.kind === 'rock' || o.kind === 'serac' || o.kind === 'spire')) {
+      o.passed = true;
+      const miss = Math.abs(o.x - P.x) - o.r * s;
+      if (miss < 3.4 && spd > 15) { P.near++; bumpChain(1, 'Close'); }
+    }
     if (!vOverlap(P.y, o.y, o.h)) continue;
     if (P.hurt > 0) continue;
     if (sweptHit(x0, z0, P.x, P.z, o.x, o.z, o.r + RIDER_R)) {
@@ -1785,20 +1945,6 @@ function step(dt) {
     }
   }
 
-  /* ---------- fires ---------- */
-  for (const f of fires) {
-    if (!f.active) continue;
-    if (f.z > P.z + CULL_BEHIND + 30) { f.active = false; f.g.visible = false; f.light.intensity = 0; continue; }
-    if (Math.hypot(f.x - P.x, f.z - P.z) < 7.5 && P.heat < 100) {
-      P.heat = Math.min(100, P.heat + 78 * dt);
-      if (!f.used) {
-        f.used = true; P.score += 180;
-        popup('Body heat', '+180', 'heat');
-        Snd.tone(520, 0.22, 'sine', 0.3); Snd.tone(780, 0.3, 'sine', 0.22);
-      }
-    }
-  }
-
   /* ---------- weather ---------- */
   weatherT -= dt;
   if (weatherT <= 0) {
@@ -1806,15 +1952,6 @@ function step(dt) {
     else { weatherLen = rand(9, 15); flashWarn('Whiteout', 2200); Snd.tone(120, 1.4, 'sawtooth', 0.12); }
   }
   weather += ((weatherLen > 0 ? 1 : 0) - weather) * Math.min(1, dt * 0.5);
-
-  /* ---------- body heat ---------- */
-  P.heat -= (0.75 + spd * 0.040) * (1 + weather * 1.3) * (1 + d * 0.35) * dt;
-  P.heat = clamp(P.heat, 0, 100);
-  if (P.heat <= 0) {
-    P.health -= 9 * dt;
-    if (Math.random() < dt * 2.2) flashWarn('Hypothermic', 700);
-  }
-  P.health = clamp(P.health, 0, 100);
 
   /* ---------- the slide ---------- */
   const slideSpeed = 19 + d * 5.5 + P.dist * 0.0003 + Math.max(0, slideGap - 40) * 0.16;
@@ -1844,15 +1981,46 @@ function step(dt) {
   if (bst > 0 && !P.air && Math.random() < dt * 55) emitSpray(P.x, P.y, P.z, 2, 2.4);
   shake = Math.max(0, shake - dt * 2.2);
 
-  if (P.health <= 0) die(P.heat <= 0 ? 'frozen' : 'wrecked');
+  P.health = clamp(P.health, 0, 100);
+  if (P.health <= 0) die('wrecked');
   else if (slideGap <= 0) die('buried');
+}
+
+function finishRun() {
+  mode = 'won';
+  deathT = 0;
+  const sc = Math.round(P.score);
+  const record = !bestTime || P.time < bestTime;
+  if (record) { bestTime = P.time; try { localStorage.setItem('sw_btime', String(bestTime)); } catch (e) {} }
+  if (sc > best) { best = sc; try { localStorage.setItem('sw_best', String(best)); } catch (e) {} }
+  if (record || sc >= best) saveGhost();
+  bestDist = Math.max(bestDist, P.dist);
+  try { localStorage.setItem('sw_bdist', String(bestDist)); } catch (e) {}
+  $('wTime').textContent = fmtTime(P.time);
+  $('wScore').textContent = fmt(sc);
+  $('wChain').textContent = '×' + P.chainBest;
+  $('wCans').textContent = fmt(P.cans);
+  $('wTricks').textContent = fmt(P.tricks);
+  $('wBest').textContent = fmtTime(bestTime);
+  $('wBestRow').querySelector('.k').textContent = record ? 'New best time' : 'Best time';
+  $('winLine').textContent = record
+    ? 'Fastest you have ridden it. The slide never got close.'
+    : 'You rode the whole face. The slide is still up there somewhere.';
+  $('winFine').textContent = 'Your ghost is saved — next run you race it down.';
+  hud.classList.remove('live');
+  padLayer.classList.remove('live');
+  trickEl.classList.remove('on');
+  Snd.bed(0.03, 0, 0);
+  Snd.tone(523, 0.3, 'triangle', 0.26);
+  setTimeout(() => Snd.tone(659, 0.3, 'triangle', 0.24), 150);
+  setTimeout(() => Snd.tone(784, 0.5, 'triangle', 0.22), 300);
+  show(winScreen);
 }
 
 function die(cause) {
   if (mode !== 'play') return;
   mode = 'dying';
   deathCause = cause; deathT = 0;
-  P.combo = 0;
   trickEl.classList.remove('on');
   Snd.bed(0.04, 0, cause === 'buried' ? 0.9 : 0.2);
   Snd.hit(1);
@@ -1901,7 +2069,7 @@ function present(dt, t) {
     camPos.set(P.x + Math.sin(a) * 26, P.y + 10 + Math.sin(menuT * 0.5) * 1.5, P.z + Math.cos(a) * 26);
     camLook.set(P.x, P.y + 2.2, P.z - 8);
     fov += (64 - fov) * Math.min(1, dt * 2);
-  } else if (mode === 'dying' || mode === 'over') {
+  } else if (mode === 'dying' || mode === 'over' || mode === 'won') {
     const a = 0.7 + deathT * 0.9, r = 12 + deathT * 5;
     camPos.set(P.x + Math.sin(a) * r, P.y + 3.6 + deathT * 2.2, P.z + Math.cos(a) * r);
     camLook.set(P.x, P.y + 1.4, P.z);
@@ -1976,23 +2144,13 @@ function present(dt, t) {
   }
   spray.geometry.attributes.position.needsUpdate = true;
 
+  updateGhost();
+
   /* cans turn on the spot */
   for (const o of props) {
     if (o.kind !== 'can' || o.slot < 0) continue;
     o.spin += dt * 2.4;
     placeProp(o);
-  }
-
-  /* fires */
-  for (const f of fires) {
-    if (!f.active) continue;
-    const fl = 1 + Math.sin(t * 11 + f.x) * 0.14 + Math.sin(t * 27.3) * 0.07;
-    f.flame.scale.set(fl, 1 + (fl - 1) * 2.1, fl);
-    f.core.scale.setScalar(0.9 + (fl - 1) * 1.4);
-    f.halo.scale.setScalar(23 + fl * 5);
-    f.smoke.rotation.y = t * 0.35;
-    f.smoke.rotation.z = 0.1 + Math.sin(t * 0.7 + f.x) * 0.09;
-    f.light.intensity = 300 * fl;
   }
 
   /* the slide */
@@ -2020,14 +2178,13 @@ function present(dt, t) {
 /* ══════════════════════════════════════════════════════════════
    17 · SCREENS
    ══════════════════════════════════════════════════════════════ */
-const startScreen = $('startScreen'), overScreen = $('overScreen'), pauseScreen = $('pauseScreen');
+const startScreen = $('startScreen'), overScreen = $('overScreen'), pauseScreen = $('pauseScreen'), winScreen = $('winScreen');
 function show(el) { el.hidden = false; el.classList.remove('fade'); }
 function hide(el) { el.classList.add('fade'); setTimeout(() => { el.hidden = true; }, 380); }
 
 const CAUSES = {
   buried:   { word: 'Buried',   eyebrow: 'The slide won',  line: 'It came over the roll behind you and took the whole face. Speed was the only answer.' },
   wrecked:  { word: 'Wrecked',  eyebrow: 'Run ended',      line: 'Too many hard contacts. The mountain keeps a tab and it always collects.' },
-  frozen:   { word: 'Frozen',   eyebrow: 'Run ended',      line: 'Body heat ran out above the treeline. The fires were not optional.' },
   crevasse: { word: 'Crevasse', eyebrow: 'The glacier won', line: 'You rode onto a snow bridge that was not there. That is what the kickers are for.' },
   lost:     { word: 'Off route', eyebrow: 'Run ended',     line: 'You left the face and kept going. Nothing out there but cliffs and a long wait.' }
 };
@@ -2043,16 +2200,25 @@ function endRun() {
   $('sDist').innerHTML = fmt(P.dist) + '<small>M</small>';
   $('sAlt').innerHTML = fmt(P.lowAlt) + '<small>M</small>';
   $('sSpd').innerHTML = fmt(P.topSpeed * 3.6) + '<small>KM/H</small>';
-  $('sTrick').textContent = fmt(P.bestTrick);
+  $('sTrick').textContent = '×' + P.chainBest;
   $('sCans').innerHTML = fmt(P.cans) + '<small>· ' + P.boosts + ' BOOST' + (P.boosts === 1 ? '' : 'S') + '</small>';
   $('sAir').innerHTML = P.bestAir.toFixed(1) + '<small>S</small>';
   const record = sc > best;
-  if (record) { best = sc; try { localStorage.setItem('sw_best', String(best)); } catch (e) {} }
+  if (record) {
+    best = sc;
+    try { localStorage.setItem('sw_best', String(best)); } catch (e) {}
+    saveGhost();
+  }
+  const shortBy = bestDist - P.dist;
+  bestDist = Math.max(bestDist, P.dist);
+  try { localStorage.setItem('sw_bdist', String(bestDist)); } catch (e) {}
   $('sBest').textContent = fmt(best);
   $('bestRow').querySelector('.k').textContent = record ? 'New best' : 'Best';
   $('overFine').textContent = record
-    ? 'New best. Every sector down, the face steepens and the slide gets hungrier.'
-    : 'Land facing your direction of travel — the spin has to finish before the snow does.';
+    ? 'New best, and your ghost is saved — next run you race it.'
+    : (shortBy > 0 && shortBy < 900
+        ? 'You went down ' + fmt(shortBy) + ' m short of your furthest. The chain is what you were really carrying.'
+        : 'Land facing your direction of travel — the spin has to finish before the snow does.');
   hud.classList.remove('live');
   padLayer.classList.remove('live');
   show(overScreen);
@@ -2068,7 +2234,7 @@ async function beginRun() {
     }
   }
   gyro.seeded = false;
-  hide(startScreen); hide(overScreen); hide(pauseScreen);
+  hide(startScreen); hide(overScreen); hide(pauseScreen); hide(winScreen);
   resetRun();
   flash.style.opacity = '0';
   mode = 'play';
@@ -2080,6 +2246,7 @@ async function beginRun() {
 
 $('btnStart').addEventListener('click', beginRun);
 $('btnAgain').addEventListener('click', beginRun);
+$('btnWinAgain').addEventListener('click', beginRun);
 $('btnResume').addEventListener('click', () => { hide(pauseScreen); mode = 'play'; last = performance.now(); });
 $('btnCal').addEventListener('click', recentre);
 const btnSnd = $('btnSnd');
@@ -2158,7 +2325,7 @@ function frame(now) {
     }
     rebuildTerrain(P.x, P.z);
     if (deathT > 1.5) endRun();
-  } else if (mode === 'over') {
+  } else if (mode === 'over' || mode === 'won') {
     deathT += dt;
     const f = parseFloat(flash.style.opacity || '0');
     if (f > 0) flash.style.opacity = String(Math.max(0, f - dt * 0.9));
@@ -2184,9 +2351,15 @@ function boot(saved) {
   present(0.016, 0);
   renderer.render(scene, camera);
   setCtrlMode(ctrlMode);
+  setRider(R.key);
+  setRoute(route);
+  ghostData = loadGhost();
   bootEl.classList.add('gone');
   show(startScreen);
-  if (best > 0) $('startFine').innerHTML = 'Best so far <b>' + fmt(best) + ' pts</b>. Switch to <b>Touch only</b> above if you would rather not tilt.';
+  const bits = ["Today's mountain is <b>#" + SEED + "</b> — the same face for everyone, until midnight."];
+  if (best > 0) bits.push('Best <b>' + fmt(best) + ' pts</b>' + (bestTime ? ' · fastest <b>' + fmtTime(bestTime) + '</b>' : ''));
+  if (ghostData) bits.push('Your ghost is on the hill.');
+  $('startFine').innerHTML = bits.join(' ');
   requestAnimationFrame(frame);
 }
 try {
