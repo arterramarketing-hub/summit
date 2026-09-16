@@ -24,12 +24,14 @@ Then a screen that is green where the losing ones are ember, and says so.
 
 ## The drop-in
 
-The title screen is a slow drone circuit of the face, and tapping **Drop in**
-flies the same camera out of that orbit into the cutscene rather than cutting
-to it: a wide look down the fall line, the ship crossing the mountain, a step
-out of the door, a ballistic fall onto the snow, and the cornice letting go
-behind you. Seven seconds, skippable with a tap, and the short version — just
-the door and the drop — after the first one.
+The title screen is a drone standing three kilometres off down the valley,
+sweeping a narrow arc across the face: the peak with its flag on top, a range
+of other mountains on the horizon behind it, and you as a speck a long way
+below. Tapping **Drop in** flies that same camera into the cutscene rather than
+cutting to it — a wide look up at the summit, the ship crossing the mountain, a
+step out of the door, a ballistic fall onto the snow, and the cornice letting
+go behind you. Seven seconds, skippable with a tap, and the short version —
+just the door and the drop — after the first one.
 
 ## Playing it
 
@@ -221,6 +223,19 @@ everything else is generated at runtime.
 - **Props** are instanced meshes drawn from slot pools, generated ahead of you
   and recycled behind. Each prop type is baked from several primitives into one
   vertex-coloured buffer, so a forest is one draw call.
+- **Nothing floats.** Every prop used to be pinned by its origin and then drawn
+  dead level, on a face that rolls by up to half a metre per metre across the
+  slope: measured, the corners of a seven-metre kicker's footprint disagreed by
+  4.8 m, and 86% of kickers had a corner more than half a metre in the air.
+  Each prop now reads the lie of the land across its *own* size and lies down
+  on it — a boulder takes all of that slope, a tree almost none, because trees
+  grow up whatever they are standing on — and then settles, bringing its
+  highest corner down to the snow so the curvature a tangent plane cannot
+  follow is buried rather than hanging. Kickers get their site chosen rather
+  than given, a handful of spots either side and the flattest one wins, and
+  their physics surface drops with them so what launches you is what you can
+  see. Measured after: not one prop with a corner off the ground, and the
+  kickers are the same height they always were.
 - **The drop-in** is a seven-second cutscene on its own clock: a wide look down
   the fall line with the view pushed out to 520 m, the ship crossing the face,
   a step out of the door, a ballistic fall onto the snow, and the cornice
@@ -243,25 +258,78 @@ everything else is generated at runtime.
   synthesises a buffer mid-run. The mix is sent twelve times a second rather
   than sixty, and only values that actually moved are sent at all, which took
   the automation traffic from 529 messages a second to 18.
+- **An oscillator wired to a gain's AudioParam is summed with it, not
+  multiplied by it.** The helicopter is filtered noise chopped by a blade-rate
+  square wave, and that square was connected straight onto the rotor bus's own
+  gain — so turning the rotor down to nothing still left the blades swinging
+  that gain by ±0.55, a sign flip twenty-five times a second on a live noise
+  stream, for the entire run. It was heard as static. The chop is now its own
+  stage, swinging zero to one, with a level stage behind it that can actually
+  close: measured, a third of everything audible after the ship had left was
+  the ship.
 - **The light** is one 8 × 256 gradient strip repainted only when the palette has
   moved enough to see — about once a second over a four-minute descent, which
   costs 0.02 ms, and far less than cross-fading two sky spheres. Fog, both
   directional lights, the hemisphere and the sun's own position lerp with it.
-- **The summit.** The fall line used to rise for ever, so there was no peak and
-  no sense of scale. Above the drop-in the face now rolls over — the gradient
-  eases to nothing and then goes negative — and the flanks fall away from the
-  crest so it is a peak and not a ridge. Every metre the rider ever touches is
-  below it, where the height field is exactly what it always was.
+- **The summit, and the flag on it.** The fall line used to rise for ever, so
+  there was no peak and no sense of scale. Above the drop-in the face rolls
+  over — the gradient eases to nothing and then goes negative — the flanks fall
+  away from the crest so it is a peak and not a ridge, and a cone on top of
+  that gives it an actual point, 550 m above where you are dropped. A dome of
+  white against a pale sky is still nothing you can pick out, so the top third
+  goes above the snow line into dark rock, on a ragged edge rather than a drawn
+  one, and a forty-six-metre mast with a red flag stands on the apex. It is
+  absurdly outsized, because from the valley floor anything the size of a real
+  flag is under a pixel and being seen from down there is the whole job. The
+  flag stands on the height the mesh *draws*, not the height the field
+  computes: at eighty metres a quad the mesh cuts the corner off a peak, and
+  the difference is thirty metres of daylight under the pole. Every metre the
+  rider ever touches is below all of this, where the height field is exactly
+  what it always was.
+- **The range** is in the height field, not in a ring of billboards, so it
+  takes the same light, the same fog and the same weather the mountain does and
+  it parallaxes because it is actually out there. Fourteen peaks, all of them
+  *behind* the summit: a portrait frame is thirty-eight degrees wide even at a
+  seventy-four degree lens, so from the drone's stand-off there is about
+  thirteen hundred metres either side of the peak to work with and anything
+  further out is simply not in the shot. Every peak's skirt is pushed clear of
+  the corridor, which is what lets the lookup answer *nothing here* for the
+  whole playable world in two comparisons. The back of the summit levels out
+  onto a plateau rather than falling for ever, because a range that has to
+  climb a kilometre before it clears the ground is a range of spikes.
+- **The clip planes move with the shot,** and this was the bug that hid all of
+  the above. Riding, nothing is further off than the weather lets you see and
+  the near plane has to be centimetres because the rider is two metres from the
+  lens. From the drone the mountain is three kilometres away and the range
+  behind it is nine — and a far plane fixed at 3,000 m was quietly cutting them
+  out of the frustum after they had been built, lit and fogged.
+- **Snow is four octaves and a slope.** The finest is sized just above the
+  mesh's own spacing — 5.8 m across, 4.4 m down — because that is the finest
+  thing that renders as texture rather than as noise, and it carries over half
+  the weight: octaves chosen to be *smoothly* resolved measured three times
+  flatter, since neighbouring vertices then agree with each other. Above it sit
+  sastrugi stretched across the fall line, a broad drift, and one 290 m octave
+  that is the only thing surviving the far field's eighty metres a quad. On top
+  of that each vertex knows which way its own patch of snow is facing — the
+  slope is the difference between this vertex's height and the last one's, both
+  already paid for, so it is free — measured against the *mean* fall line
+  rather than against flat, because every square metre of this mountain is a
+  0.4 slope and measuring from horizontal only brightens the whole face by a
+  constant. Faces the sun is on go warm, faces it is off go blue.
 - **Below the horizon the sky is the fog colour, to the byte.** Distant terrain
   fades to the fog colour, and if the sky there is anything else the far ridges
   read as a pale slab pasted over it. Invisible while the weather only let you
   see 338 m; glaring the moment a title screen looked two thousand metres.
 - **The far field.** The playable window is 300 x 470 m, which is plenty to ride
   and nowhere near enough to look at: any wide shot swings past its edge. So the
-  title screen and the drop-in get a second, much coarser mesh — 1.6 km square
-  at 36 m a quad, sampled from the same height field and sunk two metres so the
-  real one always wins where they overlap. It is 2,025 vertices, one draw call,
-  and it is hidden the moment you are riding. The title screen also renders at
+  title screen and the drop-in get a second, much coarser mesh — 7.6 km square
+  at 80 m a quad, sampled from the same height field and sunk two metres so the
+  real one always wins where they overlap. It is one draw call, it reaches that
+  far because that is where the range is, and it is hidden the moment you are
+  riding. Beyond a couple of hundred metres the *fine* mesh stands down
+  instead: from the drone it was reading as exactly what it is, a rectangle of
+  detail with four straight edges pasted onto the mountain. The title screen
+  also renders at
   0.58 of the pixel ratio, because it looks at the whole mountain from a hundred
   metres up — two to three times the fill of riding it — and all of it sits
   behind a scrim.

@@ -713,16 +713,95 @@ const SUM_K = FALL * (2 * SUM_W / Math.PI);
 function fallLine(z) {
   if (z <= SUM_Z) return z * FALL;
   const d = z - SUM_Z;
-  if (d >= SUM_W * 2) return SUM_Z * FALL - (d - SUM_W * 2) * FALL;
+  /* The far side drops off the back of the summit and then levels out onto the
+     plateau the rest of the range stands on. Left to fall for ever it put
+     everything behind the peak a kilometre underground, and a range you have
+     to build a kilometre of cone to see over is a range of spikes. */
+  if (d >= SUM_W * 2) return SUM_Z * FALL - Math.min((d - SUM_W * 2) * FALL, 385);
   return SUM_Z * FALL + SUM_K * Math.sin(Math.PI / 2 * d / SUM_W);
 }
 
 /** Above the drop-in the flanks fall away from the crest, so the roll-over is
     a peak rather than a ridge running the width of the world. Zero at z <= 0,
-    which is everywhere the rider ever is. */
+    which is everywhere the rider ever is. Capped, because unbounded it dug a
+    kilometre-deep trench round the back of the summit and there was nowhere
+    for a range to stand. */
 function summitFlank(x, z) {
   if (z <= SUM_Z) return 0;
-  return smoothstep(150, 880, Math.abs(x - driftX(z))) * (z - SUM_Z) * 0.62;
+  return smoothstep(150, 880, Math.abs(x - driftX(z))) * Math.min((z - SUM_Z) * 0.62, 340);
+}
+
+/* ---- the point on top ----
+   The roll-over on its own is a dome, and a dome a kilometre off against a
+   pale sky is nothing to look at: you could not tell where the mountain
+   stopped. A cone on top of it gives the thing a summit you can pick out from
+   the valley floor, put a flag on, and be dropped off beneath. */
+const PEAK_Z = SUM_Z + SUM_W, PEAK_R = 360, PEAK_H = 330;
+const PEAK_X = driftX(PEAK_Z);
+/** Apex altitude of the mountain, in world y. */
+const PEAK_Y = () => heightBase(PEAK_X, PEAK_Z);
+function summitCap(x, z) {
+  if (z < PEAK_Z - PEAK_R || z > PEAK_Z + PEAK_R) return 0;
+  const dx = x - PEAK_X, dz = z - PEAK_Z;
+  const d2 = dx * dx + dz * dz;
+  if (d2 >= PEAK_R * PEAK_R) return 0;
+  const t = 1 - Math.sqrt(d2) / PEAK_R;
+  /* smooth where it leaves the shoulder, sharp where it arrives at the top */
+  return PEAK_H * t * t * (0.55 + 0.45 * t);
+}
+
+/* ---- the range ----
+   Everything beyond the face, and the whole reason the face reads as big. It
+   lives in the height field rather than in a ring of billboards, so it takes
+   the same light, the same fog and the same weather the mountain does, and it
+   parallaxes because it is actually out there. It costs nothing where the
+   rider is: no peak's skirt ever reaches the corridor, so the first line is
+   an exact answer rather than an approximation. */
+const RANGE_X = 700, RANGE_Z = 900, RANGE_N = 14;
+const RGX = new Float64Array(RANGE_N), RGZ = new Float64Array(RANGE_N),
+      RGR = new Float64Array(RANGE_N), RGH = new Float64Array(RANGE_N);
+{
+  let i = 0;
+  /* Every peak's skirt is pushed clear of the corridor, out to the side or
+     back behind the summit, because farRange's first line claims there is
+     nothing inside it — and if that claim were only approximately true the
+     terrain would step along the boundary. */
+  const put = (x, z, r, h, back) => {
+    if (back) z = Math.max(z, RANGE_Z + r);
+    else x = (x < 0 ? -1 : 1) * Math.max(Math.abs(x), RANGE_X + r);
+    RGX[i] = x; RGZ[i] = z; RGR[i] = r; RGH[i] = h; i++;
+  };
+  /* All of it goes BEHIND the summit, because a portrait frame is only
+     thirty-eight degrees wide even at a seventy-four degree lens: from the
+     drone's stand-off, nineteen degrees either side of the peak is about
+     thirteen hundred metres, and anything further out is simply not in the
+     shot. The near ones flank the peak, the far ones show over the top of
+     it, and the drone never orbits round into them. */
+  for (let k = 0; k < 5; k++) {
+    const a = hash2(k, 61), b = hash2(k, 67), c = hash2(k, 71);
+    put((a - 0.5) * 2000, 2500 + b * 1100, 1000 + c * 700, 640 + b * 380, true);
+  }
+  for (let k = 0; i < RANGE_N; k++) for (const s of [-1, 1]) {
+    if (i >= RANGE_N) break;
+    const a = hash2(k * 2 + (s > 0 ? 1 : 0), 47), b = hash2(k, s > 0 ? 53 : 59);
+    put(s * (640 + a * 820), 1500 + k * 400 + b * 420, 580 + a * 400,
+        430 + b * 320, true);
+  }
+}
+function farRange(x, z) {
+  if (x < RANGE_X && x > -RANGE_X && z < RANGE_Z) return 0;
+  let add = 0;
+  for (let i = 0; i < RANGE_N; i++) {
+    const r = RGR[i], dx = x - RGX[i], dz = z - RGZ[i];
+    if (dx > r || dx < -r || dz > r || dz < -r) continue;
+    const d = Math.sqrt(dx * dx + dz * dz);
+    if (d >= r) continue;
+    const t = 1 - d / r;
+    const v = RGH[i] * t * t * (0.55 + 0.45 * t);
+    if (v > add) add = v;
+  }
+  /* cones are cones until something breaks their flanks up */
+  return add > 0 ? add + (nz(x * 0.0043, z * 0.0038) - 0.5) * Math.min(add * 0.6, 95) : 0;
 }
 
 function heightBase(x, z) {
@@ -744,8 +823,13 @@ function heightBase(x, z) {
   y += Math.sin(x * 0.01050 - z * 0.0016 + 1.1) * 5.5;
   y += (nz(x * 0.0046, z * 0.0039) - 0.5) * 22;
   y += featHeight(x, z);
+  y += summitCap(x, z);
+  y += farRange(x, z);
   return y;
 }
+/** How far a point stands above the fall line it belongs to — the only honest
+    measure of "high up" on a mountain that is itself always going down. */
+const promAt = (y, z) => y - fallLine(z);
 function height(x, z) {
   const n = crevNotch(x, z);
   return heightBase(x, z) - (n > 0 ? n * CREV_DEPTH : 0);
@@ -828,7 +912,20 @@ const FOG = new THREE.Color(0xc9d7ea);
 scene.fog = new THREE.Fog(FOG.getHex(), 80, 338);
 scene.background = FOG.clone();
 
+/* The clip planes move with the shot. Riding, nothing is further off than the
+   weather lets you see, and the near plane has to be centimetres because the
+   rider is two metres from the lens. From the drone the mountain is three
+   kilometres away and the range behind it is nine — which is what the far
+   plane used to CUT, invisibly: the peaks were built, lit and fogged, and then
+   clipped out of the frustum. */
 const camera = new THREE.PerspectiveCamera(62, 1, 0.6, 3000);
+const CLIP_WIDE = { near: 5, far: 15000 }, CLIP_NEAR = { near: 0.6, far: 3000 };
+let clipNear = 0.6, clipFar = 3000;
+function setClip(near, far) {
+  if (Math.abs(near - clipNear) < 0.02 && Math.abs(far - clipFar) < 8) return;
+  clipNear = camera.near = near; clipFar = camera.far = far;
+  camera.updateProjectionMatrix();
+}
 
 const hemi = new THREE.HemisphereLight(0x6d8cd0, 0xaec4e4, 0.60);
 scene.add(hemi);
@@ -920,7 +1017,7 @@ function applyLight(dist, dt) {
     hemi.groundColor.copy(mixHex(a.ambG, b.ambG, t));
     fill.color.copy(mixHex(a.fill, b.fill, t));
     sunGlow.material.color.copy(mixHex(a.glow, b.glow, t));
-    ridge.material.color.copy(FOG).lerp(_cB.setHex(0x8fa6c6), 0.42);
+    ridge.material.color.copy(FOG).lerp(_cB.setHex(0x93a8c6), 0.24);
     /* and the sun itself drops towards the valley rim */
     const el = lerp(a.elev, b.elev, t), az = lerp(a.az, b.az, t);
     const ch = Math.cos(el);
@@ -932,27 +1029,74 @@ function applyLight(dist, dt) {
   lightI.fill = lerp(a.fillI, b.fillI, t);
 }
 
-/* the range beyond the face — lagged rather than pinned, so it parallaxes
-   like something 900 m away instead of sitting there like wallpaper */
+/* ---- the skyline you get while it is snowing ----
+   Riding, the weather only lets you see three hundred metres, so the real
+   range is fogged out of existence and this stands in for it: unfogged cones
+   beyond the fog wall, lagged rather than pinned so they parallax like
+   something two kilometres out instead of sitting there like wallpaper. They
+   used to be eighteen big ones at 900 m and they read as cut paper — so now
+   there are more of them, further off, lower, and each one carries its own
+   tint so the range has depth instead of being one flat shape. */
+const RIDGE_N = 28;
 const ridge = new THREE.InstancedMesh(
   new THREE.ConeGeometry(1, 1, 5, 1),
   new THREE.MeshBasicMaterial({ color: 0xb4c4dc, fog: false, transparent: true, opacity: 1 }),
-  18
+  RIDGE_N
 );
 ridge.frustumCulled = false;
 const ridgeLag = new THREE.Vector3();
 {
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
-  for (let i = 0; i < 18; i++) {
-    const a = (i / 18) * Math.PI * 2;
-    const r = 900 + hash2(i, 7) * 360;
-    const w = 190 + hash2(i, 11) * 260, h = 190 + hash2(i, 13) * 320;
-    p.set(Math.sin(a) * r, h * 0.5 - 150, -Math.cos(a) * r);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(),
+        p = new THREE.Vector3(), c = new THREE.Color();
+  for (let i = 0; i < RIDGE_N; i++) {
+    const a = (i / RIDGE_N) * Math.PI * 2 + hash2(i, 5) * 0.2;
+    const far = hash2(i, 7);
+    const r = 1350 + far * 900;
+    const w = 230 + hash2(i, 11) * 420, h = 120 + hash2(i, 13) * 245 + far * 90;
+    p.set(Math.sin(a) * r, h * 0.5 - 230, -Math.cos(a) * r);
     s.set(w, h, w);
     ridge.setMatrixAt(i, m.compose(p, q, s));
+    /* the further back it stands the more of the air is in front of it */
+    const k = 1 - far * 0.10;
+    ridge.setColorAt(i, c.setRGB(k, k, k * 1.01));
   }
+  ridge.instanceColor.needsUpdate = true;
 }
 scene.add(ridge);
+
+/* ---- the flag on the summit ----
+   You could not tell the peak from the shoulder, and a mountain nobody can
+   point at is not a mountain. This one is deliberately enormous — a
+   forty-six-metre mast — because from the valley floor two kilometres out,
+   anything the size of a real flag is under a pixel, and being seen from down
+   there is the entire job. */
+const flag = new THREE.Group();
+const flagCloth = new THREE.Mesh(
+  new THREE.PlaneGeometry(30, 17, 10, 4),
+  new THREE.MeshBasicMaterial({ color: 0xe32d20, side: THREE.DoubleSide }));
+{
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 1.7, 46, 6),
+    new THREE.MeshLambertMaterial({ color: 0x20242c, flatShading: true }));
+  mast.position.y = 23;
+  const cairn = new THREE.Mesh(new THREE.ConeGeometry(8, 8, 6, 1),
+    new THREE.MeshLambertMaterial({ color: 0x353b47, flatShading: true }));
+  cairn.position.y = 2.6;
+  flagCloth.position.set(15.6, 37, 0);
+  flag.add(cairn); flag.add(mast); flag.add(flagCloth);
+  flag.position.set(PEAK_X, 0, PEAK_Z);
+  scene.add(flag);
+}
+const flagRest = flagCloth.geometry.attributes.position.array.slice();
+/** The cloth. Where the pole stands is settled by rebuildFar. */
+function flagStep(t) {
+  const a = flagCloth.geometry.attributes.position, p = a.array;
+  for (let i = 0; i < p.length; i += 3) {
+    const u = (flagRest[i] + 15) / 30;             // 0 at the mast, 1 at the fly
+    p[i + 1] = flagRest[i + 1] + Math.sin(t * 5.1 - u * 5.4) * u * 1.4;
+    p[i + 2] = Math.sin(t * 6.4 - u * 7.5) * u * u * 4.4;
+  }
+  a.needsUpdate = true;
+}
 
 /* ══════════════════════════════════════════════════════════════
    4 · GEOMETRY BAKING
@@ -1022,7 +1166,7 @@ const SPIRE_GEO = bake([
    The side profile runs from the lip (0,0) back down the fall line to the
    base, then scoops back up to the lip at height RAMP_H. Extruding that
    across the slope gives an actual takeoff rather than a slab. */
-const RAMP_L = 8.4, RAMP_W = 7.4, RAMP_H = 2.9;
+const RAMP_L = 8.4, RAMP_W = 7.4, RAMP_H = 3.65;
 function kickerShape() {
   const sh = new THREE.Shape();
   sh.moveTo(0, 0);                                            // foot of the lip face
@@ -1257,16 +1401,59 @@ scene.add(terrain);
 
 const C_SNOW = new THREE.Color(), C_SHADE = new THREE.Color(), C_ROCK = new THREE.Color();
 const C_ICE = new THREE.Color(0x9fc9e8);
+/* bare rock, above the snow line. Deliberately much darker than any biome's
+   own rock: this is the contrast that tells you where the mountain ends. */
+const C_PEAK = new THREE.Color(0x394150), C_SCREE = new THREE.Color(0x6b6f7c);
+const C_HOLLOW = new THREE.Color(0x93b2dc);
+/* Snow does not shade like a grey card: the faces the sun is on go warm and
+   the ones it is off go blue, and no amount of one-coloured sunlight gives you
+   that. The slope each vertex sits on is free — it is the difference between
+   this vertex's height and the one before it, both of which the rebuild has
+   already paid for — so it costs nothing to say which way it is looking. */
+const C_SUNNY = new THREE.Color(0xfff2dd);
+const _rowY = new Float32Array(SX + 1);
+/** Snow colour at (x, z), written into `out`. Three scales and a snow line. */
+function snowAt(out, x, z, prom) {
+  /* One octave of grain across a hundred metres of snow reads as a sheet of
+     card. Three: the drift the whole slope lies in, the sastrugi the wind cut
+     ACROSS the fall line — stretched in x, tight in z, which is why it reads
+     as ripples and not as static — and the crystal on top of both. */
+  /* Four octaves, each one sized to something the mesh can actually hold. The
+     fine mesh has a vertex every 5.8 m across and 4.4 m down, so the grain
+     term sits just above that — it is the finest thing that renders as texture
+     rather than as noise, and measured, it is where nearly all the apparent
+     texture comes from: octaves chosen to be smoothly resolved made the snow
+     LOOK flatter, by a factor of three, because neighbouring vertices then
+     agree. The broad one is the opposite end: the only octave that survives
+     the far field's eighty metres a quad, and so the only thing giving the
+     mountain any shape from the drone. */
+  const broad = nz(x * 0.0034, z * 0.0029);                   // 290 m
+  const drift = nz(x * 0.0150, z * 0.0125);                   // 67 m
+  const sastr = nz(x * 0.0200 + drift * 3.0, z * 0.0560);     // 50 x 18 m, wind-cut
+  const grain = nz(x * 0.0780, z * 0.0960);                   // 13 x 10 m
+  out.copy(C_SNOW).lerp(C_SHADE,
+    grain * 0.58 + sastr * 0.17 + drift * 0.15 + broad * 0.10);
+  /* snow in a hollow is lit by the sky and nothing else, so it goes blue */
+  if (drift < 0.34) out.lerp(C_HOLLOW, (0.34 - drift) * 0.55);
+  /* and above the snow line it stops being snow. The line is ragged because a
+     straight one looks drawn on. */
+  if (prom > 22 && summitCap(x, z) + farRange(x, z) > 20) {
+    const bare = smoothstep(0.22, 0.80,
+      smoothstep(22, 150, prom) + (nz(x * 0.0068, z * 0.0061) - 0.5) * 0.66);
+    if (bare > 0.01) out.lerp(bare > 0.66 ? C_PEAK : C_SCREE, bare * 0.94);
+  }
+}
 const _c = new THREE.Color(), _c2 = new THREE.Color();
 
 let tileX = 1e9, tileZ = 1e9;
 /* ---- the far field ----
    The playable window is 300 x 470 m, which is plenty to ride and nowhere near
    enough to look at: any wide shot swings past its edge. So the title screen
-   and the drop-in get a second, much coarser mesh — 1.6 km square at 36 m a
+   and the drop-in get a second, much coarser mesh — 7.6 km square at 83 m a
    quad — sampled from the same height field and shown only while the camera is
-   somewhere the seam cannot be seen. It is 2,025 vertices and one draw call. */
-const FAR_W = 5000, FAR_N = 64;
+   somewhere the seam cannot be seen. One draw call, and it has to reach that
+   far because that is where the range is. */
+const FAR_W = 7600, FAR_N = 92;
 const farGeo = new THREE.BufferGeometry();
 {
   const vc = (FAR_N + 1) * (FAR_N + 1);
@@ -1289,7 +1476,7 @@ farMesh.renderOrder = -1;
 scene.add(farMesh);
 let farX = 1e9, farZ = 1e9;
 function rebuildFar(px, pz, force) {
-  const ox = Math.round(px / 150) * 150, oz = Math.round(pz / 150) * 150;
+  const ox = Math.round(px / 260) * 260, oz = Math.round(pz / 260) * 260;
   if (!force && ox === farX && oz === farZ) return;
   farX = ox; farZ = oz;
   const pos = farGeo.attributes.position.array, col = farGeo.attributes.color.array;
@@ -1304,13 +1491,26 @@ function rebuildFar(px, pz, force) {
       pos[v * 3] = x; pos[v * 3 + 1] = heightBase(x, z) - 2.2; pos[v * 3 + 2] = z;
       const e = featRockAmt;
       if (e > 0.12) _c.copy(C_ROCK).lerp(C_SHADE, 1 - smoothstep(0.12, 0.62, e));
-      else _c.copy(C_SNOW).lerp(C_SHADE, nz(x * 0.012, z * 0.012) * 0.62);
+      else snowAt(_c, x, z, pos[v * 3 + 1] + 2.2 - fallLine(z));
       col[v * 3] = _c.r; col[v * 3 + 1] = _c.g; col[v * 3 + 2] = _c.b;
     }
   }
   farGeo.attributes.position.needsUpdate = true;
   farGeo.attributes.color.needsUpdate = true;
   farGeo.computeVertexNormals();
+  /* At eighty metres a quad the mesh cuts the corner off a peak, so the height
+     field's apex and the apex you can actually see are thirty metres apart —
+     which is thirty metres of daylight under a flagpole. It stands on the one
+     that is drawn. */
+  const fi = (PEAK_X - ox) / FAR_W * FAR_N + FAR_N / 2;
+  const fj = (0.5 - (PEAK_Z - oz) / FAR_W) * FAR_N;
+  const i0 = Math.floor(fi), j0 = Math.floor(fj);
+  if (i0 >= 0 && i0 < FAR_N && j0 >= 0 && j0 < FAR_N) {
+    const u = fi - i0, w = fj - j0, h = (i, j) => pos[(j * (FAR_N + 1) + i) * 3 + 1];
+    const hA = h(i0, j0), hB = h(i0 + 1, j0), hC = h(i0, j0 + 1), hD = h(i0 + 1, j0 + 1);
+    flag.position.y = (u + w <= 1 ? hA + u * (hB - hA) + w * (hC - hA)
+                                  : hD + (1 - u) * (hC - hD) + (1 - w) * (hB - hD)) - 1.2;
+  }
 }
 
 function rebuildTerrain(px, pz, force) {
@@ -1319,7 +1519,8 @@ function rebuildTerrain(px, pz, force) {
   tileX = ox; tileZ = oz;
   const pos = terrainGeo.attributes.position.array;
   const col = terrainGeo.attributes.color.array;
-  let v = 0;
+  const QX = TW / SX, QZ = TL / SZ, sx = sunDir.x, sz = sunDir.z;
+  let v = 0, prevY = 0;
   for (let j = 0; j <= SZ; j++) {
     const z = oz + BACK - (j / SZ) * TL;
     const dist = Math.max(0, -z);
@@ -1332,14 +1533,23 @@ function rebuildTerrain(px, pz, force) {
       const x = ox + (i / SX - 0.5) * TW;
       const y = height(x, z);
       pos[v * 3] = x; pos[v * 3 + 1] = y; pos[v * 3 + 2] = z;
-      const grain = nz(x * 0.07, z * 0.07);
+      /* row j - 1 is one quad further UP the hill, so it is the larger z */
+      const gx = i ? (y - prevY) / QX : 0;
+      const gz = j ? (_rowY[i] - y) / QZ : 0;
+      prevY = y; _rowY[i] = y;
       const notch = crevNotch(x, z);
       const e = featRockAmt;          // set by the height() call above
       if (e > 0.12) {
         _c.copy(nz(x * 0.21, z * 0.21) > 0.52 ? C_ROCK : _c2.copy(C_ROCK).lerp(C_SHADE, 0.35))
           .lerp(C_SHADE, 1 - smoothstep(0.12, 0.62, e));
       } else {
-        _c.copy(C_SNOW).lerp(C_SHADE, grain * 0.58);
+        snowAt(_c, x, z, y - fallLine(z));
+        /* against the mean fall line, not against flat: every square metre of
+           this mountain is a 0.4 slope, so measuring from horizontal only
+           brightens the whole face by a constant and shows nothing */
+        const face = clamp(-(gx * sx + (gz - FALL) * sz) * 1.6, -1, 1);
+        if (face > 0.02) _c.lerp(C_SUNNY, face * 0.40);
+        else if (face < -0.02) _c.lerp(C_SHADE, -face * 0.34);
         const ice = iceAmt > 0.02 ? smoothstep(0.56, 0.72, nz(x * 0.026, z * 0.022)) * iceAmt : 0;
         if (ice > 0.01) _c.lerp(C_ICE, ice * 0.85);
       }
@@ -1402,7 +1612,8 @@ function rampLift(x, z) {
     const ax = Math.abs(x - o.x);
     if (ax > hw) continue;
     const u = dz / L;
-    let h = RAMP_H * o.scale * (1 - u) * (1 - u);
+    let h = RAMP_H * o.scale * (1 - u) * (1 - u) - o.drop;   // bedded in, so lower
+    if (h <= 0) continue;
     if (ax > hw * 0.74) h *= 1 - (ax - hw * 0.74) / (hw * 0.26);
     if (h > best) best = h;
   }
@@ -1411,14 +1622,98 @@ function rampLift(x, z) {
 /** What the rider actually stands on: the mountain, plus anything built on it. */
 const groundAt = (x, z) => ramps.length ? height(x, z) + rampLift(x, z) : height(x, z);
 
+/* ---- lying down on the mountain instead of on one point of it ----
+   Every prop was pinned by its origin and then drawn dead level. The face
+   rolls by up to half a metre per metre across the slope, so a seven-metre
+   kicker had one edge buried and the other one in the air: measured, the
+   corners of a kicker's footprint disagreed by 4.8 m. Each prop now reads the
+   lie of the land across its OWN size and lies down on it. `grip` is how much
+   of that it takes — a boulder all of it, a tree almost none, because trees
+   grow up whatever they are standing on. `sink` buries the residual, which is
+   the curvature the tangent plane cannot follow. */
+const LIE = {
+  ramp:   { grip: 1.00, foot: 4.2, baked: Math.atan(FALL), sink: 0 },
+  rock:   { grip: 1.00, foot: 1.8, sink: 0.18 },
+  serac:  { grip: 0.55, foot: 2.6, sink: 0.22 },
+  spire:  { grip: 0.45, foot: 1.8, sink: 0.30 },
+  tree:   { grip: 0.25, foot: 1.4, sink: 0.22 },
+  summit: { grip: 0.80, foot: 3.0, sink: 0.25 },
+  gate:   { grip: 0.60, foot: 1.2, sink: 0.10 }
+};
+/* what each kind stands on, in its own frame. y is the baked base line, which
+   is flat for everything except the kicker, whose profile climbs the mean
+   fall line going back. */
+const FOOT_PTS = {
+  ramp:  [[-RAMP_W / 2, 0, 0], [RAMP_W / 2, 0, 0],
+          [-RAMP_W / 2, FALL * RAMP_L, RAMP_L], [RAMP_W / 2, FALL * RAMP_L, RAMP_L]],
+  rock:  [[-1.7, 0, 0], [1.7, 0, 0], [0, 0, -1.7], [0, 0, 1.7]],
+  serac: [[-2.4, 0, 0], [2.4, 0, 0], [0, 0, -2.4], [0, 0, 2.4]],
+  spire: [[-1.5, 0, 0], [1.5, 0, 0], [0, 0, -1.5], [0, 0, 1.5]],
+  tree:  [[-1.2, 0, 0], [1.2, 0, 0], [0, 0, -1.2], [0, 0, 1.2]],
+  summit:[[-3, 0, 0], [3, 0, 0], [0, 0, -3], [0, 0, 3]]
+};
+/** Lays o on the slope and settles it into it. Returns how rough the patch was. */
+function layDown(o) {
+  if (!o.grip) return 0;
+  const d = Math.max(1.5, o.foot * o.scale);
+  const gx = clamp((height(o.x + d, o.z) - height(o.x - d, o.z)) / (2 * d), -1.1, 1.1);
+  const gz = clamp((height(o.x, o.z + d) - height(o.x, o.z - d)) / (2 * d), -1.1, 1.1);
+  /* the kicker's own side profile already climbs the mean fall line, so it
+     only owes the difference between that and the ground it is actually on */
+  o.rx = o.baked - Math.atan(gz) * o.grip;
+  o.rz = Math.atan(gx) * o.grip;
+  const pts = FOOT_PTS[o.kind];
+  if (!pts) return 0;
+  /* A tangent plane cannot follow the roll of a wind lip across seven metres,
+     so whatever it missed gets buried: the highest corner is brought down to
+     the snow and everything else goes under. Nothing is ever left hanging. */
+  _e.set(o.rx, o.spin, o.rz, 'ZXY');
+  _q.setFromEuler(_e);
+  let lo = 1e9, hi = -1e9;
+  for (const q of pts) {
+    _v.set(q[0] * o.scale, q[1] * o.scale, q[2] * o.scale).applyQuaternion(_q);
+    const gap = o.y + _v.y - height(o.x + _v.x, o.z + _v.z);
+    if (gap < lo) lo = gap;
+    if (gap > hi) hi = gap;
+  }
+  o.y -= hi;
+  o.drop = hi;
+  return hi - lo;
+}
+/* A kicker wants smooth ground, and burying one to plant it costs its height.
+   So a kicker's site is chosen rather than given: a handful of spots either
+   side of where the generator asked for it, and the flattest one wins. */
+const _site = { kind: 'ramp', x: 0, z: 0, y: 0, scale: 1, spin: 0, grip: 1,
+                foot: 4.2, baked: 0, rx: 0, rz: 0, drop: 0 };
+function addRamp(x, z, opts) {
+  _site.scale = opts.scale || 1;
+  _site.baked = LIE.ramp.baked;
+  _site.z = z;
+  let bx = x, best = 1e9;
+  for (let i = 0; i < 5 && best > 0.30; i++) {
+    const cx = x + (i - 2) * 4.6;
+    _site.x = cx; _site.y = height(cx, z);
+    const r = layDown(_site);
+    if (r < best) { best = r; bx = cx; }
+  }
+  return addProp('ramp', bx, z, opts);
+}
+
 function addProp(kind, x, z, opts) {
   const pool = pools[kind];
   if (!pool.free.length) return null;
   const o = Object.assign({
     kind, x, z, y: height(x, z), slot: pool.free.pop(),
     r: 1, h: 2, scale: 1, sx: 0, sy: 0, sz: 0, spin: rand(0, Math.PI * 2),
-    lift: 0, gone: false, used: false, passed: false, scenery: false
+    lift: 0, gone: false, used: false, passed: false, scenery: false,
+    grip: 0, foot: 2, baked: 0, rx: 0, rz: 0, drop: 0
   }, opts || {});
+  const lie = LIE[kind];
+  if (lie && !opts.grip) {
+    o.grip = lie.grip; o.foot = lie.foot; o.baked = lie.baked || 0;
+    o.y -= lie.sink * o.scale;
+    layDown(o);
+  }
   if (o.lift) o.y += o.lift;
   o.y0 = o.y;
   pool.live++; pool.mesh.visible = true;
@@ -1432,7 +1727,9 @@ function placeProp(o) {
   /* default XYZ order tilts the spin axis with the object; YXZ keeps the spin
      about world up and the tilt in the object's own frame, which is what makes
      a tipped can gyrate instead of just turning on the spot */
-  _e.set(o.tiltX || 0, o.spin, 0, o.order || 'XYZ');
+  /* ZXY applies the spin first and then lays the result on the slope, so a
+     boulder turned to face anywhere still sits flat on the bank it is on */
+  _e.set(o.rx + (o.tiltX || 0), o.spin, o.rz, o.order || (o.grip ? 'ZXY' : 'XYZ'));
   _q.setFromEuler(_e);
   _v.set(o.x, o.y, o.z);
   _s.set(o.sx || o.scale, o.sy || o.scale, o.sz || o.scale);
@@ -1815,11 +2112,22 @@ const Snd = (() => {
     wind = chain(src, 'bandpass', 640, 0.7, master);
     carve = chain(src, 'bandpass', 2500, 1.5, master);
     rumble = chain(src, 'lowpass', 105, 0.9, master);
-    /* the ship: filtered noise chopped by a blade-rate square wave */
-    rotor = chain(src, 'lowpass', 340, 1.2, master);
+    /* ---- the ship ----
+       Filtered noise chopped by a blade-rate square wave. The chop has to be
+       its own stage. An oscillator wired to an AudioParam is SUMMED with that
+       param, not multiplied by it, so the blades kept swinging the gain by
+       +/-0.55 after Snd.rotor(0) had set the value to nothing — a 12.5 Hz
+       buzz under the entire run, for a helicopter that left in the first ten
+       seconds. Now the chop stage swings 0..1 on its own and the level stage
+       behind it can actually close. */
+    const rf = ctx.createBiquadFilter();
+    rf.type = 'lowpass'; rf.frequency.value = 340; rf.Q.value = 1.2;
+    const rchop = ctx.createGain(); rchop.gain.value = 0.5;
     const rlfo = ctx.createOscillator(); rlfo.type = 'square'; rlfo.frequency.value = 12.5;
-    const rg = ctx.createGain(); rg.gain.value = 0.55;
-    rlfo.connect(rg); rg.connect(rotor.gain); rlfo.start();
+    const rg = ctx.createGain(); rg.gain.value = 0.5;
+    rlfo.connect(rg); rg.connect(rchop.gain); rlfo.start();
+    rotor = ctx.createGain(); rotor.gain.value = 0;
+    src.connect(rf); rf.connect(rchop); rchop.connect(rotor); rotor.connect(master);
     /* ---- the drone ----
        A root, its fifth and two octaves, through one lowpass and a square-wave
        tremolo. Nothing plays a tune: the chain opens the filter, brings in the
@@ -1861,7 +2169,19 @@ const Snd = (() => {
       return enabled;
     },
     bed(w, c, r) { set(wind, w); set(carve, c); set(rumble, r); },
-    rotor(v) { if (ready) rotor.gain.setTargetAtTime(v, ctx.currentTime, 0.16); },
+    rotor(v) {
+      if (!ready) return;
+      const t = ctx.currentTime;
+      if (v <= 0) {
+        /* setTargetAtTime only ever approaches zero, and a helicopter that is
+           gone should be gone: ramp it out and then hold exactly silent */
+        rotor.gain.setTargetAtTime(0, t, 0.12);
+        rotor.gain.setValueAtTime(0, t + 0.5);
+      } else {
+        rotor.gain.cancelScheduledValues(t);
+        rotor.gain.setTargetAtTime(v, t, 0.16);
+      }
+    },
     /** root: Hz. drive: 0..1, how hard the run is going. vol: 0..1. */
     music(root, drive, vol) {
       if (!ready) return;
@@ -2275,7 +2595,7 @@ function generate() {
        from wherever you happen to be on the face */
     for (let k = -1; k <= 1; k++) {
       const rx = cv.x + k * (cv.halfW * 0.62);
-      addProp('ramp', rx, cv.z + cv.halfL + 11, { r: 3.6, h: 2.2, scale: 1.25, spin: 0 });
+      addRamp(rx, cv.z + cv.halfL + 11, { r: 3.6, h: 2.7, scale: 1.25, spin: 0 });
       if (k === 0) canArc(rx, cv.z + cv.halfL + 4, 0, 6, cv.halfL * 2 + 34, 7);
     }
   }
@@ -2289,7 +2609,7 @@ function generate() {
     addProp('gate', ft.x, ft.z + (ft.cliff ? 34 : 46), { scenery: true, r: 0, h: 0, lift: 0.2, spin: 0 });
     if (ft.cliff) {
       /* out over the drop: the cans are where the air is */
-      addProp('ramp', ft.x, ft.z + 9, { r: 3.6, h: 2.2, scale: 1.15, spin: 0 });
+      addRamp(ft.x, ft.z + 9, { r: 3.6, h: 2.7, scale: 1.15, spin: 0 });
       canArc(ft.x, ft.z + 3, 0, 7, 58 + ft.size * 1.6, 6 + ft.size * 0.32);
     } else {
       canTrail(ft.x - 5, ft.z + 40, 8);          // up the face and over the top
@@ -2301,7 +2621,7 @@ function generate() {
   if (z < nextRampZ) {
     nextRampZ = z - rand(150, 260);
     const rx = cx + rand(-1, 1) * span * 0.75;
-    addProp('ramp', rx, z, { r: 3.6, h: 2.2, scale: rand(0.95, 1.2), spin: 0 });
+    addRamp(rx, z, { r: 3.6, h: 2.7, scale: rand(0.95, 1.2), spin: 0 });
     canArc(rx, z - 10, rand(-1, 1), 5, 46, 5.5);
   }
 
@@ -2717,7 +3037,7 @@ function startIntro(full) {
   introFromPos.copy(camera.position);
   introFromLook.copy(camLook);
   heli.visible = true;
-  scene.fog.far = 700; scene.fog.near = 700 * 0.24;
+  scene.fog.far = 9000; scene.fog.near = 9000 * 0.24;
   slideZ = P.z + 900;                        // still up on the summit, not yet moving
   hud.classList.remove('live');
   padLayer.classList.remove('live');
@@ -2744,7 +3064,7 @@ function introStep(dt) {
   if (hg < 46 && tt < IN_DROP + 1.2 && Math.random() < dt * 34)
     emitBlast(h.x + rand(-7, 7), groundAt(h.x, h.z), h.z + rand(-7, 7), 2, 5 + (46 - hg) * 0.18);
   const near = clamp(1 - (h.distanceTo(camera.position) - 28) / 150, 0, 1);
-  Snd.rotor(tt > IN_END - 0.6 ? 0 : 0.14 + near * 0.5);
+  Snd.rotor(tt > IN_END - 0.6 ? 0 : 0.30 + near * 0.90);
 
   if (tt < IN_DROP) {
     /* still in the door */
@@ -3400,23 +3720,33 @@ function present(dt, t) {
        so the only way to hold eight hundred metres of mountain in frame is to
        run it up the screen — summit at the top, the rider a speck near the
        bottom, and the whole face between them. */
-    const a = Math.sin(menuT * 0.055) * 1.05;
-    const rad = 700 + Math.sin(menuT * 0.11) * 70;
-    const tz = P.z + 430;
-    camPos.set(P.x + Math.sin(a) * rad, P.y + 150 + Math.sin(menuT * 0.14) * 22,
-               tz - Math.cos(a) * rad);
-    camLook.set(P.x + Math.sin(a) * 60, P.y + 60, tz);
-    fov += (60 - fov) * Math.min(1, dt * 2);
+    /* The drone stands well off DOWN the valley and sweeps a narrow arc
+       across the face — it never circles, because a circuit swings it out
+       through the range and ends up shooting the back of a neighbouring peak
+       from two hundred metres. Anchored on the summit rather than on the
+       rider, so the composition holds while the rider drifts. */
+    const a = Math.sin(menuT * 0.050) * 0.30;
+    const rad = 2620 + Math.sin(menuT * 0.085) * 210;
+    const cz = PEAK_Z - 900;
+    camPos.set(PEAK_X + Math.sin(a) * rad, P.y + 610 + Math.sin(menuT * 0.12) * 60,
+               cz - Math.cos(a) * rad);
+    camLook.set(PEAK_X + Math.sin(a) * 260, P.y + 300, PEAK_Z - 240);
+    /* a portrait frame at 56 degrees is twenty-eight degrees wide, which is
+       barely the mountain and nothing either side of it */
+    fov += (74 - fov) * Math.min(1, dt * 2);
+    setClip(CLIP_WIDE.near, CLIP_WIDE.far);
   } else if (mode === 'intro') {
     /* three shots: the whole face, the ship, and then you — the last of them
        easing into the chase position so control begins where it always does */
     const tt = introT + introOff;
+    const cl = smoothstep(0, IN_END * 0.72, tt);
+    setClip(lerp(CLIP_WIDE.near, CLIP_NEAR.near, cl), lerp(CLIP_WIDE.far, CLIP_NEAR.far, cl));
     if (tt < IN_WIDE) {
       /* Act one is the mountain: stand off below it, look up past the drop
          point at the summit, and let the ship cross in front of the thing. */
       const u = tt / IN_WIDE;
-      _camP.set(dropX + 150 - u * 26, dropGround + 84 + u * 14, dropZ - 250 + u * 30);
-      _camL.set(dropX + 10, dropGround + 150, dropZ + 620);
+      _camP.set(dropX + 330 - u * 120, dropGround + 300 + u * 20, dropZ - 760 + u * 240);
+      _camL.set(dropX + 10, dropGround + 230, dropZ + 640);
       const m = smoothstep(0, IN_MATCH, introT);
       camPos.lerpVectors(introFromPos, _camP, m);
       camLook.lerpVectors(introFromLook, _camL, m);
@@ -3448,6 +3778,7 @@ function present(dt, t) {
       fov += ((58 + look * 9) - fov) * Math.min(1, dt * 2.2);
     }
   } else if (mode === 'outrun') {
+    setClip(CLIP_NEAR.near, CLIP_NEAR.far);
     /* swing from the chase seat round to the front, and end looking back up
        at everything you just came down */
     const u = clamp(outT / OUT_LEN, 0, 1);
@@ -3460,11 +3791,13 @@ function present(dt, t) {
     camLook.set(P.x, P.y + lerp(1.6, 2.4, k), P.z - lerp(18, 0, k));
     fov += ((58 - k * 10) - fov) * Math.min(1, dt * 1.8);
   } else if (mode === 'dying' || mode === 'over' || mode === 'won') {
+    setClip(CLIP_NEAR.near, CLIP_NEAR.far);
     const a = 0.7 + deathT * 0.9, r = 12 + deathT * 5;
     camPos.set(P.x + Math.sin(a) * r, P.y + 3.6 + deathT * 2.2, P.z + Math.cos(a) * r);
     camLook.set(P.x, P.y + 1.4, P.z);
     fov += (56 - fov) * Math.min(1, dt * 1.6);
   } else {
+    setClip(CLIP_NEAR.near, CLIP_NEAR.far);
     const back = P.air ? 15 : 13, up = P.air ? 6.4 : 5.6;
     camPos.set(
       P.x - Math.sin(P.camYaw) * back,
@@ -3498,7 +3831,8 @@ function present(dt, t) {
      metres up the extra detail is invisible, and drawing both fills the screen
      twice, which on a soft renderer costs two thirds of the frame rate. */
   const wantFar = mode === 'menu' || mode === 'intro';
-  if (wantFar) rebuildFar(camera.position.x, camera.position.z);
+  if (wantFar) rebuildFar((camera.position.x + camLook.x * 2) / 3,
+                          (camera.position.z + camLook.z * 2) / 3);
   if (farMesh.visible !== wantFar) farMesh.visible = wantFar;
   /* the cone skyline was a stand-in for a mountain — with a real one behind it
      it reads as painted cardboard, so it stands down */
@@ -3509,8 +3843,15 @@ function present(dt, t) {
      actually goes. */
   const wantSlide = mode !== 'menu' && !(mode === 'intro' && !introAva);
   if (slide.visible !== wantSlide) slide.visible = wantSlide;
-  if (!terrain.visible) terrain.visible = true;
+  /* The fine mesh is a 300 x 470 m rectangle. Sitting on top of the far field
+     from two kilometres out it reads as exactly that: a patch of detail with
+     four straight edges pasted onto the mountain. From further than a couple
+     of hundred metres the coarse mesh says the same thing anyway, so the fine
+     one stands down and the seam goes with it. */
+  const wantFine = !wantFar || camera.position.distanceToSquared(riderPivot.position) < 260 * 260;
+  if (terrain.visible !== wantFine) terrain.visible = wantFine;
 
+  flagStep(t);
   sky.position.copy(camera.position);
   sunGlow.position.copy(camera.position).addScaledVector(sunDir, 1200);
   /* the skyline trails the camera on a ~3 s constant: far enough behind that
@@ -3522,8 +3863,8 @@ function present(dt, t) {
   /* light: altitude first, then whatever the weather is doing to it */
   applyLight(P.dist, dt);
   const far = mode === 'intro'
-    ? lerp(700, 338, clamp((introT + introOff) / IN_END, 0, 1))
-    : mode === 'menu' ? 1250
+    ? lerp(9000, 338, clamp((introT + introOff) / (IN_END * 0.72), 0, 1))
+    : mode === 'menu' ? 11500
     : lerp(lerp(338, 104, weather), 52, inCloud);
   scene.fog.far += (far - scene.fog.far) * Math.min(1, dt * 0.8);
   scene.fog.near = scene.fog.far * 0.24;
