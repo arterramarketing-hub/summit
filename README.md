@@ -40,7 +40,9 @@ a secure origin, and iOS 13+ additionally requires a tap to grant access, which
 is what the *Drop in* button does.
 
 The gyroscope does exactly one thing: it steers. Everything else is an
-on-screen button you hold, and which lights up while held.
+on-screen button you hold, and which lights up while held — plus the sides of
+the screen, which carve when you hold them and spin you when you tap them in
+the air.
 
 **Tilt direction** on the start screen has a live marker under it. Tilt the
 handset and watch it: if it runs the way you lean, you are set; if it fights
@@ -52,9 +54,29 @@ or **Endless**.
 
 | Control | On the snow | In the air |
 | --- | --- | --- |
-| Tilt left / right, **or hold either side of the screen** | Carve | **Steer the flight** and spin |
+| Tilt left / right, **or hold either side of the screen** | Carve | **Steer the flight** — pushes the whole arc sideways |
+| **Tap** either side of the screen | — | **Half a turn.** They queue and they chain |
 | **TUCK** button | Hold to run straight and fast; **let go to pop** | Grab |
 | **FLIP** button | — | Backflip |
+
+**Spin is a tap, not a lean.** It used to accumulate at a rate while a side was
+held, so how far you came round depended on how long you leaned and nothing
+ever landed on a round number. Now a tap is exactly a hundred and eighty
+degrees: one is a switch landing, two is a clean three-sixty, and with nothing
+queued the board settles onto whichever stance is nearer rather than always
+onto forwards. Landing sideways stops being something that happens to you.
+
+**Land backwards and you stay backwards.** A switch landing pays 1.6× and a
+chain step, and from then on you are riding with the board pointing at you and
+**the steering mirrored** — lean right, go left — until you spin out of it or
+crash. The badge on screen says so while it lasts.
+
+**View** on the start screen switches between the chase camera and **first
+person**: bolted to the rider's own head rather than lerped towards it, so the
+mountain arrives at the speed you are actually going and a tap-spin takes the
+whole world round with it. A switch landing is the best of it — you come round
+the last ninety degrees, the board takes the snow backwards, and your head
+whips forward to find the hill again.
 
 **Controls** on the start screen (and the pause screen) switches between
 **Tilt to steer** and **Touch only**. Touch-only steers by holding a side of the
@@ -72,7 +94,8 @@ you actually do the thing, not on a timer.
 **Re-centre** rezeros the tilt to however you happen to be holding the phone.
 It does not matter how steeply you hold it — the steering reads true roll, not
 raw `gamma`, so it behaves the same flat on a table or held upright.
-On a desktop: arrow keys to steer, space or down to tuck and grab, F or up to flip.
+On a desktop: arrow keys to steer — a press in the air is half a turn — space
+or down to tuck and grab, F or up to flip.
 
 Locally, any static server works (a plain `file://` open will not — the ES module
 import needs an origin):
@@ -223,6 +246,17 @@ everything else is generated at runtime.
 - **Props** are instanced meshes drawn from slot pools, generated ahead of you
   and recycled behind. Each prop type is baked from several primitives into one
   vertex-coloured buffer, so a forest is one draw call.
+- **Tap and hold share one thumb**, so they are told apart by how long it stays
+  down. Tilt mode has nothing to tell apart — the gyro does all the carving —
+  so there the spin goes the instant the thumb lands, which is the whole point
+  of a tap. In touch mode the same side both carves and spins, so the spin
+  waits for the release to know which one it was.
+- **The stance is one number**, and everything on the snow is measured from it
+  rather than from zero: the eighty-degree limit on how far the board can be
+  held off the line you are travelling, the carve target, the skate that gets
+  you out of a hollow, and the axis the edge grips along — which is taken from
+  whichever end of the board is leading, so riding switch the drag, the carve
+  and the boost all still push you down the hill instead of back up it.
 - **Nothing floats.** Every prop used to be pinned by its origin and then drawn
   dead level, on a face that rolls by up to half a metre per metre across the
   slope: measured, the corners of a seven-metre kicker's footprint disagreed by
@@ -303,7 +337,23 @@ everything else is generated at runtime.
   lens. From the drone the mountain is three kilometres away and the range
   behind it is nine — and a far plane fixed at 3,000 m was quietly cutting them
   out of the frustum after they had been built, lit and fogged.
-- **Snow is four octaves and a slope.** The finest is sized just above the
+- **Snow has a texture now**, because vertex colour had run out of room: the
+  mesh has a vertex every 5.8 m across and 4.4 m down, so the finest thing it
+  can paint is about ten metres wide and everything under that is invisible by
+  construction. One tileable square of wind-blown snow — value noise on a
+  lattice that wraps, so it joins itself on all four edges — laid on in world
+  coordinates, so it stays put on the ground while the mesh scrolls underneath
+  it. Nothing in that square is bigger than about two metres, which is the
+  whole trick: the vertex colours already own everything from ten metres up,
+  so there is nothing in the texture big enough to recognise and laying it
+  down every eleven metres reads as snow rather than as a grid. The first
+  version instead sampled the same square a second time at a very different
+  scale to hide the join, and that second fetch measured 27 fps down to 22 on
+  a renderer that is really a CPU — a quarter of the frame rate to solve a
+  problem that smaller octaves solve for nothing. One fetch costs 29 down to
+  27, and even that is the last rung of the quality ladder: it comes off after
+  three bad windows in a row on hardware that cannot hold it.
+- **Snow is also four octaves and a slope.** The finest is sized just above the
   mesh's own spacing — 5.8 m across, 4.4 m down — because that is the finest
   thing that renders as texture rather than as noise, and it carries over half
   the weight: octaves chosen to be *smoothly* resolved measured three times

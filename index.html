@@ -93,7 +93,7 @@ canvas#c{display:block;width:100%;height:100%;touch-action:none}
 .ghostd.up{color:var(--volt)}
 .ghostd.down{color:var(--vital)}
 
-.hud-mid{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;min-height:0}
+.hud-mid{position:relative;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;min-height:0}
 #trick{font:800 clamp(15px,4.6vw,20px)/1.15 var(--disp);font-stretch:118%;letter-spacing:.07em;text-transform:uppercase;
   text-align:center;color:var(--snow);text-shadow:0 2px 16px rgba(4,10,20,.9);opacity:0;transition:opacity .12s ease}
 #trick.on{opacity:1}
@@ -106,6 +106,11 @@ canvas#c{display:block;width:100%;height:100%;touch-action:none}
 #coach[hidden]{display:none}
 #coach b{color:var(--volt);font-weight:700}
 @keyframes coachIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+#stance{position:absolute;left:50%;bottom:0;transform:translateX(-50%);white-space:nowrap;
+  font:800 11px/1 var(--disp);font-stretch:120%;letter-spacing:.26em;text-transform:uppercase;
+  padding:6px 12px;border:1px solid var(--volt);color:var(--volt);background:rgba(14,26,2,.55);
+  opacity:0;transition:opacity .16s ease}
+#stance.on{opacity:1}
 #warn{font:800 13px/1 var(--disp);font-stretch:120%;letter-spacing:.28em;text-transform:uppercase;
   padding:7px 14px;border:1px solid var(--ember);color:var(--ember-soft);background:rgba(24,9,2,.5);
   opacity:0;transition:opacity .18s ease}
@@ -169,7 +174,7 @@ canvas#c{display:block;width:100%;height:100%;touch-action:none}
 #pad{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .3s ease}
 #pad.live{opacity:1}
 .zone{position:absolute;top:0;bottom:0;width:50%;pointer-events:none;touch-action:none}
-body.touchmode #pad.live .zone{pointer-events:auto}
+#pad.live .zone{pointer-events:auto}
 #zoneL{left:0} #zoneR{right:0}
 
 .act .ring{position:absolute;inset:-6px;border-radius:50%;pointer-events:none;opacity:0;
@@ -370,6 +375,7 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
 
     <div class="hud-mid">
       <div id="trick"></div>
+      <div id="stance">Switch · steering mirrored</div>
       <div id="popups"></div>
       <div id="warn">Off the face</div>
       <div id="coach" hidden><b></b></div>
@@ -420,6 +426,13 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
         <span class="note" id="riderNote"></span>
       </div>
 
+      <div class="seg" id="povSeg">
+        <span class="k">View</span>
+        <button type="button" data-pov="0">Chase cam</button>
+        <button type="button" data-pov="1">First person</button>
+        <span class="note" id="povNote"></span>
+      </div>
+
       <div class="seg" id="routeSeg">
         <span class="k">Route</span>
         <button type="button" data-route="descent">Descent</button>
@@ -441,9 +454,12 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
 
       <div class="tiltviz">
         <div class="phone tilt-only" aria-hidden="true"></div>
-        <p><span class="tilt-only"><b>Tilt</b> the handset to carve — and to spin in the air.
-           That is all the gyroscope does.<br></span>
-           <span class="touch-only"><b>Hold either side of the screen</b> to carve that way — and to spin in the air.<br></span>
+        <p><span class="tilt-only"><b>Tilt</b> the handset to carve. That is all the gyroscope does.<br>
+           In the air, <b>tap either side of the screen</b> — every tap is half a
+           turn, and two of them is a full one.<br></span>
+           <span class="touch-only"><b>Hold either side of the screen</b> to carve that way.<br>
+           In the air, <b>tap</b> a side instead of holding it — every tap is half a
+           turn, and two of them is a full one.<br></span>
            <b>TUCK</b> locks the board straight and winds up a spring — <b>let go to pop</b>,
            and let go at a lip for real air. In the air the same button <b>grabs</b>.<br>
            <b>FLIP</b> backflips while you are airborne.</p>
@@ -454,13 +470,14 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
       <div class="actions">
         <button class="go" id="btnStart" type="button">Drop in</button>
       </div>
-      <p class="fine" id="startFine">Tilt only ever steers. Pick <b>Touch only</b> above to steer by holding either side of the screen. On a desktop: <b>arrow keys</b>, <b>space</b> to tuck or grab, <b>F</b> to flip.</p>
+      <p class="fine" id="startFine">Tilt only ever steers. Pick <b>Touch only</b> above to steer by holding either side of the screen. On a desktop: <b>arrow keys</b> (a press in the air is half a turn), <b>space</b> to tuck or grab, <b>F</b> to flip.</p>
       <p class="fine" id="careerFine"></p>
 
       <dl class="brief">
         <div><dt>Terrain</dt><dd>Every roller is a takeoff. Hold TUCK and let go at the lip and it throws you properly.</dd></div>
         <div><dt>Lines</dt><dd>Orange gates mark a cliff band or a spine. Riding the line pays cans and chain; going round is safe and pays nothing.</dd></div>
-        <div><dt>Tricks</dt><dd>Steer to spin, hold FLIP to backflip, hold TUCK to grab. Land pointing where you are going — sideways is a wipeout.</dd></div>
+        <div><dt>Tricks</dt><dd>Tap a side in the air to spin half a turn, hold FLIP to backflip, hold TUCK to grab. Land pointing where you are going — or exactly backwards, which is worth more.</dd></div>
+        <div><dt>Switch</dt><dd>Land backwards and you keep riding backwards, with the steering mirrored, until you spin out of it. It pays 1.6× and a chain step.</dd></div>
         <div><dt>Cans</dt><dd>Every fifth can fires a boost: a hard surge and double points until you crash.</dd></div>
         <div><dt>Chain</dt><dd>Tricks, cans, close passes and flat-out speed all build one multiplier. It never times out. A wipeout takes all of it.</dd></div>
         <div><dt>Slide</dt><dd>The avalanche never stops — but clearing a sector shoves it 80 m back down the hill.</dd></div>
@@ -1134,6 +1151,62 @@ const mat4 = (x, y, z, rx, ry, rz, sx, sy, sz) => new THREE.Matrix4()
 
 const litMat = (extra) => new THREE.MeshLambertMaterial(Object.assign({ vertexColors: true, flatShading: true }, extra || {}));
 
+/* ---- snow, below the size of a triangle ----
+   Vertex colour had run out of room. The mesh has a vertex every 5.8 m across
+   and 4.4 m down, so the finest thing it can paint is about ten metres wide
+   and everything under that is invisible by construction — which is why the
+   snow kept reading as a sheet of card however many octaves went into it.
+   This is the detail the mesh cannot hold: one tileable square of wind-blown
+   snow, laid on in world coordinates so it stays put on the ground while the
+   mesh scrolls underneath it. */
+const SNOW_TILE = 11;                   // metres across one repeat
+function snowTexture() {
+  const N = 256, cv = document.createElement('canvas');
+  cv.width = cv.height = N;
+  const ctx2 = cv.getContext('2d'), img = ctx2.createImageData(N, N), d = img.data;
+  /* value noise on a lattice that WRAPS, so the square joins itself on all
+     four edges — a seam in a texture repeated twenty times across the face
+     would read as a grid before it read as snow */
+  const vn = (u, v, pu, pv) => {
+    const x = u * pu, y = v * pv;
+    const x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0;
+    const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+    const h = (i, j) => hash2(((i % pu) + pu) % pu, ((j % pv) + pv) % pv);
+    return lerp(lerp(h(x0, y0), h(x0 + 1, y0), sx), lerp(h(x0, y0 + 1), h(x0 + 1, y0 + 1), sx), sy);
+  };
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const u = i / N, v = j / N;
+    /* Every octave in here is small — the biggest feature is under two metres
+       — and that is deliberate. The vertex colours already own everything from
+       ten metres upwards; this square only has to supply what they cannot
+       reach. It also means there is nothing in it big enough to recognise, so
+       laying it down every eleven metres reads as snow rather than as a grid,
+       and no second sample at another scale is needed to hide the join.
+       Wind cuts ACROSS the fall line, so the ripples are long in x and tight
+       in z — sastrugi are about that shape and about that size. */
+    const wind = vn(u + vn(u, v, 7, 7) * 0.13, v, 7, 26);
+    const mid = vn(u, v, 13, 15);
+    const fine = vn(u, v, 34, 38);
+    const micro = hash2(i * 2654435761 + 17, j * 40503 + 7);
+    let k = 0.735 + wind * 0.115 + mid * 0.050 + fine * 0.060 + micro * 0.040;
+    if (micro > 0.988) k = 1;                    // a crystal catching the sun
+    k = k < 0 ? 0 : k > 1 ? 1 : k;
+    /* and what little light a hollow gets, it gets from the sky */
+    const o = (j * N + i) * 4, blue = (1 - k) * 0.24;
+    d[o] = Math.round(255 * k * (1 - blue));
+    d[o + 1] = Math.round(255 * k * (1 - blue * 0.45));
+    d[o + 2] = Math.round(255 * k);
+    d[o + 3] = 255;
+  }
+  ctx2.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+const snowTex = snowTexture();
+
 /* ---- pine: trunk is what hurts, canopy is what you clip ---- */
 const TREE_GEO = bake([
   { geo: new THREE.CylinderGeometry(0.26, 0.40, 2.6, 5), color: 0x4a3527, m: mat4(0, 1.3, 0) },
@@ -1292,13 +1365,16 @@ function bodyParts(turn) {
     { geo: new THREE.BoxGeometry(0.44, 0.13, 0.10), color: 0x101722, m: at(0, 1.56, -0.20) }
   ];
 }
-const BOARD_GEO = bake([
+/* The kit, kept separate from the body: from inside the rider's own head the
+   body is a box across the lens, but the deck under your feet — or the tips
+   and the poles — is the whole reason first person reads as riding. */
+const boardKit = () => [
   { geo: new THREE.BoxGeometry(0.52, 0.10, 3.3), color: 0xd8451c, m: mat4(0, 0.09, 0) },
   { geo: new THREE.BoxGeometry(0.54, 0.11, 1.15), color: 0x16202f, m: mat4(0, 0.17, -0.05) },
   { geo: new THREE.BoxGeometry(0.34, 0.50, 0.46), color: 0x131c29, m: mat4(-0.02, 0.44, 0.62, 0, 0.9, 0) },
   { geo: new THREE.BoxGeometry(0.34, 0.50, 0.46), color: 0x131c29, m: mat4(0.02, 0.44, -0.50, 0, 0.9, 0) }
-].concat(bodyParts(0.95)));
-const SKI_GEO = bake([
+];
+const skiKit = () => [
   { geo: new THREE.BoxGeometry(0.19, 0.08, 3.1), color: 0x2f86cc, m: mat4(-0.31, 0.06, 0) },
   { geo: new THREE.BoxGeometry(0.19, 0.08, 3.1), color: 0x2f86cc, m: mat4(0.31, 0.06, 0) },
   { geo: new THREE.BoxGeometry(0.21, 0.10, 0.5), color: 0xffd23f, m: mat4(-0.31, 0.13, -1.34, -0.34, 0, 0) },
@@ -1309,13 +1385,21 @@ const SKI_GEO = bake([
   { geo: new THREE.CylinderGeometry(0.035, 0.035, 1.6, 5), color: 0x2a3444, m: mat4(0.58, 0.85, 0.55, 0.42, 0, -0.12) },
   { geo: new THREE.CylinderGeometry(0.16, 0.16, 0.05, 6), color: 0x8a97ab, m: mat4(-0.58, 0.18, 0.88) },
   { geo: new THREE.CylinderGeometry(0.16, 0.16, 0.05, 6), color: 0x8a97ab, m: mat4(0.58, 0.18, 0.88) }
-].concat(bodyParts(0)));
+];
+const BOARD_GEO = bake(boardKit().concat(bodyParts(0.95)));
+const SKI_GEO = bake(skiKit().concat(bodyParts(0)));
+/* From inside your own boots you do not see the bindings — you see the deck,
+   or the tips and the poles. And a binding half a metre from the lens is a
+   black box across a quarter of the screen, which riding switch turns the
+   other way round and makes worse. */
+const BOARD_POV = bake(boardKit().slice(0, 2));
+const SKI_POV = bake(skiKit().filter((_, i) => i !== 4 && i !== 5));
 
 const RIDERS = {
-  board: { key: 'board', name: 'Snowboard', geo: BOARD_GEO, grip: 6.6, spin: 9.2,
+  board: { key: 'board', name: 'Snowboard', geo: BOARD_GEO, pov: BOARD_POV, grip: 6.6, spin: 9.2,
            drag: 0.0112, tuckDrag: 0.40, maxYaw: 0.74, trickBonus: 1.15,
            grabs: ['Indy', 'Stalefish', 'Melon', 'Tail'], blurb: 'Loose edge, spins easy' },
-  ski:   { key: 'ski',   name: 'Skis',      geo: SKI_GEO,   grip: 8.4, spin: 6.6,
+  ski:   { key: 'ski',   name: 'Skis',      geo: SKI_GEO,   pov: SKI_POV,   grip: 8.4, spin: 6.6,
            drag: 0.0103, tuckDrag: 0.46, maxYaw: 0.82, trickBonus: 1.0,
            grabs: ['Iron Cross', 'Safety', 'Mute', 'Zudnick'], blurb: 'Holds a line, carries speed' }
 };
@@ -1325,7 +1409,11 @@ try { const k = localStorage.getItem('sw_rider'); if (RIDERS[k]) R = RIDERS[k]; 
 const riderPivot = new THREE.Group();          // yaw + world position
 const riderTilt = new THREE.Group();           // flip / bank / tumble
 const rider = new THREE.Mesh(R.geo, litMat());
-riderTilt.add(rider); riderPivot.add(riderTilt); scene.add(riderPivot);
+const povKit = new THREE.Mesh(R.pov, litMat());
+povKit.visible = false;
+riderTilt.add(rider); riderTilt.add(povKit); riderPivot.add(riderTilt); scene.add(riderPivot);
+let povMode = false;
+try { povMode = localStorage.getItem('sw_pov') === '1'; } catch (e) {}
 
 /* the ghost of your best run, raced in real time */
 const GHOST_STEP = 0.12, GHOST_MAX = 6000;
@@ -1382,6 +1470,7 @@ const terrainGeo = new THREE.BufferGeometry();
   terrainGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vc * 3), 3));
   terrainGeo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(vc * 3), 3));
   terrainGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(vc * 3), 3));
+  terrainGeo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(vc * 2), 2));
   const idx = new Uint32Array(SX * SZ * 6);
   let k = 0;
   for (let j = 0; j < SZ; j++) for (let i = 0; i < SX; i++) {
@@ -1395,7 +1484,8 @@ const terrainGeo = new THREE.BufferGeometry();
    never culled, so neither the normal attribute nor the bounding sphere needs
    recomputing on every rebuild */
 terrainGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
-const terrain = new THREE.Mesh(terrainGeo, litMat());
+const snowMat = litMat({ map: snowTex });
+const terrain = new THREE.Mesh(terrainGeo, snowMat);
 terrain.frustumCulled = false;
 scene.add(terrain);
 
@@ -1519,6 +1609,7 @@ function rebuildTerrain(px, pz, force) {
   tileX = ox; tileZ = oz;
   const pos = terrainGeo.attributes.position.array;
   const col = terrainGeo.attributes.color.array;
+  const uv = terrainGeo.attributes.uv.array;
   const QX = TW / SX, QZ = TL / SZ, sx = sunDir.x, sz = sunDir.z;
   let v = 0, prevY = 0;
   for (let j = 0; j <= SZ; j++) {
@@ -1533,6 +1624,9 @@ function rebuildTerrain(px, pz, force) {
       const x = ox + (i / SX - 0.5) * TW;
       const y = height(x, z);
       pos[v * 3] = x; pos[v * 3 + 1] = y; pos[v * 3 + 2] = z;
+      /* in world coordinates, so the snow stays where it is while the window
+         it is drawn through slides down the mountain */
+      uv[v * 2] = x / SNOW_TILE; uv[v * 2 + 1] = z / SNOW_TILE;
       /* row j - 1 is one quad further UP the hill, so it is the larger z */
       const gx = i ? (y - prevY) / QX : 0;
       const gz = j ? (_rowY[i] - y) / QZ : 0;
@@ -1562,6 +1656,7 @@ function rebuildTerrain(px, pz, force) {
   }
   terrainGeo.attributes.position.needsUpdate = true;
   terrainGeo.attributes.color.needsUpdate = true;
+  terrainGeo.attributes.uv.needsUpdate = true;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -2357,26 +2452,38 @@ function holdable(el, set) {
 holdable(btnTuck, v => { heldTuck = v; });
 holdable(btnFlip, v => { heldFlip = v; });
 
-/* hold either half of the screen to turn that way */
-function steerZone(el, set) {
-  const ids = new Set();
+/* ---- hold to carve, tap to spin ----
+   The two live on the same thumb, so they are told apart by how long it stays
+   down. Tilt mode has nothing to tell apart — the gyro does all the carving —
+   so there the spin goes the instant the thumb lands, which is the whole
+   point of a tap. In touch mode the same side both carves and spins, so the
+   spin has to wait for the release to know which one it was. */
+const TAP_MS = 230, TAP_SLOP = 30;
+function steerZone(el, set, dir) {
+  const live = new Map();
   const down = (e) => {
     e.preventDefault();
-    ids.add(e.pointerId);
+    const rec = { t: performance.now(), x: e.clientX, y: e.clientY, spun: false };
+    live.set(e.pointerId, rec);
     if (el.setPointerCapture) { try { el.setPointerCapture(e.pointerId); } catch (err) {} }
     set(true);
+    if (ctrlMode !== 'touch') { rec.spun = true; airSpin(dir); }
   };
   const up = (e) => {
-    ids.delete(e.pointerId);
-    if (!ids.size) set(false);
+    const rec = live.get(e.pointerId);
+    live.delete(e.pointerId);
+    if (rec && !rec.spun && performance.now() - rec.t < TAP_MS
+        && Math.hypot((e.clientX || rec.x) - rec.x, (e.clientY || rec.y) - rec.y) < TAP_SLOP)
+      airSpin(dir);
+    if (!live.size) set(false);
   };
   el.addEventListener('pointerdown', down);
   el.addEventListener('pointerup', up);
   el.addEventListener('pointercancel', up);
   el.addEventListener('lostpointercapture', up);
 }
-steerZone(zoneLeft, v => { zoneL = v; });
-steerZone(zoneRight, v => { zoneR = v; });
+steerZone(zoneLeft, v => { zoneL = v; }, -1);
+steerZone(zoneRight, v => { zoneR = v; }, 1);
 function releaseZones() { zoneL = zoneR = false; }
 
 /* ---- which scheme is live ---- */
@@ -2426,9 +2533,20 @@ function setRider(k) {
   R = RIDERS[k];
   try { localStorage.setItem('sw_rider', k); } catch (e) {}
   rider.geometry = R.geo;
+  povKit.geometry = R.pov;
   ghostMesh.geometry = R.geo;
   for (const b of document.querySelectorAll('[data-rider]')) b.classList.toggle('sel', b.dataset.rider === k);
   const n = $('riderNote'); if (n) n.textContent = R.blurb + '.';
+}
+function setPov(on) {
+  povMode = !!on;
+  try { localStorage.setItem('sw_pov', povMode ? '1' : '0'); } catch (e) {}
+  for (const b of document.querySelectorAll('[data-pov]'))
+    b.classList.toggle('sel', (b.dataset.pov === '1') === povMode);
+  const n = $('povNote');
+  if (n) n.textContent = povMode
+    ? 'From inside the goggles. The mountain comes at you, and a spin takes the whole world with it.'
+    : 'Over the shoulder. You can see the rider, the board and what you are about to hit.';
 }
 function setRoute(k) {
   route = k;
@@ -2439,14 +2557,19 @@ function setRoute(k) {
     ? 'Ride from 4,208 m to the valley floor at 1,000 m — 3.9 km of snow, six faces, and a cloud deck to come out of the bottom of.'
     : 'No finish line. Ride until the mountain takes you.';
 }
+for (const b of document.querySelectorAll('[data-pov]')) b.addEventListener('click', () => setPov(b.dataset.pov === '1'));
 for (const b of document.querySelectorAll('[data-rider]')) b.addEventListener('click', () => setRider(b.dataset.rider));
 for (const b of document.querySelectorAll('[data-route]')) b.addEventListener('click', () => setRoute(b.dataset.route));
 
 /* ---- keyboard, for desktop ---- */
 window.addEventListener('keydown', e => {
   switch (e.key) {
-    case 'ArrowLeft': case 'a': case 'A': keySteer = -1; break;
-    case 'ArrowRight': case 'd': case 'D': keySteer = 1; break;
+    case 'ArrowLeft': case 'a': case 'A':
+      if (!e.repeat && keySteer !== -1) airSpin(-1);
+      keySteer = -1; break;
+    case 'ArrowRight': case 'd': case 'D':
+      if (!e.repeat && keySteer !== 1) airSpin(1);
+      keySteer = 1; break;
     case 'ArrowDown': case 's': case 'S': case ' ': keyTuck = true; break;
     case 'ArrowUp': case 'w': case 'W': case 'f': case 'F': keyFlip = true; break;
     default: return;
@@ -2477,6 +2600,18 @@ const LAND_FREE = 17;
 const STALL_SPD = 7, SKATE = 9;
 /* how hard you can push the arc about once you are off the ground, m/s squared */
 const AIR_STEER = 14;
+/* Half a turn in a third of a second: fast enough to be a flick, slow enough
+   that you can see the mountain go past. Two taps inside that and they chain
+   into a clean three-sixty. */
+const SPIN_RATE = Math.PI / 0.33;
+/** Queue a half rotation. dir is -1 for left, +1 for right. */
+function airSpin(dir) {
+  if (mode !== 'play' || !P.air || P.wipe > 0) return;
+  /* three halves is as much as anyone can spend before they land; buffering
+     more just means the board is still turning when the snow arrives */
+  P.spinQ = clamp(P.spinQ + dir * Math.PI, -Math.PI * 3, Math.PI * 3);
+  Snd.whoosh(false);
+}
 /* Every can detonates a boost: a hard surge, double points, and enough speed
    that the next roller throws you properly. Taking them back to back down a
    trail stacks the timer rather than restarting it, so a whole line of cans is
@@ -2708,6 +2843,7 @@ function generate() {
    13 · HUD
    ══════════════════════════════════════════════════════════════ */
 const hud = $('hud'), popups = $('popups'), warnEl = $('warn'), trickEl = $('trick');
+const stanceEl = $('stance');
 const elAlt = $('alt'), elDist = $('dist'), elSpd = $('spd'), elScore = $('score'), elCans = $('cans');
 const elSectorTag = $('sectorTag'), sectorEl = $('sector');
 const elCond = $('condFill'), elCondP = $('condPct');
@@ -2779,7 +2915,10 @@ const COACH = [
       : '<b>Hold either side</b> of the screen to carve' },
   { id: 'tuck',  t: 13, text: () => 'Hold <b>TUCK</b> — the board locks straight and runs' },
   { id: 'pop',   t: 14, text: () => 'Let <b>TUCK</b> go at a lip. That is your jump' },
-  { id: 'land',  t: 14, text: () => 'Land pointing <b>where you are going</b>' },
+  { id: 'spin',  t: 14, text: () => (ctrlMode === 'tilt' && gyro.ok)
+      ? 'In the air, <b>tap</b> a side — every tap is half a turn'
+      : 'In the air, <b>tap</b> a side instead of holding it — half a turn each' },
+  { id: 'land',  t: 14, text: () => 'Land pointing <b>where you are going</b>, or exactly backwards' },
   { id: 'can',   t: 14, text: () => 'Sweep up the <b>cans</b> — every fifth fires a boost' }
 ];
 let coachI = -1, coachT = 0, coachHold = 0;
@@ -2942,6 +3081,7 @@ function resetRun() {
   P.air = false; P.airT = 0; P.bestAir = 0;
   P.tuckT = 0; P.wasTuck = false; P.popT = 0; P.lines = 0;
   P.spin = 0; P.flip = 0; P.grabT = 0; P.grabName = ''; P.trickBase = 0;
+  P.spinQ = 0; P.switch = false;
   P.wipe = 0; P.hurt = 0; P.slideGrace = 0; P.boostT = 0; P.boosts = 0;
   P.health = 100;
   P.dist = 0; P.alt = START_ALT; P.lowAlt = START_ALT;
@@ -3129,6 +3269,7 @@ function endIntro() {
   if (introHint) introHint.hidden = true;
   /* whatever the cutscene did to you does not count */
   P.health = 100; P.wipe = 0; P.hurt = 0; P.air = false;
+  P.switch = false; P.spinQ = 0;
   if (!introLanded) { P.y = groundAt(P.x, P.z); P.vz = Math.min(P.vz, -15); }
   /* the run's clock, its altimeter and its scoreboard all start here, at the
      bottom of the drop — nothing the cutscene did counts for or against you */
@@ -3189,7 +3330,7 @@ function popOff() {
 
 function launch(vy) {
   P.air = true; P.vy = vy;
-  P.airT = 0; P.spin = 0; P.flip = 0; P.grabT = 0; P.grabName = '';
+  P.airT = 0; P.spin = 0; P.flip = 0; P.grabT = 0; P.grabName = ''; P.spinQ = 0;
   P.launchY = P.y;
   Snd.whoosh(true);
 }
@@ -3219,7 +3360,12 @@ function land(impact) {
     wipeout(off > 1.7 ? 'Caught an edge' : 'Landed sideways', 9);
     return;
   }
-  P.heading = velYaw + wrapPi(P.heading - velYaw) * (backwards ? 0 : 0.35);
+  /* and the stance you land in is the stance you ride in */
+  P.switch = backwards;
+  const bse = backwards ? Math.PI : 0;
+  P.heading = velYaw + bse + wrapPi(P.heading - velYaw - bse) * 0.35;
+  P.spinQ = 0;
+  stanceEl.classList.toggle('on', backwards);
   taught('land');
 
   if (P.airT > 0.35) {
@@ -3261,6 +3407,8 @@ function wipeout(reason, damage) {
   if (P.wipe > 0) return;
   P.air = false;
   P.wipe = 1.0;
+  P.switch = false; P.spinQ = 0;
+  stanceEl.classList.remove('on');
   P.hurt = 1.6;             // nothing else may hit you while you are helpless
   P.slideGrace = 2.5;       // and the slide stops gaining for a moment
   P.health -= damage;
@@ -3296,9 +3444,22 @@ function step(dt) {
   else if (!tucking) { popNow = P.wasTuck; P.wasTuck = false; if (!popNow) P.tuckT = 0; }
 
   /* ---------- board attitude ---------- */
+  /* Which way the board is pointing when it is doing nothing: down the hill,
+     or exactly backwards if the last landing was a switch one. Everything on
+     the snow is measured from here rather than from zero. */
+  const base = P.switch ? Math.PI : 0;
   if (P.air) {
-    P.spin += steer * R.spin * dt;
-    P.heading += steer * R.spin * dt;
+    /* ---- half a turn at a time ----
+       Spin used to accumulate at a rate while a side was held, so how far you
+       came round depended on how long you leaned and nothing ever landed on a
+       round number — which is the stickiness. A tap is now exactly a hundred
+       and eighty degrees, they queue, and they chain: two quick taps is a
+       full rotation. */
+    if (P.spinQ !== 0 && P.wipe <= 0) {
+      const step = Math.sign(P.spinQ) * Math.min(Math.abs(P.spinQ), SPIN_RATE * dt);
+      P.heading += step; P.spin += step; P.spinQ -= step;
+      if (Math.abs(P.spinQ) < 1e-4) P.spinQ = 0;
+    }
     /* ---- and you can steer the flight, not just the board ----
        Being a pure ballistic particle meant that once you left the ground the
        landing was already decided, which is not a challenge so much as a
@@ -3308,18 +3469,24 @@ function step(dt) {
     if (P.wipe <= 0 && steer !== 0) {
       const vx0 = P.vx, vz0 = P.vz, sa = Math.hypot(vx0, vz0);
       if (sa > 1) {
-        const k = steer * AIR_STEER * dt;          // perpendicular, to the right of travel
+        /* mirrored in switch as well, so the stance is one rule and not two */
+        const k = steer * (P.switch ? -1 : 1) * AIR_STEER * dt;   // perpendicular, right of travel
         P.vx += (-vz0 / sa) * k;
         P.vz += (vx0 / sa) * k;
       }
     }
     if (P.wipe <= 0 && ctrl.flip) P.flip -= FLIP_RATE * dt;      // hold to backflip
-    /* Let go and the board settles back towards where you are actually going,
-       and a half-finished flip rotates out to the nearest whole one. Steering
-       over a roller should not quietly wind up a trick you then have to land. */
-    if (Math.abs(steer) < 0.15) {
+    /* With nothing queued the board settles onto the NEAREST stance — square
+       to where you are going, or exactly backwards — rather than always onto
+       forwards. Landing sideways stops being something that happens to you
+       and starts being something you chose, which is what makes the switch
+       rule fair. A half-finished flip rotates out to the nearest whole one
+       for the same reason. */
+    if (P.spinQ === 0) {
       const vy = Math.atan2(P.vx, -P.vz);
-      const turn = wrapPi(vy - P.heading) * Math.min(1, dt * 2.6);
+      const off = wrapPi(P.heading - vy);
+      const near = Math.abs(off) > Math.PI / 2 ? Math.PI : 0;
+      const turn = wrapPi(vy + near - P.heading) * Math.min(1, dt * 3.4);
       P.heading += turn; P.spin += turn;
     }
     if (!ctrl.flip && Math.abs(P.flip) > 0.02) {
@@ -3338,14 +3505,17 @@ function step(dt) {
     const sp0 = Math.hypot(P.vx, P.vz);
     if (sp0 > 1.5) {
       const vy0 = Math.atan2(P.vx, -P.vz);
-      const off0 = wrapPi(P.heading - vy0);
-      if (Math.abs(off0) > 1.45) P.heading = vy0 + clamp(off0, -1.45, 1.45);
+      const off0 = wrapPi(P.heading - vy0 - base);       // off the stance, not off zero
+      if (Math.abs(off0) > 1.45) P.heading = vy0 + base + clamp(off0, -1.45, 1.45);
     }
     /* tucked, the board is locked straight: no steering at all, which is the
        price of the speed and of the pop you are winding up. wrapPi, because
        an unwrapped heading unwinds the long way round — 4.75 rad back to zero
        rather than the 1.5 forward — and passes through facing uphill on the way. */
-    const target = tucking ? 0 : steer * R.maxYaw;
+    /* and riding switch, the carve is mirrored: lean right and the board goes
+       left, because the board is pointing at you. That is the price of the
+       stance, and it is the whole reason landing one is worth anything. */
+    const target = base + (tucking ? 0 : steer * R.maxYaw * (P.switch ? -1 : 1));
     P.heading += wrapPi(target - P.heading) * Math.min(1, dt * (tucking ? 4.4 : 6.2));
   }
   P.heading = wrapPi(P.heading);      // spins are counted by P.spin, not by this
@@ -3357,9 +3527,13 @@ function step(dt) {
     P.vz -= GACC * gz * dt;
   }
 
-  /* edge grip: the board keeps what points forward and scrubs what does not */
-  const fx = Math.sin(P.heading), fz = -Math.cos(P.heading);
-  const sx = Math.cos(P.heading), sz = Math.sin(P.heading);
+  /* Edge grip: the board keeps what points along it and scrubs what does not.
+     The axis is the board's, taken from whichever end is leading — so riding
+     switch the drag, the carve and the boost all still push you down the hill
+     instead of back up it. */
+  const bh = P.heading - base;
+  const fx = Math.sin(bh), fz = -Math.cos(bh);
+  const sx = Math.cos(bh), sz = Math.sin(bh);
   let vf = P.vx * fx + P.vz * fz;
   let vs = P.vx * sx + P.vz * sz;
   const ice = P.air ? 0 : iceAt(P.x, P.z, bi);
@@ -3390,9 +3564,10 @@ function step(dt) {
     const sp = Math.hypot(P.vx, P.vz);
     if (sp < STALL_SPD) {
       const k = 1 - sp / STALL_SPD;
-      P.heading += wrapPi(-P.heading) * Math.min(1, dt * 2.4 * k);
-      P.vx += Math.sin(P.heading) * SKATE * k * dt;
-      P.vz -= Math.cos(P.heading) * SKATE * k * dt;
+      P.heading += wrapPi(base - P.heading) * Math.min(1, dt * 2.4 * k);
+      const sk = P.heading - base;
+      P.vx += Math.sin(sk) * SKATE * k * dt;
+      P.vz -= Math.cos(sk) * SKATE * k * dt;
     }
   }
 
@@ -3679,12 +3854,15 @@ function die(cause) {
    16 · PRESENTATION
    ══════════════════════════════════════════════════════════════ */
 const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
-let fov = 62, hazeShown = -1, rushShown = -1, boostShown = -1, audioT = 0;
+let fov = 62, hazeShown = -1, rushShown = -1, boostShown = -1, audioT = 0, povStance = 0;
 
 function present(dt, t) {
   const spd = speedOf();
   const bst = boostAmt();
   const ground = groundAt(P.x, P.z);
+  /* which end of the board is leading: the rider's bank, the chase camera and
+     the first-person view all measure from it rather than from zero */
+  const stance = P.switch ? Math.PI : 0;
 
   /* rider */
   riderPivot.position.set(P.x, P.y, P.z);
@@ -3698,7 +3876,7 @@ function present(dt, t) {
   } else if (P.air) {
     riderTilt.rotation.set(P.flip, 0, clamp(-P.spin * 0.12, -0.5, 0.5));
   } else {
-    const bank = -P.heading * 0.72;
+    const bank = -wrapPi(P.heading - stance) * 0.72;
     riderTilt.rotation.set(0, 0, riderTilt.rotation.z + (bank - riderTilt.rotation.z) * Math.min(1, dt * 9));
   }
   const tuck = P.air ? (P.grabT > 0.12 ? 0.3 : 0) : (ctrl.tuck ? 0.2 : 0) + bst * 0.16;
@@ -3708,8 +3886,8 @@ function present(dt, t) {
   shadow.material.opacity = 0.42 * clamp(1 - (P.y - ground) / 11, 0.06, 1);
 
   /* camera — follows where you are GOING, never the spin */
-  const velYaw = spd > 3 ? Math.atan2(P.vx, -P.vz) : P.heading;
-  const want = P.air || P.wipe > 0 ? velYaw : P.heading;
+  const velYaw = spd > 3 ? Math.atan2(P.vx, -P.vz) : P.heading - stance;
+  const want = P.air || P.wipe > 0 ? velYaw : P.heading - stance;
   P.camYaw += wrapPi(want - P.camYaw) * Math.min(1, dt * (P.air ? 2.2 : 3.4));
   if (mode === 'menu') {
     /* A slow drone circuit, a long way out and high up, so the whole thing is
@@ -3807,7 +3985,7 @@ function present(dt, t) {
     const gh = height(camPos.x, camPos.z) + 2.4;
     if (camPos.y < gh) camPos.y = gh;
     camLook.set(P.x + Math.sin(P.camYaw) * 15, P.y + 1.6, P.z - Math.cos(P.camYaw) * 21);
-    fov += ((58 + clamp(spd / 44, 0, 1) * 20 + bst * 10 + fovKick) - fov) * Math.min(1, dt * 2.4);
+    fov += (((povMode ? 74 : 58) + clamp(spd / 44, 0, 1) * 20 + bst * 10 + fovKick) - fov) * Math.min(1, dt * 2.4);
   }
   camera.position.lerp(camPos,
     mode === 'outrun' ? Math.min(1, dt * 2.6)
@@ -3820,7 +3998,49 @@ function present(dt, t) {
     camera.position.y += Math.sin(t * 47) * q * 0.5;
   }
   camera.lookAt(camLook);
-  camera.rotation.z += -wrapPi(P.heading - P.camYaw) * 0.12;
+  camera.rotation.z += -wrapPi(P.heading - stance - P.camYaw) * 0.12;
+
+  /* ---- first person ----
+     Bolted to the rider's own head rather than lerped towards it, because a
+     head does not lag behind its own shoulders: the mountain arrives at the
+     speed you are actually going, and a tap-spin takes the whole world round
+     with it. The body is left behind — from inside it, it is a box across the
+     lens — but the deck stays, and the deck is most of why it reads as
+     riding. */
+  const povOn = povMode && (mode === 'play' || mode === 'outrun');
+  if (povKit.visible !== povOn) { povKit.visible = povOn; rider.visible = !povOn; }
+  if (povOn) {
+    /* Which way the head is facing lags the stance by a few frames, and that
+       lag IS the switch landing: you come round the last ninety degrees, the
+       board takes the snow backwards, and your head whips forward to find the
+       hill again. */
+    povStance += wrapPi(stance - povStance) * Math.min(1, dt * 6.5);
+    const yaw = P.heading - povStance;
+    const gxp = gradX(P.x, P.z), gzp = gradZ(P.x, P.z);
+    const along = clamp(Math.sin(yaw) * gxp - Math.cos(yaw) * gzp, -1.3, 1.3);
+    const tumble = P.wipe > 0 ? (1.35 - P.wipe) * 9 : 0;
+    /* Falling, you do look down — but only so far. At full strength a long
+       drop puts the nose of the lens on your own board and the landing you
+       are trying to read is off the top of the screen. */
+    const pitch = (P.air ? clamp(Math.atan2(P.vy, Math.max(6, spd)), -0.9, 0.5) * 0.45 + P.flip
+                         : Math.atan(along) * 0.85) + tumble * 0.45;
+    /* The lean comes from the carve, and ONLY from the carve: in the air the
+       board is a long way off the line you are travelling on by design, and
+       rolling the horizon by that much mid-spin is just nausea. */
+    const roll = clamp(-ctrl.steer * (P.switch ? -1 : 1) * 0.20
+                       - (P.air ? 0 : wrapPi(P.heading - stance - P.camYaw) * 0.28),
+                       -0.42, 0.42) + tumble * 0.35;
+    /* Head height, and a few degrees of chin-down on top of the slope: without
+       it the deck is forty degrees below the middle of a frame that only
+       reaches thirty-seven, and the one thing anchoring the view is off the
+       bottom of the screen. */
+    camera.position.set(P.x - Math.sin(yaw) * 0.15, P.y + 1.62, P.z + Math.cos(yaw) * 0.15);
+    camera.rotation.set(pitch - 0.10, yaw, roll, 'YXZ');
+    if (shake > 0.001) {
+      camera.position.x += Math.sin(t * 61) * shake * 0.5;
+      camera.position.y += Math.sin(t * 47) * shake * 0.42;
+    }
+  }
   if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
 
   inCloud = (mode === 'play' || mode === 'outrun') ? stepClouds(dt, t) : 0;
@@ -4082,14 +4302,28 @@ window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 220));
 resize();
 
-let fpsAcc = 0, fpsN = 0;
+let fpsAcc = 0, fpsN = 0, slowRuns = 0;
 function watchPerf(dt) {
   fpsAcc += dt; fpsN++;
   if (fpsAcc < 2.5) return;
   const fps = fpsN / fpsAcc;
   fpsAcc = 0; fpsN = 0;
   if (mode === 'menu') return;                     // the title screen is already cheap
-  if (fps < 42 && quality > 0.7) { quality = Math.max(0.7, quality - 0.35); resize(); }
+  if (fps < 42 && quality > 0.7) { quality = Math.max(0.7, quality - 0.35); resize(); return; }
+  /* ---- and then the snow itself ----
+     The snow texture is a fetch on every fragment of the biggest surface on
+     screen. On a GPU that is nothing; on a renderer that is really a CPU it
+     is measured at 32 fps down to 27. So it is the last rung of the
+     ladder: a device that still cannot hold the frame rate with the pixels
+     already turned down gets the vertex colours on their own, which is what
+     the mountain looked like before and is still a mountain. It takes three
+     bad windows in a row — seven and a half seconds — because one dense
+     forest or one very large slam is not a verdict on the hardware, and this
+     is a decision that cannot be taken back. */
+  slowRuns = fps < 32 ? slowRuns + 1 : 0;
+  if (slowRuns >= 3 && quality <= 0.7 && snowMat.map) {
+    snowMat.map = null; snowMat.needsUpdate = true;
+  }
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -4175,6 +4409,7 @@ function boot(saved) {
   setCtrlMode(ctrlMode);
   setTiltInvert(tiltInvert);
   setRider(R.key);
+  setPov(povMode);
   setRoute(route);
   requestAnimationFrame(pollTilt);
   ghostData = loadGhost();
