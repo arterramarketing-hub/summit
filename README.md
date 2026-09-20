@@ -337,6 +337,30 @@ everything else is generated at runtime.
   lens. From the drone the mountain is three kilometres away and the range
   behind it is nine — and a far plane fixed at 3,000 m was quietly cutting them
   out of the frustum after they had been built, lit and fogged.
+- **Relief, which is the half of depth that shading alone never gives you.**
+  Which way a face is pointing is the easy half; the other half is whether it
+  is the top of a roller or the bottom of a hollow, and that is the half that
+  reads as depth. A centred second difference over the finished vertex
+  positions says which — it needs the vertex after as well as the one before,
+  so it is a second pass, and a second pass of array reads is cheap against a
+  first one paying for a `height()` call on every vertex. Hollows take the
+  sky's colour and lose the sun; crests catch it. Underneath that, the same
+  snow height field is baked a second time as a **normal map**, so the wind
+  ripples themselves catch the light on one side and lose it on the other.
+  A normal map rather than a bump map, because three's bump map is derivative
+  based — it samples the texture three times per fragment to work out its own
+  slope, and that measured 16 fps down to 10. The slope is already known here;
+  it is a height field this file generated. Baked in once, it costs a single
+  fetch: 10.4 fps down to 9.6. The grain is in the colour copy only and
+  nowhere near the relief one — noise that changes every four centimetres has
+  an enormous derivative, and it came out as round pebbles scattered over the
+  snow rather than as snow.
+- **Nothing was added to the terrain's own geometry to do it**, and that is
+  deliberate. Any bump big enough to see at 40 m/s is a bump big enough to
+  launch you — a metre and a half over seventeen metres drops faster than
+  gravity can follow — so geometric relief and a run that is not wall-to-wall
+  air are the same dial. The depth is in the shading, where it costs nothing
+  you have to ride.
 - **Snow has a texture now**, because vertex colour had run out of room: the
   mesh has a vertex every 5.8 m across and 4.4 m down, so the finest thing it
   can paint is about ten metres wide and everything under that is invisible by
@@ -383,6 +407,29 @@ everything else is generated at runtime.
   0.58 of the pixel ratio, because it looks at the whole mountain from a hundred
   metres up — two to three times the fill of riding it — and all of it sits
   behind a scrim.
+- **The forest is a forest.** Built out of the hazard budget it was four trees
+  every twenty metres across a two-hundred-metre band, which is an orchard —
+  105 trees in the treeline sector and 120 in the forest. The tree sectors now
+  get their own pass on top, laid down through a noise field rather than
+  uniformly so it arrives in stands with glades between them: a wall of evenly
+  spaced trunks is not a forest either, it is a fence, and there would be no
+  line through it to find. Measured per 650 m sector: 523 in the treeline and
+  1,039 in the forest, which is about 470 standing at any one moment, or a
+  tree every fifteen metres. Four times the trees cost 2.2 fps rather than the
+  5.4 they first did, because of two things that were wrong before there were
+  ever enough trees to notice: an `InstancedMesh` draws every instance it was
+  *sized* for whether or not anything is in it, so the count now follows the
+  highest slot ever handed out; and every cone in a pine was closed, which is
+  40% of its triangles spent on discs you could only see by standing under the
+  tree and looking up through it.
+- **And there are fewer kickers.** One built every two hundred metres, on top
+  of a crevasse lip every three hundred and a cliff fork every five, is a lot
+  of jumping for a run that is supposed to be about reading a face — and the
+  terrain is already throwing you off its own wind lips. Measured per sector,
+  10.0 down to 7.8 on the glacier, 7.0 to 3.2 in the couloir, 5.2 to 3.0 in
+  the forest. A crevasse still gets three kickers across its lip when it is
+  wide, because the crossing has to be findable from wherever you happen to
+  be; a narrow one is findable anyway and gets the middle one only.
 - **Empty prop pools do not draw.** A pool hides its instanced mesh when nothing
   is in it, which is most of them most of the time — no seracs in the forest, no
   trees on the glacier.
