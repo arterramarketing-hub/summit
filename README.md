@@ -254,6 +254,32 @@ everything else is generated at runtime.
   Airborne samples are written with zero intensity, so the track breaks at the
   takeoff and picks up at the landing instead of being wiped. Spray is thrown
   out to the side the edge is sliding towards.
+- **The crash is integrated, not played back.** It used to be three angles
+  ramped off one timer: the same fall however fast you were going and whatever
+  took your feet away. What it should be — what you can feel it ought to be —
+  is a body that has just had its feet taken at thirty metres a second and
+  nowhere to put that momentum but into rolling. So the tumble is an angular
+  velocity seeded from the speed and the direction of travel, a quaternion
+  stepped by it, and the snow scrubbing both away over however long that
+  takes; most of the roll is about the axis ACROSS the way you were going,
+  because that is the axis the snow grabbed — the feet stop and the rest of
+  you keeps going, which is a pitch forward and not a spin. The body is
+  ballistic too, and bounces, and the snow only gets to scrub the spin while
+  it is actually touching it.
+- **And the kit goes with it.** The rider's geometry swaps to a body-only bake
+  for the length of the crash, and everything they were wearing or standing on
+  becomes a loose object with its own velocity, its own spin and its own
+  bounce: the board, or both skis and both poles, plus goggles and gloves.
+  Each one is baked about its own centre so it tumbles round itself rather
+  than orbiting the point the rider used to stand on. It keeps *some* of the
+  speed it had and not most of it — at seventy per cent of thirty metres a
+  second, on a face that falls away at 0.4, a glove never catches up with the
+  ground: it sails three hundred metres and lands in the next sector, which is
+  correct and looks ridiculous. At thirty per cent, with a bit of drag and its
+  own share of the bang in its own direction, it comes to rest five to sixteen
+  metres away, which is a crash you can see the shape of. In first person the
+  camera rides the tumble: the head offset goes through the same quaternion,
+  so you come off, the world goes over, and you end up looking at the sky.
 - **Props** are instanced meshes drawn from slot pools, generated ahead of you
   and recycled behind. Each prop type is baked from several primitives into one
   vertex-coloured buffer, so a forest is one draw call.

@@ -1431,6 +1431,33 @@ const skiKit = () => [
 ];
 const BOARD_GEO = bake(boardKit().concat(bodyParts(0.95)));
 const SKI_GEO = bake(skiKit().concat(bodyParts(0)));
+/* The rider without any of it, for the moment the crash takes the kit off
+   them: the same body, minus everything that is now cartwheeling down the
+   hill on its own. */
+const BOARD_BODY = bake(bodyParts(0.95)), SKI_BODY = bake(bodyParts(0));
+/** Bakes a loose object about its OWN centre, so it tumbles round itself
+    rather than orbiting the point the rider used to stand on. */
+function bakeLoose(parts) {
+  const g = bake(parts);
+  g.computeBoundingSphere();
+  const c = g.boundingSphere.center;
+  g.translate(-c.x, -c.y, -c.z);
+  g.computeBoundingSphere();
+  return g;
+}
+const sk = skiKit();
+const LOOSE_BOARD = bakeLoose(boardKit());
+const LOOSE_SKI_L = bakeLoose([sk[0], sk[2], sk[4]]);
+const LOOSE_SKI_R = bakeLoose([sk[1], sk[3], sk[5]]);
+const LOOSE_POLE_L = bakeLoose([sk[6], sk[8]]);
+const LOOSE_POLE_R = bakeLoose([sk[7], sk[9]]);
+const LOOSE_GOGGLE = bakeLoose([
+  { geo: new THREE.BoxGeometry(0.44, 0.13, 0.10), color: 0x101722 },
+  { geo: new THREE.BoxGeometry(0.34, 0.09, 0.03), color: 0x6ec8ff, m: mat4(0, 0, -0.055) }
+]);
+const looseGlove = () => bakeLoose([
+  { geo: new THREE.BoxGeometry(0.18, 0.16, 0.20), color: 0xff6a2b }
+]);
 /* From inside your own boots you do not see the bindings — you see the deck,
    or the tips and the poles. And a binding half a metre from the lens is a
    black box across a quarter of the screen, which riding switch turns the
@@ -1439,10 +1466,13 @@ const BOARD_POV = bake(boardKit().slice(0, 2));
 const SKI_POV = bake(skiKit().filter((_, i) => i !== 4 && i !== 5));
 
 const RIDERS = {
-  board: { key: 'board', name: 'Snowboard', geo: BOARD_GEO, pov: BOARD_POV, grip: 6.6, spin: 9.2,
+  board: { key: 'board', name: 'Snowboard', geo: BOARD_GEO, pov: BOARD_POV, body: BOARD_BODY,
+           kit: [LOOSE_BOARD, LOOSE_GOGGLE, looseGlove(), looseGlove()], grip: 6.6, spin: 9.2,
            drag: 0.0112, tuckDrag: 0.40, maxYaw: 0.74, trickBonus: 1.15,
            grabs: ['Indy', 'Stalefish', 'Melon', 'Tail'], blurb: 'Loose edge, spins easy' },
-  ski:   { key: 'ski',   name: 'Skis',      geo: SKI_GEO,   pov: SKI_POV,   grip: 8.4, spin: 6.6,
+  ski:   { key: 'ski',   name: 'Skis',      geo: SKI_GEO,   pov: SKI_POV,   body: SKI_BODY,
+           kit: [LOOSE_SKI_L, LOOSE_SKI_R, LOOSE_POLE_L, LOOSE_POLE_R,
+                 LOOSE_GOGGLE, looseGlove()], grip: 8.4, spin: 6.6,
            drag: 0.0103, tuckDrag: 0.46, maxYaw: 0.82, trickBonus: 1.0,
            grabs: ['Iron Cross', 'Safety', 'Mute', 'Zudnick'], blurb: 'Holds a line, carries speed' }
 };
@@ -1457,6 +1487,160 @@ povKit.visible = false;
 riderTilt.add(rider); riderTilt.add(povKit); riderPivot.add(riderTilt); scene.add(riderPivot);
 let povMode = false;
 try { povMode = localStorage.getItem('sw_pov') === '1'; } catch (e) {}
+
+/* ---- the crash ----
+   A wipeout used to be a canned rotation: three angles ramped off one timer,
+   the same every time however fast you were going and whatever hit you. What
+   it should be — what you can feel it ought to be — is a body that has just
+   had its feet taken away at thirty metres a second and now has nowhere to
+   put that momentum but into rolling. So it is integrated rather than played
+   back: an angular velocity seeded from the speed and the direction of
+   travel, a quaternion stepped by it, and the snow scrubbing both away over
+   however long that takes. And the kit goes with it. */
+const crashQ = new THREE.Quaternion(), crashW = new THREE.Vector3();
+const _cq = new THREE.Quaternion(), _ca = new THREE.Vector3();
+let crashOn = false, crashY = 0, crashVY = 0;
+/* Every loose thing, one mesh each, made once and hidden. Six at the very
+   most are ever in the air, and an invisible mesh is not drawn. */
+const debris = [];
+function loosePiece(geo) {
+  const mesh = new THREE.Mesh(geo, litMat({ transparent: true }));
+  mesh.visible = false;
+  mesh.frustumCulled = false;
+  scene.add(mesh);
+  geo.computeBoundingSphere();
+  const d = { mesh, geo, r: geo.boundingSphere.radius * 0.34,
+              x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0,
+              q: new THREE.Quaternion(), w: new THREE.Vector3(),
+              live: 0, fade: 1, rest: false };
+  debris.push(d);
+  return d;
+}
+const debrisOf = new Map();
+function pieceFor(geo) {
+  let d = debrisOf.get(geo);
+  if (!d) { d = loosePiece(geo); debrisOf.set(geo, d); }
+  return d;
+}
+/** Throws everything the rider was wearing or standing on. */
+function scatterKit(power) {
+  const vy = Math.atan2(P.vx, -P.vz);
+  const lx = Math.cos(vy), lz = Math.sin(vy);          // across the direction of travel
+  for (const geo of R.kit) {
+    const d = pieceFor(geo);
+    const side = rand(-1, 1), up = rand(0.35, 1);
+    /* out in its own direction and with its own share of the bang, or the
+       whole lot lands in a tidy little group ten metres down the hill */
+    const ang = rand(0, Math.PI * 2), kick = rand(0.45, 1.7);
+    d.x = P.x + lx * side * 0.5; d.y = P.y + 0.9; d.z = P.z + lz * side * 0.5;
+    /* It keeps some of the speed it had — but only some. At seventy per cent
+       of thirty metres a second, on a face that falls away at 0.4, a glove
+       never catches up with the ground: it sails three hundred metres and
+       lands in the next sector, which is correct and looks ridiculous. The
+       crash is what scatters it; the speed it was carrying is mostly left in
+       the snow with the rider. */
+    d.vx = P.vx * 0.30 + Math.cos(ang) * power * 5.4 * kick;
+    d.vz = P.vz * 0.30 + Math.sin(ang) * power * 5.4 * kick;
+    d.vy = up * power * 4.0 * kick + 2.2;
+    d.q.setFromAxisAngle(_ca.set(rand(-1, 1), rand(-1, 1), rand(-1, 1)).normalize(), rand(0, 6.28));
+    d.w.set(rand(-1, 1), rand(-1, 1), rand(-1, 1)).normalize().multiplyScalar(6 + power * 12);
+    d.live = 1e9; d.fade = 1; d.rest = false;
+    d.mesh.visible = true;
+    d.mesh.material.opacity = 1;
+  }
+}
+/** Once the rider is back up, the gear they left behind stops mattering. */
+function fadeKit() { for (const d of debris) if (d.live > 1e8) d.live = 1.1; }
+function clearKit() { for (const d of debris) { d.live = 0; d.mesh.visible = false; } }
+function stepDebris(dt) {
+  for (let i = 0; i < debris.length; i++) {
+    const d = debris[i];
+    if (d.live <= 0) continue;
+    d.live -= dt;
+    if (d.live <= 0) { d.mesh.visible = false; continue; }
+    if (!d.rest) {
+      d.vy -= GRAV_Y * dt;
+      /* a board is mostly surface area, and it does not fly */
+      const air = Math.exp(-1.15 * dt);
+      d.vx *= air; d.vz *= air;
+      d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
+      const g = height(d.x, d.z) + d.r;
+      if (d.y <= g) {
+        d.y = g;
+        if (d.vy < -2.4) {
+          d.vy = -d.vy * 0.32;                       // snow does not give much back
+          d.vx *= 0.58; d.vz *= 0.58;
+          d.w.multiplyScalar(0.5);
+          emitSpray(d.x, d.y, d.z, 3, 1.1);
+        } else {
+          d.vy = 0;
+          const k = Math.exp(-5.5 * dt);
+          d.vx *= k; d.vz *= k;
+          d.w.multiplyScalar(Math.exp(-7 * dt));
+          if (d.vx * d.vx + d.vz * d.vz < 0.2 && d.w.lengthSq() < 0.6) d.rest = true;
+        }
+      }
+      const wl = d.w.length();
+      if (wl > 1e-4) {
+        _cq.setFromAxisAngle(_ca.copy(d.w).multiplyScalar(1 / wl), wl * dt);
+        d.q.premultiply(_cq);
+      }
+      d.mesh.quaternion.copy(d.q);
+      d.mesh.position.set(d.x, d.y, d.z);
+    }
+    if (d.live < 1) d.mesh.material.opacity = d.live;
+  }
+}
+/** power: 0 a scuff, 1 everything you had. */
+function startCrash(power) {
+  if (crashOn) return;
+  crashOn = true;
+  rider.geometry = R.body;
+  const spd = Math.hypot(P.vx, P.vz);
+  const vy = Math.atan2(P.vx, -P.vz);
+  /* Most of the roll is about the axis ACROSS the way you were going, because
+     that is the axis the snow grabbed: the feet stop and the rest of you
+     keeps going, which is a pitch forward and not a spin. The rest is noise,
+     and the noise is what stops two crashes ever looking the same. */
+  const rate = clamp(spd * 0.46, 5.5, 19) * (0.6 + power * 0.7);
+  crashW.set(-Math.cos(vy) * rate + rand(-2.5, 2.5),
+             rand(-3.5, 3.5),
+             -Math.sin(vy) * rate + rand(-2.5, 2.5));
+  crashQ.setFromAxisAngle(_ca.set(0, 1, 0), P.heading);
+  crashY = 0.05;
+  crashVY = 2.2 + power * 4.5 + spd * 0.06;
+  scatterKit(power);
+}
+function endCrash() {
+  if (!crashOn) return;
+  crashOn = false;
+  rider.geometry = R.geo;
+  crashY = 0; crashVY = 0;
+  fadeKit();
+}
+function stepCrash(dt) {
+  /* the body is a ballistic thing that bounces, and the snow only gets to
+     scrub the spin while it is actually touching it */
+  crashVY -= GRAV_Y * dt;
+  crashY += crashVY * dt;
+  let grounded = false;
+  if (crashY <= 0) {
+    crashY = 0;
+    grounded = true;
+    if (crashVY < -2.6) {
+      crashVY = -crashVY * 0.30;
+      crashW.multiplyScalar(0.7);
+      emitSpray(P.x, P.y, P.z, 7, 1.8);
+      Snd.hit(0.35);
+    } else crashVY = 0;
+  }
+  if (grounded) crashW.multiplyScalar(Math.exp(-2.6 * dt));
+  const wl = crashW.length();
+  if (wl > 1e-4) {
+    _cq.setFromAxisAngle(_ca.copy(crashW).multiplyScalar(1 / wl), wl * dt);
+    crashQ.premultiply(_cq);
+  }
+}
 
 /* the ghost of your best run, raced in real time */
 const GHOST_STEP = 0.12, GHOST_MAX = 6000;
@@ -3228,6 +3412,9 @@ function resetRun() {
   P.tuckT = 0; P.wasTuck = false; P.popT = 0; P.lines = 0;
   P.spin = 0; P.flip = 0; P.grabT = 0; P.grabName = ''; P.trickBase = 0;
   P.spinQ = 0; P.switch = false;
+  crashOn = false; crashY = 0; crashVY = 0;
+  rider.geometry = R.geo;
+  clearKit();
   P.wipe = 0; P.hurt = 0; P.slideGrace = 0; P.boostT = 0; P.boosts = 0;
   P.health = 100;
   P.dist = 0; P.alt = START_ALT; P.lowAlt = START_ALT;
@@ -3564,6 +3751,7 @@ function wipeout(reason, damage) {
   flash.style.opacity = '0.5';
   emitSpray(P.x, P.y + 0.5, P.z, 30, 3.2);
   trickEl.classList.remove('on');
+  startCrash(clamp(Math.hypot(P.vx, P.vz) / 34, 0.30, 1));
   Snd.hit(1);
   flashWarn(reason, 750);
   popup(reason, '', 'bad');
@@ -3758,7 +3946,10 @@ function step(dt) {
   P.score += Math.max(0, moved) * 0.55 * P.chain * (bst > 0 ? 2 : 1);
   announceSector();
 
+  const wipeWas = P.wipe;
   P.wipe = Math.max(0, P.wipe - dt);
+  if (wipeWas > 0 && P.wipe <= 0) endCrash();
+  if (crashOn) stepCrash(dt);
   P.hurt = Math.max(0, P.hurt - dt);
   P.slideGrace = Math.max(0, P.slideGrace - dt);
   /* holding it flat out feeds the chain too */
@@ -3923,6 +4114,9 @@ function startOutrun() {
   if (mode !== 'play') return;
   mode = 'outrun';
   outT = 0;
+  /* you cross the line on your feet, whatever you were doing a moment ago */
+  P.wipe = 0;
+  endCrash();
   hud.classList.remove('live');
   padLayer.classList.remove('live');
   releaseZones();
@@ -3992,6 +4186,8 @@ function die(cause) {
   mode = 'dying';
   deathCause = cause; deathT = 0;
   trickEl.classList.remove('on');
+  /* whatever is still on the rider comes off — nobody gets up from this one */
+  if (cause !== 'crevasse') startCrash(1);
   Snd.bed(0.04, 0, cause === 'buried' ? 0.9 : 0.2);
   Snd.hit(1);
   if (cause !== 'buried') Snd.tone(90, 1.2, 'sawtooth', 0.25);
@@ -4015,12 +4211,21 @@ function present(dt, t) {
   /* rider */
   riderPivot.position.set(P.x, P.y, P.z);
   riderPivot.rotation.y = P.heading;
-  if (mode === 'dying') {
+  stepDebris(dt);
+  if (crashOn) {
+    /* every bit of the orientation is in the tumble, so the yaw the rider
+       was carrying has to come out of the pivot or it would be applied
+       twice — it is already the quaternion's starting point */
+    /* step() drives it while you are still riding; once the run is over
+       nothing else is, and a body frozen mid-roll on the results screen is
+       not what a body does */
+    if (mode !== 'play') stepCrash(dt);
+    riderPivot.rotation.y = 0;
+    riderTilt.quaternion.copy(crashQ);
+    riderPivot.position.y = P.y + crashY;
+  } else if (mode === 'dying') {
     riderTilt.rotation.set(deathT * 7, 0, deathT * 4.2);
     riderPivot.position.y = P.y + Math.max(0, Math.sin(deathT * 3.1)) * 2.0;
-  } else if (P.wipe > 0) {
-    const w = (1.35 - P.wipe) * 9;
-    riderTilt.rotation.set(w, w * 0.4, w * 0.7);
   } else if (P.air) {
     riderTilt.rotation.set(P.flip, 0, clamp(-P.spin * 0.12, -0.5, 0.5));
   } else {
@@ -4156,8 +4361,20 @@ function present(dt, t) {
      lens — but the deck stays, and the deck is most of why it reads as
      riding. */
   const povOn = povMode && (mode === 'play' || mode === 'outrun');
-  if (povKit.visible !== povOn) { povKit.visible = povOn; rider.visible = !povOn; }
-  if (povOn) {
+  const wantKit = povOn && !crashOn;
+  if (povKit.visible !== wantKit) povKit.visible = wantKit;
+  if (rider.visible === povOn) rider.visible = !povOn;
+  if (povOn && crashOn) {
+    /* ---- the crash, from inside it ----
+       The head is not where it was: it is wherever the tumble has swung it,
+       so the offset goes through the same quaternion the body is using and
+       the camera rides the arc. Held clear of the snow, because the one
+       thing a first-person view must never do is go under the ground. */
+    _ca.set(0, 1.42, 0).applyQuaternion(crashQ);
+    const hy = Math.max(P.y + crashY + _ca.y, groundAt(P.x + _ca.x, P.z + _ca.z) + 0.45);
+    camera.position.set(P.x + _ca.x, hy, P.z + _ca.z);
+    camera.quaternion.copy(crashQ);
+  } else if (povOn) {
     /* Which way the head is facing lags the stance by a few frames, and that
        lag IS the switch landing: you come round the last ninety degrees, the
        board takes the snow backwards, and your head whips forward to find the
