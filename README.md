@@ -54,7 +54,7 @@ or **Endless**.
 
 | Control | On the snow | In the air |
 | --- | --- | --- |
-| Tilt left / right, **or hold either side of the screen** | Carve | **Steer the flight** — pushes the whole arc sideways |
+| Tilt left / right, **or hold either side of the screen** | Carve | **Steer the flight** — swings the whole arc round, about 23 m either way on a normal jump |
 | **Tap** either side of the screen | — | **Half a turn.** They queue and they chain |
 | **TUCK** button | Hold to run straight and fast; **let go to pop** | Grab |
 | **FLIP** button | — | Backflip |
@@ -67,9 +67,12 @@ queued the board settles onto whichever stance is nearer rather than always
 onto forwards. Landing sideways stops being something that happens to you.
 
 **Land backwards and you stay backwards.** A switch landing pays 1.6× and a
-chain step, and from then on you are riding with the board pointing at you and
-**the steering mirrored** — lean right, go left — until you spin out of it or
-crash. The badge on screen says so while it lasts.
+chain step, and from then on you are riding with the board pointing at you
+until you spin out of it or crash. The badge on screen says so while it lasts.
+It used to mirror the steering as well — lean right, go left — on the grounds
+that the board is pointing at you and that ought to cost something. It cost
+the wrong thing: riding switch stopped being a flourish you land and became a
+punishment you sit out until you could undo it.
 
 **View** on the start screen switches between the chase camera and **first
 person**: bolted to the rider's own head rather than lerped towards it, so the
@@ -238,8 +241,16 @@ everything else is generated at runtime.
   behind the crest, powder thrown outward in a full ring, and a kick on the
   lens. It scales with the drop, so a hop does nothing and a cliff moves the
   mountain.
-- **The track** is one trench, not a stripe: three vertices per sample give a
-  dark groove with snow pushed up either side, widening as the edge goes over.
+- **The track** is one trench, not a stripe. Three vertices a sample — lip,
+  groove, lip — could only draw that as a line, and it read as one: a hairline
+  behind the rider. Six gives the section a floor with real width and a wall
+  either side, and the walls are what make it a cut you can see the depth of:
+  the one the sun is off goes dark, the one it is on stays pale. Nothing here
+  is lit — it is a decal on the snow, not geometry in it, and a trench modelled
+  below the surface would simply be occluded by it — so that asymmetry is the
+  only thing standing in for a shadow in the cut. Five vertices was not enough
+  either: with a single vertex down the middle the floor is a hairline the two
+  walls interpolate away, and what you get is a pale stripe with bright edges.
   Airborne samples are written with zero intensity, so the track breaks at the
   takeoff and picks up at the landing instead of being wiped. Spray is thrown
   out to the side the edge is sliding towards.
