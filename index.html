@@ -954,24 +954,122 @@ const fill = new THREE.DirectionalLight(0xc3d8f4, 0.55);
 fill.position.set(130, 70, 170);
 scene.add(fill, fill.target);
 
-/* The sky is one 8×256 gradient strip, repainted only when the palette has
-   moved enough to see — a few dozen times over a four-minute descent, which
-   is nothing, and far cheaper than cross-fading two sky spheres. */
+/* the sky's elevation stops: zenith, two mid bands, the warm band above the
+   horizon, then the horizon itself and everything under it — the last two
+   being the fog colour, exactly */
 const SKY_STOPS = [0.00, 0.24, 0.40, 0.465, 0.50, 1.00];
+/* ---- the sky ----
+   Repainted only when the palette has moved enough to see: a few dozen times
+   over a four-minute descent, which is nothing, and far cheaper than
+   cross-fading two sky spheres.
+   It used to be eight pixels wide: one vertical ramp, the same in every
+   direction, which meant the warm band sat all the way round the horizon at
+   equal strength. A sky does not do that. The warmth is where the sun is, and
+   the further round from it you look the colder and deeper it gets — and
+   that difference is most of what tells you which way you are facing on a
+   mountain where everything else is white.
+   So it is a proper two-dimensional map now: the same ramp for elevation,
+   plus the sun's own glow laid on at the sun's own bearing, plus cirrus
+   blitted from a layer painted once. Two-to-one, because that is the shape
+   that makes a degree across the sky the same number of texels as a degree up
+   it — at one-to-one a wisp of cloud comes out twice as wide as it was drawn,
+   and a sun's halo comes out an ellipse. */
+const SKY_W = 512, SKY_H = 256;
 const skyCv = document.createElement('canvas');
-skyCv.width = 8; skyCv.height = 256;
+skyCv.width = SKY_W; skyCv.height = SKY_H;
 const skyCtx = skyCv.getContext('2d');
 const skyTex = new THREE.CanvasTexture(skyCv);
 skyTex.colorSpace = THREE.SRGBColorSpace;
-function paintSky(cols) {
-  const grd = skyCtx.createLinearGradient(0, 0, 0, 256);
+skyTex.wrapS = THREE.RepeatWrapping;
+/* ---- where a direction lands on that square ----
+   three builds a sphere with u = 0 at -x and u running towards +z, and
+   v = 0 at the top; the canvas is flipped on upload, so its first row is the
+   zenith. Both of those have to be right or the sun glows out of the wrong
+   side of the sky, and neither is guessable — they are read off the geometry. */
+const skyU = (dx, dz) => {
+  const u = Math.atan2(dz, -dx) / (Math.PI * 2);
+  return (u - Math.floor(u)) * SKY_W;
+};
+const skyRow = (elev) => (0.5 - elev / Math.PI) * SKY_H;
+
+/* ---- cirrus ----
+   This was long flat ellipses laid along constant rows, and a constant row in
+   this projection is a constant ELEVATION — a circle round the zenith. The
+   sky had contour lines in it. So a cloud is a short string of soft puffs
+   strung along its own tilted axis now: nothing runs far enough to close into
+   a ring, and the tilt makes a streak climb through elevations the way a real
+   one does. Painted once, blitted every repaint. */
+const cirrusCv = document.createElement('canvas');
+cirrusCv.width = SKY_W; cirrusCv.height = SKY_H;
+{
+  const g = cirrusCv.getContext('2d');
+  const puff = (x, y, rx, ry, a, ang) => {
+    g.save();
+    g.translate(x, y); g.rotate(ang); g.scale(1, ry / rx);
+    const grd = g.createRadialGradient(0, 0, 0, 0, 0, rx);
+    grd.addColorStop(0, 'rgba(255,255,255,' + a.toFixed(3) + ')');
+    grd.addColorStop(0.5, 'rgba(255,255,255,' + (a * 0.40).toFixed(3) + ')');
+    grd.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grd; g.beginPath(); g.arc(0, 0, rx, 0, 6.2832); g.fill();
+    g.restore();
+  };
+  for (let i = 0; i < 46; i++) {
+    /* Between about six and thirty-six degrees up, and weighted towards the
+       bottom of that. Higher up the projection crowds the meridians together,
+       so a streak thirty texels long turns into a hundred and forty degrees
+       of sky — and a band of them at one elevation closes into a ring round
+       the zenith, which is what put contour lines in the sky the first time. */
+    const cx = hash2(i, 601) * SKY_W;
+    const cy = SKY_H * (0.301 + Math.pow(hash2(i, 603), 0.5) * 0.166);
+    const ang = (hash2(i, 605) - 0.5) * 0.95;
+    const n = 3 + Math.floor(hash2(i, 607) * 5);
+    const step = 3.5 + hash2(i, 609) * 5;
+    const amp = 0.07 + hash2(i, 611) * 0.14;
+    for (let j = 0; j < n; j++) {
+      const u = (j - (n - 1) * 0.5) * step;
+      const rx = 4.5 + hash2(i * 17 + j, 613) * 6;
+      const ry = rx * (0.26 + hash2(i * 17 + j, 617) * 0.30);
+      const a = amp * (0.40 + hash2(i * 17 + j, 619) * 0.60);
+      const px = cx + Math.cos(ang) * u;
+      const py = cy + Math.sin(ang) * u + (hash2(i * 17 + j, 623) - 0.5) * 2.6;
+      /* three times over so a cloud on the seam comes back the other side */
+      for (const off of [-SKY_W, 0, SKY_W]) puff(px + off, py, rx, ry, a, ang);
+    }
+  }
+}
+
+/** cols: the six elevation stops. sun: where it is and how hard it burns. */
+function paintSky(cols, sunDX, sunDZ, sunElev, glowCss, cloudA) {
+  const grd = skyCtx.createLinearGradient(0, 0, 0, SKY_H);
   for (let i = 0; i < SKY_STOPS.length; i++) grd.addColorStop(SKY_STOPS[i], cols[i]);
-  skyCtx.fillStyle = grd; skyCtx.fillRect(0, 0, 8, 256);
+  skyCtx.globalCompositeOperation = 'source-over';
+  skyCtx.globalAlpha = 1;
+  skyCtx.fillStyle = grd; skyCtx.fillRect(0, 0, SKY_W, SKY_H);
+  /* cloud and glow are both added rather than mixed, so the side away from
+     the sun keeps exactly the colour it had and only the sun's quarter lifts */
+  skyCtx.globalCompositeOperation = 'lighter';
+  if (cloudA > 0.01) { skyCtx.globalAlpha = cloudA; skyCtx.drawImage(cirrusCv, 0, 0); }
+  skyCtx.globalAlpha = 1;
+  const sx = skyU(sunDX, sunDZ), sy = skyRow(sunElev), rad = SKY_H * 0.50;
+  const c = new THREE.Color(glowCss);
+  const rgb = Math.round(c.r * 255) + ',' + Math.round(c.g * 255) + ',' + Math.round(c.b * 255);
+  /* three times over, because a glow sitting near the seam has to come back
+     round the other side or the sky has a hard edge down one meridian */
+  for (const off of [-SKY_W, 0, SKY_W]) {
+    const g2 = skyCtx.createRadialGradient(sx + off, sy, 0, sx + off, sy, rad);
+    g2.addColorStop(0, 'rgba(' + rgb + ',0.50)');
+    g2.addColorStop(0.35, 'rgba(' + rgb + ',0.17)');
+    g2.addColorStop(1, 'rgba(' + rgb + ',0)');
+    skyCtx.fillStyle = g2;
+    skyCtx.fillRect(sx + off - rad, sy - rad, rad * 2, rad * 2);
+  }
+  skyCtx.globalCompositeOperation = 'source-over';
   skyTex.needsUpdate = true;
 }
-paintSky(['#0b1430', '#2a4076', '#6e8ec6', '#f0c79c', '#d9d2dc', '#c8cddd']);
+paintSky(['#0b1430', '#2a4076', '#6e8ec6', '#f0c79c', '#d9d2dc', '#c8cddd'],
+         0.23, -0.75, 0.66, '#ffd9a4', 0.5);
 const sky = new THREE.Mesh(
-  new THREE.SphereGeometry(1, 18, 14),
+  new THREE.SphereGeometry(1, 40, 24),
   new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, fog: false, depthWrite: false })
 );
 sky.scale.setScalar(1600); sky.renderOrder = -10; scene.add(sky);
@@ -994,6 +1092,45 @@ const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({
   opacity: 0.9, color: 0xffe6b8
 }));
 sunGlow.scale.setScalar(420); sunGlow.renderOrder = -9; scene.add(sunGlow);
+/* A four-hundred-metre smear is a glow, not a sun. The disc inside it is what
+   makes the glow read as coming FROM something. */
+const sunDisc = new THREE.Sprite(new THREE.SpriteMaterial({
+  map: glowSprite(0xffffff, 0.62), blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+  opacity: 0.95, color: 0xfff4e0
+}));
+sunDisc.scale.setScalar(74); sunDisc.renderOrder = -8; scene.add(sunDisc);
+
+/* ---- the stars ----
+   These were painted into the sky texture, and 256 texels across 360 degrees
+   is 1.4 degrees a texel — three times the width of the moon. Every star came
+   out a hard white square. So they are points now, sized in screen pixels, and
+   a star stays a star whatever the texture is doing. They ride the sky sphere,
+   so they inherit its radius and its camera-following position, and they still
+   depth-test: a peak in front of them puts them out. */
+const STAR_N = 420;
+const stars = (() => {
+  const pos = new Float32Array(STAR_N * 3), col = new Float32Array(STAR_N * 3);
+  for (let i = 0; i < STAR_N; i++) {
+    const az = hash2(i, 401) * Math.PI * 2;
+    const el = Math.asin(0.03 + Math.pow(hash2(i, 403), 0.8) * 0.96);
+    const ch = Math.cos(el);
+    pos[i * 3] = Math.sin(az) * ch; pos[i * 3 + 1] = Math.sin(el); pos[i * 3 + 2] = -Math.cos(az) * ch;
+    /* a handful bright, most of them barely there, and all of them cut down
+       near the horizon where you are looking through the whole atmosphere */
+    const k = (Math.pow(hash2(i, 407), 2.4) * 0.86 + 0.14) * smoothstep(0.02, 0.26, Math.sin(el));
+    const warm = hash2(i, 409);
+    col[i * 3] = k * (0.84 + warm * 0.16); col[i * 3 + 1] = k * 0.93; col[i * 3 + 2] = k * (1 - warm * 0.12);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return new THREE.Points(g, new THREE.PointsMaterial({
+    size: 2.3, sizeAttenuation: false, vertexColors: true, map: glowSprite(0xffffff, 0.2),
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, opacity: 0
+  }));
+})();
+stars.frustumCulled = false; stars.renderOrder = -9.6; stars.visible = false;
+sky.add(stars);
 
 /* ---- the light of the descent ----
    Three thousand two hundred metres is a long way down, and the light at the
@@ -1026,19 +1163,38 @@ function applyLight(dist, dt) {
     const fogCss = '#' + FOG.getHexString();
     for (let i = 0; i < 4; i++) skyCols[i] = mixCss(a.sky[i], b.sky[i], t);
     skyCols[4] = skyCols[5] = fogCss;
-    paintSky(skyCols);
+    /* the sun has to be placed before the sky is painted, because where it is
+       is now half of what the sky looks like */
+    const el = lerp(a.elev, b.elev, t), az = lerp(a.az, b.az, t);
+    const ch = Math.cos(el);
+    sunDir.set(Math.sin(az) * ch, Math.sin(el), -Math.cos(az) * ch).normalize();
+    const glow = mixHex(a.glow, b.glow, t);
+    const glowCss = '#' + glow.getHexString();
+    /* Stars come out when the top of the sky is dark enough to hold them —
+       which on this mountain is a question about the sector, since the
+       glacier is lit by something that has not risen yet and the valley by
+       something that is most of the way down. Cirrus goes the other way: it
+       is only there to be seen when there is a sun to light it. */
+    _cB.set(skyCols[0]);
+    const zen = _cB.r * 0.3 + _cB.g * 0.59 + _cB.b * 0.11;
+    paintSky(skyCols, sunDir.x, sunDir.z, el, glowCss,
+             clamp(lerp(a.sunI, b.sunI, t) * 0.42, 0.08, 0.78));
+    const starA = clamp((0.30 - zen) / 0.26, 0, 1);
+    stars.material.opacity = starA;
+    stars.visible = starA > 0.015;
     scene.background.copy(FOG);
     scene.fog.color.copy(FOG);
     sun.color.copy(mixHex(a.sun, b.sun, t));
     hemi.color.copy(mixHex(a.amb, b.amb, t));
     hemi.groundColor.copy(mixHex(a.ambG, b.ambG, t));
     fill.color.copy(mixHex(a.fill, b.fill, t));
-    sunGlow.material.color.copy(mixHex(a.glow, b.glow, t));
-    ridge.material.color.copy(FOG).lerp(_cB.setHex(0x93a8c6), 0.24);
-    /* and the sun itself drops towards the valley rim */
-    const el = lerp(a.elev, b.elev, t), az = lerp(a.az, b.az, t);
-    const ch = Math.cos(el);
-    sunDir.set(Math.sin(az) * ch, Math.sin(el), -Math.cos(az) * ch).normalize();
+    sunGlow.material.color.copy(glow);
+    sunDisc.material.color.copy(glow).lerp(_cA.setRGB(1, 1, 1), 0.65);
+    /* exactly the fog colour, with the brightening baked into the peaks
+       themselves so a lit cap can still come out above the sky it stands
+       against — and so a dissolved foot lands on the bank exactly */
+    ridgeMatN.color.copy(FOG); ridgeMatF.color.copy(FOG);
+    ridgeAim(az);
     sun.position.copy(sunDir).multiplyScalar(260);
   }
   lightI.sun = lerp(a.sunI, b.sunI, t);
@@ -1046,40 +1202,185 @@ function applyLight(dist, dt) {
   lightI.fill = lerp(a.fillI, b.fillI, t);
 }
 
-/* ---- the skyline you get while it is snowing ----
+/* ══════════════════════════════════════════════════════════════
+   THE SKYLINE
    Riding, the weather only lets you see three hundred metres, so the real
-   range is fogged out of existence and this stands in for it: unfogged cones
+   range is fogged out of existence and this stands in for it: unfogged peaks
    beyond the fog wall, lagged rather than pinned so they parallax like
-   something two kilometres out instead of sitting there like wallpaper. They
-   used to be eighteen big ones at 900 m and they read as cut paper — so now
-   there are more of them, further off, lower, and each one carries its own
-   tint so the range has depth instead of being one flat shape. */
-const RIDGE_N = 28;
-const ridge = new THREE.InstancedMesh(
-  new THREE.ConeGeometry(1, 1, 5, 1),
-  new THREE.MeshBasicMaterial({ color: 0xb4c4dc, fog: false, transparent: true, opacity: 1 }),
-  RIDGE_N
-);
-ridge.frustumCulled = false;
-const ridgeLag = new THREE.Vector3();
-{
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(),
-        p = new THREE.Vector3(), c = new THREE.Color();
-  for (let i = 0; i < RIDGE_N; i++) {
-    const a = (i / RIDGE_N) * Math.PI * 2 + hash2(i, 5) * 0.2;
-    const far = hash2(i, 7);
-    const r = 1350 + far * 900;
-    const w = 230 + hash2(i, 11) * 420, h = 120 + hash2(i, 13) * 245 + far * 90;
-    p.set(Math.sin(a) * r, h * 0.5 - 230, -Math.cos(a) * r);
-    s.set(w, h, w);
-    ridge.setMatrixAt(i, m.compose(p, q, s));
-    /* the further back it stands the more of the air is in front of it */
-    const k = 1 - far * 0.10;
-    ridge.setColorAt(i, c.setRGB(k, k, k * 1.01));
+   something two kilometres out instead of sitting there like wallpaper.
+
+   They used to be five-sided cones in one flat colour, which is a traffic
+   cone, not a mountain. Each one is baked now with an irregular footprint, a
+   snowline that runs ragged across its faces, and faceted shading; and there
+   are two ranges instead of one, a near one with contrast left in it and a
+   far one washed most of the way into the sky — because what says "twenty
+   kilometres" is not size, it is how much air is in front of it. The lit side
+   is baked at local bearing zero and each instance is yawed to aim it at the
+   sun, so the whole range relights itself whenever the palette moves.
+   ══════════════════════════════════════════════════════════════ */
+const RIDGE_ROCK = [0.25, 0.30, 0.41], RIDGE_SNOW = [0.96, 0.98, 1.0];
+/* what a face turned away from the sun keeps. Not a plain dimming: snow in
+   shadow is blue, and a peak that just goes grey on its back side is a
+   cardboard cut-out with better corners on it. */
+const RIDGE_SHADE = [0.50, 0.59, 0.76];
+
+/** One peak, vertex-coloured. haze: how far its colours wash out to white.
+    foot: the height its colour has finished dissolving into the air by.
+    gain: how far above the fog colour a lit face is allowed to get. */
+function ridgeGeo(sd, sides, haze, foot, gain) {
+  const RY = [0, 0.24, 0.48, 0.71, 0.89];
+  const RR = [0.50, 0.400, 0.295, 0.185, 0.075];
+  const RN = RY.length;
+  /* a summit that leans off the centre of its own footprint, which is most of
+     what stops a peak reading as a cone */
+  const lean = (hash2(sd, 91) - 0.5) * 0.30;
+  /* A snowline is an elevation, so it is one height for the whole peak with a
+     little raggedness on it, not a number per face — and it has to sit under
+     the LOWEST point of the crest, or a shoulder tops out below its own snow
+     and the summit comes out bare rock with a white band under it. */
+  const snowY = 0.50 + hash2(sd, 77) * 0.14;
+  const kr = [], ln = [], ty = [];
+  for (let s = 0; s < sides; s++) {
+    kr.push(0.55 + hash2(sd, s * 7 + 3) * 0.85);   /* how far this ray runs out */
+    ln.push(snowY + (hash2(sd, s * 7 + 5) - 0.5) * 0.14);
+    /* and the crest is not a point. Every ray tops out somewhere of its own,
+       so the thing has a main summit, a shoulder and a saddle in between —
+       which is the difference between a mountain and a tent. */
+    ty.push(1 - Math.pow(hash2(sd, s * 7 + 9), 1.5) * 0.24);
   }
-  ridge.instanceColor.needsUpdate = true;
+  const V = [];
+  for (let s = 0; s <= sides; s++) {
+    const si = s % sides, a = (s / sides) * Math.PI * 2, ring = [];
+    for (let r = 0; r <= RN; r++) {
+      const crest = r === RN;
+      const y = crest ? ty[si]
+        : RY[r] + (r > 0 ? (hash2(sd, si * 7 + r * 31) - 0.5) * 0.06 : 0);
+      /* the same all the way up, so a long ray is a spur running out and a
+         short one is a steep face — fade it and every peak flares at the
+         bottom and pinches at the top, which is a haystack */
+      const rr = (crest ? 0.035 : RR[r]) * kr[si];
+      ring.push([Math.sin(a) * rr + lean * Math.pow(y, 1.7), y, -Math.cos(a) * rr]);
+    }
+    V.push(ring);
+  }
+  let cy = 0;
+  for (let s = 0; s < sides; s++) cy += ty[s] / sides;
+  const apex = [lean * Math.pow(cy, 1.7), cy, 0];
+  const pos = [], col = [], _rc = new THREE.Color();
+  const put = (v, line, lit) => {
+    /* narrow, because a snowline is a line. Widen it and the cap stops being
+       a cap and turns into a wash running down the whole face. */
+    const t = smoothstep(line - 0.06, line + 0.05, v[1]);
+    pos.push(v[0], v[1], v[2]);
+    /* written the way they are read on screen, then handed over as the linear
+       values the shader multiplies — skip that and rock at a quarter comes
+       out at half, and the range has no shading left in it */
+    /* and a peak goes into the bank at the waterline, over the last few per
+       cent of its height. Cut it off flat at its base instead and you can see
+       exactly where it ends — a silhouette in a tray. Fade it gradually from
+       the base instead and the whole buried half comes out as a broad pale
+       shelf lying across the bank, because it is only *most* of the way to
+       the fog colour. Below the horizon the sky is the fog colour to the
+       byte, so anything that gets there is genuinely gone. */
+    const k = 1 - smoothstep(foot - 0.08, foot, v[1]);
+    const f = (i) => {
+      const c = lerp(RIDGE_ROCK[i], RIDGE_SNOW[i], t) * lerp(RIDGE_SHADE[i], 1, lit);
+      return lerp(c + (1 - c) * haze, 1, k);
+    };
+    _rc.setRGB(f(0), f(1), f(2), THREE.SRGBColorSpace).multiplyScalar(gain);
+    /* dissolved in the shader's own units, and to exactly one, because the
+       material colour IS the fog colour: a foot vertex of one comes out the
+       fog colour to the byte, whatever the sector has done to it. Brighten
+       the material instead and every dissolved foot is a pale slab lying in
+       the bank, which is what the first attempt at this looked like. */
+    col.push(lerp(_rc.r, 1, k), lerp(_rc.g, 1, k), lerp(_rc.b, 1, k));
+  };
+  for (let s = 0; s < sides; s++) {
+    /* baked lit from local -z, which is where the instances aim the sun */
+    const am = ((s + 0.5) / sides) * Math.PI * 2;
+    /* half-lambert: a hard terminator on a five-sided peak is two facets lit
+       and three black, which is a road cone at dusk */
+    const lit = Math.pow(0.5 + 0.5 * Math.cos(am), 1.4);
+    const line = ln[s];
+    for (let r = 0; r < RN; r++) {
+      const A = V[s][r], B = V[s + 1][r], C = V[s + 1][r + 1], D = V[s][r + 1];
+      put(A, line, lit); put(C, line, lit); put(B, line, lit);
+      put(A, line, lit); put(D, line, lit); put(C, line, lit);
+    }
+    /* and a lid over the crest, so a saddle is a saddle and not a hole */
+    put(V[s][RN], line, lit); put(apex, line, lit); put(V[s + 1][RN], line, lit);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  return g;
 }
-scene.add(ridge);
+
+/* both colours are replaced with the fog colour on the first frame — the
+   brightening a skyline needs lives in the peaks' own baked gain instead */
+const ridgeMatN = new THREE.MeshBasicMaterial({
+  color: 0xb4c4dc, vertexColors: true, fog: false, transparent: true, opacity: 1 });
+const ridgeMatF = new THREE.MeshBasicMaterial({
+  color: 0xc4d2e8, vertexColors: true, fog: false, transparent: true, opacity: 1 });
+const RIDGES = [];
+const RIDGE_UP = new THREE.Vector3(0, 1, 0);
+const ridgeLag = new THREE.Vector3();
+/** One range: `shapes` silhouettes, `per` of each, spread right round. */
+function ridgeRange(mat, haze, gain, order, shapes, per, sd, r0, r1, h0, h1, w0, w1, sink) {
+  const tot = shapes * per;
+  for (let gi = 0; gi < shapes; gi++) {
+    /* the fade finishes at the rider's own eye line, a hair under the horizon
+       from any camera: below the horizon the sky is the fog colour and the
+       foot is gone, but the six degrees above it are the warm band blending
+       in, and a foot finishing up there is a straight edge lying on the sky */
+    const im = new THREE.InstancedMesh(ridgeGeo(sd + gi * 17, 5 + gi, haze, sink, gain), mat, per);
+    im.frustumCulled = false;
+    /* the near range first, so the depth buffer throws away the far one where
+       it is hidden — these are the biggest polygons in the frame and drawing
+       them back to front pays for every one of those pixels twice */
+    im.renderOrder = order;
+    const slots = [];
+    for (let i = 0; i < per; i++) {
+      const n = gi + i * shapes;      /* interleaved, so one shape never clumps */
+      const back = hash2(sd + n, 7);
+      const h = lerp(h0, h1, Math.pow(hash2(sd + n, 13), 1.5));
+      slots.push({
+        /* nearly a full slot of wander, so they clump and leave gaps */
+        az: (n / tot) * Math.PI * 2 + (hash2(sd + n, 5) - 0.5) * (Math.PI * 1.7 / tot),
+        /* buried by the same fraction of itself every time, which is what
+           lets one baked foot height serve every peak in the range */
+        r: lerp(r0, r1, back), sink: h * sink, h,
+        w: lerp(w0, w1, hash2(sd + n, 11)),
+        ratio: 0.66 + hash2(sd + n, 17) * 0.74,
+        yaw: hash2(sd + n, 19) * Math.PI * 2 * 0.18 - 0.18
+      });
+    }
+    im.userData.slots = slots;
+    RIDGES.push(im); scene.add(im);
+  }
+}
+ridgeRange(ridgeMatN, 0.14, 1.22, -2, 3, 7, 100, 1060, 1720, 210, 620, 240, 500, 0.34);
+ridgeRange(ridgeMatF, 0.70, 1.07, -1, 3, 6, 400, 2020, 2560, 460, 1020, 520, 1080, 0.36);
+
+/** Point every peak's lit side at the sun. Runs when the palette moves. */
+const ridgeAim = (() => {
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(),
+        p = new THREE.Vector3();
+  return (sunAz) => {
+    for (const im of RIDGES) {
+      const sl = im.userData.slots;
+      for (let i = 0; i < sl.length; i++) {
+        const o = sl[i];
+        p.set(Math.sin(o.az) * o.r, -o.sink, -Math.cos(o.az) * o.r);
+        s.set(o.w, o.h, o.w * o.ratio);
+        q.setFromAxisAngle(RIDGE_UP, -sunAz + o.yaw);
+        im.setMatrixAt(i, m.compose(p, q, s));
+      }
+      im.instanceMatrix.needsUpdate = true;
+    }
+  };
+})();
+ridgeAim(0);
 
 /* ---- the flag on the summit ----
    You could not tell the peak from the shoulder, and a mountain nobody can
@@ -4419,9 +4720,10 @@ function present(dt, t) {
   if (wantFar) rebuildFar((camera.position.x + camLook.x * 2) / 3,
                           (camera.position.z + camLook.z * 2) / 3);
   if (farMesh.visible !== wantFar) farMesh.visible = wantFar;
-  /* the cone skyline was a stand-in for a mountain — with a real one behind it
-     it reads as painted cardboard, so it stands down */
-  if (ridge.visible === wantFar) ridge.visible = !wantFar;
+  /* the stand-in skyline stands down for the shots that can see the real
+     range: next to a mountain that is actually in the height field, peaks
+     that only live two kilometres out read as painted cardboard */
+  if (RIDGES[0].visible === wantFar) for (const r of RIDGES) r.visible = !wantFar;
   /* and the slide is a 380 m billboard: fine when the weather only lets you
      see 338 m and it is bearing down on you, a slab pasted across the face
      from a drone two thousand metres out. It does not exist until the cornice
@@ -4439,11 +4741,12 @@ function present(dt, t) {
   flagStep(t);
   sky.position.copy(camera.position);
   sunGlow.position.copy(camera.position).addScaledVector(sunDir, 1200);
+  sunDisc.position.copy(camera.position).addScaledVector(sunDir, 1190);
   /* the skyline trails the camera on a ~3 s constant: far enough behind that
      a lateral move swings it, close enough that it never runs off the world */
   ridgeLag.x += (camera.position.x - ridgeLag.x) * Math.min(1, dt * 0.35);
   ridgeLag.z += (camera.position.z - ridgeLag.z) * Math.min(1, dt * 0.35);
-  ridge.position.set(ridgeLag.x, P.y, ridgeLag.z);
+  for (const r of RIDGES) r.position.set(ridgeLag.x, P.y, ridgeLag.z);
 
   /* light: altitude first, then whatever the weather is doing to it */
   applyLight(P.dist, dt);
@@ -4453,7 +4756,11 @@ function present(dt, t) {
     : lerp(lerp(338, 104, weather), 52, inCloud);
   scene.fog.far += (far - scene.fog.far) * Math.min(1, dt * 0.8);
   scene.fog.near = scene.fog.far * 0.24;
-  ridge.material.opacity = lerp(1, 0.05, weather);
+  /* the skyline is unfogged on purpose, which means nothing else takes it
+     away — so it has to stand down itself, both for the weather and for the
+     cloud deck, or you ride through the inside of a cloud with two kilometres
+     of mountain range showing through it */
+  ridgeMatN.opacity = ridgeMatF.opacity = lerp(1, 0.05, Math.max(weather, inCloud));
   if (Math.abs(weather - hazeShown) > 0.01) { hazeShown = weather; haze.style.opacity = String(weather * 0.5); }
   hemi.intensity = lightI.amb + weather * 0.48;
   sun.intensity = lightI.sun * lerp(1, 0.28, weather);

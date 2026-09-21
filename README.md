@@ -338,10 +338,38 @@ everything else is generated at runtime.
   stage, swinging zero to one, with a level stage behind it that can actually
   close: measured, a third of everything audible after the ship had left was
   the ship.
-- **The light** is one 8 × 256 gradient strip repainted only when the palette has
-  moved enough to see — about once a second over a four-minute descent, which
-  costs 0.02 ms, and far less than cross-fading two sky spheres. Fog, both
-  directional lights, the hemisphere and the sun's own position lerp with it.
+- **The light** is one sky texture repainted only when the palette has moved
+  enough to see — about once a second over a four-minute descent, and far less
+  than cross-fading two sky spheres. Fog, both directional lights, the
+  hemisphere and the sun's own position lerp with it.
+- **The sky used to be eight pixels wide:** one vertical ramp, identical in
+  every direction, so the warm band sat all the way round the horizon at equal
+  strength. A sky does not do that. The warmth is where the sun is, and the
+  further round from it you look the colder and deeper it gets — which on a
+  mountain where everything else is white is most of what tells you which way
+  you are facing. So it is a 512 × 256 map now: the same ramp for elevation,
+  plus the sun's own halo painted in at the sun's own bearing (three times
+  over, so a halo near the seam comes back the other side), plus a sun disc
+  inside the glow, because a four-hundred-metre smear is a glow and not a sun.
+  Two to one, not square, because that is the shape that makes a degree across
+  the sky the same number of texels as a degree up it: at one to one a wisp of
+  cloud comes out twice as wide as it was drawn and the sun's halo comes out an
+  ellipse.
+- **A constant row in that map is a constant *elevation*,** which is a circle
+  round the zenith — so the first cirrus, drawn as long flat ellipses along
+  constant rows, put contour lines in the sky. A cloud is a short string of
+  soft puffs along its own tilted axis now: nothing runs far enough to close
+  into a ring, a tilt makes a streak climb through elevations the way a real
+  one does, and the band sits low, between about six and thirty-six degrees,
+  where the projection is not yet crowding the meridians together.
+- **Stars are points, not texels.** Painted into that map they were 1.4 degrees
+  across — three times the width of the moon — and every one came out a hard
+  white square. Four hundred and twenty of them are a point cloud now, sized in
+  screen pixels, riding the sky sphere so they inherit its radius and its
+  camera-following position, still depth-testing so a peak in front of them
+  puts them out, and faded towards the horizon where you would be looking
+  through the whole atmosphere. They come out when the top of the sky is dark
+  enough to hold them, which on this mountain is a question about the sector.
 - **The summit, and the flag on it.** The fall line used to rise for ever, so
   there was no peak and no sense of scale. Above the drop-in the face rolls
   over — the gradient eases to nothing and then goes negative — the flanks fall
@@ -368,6 +396,61 @@ everything else is generated at runtime.
   whole playable world in two comparisons. The back of the summit levels out
   onto a plateau rather than falling for ever, because a range that has to
   climb a kilometre before it clears the ground is a range of spikes.
+- **The skyline you ride against** is not the range: riding, the weather only
+  lets you see three hundred metres, so the real one is fogged out of existence
+  and thirty-nine unfogged peaks stand in for it beyond the fog wall, lagged
+  rather than pinned so they parallax like something two kilometres out instead
+  of sitting there like wallpaper. They were five-sided cones in one flat
+  colour, which is a traffic cone, not a mountain. Each one is baked now with
+  an irregular footprint — the same per-ray scale all the way up, so a long ray
+  is a spur running out and a short one is a steep face; fade that scale
+  towards the apex instead and every peak flares at the bottom and pinches at
+  the top, which is a haystack. The crest is not a point either: every ray tops
+  out somewhere of its own, so a peak gets a main summit, a shoulder and a
+  saddle between them, with a lid over it so the saddle is a saddle and not a
+  hole. Six shapes are baked in all, three per range, and each instance takes
+  its own height, width, aspect and yaw on top of that.
+- **A snowline is an elevation,** so it is one height per peak with a little
+  raggedness across the faces, not a number per face — and it has to sit under
+  the *lowest* point of the crest or a shoulder tops out below its own snow and
+  the summit comes out bare rock with a white band beneath it, which is exactly
+  what the first version did. The line itself is narrow: widen it and the cap
+  stops being a cap and turns into a wash running down the whole face. The
+  shading is baked lit from local bearing zero and every instance is then yawed
+  to aim that side at the sun, so the range relights itself whenever the
+  palette moves — on a half-lambert ramp, because a hard terminator on a
+  five-sided peak is two facets lit and three black, and into a blue rather
+  than a grey, because snow in shadow is blue and a peak that merely dims on
+  its back side is a cardboard cut-out with better corners on it.
+- **A peak goes into the bank at the waterline,** over the last few per cent of
+  its height, and this took three attempts. Cut flat at its base you can see
+  exactly where it ends — a silhouette standing in a tray. Faded gradually up
+  from that base, the whole buried half comes out as a broad pale shelf lying
+  across the bank, because it only gets *most* of the way to the fog colour.
+  What works is the horizon: below it the sky is the fog colour to the byte, so
+  a foot that reaches the fog colour there is genuinely gone. Which is also why
+  every peak is buried by the same *fraction* of itself rather than the same
+  number of metres — that is what lets one baked fade height serve a range
+  whose peaks run from 210 m to a kilometre.
+- **There are two ranges, not one,** at 1.1–1.7 km and 2.0–2.6 km, and the far
+  one is washed seventy per cent of the way to white where the near one is
+  washed fourteen — because what says *twenty kilometres* is not size, it is
+  how much air is in front of it. The material colour is the fog colour
+  exactly, with the brightening baked into the peaks instead as a gain above
+  one: tint the material down towards the fog, as the flat cones did, and a
+  sunlit cap can only ever come out a darker shade of the sky, and the whole
+  point of a skyline is the white edge along the top of it — and tint it *up*
+  and a dissolved foot no longer lands on the bank. The near range draws first
+  so the depth buffer throws the far one away where it is hidden: these are the
+  biggest polygons in the frame and back to front pays for every one of those
+  pixels twice. Drawn back to front, thirty-nine peaks in two ranges cost about
+  4% of the frame against the twenty-eight flat cones they replaced; drawn
+  near-first they are inside the noise floor, under a frame either way over
+  repeated runs.
+- **The skyline stands down for the cloud deck as well as the weather.** It is
+  unfogged on purpose, which means nothing else can take it away — so it has to
+  fade itself, or you ride through the inside of a cloud with two kilometres of
+  mountain range showing through it.
 - **The clip planes move with the shot,** and this was the bug that hid all of
   the above. Riding, nothing is further off than the weather lets you see and
   the near plane has to be centimetres because the rider is two metres from the
