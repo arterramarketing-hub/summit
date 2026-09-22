@@ -411,7 +411,7 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
       <p class="eyebrow">Open-face alpine freeride</p>
       <h1>Summit<span class="ln2">Whiteout</span></h1>
       <p class="lede">Four thousand two hundred metres, no lift back up, and the cornice above you
-        has already gone. Read the face, hit the rollers, land it clean.</p>
+        has already gone. Read the face, carve the poles, and get to the valley floor.</p>
 
       <div class="seg" id="ctrlSeg">
         <span class="k">Controls</span>
@@ -474,7 +474,8 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
       <p class="fine" id="careerFine"></p>
 
       <dl class="brief">
-        <div><dt>Terrain</dt><dd>Every roller is a takeoff. Hold TUCK and let go at the lip and it throws you properly.</dd></div>
+        <div><dt>Terrain</dt><dd>The face rolls more than it throws you. Hold TUCK and let go at a lip and it throws you properly.</dd></div>
+        <div><dt>Slalom</dt><dd>Runs of red and blue poles. Round the outside of every one for a clean run and three chain steps. Clip one and it goes over — it will not put you down.</dd></div>
         <div><dt>Lines</dt><dd>Orange gates mark a cliff band or a spine. Riding the line pays cans and chain; going round is safe and pays nothing.</dd></div>
         <div><dt>Tricks</dt><dd>Tap a side in the air to spin half a turn, hold FLIP to backflip, hold TUCK to grab. Land pointing where you are going — or exactly backwards, which is worth more.</dd></div>
         <div><dt>Switch</dt><dd>Land backwards and you keep riding backwards until you spin out of it. It pays 1.6× and a chain step, and it steers exactly the way it always did.</dd></div>
@@ -604,11 +605,36 @@ const nz = (x, y) => noise2(x + SX0, y + SZ0);
 const FALL = 0.40;                 // mean gradient of the fall line
 const ROAM = 115;                  // how wide a band of mountain is kept stocked around you
 const START_ALT = 4208;
+/* ---- the bottom ----
+   The descent used to end on a piece of mountain that happened to have a
+   banner across it, at the same 0.40 gradient as everything above it, which
+   is not arriving anywhere. Over the last three hundred and forty metres the
+   face lies down to almost nothing and stays there, so there is a valley
+   floor to cross the line on and coast out across. Endless has no end, so it
+   never gets one: floorZ goes out of reach and every one of these terms
+   switches itself off. */
+const RUN_M = 3900;                // the descent, in metres of z
+const FLOOR_W = 340;               // how long the mountain takes to lie down
+const FLOOR_FALL = 0.055;          // and what it still falls at once it has
+let floorZ = -RUN_M;
+/** 0 up the mountain, 1 out on the flat. */
+const floorMix = (z) => smoothstep(floorZ + FLOOR_W, floorZ + FLOOR_W * 0.12, z);
+/** The gradient of the mean fall line at z: 0.40 up the face, next to nothing
+    out on the floor. Shading is read against this rather than against flat. */
+const meanFall = (z) => lerp(FALL, FLOOR_FALL, clamp(((floorZ + FLOOR_W) - z) / FLOOR_W, 0, 1));
 
 /** The lazy line the mountain drifts along. Nothing is fenced to it — it only
     decides roughly where the big features get laid down. */
 function driftX(z) {
-  return 30 * Math.sin(z * 0.00210 + SPH) + 14 * Math.sin(z * 0.00530 + 2.1 + SPH * 1.7);
+  /* The two long terms are the mountain's own lean — three kilometres and one
+     and a bit, so the face drifts across the world. On their own they gave a
+     line you could hold with one nudge a minute. The third is the rhythm: a
+     hundred and sixty metres, which at riding speed is a turn every three
+     seconds, and it is what makes the descent something you carve down rather
+     than point down. */
+  return 30 * Math.sin(z * 0.00210 + SPH)
+       + 14 * Math.sin(z * 0.00530 + 2.1 + SPH * 1.7)
+       + 11.5 * Math.sin(z * 0.0392 + 0.7 + SPH * 2.3);
 }
 
 /* ---- strategic features: the forks ----
@@ -624,7 +650,8 @@ let featRockAmt = 0;
 function featAt(cell) {
   let f = featCache.get(cell);
   if (f !== undefined) return f;
-  if (cell * FEAT_CELL < 420 || hash2(cell + SEED, 301) > 0.86) f = null;
+  if (cell * FEAT_CELL < 420 || -(cell * FEAT_CELL) < floorZ + FLOOR_W + 150
+      || hash2(cell + SEED, 301) > 0.86) f = null;
   else {
     const fz = -(cell * FEAT_CELL + 40 + hash2(cell + SEED, 307) * (FEAT_CELL - 80));
     const cliff = hash2(cell + SEED, 311) < 0.56;
@@ -685,7 +712,8 @@ function crevAt(cell) {
   if (c !== undefined) return c;
   const amt = BIOMES[Math.floor(Math.max(0, cell * CREV_CELL) / SECTOR_LEN) % BIOMES.length].crevasse;
   /* nothing lethal in the first 600 m — you need room to find the controls */
-  if (cell * CREV_CELL < 600 || amt <= 0 || hash2(cell + SEED, 41) > amt * 0.7) c = null;
+  if (cell * CREV_CELL < 600 || -(cell * CREV_CELL) < floorZ + FLOOR_W + 90
+      || amt <= 0 || hash2(cell + SEED, 41) > amt * 0.7) c = null;
   else {
     const cz = -(cell * CREV_CELL + 30 + hash2(cell + SEED, 77) * (CREV_CELL - 60));
     c = {
@@ -728,7 +756,15 @@ function crevNotch(x, z) {
 const SUM_Z = 200, SUM_W = 620;
 const SUM_K = FALL * (2 * SUM_W / Math.PI);
 function fallLine(z) {
-  if (z <= SUM_Z) return z * FALL;
+  if (z <= SUM_Z) {
+    const d = (floorZ + FLOOR_W) - z;
+    if (d <= 0) return z * FALL;
+    /* the integral of a gradient easing from FALL to FLOOR_FALL over FLOOR_W,
+       so the floor meets the face with no crease in it */
+    const w = Math.min(d, FLOOR_W);
+    return (floorZ + FLOOR_W) * FALL -
+      (FALL * w - (FALL - FLOOR_FALL) * w * w / (2 * FLOOR_W) + FLOOR_FALL * (d - w));
+  }
   const d = z - SUM_Z;
   /* The far side drops off the back of the summit and then levels out onto the
      plateau the rest of the range stands on. Left to fall for ever it put
@@ -823,22 +859,50 @@ function farRange(x, z) {
 
 function heightBase(x, z) {
   let y = fallLine(z) - summitFlank(x, z);
+  /* The face's own shape fades out over the run-out, or the valley floor is a
+     flat gradient with twenty metres of mountain still on it. In two parts,
+     because the sharp octaves and the broad roll are doing different jobs and
+     want different amounts left: what is left of the roll is a couple of
+     metres over a hundred, which is what a valley bottom does anyway. */
+  const fm = floorMix(z), r = 1 - fm * 0.90, rb = 1 - fm * 0.86;
+  let d = 0, db = 0;
   /* spines and bowls — the shape of the face */
-  y += Math.sin(x * 0.0180 + z * 0.0042) * 6.5;
-  y += Math.sin(x * 0.0410 - z * 0.0075 + 1.7) * 2.4;
-  /* rollers: these are what launch you, so they carry real amplitude */
-  y += (nz(x * 0.0115, z * 0.0105) - 0.5) * 17;
-  y += (nz(x * 0.0340, z * 0.0290) - 0.5) * 5.6;
-  y += (nz(x * 0.0980, z * 0.0980) - 0.5) * 1.3;
-  const lip = Math.sin(z * 0.0740 + SPH + nz(x * 0.0040, z * 0.0030) * 6.0);
-  y += lip > 0 ? lip * lip * lip * 5.2                 // the takeoff
-               : -Math.pow(-lip, 1.6) * 2.9;           // and the hollow you land in
-  /* the ridges that close the face in */
+  db += Math.sin(x * 0.0180 + z * 0.0042) * 6.5;
+  db += Math.sin(x * 0.0410 - z * 0.0075 + 1.7) * 2.4;
+  /* Rollers: broad, and what gives the face its shape underfoot. Broader than
+     they were, because what throws a rider is not the size of a thing but how
+     fast it changes slope — and at a hundred and eighteen metres across, a
+     sixteen-metre roller does that at a third of gravity, which means you ride
+     over one instead of off it. */
+  db += (nz(x * 0.0105, z * 0.0085) - 0.5) * 16;
+  /* This one was doing half the jumping, and nobody would have guessed it
+     was: a thirty-four-metre bump of five and a half metres changes slope
+     faster than a wind lip six times its length does, so most of what threw
+     a rider off this face was its fine grain rather than anything shaped like
+     a takeoff. At two metres across twenty-nine it is texture. */
+  d += (nz(x * 0.0290, z * 0.0250) - 0.5) * 2.0;
+  /* The finest octave is the only one that never fades out, and it gets a
+     little louder on the floor: ten metres across and a third of a metre tall
+     is far too small to throw anybody and it is the only thing keeping the
+     snow down there reading as snow rather than as a drawing of a plane. */
+  y += (nz(x * 0.0980, z * 0.0980) - 0.5) * lerp(0.7, 1.1, fm);
+  /* Wind lips: the takeoff, and the hollow you land in. These used to come
+     every eighty-five metres, which at riding speed is a jump every three
+     seconds whether anybody asked for one or not — measured, a third of the
+     descent was spent off the snow. What throws a rider is the rate the
+     ground changes slope, which goes as amplitude over wavelength squared,
+     so the number to move is the wavelength: at a hundred and sixty-seven
+     metres this lip is twice as tall as the old one and still launches less
+     than half as often, and what it launches is worth the airtime. */
+  const lip = Math.sin(z * 0.0376 + SPH + nz(x * 0.0040, z * 0.0030) * 6.0);
+  d += lip > 0 ? lip * lip * lip * 11.5                 // the takeoff
+               : -Math.pow(-lip, 1.6) * 4.2;           // and the hollow you land in
   /* broad cross-slope shape — ridges and bowls you can traverse at will,
      rather than shoulders that fence you in */
-  y += Math.sin(x * 0.00420 + SPH * 2) * 15;
-  y += Math.sin(x * 0.01050 - z * 0.0016 + 1.1) * 5.5;
-  y += (nz(x * 0.0046, z * 0.0039) - 0.5) * 22;
+  db += Math.sin(x * 0.00420 + SPH * 2) * 15;
+  db += Math.sin(x * 0.01050 - z * 0.0016 + 1.1) * 5.5;
+  db += (nz(x * 0.0046, z * 0.0039) - 0.5) * 22;
+  y += d * r + db * rb;
   y += featHeight(x, z);
   y += summitCap(x, z);
   y += farRange(x, z);
@@ -904,10 +968,21 @@ const BIOMES = [
     sun: 0xffd9a0, sunI: 1.78, amb: 0x93a4c8, ambG: 0xdfd4c2, ambI: 0.74,
     fill: 0xd2d4e6, fillI: 0.54, fog: 0xe6dccf, glow: 0xffbe6a, elev: 0.14, az: -1.05 }
 ];
-const sectorOf = (dist) => Math.floor(dist / SECTOR_LEN);
+/* The descent ends in the valley and stays there. The cycle used to wrap
+   straight back round at the bottom, so the run-out, the line, and everything
+   standing at the bottom of the mountain were painted in the colours of the
+   glacier four kilometres above them — the valley floor came out a slab of
+   dark blue ice. Endless has no bottom, so it keeps cycling. */
+let holdLast = true;
+const LAST_SECTOR = BIOMES.length - 1;
+const sectorOf = (dist) => {
+  const s = Math.floor(dist / SECTOR_LEN);
+  return holdLast && s > LAST_SECTOR ? LAST_SECTOR : s;
+};
 const biomeOf = (dist) => BIOMES[sectorOf(dist) % BIOMES.length];
 /** Blend weight into the next biome, so sectors dissolve rather than switch. */
 function biomeBlend(dist) {
+  if (holdLast && dist >= LAST_SECTOR * SECTOR_LEN) return 0;
   const t = (dist % SECTOR_LEN) / SECTOR_LEN;
   return smoothstep(0.88, 1.0, t);
 }
@@ -1686,12 +1761,111 @@ const GATE_GEO = bake([
   { geo: new THREE.ConeGeometry(0.42, 1.0, 4), color: 0xb6ff3f, m: mat4(-6.4, 5.9, 0, 0, 0.78, 0) },
   { geo: new THREE.ConeGeometry(0.42, 1.0, 4), color: 0xb6ff3f, m: mat4(6.4, 5.9, 0, 0, 0.78, 0) }
 ]);
+/* ---- slalom poles ----
+   The one thing an open face never asks you to do is turn. A pole is not a
+   hazard: it is hinged at the base like the real thing, you knock it flat if
+   you clip it, and a run of them alternating red and blue is the only part of
+   this mountain that is purely about carving. Round the outside of every one
+   and the run pays; going straight through the middle of them costs nothing
+   and pays nothing, which is the same bargain the cliff bands offer. */
+function poleGeo(flag) {
+  return bake([
+    /* Tall, and with a panel on it. A two-and-a-half metre pole is four pixels
+       at the hundred and fifty metres you need to see one from to have any
+       chance of setting up for it. */
+    { geo: new THREE.CylinderGeometry(0.07, 0.10, 3.4, 6), color: 0xf2f6fc, m: mat4(0, 1.70, 0) },
+    { geo: new THREE.CylinderGeometry(0.115, 0.115, 0.52, 6), color: flag, m: mat4(0, 2.95, 0) },
+    { geo: new THREE.CylinderGeometry(0.115, 0.115, 0.52, 6), color: flag, m: mat4(0, 1.70, 0) },
+    { geo: new THREE.BoxGeometry(1.55, 1.05, 0.05), color: flag, m: mat4(0.80, 2.70, 0) },
+    { geo: new THREE.BoxGeometry(1.55, 0.22, 0.06), color: 0xf2f6fc, m: mat4(0.80, 2.70, 0.01) },
+    { geo: new THREE.CylinderGeometry(0.32, 0.40, 0.16, 8), color: 0xdbe6f4, m: mat4(0, 0.08, 0) }
+  ]);
+}
+const POLE_R_GEO = poleGeo(0xf5263a), POLE_B_GEO = poleGeo(0x2f6fe0);
+
 /* ---- the can ---- */
 const CAN_GEO = bake([
   { geo: new THREE.CylinderGeometry(0.30, 0.30, 0.74, 10), color: 0x9ee02a, m: mat4(0, 0, 0) },
   { geo: new THREE.CylinderGeometry(0.31, 0.31, 0.16, 10), color: 0xd9241f, m: mat4(0, 0.04, 0, 0, 0, 0.5) },
   { geo: new THREE.CylinderGeometry(0.27, 0.30, 0.10, 10), color: 0xd8e2ee, m: mat4(0, 0.39, 0) },
   { geo: new THREE.CylinderGeometry(0.30, 0.27, 0.10, 10), color: 0xb9c6d6, m: mat4(0, -0.39, 0) }
+]);
+
+/* ══════════════════════════════════════════════════════════════
+   THE BOTTOM OF THE MOUNTAIN
+   A banner across a 0.40 slope is not a place you arrived at, it is more
+   mountain with a banner on it. The face lies down into a valley floor over
+   the last three hundred and forty metres; this is what stands on it.
+   ══════════════════════════════════════════════════════════════ */
+const WARM = 0xffd489;                    // what is behind a window at this hour
+const LODGE_GEO = (() => {
+  const p = [
+    { geo: new THREE.BoxGeometry(17.4, 2.4, 11.6), color: 0x6c6a6e, m: mat4(0, 1.2, 0) },
+    { geo: new THREE.BoxGeometry(16.4, 4.6, 10.8), color: 0x4a3526, m: mat4(0, 4.7, 0) },
+    { geo: new THREE.BoxGeometry(17.4, 3.2, 11.4), color: 0x5d4432, m: mat4(0, 8.6, 0) },
+    { geo: new THREE.ConeGeometry(1, 1, 4), color: 0x2b2320, m: mat4(0, 10.2, 0, 0, 0.785, 0, 13.6, 4.4, 9.4) },
+    { geo: new THREE.ConeGeometry(1, 1, 4), color: 0xeff5ff, m: mat4(0, 10.9, 0, 0, 0.785, 0, 12.0, 3.6, 8.3) },
+    { geo: new THREE.BoxGeometry(1.5, 3.6, 1.5), color: 0x5a5560, m: mat4(5.4, 12.2, 0) },
+    { geo: new THREE.BoxGeometry(1.9, 0.5, 1.9), color: 0xeff5ff, m: mat4(5.4, 14.1, 0) },
+    { geo: new THREE.BoxGeometry(19.4, 0.4, 3.6), color: 0x3d2c20, m: mat4(0, 2.6, 7.2) },
+    { geo: new THREE.BoxGeometry(19.4, 0.16, 0.16), color: 0x8a8090, m: mat4(0, 3.7, 8.9) },
+    { geo: new THREE.BoxGeometry(2.2, 3.4, 0.2), color: 0x241a12, m: mat4(-4.4, 4.1, 5.5) }
+  ];
+  /* windows, on the side you come down at it from */
+  for (let i = -2; i <= 2; i++) {
+    p.push({ geo: new THREE.BoxGeometry(1.7, 1.9, 0.16), color: WARM, m: mat4(i * 3.2, 8.8, 5.75) });
+    if (i) p.push({ geo: new THREE.BoxGeometry(1.4, 1.6, 0.16),
+                    color: i % 2 ? WARM : 0x22303f, m: mat4(i * 3.3, 4.8, 5.45) });
+  }
+  return bake(p);
+})();
+/* the base station: a roof over the loading area, and the wheel the cable
+   turns round */
+const LIFT_GEO = (() => {
+  const p = [
+    { geo: new THREE.BoxGeometry(17.4, 0.9, 13.4), color: 0x9aa6b6, m: mat4(0, 9.5, 0) },
+    { geo: new THREE.BoxGeometry(18.0, 0.55, 14.0), color: 0xeff5ff, m: mat4(0, 10.1, 0) },
+    { geo: new THREE.CylinderGeometry(3.4, 3.4, 0.6, 14), color: 0x4e565f, m: mat4(0, 6.4, -1.6, 0, 0, 1.5708) },
+    { geo: new THREE.CylinderGeometry(3.8, 3.8, 0.28, 14), color: 0xff6a2b, m: mat4(0, 6.4, -1.6, 0, 0, 1.5708) },
+    { geo: new THREE.BoxGeometry(1.4, 6.6, 1.4), color: 0x7a8290, m: mat4(0, 3.2, -1.6) },
+    { geo: new THREE.BoxGeometry(9.4, 3.4, 7.2), color: 0x3f4855, m: mat4(0, 1.7, 3.6) },
+    { geo: new THREE.BoxGeometry(6.0, 1.3, 0.16), color: WARM, m: mat4(0, 2.4, 7.25) },
+    { geo: new THREE.BoxGeometry(9.8, 0.4, 7.6), color: 0xeff5ff, m: mat4(0, 3.6, 3.6) }
+  ];
+  for (const sx of [-1, 1]) for (const sz of [-1, 1])
+    p.push({ geo: new THREE.BoxGeometry(0.8, 9.6, 0.8), color: 0x7a8290, m: mat4(sx * 7.6, 4.8, sz * 5.8) });
+  return bake(p);
+})();
+/* a tower, and the span of cable that hangs between two of them */
+const PYL_SPAN = 62, PYL_TOP = 12.6;
+const PYLON_GEO = bake([
+  { geo: new THREE.CylinderGeometry(0.44, 0.84, 13.2, 8), color: 0x8894a4, m: mat4(0, 6.6, 0) },
+  { geo: new THREE.BoxGeometry(5.6, 0.44, 0.44), color: 0x8894a4, m: mat4(0, 13.0, 0) },
+  { geo: new THREE.BoxGeometry(1.3, 0.55, 2.8), color: 0x5a636f, m: mat4(-2.4, PYL_TOP, 0) },
+  { geo: new THREE.BoxGeometry(1.3, 0.55, 2.8), color: 0x5a636f, m: mat4(2.4, PYL_TOP, 0) },
+  { geo: new THREE.BoxGeometry(1.0, 1.0, 0.3), color: 0xff6a2b, m: mat4(0, 10.4, 0.28) }
+]);
+const CABLE_GEO = bake([
+  { geo: new THREE.BoxGeometry(0.11, 0.11, PYL_SPAN), color: 0x2d333c, m: mat4(-2.4, 0, 0) },
+  { geo: new THREE.BoxGeometry(0.11, 0.11, PYL_SPAN), color: 0x2d333c, m: mat4(2.4, 0, 0) }
+]);
+/* twelve metres of safety netting, on three posts */
+const FENCE_GEO = bake([
+  { geo: new THREE.BoxGeometry(0.13, 1.6, 0.13), color: 0x3a3f48, m: mat4(-6, 0.8, 0) },
+  { geo: new THREE.BoxGeometry(0.13, 1.6, 0.13), color: 0x3a3f48, m: mat4(0, 0.8, 0) },
+  { geo: new THREE.BoxGeometry(0.13, 1.6, 0.13), color: 0x3a3f48, m: mat4(6, 0.8, 0) },
+  { geo: new THREE.BoxGeometry(12.1, 1.15, 0.05), color: 0xff6a2b, m: mat4(0, 1.0, 0) }
+]);
+/* and the machine that made the piste you came down */
+const CAT_GEO = bake([
+  { geo: new THREE.BoxGeometry(5.0, 0.9, 7.6), color: 0x1b2028, m: mat4(0, 0.5, 0) },
+  { geo: new THREE.BoxGeometry(4.4, 1.2, 8.0), color: 0x2f3844, m: mat4(0, 1.0, 0) },
+  { geo: new THREE.BoxGeometry(3.8, 2.0, 4.6), color: 0xff6a2b, m: mat4(0, 2.4, -0.4) },
+  { geo: new THREE.BoxGeometry(3.4, 1.6, 3.0), color: 0x16212e, m: mat4(0, 4.1, 0.3) },
+  { geo: new THREE.BoxGeometry(3.5, 1.05, 0.14), color: 0x9fd6ff, m: mat4(0, 4.2, 1.78) },
+  { geo: new THREE.BoxGeometry(6.2, 1.5, 0.35), color: 0xd8dde4, m: mat4(0, 1.4, 4.7, -0.26, 0, 0) },
+  { geo: new THREE.CylinderGeometry(0.09, 0.09, 2.2, 5), color: 0x8894a4, m: mat4(1.5, 5.6, -0.3) },
+  { geo: new THREE.BoxGeometry(0.55, 0.3, 0.24), color: 0xffd489, m: mat4(1.5, 6.6, -0.3) }
 ]);
 
 /* ---- the riders ---- */
@@ -1769,12 +1943,12 @@ const SKI_POV = bake(skiKit().filter((_, i) => i !== 4 && i !== 5));
 const RIDERS = {
   board: { key: 'board', name: 'Snowboard', geo: BOARD_GEO, pov: BOARD_POV, body: BOARD_BODY,
            kit: [LOOSE_BOARD, LOOSE_GOGGLE, looseGlove(), looseGlove()], grip: 6.6, spin: 9.2,
-           drag: 0.0112, tuckDrag: 0.40, maxYaw: 0.74, trickBonus: 1.15,
+           drag: 0.0212, tuckDrag: 0.40, maxYaw: 0.74, trickBonus: 1.15,
            grabs: ['Indy', 'Stalefish', 'Melon', 'Tail'], blurb: 'Loose edge, spins easy' },
   ski:   { key: 'ski',   name: 'Skis',      geo: SKI_GEO,   pov: SKI_POV,   body: SKI_BODY,
            kit: [LOOSE_SKI_L, LOOSE_SKI_R, LOOSE_POLE_L, LOOSE_POLE_R,
                  LOOSE_GOGGLE, looseGlove()], grip: 8.4, spin: 6.6,
-           drag: 0.0103, tuckDrag: 0.46, maxYaw: 0.82, trickBonus: 1.0,
+           drag: 0.0195, tuckDrag: 0.46, maxYaw: 0.82, trickBonus: 1.0,
            grabs: ['Iron Cross', 'Safety', 'Mute', 'Zudnick'], blurb: 'Holds a line, carries speed' }
 };
 let R = RIDERS.board;
@@ -2008,11 +2182,18 @@ const terrainGeo = new THREE.BufferGeometry();
   }
   terrainGeo.setIndex(new THREE.BufferAttribute(idx, 1));
 }
-/* flat shading takes its normals from screen-space derivatives and the mesh is
-   never culled, so neither the normal attribute nor the bounding sphere needs
-   recomputing on every rebuild */
+/* The mesh is never culled, so the bounding sphere never needs recomputing.
+   The normals do. They used to come from screen-space derivatives, which is
+   free and correct until a two-by-two fragment quad spans more than one
+   triangle — and on a valley floor seen from a camera six metres above it,
+   four hundred metres of ground compress into a few dozen rows of pixels and
+   every quad does. The normals came out of that noise pointing anywhere, the
+   sun stopped reaching the floor entirely, and the bottom of the mountain
+   rendered as a dark blue lake. The grid knows its own slope — it is the
+   difference between neighbouring heights, which the rebuild has already paid
+   for — so it writes the normals itself now. */
 terrainGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
-const snowMat = litMat({ map: snowTex, normalMap: snowNorm });
+const snowMat = litMat({ map: snowTex, normalMap: snowNorm, flatShading: false });
 const terrain = new THREE.Mesh(terrainGeo, snowMat);
 terrain.frustumCulled = false;
 scene.add(terrain);
@@ -2087,7 +2268,7 @@ const farGeo = new THREE.BufferGeometry();
   farGeo.setIndex(new THREE.BufferAttribute(idx, 1));
   farGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
 }
-const farMesh = new THREE.Mesh(farGeo, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
+const farMesh = new THREE.Mesh(farGeo, new THREE.MeshLambertMaterial({ vertexColors: true }));
 farMesh.frustumCulled = false;
 farMesh.visible = false;
 farMesh.renderOrder = -1;
@@ -2136,6 +2317,7 @@ function rebuildTerrain(px, pz, force) {
   if (!force && ox === tileX && oz === tileZ) return;
   tileX = ox; tileZ = oz;
   const pos = terrainGeo.attributes.position.array;
+  const nor = terrainGeo.attributes.normal.array;
   const col = terrainGeo.attributes.color.array;
   const uv = terrainGeo.attributes.uv.array;
   const QX = TW / SX, QZ = TL / SZ, sx = sunDir.x, sz = sunDir.z;
@@ -2148,6 +2330,7 @@ function rebuildTerrain(px, pz, force) {
     C_SHADE.set(bi.shade).lerp(_c2.set(nx.shade), bl);
     C_ROCK.set(bi.rock).lerp(_c2.set(nx.rock), bl);
     const iceAmt = lerp(bi.ice, nx.ice, bl);
+    const mf = meanFall(z), fl = floorMix(z);
     for (let i = 0; i <= SX; i++, v++) {
       const x = ox + (i / SX - 0.5) * TW;
       const y = height(x, z);
@@ -2159,6 +2342,9 @@ function rebuildTerrain(px, pz, force) {
       const gx = i ? (y - prevY) / QX : 0;
       const gz = j ? (_rowY[i] - y) / QZ : 0;
       prevY = y; _rowY[i] = y;
+      /* y = f(x, z), so the surface normal is (-df/dx, 1, -df/dz) */
+      const nl = 1 / Math.sqrt(gx * gx + gz * gz + 1);
+      nor[v * 3] = -gx * nl; nor[v * 3 + 1] = nl; nor[v * 3 + 2] = -gz * nl;
       const notch = crevNotch(x, z);
       const e = featRockAmt;          // set by the height() call above
       if (e > 0.12) {
@@ -2169,12 +2355,18 @@ function rebuildTerrain(px, pz, force) {
         /* against the mean fall line, not against flat: every square metre of
            this mountain is a 0.4 slope, so measuring from horizontal only
            brightens the whole face by a constant and shows nothing */
-        const face = clamp(-(gx * sx + (gz - FALL) * sz) * 1.6, -1, 1);
+        const face = clamp(-(gx * sx + (gz - mf) * sz) * 1.6, -1, 1);
         if (face > 0.02) _c.lerp(C_SUNNY, face * 0.40);
         else if (face < -0.02) _c.lerp(C_SHADE, -face * 0.34);
         const ice = iceAmt > 0.02 ? smoothstep(0.56, 0.72, nz(x * 0.026, z * 0.022)) * iceAmt : 0;
         if (ice > 0.01) _c.lerp(C_ICE, ice * 0.85);
       }
+      /* Flat ground with the sun thirty-odd degrees up takes about three
+         quarters of the light a 0.4 slope facing it does. Correct, and
+         useless: the bottom of the mountain wants to read as somewhere you
+         arrived at, not as the one part of it in shadow. It gets the
+         difference back here, before the light is applied. */
+      if (fl > 0.01) _c.multiplyScalar(1 + fl * 0.42);
       if (notch > 0.0005) {
         if (notch < 0.045) _c.lerp(_c2.set(0xf7fcff), 0.9);         // the lip catches the light
         else _c.lerp(_c2.set(0x081a2e), smoothstep(0.045, 0.30, notch) * 0.96);
@@ -2221,6 +2413,7 @@ function rebuildTerrain(px, pz, force) {
     }
   }
   terrainGeo.attributes.position.needsUpdate = true;
+  terrainGeo.attributes.normal.needsUpdate = true;
   terrainGeo.attributes.color.needsUpdate = true;
   terrainGeo.attributes.uv.needsUpdate = true;
 }
@@ -2258,10 +2451,18 @@ const pools = {
   spire: makePool(SPIRE_GEO, 60, true),
   ramp:  makePool(RAMP_GEO, 24, false),
   gate:  makePool(GATE_GEO, 14, false),
+  poleR: makePool(POLE_R_GEO, 20, false),
+  poleB: makePool(POLE_B_GEO, 20, false),
   finish: makePool(FINISH_GEO, 2, false),
   summit: makePool(SUMMIT_GEO, 6, false),
   tower:  makePool(TOWER_GEO, 6, false),
   hut:    makePool(HUT_GEO, 4, false),
+  lodge:  makePool(LODGE_GEO, 2, false),
+  lift:   makePool(LIFT_GEO, 1, false),
+  pylon:  makePool(PYLON_GEO, 8, false),
+  cable:  makePool(CABLE_GEO, 8, false),
+  fence:  makePool(FENCE_GEO, 26, false),
+  cat:    makePool(CAT_GEO, 3, false),
   can:   makePool(CAN_GEO, 150, false, { emissive: 0x2d4a06 })
 };
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(),
@@ -2304,7 +2505,14 @@ const LIE = {
   spire:  { grip: 0.45, foot: 1.8, sink: 0.30 },
   tree:   { grip: 0.25, foot: 1.4, sink: 0.22 },
   summit: { grip: 0.80, foot: 3.0, sink: 0.25 },
-  gate:   { grip: 0.60, foot: 1.2, sink: 0.10 }
+  gate:   { grip: 0.60, foot: 1.2, sink: 0.10 },
+  poleR:  { grip: 0.85, foot: 1.4, sink: 0.05 },
+  poleB:  { grip: 0.85, foot: 1.4, sink: 0.05 },
+  lodge:  { grip: 0.45, foot: 8.0, sink: 0.60 },
+  lift:   { grip: 0.35, foot: 8.0, sink: 0.55 },
+  pylon:  { grip: 0,    foot: 1.0, sink: 0.30 },
+  fence:  { grip: 0.85, foot: 6.0, sink: 0.12 },
+  cat:    { grip: 0.90, foot: 4.0, sink: 0.20 }
 };
 /* what each kind stands on, in its own frame. y is the baked base line, which
    is flat for everything except the kicker, whose profile climbs the mean
@@ -3237,6 +3445,7 @@ const P = {
 let mode = 'menu';
 let genZ = 0, nextRampZ = 0, nextCanZ = 0, nextMarkZ = 0;
 let finishZ = 0, finishPlaced = false;
+let nextSlalomZ = 0, slalomRuns = 0, slalomWarnZ = 0;
 let slideZ = 0, slideGap = 190;
 let weather = 0, weatherT = 24, weatherLen = 0;
 let shake = 0, menuT = 0, deathT = 0, deathCause = null, curSector = -1, crevWarn = 0;
@@ -3249,8 +3458,13 @@ let shake = 0, menuT = 0, deathT = 0, deathCause = null, curSector = -1, crevWar
    couloir, treeline, forest, the cloud deck and the valley floor — now puts
    you on the bottom, and the number on the HUD moves at a rate you can feel. */
 const FINISH_ALT = 1000;
-const DESCENT_M = 3900;          // metres ridden: one cycle of all six faces
-const ALT_SCALE = (START_ALT - FINISH_ALT) / (DESCENT_M * FALL);
+const DESCENT_M = RUN_M;         // metres ridden: one cycle of all six faces
+/* The altimeter maps world height onto the four thousand two hundred metres
+   the HUD claims, so it has to know how much world height the descent
+   actually loses — which stopped being DESCENT_M x FALL the moment the last
+   three hundred metres started lying down. Recomputed when the world is
+   seeded, because the run-out only exists on the descent. */
+let altScale = (START_ALT - FINISH_ALT) / (DESCENT_M * FALL);
 let route = 'descent';
 let best = 0, bestTime = 0, bestDist = 0;
 /* career: everything you have ever ridden down, kept across runs */
@@ -3285,12 +3499,58 @@ const speedOf = () => Math.hypot(P.vx, P.vz);
    12 · WORLD GENERATION
    ══════════════════════════════════════════════════════════════ */
 function seedWorld() {
+  floorZ = route === 'descent' ? -RUN_M : -1e9;
+  holdLast = route === 'descent';
+  altScale = (START_ALT - FINISH_ALT) / Math.max(1, fallLine(0) - fallLine(-DESCENT_M));
   clearProps();
   crevCache.clear();
   featCache.clear();
   genZ = -40; nextRampZ = -150; nextCanZ = -90; nextMarkZ = -210;
+  nextSlalomZ = -330; slalomRuns = 0; slalomWarnZ = 0;
   finishZ = -DESCENT_M; finishPlaced = false;
   while (genZ > P.z - GEN_AHEAD) generate();
+}
+
+/** Everything that stands at the bottom, laid out once when the line goes in.
+    All of it is scenery: you have arrived, and nothing down here is allowed to
+    take that away from you. */
+function buildBase(fx, fz) {
+  const SC = { scenery: true, r: 0, h: 0 };
+  /* the lodge, facing up the hill at whoever is coming down it */
+  addProp('lodge', fx - 62, fz - 30, Object.assign({ spin: 0.10 }, SC));
+  addProp('hut',   fx - 44, fz - 78, Object.assign({ scale: 1.35, spin: -0.42 }, SC));
+  addProp('hut',   fx - 82, fz - 104, Object.assign({ scale: 1.05, spin: 0.55 }, SC));
+  addProp('cat',   fx - 33, fz - 50, Object.assign({ spin: 0.85 }, SC));
+  addProp('cat',   fx + 30, fz - 96, Object.assign({ spin: -1.9 }, SC));
+  /* the lift, and its line going back up the mountain you just came down */
+  const lx = fx + 58;
+  addProp('lift', lx, fz - 22, Object.assign({ spin: 0 }, SC));
+  const top = [];
+  for (let i = 0; i < 6; i++) {
+    const pz = fz + 44 + i * PYL_SPAN;
+    addProp('pylon', lx, pz, Object.assign({}, SC));
+    top.push({ z: pz, y: height(lx, pz) - LIE.pylon.sink + PYL_TOP });
+  }
+  for (let i = 1; i < top.length; i++) {
+    const a = top[i - 1], b = top[i];
+    const dy = b.y - a.y, dz = b.z - a.z;
+    addProp('cable', lx, (a.z + b.z) / 2, Object.assign({
+      y: (a.y + b.y) / 2, rx: -Math.atan2(dy, dz),
+      sx: 1, sy: 1, sz: Math.hypot(dy, dz) / PYL_SPAN }, SC));
+  }
+  /* netting either side, funnelling into the line */
+  for (let i = 0; i < 9; i++) {
+    const zz = fz + 10 + i * 22, w = 25 + i * 2.4;
+    for (const s of [-1, 1])
+      addProp('fence', driftX(zz) + s * w, zz, Object.assign({ spin: Math.PI / 2 }, SC));
+  }
+  /* and woods, thick, all round the outside of it */
+  for (let i = 0; i < 110; i++) {
+    const s = Math.random() < 0.5 ? -1 : 1;
+    const zz = fz + rand(-210, 320);
+    addProp('tree', driftX(zz) + s * rand(86, 230), zz,
+      Object.assign({ scale: rand(0.8, 1.7) }, SC));
+  }
 }
 
 /** A ballistic arc of cans over a kicker — the line you want to be on. */
@@ -3325,6 +3585,9 @@ function generate() {
   const bi = biomeOf(dist);
   const cx = P.x;                    // keep the band stocked wherever the rider is
   const span = ROAM;
+  /* the last few hundred metres are the bottom of the mountain, not more of
+     it: nothing is stocked down there except what stands at the bottom */
+  const onFloor = z < floorZ + FLOOR_W + 70;
 
   /* every crevasse gets a kicker on its near lip — the gap is always makeable */
   const cv = crevAt(Math.floor(-z / CREV_CELL));
@@ -3360,7 +3623,7 @@ function generate() {
   }
 
   /* kickers */
-  if (z < nextRampZ) {
+  if (z < nextRampZ && !onFloor) {
     /* One built kicker every two hundred metres, on top of a crevasse lip
        every three hundred and a cliff fork every five, is a lot of jumping
        for a run that is supposed to be about reading a face — and the terrain
@@ -3377,7 +3640,7 @@ function generate() {
   /* the first 400 m are quiet, and no two hazards in a row may sit closer
      than a rider can thread, so a row is never a wall */
   const warmup = clamp(dist / 400, 0.25, 1);
-  const hazards = Math.round((1 + Math.random() * (1.8 + 2.6 * d)) * warmup);
+  const hazards = onFloor ? 0 : Math.round((1 + Math.random() * (1.8 + 2.6 * d)) * warmup);
   const taken = [];
   for (let i = 0; i < hazards; i++) {
     let x = 0, ok = false;
@@ -3411,7 +3674,7 @@ function generate() {
      rather than uniformly, so it comes in stands with glades between them —
      a wall of evenly spaced trunks is not a forest either, it is a fence, and
      there would be no line through it to find. */
-  if (bi.grove > 0) {
+  if (bi.grove > 0 && !onFloor) {
     const want = Math.round(bi.grove * gap * 0.95 * warmup);
     for (let i = 0; i < want; i++) {
       const tx = cx + rand(-1, 1) * span * 1.35;
@@ -3422,13 +3685,34 @@ function generate() {
     }
   }
 
+  /* ---- a slalom ----
+     Laid as a run rather than scattered about, because the whole point of it
+     is the rhythm: alternating sides at a fixed pitch, hung off the drift
+     line so the course itself drifts across the face the way the face does. */
+  if (z < nextSlalomZ && dist > 300 && !onFloor) {
+    const n = 7 + Math.floor(Math.random() * 6);
+    const pitch = 38 + Math.random() * 10;
+    const off = 8 + Math.random() * 3;
+    nextSlalomZ = z - (n * pitch + rand(260, 460));
+    slalomRuns++;
+    if (slalomRuns === 1) slalomWarnZ = z;
+    let side = Math.random() < 0.5 ? -1 : 1;
+    for (let i = 0; i < n; i++) {
+      const pz = z - i * pitch;
+      addProp(side < 0 ? 'poleB' : 'poleR', driftX(pz) + side * off, pz,
+        { r: 0.5, h: 3.3, spin: side < 0 ? -0.9 : 0.9, side, idx: i, of: n });
+      side = -side;
+    }
+  }
+
   /* can trails on the open snow */
   if (z < nextCanZ) {
     nextCanZ = z - rand(150, 300);
     canTrail(cx + rand(-1, 1) * span * 0.8, z, 5 + Math.floor(Math.random() * 4));
   }
 
-  /* the line itself, and the last hundred metres lined with flags */
+  /* the line itself, the last two hundred metres lined with flags, and the
+     place the line is at the bottom of */
   if (route === 'descent' && !finishPlaced && z < finishZ + 40) {
     finishPlaced = true;
     const fx = driftX(finishZ);
@@ -3439,12 +3723,13 @@ function generate() {
         addProp('gate', driftX(fz2) + s * (26 + i * 3), fz2,
           { scenery: true, r: 0, h: 0, lift: 0.2, spin: 0, scale: 0.42 });
     }
+    buildBase(fx, finishZ);
   }
 
   /* landmarks, set wide of the line: they come out of the haze, hold still
      while you ride past, and are the only thing on the face that tells you
      you have actually travelled */
-  if (z < nextMarkZ) {
+  if (z < nextMarkZ && !onFloor) {
     nextMarkZ = z - rand(300, 470);
     const side = Math.random() < 0.5 ? -1 : 1;
     const r = Math.random();
@@ -3712,7 +3997,7 @@ function resetRun() {
   P.air = false; P.airT = 0; P.bestAir = 0;
   P.tuckT = 0; P.wasTuck = false; P.popT = 0; P.lines = 0;
   P.spin = 0; P.flip = 0; P.grabT = 0; P.grabName = ''; P.trickBase = 0;
-  P.spinQ = 0; P.switch = false;
+  P.spinQ = 0; P.switch = false; P.slalomRun = 0;
   crashOn = false; crashY = 0; crashVY = 0;
   rider.geometry = R.geo;
   clearKit();
@@ -3748,6 +4033,34 @@ function bumpChain(n, why) {
   flashChain(why, false);
   Snd.tone(300 + Math.min(30, P.chain) * 26, 0.07, 'square', 0.09);
 }
+/* ---- judging a pole ----
+   Called once, as the rider draws level with it. Outside is a clear; through
+   the middle, or a pole already on its face, is not. Nothing is ever taken
+   away for missing one — the run simply does not pay. */
+function judgePole(o) {
+  if (o.idx === 0) P.slalomRun = 0;
+  const out = !o.down && (P.x - o.x) * o.side > 0.35;
+  if (out) {
+    P.slalomRun++;
+    const pts = Math.round(70 * P.chain);
+    P.score += pts;
+    Snd.tone(660 + Math.min(9, P.slalomRun) * 42, 0.055, 'triangle', 0.10);
+  }
+  if (o.idx !== o.of - 1) return;
+  if (P.slalomRun >= o.of) {
+    bumpChain(3, 'Slalom');
+    const bonus = Math.round(300 * P.chain);
+    P.score += bonus; P.lines++;
+    popup('Clean slalom', '+' + fmt(bonus), 'near');
+    Snd.tone(620, 0.12, 'triangle', 0.22);
+    setTimeout(() => Snd.tone(930, 0.2, 'triangle', 0.18), 90);
+  } else if (P.slalomRun >= Math.ceil(o.of * 0.6)) {
+    bumpChain(1, 'Slalom');
+    popup('Slalom ' + P.slalomRun + '/' + o.of, '', 'near');
+  }
+  P.slalomRun = 0;
+}
+
 function breakChain() {
   if (P.chain <= 1) return;
   popup('Chain lost', '×' + P.chain, 'bad');
@@ -4221,7 +4534,12 @@ function step(dt) {
     P.y = g;
     if (P.air) land(impact);
     P.vy = Math.max(P.vy, follow);
-  } else if (!P.air && P.wipe <= 0 && P.y - g > (tucking ? 1.25 : 0.35) && speedOf() > 8) {
+  } else if (!P.air && P.wipe <= 0 && P.y - g > (tucking ? 1.25 : 0.62) && speedOf() > 8) {
+    /* Thirty-five centimetres used to be enough to count as flying, which on
+       a face with a bump every thirty metres meant a quarter of the descent
+       was spent in the air whether anybody asked for one or not. Sixty-two
+       leaves the small stuff as what it is — a board skipping — and keeps
+       being airborne for the things that actually threw you. */
     launch(P.vy);
   } else if (!P.air && tucking && P.wipe <= 0) {
     /* a tuck is a weighted stance: it absorbs the rollers instead of being
@@ -4236,14 +4554,17 @@ function step(dt) {
   P.topSpeed = Math.max(P.topSpeed, spd);
   const moved = -(P.z - z0);
   if (moved > 0) P.dist += moved;
-  P.alt = START_ALT + (P.y - P.y0) * ALT_SCALE;
+  P.alt = START_ALT + (P.y - P.y0) * altScale;
   P.lowAlt = Math.min(P.lowAlt, P.alt);
   ghostClock += dt;
   if (ghostClock >= GHOST_STEP && ghostRec.length < GHOST_MAX * 4) {
     ghostClock -= GHOST_STEP;
     ghostRec.push(P.x, P.y, P.z, P.heading);
   }
-  if (route === 'descent' && P.alt <= FINISH_ALT) { startOutrun(); return; }
+  /* Crossing the line ends it, not the altimeter reading a number: the finish
+     stands at a fixed z and the run-out means the height you are at when you
+     reach it is no longer a fixed multiple of how far you have come. */
+  if (route === 'descent' && P.z <= finishZ) { startOutrun(); return; }
   P.score += Math.max(0, moved) * 0.55 * P.chain * (bst > 0 ? 2 : 1);
   announceSector();
 
@@ -4285,6 +4606,12 @@ function step(dt) {
   /* ---------- into the gash ---------- */
   if (heightBase(P.x, P.z) - P.y > 5.5) { die('crevasse'); return; }
 
+  /* ---------- the first slalom wants a word ---------- */
+  if (slalomWarnZ && P.z - slalomWarnZ < 130) {
+    slalomWarnZ = 0;
+    flashWarn('Slalom — round the outside', 1900);
+  }
+
   /* ---------- the forks ---------- */
   featNear(P.z, _feats);
   for (const f of _feats) {
@@ -4325,6 +4652,22 @@ function step(dt) {
       continue;
     }
     if (o.kind === 'ramp') continue;
+
+    if (o.kind === 'poleR' || o.kind === 'poleB') {
+      /* clipping one knocks it over and costs a little speed; it does not
+         put you down, because a slalom pole never has */
+      if (!o.down && P.y - o.y < 3.1 &&
+          sweptHit(x0, z0, P.x, P.z, o.x, o.z, 0.42 + RIDER_R)) {
+        o.down = true;
+        o.rx = 1.42 * (dz > 0 ? 1 : -1); o.rz = rand(-0.4, 0.4);
+        placeProp(o);
+        P.vx *= 0.985; P.vz *= 0.985;
+        Snd.tone(210, 0.07, 'square', 0.09);
+        emitSpray(o.x, o.y + 0.6, o.z, 3, 1.1);
+      }
+      if (dz <= 0 && !o.passed) { o.passed = true; judgePole(o); }
+      continue;
+    }
 
     /* trees carry two volumes: branches you brush, trunk you do not */
     const s = o.scale;

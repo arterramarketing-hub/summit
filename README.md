@@ -16,11 +16,21 @@ midnight, and your best run is saved as a **ghost** you race on the next one.
 
 ## Getting to the bottom
 
-Crossing the finish altitude does not stop the game and put a menu on the
-screen — which reads exactly like dying, and was read exactly like dying. You
-ride through a banner, coast out onto the flat throwing a wall of snow, and the
-camera comes round in front of you and settles before anything is asked of you.
-Then a screen that is green where the losing ones are ember, and says so.
+Crossing the line does not stop the game and put a menu on the screen — which
+reads exactly like dying, and was read exactly like dying. You ride through a
+banner, coast out onto the flat throwing a wall of snow, and the camera comes
+round in front of you and settles before anything is asked of you. Then a
+screen that is green where the losing ones are ember, and says so.
+
+And there is now something to arrive at. The last 340 m of the face **lie
+down**: the gradient eases from 0.40 to 0.055 and stays there, so the banner
+stands on a valley floor you coast out across rather than on another piece of
+0.40 mountain that happens to have a banner on it. Standing on it: a timber
+lodge with its windows lit, a lift station with the bullwheel the cable turns
+round, six towers carrying that cable back up the hill, safety netting
+funnelling into the line, two snowcats parked up, and woods thick all round
+the outside. Nothing down there is a hazard — you have arrived, and the bottom
+of the mountain is not allowed to take that away from you.
 
 ## The drop-in
 
@@ -140,9 +150,26 @@ npx http-server -p 8080 .      # then http://localhost:8080
 - **The face has furniture.** Summit spires, serac towers and huts sit at real
   coordinates out to 300 m either side. They come out of the haze, hold still
   while you ride past, and are how you know you have actually travelled.
-- **The mountain launches you.** Wind lips every ~85 m are shaped so their
-  curvature beats gravity *above* a certain speed. Ride slowly and you roll over
-  them; carry speed and you are airborne roughly a quarter of the time.
+- **The mountain launches you, but it waits to be asked.** Wind lips every
+  ~167 m are shaped so their curvature beats gravity *above* a certain speed.
+  Ride slowly and you roll over them; carry speed and one throws you properly.
+  They used to come every 85 m, which measured out at a takeoff every 79 m of
+  descent and **30% of the run spent off the snow** — a jump every three
+  seconds whether you wanted one or not. It is 4.8 takeoffs a kilometre and
+  **8%** now, at the same speed, and the airs that are left are worth having.
+- **It is a mountain you carve down.** The line the face drifts along used to
+  wander on a three-kilometre and a one-kilometre term — a lean, not a rhythm,
+  and you could hold it with one nudge a minute. There is a 167 m term on it
+  now, which at riding speed is a turn every three seconds. Measured: **104 m
+  of side-to-side per kilometre of descent before, 236 m after.**
+- **And there are slalom courses.** Runs of seven to twelve poles, red and blue,
+  alternating either side of the drift line at a 38–48 m pitch, one every three
+  or four hundred metres. Going round the outside of every one pays a clean
+  run: three chain steps and a bonus. Going straight through the middle costs
+  nothing and pays nothing, which is the same bargain the cliff bands offer.
+  Clip one and it goes over — a slalom pole is hinged at the base and has never
+  put anybody down, so it takes a little speed and breaks the run and that is
+  all.
 - **Height never hurts you.** There is no fall damage at all: this mountain can
   throw you three hundred metres off a cliff with a pop and you will land on
   full condition. The only thing a landing asks is that the board is pointing
@@ -550,6 +577,56 @@ everything else is generated at runtime.
   the forest. A crevasse still gets three kickers across its lip when it is
   wide, because the crossing has to be findable from wherever you happen to
   be; a narrow one is findable anyway and gets the middle one only.
+- **The valley floor is the integral of an easing gradient**, not a spliced-on
+  plane: the fall line's gradient ramps from 0.40 to 0.055 over the last 340 m
+  and the height is what you get by integrating that, so the floor meets the
+  face with no crease in it. The face's own texture fades out across the same
+  340 m — the sharp octaves almost completely, the broad roll to a seventh —
+  or the floor is a flat gradient with twenty metres of mountain still on it.
+  Crevasses and cliff bands switch off down there, and so does every hazard the
+  generator would otherwise stock. Endless has no bottom, so `floorZ` goes out
+  of reach and every one of these terms switches itself off.
+- **The descent ends in the valley and stays there.** Six sectors, 650 m each,
+  is exactly the 3,900 m descent — and the palette used to wrap straight back
+  round to the glacier's at the bottom, so the run-out, the line and everything
+  standing at the bottom of the mountain were painted in the colours of the ice
+  four kilometres above them. The valley floor came out a slab of dark blue.
+  The last face is held now; endless still cycles.
+- **The terrain writes its own normals.** They used to come from screen-space
+  derivatives, which is free and exactly right until a 2×2 fragment quad spans
+  more than one triangle — and on a valley floor seen from a camera six metres
+  above it, 400 m of ground compress into a few dozen rows of pixels and every
+  quad does. The sun stopped reaching the floor at all. The grid knows its own
+  slope: it is the difference between neighbouring heights, which the rebuild
+  has already paid for, so it writes `(-df/dx, 1, -df/dz)` per vertex and the
+  material stopped deriving anything. Measured against flat shading on the same
+  frame, the face renders the same; the floor no longer renders as water.
+- **Shading is read against the *local* mean fall line**, which stopped being
+  0.40 the moment the run-out existed. Flat ground measured against a 0.4
+  reference reads as a face turned hard away from the sun.
+- **Crossing the line ends the descent, not the altimeter reading 1,000.** The
+  finish stands at a fixed z; with the run-out in, the height you are at when
+  you reach it is no longer a fixed multiple of how far you have come, and the
+  old altitude test simply never fired — the run never ended. The altimeter's
+  own scale is recomputed from the height the descent actually loses.
+- **What throws a rider is not size, it is the rate the ground changes slope**,
+  which goes as amplitude over wavelength squared — and against the game's own
+  gravity of 26 m/s², not 9.81. Two things followed from measuring that. The
+  face's *fine grain* was doing half the jumping: a 34 m bump of 5.6 m changes
+  slope faster than a wind lip six times its length, so most of what threw you
+  was texture rather than anything shaped like a takeoff, and it is 2.0 m
+  across 29 m now. And the wind lip went the other way — twice as tall, twice
+  the wavelength, and it launches less than half as often. The broad rollers
+  went from 17 m across 95 to 16 across 118, which puts them at a third of
+  gravity: you ride over one instead of off it.
+- **Being airborne now takes 62 cm of daylight**, not 35. Thirty-five
+  centimetres on a face with a bump every thirty metres is not flying, it is a
+  board skipping, and it was being counted and scored as air.
+- **A smoother face is a faster one**, which nobody asks for: with the fine
+  grain gone there is less sideways scrub, and the same pilot ran at **152 km/h
+  mean and 247 peak** against the old 87 and 132. Drag went from 0.0112 to
+  0.0212 to put it back — 93 and 149 measured, which is where the avalanche
+  chase was balanced.
 - **Empty prop pools do not draw.** A pool hides its instanced mesh when nothing
   is in it, which is most of them most of the time — no seracs in the forest, no
   trees on the glacier.
