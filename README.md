@@ -17,20 +17,24 @@ midnight, and your best run is saved as a **ghost** you race on the next one.
 ## Getting to the bottom
 
 Crossing the line does not stop the game and put a menu on the screen — which
-reads exactly like dying, and was read exactly like dying. You ride through a
-banner, coast out onto the flat throwing a wall of snow, and the camera comes
-round in front of you and settles before anything is asked of you. Then a
-screen that is green where the losing ones are ember, and says so.
+reads exactly like dying, and was read exactly like dying. You cross the banner
+at whatever you carried in — sixty, a hundred — run another eighty to a hundred
+and fifteen metres out across the valley floor, put it on edge and throw the
+wall of snow that everybody who has ever finished a run throws,
+and the camera comes round in front of you and settles before anything is asked
+of you. Eleven seconds, or a tap. Then a screen that is green where the losing
+ones are ember, and says so.
 
-And there is now something to arrive at. The last 340 m of the face **lie
-down**: the gradient eases from 0.40 to 0.055 and stays there, so the banner
-stands on a valley floor you coast out across rather than on another piece of
-0.40 mountain that happens to have a banner on it. Standing on it: a timber
-lodge with its windows lit, a lift station with the bullwheel the cable turns
-round, six towers carrying that cable back up the hill, safety netting
-funnelling into the line, two snowcats parked up, and woods thick all round
-the outside. Nothing down there is a hazard — you have arrived, and the bottom
-of the mountain is not allowed to take that away from you.
+And there is something to arrive at. The face **lies down** over its last 420
+m — the gradient eases from 0.40 to 0.055 — and the line sits 200 m into that
+rather than at the end of it, so you cross the banner still carrying speed and
+the 220 m past it are where the floor actually flattens and where you stop.
+Standing on it: a timber lodge with its windows lit, a lift station with the
+bullwheel the cable turns round, six towers carrying that cable back up the
+hill, safety netting funnelling into the line, two snowcats parked up, and
+woods thick all round the outside. Nothing down there is a hazard — you have
+arrived, and the bottom of the mountain is not allowed to take that away from
+you.
 
 ## The drop-in
 
@@ -38,10 +42,15 @@ The title screen is a drone standing three kilometres off down the valley,
 sweeping a narrow arc across the face: the peak with its flag on top, a range
 of other mountains on the horizon behind it, and you as a speck a long way
 below. Tapping **Drop in** flies that same camera into the cutscene rather than
-cutting to it — a wide look up at the summit, the ship crossing the mountain, a
-step out of the door, a ballistic fall onto the snow, and the cornice letting
-go behind you. Seven seconds, skippable with a tap, and the short version —
-just the door and the drop — after the first one.
+cutting to it — a wide look up at the summit, and the ship crossing the
+mountain and settling into a hover over the drop point.
+
+And then it waits. **You have to jump.** The ship holds there with its clock
+stopped and the snow going up underneath it until you tap, which is the one
+moment of the opening that is actually yours and used to be something that
+happened to you on a timer. Tap and you push off the skid, fall onto the snow,
+and the cornice lets go behind you. It goes by itself after nine seconds,
+because a game that can be stuck on its own opening is a game that is stuck.
 
 ## Playing it
 
@@ -334,11 +343,28 @@ everything else is generated at runtime.
   their physics surface drops with them so what launches you is what you can
   see. Measured after: not one prop with a corner off the ground, and the
   kickers are the same height they always were.
-- **The drop-in** is a seven-second cutscene on its own clock: a wide look down
-  the fall line with the view pushed out to 520 m, the ship crossing the face,
-  a step out of the door, a ballistic fall onto the snow, and the cornice
-  letting go behind you. A tap skips it, and after the first one you get the
-  short version — just the door and the drop.
+- **The drop-in** is a cutscene on its own clock: a wide look down the fall
+  line with the view pushed out, the ship crossing the face, a hover, a jump
+  out of the door, a ballistic fall onto the snow, and the cornice letting go
+  behind you. After the first one you get the short version — just the door
+  and the jump.
+- **The clock stops in the hover**, which is what makes the jump yours rather
+  than the timer's. Everything downstream of the drop — the cornice, the swing
+  round to watch it, the hand-off into the chase seat, the fog opening out —
+  is keyed to that one clock, so holding it is one accumulator subtracted from
+  it rather than five beats rescheduled. The camera keeps crawling in and
+  round on the wait, because a held shot and a frozen one do not read the same.
+- **One tap, three meanings**, in the order they come up: jump out of the ship
+  if it is hovering, wave the ending on if it is running, and otherwise walk
+  out of the cutscene — which a cutscene must always allow.
+- **The ride-out is three parts.** It used to brake from the instant you
+  crossed the line and stop inside twenty metres, which is not arriving
+  anywhere, it is being switched off. Now: 4.2 s of riding on four tenths of
+  the hill's gravity — full gravity and you cross the line and speed *up* —
+  then 2.4 s of edge, turned towards the middle of the piste so it reads as
+  something you did, and then you stand there while the camera comes round.
+  Measured: 77 m past the line arriving at 60 km/h, 114 m arriving at 100,
+  against the old 20 whatever you arrived at.
 - **The tilt** is reconstructed rather than read. Browser orientation angles are
   intrinsic Z-X'-Y'', so raw `gamma` measures rotation about an axis that has
   already been pitched by `beta`: at the 60-75 degrees people actually hold a
