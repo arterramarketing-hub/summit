@@ -2860,41 +2860,77 @@ slide.add(slideWall);
 /* ══════════════════════════════════════════════════════════════
    8 · CARVE TRAIL
    ══════════════════════════════════════════════════════════════ */
-/* A snowboard leaves one trench, not a flat stripe: a dark cut with the snow
-   it displaced pushed up into a bright berm either side, widening as you lay
-   the edge over. Three vertices a sample — lip, groove, lip — could only draw
-   that as a line, and it read as one: a hairline behind the rider. Five gives
-   the section a floor with two walls, which is what makes it a trench you can
-   see the depth of. The walls do the work: the one the sun is off goes dark,
-   the one it is on stays pale, and since nothing here is lit — it is a decal
-   on the snow, not geometry in it — that asymmetry is the only thing standing
-   in for a shadow in the cut.
+/* A snowboard does not leave a stripe on the snow, it moves the snow: the
+   edge cuts a trench and everything it cuts gets thrown up into a berm either
+   side, and the berms are the whole of it. Deformable-snow work in bigger
+   games splits a trail into depth and *displaced mass* channels for exactly
+   that reason — depth alone gives you a footprint decal, and mass is what
+   gives you something standing proud of the surface with a lit face and a
+   shaded one.
+   This was a decal: six vertices across, nine centimetres above the snow,
+   unlit, with the trench painted on in vertex colour and a hand-rolled
+   left/right asymmetry standing in for a shadow. It is geometry now. Nine
+   vertices carry an actual section — toe, berm crest, inner shoulder, floor,
+   and back out again — built in the terrain's own tangent frame, carrying
+   real normals, and lit by the same sun as everything else. Which face of a
+   berm is bright is no longer something this file decides.
+   None of it is cut below the snow, because the terrain is a 5.8 x 4.4 m grid
+   and a two-metre trench cannot be taken out of it — anything modelled under
+   the surface is simply occluded by it. The whole section is lifted clear
+   instead and the cut is taken back out of that lift, so the floor sits below
+   the ground the toes rest on without ever going under the ground itself. The
+   depth reads off the berms, off the lit and shaded walls inside them, and off
+   a floor a little under half as bright as open snow, because it is shut in
+   between the two of them.
    Airborne samples are pushed with zero intensity, so the track breaks at the
    takeoff and picks up at the landing rather than being wiped. */
-const TRAIL_N = 132, TRAIL_RING = 6, TRAIL_V = TRAIL_N * TRAIL_RING;
+const TRAIL_N = 132, TRAIL_RING = 9, TRAIL_V = TRAIL_N * TRAIL_RING;
 const trailGeo = new THREE.BufferGeometry();
 const trailP = new Float32Array(TRAIL_V * 3);
+const trailNm = new Float32Array(TRAIL_V * 3);
 const trailC = new Float32Array(TRAIL_V * 4);
+const trailUv = new Float32Array(TRAIL_V * 2);     // world coordinates, as the snow's are
 const trailI = new Float32Array(TRAIL_N);          // per-sample intensity, 0 = gap
-const trailS = new Float32Array(TRAIL_N);          // which way the sun was, across the cut
+const trailG = new Float32Array(TRAIL_N);          // per-sample grain, so it is not a pipe
+const trailY0 = new Float32Array(TRAIL_N);         // the snow it was cut into
 const TRAIL_AGE = new Float32Array(TRAIL_N);       // index is age, so the fade is static
 for (let i = 0; i < TRAIL_N; i++) TRAIL_AGE[i] = Math.pow(1 - i / (TRAIL_N - 1), 0.85);
-const GROOVE = [0.045, 0.065, 0.115], WALL = [0.15, 0.20, 0.32], LIP = [0.66, 0.74, 0.90];
-/* Berm, wall, floor, floor, wall, berm — across, as a fraction of the half
-   width. Six and not five because with a single vertex in the middle the
-   floor is a hairline that the two walls interpolate away either side of, and
-   what you get is a pale stripe with bright edges rather than a cut. The
-   floor needs width of its own. */
-const RING_X = [1, 0.52, 0.30, -0.30, -0.52, -1];
-const RING_Y = [0.075, 0.012, -0.014, -0.014, 0.012, 0.075];
-const RING_C = [LIP, WALL, GROOVE, GROOVE, WALL, LIP];
-const RING_A = [0.26, 0.66, 0.92, 0.92, 0.66, 0.26];
+/* Every number here is a fraction of the snow the track was cut out of,
+   because the material carries the same texture and the same biome colour
+   the ground does. One is snow. Berm crests are loose and scatter a shade
+   more light than they did packed down; the floor of the cut is shut in
+   between them and lit mostly by sky, so it is darker and bluer. Painting
+   the floor black, which is what this did before, makes a tar stripe down
+   a white mountain; three quarters of open snow reads as nothing at all.
+   About half is what a shallow trench with two berms over it actually
+   loses. */
+const BERM = [1.16, 1.15, 1.13], WALL = [0.82, 0.85, 0.91], FLOOR = [0.46, 0.51, 0.66];
+/* Across the section, as a fraction of the half width: the toe where the berm
+   runs out into undisturbed snow, the crest, the shoulder inside it, and the
+   floor of the cut. Nine and not six because a berm needs a crest with a
+   flank either side of it or it is a fold, not a pile. */
+/* The crest sits where loose snow would let it: on a hard turn the berm
+   stands 0.30 m and its outer flank runs 0.41 m out to the toe, which is 35
+   degrees, which is the angle of repose for snow. The flank inside it is far
+   steeper, because that side is cut rather than piled. What the berms hold is
+   more than the trench gives back — the edge packs snow under the board as
+   well as moving it, and a volume-true berm is invisible from ten metres. */
+const RING_X = [-1, -0.60, -0.46, -0.34, 0, 0.34, 0.46, 0.60, 1];
+const RING_C = [BERM, BERM, WALL, FLOOR, FLOOR, FLOOR, WALL, BERM, BERM];
+const RING_A = [0, 0.92, 1, 1, 1, 1, 1, 0.92, 0];
+/* Berms slump. Four tenths of a per cent a sample is about sixty per cent of
+   the height left by the time the track has run its hundred metres out. */
+const TRAIL_SLUMP = 0.9961;
 {
   trailGeo.setAttribute('position', new THREE.BufferAttribute(trailP, 3));
+  trailGeo.setAttribute('normal', new THREE.BufferAttribute(trailNm, 3));
   trailGeo.setAttribute('color', new THREE.BufferAttribute(trailC, 4));
+  trailGeo.setAttribute('uv', new THREE.BufferAttribute(trailUv, 2));
   const idx = new Uint16Array((TRAIL_N - 1) * (TRAIL_RING - 1) * 6);
   let k = 0;
-  for (let i = 0; i < TRAIL_N - 1; i++) {
+  /* oldest first, so the ribbon draws back to front and the blend is right
+     where a turn folds its own track under itself */
+  for (let i = TRAIL_N - 2; i >= 0; i--) {
     const a = i * TRAIL_RING, b = (i + 1) * TRAIL_RING;
     for (let e = 0; e < TRAIL_RING - 1; e++) {
       idx[k++] = a + e;     idx[k++] = b + e; idx[k++] = a + e + 1;
@@ -2903,52 +2939,142 @@ const RING_A = [0.26, 0.66, 0.92, 0.92, 0.66, 0.26];
   }
   trailGeo.setIndex(new THREE.BufferAttribute(idx, 1));
 }
-const trail = new THREE.Mesh(trailGeo, new THREE.MeshBasicMaterial({
-  vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: true
-}));
+/* The same texture, the same normal map and the same biome colour as the
+   ground, because a track is made of the snow it displaced and not of some
+   other substance. It is also the only honest way to get the brightness
+   right: a fixed colour that matches the glacier is too dark in the forest
+   and too bright under cloud. */
+const trailMat = litMat({
+  map: snowTex, normalMap: snowNorm, flatShading: false,
+  transparent: true, depthWrite: false, side: THREE.DoubleSide,
+  /* The toes lie all but flat against the snow, and a depth buffer cannot
+     separate two surfaces that close at a grazing angle — it stipples along
+     the edge. A slope-scaled bias settles it without lifting the geometry
+     any further off the ground, which would make it float. */
+  polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6
+});
+const trail = new THREE.Mesh(trailGeo, trailMat);
 trail.frustumCulled = false;
+trail.renderOrder = -0.5;          // over the snow, under everything standing on it
 scene.add(trail);
 let trailClock = 0;
 
 function trailShade() {
   for (let i = 0; i < TRAIL_N; i++) {
-    const a = TRAIL_AGE[i] * trailI[i], s = trailS[i];
+    const a = TRAIL_AGE[i] * trailI[i], g = trailG[i];
     const o = i * TRAIL_RING * 4;
     for (let e = 0; e < TRAIL_RING; e++) {
       const src = RING_C[e], v = o + e * 4;
-      /* one wall is in the sun and the other is not, and which is which is
-         the whole of the illusion */
-      const side = e === 1 ? 1 - s * 0.5 : e === 4 ? 1 + s * 0.5 : 1;
-      trailC[v] = src[0]; trailC[v + 1] = src[1]; trailC[v + 2] = src[2];
-      trailC[v + 3] = a * RING_A[e] * side;
+      trailC[v] = src[0] * g; trailC[v + 1] = src[1] * g; trailC[v + 2] = src[2] * g;
+      trailC[v + 3] = a * RING_A[e];
     }
   }
   trailGeo.attributes.color.needsUpdate = true;
 }
-/** edge: 0 straight-lining, 1 fully on edge. on: 0 while airborne. */
+/* How far the drawn snow sits above the real snow, here.
+   The terrain mesh samples a 5.8 x 4.4 m grid through a surface with a ten
+   metre grain in it, so every hollow is drawn as a chord across the top of
+   it: the snow on screen is above the snow in the equations by more than a
+   twentieth of a metre over a seventh of the mountain, and by more than a
+   fifth over a fiftieth of it. Lay a track on the true height and it vanishes
+   into the ground in patches and stipples along its edges — which is what a
+   flat nine-centimetre lift was there to paper over, at the cost of floating
+   everywhere the ground is honest. The second difference across one quad says
+   how far the chord rises, so the track is lifted by that instead: it sits
+   four and a half centimetres up on ground the mesh can hold, and gets out
+   of the way where it cannot. One in sixty samples still catches, against one
+   in fifteen for the flat lift. */
+const TQX = TW / SX * 0.5, TQZ = TL / SZ * 0.5;
+function chordGap(x, z) {
+  const c = height(x, z);
+  const a = 0.25 * (height(x + TQX, z) + height(x - TQX, z) + height(x, z + TQZ) + height(x, z - TQZ));
+  return a > c ? Math.min((a - c) * 1.5, 0.6) : 0;
+}
+/** edge: 0 straight-lining, 1 fully on edge. lean: signed, which way the
+    board is scrubbing, so the outside of the turn gets the bigger berm.
+    on: 0 while airborne. */
 const TRAIL_STRIDE = TRAIL_RING * 3;
-function pushTrail(x, y, z, h, edge, on) {
+const _sec = new Float32Array(TRAIL_RING * 2);     // the section, in metres
+const _secN = new Float32Array(TRAIL_RING * 2);    // and its normal, in section space
+function pushTrail(x, y, z, h, edge, on, lean) {
   for (let i = TRAIL_N - 1; i > 0; i--) {
     const d = i * TRAIL_STRIDE, sr = (i - 1) * TRAIL_STRIDE;
-    for (let k = 0; k < TRAIL_STRIDE; k++) trailP[d + k] = trailP[sr + k];
+    const du = i * TRAIL_RING * 2, su = (i - 1) * TRAIL_RING * 2;
+    const y0 = trailY0[i] = trailY0[i - 1];
+    for (let e = 0; e < TRAIL_RING; e++) {
+      const de = d + e * 3, se = sr + e * 3;
+      trailP[de] = trailP[se];
+      trailP[de + 1] = y0 + (trailP[se + 1] - y0) * TRAIL_SLUMP;
+      trailP[de + 2] = trailP[se + 2];
+      trailNm[de] = trailNm[se]; trailNm[de + 1] = trailNm[se + 1]; trailNm[de + 2] = trailNm[se + 2];
+      trailUv[du + e * 2] = trailUv[su + e * 2];
+      trailUv[du + e * 2 + 1] = trailUv[su + e * 2 + 1];
+    }
     trailI[i] = trailI[i - 1];
-    trailS[i] = trailS[i - 1];
+    trailG[i] = trailG[i - 1];
   }
-  const w = 0.34 + edge * 0.52;                         // half width, lip to centre
-  const cx = Math.cos(h), cz = Math.sin(h);             // board's lateral axis
-  /* Everything sits ABOVE the snow: this is a decal, and a trench modelled
-     below the surface would simply be occluded by it. The depth is in the
-     colour, and the height only keeps the near lip in front of the far one. */
-  const yy = y + 0.09;
+  /* the section, in metres. Laying the edge over widens the cut, deepens it,
+     and throws more of what it cuts onto the outside of the turn. */
+  const w = 0.36 + edge * 0.66;
+  const dep = 0.014 + edge * 0.040;
+  /* A berm is thrown snow, not an extrusion: without this the track is a
+     length of pipe lying on the mountain. A third of the crest height comes
+     and goes over a metre or so, and the same noise lightens and darkens it. */
+  const lump = 0.80 + nz(x * 0.74, z * 0.74) * 0.42;
+  const berm = (0.038 + edge * 0.262) * lump;
+  const hR = berm * (1 + lean * 0.42), hL = berm * (1 - lean * 0.42);
+  /* The section is lifted clear of the snow and the cut is taken back out of
+     that lift, so the floor really does sit below the ground the toes rest on
+     — seventy-five millimetres below it on a hard turn — and the walls between
+     them are lit as the walls of a trench and not as the sides of something
+     lying on top of the hill. */
+  const Y = [0.020, hL, hL * 0.35 - dep * 0.25, -dep * 0.85, -dep, -dep * 0.85,
+             hR * 0.35 - dep * 0.25, hR, 0.020];
+  for (let e = 0; e < TRAIL_RING; e++) { _sec[e * 2] = RING_X[e] * w; _sec[e * 2 + 1] = Y[e]; }
   for (let e = 0; e < TRAIL_RING; e++) {
-    const o = e * 3, f = RING_X[e] * w;
-    trailP[o] = x + cx * f;
-    trailP[o + 1] = yy + RING_Y[e] * (1 + edge);
-    trailP[o + 2] = z + cz * f;
+    const a = e ? e - 1 : 0, b = e < TRAIL_RING - 1 ? e + 1 : e;
+    const tx = _sec[b * 2] - _sec[a * 2], ty = _sec[b * 2 + 1] - _sec[a * 2 + 1];
+    const l = Math.hypot(tx, ty) || 1;
+    _secN[e * 2] = -ty / l; _secN[e * 2 + 1] = tx / l;
+  }
+  /* and the frame it is swept along: the snow's own normal, and the board's
+     lateral axis flattened into the snow's tangent plane. A section built on
+     world up instead would lift its outer edge off a 0.4 slope. */
+  const gx = gradX(x, z), gz = gradZ(x, z);
+  const nl = 1 / Math.sqrt(gx * gx + gz * gz + 1);
+  const Nx = -gx * nl, Ny = nl, Nz = -gz * nl;
+  let lx = Math.cos(h), ly = 0, lz = Math.sin(h);
+  const dp = lx * Nx + lz * Nz;
+  lx -= Nx * dp; ly -= Ny * dp; lz -= Nz * dp;
+  const ll = 1 / (Math.hypot(lx, ly, lz) || 1);
+  lx *= ll; ly *= ll; lz *= ll;
+  /* the datum carries the cut's own depth, so the floor of it lands on the
+     lift and never under it, however hard the turn */
+  const yy = y + 0.045 + dep + chordGap(x, z);
+  trailY0[0] = yy;
+  for (let e = 0; e < TRAIL_RING; e++) {
+    const o = e * 3, f = _sec[e * 2], g = _sec[e * 2 + 1];
+    trailP[o] = x + lx * f + Nx * g;
+    trailP[o + 1] = yy + ly * f + Ny * g;
+    trailP[o + 2] = z + lz * f + Nz * g;
+    const a = _secN[e * 2], c = _secN[e * 2 + 1];
+    trailNm[o] = lx * a + Nx * c;
+    trailNm[o + 1] = ly * a + Ny * c;
+    trailNm[o + 2] = lz * a + Nz * c;
+    trailUv[e * 2] = trailP[o] / SNOW_TILE;
+    trailUv[e * 2 + 1] = trailP[o + 2] / SNOW_TILE;
   }
   trailI[0] = on ? 0.6 + edge * 0.4 : 0;
-  trailS[0] = clamp((cx * sunDir.x + cz * sunDir.z) * 1.4, -1, 1);
+  trailG[0] = 0.94 + nz(x * 1.7, z * 1.7) * 0.13;
+  /* and the colour of the snow here, blended across the sector boundary the
+     same way the ground is, with the same lift given to the valley floor */
+  const dist = Math.max(0, -z), nxb = BIOMES[(sectorOf(dist) + 1) % BIOMES.length];
+  trailMat.color.set(biomeOf(dist).snow).lerp(_c2.set(nxb.snow), biomeBlend(dist));
+  const fl = floorMix(z);
+  if (fl > 0.01) trailMat.color.multiplyScalar(1 + fl * 0.42);
   trailGeo.attributes.position.needsUpdate = true;
+  trailGeo.attributes.normal.needsUpdate = true;
+  trailGeo.attributes.uv.needsUpdate = true;
   trailShade();
 }
 function resetTrail(x, y, z) {
@@ -2956,10 +3082,15 @@ function resetTrail(x, y, z) {
     const o = i * TRAIL_STRIDE;
     for (let e = 0; e < TRAIL_RING; e++) {
       trailP[o + e * 3] = x; trailP[o + e * 3 + 1] = y; trailP[o + e * 3 + 2] = z;
+      trailNm[o + e * 3] = 0; trailNm[o + e * 3 + 1] = 1; trailNm[o + e * 3 + 2] = 0;
+      trailUv[i * TRAIL_RING * 2 + e * 2] = x / SNOW_TILE;
+      trailUv[i * TRAIL_RING * 2 + e * 2 + 1] = z / SNOW_TILE;
     }
-    trailI[i] = 0; trailS[i] = 0;
+    trailI[i] = 0; trailY0[i] = y; trailG[i] = 1;
   }
   trailGeo.attributes.position.needsUpdate = true;
+  trailGeo.attributes.normal.needsUpdate = true;
+  trailGeo.attributes.uv.needsUpdate = true;
   trailShade();
 }
 
@@ -4777,12 +4908,21 @@ function step(dt) {
   rebuildTerrain(P.x, P.z);
 
   const bite = Math.abs(vs);
-  const edge = clamp(bite / 11, 0, 1);
+  /* How much edge is in the snow. Slip on its own was the wrong measure — a
+     clean carve barely slips, so the harder you carved the less the track
+     showed: measured, holding full lock read 0.11 of an edge and left a
+     scratch. What cuts a trench is the edge the board is standing on, which
+     is the steering; a skid on top of that widens the cut rather than
+     replacing it. Both want speed behind them, because at walking pace a
+     board on edge leaves a scratch and nothing else. */
+  const edge = clamp(Math.max(Math.abs(steer), bite / 9) * clamp(spd / 13, 0, 1), 0, 1);
   trailClock += dt;
   if (trailClock > 0.032) {
     trailClock = 0;
+    /* and the pile goes on the outside of the turn, where it goes in life */
     pushTrail(P.x, P.air ? height(P.x, P.z) : P.y, P.z, P.heading, edge,
-              (P.air || P.wipe > 0) ? 0 : 1);
+              (P.air || P.wipe > 0) ? 0 : 1,
+              clamp(-steer + vs / 16, -1, 1) * (P.switch ? -1 : 1));
   }
   /* the edge shoves snow out to the side it is sliding towards */
   if (!P.air && P.wipe <= 0 && bite > 3.2 && Math.random() < dt * (16 + edge * 60)) {
@@ -5437,6 +5577,7 @@ function watchPerf(dt) {
   slowRuns = fps < 32 ? slowRuns + 1 : 0;
   if (slowRuns >= 3 && quality <= 0.7 && snowMat.map) {
     snowMat.map = null; snowMat.normalMap = null; snowMat.needsUpdate = true;
+    trailMat.map = null; trailMat.normalMap = null; trailMat.needsUpdate = true;
   }
 }
 

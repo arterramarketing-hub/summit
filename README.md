@@ -277,16 +277,54 @@ everything else is generated at runtime.
   behind the crest, powder thrown outward in a full ring, and a kick on the
   lens. It scales with the drop, so a hop does nothing and a cliff moves the
   mountain.
-- **The track** is one trench, not a stripe. Three vertices a sample — lip,
-  groove, lip — could only draw that as a line, and it read as one: a hairline
-  behind the rider. Six gives the section a floor with real width and a wall
-  either side, and the walls are what make it a cut you can see the depth of:
-  the one the sun is off goes dark, the one it is on stays pale. Nothing here
-  is lit — it is a decal on the snow, not geometry in it, and a trench modelled
-  below the surface would simply be occluded by it — so that asymmetry is the
-  only thing standing in for a shadow in the cut. Five vertices was not enough
-  either: with a single vertex down the middle the floor is a hairline the two
-  walls interpolate away, and what you get is a pale stripe with bright edges.
+- **The track is snow that moved, not a stripe drawn on snow.** A board does
+  not mark the mountain, it displaces it: the edge cuts a trench and everything
+  it cuts goes up into a berm either side, and the berms are the whole of it.
+  Deformable-snow work in bigger games splits a trail into a depth channel and
+  a *displaced mass* channel for exactly that reason — depth alone gives a
+  footprint decal, and mass is what gives you something standing proud of the
+  surface with a lit face and a shaded one.
+- **It was a decal:** six vertices across, nine centimetres above the snow,
+  unlit, with the trench painted on in vertex colour and a hand-rolled
+  left/right asymmetry standing in for a shadow in the cut. It is geometry now.
+  Nine vertices carry an actual section — toe, berm crest, inner shoulder,
+  floor, and back out again — swept along the terrain's own tangent frame,
+  carrying real normals, lit by the same sun as the mountain. Which face of a
+  berm is bright stopped being something this file decides. Carving, the
+  section stands **0.66 m from floor to crest across 1.55 m**; straight-lining
+  it is **0.06 m across 0.76 m**, a scuff, which is what straight-lining
+  leaves.
+- **It wears the snow's own material** — the same texture, the same normal map,
+  the same biome colour blended across sector boundaries the same way the
+  ground is — because a track is made of the snow it displaced and not of some
+  other substance, and because a fixed colour is the wrong colour everywhere
+  but where it was chosen. Against the ground it is one: crests 1.13–1.16,
+  walls 0.82–0.91, floor **0.46**. The floor used to be painted at 0.18 of open
+  snow, which measures as a tar stripe down a white mountain; three quarters
+  reads as nothing at all. Shallow trenches in snow lose about half.
+- **The berms are thrown snow, not an extrusion.** Without a third of the crest
+  height coming and going over a metre or so — and the same noise lightening
+  and darkening it — the track is a length of pipe lying on the mountain. They
+  also slump, four tenths of a per cent a sample, so what is behind you is
+  about sixty per cent of the height it was laid at by the time it runs out.
+- **The edge signal was measuring the wrong thing.** It came off sideways
+  speed, which is *skid* — and a clean carve barely slips, so holding full lock
+  measured 0.11 of full edge and the trench never grew. It is the steering
+  input plus what slip there is, gated on speed, and now a held carve reads as
+  a held carve.
+- **The drawn snow sits above the real snow.** The terrain mesh samples a
+  5.8 × 4.4 m grid through a surface with a ten-metre grain in it, so every
+  hollow gets drawn as a chord across the top of it: measured over the whole
+  descent, the mesh is more than 5 cm above `height(x, z)` for **15%** of the
+  mountain and more than 12 cm for **4.3%** of it. Pin a track to the true
+  height and it sinks into the ground in patches and stipples along its edges,
+  which is what a flat nine-centimetre lift was there to paper over — at the
+  cost of floating everywhere the ground is honest, and still catching on
+  **6.5%** of samples. The second difference across one quad says how far the
+  chord rises, so the section is lifted by that instead: 4.5 cm on ground the
+  mesh can hold, out of the way where it cannot, and **1.6%** left catching.
+- **The ribbon is indexed oldest first**, so it draws back to front and a turn
+  that folds its own track under itself blends the right way round.
   Airborne samples are written with zero intensity, so the track breaks at the
   takeoff and picks up at the landing instead of being wiped. Spray is thrown
   out to the side the edge is sliding towards.
