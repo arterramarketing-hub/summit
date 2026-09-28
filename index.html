@@ -67,7 +67,10 @@ canvas#c{display:block;width:100%;height:100%;touch-action:none}
 .hud-top{display:flex;flex-direction:column;gap:9px;
   margin:calc(var(--pad-t) * -1) calc(var(--pad-x) * -1) 0;
   padding:var(--pad-t) var(--pad-x) 30px;
-  background:linear-gradient(180deg,rgba(6,11,21,.72),rgba(6,11,21,.26) 62%,rgba(6,11,21,0))}
+  background:linear-gradient(180deg,rgba(6,11,21,.78),rgba(6,11,21,.40) 62%,rgba(6,11,21,0))}
+/* the small labels sit where the scrim is thinnest, over whatever the sky is
+   doing; on a bright one they disappeared */
+.hud-top .k,.hud-top .sub,#avaDist,#descentPct{text-shadow:0 1px 5px rgba(4,9,18,.95),0 0 12px rgba(4,9,18,.6)}
 .slide-gauge{display:flex;flex-direction:column;gap:5px}
 .slide-head{display:flex;justify-content:space-between;align-items:baseline}
 .slide-head .k{color:var(--ember-soft)}
@@ -99,9 +102,16 @@ canvas#c{display:block;width:100%;height:100%;touch-action:none}
 #trick.on{opacity:1}
 #trick em{font-style:normal;color:var(--frost)}
 #trick i{display:block;font:600 11px/1 var(--mono);font-style:normal;letter-spacing:.22em;color:var(--ember-soft);margin-top:6px}
-#coach{font:600 11.5px/1.45 var(--mono);letter-spacing:.06em;color:var(--ink);text-align:center;
-  background:rgba(7,13,24,.62);border:1px solid rgba(186,212,248,.22);padding:8px 14px;
-  -webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px);max-width:min(92vw,330px);
+/* The prompt sits at the top of the playfield, under the readouts. It used
+   to sit in the middle of the screen, which in the chase view is exactly
+   where the rider is drawn, for the first minute and a half of play. And
+   none of the in-game panels blur what is behind them any more: over a
+   canvas that changes every frame, a backdrop filter is a full re-blur of
+   that patch of screen, every frame, which on iOS is a real cost. */
+#coach{position:absolute;top:4px;left:0;right:0;margin:0 auto;width:max-content;
+  font:600 11.5px/1.45 var(--mono);letter-spacing:.06em;color:var(--ink);text-align:center;
+  background:rgba(7,13,24,.78);border:1px solid rgba(186,212,248,.22);padding:8px 14px;
+  max-width:min(92vw,330px);
   animation:coachIn .34s ease both}
 #coach[hidden]{display:none}
 #coach b{color:var(--volt);font-weight:700}
@@ -158,9 +168,8 @@ canvas#c{display:block;width:100%;height:100%;touch-action:none}
 .digits.boosting{color:var(--volt);text-shadow:0 0 18px rgba(182,255,63,.55)}
 .pop.boost{color:var(--volt);font-size:19px;letter-spacing:.2em}
 .tools{display:flex;gap:7px;justify-content:flex-end}
-.tool{font:600 9px/1 var(--mono);letter-spacing:.12em;color:var(--ink-dim);background:var(--panel);
-  border:1px solid var(--hair);padding:7px 9px;cursor:pointer;pointer-events:auto;
-  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.tool{font:600 9px/1 var(--mono);letter-spacing:.12em;color:var(--ink-dim);background:rgba(7,13,24,.74);
+  border:1px solid var(--hair);padding:7px 9px;cursor:pointer;pointer-events:auto}
 .tool:active{color:var(--ink);border-color:var(--ember)}
 .tool.off{color:#55637c;text-decoration:line-through}
 
@@ -187,9 +196,8 @@ canvas#c{display:block;width:100%;height:100%;touch-action:none}
 .act.primed em{color:var(--volt)}
 .act{position:absolute;bottom:calc(var(--pad-b) + 96px);width:78px;height:78px;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
-  border:2px solid rgba(186,212,248,.4);border-radius:50%;background:rgba(7,13,24,.46);
+  border:2px solid rgba(186,212,248,.4);border-radius:50%;background:rgba(7,13,24,.58);
   color:var(--ink);pointer-events:auto;touch-action:none;cursor:pointer;padding:0;
-  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
   transition:transform .09s ease,background .09s ease,border-color .09s ease}
 #btnFlip{left:var(--pad-x)} #btnTuck{right:var(--pad-x)}
 .act svg{width:27px;height:27px;display:block}
@@ -217,7 +225,7 @@ canvas#c{display:block;width:100%;height:100%;touch-action:none}
 body.touchmode .tilt-only{display:none}
 body:not(.touchmode) .touch-only{display:none}
 #boostfx{position:absolute;inset:0;pointer-events:none;opacity:0;
-  background:radial-gradient(64% 48% at 50% 56%,rgba(182,255,63,0) 42%,rgba(150,240,40,.34) 100%)}
+  background:radial-gradient(64% 48% at 50% 56%,rgba(182,255,63,0) 50%,rgba(150,240,40,.24) 100%)}
 #rush{position:absolute;inset:0;pointer-events:none;opacity:0;
   background:radial-gradient(58% 42% at 50% 52%,transparent 42%,rgba(8,16,30,.66) 100%)}
 #vig{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .25s ease;
@@ -312,10 +320,10 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
   font:800 14px/1 var(--disp);font-stretch:122%;letter-spacing:.3em;color:var(--ember-soft);
   animation:throb 1.05s ease-in-out infinite}
 #introHint.jump b{display:inline-block;padding:11px 20px;border:1px solid var(--ember);
-  background:rgba(24,9,2,.58);-webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px)}
+  background:rgba(24,9,2,.72)}
 #introHint.out{color:var(--ink)}
 #introHint.out b{display:inline-block;padding:7px 14px;border:1px solid var(--hair);
-  background:rgba(7,13,24,.5);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+  background:rgba(7,13,24,.66)}
 #introHint[hidden]{display:none}
 #boot{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:32px;
   text-align:center;font:500 13px/1.7 var(--mono);color:var(--ink-dim);background:var(--abyss)}
@@ -469,7 +477,7 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
            <span class="touch-only"><b>Hold either side of the screen</b> to carve that way.<br>
            In the air, <b>tap</b> a side instead of holding it — every tap is half a
            turn, and two of them is a full one.<br></span>
-           <b>TUCK</b> locks the board straight and winds up a spring — <b>let go to pop</b>,
+           <b>TUCK</b> locks you dead straight and winds up a spring — <b>let go to pop</b>,
            and let go at a lip for real air. In the air the same button <b>grabs</b>.<br>
            <b>FLIP</b> backflips while you are airborne.</p>
       </div>
@@ -2093,7 +2101,7 @@ function startCrash(power) {
   crashW.set(-Math.cos(vy) * rate + rand(-2.5, 2.5),
              rand(-3.5, 3.5),
              -Math.sin(vy) * rate + rand(-2.5, 2.5));
-  crashQ.setFromAxisAngle(_ca.set(0, 1, 0), P.heading);
+  crashQ.setFromAxisAngle(_ca.set(0, 1, 0), -P.heading);     // the same yaw the pivot had
   crashY = 0.05;
   crashVY = 2.2 + power * 4.5 + spd * 0.06;
   scatterKit(power);
@@ -2161,11 +2169,9 @@ function updateGhost() {
   if (i >= n - 1) { ghostMesh.visible = false; return; }
   const t = f - i, a = i * 4, b = a + 4;
   ghostMesh.visible = true;
-  ghostMesh.position.set(
-    lerp(ghostData[a], ghostData[b], t),
-    lerp(ghostData[a + 1], ghostData[b + 1], t),
-    lerp(ghostData[a + 2], ghostData[b + 2], t));
-  ghostMesh.rotation.y = ghostData[a + 3] + wrapPi(ghostData[b + 3] - ghostData[a + 3]) * t;
+  const gx = lerp(ghostData[a], ghostData[b], t), gz = lerp(ghostData[a + 2], ghostData[b + 2], t);
+  ghostMesh.position.set(gx, lerp(ghostData[a + 1], ghostData[b + 1], t) + drawnHeight(gx, gz) - height(gx, gz), gz);
+  ghostMesh.rotation.y = -(ghostData[a + 3] + wrapPi(ghostData[b + 3] - ghostData[a + 3]) * t);
 }
 
 const shadow = new THREE.Mesh(
@@ -2173,6 +2179,9 @@ const shadow = new THREE.Mesh(
   new THREE.MeshBasicMaterial({ map: glowSprite(0x21304a, 0.4), transparent: true, opacity: 0.42, depthWrite: false, fog: false })
 );
 shadow.rotation.x = -Math.PI / 2; scene.add(shadow);
+const _shN = new THREE.Vector3(), _shZ = new THREE.Vector3(0, 0, 1);
+/* how far the drawn snow under the rider is off the true surface */
+let riderLift = 0;
 
 /* ══════════════════════════════════════════════════════════════
    5 · TERRAIN MESH — a rolling window re-sampled from the field
@@ -2222,7 +2231,6 @@ const C_HOLLOW = new THREE.Color(0x93b2dc);
    this vertex's height and the one before it, both of which the rebuild has
    already paid for — so it costs nothing to say which way it is looking. */
 const C_SUNNY = new THREE.Color(0xfff2dd);
-const _rowY = new Float32Array(SX + 1);
 /** Snow colour at (x, z), written into `out`. Three scales and a snow line. */
 function snowAt(out, x, z, prom) {
   /* One octave of grain across a hundred metres of snow reads as a sheet of
@@ -2255,8 +2263,55 @@ function snowAt(out, x, z, prom) {
   }
 }
 const _c = new THREE.Color(), _c2 = new THREE.Color();
+const C_LIP = new THREE.Color(0xf7fcff), C_GASH = new THREE.Color(0x081a2e);
 
-let tileX = 1e9, tileZ = 1e9;
+/* ---- the grid is nailed to the world ----
+   The window used to re-anchor every twelve metres, and twelve is not a whole
+   number of quads either way — 2.08 across and 2.76 down — so every re-anchor
+   put every vertex somewhere new. The mesh is a chord across the true surface,
+   and a chord taken from different points is a different chord: the snow under
+   the rider re-triangulated a few times a second, hollows filled and emptied
+   by up to a fifth of a metre, and everything standing on the drawn surface
+   rode up and down with it. The vertices sit on a fixed lattice now, whole
+   multiples of the quad size, and the window only ever moves by whole rows
+   and whole columns.
+
+   Which is also what makes it cheap. Moving by whole rows means most of the
+   window is still valid after a move, just at a different index, so it is
+   copied rather than recomputed and only the rows and columns that are new
+   pay for a height() call. A rebuild was 5,777 of them, 8-20 ms, two or three
+   times a second at speed — one dropped frame each. A shift is a hundred or
+   two, about a millisecond. What depends on neighbours (normals, slope and
+   curvature shading) is cheap arithmetic, so it is simply redone everywhere. */
+const QX = TW / SX, QZ = TL / SZ, TV = (SX + 1) * (SZ + 1), TW1 = SX + 1;
+const tAlb = new Float32Array(TV * 3);   // colour before any slope shading
+const tIce = new Float32Array(TV);       // how much of it is ice
+const tNotch = new Float32Array(TV);     // how far into a crevasse
+const tRock = new Uint8Array(TV);        // bare rock takes no slope shading
+const rShade = new Float32Array((SZ + 1) * 3), rMf = new Float32Array(SZ + 1), rFl = new Float32Array(SZ + 1);
+const sPos = new Float32Array(TV * 3), sAlb = new Float32Array(TV * 3);
+const sIce = new Float32Array(TV), sNotch = new Float32Array(TV), sRock = new Uint8Array(TV);
+let tileI = 1e9, tileJ = 1e9;
+/** The snow as it is DRAWN at (x, z): the triangle of the grid that the point
+    falls in. The true surface has a ten-metre grain the grid cannot hold, so
+    in a hollow the drawn snow is a chord above it and on a crest a chord below
+    it — by a fifth of a metre over one fiftieth of the mountain. Anything that
+    has to look as if it is standing on the snow stands on this. */
+function drawnHeight(x, z) {
+  const u = x / QX, w = -z / QZ;
+  const ii = Math.floor(u), jj = Math.floor(w), fu = u - ii, fw = w - jj;
+  const i = ii - tileI, j = jj + tileJ;
+  let hA, hB, hC, hD;
+  if (i >= 0 && j >= 0 && i < SX && j < SZ) {
+    const pos = terrainGeo.attributes.position.array, o = (j * TW1 + i) * 3 + 1;
+    hA = pos[o]; hB = pos[o + 3]; hC = pos[o + TW1 * 3]; hD = pos[o + TW1 * 3 + 3];
+  } else {
+    const x0 = ii * QX, x1 = (ii + 1) * QX, z0 = -jj * QZ, z1 = -(jj + 1) * QZ;
+    hA = height(x0, z0); hB = height(x1, z0); hC = height(x0, z1); hD = height(x1, z1);
+  }
+  return fu + fw <= 1 ? hA + fu * (hB - hA) + fw * (hC - hA)
+                      : hD + (1 - fu) * (hC - hD) + (1 - fw) * (hB - hD);
+}
 /* ---- the far field ----
    The playable window is 300 x 470 m, which is plenty to ride and nowhere near
    enough to look at: any wide shot swings past its edge. So the title screen
@@ -2286,8 +2341,11 @@ farMesh.visible = false;
 farMesh.renderOrder = -1;
 scene.add(farMesh);
 let farX = 1e9, farZ = 1e9;
+const FQ = FAR_W / FAR_N;
 function rebuildFar(px, pz, force) {
-  const ox = Math.round(px / 260) * 260, oz = Math.round(pz / 260) * 260;
+  /* on whole quads, for the same reason the fine mesh is: a far field that
+     re-anchors off its own lattice shimmers every time the drone crosses a cell */
+  const ox = Math.round(px / (FQ * 3)) * FQ * 3, oz = Math.round(pz / (FQ * 3)) * FQ * 3;
   if (!force && ox === farX && oz === farZ) return;
   farX = ox; farZ = oz;
   const pos = farGeo.attributes.position.array, col = farGeo.attributes.color.array;
@@ -2324,110 +2382,135 @@ function rebuildFar(px, pz, force) {
   }
 }
 
-function rebuildTerrain(px, pz, force) {
-  const ox = Math.round(px / 12) * 12, oz = Math.round(pz / 12) * 12;
-  if (!force && ox === tileX && oz === tileZ) return;
-  tileX = ox; tileZ = oz;
+/** Everything about one vertex that does not depend on its neighbours. */
+function tPass1(v, x, z, iceAmt) {
+  const pos = terrainGeo.attributes.position.array;
+  const y = height(x, z);
+  pos[v * 3] = x; pos[v * 3 + 1] = y; pos[v * 3 + 2] = z;
+  tNotch[v] = crevNotch(x, z);
+  const e = featRockAmt;          // set by the height() call above
+  if (e > 0.12) {
+    _c.copy(nz(x * 0.21, z * 0.21) > 0.52 ? C_ROCK : _c2.copy(C_ROCK).lerp(C_SHADE, 0.35))
+      .lerp(C_SHADE, 1 - smoothstep(0.12, 0.62, e));
+    tRock[v] = 1; tIce[v] = 0;
+  } else {
+    snowAt(_c, x, z, y - fallLine(z));
+    tRock[v] = 0;
+    tIce[v] = iceAmt > 0.02 ? smoothstep(0.56, 0.72, nz(x * 0.026, z * 0.022)) * iceAmt : 0;
+  }
+  tAlb[v * 3] = _c.r; tAlb[v * 3 + 1] = _c.g; tAlb[v * 3 + 2] = _c.b;
+}
+/** Normals, uvs and every shade that reads the neighbours, for the whole grid. */
+function tFinish() {
   const pos = terrainGeo.attributes.position.array;
   const nor = terrainGeo.attributes.normal.array;
   const col = terrainGeo.attributes.color.array;
   const uv = terrainGeo.attributes.uv.array;
-  const QX = TW / SX, QZ = TL / SZ, sx = sunDir.x, sz = sunDir.z;
-  let v = 0, prevY = 0;
+  const sx = sunDir.x, sz = sunDir.z, row = TW1 * 3;
+  const sR = C_SUNNY.r, sG = C_SUNNY.g, sB = C_SUNNY.b;
+  const iR = C_ICE.r, iG = C_ICE.g, iB = C_ICE.b;
+  const hR = C_HOLLOW.r, hG = C_HOLLOW.g, hB = C_HOLLOW.b;
   for (let j = 0; j <= SZ; j++) {
-    const z = oz + BACK - (j / SZ) * TL;
-    const dist = Math.max(0, -z);
-    const bi = biomeOf(dist), nx = BIOMES[(sectorOf(dist) + 1) % BIOMES.length], bl = biomeBlend(dist);
-    C_SNOW.set(bi.snow).lerp(_c2.set(nx.snow), bl);
-    C_SHADE.set(bi.shade).lerp(_c2.set(nx.shade), bl);
-    C_ROCK.set(bi.rock).lerp(_c2.set(nx.rock), bl);
-    const iceAmt = lerp(bi.ice, nx.ice, bl);
-    const mf = meanFall(z), fl = floorMix(z);
-    for (let i = 0; i <= SX; i++, v++) {
-      const x = ox + (i / SX - 0.5) * TW;
-      const y = height(x, z);
-      pos[v * 3] = x; pos[v * 3 + 1] = y; pos[v * 3 + 2] = z;
-      /* in world coordinates, so the snow stays where it is while the window
-         it is drawn through slides down the mountain */
-      uv[v * 2] = x / SNOW_TILE; uv[v * 2 + 1] = z / SNOW_TILE;
-      /* row j - 1 is one quad further UP the hill, so it is the larger z */
-      const gx = i ? (y - prevY) / QX : 0;
-      const gz = j ? (_rowY[i] - y) / QZ : 0;
-      prevY = y; _rowY[i] = y;
+    const mf = rMf[j], fl = rFl[j], shR = rShade[j * 3], shG = rShade[j * 3 + 1], shB = rShade[j * 3 + 2];
+    for (let i = 0; i <= SX; i++) {
+      const v = j * TW1 + i, o = v * 3, y = pos[o + 1];
+      const yl = i > 0 ? pos[o - 2] : y, yr = i < SX ? pos[o + 4] : y;
+      const yu = j > 0 ? pos[o + 1 - row] : y, yd = j < SZ ? pos[o + 1 + row] : y;
+      /* central differences where there are two neighbours; row j - 1 is one
+         quad further UP the hill, so it is the larger z */
+      const gx = (yr - yl) / ((i > 0 && i < SX ? 2 : 1) * QX);
+      const gz = (yu - yd) / ((j > 0 && j < SZ ? 2 : 1) * QZ);
       /* y = f(x, z), so the surface normal is (-df/dx, 1, -df/dz) */
       const nl = 1 / Math.sqrt(gx * gx + gz * gz + 1);
-      nor[v * 3] = -gx * nl; nor[v * 3 + 1] = nl; nor[v * 3 + 2] = -gz * nl;
-      const notch = crevNotch(x, z);
-      const e = featRockAmt;          // set by the height() call above
-      if (e > 0.12) {
-        _c.copy(nz(x * 0.21, z * 0.21) > 0.52 ? C_ROCK : _c2.copy(C_ROCK).lerp(C_SHADE, 0.35))
-          .lerp(C_SHADE, 1 - smoothstep(0.12, 0.62, e));
-      } else {
-        snowAt(_c, x, z, y - fallLine(z));
+      nor[o] = -gx * nl; nor[o + 1] = nl; nor[o + 2] = -gz * nl;
+      /* in world coordinates, so the snow stays where it is while the window
+         it is drawn through slides down the mountain */
+      uv[v * 2] = pos[o] / SNOW_TILE; uv[v * 2 + 1] = pos[o + 2] / SNOW_TILE;
+      let r = tAlb[o], g = tAlb[o + 1], b = tAlb[o + 2];
+      if (!tRock[v]) {
         /* against the mean fall line, not against flat: every square metre of
            this mountain is a 0.4 slope, so measuring from horizontal only
            brightens the whole face by a constant and shows nothing */
         const face = clamp(-(gx * sx + (gz - mf) * sz) * 1.6, -1, 1);
-        if (face > 0.02) _c.lerp(C_SUNNY, face * 0.40);
-        else if (face < -0.02) _c.lerp(C_SHADE, -face * 0.34);
-        const ice = iceAmt > 0.02 ? smoothstep(0.56, 0.72, nz(x * 0.026, z * 0.022)) * iceAmt : 0;
-        if (ice > 0.01) _c.lerp(C_ICE, ice * 0.85);
+        if (face > 0.02) { const t = face * 0.40; r += (sR - r) * t; g += (sG - g) * t; b += (sB - b) * t; }
+        else if (face < -0.02) { const t = -face * 0.34; r += (shR - r) * t; g += (shG - g) * t; b += (shB - b) * t; }
+        const ice = tIce[v];
+        if (ice > 0.01) { const t = ice * 0.85; r += (iR - r) * t; g += (iG - g) * t; b += (iB - b) * t; }
       }
       /* Flat ground with the sun thirty-odd degrees up takes about three
          quarters of the light a 0.4 slope facing it does. Correct, and
          useless: the bottom of the mountain wants to read as somewhere you
          arrived at, not as the one part of it in shadow. It gets the
          difference back here, before the light is applied. */
-      if (fl > 0.01) _c.multiplyScalar(1 + fl * 0.42);
+      if (fl > 0.01) { const m = 1 + fl * 0.42; r *= m; g *= m; b *= m; }
+      const notch = tNotch[v];
       if (notch > 0.0005) {
-        if (notch < 0.045) _c.lerp(_c2.set(0xf7fcff), 0.9);         // the lip catches the light
-        else _c.lerp(_c2.set(0x081a2e), smoothstep(0.045, 0.30, notch) * 0.96);
+        if (notch < 0.045) { r += (C_LIP.r - r) * 0.9; g += (C_LIP.g - g) * 0.9; b += (C_LIP.b - b) * 0.9; }
+        else { const t = smoothstep(0.045, 0.30, notch) * 0.96;
+               r += (C_GASH.r - r) * t; g += (C_GASH.g - g) * t; b += (C_GASH.b - b) * t; }
       }
-      col[v * 3] = _c.r; col[v * 3 + 1] = _c.g; col[v * 3 + 2] = _c.b;
-    }
-  }
-  /* ---- and now the shape of it ----
-     Which way a face points is only half of relief; the other half is whether
-     it is the top of a roller or the bottom of a hollow, and that is the half
-     that reads as depth. A centred second difference says which — it needs
-     the vertex after as well as the one before, so it is a second pass, and a
-     second pass is cheap against a first one that is paying for a height()
-     call on every vertex. Hollows take the sky's colour and lose the sun;
-     crests catch it. This is what snow does, and it is what a smooth shaded
-     sheet of it never does. */
-  const W = SX + 1;
-  for (let j = 1; j < SZ; j++) {
-    for (let i = 1; i < SX; i++) {
-      const v = j * W + i, y = pos[v * 3 + 1];
-      const lap = (pos[(v - 1) * 3 + 1] + pos[(v + 1) * 3 + 1]
-                 + pos[(v - W) * 3 + 1] + pos[(v + W) * 3 + 1]) * 0.25 - y;
-      if (lap > -0.015 && lap < 0.015) continue;
-      /* Measured across the face: the median vertex sits 0.145 m off the mean
-         of its four neighbours and the ninetieth percentile 0.37 m, so the
-         gain has to be about two and a half for the shading to reach the top
-         of its range on the rollers that actually stand out. At a gain of
-         0.62 — which looked reasonable written down — the median vertex moved
-         four per cent towards the hollow colour, which is nothing, and the
-         measured contrast across the mesh did not change at all. */
-      const k = clamp(lap * 2.4, -0.85, 0.85);
-      const o3 = v * 3;
-      if (k > 0) {                       // a hollow: lit by the sky and nothing else
-        const t = k * 0.42;
-        col[o3] += (C_HOLLOW.r - col[o3]) * t;
-        col[o3 + 1] += (C_HOLLOW.g - col[o3 + 1]) * t;
-        col[o3 + 2] += (C_HOLLOW.b - col[o3 + 2]) * t;
-      } else {                           // a crest: the wind polishes it
-        const t = -k * 0.36;
-        col[o3] += (C_SUNNY.r - col[o3]) * t;
-        col[o3 + 1] += (C_SUNNY.g - col[o3 + 1]) * t;
-        col[o3 + 2] += (C_SUNNY.b - col[o3 + 2]) * t;
+      /* ---- and now the shape of it ----
+         Which way a face points is only half of relief; the other half is
+         whether it is the top of a roller or the bottom of a hollow, and that
+         is the half that reads as depth. Hollows take the sky's colour and
+         lose the sun; crests catch it. Measured across the face: the median
+         vertex sits 0.145 m off the mean of its four neighbours and the
+         ninetieth percentile 0.37 m, so the gain has to be about two and a
+         half for the shading to reach the top of its range on the rollers
+         that actually stand out. */
+      if (i > 0 && i < SX && j > 0 && j < SZ) {
+        const lap = (yl + yr + yu + yd) * 0.25 - y;
+        if (lap <= -0.015 || lap >= 0.015) {
+          const k = clamp(lap * 2.4, -0.85, 0.85);
+          if (k > 0) { const t = k * 0.42; r += (hR - r) * t; g += (hG - g) * t; b += (hB - b) * t; }
+          else { const t = -k * 0.36; r += (sR - r) * t; g += (sG - g) * t; b += (sB - b) * t; }
+        }
       }
+      col[o] = r; col[o + 1] = g; col[o + 2] = b;
     }
   }
   terrainGeo.attributes.position.needsUpdate = true;
   terrainGeo.attributes.normal.needsUpdate = true;
   terrainGeo.attributes.color.needsUpdate = true;
   terrainGeo.attributes.uv.needsUpdate = true;
+}
+function rebuildTerrain(px, pz, force) {
+  const I0 = Math.round((px - TW / 2) / QX), J0 = Math.round((pz + BACK) / QZ);
+  const dI = I0 - tileI, dJ = J0 - tileJ;
+  /* two quads of slack before it moves, so it moves a couple of rows at a
+     time instead of one row every frame */
+  if (!force && dI > -2 && dI < 2 && dJ > -2 && dJ < 2) return;
+  const full = force || Math.abs(dI) > SX / 2 || Math.abs(dJ) > SZ / 2;
+  const pos = terrainGeo.attributes.position.array;
+  if (!full) { sPos.set(pos); sAlb.set(tAlb); sIce.set(tIce); sNotch.set(tNotch); sRock.set(tRock); }
+  tileI = I0; tileJ = J0;
+  /* the columns of the old window that survive the move, in new indices */
+  const iA = Math.max(0, -dI), iB = Math.min(SX, SX - dI);
+  for (let j = 0; j <= SZ; j++) {
+    const z = (J0 - j) * QZ;
+    const dist = Math.max(0, -z);
+    const bi = biomeOf(dist), nx = BIOMES[(sectorOf(dist) + 1) % BIOMES.length], bl = biomeBlend(dist);
+    C_SNOW.set(bi.snow).lerp(_c2.set(nx.snow), bl);
+    C_SHADE.set(bi.shade).lerp(_c2.set(nx.shade), bl);
+    C_ROCK.set(bi.rock).lerp(_c2.set(nx.rock), bl);
+    rShade[j * 3] = C_SHADE.r; rShade[j * 3 + 1] = C_SHADE.g; rShade[j * 3 + 2] = C_SHADE.b;
+    rMf[j] = meanFall(z); rFl[j] = floorMix(z);
+    const iceAmt = lerp(bi.ice, nx.ice, bl);
+    const js = j - dJ, v0 = j * TW1;
+    if (!full && js >= 0 && js <= SZ && iA <= iB) {
+      const s0 = js * TW1 + iA + dI, n = iB - iA + 1, d0 = v0 + iA;
+      pos.set(sPos.subarray(s0 * 3, (s0 + n) * 3), d0 * 3);
+      tAlb.set(sAlb.subarray(s0 * 3, (s0 + n) * 3), d0 * 3);
+      tIce.set(sIce.subarray(s0, s0 + n), d0);
+      tNotch.set(sNotch.subarray(s0, s0 + n), d0);
+      tRock.set(sRock.subarray(s0, s0 + n), d0);
+      for (let i = 0; i < iA; i++) tPass1(v0 + i, (I0 + i) * QX, z, iceAmt);
+      for (let i = iB + 1; i <= SX; i++) tPass1(v0 + i, (I0 + i) * QX, z, iceAmt);
+    } else {
+      for (let i = 0; i <= SX; i++) tPass1(v0 + i, (I0 + i) * QX, z, iceAmt);
+    }
+  }
+  tFinish();
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -2558,7 +2641,7 @@ function layDown(o) {
   let lo = 1e9, hi = -1e9;
   for (const q of pts) {
     _v.set(q[0] * o.scale, q[1] * o.scale, q[2] * o.scale).applyQuaternion(_q);
-    const gap = o.y + _v.y - height(o.x + _v.x, o.z + _v.z);
+    const gap = o.y + _v.y - drawnHeight(o.x + _v.x, o.z + _v.z);
     if (gap < lo) lo = gap;
     if (gap > hi) hi = gap;
   }
@@ -2892,7 +2975,8 @@ const trailC = new Float32Array(TRAIL_V * 4);
 const trailUv = new Float32Array(TRAIL_V * 2);     // world coordinates, as the snow's are
 const trailI = new Float32Array(TRAIL_N);          // per-sample intensity, 0 = gap
 const trailG = new Float32Array(TRAIL_N);          // per-sample grain, so it is not a pipe
-const trailY0 = new Float32Array(TRAIL_N);         // the snow it was cut into
+const trailB = new Float32Array(TRAIL_V);          // the drawn snow under each vertex
+let trailS = 0, trailLX = 0, trailLZ = 0;          // distance along the track, for its noise
 const TRAIL_AGE = new Float32Array(TRAIL_N);       // index is age, so the fade is static
 for (let i = 0; i < TRAIL_N; i++) TRAIL_AGE[i] = Math.pow(1 - i / (TRAIL_N - 1), 0.85);
 /* Every number here is a fraction of the snow the track was cut out of,
@@ -2905,19 +2989,35 @@ for (let i = 0; i < TRAIL_N; i++) TRAIL_AGE[i] = Math.pow(1 - i / (TRAIL_N - 1),
    About half is what a shallow trench with two berms over it actually
    loses. */
 const BERM = [1.16, 1.15, 1.13], WALL = [0.82, 0.85, 0.91], FLOOR = [0.46, 0.51, 0.66];
-/* Across the section, as a fraction of the half width: the toe where the berm
-   runs out into undisturbed snow, the crest, the shoulder inside it, and the
-   floor of the cut. Nine and not six because a berm needs a crest with a
-   flank either side of it or it is a fold, not a pile. */
-/* The crest sits where loose snow would let it: on a hard turn the berm
+/* Across the section, as a fraction of the half width.
+   A board: the toe where the berm runs out into undisturbed snow, the crest,
+   the shoulder inside it, and the floor of the cut. Nine and not six because
+   a berm needs a crest with a flank either side of it or it is a fold, not a
+   pile. The crest sits where loose snow would let it: on a hard turn the berm
    stands 0.30 m and its outer flank runs 0.41 m out to the toe, which is 35
-   degrees, which is the angle of repose for snow. The flank inside it is far
-   steeper, because that side is cut rather than piled. What the berms hold is
-   more than the trench gives back — the edge packs snow under the board as
-   well as moving it, and a volume-true berm is invisible from ten metres. */
-const RING_X = [-1, -0.60, -0.46, -0.34, 0, 0.34, 0.46, 0.60, 1];
-const RING_C = [BERM, BERM, WALL, FLOOR, FLOOR, FLOOR, WALL, BERM, BERM];
-const RING_A = [0, 0.92, 1, 1, 1, 1, 1, 0.92, 0];
+   degrees, the angle of repose for snow. The flank inside it is far steeper,
+   because that side is cut rather than piled. What the berms hold is more
+   than the trench gives back — the edge packs snow under the board as well as
+   moving it, and a volume-true berm is invisible from ten metres.
+   Skis are two edges, not one: two narrow grooves where the skis ran, a
+   strip of snow between them they never touched, and a lip thrown off the
+   outside of each — the pair of tramlines every skier leaves, which is what
+   a skier's track looks like and a snowboarder's trench is not. The grooves
+   sit a ski's width either side of centre, where the model puts the skis. */
+const SNOW1 = [1, 1, 1];
+const TRAIL_PROFILE = {
+  board: { x: [-1, -0.60, -0.46, -0.34, 0, 0.34, 0.46, 0.60, 1],
+           c: [BERM, BERM, WALL, FLOOR, FLOOR, FLOOR, WALL, BERM, BERM],
+           a: [0, 0.92, 1, 1, 1, 1, 1, 0.92, 0] },
+  ski:   { x: [-1, -0.80, -0.56, -0.34, 0, 0.34, 0.56, 0.80, 1],
+           c: [BERM, BERM, FLOOR, WALL, SNOW1, WALL, FLOOR, BERM, BERM],
+           a: [0, 0.90, 1, 1, 0.70, 1, 1, 0.90, 0] }
+};
+let trailProf = TRAIL_PROFILE.board;
+/* A track sits three centimetres over the drawn snow, and that is all the
+   lift it needs: it is laid on the same triangles the snow is drawn with, so
+   nothing of the ground can come up through it. */
+const TRAIL_LIFT = 0.03;
 /* Berms slump. Four tenths of a per cent a sample is about sixty per cent of
    the height left by the time the track has run its hundred metres out. */
 const TRAIL_SLUMP = 0.9961;
@@ -2944,9 +3044,13 @@ const TRAIL_SLUMP = 0.9961;
    other substance. It is also the only honest way to get the brightness
    right: a fixed colour that matches the glacier is too dark in the forest
    and too bright under cloud. */
+/* It writes depth. It did not, and a mesh that does not write depth draws
+   in index order rather than nearest-last: the far berm and the floor of the
+   newer rings were painted over the near flank of the older ones, which from
+   a low camera is a row of bright slabs along the outside of every turn. */
 const trailMat = litMat({
   map: snowTex, normalMap: snowNorm, flatShading: false,
-  transparent: true, depthWrite: false, side: THREE.DoubleSide,
+  transparent: true, depthWrite: true, side: THREE.DoubleSide,
   /* The toes lie all but flat against the snow, and a depth buffer cannot
      separate two surfaces that close at a grazing angle — it stipples along
      the edge. A slope-scaled bias settles it without lifting the geometry
@@ -2964,31 +3068,12 @@ function trailShade() {
     const a = TRAIL_AGE[i] * trailI[i], g = trailG[i];
     const o = i * TRAIL_RING * 4;
     for (let e = 0; e < TRAIL_RING; e++) {
-      const src = RING_C[e], v = o + e * 4;
+      const src = trailProf.c[e], v = o + e * 4;
       trailC[v] = src[0] * g; trailC[v + 1] = src[1] * g; trailC[v + 2] = src[2] * g;
-      trailC[v + 3] = a * RING_A[e];
+      trailC[v + 3] = a * trailProf.a[e];
     }
   }
   trailGeo.attributes.color.needsUpdate = true;
-}
-/* How far the drawn snow sits above the real snow, here.
-   The terrain mesh samples a 5.8 x 4.4 m grid through a surface with a ten
-   metre grain in it, so every hollow is drawn as a chord across the top of
-   it: the snow on screen is above the snow in the equations by more than a
-   twentieth of a metre over a seventh of the mountain, and by more than a
-   fifth over a fiftieth of it. Lay a track on the true height and it vanishes
-   into the ground in patches and stipples along its edges — which is what a
-   flat nine-centimetre lift was there to paper over, at the cost of floating
-   everywhere the ground is honest. The second difference across one quad says
-   how far the chord rises, so the track is lifted by that instead: it sits
-   four and a half centimetres up on ground the mesh can hold, and gets out
-   of the way where it cannot. One in sixty samples still catches, against one
-   in fifteen for the flat lift. */
-const TQX = TW / SX * 0.5, TQZ = TL / SZ * 0.5;
-function chordGap(x, z) {
-  const c = height(x, z);
-  const a = 0.25 * (height(x + TQX, z) + height(x - TQX, z) + height(x, z + TQZ) + height(x, z - TQZ));
-  return a > c ? Math.min((a - c) * 1.5, 0.6) : 0;
 }
 /** edge: 0 straight-lining, 1 fully on edge. lean: signed, which way the
     board is scrubbing, so the outside of the turn gets the bigger berm.
@@ -2996,15 +3081,17 @@ function chordGap(x, z) {
 const TRAIL_STRIDE = TRAIL_RING * 3;
 const _sec = new Float32Array(TRAIL_RING * 2);     // the section, in metres
 const _secN = new Float32Array(TRAIL_RING * 2);    // and its normal, in section space
+const _secY = new Float32Array(TRAIL_RING);
 function pushTrail(x, y, z, h, edge, on, lean) {
+  trailProf = TRAIL_PROFILE[R.key] || TRAIL_PROFILE.board;
   for (let i = TRAIL_N - 1; i > 0; i--) {
     const d = i * TRAIL_STRIDE, sr = (i - 1) * TRAIL_STRIDE;
     const du = i * TRAIL_RING * 2, su = (i - 1) * TRAIL_RING * 2;
-    const y0 = trailY0[i] = trailY0[i - 1];
+    const dv = i * TRAIL_RING, sv = (i - 1) * TRAIL_RING;
     for (let e = 0; e < TRAIL_RING; e++) {
-      const de = d + e * 3, se = sr + e * 3;
+      const de = d + e * 3, se = sr + e * 3, b = trailB[dv + e] = trailB[sv + e];
       trailP[de] = trailP[se];
-      trailP[de + 1] = y0 + (trailP[se + 1] - y0) * TRAIL_SLUMP;
+      trailP[de + 1] = b + (trailP[se + 1] - b) * TRAIL_SLUMP;
       trailP[de + 2] = trailP[se + 2];
       trailNm[de] = trailNm[se]; trailNm[de + 1] = trailNm[se + 1]; trailNm[de + 2] = trailNm[se + 2];
       trailUv[du + e * 2] = trailUv[su + e * 2];
@@ -3013,24 +3100,43 @@ function pushTrail(x, y, z, h, edge, on, lean) {
     trailI[i] = trailI[i - 1];
     trailG[i] = trailG[i - 1];
   }
-  /* the section, in metres. Laying the edge over widens the cut, deepens it,
-     and throws more of what it cuts onto the outside of the turn. */
-  const w = 0.36 + edge * 0.66;
-  const dep = 0.014 + edge * 0.040;
   /* A berm is thrown snow, not an extrusion: without this the track is a
      length of pipe lying on the mountain. A third of the crest height comes
-     and goes over a metre or so, and the same noise lightens and darkens it. */
-  const lump = 0.80 + nz(x * 0.74, z * 0.74) * 0.42;
-  const berm = (0.038 + edge * 0.262) * lump;
-  const hR = berm * (1 + lean * 0.42), hL = berm * (1 - lean * 0.42);
-  /* The section is lifted clear of the snow and the cut is taken back out of
-     that lift, so the floor really does sit below the ground the toes rest on
-     — seventy-five millimetres below it on a hard turn — and the walls between
-     them are lit as the walls of a trench and not as the sides of something
-     lying on top of the hill. */
-  const Y = [0.020, hL, hL * 0.35 - dep * 0.25, -dep * 0.85, -dep, -dep * 0.85,
-             hR * 0.35 - dep * 0.25, hR, 0.020];
-  for (let e = 0; e < TRAIL_RING; e++) { _sec[e * 2] = RING_X[e] * w; _sec[e * 2 + 1] = Y[e]; }
+     and goes, and the same noise lightens and darkens it — measured along the
+     track rather than read off the ground, and never finer than 3.5 m. At
+     full speed a sample is laid every 1.4 m, and noise any finer than twice
+     that aliases into a regular zig-zag: the berms read as a zip. */
+  trailS += Math.min(4, Math.hypot(x - trailLX, z - trailLZ)); trailLX = x; trailLZ = z;
+  const lump = 0.80 + nz(trailS * 0.21, 7.3) * 0.42;
+  let w, dep;
+  const Y = _secY;
+  if (trailProf === TRAIL_PROFILE.ski) {
+    /* two grooves that deepen on edge, a lip off the outside of each that
+       grows on the outside of the turn, and the strip between them left
+       standing */
+    w = 0.52 + edge * 0.16;
+    dep = 0.012 + edge * 0.030;
+    const berm = (0.020 + edge * 0.130) * lump;
+    const hR = berm * (1 + lean * 0.55), hL = berm * (1 - lean * 0.55);
+    const mid = 0.010 + edge * 0.018;
+    Y[0] = 0.020; Y[1] = hL; Y[2] = -dep; Y[3] = mid * 0.4 - dep * 0.3; Y[4] = mid;
+    Y[5] = mid * 0.4 - dep * 0.3; Y[6] = -dep; Y[7] = hR; Y[8] = 0.020;
+  } else {
+    /* Laying the edge over widens the cut, deepens it, and throws more of
+       what it cuts onto the outside of the turn. The cut is taken back out of
+       the lift, so the floor really does sit below the ground the toes rest
+       on — seventy-five millimetres below it on a hard turn — and the walls
+       between are lit as the walls of a trench, not as the sides of something
+       lying on top of the hill. */
+    w = 0.36 + edge * 0.66;
+    dep = 0.014 + edge * 0.040;
+    const berm = (0.038 + edge * 0.262) * lump;
+    const hR = berm * (1 + lean * 0.42), hL = berm * (1 - lean * 0.42);
+    Y[0] = 0.020; Y[1] = hL; Y[2] = hL * 0.35 - dep * 0.25; Y[3] = -dep * 0.85; Y[4] = -dep;
+    Y[5] = -dep * 0.85; Y[6] = hR * 0.35 - dep * 0.25; Y[7] = hR; Y[8] = 0.020;
+  }
+  const RX = trailProf.x;
+  for (let e = 0; e < TRAIL_RING; e++) { _sec[e * 2] = RX[e] * w; _sec[e * 2 + 1] = Y[e]; }
   for (let e = 0; e < TRAIL_RING; e++) {
     const a = e ? e - 1 : 0, b = e < TRAIL_RING - 1 ? e + 1 : e;
     const tx = _sec[b * 2] - _sec[a * 2], ty = _sec[b * 2 + 1] - _sec[a * 2 + 1];
@@ -3048,15 +3154,20 @@ function pushTrail(x, y, z, h, edge, on, lean) {
   lx -= Nx * dp; ly -= Ny * dp; lz -= Nz * dp;
   const ll = 1 / (Math.hypot(lx, ly, lz) || 1);
   lx *= ll; ly *= ll; lz *= ll;
-  /* the datum carries the cut's own depth, so the floor of it lands on the
-     lift and never under it, however hard the turn */
-  const yy = y + 0.045 + dep + chordGap(x, z);
-  trailY0[0] = yy;
+  /* Every vertex stands on the drawn snow under itself, so the section
+     follows the ground across its whole width instead of a tangent plane
+     that cannot — and the cut's own depth is carried in the datum, so the
+     floor of it lands on the lift and never under the snow. Over a kicker
+     the rider is above the snow by the ramp, and so is the track. */
+  const ramp = Math.max(0, y - height(x, z));
   for (let e = 0; e < TRAIL_RING; e++) {
     const o = e * 3, f = _sec[e * 2], g = _sec[e * 2 + 1];
-    trailP[o] = x + lx * f + Nx * g;
-    trailP[o + 1] = yy + ly * f + Ny * g;
-    trailP[o + 2] = z + lz * f + Nz * g;
+    const ex = x + lx * f, ez = z + lz * f;
+    const base = drawnHeight(ex, ez) + ramp + TRAIL_LIFT + dep;
+    trailB[e] = base;
+    trailP[o] = ex + Nx * g;
+    trailP[o + 1] = base + Ny * g;
+    trailP[o + 2] = ez + Nz * g;
     const a = _secN[e * 2], c = _secN[e * 2 + 1];
     trailNm[o] = lx * a + Nx * c;
     trailNm[o + 1] = ly * a + Ny * c;
@@ -3065,7 +3176,7 @@ function pushTrail(x, y, z, h, edge, on, lean) {
     trailUv[e * 2 + 1] = trailP[o + 2] / SNOW_TILE;
   }
   trailI[0] = on ? 0.6 + edge * 0.4 : 0;
-  trailG[0] = 0.94 + nz(x * 1.7, z * 1.7) * 0.13;
+  trailG[0] = 0.94 + nz(trailS * 0.27, 19.1) * 0.13;
   /* and the colour of the snow here, blended across the sector boundary the
      same way the ground is, with the same lift given to the valley floor */
   const dist = Math.max(0, -z), nxb = BIOMES[(sectorOf(dist) + 1) % BIOMES.length];
@@ -3086,8 +3197,11 @@ function resetTrail(x, y, z) {
       trailUv[i * TRAIL_RING * 2 + e * 2] = x / SNOW_TILE;
       trailUv[i * TRAIL_RING * 2 + e * 2 + 1] = z / SNOW_TILE;
     }
-    trailI[i] = 0; trailY0[i] = y; trailG[i] = 1;
+    trailI[i] = 0; trailG[i] = 1;
   }
+  trailB.fill(y);
+  trailS = 0; trailLX = x; trailLZ = z;
+  trailProf = TRAIL_PROFILE[R.key] || TRAIL_PROFILE.board;
   trailGeo.attributes.position.needsUpdate = true;
   trailGeo.attributes.normal.needsUpdate = true;
   trailGeo.attributes.uv.needsUpdate = true;
@@ -3489,6 +3603,7 @@ function setRider(k) {
   ghostMesh.geometry = R.geo;
   for (const b of document.querySelectorAll('[data-rider]')) b.classList.toggle('sel', b.dataset.rider === k);
   const n = $('riderNote'); if (n) n.textContent = R.blurb + '.';
+  setPov(povMode);                  // its note names the board or the skis
 }
 function setPov(on) {
   povMode = !!on;
@@ -3498,7 +3613,7 @@ function setPov(on) {
   const n = $('povNote');
   if (n) n.textContent = povMode
     ? 'From inside the goggles. The mountain comes at you, and a spin takes the whole world with it.'
-    : 'Over the shoulder. You can see the rider, the board and what you are about to hit.';
+    : 'Over the shoulder. You can see the rider, the ' + (R.key === 'ski' ? 'skis' : 'board') + ' and what you are about to hit.';
 }
 function setRoute(k) {
   route = k;
@@ -3979,7 +4094,7 @@ const COACH = [
   { id: 'steer', t: 10, text: () => (ctrlMode === 'tilt' && gyro.ok)
       ? '<b>Tilt</b> the handset to carve'
       : '<b>Hold either side</b> of the screen to carve' },
-  { id: 'tuck',  t: 13, text: () => 'Hold <b>TUCK</b> — the board locks straight and runs' },
+  { id: 'tuck',  t: 13, text: () => 'Hold <b>TUCK</b> — the ' + (R.key === 'ski' ? 'skis lock' : 'board locks') + ' straight and run' + (R.key === 'ski' ? '' : 's') },
   { id: 'pop',   t: 14, text: () => 'Let <b>TUCK</b> go at a lip. That is your jump' },
   { id: 'spin',  t: 14, text: () => (ctrlMode === 'tilt' && gyro.ok)
       ? 'In the air, <b>tap</b> a side — every tap is half a turn'
@@ -4162,6 +4277,7 @@ function resetRun() {
   ghostRec = []; ghostClock = 0; ghostData = loadGhost();
   ghostCur = 0; ghostShown = -999; ghostDEl.hidden = true;
   ghostMesh.visible = false;
+  tileI = tileJ = 1e9;              // the window is from somewhere else; nothing may read it
   seedWorld();
   rebuildTerrain(P.x, P.z, true);
   resetTrail(P.x, P.y, P.z);
@@ -5085,8 +5201,23 @@ function present(dt, t) {
   const stance = P.switch ? Math.PI : 0;
 
   /* rider */
-  riderPivot.position.set(P.x, P.y, P.z);
-  riderPivot.rotation.y = P.heading;
+  /* The physics measures heading one way round and three.js measures a yaw
+     the other: forward is (sin h, -cos h) on the snow, and rotation.y = h
+     points a model's nose at (-sin h, -cos h). So the rider was drawn
+     mirrored — exactly right going straight down the fall line and off by
+     twice the heading everywhere else. Measured on skis, a normal carve at
+     47 degrees drew the skis 90 degrees off the line they were travelling:
+     sideways down the mountain, leaning the wrong way, and spinning against
+     the tap that started the spin. The minus sign is the whole fix. */
+  /* and it stands on the snow that is drawn: the true surface is up to a
+     fifth of a metre off it, which is a board buried in every hollow and
+     hovering over every crest. Faded out with height, so a rider hanging in
+     the helicopter door or ten metres up is not nudged by a hollow below. */
+  const dOff = drawnHeight(P.x, P.z) - height(P.x, P.z);
+  const near = clamp(1 - (P.y - ground) / 4, 0, 1);
+  riderLift += (dOff * near - riderLift) * Math.min(1, dt * 12);
+  riderPivot.position.set(P.x, P.y + riderLift, P.z);
+  riderPivot.rotation.y = -P.heading;
   stepDebris(dt);
   if (crashOn) {
     /* every bit of the orientation is in the tumble, so the yaw the rider
@@ -5098,10 +5229,10 @@ function present(dt, t) {
     if (mode !== 'play') stepCrash(dt);
     riderPivot.rotation.y = 0;
     riderTilt.quaternion.copy(crashQ);
-    riderPivot.position.y = P.y + crashY;
+    riderPivot.position.y = P.y + riderLift + crashY;
   } else if (mode === 'dying') {
     riderTilt.rotation.set(deathT * 7, 0, deathT * 4.2);
-    riderPivot.position.y = P.y + Math.max(0, Math.sin(deathT * 3.1)) * 2.0;
+    riderPivot.position.y = P.y + riderLift + Math.max(0, Math.sin(deathT * 3.1)) * 2.0;
   } else if (P.air) {
     riderTilt.rotation.set(P.flip, 0, clamp(-P.spin * 0.12, -0.5, 0.5));
   } else {
@@ -5111,7 +5242,15 @@ function present(dt, t) {
   const tuck = P.air ? (P.grabT > 0.12 ? 0.3 : 0) : (ctrl.tuck ? 0.2 : 0) + bst * 0.16;
   rider.scale.set(1, 1 - tuck - clamp(spd / 70, 0, 1) * 0.12, 1);
 
-  shadow.position.set(P.x, ground + 0.07, P.z);
+  /* A level plane 5.6 m long on a 0.4 slope has its uphill end a metre off
+     the snow — which, from a camera behind and above, is the end nearest the
+     lens: a dark patch hanging in the air behind the rider. */
+  {
+    const sgx = gradX(P.x, P.z), sgz = gradZ(P.x, P.z), sl = 1 / Math.sqrt(sgx * sgx + sgz * sgz + 1);
+    _shN.set(-sgx * sl, sl, -sgz * sl);
+    shadow.quaternion.setFromUnitVectors(_shZ, _shN);
+    shadow.position.set(P.x + _shN.x * 0.07, ground + dOff + _shN.y * 0.07, P.z + _shN.z * 0.07);
+  }
   shadow.material.opacity = 0.42 * clamp(1 - (P.y - ground) / 11, 0.06, 1);
 
   /* camera — follows where you are GOING, never the spin */
@@ -5282,8 +5421,10 @@ function present(dt, t) {
        it the deck is forty degrees below the middle of a frame that only
        reaches thirty-seven, and the one thing anchoring the view is off the
        bottom of the screen. */
-    camera.position.set(P.x - Math.sin(yaw) * 0.15, P.y + 1.62, P.z + Math.cos(yaw) * 0.15);
-    camera.rotation.set(pitch - 0.10, yaw, roll, 'YXZ');
+    camera.position.set(P.x - Math.sin(yaw) * 0.15, P.y + riderLift + 1.62, P.z + Math.cos(yaw) * 0.15);
+    /* -yaw for the same reason the body takes -heading: the lens was looking
+       off the line by twice the heading, the wrong way round */
+    camera.rotation.set(pitch - 0.10, -yaw, roll, 'YXZ');
     if (shake > 0.001) {
       camera.position.x += Math.sin(t * 61) * shake * 0.5;
       camera.position.y += Math.sin(t * 47) * shake * 0.42;
@@ -5530,7 +5671,26 @@ document.addEventListener('visibilitychange', () => {
 /* ══════════════════════════════════════════════════════════════
    18 · RESIZE & ADAPTIVE RESOLUTION
    ══════════════════════════════════════════════════════════════ */
-let quality = Math.min(window.devicePixelRatio || 1, 1.75);
+/* ---- how sharp ----
+   This used to be a one-way ladder tuned on a software renderer: any 2.5 s
+   under 42 fps took a third of the resolution away, for good, down to 0.7 of
+   a CSS pixel — and three windows under 32 took the snow texture too. On a
+   phone that is a disaster with nothing to do with the phone. Safari caps
+   animation at 30 fps in Low Power Mode, a cutscene or a shader compile can
+   eat a window on its own, and none of that is fill rate, so none of it gets
+   better for dropping pixels: it just stepped down every 2.5 s until a
+   1170 x 2532 screen was showing 273 x 590 stretched over it, with the snow
+   flattened to vertex colour, still at 30 fps.
+   So now a step down is a question, not a verdict. It is only asked while
+   riding, never in the first seconds after anything changes; it is kept only
+   if the frame rate actually comes up for it; and it is undone when it does
+   not, which also settles that the pixels were not the problem and stops it
+   asking again for a while. It never goes under one CSS pixel on a high-DPI
+   screen, it climbs back when there is headroom, and the texture only ever
+   goes on a renderer that is really a CPU. */
+const DPR = window.devicePixelRatio || 1;
+const Q_MAX = Math.min(DPR, 1.75), Q_MIN = Math.min(Q_MAX, DPR >= 2 ? 1.0 : 0.85);
+let quality = Q_MAX;
 /* The title screen looks at the whole mountain from a hundred metres up, which
    is two to three times the fill of riding it, and all of it sits behind a
    scrim. So it renders at a fraction of the resolution and nobody can tell. */
@@ -5557,25 +5717,59 @@ window.addEventListener('orientationchange', () => setTimeout(resize, 220));
 resize();
 
 let fpsAcc = 0, fpsN = 0, slowRuns = 0;
+let perfSettle = 3, perfTrial = null, perfCalm = 0, perfDoubt = 0, perfFails = 0, perfCeil = 9, perfCeilT = 0;
+const softGL = (() => {
+  try {
+    const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const name = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+    return /swiftshader|llvmpipe|softpipe|software|basic render/i.test(name);
+  } catch (err) { return false; }
+})();
+function setQuality(q) {
+  quality = q; resize();
+  perfSettle = 1.5; fpsAcc = 0; fpsN = 0;       // the resize itself is a hitch; do not judge it
+}
 function watchPerf(dt) {
+  /* only riding is judged: the menu and the cutscene are cheap or scripted,
+     and the first seconds of anything are shader compiles and first touches */
+  if (mode !== 'play') { perfSettle = Math.max(perfSettle, 2.5); fpsAcc = 0; fpsN = 0; return; }
+  if (perfDoubt > 0) perfDoubt -= dt;
+  if (perfCeilT > 0) perfCeilT -= dt;
+  if (perfSettle > 0) { perfSettle -= dt; return; }
   fpsAcc += dt; fpsN++;
   if (fpsAcc < 2.5) return;
   const fps = fpsN / fpsAcc;
   fpsAcc = 0; fpsN = 0;
-  if (mode === 'menu') return;                     // the title screen is already cheap
-  if (fps < 42 && quality > 0.7) { quality = Math.max(0.7, quality - 0.35); resize(); return; }
+  if (perfTrial) {
+    const t = perfTrial; perfTrial = null;
+    /* it did not help, so the pixels were never the problem: put them back,
+       and wait longer before asking again each time it turns out that way */
+    if (fps < t.fps * 1.12) { perfDoubt = 75 * ++perfFails; setQuality(t.from); return; }
+    /* it helped, so the level it came down from is too slow for this device
+       right now: do not climb back to it for a couple of minutes, or it would
+       see-saw between the two */
+    perfCeil = t.from; perfCeilT = 120;
+  }
+  if (fps < 45 && quality > Q_MIN + 0.01 && perfDoubt <= 0) {
+    perfTrial = { from: quality, fps };
+    perfCalm = 0;
+    setQuality(Math.max(Q_MIN, quality - 0.25));
+    return;
+  }
+  if (fps > 56) {
+    const up = Math.min(Q_MAX, quality + 0.25);
+    if (++perfCalm >= 4 && quality < Q_MAX - 0.01 && (perfCeilT <= 0 || up < perfCeil - 0.01)) {
+      perfCalm = 0; setQuality(up); return;
+    }
+  } else perfCalm = 0;
   /* ---- and then the snow itself ----
      The snow texture is a fetch on every fragment of the biggest surface on
      screen. On a GPU that is nothing; on a renderer that is really a CPU it
-     is measured at 32 fps down to 27. So it is the last rung of the
-     ladder: a device that still cannot hold the frame rate with the pixels
-     already turned down gets the vertex colours on their own, which is what
-     the mountain looked like before and is still a mountain. It takes three
-     bad windows in a row — seven and a half seconds — because one dense
-     forest or one very large slam is not a verdict on the hardware, and this
-     is a decision that cannot be taken back. */
+     is measured at 32 fps down to 27. So it is the last rung of the ladder,
+     and only on one of those — three bad windows in a row, with the pixels
+     already down, and a decision that is not taken back. */
   slowRuns = fps < 32 ? slowRuns + 1 : 0;
-  if (slowRuns >= 3 && quality <= 0.7 && snowMat.map) {
+  if (softGL && slowRuns >= 3 && quality <= Q_MIN + 0.01 && snowMat.map) {
     snowMat.map = null; snowMat.normalMap = null; snowMat.needsUpdate = true;
     trailMat.map = null; trailMat.normalMap = null; trailMat.needsUpdate = true;
   }
@@ -5660,6 +5854,21 @@ function boot(saved) {
   resetTrail(P.x, P.y, P.z);
   camera.position.set(P.x + 22, P.y + 11, P.z + 22);
   present(0.016, 0);
+  /* ---- every shader, now, behind the loading screen ----
+     three.js builds a program the first time something is drawn with it, and
+     six of them were first drawn during the drop-in, the first seconds of the
+     run and the first crash: a hundred to a hundred and sixty milliseconds
+     each on this machine, a frozen frame each on a phone, and all of them in
+     exactly the windows the frame-rate watch used to judge the device by.
+     The crash kit is made here as well, for both riders, rather than on the
+     first fall. Then one frame with everything visible, so each program is
+     linked and has its uniforms, not just compiled. */
+  for (const k in RIDERS) for (const g of RIDERS[k].kit) pieceFor(g);
+  renderer.compile(scene, camera);
+  const hidden = [];
+  scene.traverse(o => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+  renderer.render(scene, camera);
+  for (const o of hidden) o.visible = false;
   renderer.render(scene, camera);
   setCtrlMode(ctrlMode);
   setTiltInvert(tiltInvert);

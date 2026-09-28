@@ -210,6 +210,10 @@ npx http-server -p 8080 .      # then http://localhost:8080
   lip** so the crossing is findable from wherever you are on the face, and a
   warning when one is coming that you cannot yet see over the roller. None
   appear in the first 600 m.
+- **The prompts stay out of the way.** The first-run coach sat in the middle of
+  the screen, which in the chase view is exactly where the rider is drawn, for
+  the first minute and a half. It sits under the readouts now, and it says
+  "skis" to a skier.
 - **The slide** sits about 120 m back while you ride clean and hauls in when a
   crash bleeds your speed — though it stops gaining for two and a half seconds
   after a wipeout, so one mistake does not cascade into three, and it comes up
@@ -250,6 +254,33 @@ everything else is generated at runtime.
   running on forever. A rolling 300 × 470 m mesh window re-samples it as you
   descend, so nothing about the world is ever stored. Hazards are generated in a
   band around wherever the rider actually is, not around a fixed course line.
+- **The grid is nailed to the world.** The window used to re-anchor every 12 m,
+  and 12 is not a whole number of quads either way (2.08 across, 2.76 down), so
+  every re-anchor moved every vertex. The mesh is a chord across the true
+  surface, and a chord taken from different points is a different chord: the
+  snow under the rider re-triangulated several times a second, hollows filling
+  and emptying by up to a fifth of a metre. Vertices sit on a fixed lattice of
+  whole quads now, and the window only moves by whole rows and columns.
+- **Which is what makes it cheap.** After a move most of the window is still
+  valid, just at a different index, so it is copied; only new rows and columns
+  pay for `height()`. A rebuild was 5,777 calls and **8–20 ms**, two or three
+  times a second at speed — one dropped frame each. A shift is a hundred or two,
+  **0.4 ms** median, and matches a full rebuild bit for bit. Normals and the
+  slope and curvature shading need neighbours but no noise, so they are redone
+  everywhere. Over a 90 s ski run, `height()` calls went from 17,600 a second to
+  570, and frames spending more than 8 ms in script from 224 to 3.
+- **The rider faces where it is going.** The physics measures heading one way
+  round and three.js measures yaw the other: forward on the snow is
+  `(sin h, -cos h)`, and `rotation.y = h` points a model's nose at
+  `(-sin h, -cos h)`. So the rider was drawn mirrored — right going straight
+  down the fall line, off by twice the heading everywhere else. Measured on
+  skis, a normal 47° carve drew the skis **90° off** the line they were
+  travelling: sideways down the mountain, leaning downhill instead of into the
+  hill, and spinning against the tap that started the spin. First person had
+  the same fault (91° off while carving), as did the crash's starting yaw and
+  the ghost. All four take `-heading` now; measured, the model sits 2–13° off
+  its velocity while carving, which is the edge slip, and 176–179° riding
+  switch, which is riding switch.
 - **Heading is wrapped, every frame.** It was not, and a crash could leave it
   at 4.75 radians; the recovery then eased `target - heading` on the raw
   difference and unwound the long way round — 4.75 radians back to zero rather
@@ -303,28 +334,40 @@ everything else is generated at runtime.
   snow, which measures as a tar stripe down a white mountain; three quarters
   reads as nothing at all. Shallow trenches in snow lose about half.
 - **The berms are thrown snow, not an extrusion.** Without a third of the crest
-  height coming and going over a metre or so — and the same noise lightening
-  and darkening it — the track is a length of pipe lying on the mountain. They
-  also slump, four tenths of a per cent a sample, so what is behind you is
-  about sixty per cent of the height it was laid at by the time it runs out.
+  height coming and going — and the same noise lightening and darkening it —
+  the track is a length of pipe lying on the mountain. The noise is measured
+  along the track, never finer than 3.5 m: at full speed a sample is laid every
+  1.4 m, and anything finer than twice that aliases into a regular zig-zag that
+  reads as a zip. The berms also slump, four tenths of a per cent a sample, so
+  what is behind you is about sixty per cent of the height it was laid at by the
+  time it runs out.
+- **Skis leave tramlines.** A board is one edge and cuts one trench; skis are
+  two, and leave two narrow grooves a ski's width either side of centre, a strip
+  of snow between them they never touched, and a lip thrown off the outside of
+  each. The skier used to leave a snowboarder's trench.
 - **The edge signal was measuring the wrong thing.** It came off sideways
   speed, which is *skid* — and a clean carve barely slips, so holding full lock
   measured 0.11 of full edge and the trench never grew. It is the steering
   input plus what slip there is, gated on speed, and now a held carve reads as
   a held carve.
-- **The drawn snow sits above the real snow.** The terrain mesh samples a
-  5.8 × 4.4 m grid through a surface with a ten-metre grain in it, so every
-  hollow gets drawn as a chord across the top of it: measured over the whole
-  descent, the mesh is more than 5 cm above `height(x, z)` for **15%** of the
-  mountain and more than 12 cm for **4.3%** of it. Pin a track to the true
-  height and it sinks into the ground in patches and stipples along its edges,
-  which is what a flat nine-centimetre lift was there to paper over — at the
-  cost of floating everywhere the ground is honest, and still catching on
-  **6.5%** of samples. The second difference across one quad says how far the
-  chord rises, so the section is lifted by that instead: 4.5 cm on ground the
-  mesh can hold, out of the way where it cannot, and **1.6%** left catching.
-- **The ribbon is indexed oldest first**, so it draws back to front and a turn
-  that folds its own track under itself blends the right way round.
+- **Everything stands on the snow that is drawn.** The terrain mesh samples a
+  5.8 × 4.4 m grid through a surface with a ten-metre grain, so every hollow is
+  drawn as a chord across the top of it and every crest as a chord below it:
+  measured over the descent, the drawn snow is more than 5 cm above
+  `height(x, z)` over **15%** of the mountain and more than 12 cm over **4.3%**,
+  and below it on the crests. With the lattice fixed, the drawn
+  surface is a known thing — `drawnHeight(x, z)` is the grid triangle a point
+  falls in — so the rider, its shadow, the ghost and every prop's footing stand
+  on it, and the track is laid on it vertex by vertex, three centimetres up.
+  Nothing of the ground can come up through a track that sits on the same
+  triangles the ground is drawn with. The shadow also lies on the slope now; it
+  used to be level, and on a 0.4 face its uphill end hung a metre in the air
+  behind the rider.
+- **The ribbon writes depth.** It did not, and a mesh that does not write depth
+  draws in index order rather than nearest-last: the far berm and floor of newer
+  rings painted over the near flank of older ones, a row of bright slabs along
+  the outside of every turn from a low camera. It is indexed oldest first as
+  well, so a turn that folds its own track under itself blends the right way.
   Airborne samples are written with zero intensity, so the track breaks at the
   takeoff and picks up at the landing instead of being wiped. Spray is thrown
   out to the side the edge is sliding towards.
@@ -694,8 +737,30 @@ everything else is generated at runtime.
 - **Empty prop pools do not draw.** A pool hides its instanced mesh when nothing
   is in it, which is most of them most of the time — no seracs in the forest, no
   trees on the glacier.
-- **Resolution** adapts: if the frame rate sits under 42 fps the renderer drops
-  its pixel ratio rather than dropping frames. The terrain rebuild skips vertex
-  normals (the material is flat-shaded, so they come from screen-space
-  derivatives) and bounding spheres (the mesh is never culled), which is most of
-  the reason a 43% wider window costs less CPU than the old narrow one.
+- **Resolution is a question, not a verdict.** It used to be a one-way ladder
+  tuned on a software renderer: any 2.5 s under 42 fps took a third of the
+  resolution away for good, down to 0.7 of a CSS pixel, and three windows under
+  32 took the snow texture as well. On a phone that fires for reasons that have
+  nothing to do with fill rate — Safari caps animation at 30 fps in Low Power
+  Mode, and a shader compile or a cutscene can eat a window on its own — so it
+  stepped down every 2.5 s until a 1170 × 2532 screen was showing 273 × 590
+  stretched over it, with the snow flattened to vertex colour, still at 30 fps.
+  Measured in the harness, the texture was gone inside the first **300 m** of a
+  run. Now a
+  step down is only tried while riding, never in the settling seconds after
+  anything changes; it is kept only if the frame rate comes up at least 12% for
+  it and undone if not, which also backs the question off for longer each time;
+  it never goes under one CSS pixel on a high-DPI screen; it climbs back when
+  there is headroom; and the texture only ever goes on a renderer that reports
+  itself as software.
+- **Every shader is built behind the loading screen.** three.js compiles a
+  program the first time something is drawn with it, and six were first drawn
+  during the drop-in, the first seconds of the run and the first crash — 100 to
+  160 ms each here, a frozen frame each on a phone, in exactly the windows the
+  old resolution ladder judged the device by. `renderer.compile` runs at boot
+  with the crash kit for both riders already made, then one frame with
+  everything visible so each program is linked, not just compiled. Measured:
+  19 programs at the title screen, 19 after a run and a crash.
+- **Nothing over the canvas blurs.** The in-game panels used `backdrop-filter`,
+  which over a canvas that changes every frame is a fresh blur of that patch of
+  screen every frame; on iOS that is real GPU time. They are solid tints now.
