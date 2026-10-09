@@ -366,6 +366,7 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
         <div class="bar"><div class="fill" id="avaFill"></div><div class="segs"></div></div>
       </div>
       <div class="tools">
+        <button class="tool" id="btnPause" type="button">Pause</button>
         <button class="tool" id="btnCal" type="button">Re-centre</button>
         <button class="tool" id="btnSnd" type="button">Sound</button>
       </div>
@@ -492,6 +493,7 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
 
       <dl class="brief">
         <div><dt>Terrain</dt><dd>The face rolls more than it throws you. Hold TUCK and let go at a lip and it throws you properly.</dd></div>
+        <div><dt>Pump</dt><dd>Hold TUCK through the bottom of a dip and you come out of it faster. Time it on every one and it adds up.</dd></div>
         <div><dt>Slalom</dt><dd>Runs of red and blue poles. Round the outside of every one for a clean run and three chain steps. Clip one and it goes over — it will not put you down.</dd></div>
         <div><dt>Lines</dt><dd>Orange gates mark a cliff band or a spine. Riding the line pays cans and chain; going round is safe and pays nothing.</dd></div>
         <div><dt>Tricks</dt><dd>Tap a side in the air to spin half a turn, hold FLIP to backflip, hold TUCK to grab. Land pointing where you are going — or exactly backwards, which is worth more.</dd></div>
@@ -1960,12 +1962,17 @@ const looseGlove = () => bakeLoose([
 const BOARD_POV = bake(boardKit().slice(0, 2));
 const SKI_POV = bake(skiKit().filter((_, i) => i !== 4 && i !== 5));
 
+/* The kit the live rider stands on. Ski poles are not in it: they are held,
+   so they hang off the hands of the rig below and move with the arms. */
+const BOARD_KIT = bake(boardKit()), SKI_KIT = bake(skiKit().slice(0, 6));
 const RIDERS = {
-  board: { key: 'board', name: 'Snowboard', geo: BOARD_GEO, pov: BOARD_POV, body: BOARD_BODY,
+  board: { key: 'board', name: 'Snowboard', geo: BOARD_GEO, pov: BOARD_POV, body: BOARD_BODY, kitGeo: BOARD_KIT,
+           turn: 0.95, feet: [[-0.02, 0.62, 0.62], [0.02, 0.62, -0.50]],
            kit: [LOOSE_BOARD, LOOSE_GOGGLE, looseGlove(), looseGlove()], grip: 6.6, spin: 9.2,
            drag: 0.0212, tuckDrag: 0.40, maxYaw: 0.74, trickBonus: 1.15,
            grabs: ['Indy', 'Stalefish', 'Melon', 'Tail'], blurb: 'Loose edge, spins easy' },
-  ski:   { key: 'ski',   name: 'Skis',      geo: SKI_GEO,   pov: SKI_POV,   body: SKI_BODY,
+  ski:   { key: 'ski',   name: 'Skis',      geo: SKI_GEO,   pov: SKI_POV,   body: SKI_BODY, kitGeo: SKI_KIT,
+           turn: 0, feet: [[-0.31, 0.52, 0.02], [0.31, 0.52, 0.02]],
            kit: [LOOSE_SKI_L, LOOSE_SKI_R, LOOSE_POLE_L, LOOSE_POLE_R,
                  LOOSE_GOGGLE, looseGlove()], grip: 8.4, spin: 6.6,
            drag: 0.0195, tuckDrag: 0.46, maxYaw: 0.82, trickBonus: 1.0,
@@ -1976,10 +1983,120 @@ try { const k = localStorage.getItem('sw_rider'); if (RIDERS[k]) R = RIDERS[k]; 
 
 const riderPivot = new THREE.Group();          // yaw + world position
 const riderTilt = new THREE.Group();           // flip / bank / tumble
-const rider = new THREE.Mesh(R.geo, litMat());
+const rider = new THREE.Mesh(R.kitGeo, litMat());
 const povKit = new THREE.Mesh(R.pov, litMat());
 povKit.visible = false;
 riderTilt.add(rider); riderTilt.add(povKit); riderPivot.add(riderTilt); scene.add(riderPivot);
+
+/* ---- a body that moves ----
+   The rider was one baked block, and the only thing it ever did was squash
+   in y when you tucked. Now the kit stays on the snow and everything above it
+   is jointed: two legs that run from the boots to the hips and fold as the
+   hips drop, an upper body that pitches over and counter-leans into a carve,
+   and two arms on shoulders. All of it is driven from numbers the physics
+   already has — speed, steer, tuck, landing impact, how hard the ground is
+   bending under you — so nothing about it is played back. */
+const HIP_Y = 0.74, LEG_COL = 0x16263c;
+const _legUp = new THREE.Vector3(0, 1, 0), _legD = new THREE.Vector3(), _legA = new THREE.Vector3(), _legB = new THREE.Vector3();
+function buildRig(Rd) {
+  const root = new THREE.Group();
+  const bp = bodyParts(0);
+  /* hips: the upper body hangs off them, counter-leaned in the rider frame
+     and turned to its stance inside that */
+  const roll = new THREE.Group(); roll.position.y = HIP_Y; root.add(roll);
+  const upper = new THREE.Group(); upper.rotation.order = 'YXZ'; upper.rotation.y = Rd.turn; roll.add(upper);
+  const ug = bake([bp[0], bp[1], bp[4], bp[5]]); ug.translate(0, -HIP_Y, 0);
+  upper.add(new THREE.Mesh(ug, litMat()));
+  const arms = [];
+  for (const side of [-1, 1]) {
+    const sh = new THREE.Group(); sh.position.set(side * 0.36, 1.25 - HIP_Y, 0.05); upper.add(sh);
+    const joint = new THREE.Group(); sh.add(joint);
+    joint.add(new THREE.Mesh(bake([{ geo: new THREE.BoxGeometry(0.18, 0.70, 0.18), color: 0x1d3450, m: mat4(0, -0.33, 0) },
+                                    { geo: new THREE.BoxGeometry(0.19, 0.16, 0.20), color: 0xff6a2b, m: mat4(0, -0.70, 0) }]), litMat()));
+    let pole = null;
+    if (Rd.key === 'ski') {
+      /* held in the fist, running down and back to the basket */
+      const dir = new THREE.Vector3(0, -1, 0.42).normalize(), L = 1.24;
+      const q = new THREE.Quaternion().setFromUnitVectors(_legUp, dir);
+      const e3 = new THREE.Euler().setFromQuaternion(q);
+      const mid = dir.clone().multiplyScalar(L / 2).add(new THREE.Vector3(0, -0.70, 0));
+      const tip = dir.clone().multiplyScalar(L - 0.12).add(new THREE.Vector3(0, -0.70, 0));
+      pole = new THREE.Mesh(bake([
+        { geo: new THREE.CylinderGeometry(0.03, 0.03, L, 5), color: 0x2a3444, m: mat4(mid.x, mid.y, mid.z, e3.x, e3.y, e3.z) },
+        { geo: new THREE.CylinderGeometry(0.13, 0.13, 0.04, 6), color: 0x8a97ab, m: mat4(tip.x, tip.y, tip.z, e3.x, e3.y, e3.z) }]), litMat());
+      joint.add(pole);
+    }
+    arms.push({ side, joint, pole });
+  }
+  const legGeo = bake([{ geo: new THREE.BoxGeometry(0.19, 1, 0.21), color: LEG_COL }]);
+  const legs = Rd.feet.map(() => { const m = new THREE.Mesh(legGeo, litMat()); root.add(m); return m; });
+  return { root, roll, upper, arms, legs, Rd };
+}
+const RIGS = { board: buildRig(RIDERS.board), ski: buildRig(RIDERS.ski) };
+for (const k in RIGS) { RIGS[k].root.visible = false; riderTilt.add(RIGS[k].root); }
+let rig = RIGS[R.key];
+rig.root.visible = true;
+/** the pose, as a handful of springs */
+const pose = { crouch: 0.25, comp: 0, compV: 0, plant: 0, plantSide: 1, lastSide: 0, t: 0 };
+function poseLand(impact) { pose.compV -= clamp(impact, 2, 26) * 0.11; }
+function stepPose(dt, spd, bst) {
+  const Rd = rig.Rd;
+  pose.t += dt;
+  /* how low: carving and speed lower you, a tuck folds you, a grab folds you
+     further; the ground bending under you takes some of it out of the legs */
+  let target;
+  if (crashOn || P.wipe > 0) target = 0.3;
+  else if (P.air) target = P.grabT > 0.12 ? 0.88 : 0.40;
+  else if (ctrl.tuck) target = 0.82;
+  else target = 0.20 + clamp(spd / 45, 0, 1) * 0.12 + Math.abs(ctrl.steer) * 0.16 + bst * 0.08;
+  pose.crouch += (target - pose.crouch) * Math.min(1, dt * 9);
+  /* a landing pushes the hips down and the legs spring them back up */
+  pose.compV += (-90 * pose.comp - 13 * pose.compV) * dt;
+  pose.comp = clamp(pose.comp + pose.compV * dt, -0.15, 0.55);
+  if (pose.comp < -0.1 && pose.compV < 0) pose.compV *= 0.5;
+  const terr = P.air ? 0 : clamp((P.kappa || 0) * 7, -0.12, 0.28);
+  const c = clamp(pose.crouch - pose.comp + terr, 0, 1);
+  const hipY = HIP_Y - c * 0.34;
+  rig.roll.position.y = hipY;
+  /* the hips go with the bank and the shoulders come back towards level —
+     angulation, which is the difference between leaning and carving */
+  rig.roll.rotation.z = P.air ? 0 : -riderTilt.rotation.z * 0.38;
+  rig.upper.rotation.x = -(0.08 + c * 0.55);
+  /* arms */
+  const plantK = pose.plant > 0 ? Math.sin(Math.min(1, pose.plant) * Math.PI) : 0;
+  pose.plant = Math.max(0, pose.plant - dt / 0.42);
+  for (const a of rig.arms) {
+    let fwd, out;
+    if (crashOn) { fwd = Math.sin(pose.t * 13 + a.side) * 1.5; out = 0.9 + Math.sin(pose.t * 9 + a.side * 2) * 0.6; }
+    else if (P.air) {
+      const grabArm = P.grabT > 0.12 && a.side < 0;
+      fwd = grabArm ? 0.25 : (Math.abs(P.flip) > 0.3 ? -0.5 : 0.35);
+      out = grabArm ? -0.1 : 1.15 + Math.sin(pose.t * 7 + a.side) * 0.08;
+    } else if (ctrl.tuck) { fwd = 1.15; out = 0.06; }
+    else if (Rd.key === 'board') { fwd = a.side < 0 ? 0.55 : -0.25; out = 0.32 + Math.abs(ctrl.steer) * 0.25; }
+    else {
+      fwd = 0.42 + (a.side === pose.plantSide ? plantK * 0.85 : 0);
+      out = 0.22 + Math.abs(ctrl.steer) * 0.12;
+    }
+    a.joint.rotation.x += (fwd - a.joint.rotation.x) * Math.min(1, dt * 14);
+    a.joint.rotation.z += (out * a.side - a.joint.rotation.z) * Math.min(1, dt * 14);
+    if (a.pole) a.pole.visible = !crashOn;
+  }
+  /* legs: from each boot to its hip, the length whatever the crouch leaves */
+  const tc = Math.cos(Rd.turn), ts = -Math.sin(Rd.turn);
+  for (let i = 0; i < rig.legs.length; i++) {
+    const f = Rd.feet[i], side = i === 0 ? -1 : 1;
+    if (crashOn) _legA.set(side * 0.15 * tc, hipY - 0.62, side * 0.15 * ts + 0.1);
+    else _legA.set(f[0], f[1], f[2]);
+    _legB.set(side * 0.15 * tc, hipY - 0.04, side * 0.15 * ts);
+    _legD.subVectors(_legB, _legA);
+    const len = Math.max(0.05, _legD.length());
+    const m = rig.legs[i];
+    m.position.addVectors(_legA, _legB).multiplyScalar(0.5);
+    m.quaternion.setFromUnitVectors(_legUp, _legD.multiplyScalar(1 / len));
+    m.scale.set(1, len, 1);
+  }
+}
 let povMode = false;
 try { povMode = localStorage.getItem('sw_pov') === '1'; } catch (e) {}
 
@@ -2090,7 +2207,6 @@ function stepDebris(dt) {
 function startCrash(power) {
   if (crashOn) return;
   crashOn = true;
-  rider.geometry = R.body;
   const spd = Math.hypot(P.vx, P.vz);
   const vy = Math.atan2(P.vx, -P.vz);
   /* Most of the roll is about the axis ACROSS the way you were going, because
@@ -2109,7 +2225,6 @@ function startCrash(power) {
 function endCrash() {
   if (!crashOn) return;
   crashOn = false;
-  rider.geometry = R.geo;
   crashY = 0; crashVY = 0;
   fadeKit();
 }
@@ -2816,7 +2931,10 @@ const slam = { t: 0, life: 0, x: 0, z: 0, reach: 0, lift: 0, p: 0 };
 const slamWob = new Float32Array(SLAM_SEG + 1);
 for (let i = 0; i < SLAM_SEG; i++) slamWob[i] = 0.86 + hash2(i, 17) * 0.28;
 slamWob[SLAM_SEG] = slamWob[0];
-let fovKick = 0;
+let fovKick = 0, camDip = 0;
+/* A short buzz in the hand where the phone can do it. Android can; iOS Safari
+   has no vibration API at all, so this is silently nothing there. */
+const buzz = (p) => { try { if (navigator.vibrate) navigator.vibrate(p); } catch (err) {} };
 
 /** Powder thrown outward in a full ring, the way a landing really moves it. */
 function emitBlast(x, y, z, n, power) {
@@ -3598,7 +3716,8 @@ function setRider(k) {
   if (!RIDERS[k]) return;
   R = RIDERS[k];
   try { localStorage.setItem('sw_rider', k); } catch (e) {}
-  rider.geometry = R.geo;
+  rider.geometry = R.kitGeo;
+  rig.root.visible = false; rig = RIGS[k];
   povKit.geometry = R.pov;
   ghostMesh.geometry = R.geo;
   for (const b of document.querySelectorAll('[data-rider]')) b.classList.toggle('sel', b.dataset.rider === k);
@@ -3698,7 +3817,7 @@ const boostAmt = () => P.boostT <= 0 ? 0 : Math.min(1, P.boostT / 0.7);
 
 const P = {
   x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, heading: 0, camYaw: 0,
-  air: false, airT: 0, bestAir: 0, launchY: 0,
+  air: false, airT: 0, bestAir: 0, launchY: 0, kappa: 0, pumpAcc: 0, pumpPk: 0, pumps: 0,
   tuckT: 0, wasTuck: false, popT: 0, lines: 0,
   spin: 0, flip: 0, grabT: 0, grabName: '', trickBase: 0,
   wipe: 0, hurt: 0, slideGrace: 0, boostT: 0, boosts: 0,
@@ -4264,14 +4383,15 @@ function resetRun() {
   P.spin = 0; P.flip = 0; P.grabT = 0; P.grabName = ''; P.trickBase = 0;
   P.spinQ = 0; P.switch = false; P.slalomRun = 0;
   crashOn = false; crashY = 0; crashVY = 0;
-  rider.geometry = R.geo;
   clearKit();
+  pose.comp = pose.compV = pose.plant = 0;
   P.wipe = 0; P.hurt = 0; P.slideGrace = 0; P.boostT = 0; P.boosts = 0;
   P.health = 100;
   P.dist = 0; P.alt = START_ALT; P.lowAlt = START_ALT;
   P.score = 0; P.topSpeed = 0; P.cans = 0; P.canChain = 0; P.canChainT = 0;
   P.chain = 1; P.chainBest = 1; P.fastT = 0; P.near = 0; P.bestTrick = 0; P.tricks = 0; P.time = 0; P.switches = 0;
   slideGap = 165; slideZ = P.z + slideGap;
+  P.kappa = 0; P.pumpAcc = 0; P.pumpPk = 0; P.pumps = 0;
   weather = 0; weatherT = 26; weatherLen = 0;
   shake = 0; deathCause = null; curSector = -1;
   ghostRec = []; ghostClock = 0; ghostData = loadGhost();
@@ -4343,6 +4463,7 @@ function fireBoost() {
   emitSpray(P.x, P.y + 0.3, P.z, fresh ? 22 : 8, fresh ? 3.0 : 1.7);
   if (!fresh) { Snd.tone(760, 0.09, 'triangle', 0.10); return; }
   popup('Boost', '×2 SCORE', 'boost');
+  buzz(25);
   shake = Math.max(shake, 0.5);
   Snd.whoosh(true);
   Snd.tone(220, 0.45, 'sawtooth', 0.20);
@@ -4596,6 +4717,9 @@ function land(impact) {
     return;
   }
   emitSpray(P.x, P.y, P.z, 18, 2.6);
+  poseLand(impact);
+  camDip = Math.min(0.9, camDip + impact * 0.035 + Math.max(0, P.launchY - P.y) * 0.008);
+  buzz(Math.round(clamp(10 + impact * 1.6, 12, 45)));
 
   /* landing quality: point where you are going — or exactly backwards, which
      is a switch landing and pays for the nerve */
@@ -4664,6 +4788,7 @@ function wipeout(reason, damage) {
   emitSpray(P.x, P.y + 0.5, P.z, 30, 3.2);
   trickEl.classList.remove('on');
   startCrash(clamp(Math.hypot(P.vx, P.vz) / 34, 0.30, 1));
+  buzz([45, 30, 80]);
   Snd.hit(1);
   flashWarn(reason, 750);
   popup(reason, '', 'bad');
@@ -4850,6 +4975,38 @@ function step(dt) {
 
   const spd = speedOf();
   P.topSpeed = Math.max(P.topSpeed, spd);
+  /* ---- pumping ----
+     How hard the ground is bending along the line you are riding: the slope
+     two and a half metres ahead against the slope behind. Positive is a
+     compression — the bottom of a dip, where the slope is easing — and that
+     is where weighting the board gains speed. Hold TUCK through one and you
+     absorb it into speed; the body folds into every dip either way. */
+  if (!P.air && spd > 4) {
+    const ux = P.vx / spd, uz = P.vz / spd;
+    const sA = gradX(P.x + ux * 2.5, P.z + uz * 2.5) * ux + gradZ(P.x + ux * 2.5, P.z + uz * 2.5) * uz;
+    const sB = gradX(P.x - ux * 2.5, P.z - uz * 2.5) * ux + gradZ(P.x - ux * 2.5, P.z - uz * 2.5) * uz;
+    P.kappa += ((sA - sB) / 5 - P.kappa) * Math.min(1, dt * 12);
+    if (tucking && P.wipe <= 0 && P.kappa > 0.012 && P.pumpAcc < 5) {
+      const gain = Math.min(5 - P.pumpAcc, P.kappa * spd * 2.4 * dt);
+      const k = (spd + gain) / spd;
+      P.vx *= k; P.vz *= k; P.pumpAcc += gain;
+      P.pumpPk = Math.max(P.pumpPk, P.kappa);
+    } else if (P.pumpAcc > 0 && (P.kappa < Math.max(0.006, P.pumpPk * 0.4) || !tucking)) {
+      /* out of the dip: a real pump counts */
+      P.pumpPk = 0;
+      if (P.pumpAcc > 0.8) {
+        bumpChain(1, 'Pumped');
+        P.pumps++;
+        buzz(8);
+      }
+      P.pumpAcc = 0;
+    }
+  } else { P.kappa *= Math.exp(-dt * 6); P.pumpAcc = 0; }
+  /* on skis, every change of edge starts with a pole plant on the new inside */
+  if (!P.air && P.wipe <= 0 && Math.abs(steer) > 0.35) {
+    const sd = Math.sign(steer);
+    if (sd !== pose.lastSide) { pose.lastSide = sd; pose.plant = 1; pose.plantSide = sd; }
+  }
   const moved = -(P.z - z0);
   if (moved > 0) P.dist += moved;
   P.alt = START_ALT + (P.y - P.y0) * altScale;
@@ -5239,8 +5396,7 @@ function present(dt, t) {
     const bank = -wrapPi(P.heading - stance) * 0.72;
     riderTilt.rotation.set(0, 0, riderTilt.rotation.z + (bank - riderTilt.rotation.z) * Math.min(1, dt * 9));
   }
-  const tuck = P.air ? (P.grabT > 0.12 ? 0.3 : 0) : (ctrl.tuck ? 0.2 : 0) + bst * 0.16;
-  rider.scale.set(1, 1 - tuck - clamp(spd / 70, 0, 1) * 0.12, 1);
+  stepPose(dt, spd, bst);
 
   /* A level plane 5.6 m long on a 0.4 slope has its uphill end a metre off
      the snow — which, from a camera behind and above, is the end nearest the
@@ -5373,6 +5529,8 @@ function present(dt, t) {
     camera.position.y += Math.sin(t * 47) * q * 0.5;
   }
   camera.lookAt(camLook);
+  /* a landing drops the lens a little and lets it come back up */
+  if (camDip > 0.002) { camera.position.y -= camDip; camDip *= Math.exp(-dt * 5.5); }
   camera.rotation.z += -wrapPi(P.heading - stance - P.camYaw) * 0.12;
 
   /* ---- first person ----
@@ -5385,7 +5543,9 @@ function present(dt, t) {
   const povOn = povMode && (mode === 'play' || mode === 'outrun');
   const wantKit = povOn && !crashOn;
   if (povKit.visible !== wantKit) povKit.visible = wantKit;
-  if (rider.visible === povOn) rider.visible = !povOn;
+  if (rig.root.visible === povOn) rig.root.visible = !povOn;
+  const wantBoard = !povOn && !crashOn;
+  if (rider.visible !== wantBoard) rider.visible = wantBoard;
   if (povOn && crashOn) {
     /* ---- the crash, from inside it ----
        The head is not where it was: it is wherever the tumble has swung it,
@@ -5661,6 +5821,10 @@ $('btnAgain').addEventListener('click', beginRun);
 $('btnWinAgain').addEventListener('click', beginRun);
 $('btnResume').addEventListener('click', () => { hide(pauseScreen); mode = 'play'; last = performance.now(); });
 $('btnCal').addEventListener('click', recentre);
+$('btnPause').addEventListener('click', () => {
+  if (mode !== 'play') return;
+  mode = 'paused'; releaseZones(); Snd.bed(0, 0, 0); show(pauseScreen);
+});
 const btnSnd = $('btnSnd');
 btnSnd.classList.toggle('off', !Snd.on);
 btnSnd.addEventListener('click', () => { Snd.boot(); btnSnd.classList.toggle('off', !Snd.toggle()); });
