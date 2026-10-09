@@ -269,6 +269,28 @@ everything else is generated at runtime.
   slope and curvature shading need neighbours but no noise, so they are redone
   everywhere. Over a 90 s ski run, `height()` calls went from 17,600 a second to
   570, and frames spending more than 8 ms in script from 224 to 3.
+- **The rider has a body that moves.** It was one baked block that squashed in
+  y when you tucked. The kit stays on the snow and the body above it is
+  jointed: legs from boots to hips that fold as the hips drop, an upper body
+  that pitches over and counter-leans into a carve, and arms on shoulders that
+  spread in the air, reach for a grab, come in for a tuck and flail in a crash.
+  Ski poles are held, and every change of edge starts with a plant on the new
+  inside. Landings compress the legs on a spring and dip the camera. All of it
+  is driven from speed, steer, tuck, impact and ground curvature.
+- **Pumping.** Hold TUCK through the bottom of a dip and you come out faster:
+  where the slope along your line eases (2.5 m ahead against 2.5 m behind), a
+  tucked rider turns the compression into speed, up to 5 m/s a dip, and a dip
+  worth 0.8 m/s or more is a chain step. Measured over ten seconds tucked: four
+  pumps, 4.7 m/s.
+- **Three challenges a day**, drawn from the day's seed so everyone on today's
+  face chases the same three, checked live, paying 500 × chain when they land,
+  and ticked on the title screen until midnight.
+- **A card to send.** "Share this run" renders the last frame with the run
+  written over it at 1080 × 1350 and opens the share sheet, or downloads it.
+- **Jackets, earned with vertical**: six, unlocking at 0, 5, 15, 30, 60 and
+  120 km of career descent.
+- **Pause and haptics.** A pause button in the HUD; landings, crashes and boosts
+  vibrate where the browser can (Android; iOS Safari has no vibration API).
 - **The rider faces where it is going.** The physics measures heading one way
   round and three.js measures yaw the other: forward on the snow is
   `(sin h, -cos h)`, and `rotation.y = h` points a model's nose at

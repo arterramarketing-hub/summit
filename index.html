@@ -222,6 +222,18 @@ canvas#c{display:block;width:100%;height:100%;touch-action:none}
 .seg button{flex:1;min-width:120px;font:600 11px/1 var(--mono);letter-spacing:.1em;color:var(--ink-dim);
   background:transparent;border:1px solid var(--hair);padding:12px 10px;cursor:pointer}
 .seg button.sel{color:#120600;background:var(--ember);border-color:var(--ember)}
+.swatches{flex:0 0 100%;display:flex;gap:10px;flex-wrap:wrap}
+.swatches button{flex:0 0 auto;min-width:0;width:44px;height:44px;padding:0;border:2px solid var(--hair);position:relative}
+.swatches button.sel{border-color:var(--ink);box-shadow:0 0 0 2px var(--ember)}
+.swatches button.locked{opacity:.32}
+.swatches button.locked::after{content:"";position:absolute;inset:14px;border:2px solid #0b1220;border-radius:2px}
+.daily{margin:20px 0 0}
+.daily ul{list-style:none;margin:8px 0 0;padding:0;border-top:1px solid var(--hair)}
+.daily li{display:flex;gap:10px;align-items:baseline;padding:8px 0;border-bottom:1px solid rgba(186,212,248,.12);
+  font:500 12.5px/1.45 var(--mono);color:#b9c8de}
+.daily li i{font-style:normal;flex:0 0 18px;color:#55637c}
+.daily li.done{color:var(--volt)}
+.daily li.done i{color:var(--volt)}
 body.touchmode .tilt-only{display:none}
 body:not(.touchmode) .touch-only{display:none}
 #boostfx{position:absolute;inset:0;pointer-events:none;opacity:0;
@@ -451,6 +463,17 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
         <span class="note" id="povNote"></span>
       </div>
 
+      <div class="seg" id="jacketSeg">
+        <span class="k">Jacket</span>
+        <div class="swatches" id="swatches"></div>
+        <span class="note" id="jacketNote"></span>
+      </div>
+
+      <div class="daily" id="dailyBox">
+        <span class="k">Today's challenges</span>
+        <ul id="dailyList"></ul>
+      </div>
+
       <div class="seg" id="routeSeg">
         <span class="k">Route</span>
         <button type="button" data-route="descent">Descent</button>
@@ -525,6 +548,7 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
       </div>
       <div class="actions">
         <button class="go" id="btnAgain" type="button">Drop in again</button>
+        <button class="go ghost" id="btnShareO" type="button">Share this run</button>
       </div>
       <p class="fine" id="overFine">Land facing your direction of travel — the spin has to finish before the snow does.</p>
     </div>
@@ -547,7 +571,8 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
         <div class="stat"><div class="k">Career vertical</div><div class="v" id="wVert">0<small>M</small></div></div>
         <div class="stat hero" id="wBestRow"><div class="k">Best time</div><div class="v" id="wBest">—</div></div>
       </div>
-      <div class="actions"><button class="go" id="btnWinAgain" type="button">Ride it again</button></div>
+      <div class="actions"><button class="go" id="btnWinAgain" type="button">Ride it again</button>
+        <button class="go ghost" id="btnShareW" type="button">Share this run</button></div>
       <p class="fine" id="winFine">Your ghost is saved. Next run you race it.</p>
     </div>
   </section>
@@ -1893,14 +1918,16 @@ const CAT_GEO = bake([
 /* ---- the riders ---- */
 /* Shared parts, then a board stance (body turned across the deck) or a ski
    stance (square to the fall line, poles out). */
-function bodyParts(turn) {
+let jacketCol = 0x1d3450;
+function bodyParts(turn, jk) {
+  const J = jk === undefined ? jacketCol : jk;
   const c = Math.cos(turn), sn = Math.sin(turn);
   const at = (x, y, z, rx, ry, rz) => mat4(x * c + z * sn, y, z * c - x * sn, rx || 0, (ry || 0) + turn, rz || 0);
   return [
-    { geo: new THREE.BoxGeometry(0.56, 0.72, 0.78), color: 0x1d3450, m: at(0, 1.03, 0.05, 0.22) },
+    { geo: new THREE.BoxGeometry(0.56, 0.72, 0.78), color: J, m: at(0, 1.03, 0.05, 0.22) },
     { geo: new THREE.BoxGeometry(0.58, 0.14, 0.80), color: 0xff6a2b, m: at(0, 0.86, 0.06, 0.22) },
-    { geo: new THREE.BoxGeometry(0.18, 0.70, 0.18), color: 0x1d3450, m: at(-0.36, 0.92, 0.26, 0.34, 0, 0.26) },
-    { geo: new THREE.BoxGeometry(0.18, 0.70, 0.18), color: 0x1d3450, m: at(0.36, 0.92, -0.14, -0.30, 0, -0.20) },
+    { geo: new THREE.BoxGeometry(0.18, 0.70, 0.18), color: J, m: at(-0.36, 0.92, 0.26, 0.34, 0, 0.26) },
+    { geo: new THREE.BoxGeometry(0.18, 0.70, 0.18), color: J, m: at(0.36, 0.92, -0.14, -0.30, 0, -0.20) },
     { geo: new THREE.BoxGeometry(0.42, 0.40, 0.44), color: 0xe9eef7, m: at(0, 1.56, 0.02) },
     { geo: new THREE.BoxGeometry(0.44, 0.13, 0.10), color: 0x101722, m: at(0, 1.56, -0.20) }
   ];
@@ -2011,7 +2038,7 @@ function buildRig(Rd) {
   for (const side of [-1, 1]) {
     const sh = new THREE.Group(); sh.position.set(side * 0.36, 1.25 - HIP_Y, 0.05); upper.add(sh);
     const joint = new THREE.Group(); sh.add(joint);
-    joint.add(new THREE.Mesh(bake([{ geo: new THREE.BoxGeometry(0.18, 0.70, 0.18), color: 0x1d3450, m: mat4(0, -0.33, 0) },
+    joint.add(new THREE.Mesh(bake([{ geo: new THREE.BoxGeometry(0.18, 0.70, 0.18), color: jacketCol, m: mat4(0, -0.33, 0) },
                                     { geo: new THREE.BoxGeometry(0.19, 0.16, 0.20), color: 0xff6a2b, m: mat4(0, -0.70, 0) }]), litMat()));
     let pole = null;
     if (Rd.key === 'ski') {
@@ -2032,10 +2059,29 @@ function buildRig(Rd) {
   const legs = Rd.feet.map(() => { const m = new THREE.Mesh(legGeo, litMat()); root.add(m); return m; });
   return { root, roll, upper, arms, legs, Rd };
 }
-const RIGS = { board: buildRig(RIDERS.board), ski: buildRig(RIDERS.ski) };
-for (const k in RIGS) { RIGS[k].root.visible = false; riderTilt.add(RIGS[k].root); }
-let rig = RIGS[R.key];
-rig.root.visible = true;
+/* ---- jackets ----
+   Earned with vertical, which is the one thing a career on this mountain is
+   actually made of. The thresholds are a few runs, a few dozen, and a lot. */
+const JACKETS = [
+  { id: 'navy',    name: 'Expedition', col: 0x1d3450, vert: 0 },
+  { id: 'ember',   name: 'Ember',      col: 0xc2471a, vert: 5000 },
+  { id: 'glacier', name: 'Glacier',    col: 0x1f7f8c, vert: 15000 },
+  { id: 'volt',    name: 'Volt',       col: 0x5f8f12, vert: 30000 },
+  { id: 'white',   name: 'Whiteout',   col: 0xdfe6ef, vert: 60000 },
+  { id: 'gold',    name: 'Summit',     col: 0xc9a227, vert: 120000 }
+];
+let jacketId = 'navy';
+try { const j = localStorage.getItem('sw_jacket'); if (JACKETS.some(x => x.id === j)) jacketId = j; } catch (e) {}
+jacketCol = JACKETS.find(x => x.id === jacketId).col;
+let RIGS = null, rig = null;
+function makeRigs() {
+  if (RIGS) for (const k in RIGS) riderTilt.remove(RIGS[k].root);
+  RIGS = { board: buildRig(RIDERS.board), ski: buildRig(RIDERS.ski) };
+  for (const k in RIGS) { RIGS[k].root.visible = false; riderTilt.add(RIGS[k].root); }
+  rig = RIGS[R.key];
+  rig.root.visible = true;
+}
+makeRigs();
 /** the pose, as a handful of springs */
 const pose = { crouch: 0.25, comp: 0, compV: 0, plant: 0, plantSide: 1, lastSide: 0, t: 0 };
 function poseLand(impact) { pose.compV -= clamp(impact, 2, 26) * 0.11; }
@@ -3817,7 +3863,7 @@ const boostAmt = () => P.boostT <= 0 ? 0 : Math.min(1, P.boostT / 0.7);
 
 const P = {
   x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, heading: 0, camYaw: 0,
-  air: false, airT: 0, bestAir: 0, launchY: 0, kappa: 0, pumpAcc: 0, pumpPk: 0, pumps: 0,
+  air: false, airT: 0, bestAir: 0, launchY: 0, kappa: 0, pumpAcc: 0, pumpPk: 0, pumps: 0, cleanSlaloms: 0, cleanFrom: 0, cleanBest: 0, finished: false,
   tuckT: 0, wasTuck: false, popT: 0, lines: 0,
   spin: 0, flip: 0, grabT: 0, grabName: '', trickBase: 0,
   wipe: 0, hurt: 0, slideGrace: 0, boostT: 0, boosts: 0,
@@ -3865,6 +3911,131 @@ try {
 } catch (e) {}
 const EVEREST = 8849;
 function saveCareer() { try { localStorage.setItem('sw_career', JSON.stringify(career)); } catch (e) {} }
+
+/* ---- today's challenges ----
+   Three a day, drawn from the same seed as the mountain, so everybody riding
+   today's face is chasing the same three. Checked live; each one pays the
+   moment it lands and stays ticked until midnight. */
+const CHALLENGES = [
+  { id: 'switch2',  text: 'Land 2 switch',                    ok: () => P.switches >= 2 },
+  { id: 'slalom',   text: 'Ride a clean slalom',              ok: () => P.cleanSlaloms >= 1 },
+  { id: 'pump6',    text: 'Pump 6 dips in one run',           ok: () => P.pumps >= 6 },
+  { id: 'cans30',   text: 'Take 30 cans',                     ok: () => P.cans >= 30 },
+  { id: 'chain12',  text: 'Build the chain to ×12',           ok: () => P.chainBest >= 12 },
+  { id: 'clean2k',  text: 'Ride 2,000 m without a wipeout',   ok: () => P.cleanBest >= 2000 },
+  { id: 'air3',     text: 'Stay in the air for 3 s',          ok: () => P.bestAir >= 3 },
+  { id: 'valley',   text: 'Reach the valley floor',           ok: () => P.finished },
+  { id: 'speed140', text: 'Hit 140 km/h',                     ok: () => P.topSpeed * 3.6 >= 140 },
+  { id: 'tricks8',  text: 'Land 8 tricks in one run',         ok: () => P.tricks >= 8 },
+  { id: 'lines3',   text: 'Ride 3 lines — cliffs, spines or slaloms', ok: () => P.lines >= 3 },
+  { id: 'close10',  text: 'Pass 10 things close',             ok: () => P.near >= 10 }
+];
+const todays = (() => {
+  const pool = CHALLENGES.slice(), out = [];
+  for (let k = 0; k < 3; k++) out.push(pool.splice(Math.floor(hash2(SEED, 911 + k) * pool.length), 1)[0]);
+  return out;
+})();
+let dailyDone = [];
+try { const d = JSON.parse(localStorage.getItem('sw_daily') || 'null'); if (d && d.day === DAY) dailyDone = d.done || []; } catch (e) {}
+let dailyT = 0;
+function saveDaily() { try { localStorage.setItem('sw_daily', JSON.stringify({ day: DAY, done: dailyDone })); } catch (e) {} }
+function dailyTick(dt) {
+  dailyT -= dt; if (dailyT > 0) return; dailyT = 0.5;
+  for (const c of todays) {
+    if (dailyDone.includes(c.id) || !c.ok()) continue;
+    dailyDone.push(c.id); saveDaily();
+    const bonus = Math.round(500 * P.chain);
+    P.score += bonus;
+    popup('Challenge done', c.text + ' · +' + fmt(bonus), 'can');
+    Snd.tone(700, 0.14, 'triangle', 0.22);
+    setTimeout(() => Snd.tone(1050, 0.22, 'triangle', 0.2), 120);
+    buzz([20, 40, 20]);
+  }
+}
+function renderDaily() {
+  const ul = $('dailyList'); if (!ul) return;
+  ul.innerHTML = todays.map(c => '<li class="' + (dailyDone.includes(c.id) ? 'done' : '') + '"><i>' +
+    (dailyDone.includes(c.id) ? '✓' : '○') + '</i>' + c.text + '</li>').join('');
+}
+const dailyLine = () => 'Today: <b>' + dailyDone.length + ' / 3</b> challenges.' +
+  (unlockedNow.length ? ' New jacket unlocked: <b>' + unlockedNow.map(j => j.name).join(', ') + '</b> — pick it on the title screen.' : '');
+
+/* ---- the jacket rack ---- */
+function renderJackets() {
+  const box = $('swatches'); if (!box) return;
+  box.innerHTML = '';
+  for (const j of JACKETS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    const open = career.vert >= j.vert;
+    b.className = (j.id === jacketId ? 'sel ' : '') + (open ? '' : 'locked');
+    b.style.background = '#' + j.col.toString(16).padStart(6, '0');
+    b.setAttribute('aria-label', j.name + (open ? '' : ', locked'));
+    b.addEventListener('click', () => {
+      if (!open) { $('jacketNote').textContent = j.name + ' — unlocks at ' + fmt(j.vert) + ' m of career vertical (' + fmt(career.vert) + ' so far).'; return; }
+      jacketId = j.id; jacketCol = j.col;
+      try { localStorage.setItem('sw_jacket', j.id); } catch (e) {}
+      makeRigs(); renderJackets();
+    });
+    box.appendChild(b);
+  }
+  const cur = JACKETS.find(x => x.id === jacketId);
+  const next = JACKETS.find(x => career.vert < x.vert);
+  $('jacketNote').textContent = cur.name + '.' + (next ? ' Next: ' + next.name + ' at ' + fmt(next.vert) + ' m of career vertical.' : ' Every jacket earned.');
+}
+
+/* ---- a card to send somebody ----
+   The last frame of the mountain with the run written over it, as an image.
+   Where the phone can share files it opens the share sheet; anywhere else
+   it downloads. */
+async function shareRun(won) {
+  const W = 1080, H = 1350, cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const g = cv.getContext('2d');
+  renderer.render(scene, camera);
+  const src = renderer.domElement, sr = src.width / src.height, dr = W / H;
+  let sw = src.width, sh = src.height, sx = 0, sy = 0;
+  if (sr > dr) { sw = sh * dr; sx = (src.width - sw) / 2; } else { sh = sw / dr; sy = (src.height - sh) / 2; }
+  try { g.drawImage(src, sx, sy, sw, sh, 0, 0, W, H); } catch (e) { g.fillStyle = '#0a1222'; g.fillRect(0, 0, W, H); }
+  const gr = g.createLinearGradient(0, 0, 0, H);
+  gr.addColorStop(0, 'rgba(4,8,16,.82)'); gr.addColorStop(0.45, 'rgba(4,8,16,.25)'); gr.addColorStop(1, 'rgba(4,8,16,.9)');
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  const disp = '800 ', mono = '600 ';
+  g.fillStyle = '#ff6a2b'; g.font = mono + '30px "IBM Plex Mono", monospace';
+  g.fillText("MOUNTAIN #" + SEED + ' · ' + new Date().toISOString().slice(0, 10), 72, 110);
+  g.fillStyle = '#eaf1fb'; g.font = disp + '120px Archivo, sans-serif';
+  g.fillText('SUMMIT', 72, 240);
+  g.fillStyle = won ? '#b6ff3f' : '#ff6a2b';
+  g.fillText(won ? 'MADE IT' : (CAUSES[deathCause] || CAUSES.wrecked).word.toUpperCase(), 72, 360);
+  const rows = [
+    ['SCORE', fmt(Math.round(P.score))],
+    [won ? 'TIME' : 'DESCENT', won ? fmtTime(P.time) : fmt(P.dist) + ' M'],
+    ['BEST CHAIN', '×' + P.chainBest],
+    ['TOP SPEED', fmt(P.topSpeed * 3.6) + ' KM/H'],
+    ['RIDER', R.name.toUpperCase()],
+    ['CHALLENGES', dailyDone.length + ' / 3']
+  ];
+  let y = H - 470;
+  for (const [k, v] of rows) {
+    g.fillStyle = '#93a7c6'; g.font = mono + '28px "IBM Plex Mono", monospace'; g.fillText(k, 72, y);
+    g.fillStyle = '#eaf1fb'; g.font = mono + '52px "IBM Plex Mono", monospace';
+    g.textAlign = 'right'; g.fillText(v, W - 72, y + 4); g.textAlign = 'left';
+    y += 74;
+  }
+  const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
+  if (!blob) return;
+  const file = new File([blob], 'summit-' + SEED + '.png', { type: 'image/png' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'Summit Whiteout', text: 'Mountain #' + SEED + ' — ' + fmt(Math.round(P.score)) + ' pts' });
+      return;
+    }
+  } catch (err) { if (err && err.name === 'AbortError') return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = file.name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
 function careerLine() {
   if (career.vert < 50) return '';
   const ev = career.vert / EVEREST;
@@ -4392,6 +4563,7 @@ function resetRun() {
   P.chain = 1; P.chainBest = 1; P.fastT = 0; P.near = 0; P.bestTrick = 0; P.tricks = 0; P.time = 0; P.switches = 0;
   slideGap = 165; slideZ = P.z + slideGap;
   P.kappa = 0; P.pumpAcc = 0; P.pumpPk = 0; P.pumps = 0;
+  P.cleanSlaloms = 0; P.cleanFrom = 0; P.cleanBest = 0; P.finished = false;
   weather = 0; weatherT = 26; weatherLen = 0;
   shake = 0; deathCause = null; curSector = -1;
   ghostRec = []; ghostClock = 0; ghostData = loadGhost();
@@ -4436,7 +4608,7 @@ function judgePole(o) {
   if (P.slalomRun >= o.of) {
     bumpChain(3, 'Slalom');
     const bonus = Math.round(300 * P.chain);
-    P.score += bonus; P.lines++;
+    P.score += bonus; P.lines++; P.cleanSlaloms++;
     popup('Clean slalom', '+' + fmt(bonus), 'near');
     Snd.tone(620, 0.12, 'triangle', 0.22);
     setTimeout(() => Snd.tone(930, 0.2, 'triangle', 0.18), 90);
@@ -4774,6 +4946,7 @@ function land(impact) {
 
 function wipeout(reason, damage) {
   if (P.wipe > 0) return;
+  P.cleanFrom = P.dist;
   P.air = false;
   P.wipe = 1.0;
   P.switch = false; P.spinQ = 0;
@@ -5009,6 +5182,7 @@ function step(dt) {
   }
   const moved = -(P.z - z0);
   if (moved > 0) P.dist += moved;
+  P.cleanBest = Math.max(P.cleanBest, P.dist - P.cleanFrom);
   P.alt = START_ALT + (P.y - P.y0) * altScale;
   P.lowAlt = Math.min(P.lowAlt, P.alt);
   ghostClock += dt;
@@ -5296,6 +5470,7 @@ function outrunStep(dt) {
 function finishRun() {
   if (mode === 'won') return;
   mode = 'won';
+  P.finished = true; dailyTick(1);
   deathT = 0;
   if (introHint) introHint.hidden = true;
   bankCareer();
@@ -5318,7 +5493,7 @@ function finishRun() {
   $('winLine').textContent = record
     ? 'Fastest you have ridden it. The slide never got close.'
     : 'Three thousand two hundred metres of vertical, all six faces, and the slide is still up there somewhere.';
-  $('winFine').innerHTML = 'Your ghost is saved — next run you race it down. ' + careerLine();
+  $('winFine').innerHTML = 'Your ghost is saved — next run you race it down. ' + dailyLine() + ' ' + careerLine();
   hud.classList.remove('live');
   padLayer.classList.remove('live');
   releaseZones();
@@ -5750,8 +5925,11 @@ const CAUSES = {
 };
 
 /** Everything you rode this run, added to everything you have ever ridden. */
+let unlockedNow = [];
 function bankCareer() {
+  const before = career.vert;
   career.vert += Math.max(0, Math.round(START_ALT - P.lowAlt));
+  unlockedNow = JACKETS.filter(j => before < j.vert && career.vert >= j.vert);
   career.runs += 1;
   career.cans += P.cans;
   career.tricks += P.tricks;
@@ -5791,7 +5969,7 @@ function endRun() {
     : (shortBy > 0 && shortBy < 900
         ? 'You went down ' + fmt(shortBy) + ' m short of your furthest. The chain is what you were really carrying.'
         : 'Land facing your direction of travel — the spin has to finish before the snow does.'))
-    + ' ' + careerLine();
+    + ' ' + dailyLine() + ' ' + careerLine();
   hud.classList.remove('live');
   padLayer.classList.remove('live');
   releaseZones();
@@ -5819,6 +5997,8 @@ async function beginRun() {
 $('btnStart').addEventListener('click', beginRun);
 $('btnAgain').addEventListener('click', beginRun);
 $('btnWinAgain').addEventListener('click', beginRun);
+$('btnShareO').addEventListener('click', () => shareRun(false));
+$('btnShareW').addEventListener('click', () => shareRun(true));
 $('btnResume').addEventListener('click', () => { hide(pauseScreen); mode = 'play'; last = performance.now(); });
 $('btnCal').addEventListener('click', recentre);
 $('btnPause').addEventListener('click', () => {
@@ -5967,6 +6147,7 @@ function frame(now) {
     step(dt);
     liveTrick();
     coachTick(dt);
+    dailyTick(dt);
     updateHUD(dt);
     if (warnTimer > 0) { warnTimer -= dt; if (warnTimer <= 0) warnEl.classList.remove('on'); }
     const f = parseFloat(flash.style.opacity || '0');
@@ -6048,6 +6229,7 @@ function boot(saved) {
   if (ghostData) bits.push('Your ghost is on the hill.');
   $('startFine').innerHTML = bits.join(' ');
   $('careerFine').innerHTML = careerLine();
+  renderDaily(); renderJackets();
   requestAnimationFrame(frame);
 }
 try {
