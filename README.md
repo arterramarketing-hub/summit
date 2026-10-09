@@ -291,6 +291,19 @@ everything else is generated at runtime.
   120 km of career descent.
 - **Pause and haptics.** A pause button in the HUD; landings, crashes and boosts
   vibrate where the browser can (Android; iOS Safari has no vibration API).
+- **The slide means something now.** It ran at a fixed pace with a capped
+  catch-up, which any rider holding speed outran: over whole simulated runs the
+  gap sat at 130–170 m and the slide never killed anyone. It rides a rubber
+  band now — 94% of your own recent pace, leaning towards a target gap that
+  closes from 130 m at the top to 75 m at the bottom — so a clean rider drifts
+  slightly ahead and a crash costs most of the margin. Simulated: riders who
+  crashed nine and eleven times were buried; cleaner ones kept 99 m or more.
+- **Skyline feet fade to transparent**, not to the fog colour. The fog colour is
+  only right against fully fogged ground; sunlit snow a couple of hundred
+  metres off is brighter, so the feet stood against it as grey cardboard in
+  the lower sectors.
+- **Two kinds of tree.** About a third are a taller, narrower spruce carrying
+  more snow, and every tree gets its own height and girth.
 - **The rider faces where it is going.** The physics measures heading one way
   round and three.js measures yaw the other: forward on the snow is
   `(sin h, -cos h)`, and `rotation.y = h` points a model's nose at

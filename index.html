@@ -523,7 +523,7 @@ button:focus-visible,.tool:focus-visible{outline:2px solid var(--frost);outline-
         <div><dt>Switch</dt><dd>Land backwards and you keep riding backwards until you spin out of it. It pays 1.6× and a chain step, and it steers exactly the way it always did.</dd></div>
         <div><dt>Cans</dt><dd>Every fifth can fires a boost: a hard surge and double points until you crash.</dd></div>
         <div><dt>Chain</dt><dd>Tricks, cans, close passes and flat-out speed all build one multiplier. It never times out. A wipeout takes all of it.</dd></div>
-        <div><dt>Slide</dt><dd>The avalanche never stops — but clearing a sector shoves it 80 m back down the hill.</dd></div>
+        <div><dt>Slide</dt><dd>The avalanche keeps your pace and closes in as the mountain goes on. Ride clean and you stay ahead; crash twice close together and it has you. Clearing a sector shoves it 80 m back.</dd></div>
       </dl>
     </div>
   </section>
@@ -1415,7 +1415,12 @@ function ridgeGeo(sd, sides, haze, foot, gain) {
        fog colour to the byte, whatever the sector has done to it. Brighten
        the material instead and every dissolved foot is a pale slab lying in
        the bank, which is what the first attempt at this looked like. */
-    col.push(lerp(_rc.r, 1, k), lerp(_rc.g, 1, k), lerp(_rc.b, 1, k));
+    /* and fading the foot to transparent rather than to the fog colour: the
+       fog colour is only right where the ground behind is fully fogged, and
+       sunlit snow two hundred metres off is brighter than that, so the feet
+       stood against it as grey cardboard. Transparent is right against
+       anything. */
+    col.push(_rc.r, _rc.g, _rc.b, 1 - k);
   };
   for (let s = 0; s < sides; s++) {
     /* baked lit from local -z, which is where the instances aim the sun */
@@ -1434,7 +1439,7 @@ function ridgeGeo(sd, sides, haze, foot, gain) {
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
   return g;
 }
 
@@ -1681,6 +1686,20 @@ const TREE_GEO = bake([
   { geo: new THREE.ConeGeometry(1.00, 2.6, 7, 1, true), color: 0x2d5c48, m: mat4(0, 7.5, 0) },
   { geo: new THREE.ConeGeometry(1.72, 0.85, 7, 1, true), color: 0xe9f1fb, m: mat4(0, 4.45, 0) },
   { geo: new THREE.ConeGeometry(1.06, 0.70, 7, 1, true), color: 0xf1f7ff, m: mat4(0, 6.6, 0) }
+]);
+/* ---- spruce: taller, narrower, carrying more snow ----
+   A forest of one shape is a pattern, not a forest. Roughly a third of the
+   trees are this one, and every tree gets its own height and girth. */
+const TREE2_GEO = bake([
+  { geo: new THREE.CylinderGeometry(0.22, 0.34, 2.4, 5, 1, true), color: 0x3f2e22, m: mat4(0, 1.2, 0) },
+  { geo: new THREE.ConeGeometry(1.75, 3.2, 6, 1, true), color: 0x18382e, m: mat4(0, 3.3, 0) },
+  { geo: new THREE.ConeGeometry(1.45, 2.9, 6, 1, true), color: 0x1f4436, m: mat4(0, 5.0, 0) },
+  { geo: new THREE.ConeGeometry(1.10, 2.6, 6, 1, true), color: 0x26503f, m: mat4(0, 6.6, 0) },
+  { geo: new THREE.ConeGeometry(0.70, 2.2, 6, 1, true), color: 0x2d5a47, m: mat4(0, 8.1, 0) },
+  { geo: new THREE.ConeGeometry(1.52, 0.95, 6, 1, true), color: 0xedf4fd, m: mat4(0, 4.15, 0) },
+  { geo: new THREE.ConeGeometry(1.22, 0.85, 6, 1, true), color: 0xf1f7ff, m: mat4(0, 5.75, 0) },
+  { geo: new THREE.ConeGeometry(0.88, 0.75, 6, 1, true), color: 0xf4f9ff, m: mat4(0, 7.25, 0) },
+  { geo: new THREE.ConeGeometry(0.55, 0.70, 6, 1, true), color: 0xf7fbff, m: mat4(0, 8.75, 0) }
 ]);
 /* ---- boulder ---- */
 const ROCK_GEO = bake([
@@ -2701,7 +2720,8 @@ function makePool(geo, cap, jitter, matOpts) {
   return { mesh, free, dirty: false, cap, live: 0 };
 }
 const pools = {
-  tree:  makePool(TREE_GEO, 760, true),
+  tree:  makePool(TREE_GEO, 520, true),
+  tree2: makePool(TREE2_GEO, 300, true),
   rock:  makePool(ROCK_GEO, 130, true),
   serac: makePool(SERAC_GEO, 70, true),
   spire: makePool(SPIRE_GEO, 60, true),
@@ -2830,7 +2850,8 @@ function addRamp(x, z, opts) {
 }
 
 function addProp(kind, x, z, opts) {
-  const pool = pools[kind];
+  const pk = kind === 'tree' && Math.random() < 0.35 ? 'tree2' : kind;
+  const pool = pools[pk];
   if (!pool.free.length) return null;
   const o = Object.assign({
     kind, x, z, y: height(x, z), slot: pool.free.pop(),
@@ -2838,6 +2859,11 @@ function addProp(kind, x, z, opts) {
     lift: 0, gone: false, used: false, passed: false, scenery: false,
     grip: 0, foot: 2, baked: 0, rx: 0, rz: 0, drop: 0
   }, opts || {});
+  o.pool = pk;
+  if (kind === 'tree') {
+    const sc = o.scale, tall = rand(0.86, 1.22), girth = rand(0.88, 1.12);
+    o.sy = sc * tall; o.sx = o.sz = sc * girth;
+  }
   const lie = LIE[kind];
   if (lie && !opts.grip) {
     o.grip = lie.grip; o.foot = lie.foot; o.baked = lie.baked || 0;
@@ -2853,7 +2879,7 @@ function addProp(kind, x, z, opts) {
   return o;
 }
 function placeProp(o) {
-  const pool = pools[o.kind];
+  const pool = pools[o.pool || o.kind];
   /* default XYZ order tilts the spin axis with the object; YXZ keeps the spin
      about world up and the tilt in the object's own frame, which is what makes
      a tipped can gyrate instead of just turning on the spot */
@@ -2869,7 +2895,7 @@ function placeProp(o) {
 }
 function killProp(o) {
   if (o.kind === 'ramp') { const i = ramps.indexOf(o); if (i >= 0) ramps.splice(i, 1); }
-  const pool = pools[o.kind];
+  const pool = pools[o.pool || o.kind];
   pool.mesh.setMatrixAt(o.slot, ZERO);
   pool.dirty = true;
   pool.free.push(o.slot);
@@ -3876,7 +3902,7 @@ let mode = 'menu';
 let genZ = 0, nextRampZ = 0, nextCanZ = 0, nextMarkZ = 0;
 let finishZ = 0, finishPlaced = false;
 let nextSlalomZ = 0, slalomRuns = 0, slalomWarnZ = 0;
-let slideZ = 0, slideGap = 190;
+let slideZ = 0, slideGap = 190, slideEma = 0;
 let weather = 0, weatherT = 24, weatherLen = 0;
 let shake = 0, menuT = 0, deathT = 0, deathCause = null, curSector = -1, crevWarn = 0;
 /* ---- the length of the descent ----
@@ -4563,6 +4589,7 @@ function resetRun() {
   P.chain = 1; P.chainBest = 1; P.fastT = 0; P.near = 0; P.bestTrick = 0; P.tricks = 0; P.time = 0; P.switches = 0;
   slideGap = 165; slideZ = P.z + slideGap;
   P.kappa = 0; P.pumpAcc = 0; P.pumpPk = 0; P.pumps = 0;
+  slideEma = 0;
   P.cleanSlaloms = 0; P.cleanFrom = 0; P.cleanBest = 0; P.finished = false;
   weather = 0; weatherT = 26; weatherLen = 0;
   shake = 0; deathCause = null; curSector = -1;
@@ -5343,8 +5370,19 @@ function step(dt) {
      a run could end at fifteen seconds through nobody's fault. It now comes up
      to speed over the first 260 m, alongside you. */
   const warm = clamp(P.dist / 260, 0, 1);
-  const chase = P.slideGrace > 0 ? 0 : Math.min(13, Math.max(0, slideGap - 55) * 0.11) * warm;
-  const slideSpeed = (19 + d * 5.5 + P.dist * 0.0003) * (0.55 + 0.45 * warm) + chase;
+  /* And then it has to mean something. It used to have a fixed pace plus a
+     capped catch-up, which any rider holding speed simply outran: measured
+     over whole runs the gap sat at 130-170 m and never once killed anyone.
+     Now it rides on a rubber band. It runs at 94% of your own recent pace
+     and leans towards a target gap that closes from 130 m at the top to 75 m
+     at the bottom, so a clean rider drifts a little ahead of it and a crash —
+     two and a half seconds stopped while it keeps its base pace — costs most
+     of the margin. Two close together and it has you. */
+  slideEma += (speedOf() - slideEma) * Math.min(1, dt / 4);
+  const slideBase = (19 + d * 5.5) * (0.55 + 0.45 * warm);
+  const slideTarget = lerp(130, 75, d);
+  const slideSpeed = P.slideGrace > 0 ? slideBase
+    : Math.max(slideBase, slideEma * 0.94 * warm + slideBase * (1 - warm)) + clamp((slideGap - slideTarget) * 0.10, -3, 14) * warm;
   slideZ -= slideSpeed * dt;
   slideGap = slideZ - P.z;
   if (slideGap > 200) { slideGap = 200; slideZ = P.z + slideGap; }
