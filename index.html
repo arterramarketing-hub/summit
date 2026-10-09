@@ -4057,6 +4057,15 @@ async function shareRun(won) {
       return;
     }
   } catch (err) { if (err && err.name === 'AbortError') return; }
+  /* inside the Claude artifact viewer a plain download link does nothing;
+     the viewer's own save prompt is the way out */
+  if (window.claude && typeof window.claude.use === 'function') {
+    const dl = await window.claude.use('downloads');
+    if (dl) {
+      try { await dl.save({ filename: file.name, data: blob }); } catch (err) {}
+      return;
+    }
+  }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = file.name;
   document.body.appendChild(a); a.click(); a.remove();
