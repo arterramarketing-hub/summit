@@ -24,7 +24,16 @@ namespace Summit
         readonly List<Vector2Int> wanted = new List<Vector2Int>();
         readonly List<Vector2Int> drop = new List<Vector2Int>();
 
-        void Awake() { quads = Mathf.RoundToInt(chunkSize / MountainField.Quad); }
+        int lastCx = int.MinValue, lastCz = int.MinValue, sortCx, sortCz;
+        bool pending;
+        System.Comparison<Vector2Int> byDistance;
+
+        void Awake()
+        {
+            quads = Mathf.RoundToInt(chunkSize / MountainField.Quad);
+            byDistance = (a, b) =>
+                (Mathf.Abs(a.x - sortCx) + Mathf.Abs(a.y - sortCz)).CompareTo(Mathf.Abs(b.x - sortCx) + Mathf.Abs(b.y - sortCz));
+        }
         void Start() { Refresh(true); }
         void Update() { Refresh(false); }
 
@@ -36,14 +45,17 @@ namespace Summit
             if (target == null) return;
             int cx = Mathf.FloorToInt(target.position.x / chunkSize);
             int cz = Mathf.FloorToInt(target.position.z / chunkSize);
+            // nothing to do until the rider crosses into a new cell, or while chunks are still queued
+            if (!all && cx == lastCx && cz == lastCz && !pending) return;
+            lastCx = cx; lastCz = cz;
 
             wanted.Clear();
             for (int dz = -behindChunks; dz <= aheadChunks; dz++)
                 for (int dx = -sideChunks; dx <= sideChunks; dx++)
                     wanted.Add(new Vector2Int(cx + dx, cz + dz));
             // nearest first
-            wanted.Sort((a, b) =>
-                (Mathf.Abs(a.x - cx) + Mathf.Abs(a.y - cz)).CompareTo(Mathf.Abs(b.x - cx) + Mathf.Abs(b.y - cz)));
+            sortCx = cx; sortCz = cz;
+            wanted.Sort(byDistance);
 
             drop.Clear();
             foreach (var kv in live)
@@ -53,9 +65,10 @@ namespace Summit
             foreach (var k in drop) { live[k].SetActive(false); spare.Enqueue(live[k]); live.Remove(k); }
 
             int budget = all ? int.MaxValue : buildsPerFrame;
+            pending = false;
             foreach (var k in wanted)
             {
-                if (budget <= 0) break;
+                if (budget <= 0) { pending = true; break; }
                 if (live.ContainsKey(k)) continue;
                 live[k] = Build(k);
                 budget--;
@@ -89,6 +102,10 @@ namespace Summit
             return go;
         }
 
+        Vector3[] verts, norms;
+        Vector2[] uvs;
+        Color[] cols;
+        int[] tris;
         float[] grid;   // heights with a one-cell border, reused between chunks
 
         void Fill(Mesh mesh, Vector2Int key)
@@ -103,10 +120,11 @@ namespace Summit
                 for (int i = 0; i < g; i++)
                     grid[j * g + i] = MountainField.Height(x0 + (i - 1) * q, z0 + (j - 1) * q);
 
-            var verts = new Vector3[n * n];
-            var norms = new Vector3[n * n];
-            var uvs = new Vector2[n * n];
-            var cols = new Color[n * n];
+            if (verts == null || verts.Length != n * n)
+            {
+                verts = new Vector3[n * n]; norms = new Vector3[n * n];
+                uvs = new Vector2[n * n]; cols = new Color[n * n];
+            }
             for (int j = 0; j < n; j++)
                 for (int i = 0; i < n; i++)
                 {
@@ -124,15 +142,18 @@ namespace Summit
                     cols[v] = k > 0f ? Color.Lerp(Color.white, new Color(0.72f, 0.80f, 0.95f), k * 0.55f)
                                      : Color.Lerp(Color.white, new Color(1f, 0.98f, 0.94f), -k * 0.4f);
                 }
-            var tris = new int[quads * quads * 6];
-            int t = 0;
-            for (int j = 0; j < quads; j++)
-                for (int i = 0; i < quads; i++)
-                {
-                    int a = j * n + i, b = a + 1, c = a + n, d = c + 1;
-                    tris[t++] = a; tris[t++] = c; tris[t++] = b;
-                    tris[t++] = b; tris[t++] = c; tris[t++] = d;
-                }
+            if (tris == null)
+            {
+                tris = new int[quads * quads * 6];
+                int t = 0;
+                for (int j = 0; j < quads; j++)
+                    for (int i = 0; i < quads; i++)
+                    {
+                        int a = j * n + i, b = a + 1, c = a + n, d = c + 1;
+                        tris[t++] = a; tris[t++] = c; tris[t++] = b;
+                        tris[t++] = b; tris[t++] = c; tris[t++] = d;
+                    }
+            }
             mesh.Clear();
             mesh.vertices = verts;
             mesh.normals = norms;

@@ -132,6 +132,7 @@ namespace Summit
         {
             X = x; Z = z; StartZ = z;
             Y = MountainField.Height(x, z);
+            prevX = X; prevY = Y; prevZ = Z; acc = 0f;
             Heading = 0f; Speed = 0f; vx = vz = 0f; Vy = 0f; vyGround = 0f;
             Airborne = false; Crashed = false; Running = false;
             AirTime = 0f; Spin = 0f; spinVis = 0f; lean = 0f; tuck = 0f;
@@ -152,15 +153,28 @@ namespace Summit
             vyGround = g.x * vx + g.y * vz;
         }
 
+        const float StepH = 1f / 120f;
+        float acc, prevX, prevY, prevZ;
+        bool popPending; float popHold;
+
         void Update()
         {
-            float dt = Mathf.Min(Time.deltaTime, 1f / 20f);
+            float dt = Mathf.Min(Time.deltaTime, 0.05f);
             if (Running)
             {
-                int n = Mathf.CeilToInt(dt / (1f / 120f));
-                float h = dt / n;
-                for (int i = 0; i < n; i++) Step(h, i == 0);
+                // fixed 120 Hz physics no matter how uneven the frames are; the picture is blended between steps
+                if (input.Released && input.LastHold > 0.08f) { popPending = true; popHold = input.LastHold; }
+                acc += dt;
+                int guard = 0;
+                while (acc >= StepH && guard++ < 12)
+                {
+                    prevX = X; prevY = Y; prevZ = Z;
+                    Step(StepH, false);
+                    acc -= StepH;
+                }
+                popPending = false;
             }
+            else { acc = 0f; prevX = X; prevY = Y; prevZ = Z; }
             UpdateVisual(dt);
         }
 
@@ -185,7 +199,7 @@ namespace Summit
             if (!Airborne)
             {
                 Ground(dt, holding);
-                if (firstSub && input.Released && input.LastHold > 0.08f) Pop(input.LastHold);
+                if (popPending) { popPending = false; Pop(popHold); }
             }
             else Air(dt);
 
@@ -365,8 +379,10 @@ namespace Summit
         void UpdateVisual(float dt)
         {
             float k = 1f - Mathf.Exp(-dt * 12f);
-            float vis = Airborne ? Y : MountainField.DrawnHeight(X, Z);
-            transform.position = new Vector3(X, vis, Z);
+            float alpha = Running ? Mathf.Clamp01(acc / StepH) : 1f;
+            float rx = Mathf.Lerp(prevX, X, alpha), rz = Mathf.Lerp(prevZ, Z, alpha);
+            float vis = Airborne ? Mathf.Lerp(prevY, Y, alpha) : MountainField.DrawnHeight(rx, rz);
+            transform.position = new Vector3(rx, vis, rz);
 
             Vector3 n = Airborne ? Vector3.up : MountainField.Normal(X, Z);
             SurfaceNormal = dt <= 0f ? n : Vector3.Slerp(SurfaceNormal, n, Airborne ? k * 0.25f : k);

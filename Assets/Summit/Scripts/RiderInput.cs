@@ -24,10 +24,15 @@ namespace Summit
         public float tiltRange = 0.36f;   // sin of the tilt that gives full lock (about 21 degrees)
         public float deadZone = 0.03f;
         public bool invertTilt;
-        /// <summary>false = tap the left or right half to turn (default); true = steer by tilting the phone.</summary>
+        /// <summary>false = drag a finger left or right like a stick (default); true = steer by tilting the phone.</summary>
         public bool useTilt;
 
         float zero, twoTime;
+        /// <summary>One-finger drag stick: where the finger first touched and where it is now (screen pixels).</summary>
+        public bool StickActive;
+        public Vector2 StickOrigin, StickPos;
+        public float stickRadiusFrac = 0.11f;   // full lock at this fraction of the screen width
+        bool stickPrev;
         bool wasDown, swallow;
 
         void OnEnable()
@@ -62,17 +67,26 @@ namespace Summit
             float t = RawTilt();
             HasTilt = !float.IsNaN(t);
             float target = 0f;
-            Pointers(out bool left, out bool right, out int fingers);
+            Pointers(out int fingers, out Vector2 fingerPos);
             if (!useTilt)
             {
-                // two thumbs tapping left/right overlap for a moment: only a deliberate two-finger hold tucks
+                // one finger is a stick: the spot you first touch is neutral, drag sideways to steer
+                bool on = fingers >= 1;
+                if (on && !stickPrev) StickOrigin = fingerPos;
+                stickPrev = on;
+                StickActive = on;
+                StickPos = fingerPos;
+                float radius = Mathf.Max(60f, Screen.width * stickRadiusFrac);
+                float d = on ? Mathf.Clamp((fingerPos.x - StickOrigin.x) / radius, -1f, 1f) : 0f;
+                float a = Mathf.Abs(d);
+                a = a < 0.08f ? 0f : (a - 0.08f) / 0.92f;
+                target = Mathf.Sign(d) * a;
+                // a second finger held down tucks; a quick overlap does not count
                 twoTime = fingers >= 2 ? twoTime + Time.unscaledDeltaTime : 0f;
-                target = (right ? 1f : 0f) - (left ? 1f : 0f);
-                if (fingers >= 2) target = 0f;
-                target *= 0.9f;
             }
             else if (HasTilt)
             {
+                StickActive = false; stickPrev = false;
                 float d = t - zero;
                 if (invertTilt) d = -d;
                 float a = Mathf.Abs(d);
@@ -81,19 +95,11 @@ namespace Summit
             }
             float key = KeyAxis();
             if (key != 0f) target = key;
-            // a short low-pass takes the jitter out of the sensor without feeling laggy
-            if (useTilt)
-                Steer = Mathf.Lerp(Steer, target, 1f - Mathf.Exp(-Time.unscaledDeltaTime * 18f));
-            else
-            {
-                // ramp the turn in so a tap eases into the corner instead of snapping to full lock
-                bool reversing = target * Steer < 0f;
-                float rate = target == 0f || reversing ? 7f : 3.6f;
-                Steer = Mathf.MoveTowards(Steer, target, rate * Time.unscaledDeltaTime);
-            }
+            // a short low-pass takes the jitter out of the finger or sensor without feeling laggy
+            Steer = Mathf.Lerp(Steer, target, 1f - Mathf.Exp(-Time.unscaledDeltaTime * (useTilt ? 18f : 14f)));
 
             // hold / release
-            // tap mode: one finger steers, two fingers (or Space) tuck; tilt mode: any press tucks
+            // stick mode: a second finger (or Space) tucks; tilt mode: any press tucks
             bool down = useTilt ? PointerDown() : (twoTime > 0.22f || SpaceDown());
             if (swallow) { if (!down) swallow = false; down = false; wasDown = false; }
             Pressed = down && !wasDown;
@@ -141,38 +147,37 @@ namespace Summit
 #endif
         }
 
-        /// <summary>Which half of the screen is being touched, and how many fingers are down.</summary>
-        static void Pointers(out bool left, out bool right, out int fingers)
+        /// <summary>How many fingers are down, and where the first one is.</summary>
+        static void Pointers(out int fingers, out Vector2 pos)
         {
-            left = right = false; fingers = 0;
-            float mid = Screen.width * 0.5f;
+            fingers = 0; pos = Vector2.zero;
 #if ENABLE_INPUT_SYSTEM
             if (Touchscreen.current != null)
             {
                 foreach (var tc in Touchscreen.current.touches)
                 {
                     if (!tc.press.isPressed) continue;
+                    if (fingers == 0) pos = tc.position.ReadValue();
                     fingers++;
-                    if (tc.position.ReadValue().x < mid) left = true; else right = true;
                 }
             }
             if (fingers == 0 && Mouse.current != null && Mouse.current.leftButton.isPressed)
             {
                 fingers = 1;
-                if (Mouse.current.position.ReadValue().x < mid) left = true; else right = true;
+                pos = Mouse.current.position.ReadValue();
             }
 #else
             for (int i = 0; i < Input.touchCount; i++)
             {
                 var tc = Input.GetTouch(i);
                 if (tc.phase == TouchPhase.Ended || tc.phase == TouchPhase.Canceled) continue;
+                if (fingers == 0) pos = tc.position;
                 fingers++;
-                if (tc.position.x < mid) left = true; else right = true;
             }
             if (fingers == 0 && Input.GetMouseButton(0))
             {
                 fingers = 1;
-                if (Input.mousePosition.x < mid) left = true; else right = true;
+                pos = Input.mousePosition;
             }
 #endif
         }

@@ -6,6 +6,9 @@ namespace Summit
     /// <summary>The heads-up display, built in code so there is nothing to wire up.</summary>
     public class Hud : MonoBehaviour
     {
+        int lastKmh = -2, lastPts = -2, lastMult = -1, lastGap = -2;
+        RectTransform canvasRect, stickRing, stickKnob;
+        Canvas canvasRef;
         RectTransform playBtn, restartBtn, modeBtn;
         Text modeLabel;
         Text playLabel;
@@ -20,6 +23,8 @@ namespace Summit
         {
             font = LoadFont();
             var canvas = gameObject.AddComponent<Canvas>();
+            canvasRef = canvas;
+            canvasRect = (RectTransform)transform;
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = 10;
             var scaler = gameObject.AddComponent<CanvasScaler>();
@@ -55,6 +60,14 @@ namespace Summit
             hint = NewText("Hint", safe, new Vector2(0.5f, 0f), new Vector2(0f, 120f), 44, TextAnchor.LowerCenter);
             hint.color = new Color(1f, 1f, 1f, 0.9f);
 
+            // the drag stick: a ring where the finger lands and a knob that follows it
+            var circle = MakeCircle(96);
+            var ring = NewImage("StickRing", transform, new Color(1f, 1f, 1f, 0.22f));
+            ring.sprite = circle; stickRing = ring.rectTransform;
+            var knob = NewImage("StickKnob", transform, new Color(1f, 1f, 1f, 0.7f));
+            knob.sprite = circle; stickKnob = knob.rectTransform;
+            stickRing.gameObject.SetActive(false); stickKnob.gameObject.SetActive(false);
+
             // buttons (hit-tested by SummitGame, so no EventSystem is needed)
             var pb = NewImage("PlayButton", safe, new Color(0.10f, 0.45f, 0.90f, 0.95f));
             Place(pb.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, -90f), new Vector2(520f, 150f), new Vector2(0.5f, 0.5f));
@@ -74,7 +87,38 @@ namespace Summit
             SetButtons(false, false, "PLAY");
         }
 
-        public void SetMode(bool tilt) { modeLabel.text = tilt ? "STEERING: TILT  (tap to change)" : "STEERING: TAP SIDES  (tap to change)"; }
+        static Sprite MakeCircle(int px)
+        {
+            var t = new Texture2D(px, px, TextureFormat.RGBA32, false);
+            float c = (px - 1) * 0.5f;
+            for (int y = 0; y < px; y++)
+                for (int x = 0; x < px; x++)
+                {
+                    float d = Mathf.Sqrt((x - c) * (x - c) + (y - c) * (y - c)) / c;
+                    t.SetPixel(x, y, new Color(1f, 1f, 1f, Mathf.Clamp01((1f - d) * 6f)));
+                }
+            t.Apply();
+            return Sprite.Create(t, new Rect(0, 0, px, px), new Vector2(0.5f, 0.5f), 100f);
+        }
+
+        /// <summary>Draws the stick at the finger's start point; positions are screen pixels.</summary>
+        public void SetStick(bool show, Vector2 origin, Vector2 pos, float radiusPx)
+        {
+            if (stickRing.gameObject.activeSelf != show)
+            {
+                stickRing.gameObject.SetActive(show); stickKnob.gameObject.SetActive(show);
+            }
+            if (!show) return;
+            float sc = Mathf.Max(0.01f, canvasRef.scaleFactor);
+            RectTransformUtility.ScreenPointToLocalPointInRectangle(canvasRect, origin, null, out Vector2 o);
+            float kx = Mathf.Clamp(pos.x - origin.x, -radiusPx, radiusPx) / sc;
+            stickRing.anchoredPosition = o;
+            stickRing.sizeDelta = Vector2.one * (radiusPx * 2f / sc);
+            stickKnob.anchoredPosition = o + new Vector2(kx, 0f);
+            stickKnob.sizeDelta = Vector2.one * (radiusPx * 0.9f / sc);
+        }
+
+        public void SetMode(bool tilt) { modeLabel.text = tilt ? "STEERING: TILT  (tap to change)" : "STEERING: DRAG STICK  (tap to change)"; }
         public bool OnMode(Vector2 p) => Inside(modeBtn, p);
 
         public void SetButtons(bool play, bool restart, string playText)
@@ -171,10 +215,15 @@ namespace Summit
 
         public void SetRun(float kmh, int points, float mult, float gap, float gapMax, bool showRun)
         {
-            speed.text = showRun ? Mathf.RoundToInt(kmh) + " km/h" : "";
-            score.text = showRun ? points.ToString("N0") : "";
-            chain.text = showRun && mult > 1.01f ? "x" + mult.ToString("0.#") + " chain" : "";
-            slide.text = showRun ? "SLIDE " + Mathf.Max(0, Mathf.RoundToInt(gap)) + " m" : "";
+            // only touch the Text objects when the number changes: rebuilding them every frame causes hitches
+            int k0 = showRun ? Mathf.RoundToInt(kmh) : -1;
+            if (k0 != lastKmh) { lastKmh = k0; speed.text = showRun ? k0 + " km/h" : ""; }
+            int p0 = showRun ? points : -1;
+            if (p0 != lastPts) { lastPts = p0; score.text = showRun ? points.ToString("N0") : ""; }
+            int m0 = showRun && mult > 1.01f ? Mathf.RoundToInt(mult * 10f) : 0;
+            if (m0 != lastMult) { lastMult = m0; chain.text = m0 > 0 ? "x" + mult.ToString("0.#") + " chain" : ""; }
+            int s0 = showRun ? Mathf.Max(0, Mathf.RoundToInt(gap)) : -1;
+            if (s0 != lastGap) { lastGap = s0; slide.text = showRun ? "SLIDE " + s0 + " m" : ""; }
             slide.color = gap < 40f ? new Color(1f, 0.45f, 0.35f) : Color.white;
             float k = Mathf.Clamp01(gap / gapMax);
             slideFill.rectTransform.anchorMax = new Vector2(showRun ? k : 0f, 1f);

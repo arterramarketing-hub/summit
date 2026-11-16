@@ -35,6 +35,7 @@ namespace Summit
 
         void Awake()
         {
+            QualitySettings.vSyncCount = 0;
             Application.targetFrameRate = 60;
             Screen.sleepTimeout = SleepTimeout.NeverSleep;
             Screen.orientation = ScreenOrientation.Portrait;
@@ -166,7 +167,7 @@ namespace Summit
             chase.Snap();
             hud.SetWhiteout(0f);
             hud.Show("SUMMIT", "Best " + Mathf.RoundToInt(best).ToString("N0"),
-                Application.isMobilePlatform ? "Tap left / right to turn  ·  two fingers to tuck  ·  let go to jump"
+                Application.isMobilePlatform ? "Drag a finger left / right to steer  ·  add a second finger to tuck  ·  lift it to jump"
                               : "A / D to steer  ·  hold Space to tuck  ·  let go to jump");
             hud.SetButtons(true, false, "PLAY");
             hud.SetMode(input.useTilt);
@@ -228,6 +229,9 @@ namespace Summit
                     }
                     break;
             }
+
+            bool stick = state == State.Riding && !input.useTilt && input.StickActive;
+            hud.SetStick(stick, input.StickOrigin, input.StickPos, Mathf.Max(60f, Screen.width * input.stickRadiusFrac));
 
             float gap = state == State.Ready ? 120f : slide.Gap(rider);
             float close = Mathf.Clamp01(1f - gap / 45f);
