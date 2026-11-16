@@ -109,9 +109,9 @@ namespace Summit
             float fcWind = (170f + 250f * s + 900f * s * s) * gust;
             float fW = F(fcWind), gW = Gain(fcWind, 1.5f);
             float fRoar = F(85f), gRoar = Gain(85f, 1.2f);
-            float fcHi = 1700f + 1800f * s;
-            float fHi = F(fcHi), gHi = Gain(fcHi, 1.1f);
-            float fLo = F(380f), gLo = Gain(380f, 1.3f);
+            float fcHi = 1100f + 1300f * s + 900f * sCarve;
+            float fHi = F(fcHi), gHi = Gain(fcHi, 0.9f);
+            float fLo = F(420f), gLo = Gain(420f, 1.6f);
             float fRum = F(48f), gRum = Gain(48f, 1.0f);
 
             int frames = data.Length / channels;
@@ -133,8 +133,9 @@ namespace Summit
                 gust += (gustTarget - gust) * (smoothK * 0.08f);
 
                 float sp = sSpeed;
-                float windAmp = (0.025f + 0.20f * sp * sp) * (0.75f + 0.25f * gust);
-                float roarAmp = 0.015f + 0.10f * sp;
+                // a soft bed of wind that only really opens up at speed
+                float windAmp = (0.006f + 0.11f * sp * sp) * (0.8f + 0.2f * gust);
+                float roarAmp = 0.004f + 0.045f * sp * sp;
                 float l = Band(ref windL, Noise(ref rngA), fW, 1.5f) * gW * windAmp
                         + Band(ref roarL, Noise(ref rngA), fRoar, 1.2f) * gRoar * roarAmp;
                 float r = Band(ref windR, Noise(ref rngB), fW, 1.5f) * gW * windAmp
@@ -144,11 +145,12 @@ namespace Summit
                 if (--crunchLeft <= 0)
                 {
                     crunchLeft = 18 + (int)((Noise(ref rngC) * 0.5f + 0.5f) * 90f);
-                    crunch = 0.55f + 0.9f * (Noise(ref rngC) * 0.5f + 0.5f);
+                    crunch = 0.8f + 0.4f * (Noise(ref rngC) * 0.5f + 0.5f);
                 }
-                float scrapeAmp = sSnow * ((0.012f + 0.045f * sp) + sCarve * (0.025f + 0.10f * sp));
+                // the board on snow: a quiet glide, and a clear swoosh that swells as the edge bites
+                float scrapeAmp = sSnow * ((0.008f + 0.03f * sp) + sCarve * sCarve * (0.06f + 0.20f * sp));
                 float n = Noise(ref rngC);
-                float scrape = (Band(ref scrapeHi, n, fHi, 1.1f) * gHi + 0.6f * Band(ref scrapeLo, n, fLo, 1.3f) * gLo)
+                float scrape = (Band(ref scrapeHi, n, fHi, 0.9f) * gHi * 0.8f + 0.7f * Band(ref scrapeLo, n, fLo, 1.6f) * gLo)
                              * scrapeAmp * crunch;
                 float pr = 0.5f + 0.3f * sPan;   // the edge you are on is a little louder on its side
                 l += scrape * (1f - pr) * 1.4f;
@@ -158,7 +160,7 @@ namespace Summit
                 float rum = Band(ref rumbleF, Noise(ref rngC), fRum, 1.0f) * gRum * sRumble * sRumble * 0.32f;
                 l += rum; r += rum;
 
-                float fx = Voices();
+                float fx = Voices() * 0.6f;
                 l = SoftLimit((l * sMaster + fx) * 1.1f);
                 r = SoftLimit((r * sMaster + fx) * 1.1f);
 

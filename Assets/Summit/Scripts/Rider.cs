@@ -13,7 +13,7 @@ namespace Summit
         // tuning: tweak these to change the feel (they are fields so a test harness can sweep them)
         public static float Gravity = 26f;     // pull down the slope, scaled up from real for feel
         public static float DragOpen = 0.014f, DragTuck = 0.0088f;   // air drag per (m/s)^2, standing vs tucked
-        const float GripStart = 7f, GripTuck = 4.5f;   // 1/s: how fast the edge bleeds sideways velocity
+        public static float GripStart = 16f, GripTuck = 11f;   // 1/s: how fast the edge kills sideways slide (higher = tighter)
         public static float AirGravity = 30f;
         const float MaxHeading = 1.45f;        // about 83 degrees off the fall line
         const float Tau = Mathf.PI * 2f;
@@ -81,12 +81,13 @@ namespace Summit
             trailAnchor.SetParent(transform, false);
             trail = trailAnchor.gameObject.AddComponent<TrailRenderer>();
             trail.alignment = LineAlignment.TransformZ;
-            trail.time = 7f;
-            trail.minVertexDistance = 0.5f;
-            trail.widthMultiplier = 0.34f;
+            trail.time = 14f;
+            trail.minVertexDistance = 0.35f;
+            trail.widthMultiplier = 0.42f;
             trail.material = trailMat;
-            trail.startColor = new Color(0.78f, 0.84f, 0.96f, 0.85f);
-            trail.endColor = new Color(0.84f, 0.89f, 0.98f, 0f);
+            // a shaded groove in the snow: darker and bluer than the surface so it reads behind you
+            trail.startColor = new Color(0.58f, 0.67f, 0.84f, 0.75f);
+            trail.endColor = new Color(0.70f, 0.78f, 0.92f, 0f);
             trail.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             trail.receiveShadows = false;
             trail.numCapVertices = 0;
@@ -259,7 +260,7 @@ namespace Summit
             float keep = Mathf.Exp(-Mathf.Lerp(GripStart, GripTuck, tuck) * dt);
             float vl2 = vl * keep;
             float lost = Mathf.Abs(vl) - Mathf.Abs(vl2);
-            vf += (vf >= 0f ? 1f : -1f) * lost * 0.6f;
+            vf += (vf >= 0f ? 1f : -1f) * lost * 0.8f;   // a clean carve keeps most of its speed
             v = f * vf + r * vl2;
             Carve = Mathf.Lerp(Carve, Mathf.Clamp01((lost / dt) / 18f + Mathf.Abs(Steer) * 0.2f), 1f - Mathf.Exp(-dt * 10f));
 
@@ -268,7 +269,7 @@ namespace Summit
             if (vlen < 3f) v += f * (6f * dt);
 
             // 4. steering turns the board; the velocity follows through the grip above
-            float turn = Mathf.Lerp(2.4f, 1.15f, Mathf.Clamp01(vlen / 38f)) * Mathf.Lerp(1f, 0.55f, tuck);
+            float turn = Mathf.Lerp(3.0f, 1.75f, Mathf.Clamp01(vlen / 38f)) * Mathf.Lerp(1f, 0.7f, tuck);
             Heading += Steer * turn * dt;
             // stalled across the hill: the board swings back down on its own
             if (vlen < 3f) Heading = Mathf.MoveTowards(Heading, 0f, dt * 1.4f * (1f - vlen / 3f));
@@ -327,7 +328,7 @@ namespace Summit
             // steering in the air spins; a short grace stops small hops from rotating you
             // in the air a gentle steer lines the board up for the landing; holding hard over spins
             if (AirTime > 0.18f && Mathf.Abs(Steer) > 0.6f) Spin += Steer * 9f * dt;
-            else Heading = Mathf.Clamp(Heading + Steer * 0.9f * dt, -MaxHeading, MaxHeading);
+            else Heading = Mathf.Clamp(Heading + Steer * 1.4f * dt, -MaxHeading, MaxHeading);
             float gy = MountainField.Height(X, Z);
             AboveGround = Y - gy;
             peak = Mathf.Max(peak, AboveGround);
@@ -435,7 +436,7 @@ namespace Summit
                 lastTravel = th;
                 yawRateS = Mathf.Lerp(yawRateS, yawRate, 1f - Mathf.Exp(-dt * 10f));
                 float want = Airborne ? 0f : Mathf.Clamp(Mathf.Atan2(Speed * yawRateS, 9.81f) * Mathf.Rad2Deg, -50f, 50f);
-                lean = Mathf.Lerp(lean, want, 1f - Mathf.Exp(-dt * 8f));
+                lean = Mathf.Lerp(lean, want, 1f - Mathf.Exp(-dt * 14f));
                 roll.localRotation = Quaternion.Euler(0f, 0f, -lean * 0.45f);
                 upper.localRotation = Quaternion.Euler(0f, 0f, -lean * 0.55f);
                 upper.localScale = new Vector3(1f, 1f - 0.24f * tuck, 1f);

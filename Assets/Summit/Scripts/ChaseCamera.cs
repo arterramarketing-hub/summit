@@ -25,6 +25,7 @@ namespace Summit
         void LateUpdate()
         {
             if (rider == null) return;
+            if (cam == null) cam = GetComponent<Camera>();
             float dt = Time.deltaTime;
             float s01 = Mathf.Clamp01(rider.Speed / 40f);
             Vector3 raw = rider.transform.position + Vector3.up * 1.1f;
@@ -37,7 +38,7 @@ namespace Summit
             // look where the rider is going, not just where the board points
             float wantYaw = rider.Crashed ? yaw
                 : Mathf.Lerp(rider.Heading, rider.TravelHeading, 0.7f) * 0.85f;
-            yaw = first ? wantYaw : Mathf.Lerp(yaw, wantYaw, 1f - Mathf.Exp(-dt * 3.5f));
+            yaw = first ? wantYaw : Mathf.Lerp(yaw, wantYaw, 1f - Mathf.Exp(-dt * 6.5f));
             var f = new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw));
 
             float dist = Mathf.Lerp(5.8f, 8.2f, s01);

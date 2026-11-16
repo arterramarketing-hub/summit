@@ -28,7 +28,9 @@ namespace Summit
         bool pending;
         System.Comparison<Vector2Int> byDistance;
 
-        void Awake()
+        void Awake() { Init(); }
+
+        void Init()
         {
             quads = Mathf.RoundToInt(chunkSize / MountainField.Quad);
             byDistance = (a, b) =>
@@ -43,6 +45,7 @@ namespace Summit
         void Refresh(bool all)
         {
             if (target == null) return;
+            if (byDistance == null) Init();
             int cx = Mathf.FloorToInt(target.position.x / chunkSize);
             int cz = Mathf.FloorToInt(target.position.z / chunkSize);
             // nothing to do until the rider crosses into a new cell, or while chunks are still queued

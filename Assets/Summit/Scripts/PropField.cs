@@ -101,6 +101,7 @@ namespace Summit
         {
             var go = new GameObject("Tree");
             go.transform.SetParent(transform, false);
+            if (treeMesh == null) treeMesh = BuildTreeMesh();
             go.AddComponent<MeshFilter>().sharedMesh = treeMesh;
             var mr = go.AddComponent<MeshRenderer>();
             mr.sharedMaterials = new[] { foliage, bark };

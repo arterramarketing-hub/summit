@@ -81,6 +81,9 @@ namespace Summit
             if (chase == null) chase = cam.gameObject.AddComponent<ChaseCamera>();
             chase.rider = rider;
 
+            var atmo = new GameObject("Atmosphere").AddComponent<Atmosphere>();
+            atmo.Build(cam, rider, spray);
+
             var hg = new GameObject("HUD");
             hud = hg.AddComponent<Hud>();
             hud.Build();
