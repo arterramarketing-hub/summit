@@ -27,7 +27,7 @@ namespace Summit
         /// <summary>false = tap the left or right half to turn (default); true = steer by tilting the phone.</summary>
         public bool useTilt;
 
-        float zero;
+        float zero, twoTime;
         bool wasDown, swallow;
 
         void OnEnable()
@@ -65,7 +65,11 @@ namespace Summit
             Pointers(out bool left, out bool right, out int fingers);
             if (!useTilt)
             {
+                // two thumbs tapping left/right overlap for a moment: only a deliberate two-finger hold tucks
+                twoTime = fingers >= 2 ? twoTime + Time.unscaledDeltaTime : 0f;
                 target = (right ? 1f : 0f) - (left ? 1f : 0f);
+                if (fingers >= 2) target = 0f;
+                target *= 0.9f;
             }
             else if (HasTilt)
             {
@@ -78,11 +82,19 @@ namespace Summit
             float key = KeyAxis();
             if (key != 0f) target = key;
             // a short low-pass takes the jitter out of the sensor without feeling laggy
-            Steer = Mathf.Lerp(Steer, target, 1f - Mathf.Exp(-Time.unscaledDeltaTime * 18f));
+            if (useTilt)
+                Steer = Mathf.Lerp(Steer, target, 1f - Mathf.Exp(-Time.unscaledDeltaTime * 18f));
+            else
+            {
+                // ramp the turn in so a tap eases into the corner instead of snapping to full lock
+                bool reversing = target * Steer < 0f;
+                float rate = target == 0f || reversing ? 7f : 3.6f;
+                Steer = Mathf.MoveTowards(Steer, target, rate * Time.unscaledDeltaTime);
+            }
 
             // hold / release
             // tap mode: one finger steers, two fingers (or Space) tuck; tilt mode: any press tucks
-            bool down = useTilt ? PointerDown() : (fingers >= 2 || SpaceDown());
+            bool down = useTilt ? PointerDown() : (twoTime > 0.22f || SpaceDown());
             if (swallow) { if (!down) swallow = false; down = false; wasDown = false; }
             Pressed = down && !wasDown;
             Released = !down && wasDown;

@@ -278,12 +278,12 @@ namespace Summit
             // bad landings no longer wipe you out: you keep riding, lose speed and skip the trick points
             bool sloppy = real && Mathf.Abs(err) > 0.75f;
             bool hard = impact > 26f;
-            if (sloppy) Speed *= 0.7f;
-            if (hard) Speed *= 0.8f;
+            if (sloppy) Speed *= 0.88f;
+            if (hard) Speed *= 0.9f;
             if (sloppy || hard)
             {
+                // keep riding the way you were pointed; just lose a little speed and settle the body
                 spinVis = 0f; Spin = 0f;
-                Heading = 0f;
                 Landed?.Invoke(impact);
                 spray.Emit(40);
                 RoughLanding?.Invoke(sloppy ? "Sloppy landing" : "Hard landing");
