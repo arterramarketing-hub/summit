@@ -191,8 +191,9 @@ namespace Summit
             int s = Score;
             bool record = s > best;
             if (record) { best = s; PlayerPrefs.SetInt("summit_best", s); PlayerPrefs.Save(); }
-            hud.Show("BURIED", s.ToString("N0") + (record ? "  ·  new best" : "  ·  best " + Mathf.RoundToInt(best).ToString("N0")),
-                     Mathf.RoundToInt(rider.Distance) + " m down the mountain");
+            hud.Show("BURIED", "Score " + s.ToString("N0"),
+                     (record ? "NEW BEST  " : "Best ") + Mathf.RoundToInt(best).ToString("N0") +
+                     "   ·   " + Mathf.RoundToInt(rider.Distance) + " m");
             hud.SetButtons(true, false, "PLAY AGAIN");
         }
 
