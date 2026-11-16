@@ -10,9 +10,11 @@ namespace Summit
     /// </summary>
     public class Rider : MonoBehaviour
     {
-        public const float Gravity = 32f;      // pull down the slope, scaled up from real for feel
+        // tuning: tweak these to change the feel (they are fields so a test harness can sweep them)
+        public static float Gravity = 26f;     // pull down the slope, scaled up from real for feel
+        public static float DragOpen = 0.014f, DragTuck = 0.0088f;   // air drag per (m/s)^2, standing vs tucked
         const float GripStart = 7f, GripTuck = 4.5f;   // 1/s: how fast the edge bleeds sideways velocity
-        public const float AirGravity = 26f;
+        public static float AirGravity = 30f;
         const float MaxHeading = 1.45f;        // about 83 degrees off the fall line
         const float Tau = Mathf.PI * 2f;
 
@@ -29,7 +31,15 @@ namespace Summit
         public System.Action<string, int> Trick;   // name, points
         public System.Action<string> Crash;        // reason
         public System.Action<float> Landed;
-        public System.Action<string> RoughLanding;        // impact
+        public System.Action<string> RoughLanding;
+        public System.Action Jumped;
+
+        public float Vz => vz;
+        /// <summary>The direction the rider is actually travelling (the board can point a little off it).</summary>
+        public float TravelHeading => vx * vx + vz * vz > 0.25f ? Mathf.Atan2(vx, vz) : Heading;
+        /// <summary>0..1: how hard the edge is biting, for the snow sound and spray.</summary>
+        public float Carve { get; private set; }
+        float lastTravel, yawRateS;
 
         float vx, vz;   // horizontal velocity (m/s): the real state, Speed is just its length
         float vyGround, crashTimer, lean, tuck, peak, spinVis;
@@ -135,7 +145,7 @@ namespace Summit
             prevX = X; prevY = Y; prevZ = Z; acc = 0f;
             Heading = 0f; Speed = 0f; vx = vz = 0f; Vy = 0f; vyGround = 0f;
             Airborne = false; Crashed = false; Running = false;
-            AirTime = 0f; Spin = 0f; spinVis = 0f; lean = 0f; tuck = 0f;
+            AirTime = 0f; Spin = 0f; spinVis = 0f; lean = 0f; tuck = 0f; Carve = 0f; lastTravel = 0f; yawRateS = 0f;
             pivot.localRotation = Quaternion.identity;
             roll.localRotation = Quaternion.identity;
             SurfaceNormal = MountainField.Normal(x, z);
@@ -238,7 +248,7 @@ namespace Summit
             float sp = v.magnitude;
             if (sp > 1e-3f)
             {
-                float drag = Mathf.Lerp(0.0105f, 0.0062f, tuck);
+                float drag = Mathf.Lerp(DragOpen, DragTuck, tuck);
                 acc -= (v / sp) * (drag * sp * sp + 0.35f);
             }
             v += acc * dt;
@@ -251,6 +261,7 @@ namespace Summit
             float lost = Mathf.Abs(vl) - Mathf.Abs(vl2);
             vf += (vf >= 0f ? 1f : -1f) * lost * 0.6f;
             v = f * vf + r * vl2;
+            Carve = Mathf.Lerp(Carve, Mathf.Clamp01((lost / dt) / 18f + Mathf.Abs(Steer) * 0.2f), 1f - Mathf.Exp(-dt * 10f));
 
             // never stuck: below a jog you skate along the board
             float vlen = v.magnitude;
@@ -271,7 +282,7 @@ namespace Summit
             float ny = MountainField.Height(X, Z);
             float vy = (ny - Y) / dt;
             // the ground falls away faster than gravity can follow: take off
-            if (Speed > 8f && vy < vyGround - AirGravity * dt)
+            if (Speed > 8f && vy < vyGround - AirGravity * dt && GroundFallsAway())
             {
                 Airborne = true;
                 Vy = vyGround;
@@ -284,8 +295,20 @@ namespace Summit
             AboveGround = 0f;
         }
 
+        // a crest only throws you if the snow really drops away under a ballistic arc;
+        // otherwise the board stays pressed into the snow (it compresses) instead of chattering
+        public static float TakeoffClearance = 0.25f;
+        bool GroundFallsAway()
+        {
+            const float T = 0.12f;
+            float by = Y + vyGround * T - 0.5f * AirGravity * T * T;
+            float gy = MountainField.Height(X + vx * T, Z + vz * T);
+            return by - gy > TakeoffClearance;
+        }
+
         void Pop(float held)
         {
+            Jumped?.Invoke();
             Airborne = true;
             Vy = vyGround + Mathf.Lerp(5f, 7.5f, Mathf.Clamp01(held / 0.8f));
             AirTime = 0f; Spin = 0f; peak = 0f;
@@ -294,6 +317,7 @@ namespace Summit
         void Air(float dt)
         {
             tuck = Mathf.MoveTowards(tuck, 0.3f, dt * 3f);
+            Carve = Mathf.MoveTowards(Carve, 0f, dt * 8f);
             AirTime += dt;
             Vy -= AirGravity * dt;
             Y += Vy * dt;
@@ -301,7 +325,9 @@ namespace Summit
             X += vx * dt;
             Z += vz * dt;
             // steering in the air spins; a short grace stops small hops from rotating you
-            if (AirTime > 0.18f) Spin += Steer * 9f * dt;
+            // in the air a gentle steer lines the board up for the landing; holding hard over spins
+            if (AirTime > 0.18f && Mathf.Abs(Steer) > 0.6f) Spin += Steer * 9f * dt;
+            else Heading = Mathf.Clamp(Heading + Steer * 0.9f * dt, -MaxHeading, MaxHeading);
             float gy = MountainField.Height(X, Z);
             AboveGround = Y - gy;
             peak = Mathf.Max(peak, AboveGround);
@@ -403,7 +429,12 @@ namespace Summit
                 if (fp.sqrMagnitude > 1e-4f) pivot.rotation = Quaternion.LookRotation(fp.normalized, SurfaceNormal);
 
                 // lean into the turn; positive steer turns right, so roll right
-                float want = Airborne ? 0f : Steer * Mathf.Clamp01(Speed / 12f) * 38f;
+                // lean like a real rider: the angle that balances the turn's sideways pull against gravity
+                float th = TravelHeading;
+                float yawRate = dt > 0f ? Mathf.DeltaAngle(lastTravel * Mathf.Rad2Deg, th * Mathf.Rad2Deg) * Mathf.Deg2Rad / dt : 0f;
+                lastTravel = th;
+                yawRateS = Mathf.Lerp(yawRateS, yawRate, 1f - Mathf.Exp(-dt * 10f));
+                float want = Airborne ? 0f : Mathf.Clamp(Mathf.Atan2(Speed * yawRateS, 9.81f) * Mathf.Rad2Deg, -50f, 50f);
                 lean = Mathf.Lerp(lean, want, 1f - Mathf.Exp(-dt * 8f));
                 roll.localRotation = Quaternion.Euler(0f, 0f, -lean * 0.45f);
                 upper.localRotation = Quaternion.Euler(0f, 0f, -lean * 0.55f);
@@ -417,7 +448,7 @@ namespace Summit
             trail.emitting = Running && !Crashed && AboveGround < 0.15f;
 
             sprayEm.rateOverTime = Running && !Crashed && !Airborne
-                ? Mathf.Abs(Steer) * Speed * 6f + Mathf.Max(0f, Speed - 22f) * 2f
+                ? Carve * Speed * 7f + Mathf.Max(0f, Speed - 22f) * 1.5f
                 : 0f;
         }
     }

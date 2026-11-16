@@ -24,7 +24,7 @@ namespace Summit
         public void Step(float dt, Rider r)
         {
             Elapsed += dt;
-            ema = Mathf.Lerp(ema, r.Speed * Mathf.Cos(r.Heading), 1f - Mathf.Exp(-dt / 6f));
+            ema = Mathf.Lerp(ema, r.Vz, 1f - Mathf.Exp(-dt / 6f));
             float d = Mathf.Clamp01(Elapsed / 240f);        // harder over four minutes
             float target = Mathf.Lerp(130f, 75f, d);
             float gap = Gap(r);

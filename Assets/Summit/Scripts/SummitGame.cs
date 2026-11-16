@@ -53,6 +53,8 @@ namespace Summit
             rider.Trick += OnTrick;
             rider.Crash += OnCrash;
             rider.RoughLanding += OnRough;
+            rider.Jumped += () => { if (state == State.Riding) audioFx.Play(Sfx.Jump); };
+            rider.Landed += impact => { if (state == State.Riding && impact > 4f) audioFx.Play(Sfx.Land, Mathf.Clamp01(impact / 24f)); };
 
             var tg = new GameObject("Terrain");
             terrain = tg.AddComponent<TerrainStreamer>();
@@ -187,6 +189,7 @@ namespace Summit
         void ToBuried()
         {
             state = State.Buried;
+            audioFx.Play(Sfx.Buried);
             stateTimer = 0f;
             rider.Running = false;
             int s = Score;
@@ -198,6 +201,7 @@ namespace Summit
             hud.SetButtons(true, false, "PLAY AGAIN");
         }
 
+        const bool showDiag = false;
         float diagT, diagSum, diagMax; int diagFrames, gc0;
         void Diagnostics()
         {
@@ -208,7 +212,7 @@ namespace Summit
                           "  speed=" + rider.Speed.ToString("0.0") + "  gc=" + System.GC.CollectionCount(0));
             if (diagT >= 0.5f)
             {
-                hud.SetDiag((diagFrames / diagSum).ToString("0") + " fps  worst " + (diagMax * 1000f).ToString("0") +
+                if (showDiag) hud.SetDiag((diagFrames / diagSum).ToString("0") + " fps  worst " + (diagMax * 1000f).ToString("0") +
                             " ms  gc " + (System.GC.CollectionCount(0) - gc0));
                 diagT = diagSum = diagMax = 0f; diagFrames = 0;
             }
@@ -223,11 +227,11 @@ namespace Summit
             {
                 case State.Ready:
                     if (input.AnyPress() && ModeTapped()) { }
-                    else if (input.AnyPress() && (Tapped(true) || SpacePressed())) ToRiding();
+                    else if (input.AnyPress() && (Tapped(true) || SpacePressed())) { audioFx.Play(Sfx.Click); ToRiding(); }
                     break;
 
                 case State.Riding:
-                    if (input.AnyPress() && hud.OnRestart(RiderInput.PointerPosition())) { ToReady(); input.SwallowCurrentPress(); break; }
+                    if (input.AnyPress() && hud.OnRestart(RiderInput.PointerPosition())) { audioFx.Play(Sfx.Click); ToReady(); input.SwallowCurrentPress(); break; }
                     slide.Step(dt, rider);
                     if (chainCount > 0)
                     {
@@ -255,12 +259,15 @@ namespace Summit
             hud.SetRun(rider.Speed * 3.6f, Score, Mult, gap, 160f, state == State.Riding);
             hud.SetWhiteout(state == State.Buried ? Mathf.Min(0.85f, stateTimer * 2f) : close * close * 0.5f);
             chase.shake = state == State.Riding ? close * close + (rider.Crashed ? 0.2f : 0f) : 0f;
-            audioFx.Set(rider.Speed / 40f, rider.Airborne ? 0f : Mathf.Abs(rider.Steer), close, state == State.Buried ? 0.3f : 1f);
+            bool onSnow = state == State.Riding && !rider.Airborne && !rider.Crashed;
+            audioFx.Set(rider.Speed / 40f, rider.Carve, state == State.Riding ? close : 0f,
+                        state == State.Buried ? 0.3f : 1f, onSnow ? 1f : 0f, rider.Steer);
         }
 
         bool ModeTapped()
         {
             if (!hud.OnMode(RiderInput.PointerPosition())) return false;
+            audioFx.Play(Sfx.Click);
             input.SetTilt(!input.useTilt);
             hud.SetMode(input.useTilt);
             return true;
@@ -290,6 +297,8 @@ namespace Summit
             chainCount = Mathf.Min(chainCount + 1, 8);
             chainTimer = 4f;
             hud.Flash(name, "+" + got);
+            if (name == "Close call") audioFx.Play(Sfx.CloseCall);
+            else audioFx.Play(Sfx.Trick, chainCount - 1);
         }
 
         void OnCrash(string why)
@@ -297,6 +306,7 @@ namespace Summit
             if (state != State.Riding) return;
             chainCount = 0;
             hud.Flash(why, "the slide is gaining", 1.3f);
+            audioFx.Play(Sfx.Crash);
 #if UNITY_IOS || UNITY_ANDROID
             Handheld.Vibrate();
 #endif

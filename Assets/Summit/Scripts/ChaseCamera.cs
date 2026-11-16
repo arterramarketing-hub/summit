@@ -14,7 +14,8 @@ namespace Summit
         public float shake;           // 0..1, set by the game (the slide closing in)
 
         Camera cam;
-        float yaw, height, fov = 62f;
+        float yaw, height, fov = 62f, focusVy;
+        Vector3 focus;
         bool first = true;
 
         void Awake() { cam = GetComponent<Camera>(); }
@@ -26,9 +27,16 @@ namespace Summit
             if (rider == null) return;
             float dt = Time.deltaTime;
             float s01 = Mathf.Clamp01(rider.Speed / 40f);
-            Vector3 focus = rider.transform.position + Vector3.up * 1.1f;
+            Vector3 raw = rider.transform.position + Vector3.up * 1.1f;
+            // follow sideways and forwards exactly, but spring the height: the snow is made of flat
+            // facets, and following every kink is what made the whole view shudder
+            if (first) { focus = raw; focusVy = 0f; }
+            focus.x = raw.x; focus.z = raw.z;
+            focus.y = Mathf.SmoothDamp(focus.y, raw.y, ref focusVy, 0.11f, Mathf.Infinity, Mathf.Max(dt, 1e-4f));
 
-            float wantYaw = rider.Crashed ? yaw : rider.Heading * 0.85f;
+            // look where the rider is going, not just where the board points
+            float wantYaw = rider.Crashed ? yaw
+                : Mathf.Lerp(rider.Heading, rider.TravelHeading, 0.7f) * 0.85f;
             yaw = first ? wantYaw : Mathf.Lerp(yaw, wantYaw, 1f - Mathf.Exp(-dt * 3.5f));
             var f = new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw));
 

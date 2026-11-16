@@ -12,14 +12,18 @@ namespace Summit
     {
         public const float Fall = 0.40f;          // mean gradient of the fall line
         public const float Quad = 1.5f;           // terrain mesh spacing, shared with the streamer
+        public static float LipScale = 1f;        // height of the wind lips that throw you into the air
+        public static float LipMaskLow = 0.45f;    // higher = fewer stretches of the face carry lips
         public static int Seed { get; private set; }
         static float sx0, sz0, sph;
 
         public static void Init(int seed)
         {
             Seed = seed;
-            sx0 = seed * 137.31f;
-            sz0 = seed * 91.77f;
+            // keep the per-day offsets small: a float near 100,000 can only step by about 0.008,
+            // which turned the smooth noise into a staircase of 20 cm ledges the board kept hitting
+            sx0 = Mathf.Repeat(seed * 137.31f, 997f);
+            sz0 = Mathf.Repeat(seed * 91.77f, 991f);
             sph = (seed % 628) / 100f;
         }
 
@@ -75,13 +79,23 @@ namespace Summit
             y += Mathf.Sin(x * 0.00420f + sph * 2f) * 15f;
             y += Mathf.Sin(x * 0.01050f - z * 0.0016f + 1.1f) * 5.5f;
             y += (Noise(x * 0.0046f, z * 0.0039f) - 0.5f) * 22f;
-            // grain you feel underfoot but do not fly off
-            y += (Noise(x * 0.0290f, z * 0.0250f) - 0.5f) * 2.0f;
-            y += (Noise(x * 0.0980f, z * 0.0980f) - 0.5f) * 0.7f;
+            // gentle texture underfoot; finer grain made the board chatter and hop at speed
+            y += (Noise(x * 0.0290f, z * 0.0250f) - 0.5f) * 1.1f;
             // wind lips: a long ramp up and a short drop off the back, which
             // is what throws you into the air
-            float lip = Mathf.Sin(z * 0.0376f + sph + Noise(x * 0.004f, z * 0.003f) * 6f);
-            y += lip > 0f ? lip * lip * lip * 9.5f : -Mathf.Pow(-lip, 1.6f) * 4.2f;
+            // Kickers: a short curved ramp with a crisp lip, then a smooth landing. They sit in
+            // patches across the face, so a jump is a feature you can see coming and aim for.
+            const float Period = 167f, RampLen = 12f, LandLen = 26f;
+            float ph = z / Period + Noise(x * 0.004f, z * 0.003f) * 0.6f + sph;
+            float cell = Mathf.Floor(ph), u = ph - cell;
+            float kick = 0f;
+            if (u * Period < RampLen) { float a = u * Period / RampLen; kick = a * a; }
+            else if (u * Period < RampLen + LandLen) { float c = (u * Period - RampLen) / LandLen; kick = 1f - c * c * (3f - 2f * c); }
+            if (kick > 0f)
+            {
+                float m = Mathf.Clamp01((Noise(x * 0.018f + 40f, cell * 7.3f) - LipMaskLow) / 0.15f);
+                y += kick * 1.7f * LipScale * m * m * (3f - 2f * m);
+            }
             // the face is a valley: far off the line the walls rise
             float off = Mathf.Abs(x - DriftX(z));
             if (off > 120f) y += (off - 120f) * (off - 120f) * 0.004f;
