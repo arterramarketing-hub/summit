@@ -10,7 +10,8 @@ namespace Summit
     /// </summary>
     public class Rider : MonoBehaviour
     {
-        public const float GroundAcc = 30f;    // gravity along the slope, tuned for feel
+        public const float Gravity = 32f;      // pull down the slope, scaled up from real for feel
+        const float GripStart = 7f, GripTuck = 4.5f;   // 1/s: how fast the edge bleeds sideways velocity
         public const float AirGravity = 26f;
         const float MaxHeading = 1.45f;        // about 83 degrees off the fall line
         const float Tau = Mathf.PI * 2f;
@@ -30,6 +31,7 @@ namespace Summit
         public System.Action<float> Landed;
         public System.Action<string> RoughLanding;        // impact
 
+        float vx, vz;   // horizontal velocity (m/s): the real state, Speed is just its length
         float vyGround, crashTimer, lean, tuck, peak, spinVis;
         int lastMissId;
         Vector3 crashAxis;
@@ -130,7 +132,7 @@ namespace Summit
         {
             X = x; Z = z; StartZ = z;
             Y = MountainField.Height(x, z);
-            Heading = 0f; Speed = 0f; Vy = 0f; vyGround = 0f;
+            Heading = 0f; Speed = 0f; vx = vz = 0f; Vy = 0f; vyGround = 0f;
             Airborne = false; Crashed = false; Running = false;
             AirTime = 0f; Spin = 0f; spinVis = 0f; lean = 0f; tuck = 0f;
             pivot.localRotation = Quaternion.identity;
@@ -145,8 +147,9 @@ namespace Summit
         {
             Running = true;
             Speed = 5f;
+            vx = Mathf.Sin(Heading) * Speed; vz = Mathf.Cos(Heading) * Speed;
             Vector2 g = MountainField.Gradient(X, Z);
-            vyGround = g.y * Speed;   // heading is 0, so the board points along +Z
+            vyGround = g.x * vx + g.y * vz;
         }
 
         void Update()
@@ -168,9 +171,9 @@ namespace Summit
             if (Crashed)
             {
                 crashTimer -= dt;
-                Speed = Mathf.MoveTowards(Speed, 0f, 22f * dt);
-                X += Mathf.Sin(Heading) * Speed * dt;
-                Z += Mathf.Cos(Heading) * Speed * dt;
+                SetSpeed(Mathf.MoveTowards(Speed, 0f, 22f * dt));
+                X += vx * dt;
+                Z += vz * dt;
                 Y = MountainField.Height(X, Z);
                 if (crashTimer <= 0f) Recover();
                 return;
@@ -199,28 +202,58 @@ namespace Summit
             }
         }
 
+        void SetSpeed(float v)
+        {
+            float cur = Mathf.Sqrt(vx * vx + vz * vz);
+            if (cur > 1e-4f) { float k = v / cur; vx *= k; vz *= k; }
+            else { vx = Mathf.Sin(Heading) * v; vz = Mathf.Cos(Heading) * v; }
+            Speed = v;
+        }
+
         void Ground(float dt, bool holding)
         {
             tuck = Mathf.MoveTowards(tuck, holding ? 1f : 0f, dt * 5f);
             var f = new Vector2(Mathf.Sin(Heading), Mathf.Cos(Heading));
+            var r = new Vector2(f.y, -f.x);                 // the board's right-hand side
             Vector2 g = MountainField.Gradient(X, Z);
-            float slope = -(g.x * f.x + g.y * f.y);   // positive when the board points downhill
-            float acc = GroundAcc * slope / Mathf.Sqrt(1f + slope * slope);
-            float drag = Mathf.Lerp(0.0105f, 0.0062f, tuck);
-            acc -= drag * Speed * Speed + 0.35f;
-            acc -= Mathf.Abs(Steer) * Speed * Mathf.Lerp(0.07f, 0.11f, tuck);   // carving bleeds speed
-            Speed = Mathf.Max(0f, Speed + acc * dt);
-            // never stuck: below a jog you skate, even up the face of a roller
-            if (Speed < 4f) Speed = Mathf.Min(4f, Speed + 6f * dt);
+            var v = new Vector2(vx, vz);
 
-            float turn = Mathf.Lerp(2.4f, 1.15f, Mathf.Clamp01(Speed / 38f)) * Mathf.Lerp(1f, 0.55f, tuck);
+            // 1. gravity: the slope pulls the rider down the fall line, wherever the board points
+            Vector2 acc = -Gravity * g / (1f + g.sqrMagnitude);
+            // 2. drag: air resistance grows with speed squared (less when tucked), plus snow friction
+            float sp = v.magnitude;
+            if (sp > 1e-3f)
+            {
+                float drag = Mathf.Lerp(0.0105f, 0.0062f, tuck);
+                acc -= (v / sp) * (drag * sp * sp + 0.35f);
+            }
+            v += acc * dt;
+
+            // 3. edge grip: sideways velocity is bled off, and most of it is turned into forward
+            //    speed (a carve keeps its momentum); the rest is scraped off as spray
+            float vf = Vector2.Dot(v, f), vl = Vector2.Dot(v, r);
+            float keep = Mathf.Exp(-Mathf.Lerp(GripStart, GripTuck, tuck) * dt);
+            float vl2 = vl * keep;
+            float lost = Mathf.Abs(vl) - Mathf.Abs(vl2);
+            vf += (vf >= 0f ? 1f : -1f) * lost * 0.6f;
+            v = f * vf + r * vl2;
+
+            // never stuck: below a jog you skate along the board
+            float vlen = v.magnitude;
+            if (vlen < 3f) v += f * (6f * dt);
+
+            // 4. steering turns the board; the velocity follows through the grip above
+            float turn = Mathf.Lerp(2.4f, 1.15f, Mathf.Clamp01(vlen / 38f)) * Mathf.Lerp(1f, 0.55f, tuck);
             Heading += Steer * turn * dt;
             // stalled across the hill: the board swings back down on its own
-            if (Speed < 3f) Heading = Mathf.MoveTowards(Heading, 0f, dt * 1.4f * (1f - Speed / 3f));
+            if (vlen < 3f) Heading = Mathf.MoveTowards(Heading, 0f, dt * 1.4f * (1f - vlen / 3f));
             Heading = Mathf.Clamp(Heading, -MaxHeading, MaxHeading);
 
-            X += Mathf.Sin(Heading) * Speed * dt;
-            Z += Mathf.Cos(Heading) * Speed * dt;
+            vx = v.x; vz = v.y;
+            Speed = v.magnitude;
+
+            X += vx * dt;
+            Z += vz * dt;
             float ny = MountainField.Height(X, Z);
             float vy = (ny - Y) / dt;
             // the ground falls away faster than gravity can follow: take off
@@ -250,9 +283,9 @@ namespace Summit
             AirTime += dt;
             Vy -= AirGravity * dt;
             Y += Vy * dt;
-            Speed = Mathf.Max(0f, Speed - 0.002f * Speed * Speed * dt);
-            X += Mathf.Sin(Heading) * Speed * dt;
-            Z += Mathf.Cos(Heading) * Speed * dt;
+            SetSpeed(Mathf.Max(0f, Speed - 0.002f * Speed * Speed * dt));
+            X += vx * dt;
+            Z += vz * dt;
             // steering in the air spins; a short grace stops small hops from rotating you
             if (AirTime > 0.18f) Spin += Steer * 9f * dt;
             float gy = MountainField.Height(X, Z);
@@ -263,9 +296,8 @@ namespace Summit
 
         void Land(float gy)
         {
-            var f = new Vector2(Mathf.Sin(Heading), Mathf.Cos(Heading));
             Vector2 g = MountainField.Gradient(X, Z);
-            float groundVy = (g.x * f.x + g.y * f.y) * Speed;
+            float groundVy = g.x * vx + g.y * vz;
             float impact = groundVy - Vy;   // how much faster you are falling than the slope
             Airborne = false;
             Y = gy;
@@ -278,8 +310,8 @@ namespace Summit
             // bad landings no longer wipe you out: you keep riding, lose speed and skip the trick points
             bool sloppy = real && Mathf.Abs(err) > 0.75f;
             bool hard = impact > 26f;
-            if (sloppy) Speed *= 0.88f;
-            if (hard) Speed *= 0.9f;
+            if (sloppy) SetSpeed(Speed * 0.88f);
+            if (hard) SetSpeed(Speed * 0.9f);
             if (sloppy || hard)
             {
                 // keep riding the way you were pointed; just lose a little speed and settle the body
@@ -292,7 +324,7 @@ namespace Summit
 
             spinVis = real ? err : Spin;   // fold the small leftover into the picture, not the run
             Spin = 0f;
-            Speed = Mathf.Max(0f, Speed - Mathf.Max(0f, impact - 10f) * 0.3f);
+            SetSpeed(Mathf.Max(0f, Speed - Mathf.Max(0f, impact - 10f) * 0.3f));
             Landed?.Invoke(impact);
             if (impact > 6f) spray.Emit(Mathf.Clamp((int)(impact * 2f), 6, 40));
 
@@ -318,7 +350,7 @@ namespace Summit
         {
             Crashed = false;
             Heading = 0f;
-            Speed = 3f;
+            vx = 0f; vz = 3f; Speed = 3f;
             Spin = 0f; spinVis = 0f;
             // step clear of whatever stopped you
             float d = PropField.Nearest(X, Z, out _, out float s);
