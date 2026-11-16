@@ -9,6 +9,7 @@ namespace Summit
         int lastKmh = -2, lastPts = -2, lastMult = -1, lastGap = -2;
         RectTransform canvasRect, stickRing, stickKnob;
         Canvas canvasRef;
+        Text diag;
         RectTransform playBtn, restartBtn, modeBtn;
         Text modeLabel;
         Text playLabel;
@@ -59,6 +60,9 @@ namespace Summit
             small = NewText("Small", safe, new Vector2(0.5f, 0.5f), new Vector2(0f, 150f), 50, TextAnchor.MiddleCenter);
             hint = NewText("Hint", safe, new Vector2(0.5f, 0f), new Vector2(0f, 120f), 44, TextAnchor.LowerCenter);
             hint.color = new Color(1f, 1f, 1f, 0.9f);
+
+            diag = NewText("Diag", safe, new Vector2(0f, 0f), new Vector2(20f, 70f), 30, TextAnchor.UpperLeft);
+            diag.color = new Color(1f, 1f, 0.6f, 0.9f);
 
             // the drag stick: a ring where the finger lands and a knob that follows it
             var circle = MakeCircle(96);
@@ -117,6 +121,8 @@ namespace Summit
             stickKnob.anchoredPosition = o + new Vector2(kx, 0f);
             stickKnob.sizeDelta = Vector2.one * (radiusPx * 0.9f / sc);
         }
+
+        public void SetDiag(string t) { diag.text = t; }
 
         public void SetMode(bool tilt) { modeLabel.text = tilt ? "STEERING: TILT  (tap to change)" : "STEERING: DRAG STICK  (tap to change)"; }
         public bool OnMode(Vector2 p) => Inside(modeBtn, p);

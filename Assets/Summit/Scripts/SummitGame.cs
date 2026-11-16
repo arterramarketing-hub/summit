@@ -198,8 +198,25 @@ namespace Summit
             hud.SetButtons(true, false, "PLAY AGAIN");
         }
 
+        float diagT, diagSum, diagMax; int diagFrames, gc0;
+        void Diagnostics()
+        {
+            float r = Time.unscaledDeltaTime;
+            diagFrames++; diagSum += r; if (r > diagMax) diagMax = r; diagT += r;
+            if (r > 0.034f)
+                Debug.Log("SUMMIT HITCH " + (r * 1000f).ToString("0") + " ms  state=" + state + "  air=" + rider.Airborne +
+                          "  speed=" + rider.Speed.ToString("0.0") + "  gc=" + System.GC.CollectionCount(0));
+            if (diagT >= 0.5f)
+            {
+                hud.SetDiag((diagFrames / diagSum).ToString("0") + " fps  worst " + (diagMax * 1000f).ToString("0") +
+                            " ms  gc " + (System.GC.CollectionCount(0) - gc0));
+                diagT = diagSum = diagMax = 0f; diagFrames = 0;
+            }
+        }
+
         void Update()
         {
+            Diagnostics();
             float dt = Time.deltaTime;
             stateTimer += dt;
             switch (state)

@@ -381,11 +381,14 @@ namespace Summit
             float k = 1f - Mathf.Exp(-dt * 12f);
             float alpha = Running ? Mathf.Clamp01(acc / StepH) : 1f;
             float rx = Mathf.Lerp(prevX, X, alpha), rz = Mathf.Lerp(prevZ, Z, alpha);
-            float vis = Airborne ? Mathf.Lerp(prevY, Y, alpha) : MountainField.DrawnHeight(rx, rz);
+            float drawn = MountainField.DrawnHeight(rx, rz);
+            // tiny hops over bumps must not pop the picture: never draw below the visible snow
+            float vis = Airborne ? Mathf.Max(Mathf.Lerp(prevY, Y, alpha), drawn) : drawn;
             transform.position = new Vector3(rx, vis, rz);
 
-            Vector3 n = Airborne ? Vector3.up : MountainField.Normal(X, Z);
-            SurfaceNormal = dt <= 0f ? n : Vector3.Slerp(SurfaceNormal, n, Airborne ? k * 0.25f : k);
+            // blend toward "level" only as the rider really leaves the snow, so micro-hops do not flip the body
+            Vector3 n = Vector3.Slerp(MountainField.Normal(X, Z), Vector3.up, Mathf.Clamp01(AboveGround / 1.5f));
+            SurfaceNormal = dt <= 0f ? n : Vector3.Slerp(SurfaceNormal, n, k);
 
             if (Crashed)
             {
