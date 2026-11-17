@@ -123,7 +123,8 @@ namespace Summit
             Place(rb.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 50f), new Vector2(300f, 90f), new Vector2(0.5f, 0f));
             restartBtn = rb.rectTransform;
             var rl = NewText("RestartLabel", rb.transform, new Vector2(0.5f, 0.5f), Vector2.zero, 44, TextAnchor.MiddleCenter);
-            rl.text = "RESTART";
+            rl.text = "II  PAUSE";
+            BuildPause();
             var mb = NewImage("ModeButton", safe, new Color(0f, 0f, 0f, 0.4f));
             Place(mb.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, -280f), new Vector2(620f, 100f), new Vector2(0.5f, 0.5f));
             modeBtn = mb.rectTransform;
@@ -208,6 +209,54 @@ namespace Summit
             r.gameObject.activeInHierarchy && RectTransformUtility.RectangleContainsScreenPoint(r, p, null);
         public bool OnPlay(Vector2 p) => Inside(playBtn, p);
         public bool OnRestart(Vector2 p) => Inside(restartBtn, p);
+
+        // ---- the pause menu: resume, camera distance, steering mode, restart
+
+        GameObject pausePanel;
+        RectTransform resumeBtn, camMinus, camPlus, steerBtn, againBtn;
+        Text camLabel, steerLabel;
+
+        RectTransform Button(Transform parent, string label, Vector2 pos, Vector2 size, Color c, out Text text, int fontSize = 52)
+        {
+            var b = NewImage(label + "Btn", parent, c);
+            Place(b.rectTransform, new Vector2(0.5f, 0.5f), pos, size, new Vector2(0.5f, 0.5f));
+            text = NewText(label + "Label", b.transform, new Vector2(0.5f, 0.5f), Vector2.zero, fontSize, TextAnchor.MiddleCenter);
+            text.text = label;
+            return b.rectTransform;
+        }
+
+        void BuildPause()
+        {
+            var dim = NewImage("Pause", transform, new Color(0.03f, 0.06f, 0.12f, 0.72f));
+            Stretch(dim.rectTransform);
+            pausePanel = dim.gameObject;
+            var panel = new GameObject("PauseSafe", typeof(RectTransform)).GetComponent<RectTransform>();
+            panel.SetParent(pausePanel.transform, false);
+            panel.anchorMin = Vector2.zero; panel.anchorMax = Vector2.one; panel.offsetMin = panel.offsetMax = Vector2.zero;
+            var title = NewText("PausedTitle", panel, new Vector2(0.5f, 0.5f), new Vector2(0f, 470f), 110, TextAnchor.MiddleCenter);
+            title.text = "PAUSED";
+            Color blue = new Color(0.10f, 0.45f, 0.90f, 0.95f), grey = new Color(1f, 1f, 1f, 0.16f);
+            resumeBtn = Button(panel, "RESUME", new Vector2(0f, 250f), new Vector2(560f, 140f), blue, out _, 64);
+            var camTitle = NewText("CamTitle", panel, new Vector2(0.5f, 0.5f), new Vector2(0f, 95f), 40, TextAnchor.MiddleCenter);
+            camTitle.text = "CAMERA DISTANCE";
+            camTitle.color = new Color(1f, 1f, 1f, 0.75f);
+            camMinus = Button(panel, "-", new Vector2(-230f, 0f), new Vector2(130f, 120f), grey, out _, 80);
+            camPlus = Button(panel, "+", new Vector2(230f, 0f), new Vector2(130f, 120f), grey, out _, 80);
+            camLabel = NewText("CamValue", panel, new Vector2(0.5f, 0.5f), Vector2.zero, 56, TextAnchor.MiddleCenter);
+            steerBtn = Button(panel, "STEERING", new Vector2(0f, -190f), new Vector2(620f, 110f), grey, out steerLabel, 40);
+            againBtn = Button(panel, "RESTART RUN", new Vector2(0f, -350f), new Vector2(560f, 120f), new Color(0.8f, 0.2f, 0.15f, 0.9f), out _, 50);
+            pausePanel.SetActive(false);
+        }
+
+        public void ShowPause(bool on) { pausePanel.SetActive(on); }
+        public bool Paused => pausePanel.activeSelf;
+        public void SetCamera(string name) { camLabel.text = name; }
+        public void SetPauseSteer(bool tilt) { steerLabel.text = tilt ? "STEERING: TILT  (tap to change)" : "STEERING: DRAG  (tap to change)"; }
+        public bool OnResume(Vector2 p) => Inside(resumeBtn, p);
+        public bool OnCamMinus(Vector2 p) => Inside(camMinus, p);
+        public bool OnCamPlus(Vector2 p) => Inside(camPlus, p);
+        public bool OnPauseSteer(Vector2 p) => Inside(steerBtn, p);
+        public bool OnPauseRestart(Vector2 p) => Inside(againBtn, p);
 
         static Font LoadFont()
         {

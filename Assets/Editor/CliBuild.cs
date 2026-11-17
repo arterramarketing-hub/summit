@@ -40,6 +40,7 @@ public static class CliBuild
         SummitImport.EnsureImprintMaterial();
         SummitImport.EnsureVertexColorMaterial();
         SummitImport.EnsureSnowTextures();
+        SummitImport.EnsureSky();
         PlayerSettings.productName = "Summit";
         PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.iOS, "com.paulartuso.summit");
         var icon = MakeIcon();

@@ -37,7 +37,7 @@ namespace Summit
         /// Across the track: snow, bright thrown-up crest, shaded inner wall, packed floor, and back.
         /// Bottom row: a clean carve (dark, polished cut); top row: a skid (scraped, lighter smear).
         /// </summary>
-        static Texture2D Strip()
+        public static Texture2D Strip()
         {
             const int n = 128;
             var t = new Texture2D(n, 2, TextureFormat.RGB24, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };

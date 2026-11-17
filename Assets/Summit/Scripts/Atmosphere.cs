@@ -28,7 +28,9 @@ namespace Summit
             snow = MakeSnow(flake);
             mist = MakeMist(flake);
             streaks = MakeStreaks(flake);
+            // the mountains are painted into the sky now (Materials/SkyPanorama.png); the old low-poly rings are off
             backdrop = MakeBackdrop();
+            backdrop.gameObject.SetActive(false);
 
             var vol = Object.FindFirstObjectByType<Volume>();
             if (vol != null && vol.profile != null && vol.profile.TryGet(out vignette))

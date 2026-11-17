@@ -161,6 +161,8 @@ namespace Summit
             Refresh(true);
         }
 
+        const float ShadowRange = 150f;   // a little past the render asset's 140 m shadow distance
+
         void Refresh(bool force)
         {
             if (target == null) return;
@@ -175,7 +177,10 @@ namespace Summit
                 {
                     var pl = Get(x, z);
                     if (pl.kind == Kind.None) continue;
-                    bool isNear = Mathf.Abs(x - c.x) <= sideCells && z <= c.y + aheadCells;
+                    // shadows for every tree within the shadow range, so none pops a shadow on as it nears
+                    // (the render asset fades shadows out over the last part of that range)
+                    float dxm = (x - c.x) * Cell, dzm = (z - c.y) * Cell;
+                    bool isNear = dxm * dxm + dzm * dzm < ShadowRange * ShadowRange;
                     var parts = pl.kind == Kind.Tree ? treeParts[pl.idx] : rockParts[pl.idx];
                     var dict = isNear ? nearL : farL;
                     for (int i = 0; i < parts.Count; i++)

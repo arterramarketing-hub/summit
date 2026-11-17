@@ -116,6 +116,39 @@ public class SummitImport : AssetPostprocessor
         AssetDatabase.SaveAssets();
     }
 
+    /// <summary>The sky: Materials/SkyPanorama.png (painted by Tools/MakeSky.swift) on Skybox/Panoramic.</summary>
+    public static void EnsureSky()
+    {
+        const string tex = "Assets/Summit/Materials/SkyPanorama.png", matPath = "Assets/Summit/Materials/Sky.mat";
+        var ti = (TextureImporter)AssetImporter.GetAtPath(tex);
+        if (ti == null) return;
+        bool dirty = ti.mipmapEnabled || ti.maxTextureSize != 4096 || ti.wrapModeU != TextureWrapMode.Repeat;
+        if (dirty)
+        {
+            ti.mipmapEnabled = false;                 // mips put a seam down the back of a panorama
+            ti.maxTextureSize = 4096;
+            ti.wrapModeU = TextureWrapMode.Repeat; ti.wrapModeV = TextureWrapMode.Clamp;
+            ti.filterMode = FilterMode.Bilinear;
+            ti.sRGBTexture = true;
+            var ios = ti.GetPlatformTextureSettings("iPhone");
+            ios.overridden = true; ios.maxTextureSize = 4096; ios.format = TextureImporterFormat.ASTC_5x5;
+            ti.SetPlatformTextureSettings(ios);
+            ti.SaveAndReimport();
+        }
+        var mat = AssetDatabase.LoadAssetAtPath<Material>(matPath);
+        var sh = Shader.Find("Skybox/Panoramic");
+        if (mat == null || sh == null) return;
+        mat.shader = sh;
+        mat.SetTexture("_MainTex", AssetDatabase.LoadAssetAtPath<Texture2D>(tex));
+        mat.SetFloat("_Mapping", 1f);       // latitude-longitude
+        mat.SetFloat("_ImageType", 0f);     // 360 degrees
+        mat.SetFloat("_Exposure", 1f);
+        mat.SetFloat("_Rotation", 0f);
+        mat.SetColor("_Tint", new Color(0.5f, 0.5f, 0.5f, 1f));
+        EditorUtility.SetDirty(mat);
+        AssetDatabase.SaveAssets();
+    }
+
     static float Smooth(float a, float b, float x) { float t = Mathf.Clamp01((x - a) / (b - a)); return t * t * (3f - 2f * t); }
 
     // a wind ripple: a gentle windward face and a short steep lee side
@@ -232,6 +265,7 @@ public class SummitImport : AssetPostprocessor
         EnsureImprintMaterial();
         EnsureVertexColorMaterial();
         EnsureSnowTextures();
+        EnsureSky();
         if (Application.isBatchMode) EditorApplication.Exit(0);
     }
 }

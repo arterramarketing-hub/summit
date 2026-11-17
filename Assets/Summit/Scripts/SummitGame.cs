@@ -32,7 +32,31 @@ namespace Summit
         int falls;
         float wipeoutTimer, hurtShake;
         string fallsNote = "", endTitle = "WIPED OUT";
-        bool crevasseWatch;   // went over a crevasse: lost only if the body actually drops into it
+        bool crevasseWatch;
+        // pause menu and the camera distance setting
+        bool paused;
+        static readonly float[] CamDist = { 0.65f, 0.82f, 1f, 1.22f, 1.5f };
+        static readonly string[] CamName = { "CLOSEST", "CLOSE", "NORMAL", "FAR", "FARTHEST" };
+        int camLevel = 2;
+
+        void SetPaused(bool on)
+        {
+            paused = on;
+            Time.timeScale = on ? 0f : 1f;
+            AudioListener.pause = on;
+            hud.ShowPause(on);
+            hud.SetCamera(CamName[camLevel]);
+            hud.SetPauseSteer(input.useTilt);
+            input.SwallowCurrentPress();
+        }
+
+        void SetCamLevel(int k)
+        {
+            camLevel = Mathf.Clamp(k, 0, CamDist.Length - 1);
+            chase.distScale = CamDist[camLevel];
+            hud.SetCamera(CamName[camLevel]);
+            PlayerPrefs.SetInt("summit_camdist", camLevel); PlayerPrefs.Save();
+        }   // went over a crevasse: lost only if the body actually drops into it
         bool endBuried;
         readonly Avalanche slide = new Avalanche();
 
@@ -141,6 +165,8 @@ namespace Summit
             chase = cam.gameObject.GetComponent<ChaseCamera>();
             if (chase == null) chase = cam.gameObject.AddComponent<ChaseCamera>();
             chase.rider = rider;
+            camLevel = Mathf.Clamp(PlayerPrefs.GetInt("summit_camdist", 2), 0, CamDist.Length - 1);
+            chase.distScale = CamDist[camLevel];
 
             fx = new GameObject("SnowFX").AddComponent<SnowFX>();
             fx.Build(cam, spray);
@@ -263,6 +289,8 @@ namespace Summit
             chase.Snap();
             hud.SetWhiteout(0f);
             falls = 0; wipeoutTimer = 0f; hurtShake = 0f; crevasseWatch = false;
+            if (paused) SetPaused(false);
+            chase.peek = 0f;
             if (fx != null) fx.Clear();
             hud.Show("", "Best " + Mathf.RoundToInt(best).ToString("N0"),
                 Application.isMobilePlatform ? "Drag a finger left / right to steer  ·  add a second finger to tuck  ·  lift it to jump"
@@ -331,7 +359,20 @@ namespace Summit
                     break;
 
                 case State.Riding:
-                    if (input.AnyPress() && hud.OnRestart(RiderInput.PointerPosition())) { audioFx.Play(Sfx.Click); ToReady(); input.SwallowCurrentPress(); break; }
+                    if (paused)
+                    {
+                        if (input.AnyPress())
+                        {
+                            var pp = RiderInput.PointerPosition();
+                            if (hud.OnResume(pp)) { audioFx.Play(Sfx.Click); SetPaused(false); }
+                            else if (hud.OnCamMinus(pp)) { audioFx.Play(Sfx.Click); SetCamLevel(camLevel - 1); }
+                            else if (hud.OnCamPlus(pp)) { audioFx.Play(Sfx.Click); SetCamLevel(camLevel + 1); }
+                            else if (hud.OnPauseSteer(pp)) { audioFx.Play(Sfx.Click); input.SetTilt(!input.useTilt); hud.SetPauseSteer(input.useTilt); hud.SetMode(input.useTilt); }
+                            else if (hud.OnPauseRestart(pp)) { audioFx.Play(Sfx.Click); SetPaused(false); ToReady(); input.SwallowCurrentPress(); }
+                        }
+                        break;
+                    }
+                    if (input.AnyPress() && hud.OnRestart(RiderInput.PointerPosition())) { audioFx.Play(Sfx.Click); SetPaused(true); break; }
                     runTime += dt;
                     slide.Step(dt, rider);
                     if (crevasseWatch)
@@ -367,6 +408,10 @@ namespace Summit
             hud.SetPower(runTime, rider.Shields, rider.BoostTime / 4f, state == State.Riding);
             hud.SetWhiteout(state == State.Buried ? Mathf.Min(0.85f, stateTimer * 2f) : close * close * 0.5f);
             hurtShake = Mathf.MoveTowards(hurtShake, 0f, dt * 2.5f);
+            // fell into a crevasse: the camera leans over the edge and looks down after the body
+            bool deep = rider.Crashed && body.RagdollBelowSnow > 0.8f;
+            chase.peek = Mathf.MoveTowards(chase.peek, deep ? 1f : 0f, Time.unscaledDeltaTime * (deep ? 1.2f : 3f));
+            chase.peekAt = body.RagdollCentre;
             chase.shake = (state == State.Riding ? close * close + (rider.Crashed ? 0.2f : 0f) : 0f) + hurtShake * hurtShake * 0.8f;
             hud.SetFalls(MaxFalls - falls, MaxFalls, state == State.Riding);
             bool onSnow = state == State.Riding && !rider.Airborne && !rider.Crashed;

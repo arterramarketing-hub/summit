@@ -18,6 +18,7 @@ public static class RenderShot
     public static void Run()
     {
         SummitImport.EnsureSnowTextures();
+        SummitImport.EnsureSky();
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
         var game = Object.FindFirstObjectByType<SummitGame>();
         typeof(SummitGame).GetMethod("Awake", NP).Invoke(game, null);
@@ -116,6 +117,27 @@ public static class RenderShot
             Debug.Log($"SHOT {sp.name} speed={rider.Speed * 3.6f:0} km/h air={rider.Airborne} grind={rider.Grinding} heading={rider.Heading:0.00} pos={rider.transform.position} cam={cam.transform.position} camfwd={cam.transform.forward}");
         }
 
+        // a fall into a crevasse: ride straight into one, let the body drop, then the camera looks down after it
+        {
+            var cv = Course.CrevassesOf(0)[0];
+            float zm = (cv.z0 + cv.z1) * 0.5f;
+            Course.Opening(cv, zm, out float ccx);
+            rider.ResetAt(ccx, zm - 3f); body.ResetVisual(); rider.Begin(); rider.Body.linearVelocity = Vector3.forward * 8f;
+            terrain.Prewarm(); props.Prewarm(); dress.Prewarm();
+            Debug.Log($"SHOT crevstart cut={Course.CrevasseCut(rider.transform.position.x, rider.transform.position.z):0.0} open={Course.Opening(cv, zm, out _):0.0} at={rider.transform.position} sec={Course.At(zm)}");
+            for (int i = 0; i < 120 * 2.5f && body.RagdollBelowSnow < 9f; i++)
+            {
+                rider.Steer = 0f; rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); if (i % 4 == 0) body.Apply(4 * Dt);
+                if (i % 30 == 0) Debug.Log($"SHOT crevstep t={i * Dt:0.00} crashed={rider.Crashed} below={body.RagdollBelowSnow:0.0} pos={rider.transform.position} rag={body.RagdollCentre}");
+            }
+            Debug.Log($"SHOT crevfall crashed={rider.Crashed} below={body.RagdollBelowSnow:0.0} centre={body.RagdollCentre}");
+            chase.enabled = true; chase.Snap(); late.Invoke(chase, null);
+            chase.peek = 1f; chase.peekAt = body.RagdollCentre;
+            late.Invoke(chase, null);
+            typeof(Forest).GetMethod("Draw", NP).Invoke(props, null);
+            Shoot(cam, "RenderShotCrevFall.png");
+            chase.peek = 0f;
+        }
         // back up after the crash (bandages on), then close-ups standing still, from the side and from behind
         rider.ResetAt(Slope.Centre(Slope.StartZ), Slope.StartZ);
         body.Apply(Dt);

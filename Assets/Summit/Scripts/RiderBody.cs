@@ -38,6 +38,9 @@ namespace Summit
         Material bandageMat, bandageLine;
         float crashClock, stillFor;
         SnowTrail bodyTrail;
+        Craters craters;
+        /// <summary>Where the thrown body is (its pelvis).</summary>
+        public Vector3 RagdollCentre => ragdoll != null && ragdoll.Active ? ragdoll.Centre : transform.position;
         /// <summary>How far the thrown body is below the snow surface (in a crevasse), metres.</summary>
         public float RagdollBelowSnow { get; private set; }
         /// <summary>The thrown body is still tumbling or sliding.</summary>
@@ -89,6 +92,7 @@ namespace Summit
             trail = new SnowTrail(jacket != null ? jacket.shader : Shader.Find("Universal Render Pipeline/Lit"));
             // the furrow a tumbling body ploughs through the snow
             bodyTrail = new SnowTrail(jacket != null ? jacket.shader : Shader.Find("Universal Render Pipeline/Lit"));
+            craters = new Craters(jacket != null ? jacket.shader : Shader.Find("Universal Render Pipeline/Lit"));
 
             // powder off the edge
             var sg = new GameObject("Spray");
@@ -197,7 +201,7 @@ namespace Summit
             {
                 if (impact > 5f) spray.Emit(Mathf.Clamp((int)(impact * 2.5f), 8, 50));
                 comp = Mathf.Min(0.6f, comp + impact * 0.035f);
-                if (impact > 3f) marks.Add(transform.position + Vector3.down * Rider.R, normal, 0.9f + impact * 0.07f, rider.Heading);
+                if (impact > 3f) craters.Add(transform.position + Vector3.down * Rider.R, rider.Velocity, 0.45f + impact * 0.035f, Mathf.Min(0.22f, 0.04f + impact * 0.012f));
                 if (impact > 2.5f) fx?.Landing(transform.position + Vector3.down * Rider.R, normal, impact, rider.Velocity);
             };
             rider.ShieldHit += () => { shieldFlash = 1f; spray.Emit(40); };
@@ -206,7 +210,7 @@ namespace Summit
                 spray.Emit(70);
                 crashSpin = 0f;
                 ragdollPending = rig != null;   // thrown on the next physics step, not inside the collision
-                marks.Add(transform.position + Vector3.down * Rider.R, normal, 2.2f, Random.value * 6f);
+                craters.Add(transform.position + Vector3.down * Rider.R, lastVel, 1.0f, 0.2f);
                 crashAxis = new Vector3(Random.Range(-1f, 1f), 0.2f, Random.Range(0.4f, 1f)).normalized;
             };
             rider.Scraped += _ => spray.Emit(25);
@@ -734,6 +738,7 @@ namespace Summit
             spray.Clear();
             bow.Clear();
             marks.Clear();
+            craters.Clear();
             comp = 0f; compV = 0f; shieldFlash = 0f;
             Apply(0f);
         }
@@ -750,7 +755,7 @@ namespace Summit
             if (v > 2.2f)
             {
                 // a crater where it landed, and snow thrown everywhere
-                marks.Add(OnSnow(at), Slope.Normal(at.x, at.z), Mathf.Min(1.9f, 0.6f + 0.1f * v), Random.value * 6.3f);
+                craters.Add(OnSnow(at), ragdoll != null ? ragdoll.Velocity : Vector3.zero, Mathf.Min(1.1f, 0.35f + 0.055f * v), Mathf.Min(0.22f, 0.05f + 0.015f * v));
                 if (v > 3.5f) fx?.Impact(at, v, ragdoll != null ? ragdoll.Velocity : Vector3.zero);
                 else fx?.Puff(at, v);
             }
@@ -852,9 +857,15 @@ namespace Summit
                     ragdoll.Drag += (at, v) =>
                     {
                         if (v < 1.2f) return;
-                        marks.Add(OnSnow(at), Slope.Normal(at.x, at.z), 0.35f + 0.03f * v, Random.value * 6.3f);
+                        if (v > 2f) craters.Add(OnSnow(at), ragdoll != null ? ragdoll.Velocity : Vector3.zero, 0.3f + 0.025f * v, 0.04f + 0.008f * v);
                         if (Random.value < 0.4f) fx?.Puff(at, v * 0.5f);
                     };
+                }
+                if (ragdoll.Active)
+                {
+                    // crashed again before the last one was tidied away: patch up, then throw again
+                    ragdoll.End();
+                    foreach (var b in brokenThisCrash) Bandage(b);
                 }
                 ragdoll.Begin(lastVel);
                 stillFor = 0f;
