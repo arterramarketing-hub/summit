@@ -41,11 +41,24 @@ namespace Summit
         public Transform HandR => wrR;
         public Transform UpperL => uaL; public Transform LowerL => laL; public Transform UpperR => uaR; public Transform LowerR => laR;
         public Transform ThighL => ulL; public Transform ThighR => ulR;
+        public Transform Hips => hips; public Transform BodyBone => body; public Transform Chest => chest; public Transform Neck => neck;
+        public Transform ShinL => llL; public Transform ShinR => llR; public Transform EndL => endL; public Transform EndR => endR;
+        public Transform FootL => ftL; public Transform FootR => ftR;
+        public Transform Root => model;
+
+        readonly Dictionary<Transform, Vector3> bindPos = new Dictionary<Transform, Vector3>();
+
+        /// <summary>Put every bone back exactly where it was at rest (after a ragdoll has thrown them about).</summary>
+        public void RestoreBind()
+        {
+            foreach (var kv in bind) kv.Key.localRotation = kv.Value;
+            foreach (var kv in bindPos) kv.Key.localPosition = kv.Value;
+        }
 
         /// <summary>Call once the model is placed, scaled and turned side-on: records the rest pose.</summary>
         public void CaptureBind()
         {
-            foreach (var t in model.GetComponentsInChildren<Transform>(true)) bind[t] = t.localRotation;
+            foreach (var t in model.GetComponentsInChildren<Transform>(true)) { bind[t] = t.localRotation; if (t != model) bindPos[t] = t.localPosition; }
             if (body != null) bodyBindPos = body.localPosition;
             thighLen = Vector3.Distance(ulL.position, llL.position);
             shinLen = Vector3.Distance(llL.position, endL.position);

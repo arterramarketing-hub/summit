@@ -141,6 +141,7 @@ namespace Summit
             StartZ = z;
             Heading = 0f; Speed = 0f; Steer = 0f; groundVy = 0f;
             Airborne = false; Crashed = false; Running = false; Grinding = false;
+            HasCrashFollow = false; rb.detectCollisions = true;
             AirTime = 0f; Tuck = 0f; Carve = 0f; Skid = 0f; Peak = 0f; AboveGround = 0f;
             Lean = 0f; leanVel = 0f; YawRate = 0f;
             ClearTrick();
@@ -539,7 +540,8 @@ namespace Summit
             if (Crashed) return;
             Crashed = true;
             Airborne = false; Grinding = false;
-            crashTimer = 1.4f;
+            crashTimer = 2.6f;   // long enough to tumble and come to rest
+            rb.detectCollisions = false;
             Carve = 0f; Skid = 0f; Lean = 0f; leanVel = 0f;
             crashCause = why;
             ClearTrick();
@@ -550,15 +552,27 @@ namespace Summit
         {
             crashTimer -= dt;
             var h = new Vector3(v.x, 0f, v.z) * Mathf.Exp(-dt * 3f);
+            if (HasCrashFollow)
+            {
+                // stay with the thrown body, so the camera watches it and you get up where it lands
+                var d = CrashFollow - p; d.y = 0f;
+                h = Vector3.ClampMagnitude(d * 8f, 40f);
+            }
             float wantY = Slope.DrawnHeight(p.x + h.x * dt, p.z + h.z * dt) + R;
             Speed = h.magnitude;
             if (crashTimer <= 0f) return Recover(p);
             return new Vector3(h.x, (wantY - p.y) / dt, h.z);
         }
 
+        /// <summary>Where the thrown rider is, set by the ragdoll while a crash plays out.</summary>
+        public Vector3 CrashFollow;
+        public bool HasCrashFollow;
+
         Vector3 Recover(Vector3 p)
         {
             Crashed = false;
+            HasCrashFollow = false;
+            rb.detectCollisions = true;
             Heading = 0f;
             // climb out of a crevasse onto its nearer rim
             if (Course.CrevasseNear(p.x, p.z, 0.5f, out float cx, out float half))

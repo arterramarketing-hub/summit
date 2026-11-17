@@ -21,6 +21,12 @@ namespace Summit
         ParticleSystem wake;
         Vector3 normal = Vector3.up;
         float lean, lastTravel, yawRate, crashSpin;
+        Transform boardRoot;
+        ParticleSystem bow;
+        ParticleSystem.EmissionModule bowEm;
+        Ragdoll ragdoll;
+        bool ragdollPending;
+        Vector3 lastVel;
         Vector3 crashAxis;
 
         // humanoid
@@ -45,15 +51,17 @@ namespace Summit
             roll = new GameObject("Roll").transform;
             roll.SetParent(pivot, false);
 
-            // the board: a deck with kicked-up nose and tail
-            Part(PrimitiveType.Cube, roll, new Vector3(0f, 0.025f, 0f), new Vector3(0.29f, 0.03f, 1.30f), Vector3.zero, board);
-            Part(PrimitiveType.Cylinder, roll, new Vector3(0f, 0.025f, 0.65f), new Vector3(0.29f, 0.015f, 0.29f), Vector3.zero, board);
-            Part(PrimitiveType.Cylinder, roll, new Vector3(0f, 0.025f, -0.65f), new Vector3(0.29f, 0.015f, 0.29f), Vector3.zero, board);
-            Part(PrimitiveType.Cube, roll, new Vector3(0f, 0.06f, 0.83f), new Vector3(0.27f, 0.025f, 0.16f), new Vector3(-28f, 0f, 0f), board);
-            Part(PrimitiveType.Cube, roll, new Vector3(0f, 0.06f, -0.83f), new Vector3(0.27f, 0.025f, 0.16f), new Vector3(28f, 0f, 0f), board);
+            // the board: a deck with kicked-up nose and tail (its own object, so a crash can throw it away)
+            boardRoot = new GameObject("Board").transform;
+            boardRoot.SetParent(roll, false);
+            Part(PrimitiveType.Cube, boardRoot, new Vector3(0f, 0.025f, 0f), new Vector3(0.29f, 0.03f, 1.30f), Vector3.zero, board);
+            Part(PrimitiveType.Cylinder, boardRoot, new Vector3(0f, 0.025f, 0.65f), new Vector3(0.29f, 0.015f, 0.29f), Vector3.zero, board);
+            Part(PrimitiveType.Cylinder, boardRoot, new Vector3(0f, 0.025f, -0.65f), new Vector3(0.29f, 0.015f, 0.29f), Vector3.zero, board);
+            Part(PrimitiveType.Cube, boardRoot, new Vector3(0f, 0.06f, 0.83f), new Vector3(0.27f, 0.025f, 0.16f), new Vector3(-28f, 0f, 0f), board);
+            Part(PrimitiveType.Cube, boardRoot, new Vector3(0f, 0.06f, -0.83f), new Vector3(0.27f, 0.025f, 0.16f), new Vector3(28f, 0f, 0f), board);
             // bindings
-            Part(PrimitiveType.Cube, roll, new Vector3(0f, 0.07f, 0.27f), new Vector3(0.22f, 0.06f, 0.13f), new Vector3(0f, 12f, 0f), dark);
-            Part(PrimitiveType.Cube, roll, new Vector3(0f, 0.07f, -0.27f), new Vector3(0.22f, 0.06f, 0.13f), new Vector3(0f, -12f, 0f), dark);
+            Part(PrimitiveType.Cube, boardRoot, new Vector3(0f, 0.07f, 0.27f), new Vector3(0.22f, 0.06f, 0.13f), new Vector3(0f, 12f, 0f), dark);
+            Part(PrimitiveType.Cube, boardRoot, new Vector3(0f, 0.07f, -0.27f), new Vector3(0.22f, 0.06f, 0.13f), new Vector3(0f, -12f, 0f), dark);
 
             upper = new GameObject("Body").transform;
             upper.SetParent(roll, false);
@@ -130,6 +138,42 @@ namespace Summit
             wr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             wake.Play();
 
+            // the nose ploughing through the snow: a bow wave of powder thrown up and out either side
+            var bg = new GameObject("Bow");
+            bg.transform.SetParent(roll, false);
+            bg.transform.localPosition = new Vector3(0f, 0.04f, 0.72f);
+            bg.transform.localRotation = Quaternion.Euler(-62f, 0f, 0f);   // mostly up, leaning forward
+            bow = bg.AddComponent<ParticleSystem>();
+            bow.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            var bm = bow.main;
+            bm.startLifetime = new ParticleSystem.MinMaxCurve(0.3f, 0.75f);
+            bm.startSpeed = new ParticleSystem.MinMaxCurve(1.5f, 4.5f);
+            bm.startSize = new ParticleSystem.MinMaxCurve(0.12f, 0.42f);
+            bm.startColor = new ParticleSystem.MinMaxGradient(new Color(1f, 1f, 1f, 0.95f), new Color(0.80f, 0.86f, 0.96f, 0.95f));   // some puffs in shade, so it reads against the snow
+            bm.gravityModifier = 0.9f;
+            bm.simulationSpace = ParticleSystemSimulationSpace.World;
+            bm.maxParticles = 700;
+            bm.playOnAwake = false;
+            var bsh = bow.shape;
+            bsh.shapeType = ParticleSystemShapeType.Cone;
+            bsh.angle = 55f;          // a wide fan: out to both sides of the nose
+            bsh.radius = 0.12f;
+            bsh.radiusThickness = 0.2f;
+            var biv = bow.inheritVelocity;   // the snow starts moving with the board, then falls behind
+            biv.enabled = true; biv.mode = ParticleSystemInheritVelocityMode.Initial; biv.curve = 0.55f;
+            var bcol = bow.colorOverLifetime; bcol.enabled = true;
+            var bgd = new Gradient();
+            bgd.SetKeys(new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
+                        new[] { new GradientAlphaKey(0.9f, 0f), new GradientAlphaKey(0.5f, 0.6f), new GradientAlphaKey(0f, 1f) });
+            bcol.color = bgd;
+            var bsz = bow.sizeOverLifetime; bsz.enabled = true;
+            bsz.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 0.7f, 1f, 1.8f));
+            bowEm = bow.emission; bowEm.rateOverTime = 0f;
+            var bpr = bg.GetComponent<ParticleSystemRenderer>();
+            bpr.material = sprayMat;
+            bpr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            bow.Play();
+
             marks = new SnowMarks(transform.parent, Imprint(trailMat, CraterTexture()));
             BuildShield(trailMat);
             rider.Landed += impact =>
@@ -143,6 +187,7 @@ namespace Summit
             {
                 spray.Emit(70);
                 crashSpin = 0f;
+                ragdollPending = rig != null;   // thrown on the next physics step, not inside the collision
                 marks.Add(transform.position + Vector3.down * Rider.R, normal, 2.2f, Random.value * 6f);
                 crashAxis = new Vector3(Random.Range(-1f, 1f), 0.2f, Random.Range(0.4f, 1f)).normalized;
             };
@@ -591,14 +636,37 @@ namespace Summit
             normal = Slope.Normal(rider.transform.position.x, rider.transform.position.z);
             lean = 0f; yawRate = 0f; lastTravel = rider.Heading;
             pivot.localRotation = Quaternion.identity;
+            if (ragdoll != null) ragdoll.End();
+            ragdollPending = false;
             trail.Clear();
             spray.Clear();
+            bow.Clear();
             marks.Clear();
             comp = 0f; compV = 0f; shieldFlash = 0f;
             Apply(0f);
         }
 
         void LateUpdate() { Apply(Time.deltaTime); }
+
+        void FixedUpdate() { PhysicsStep(); }
+
+        /// <summary>Per physics step (public so the test harness can call it).</summary>
+        public void PhysicsStep()
+        {
+            if (rider == null) return;
+            if (ragdollPending && rider.Crashed)
+            {
+                ragdollPending = false;
+                if (ragdoll == null) ragdoll = new Ragdoll(rig, boardRoot, rider.GetComponent<Collider>());
+                ragdoll.Begin(lastVel);
+            }
+            if (ragdoll != null && ragdoll.Active)
+            {
+                ragdoll.PhysicsStep();
+                rider.CrashFollow = ragdoll.Centre;
+                rider.HasCrashFollow = rider.Crashed;
+            }
+        }
 
         /// <summary>Draw the rider for this frame (public so the test harness can call it).</summary>
         public void Apply(float dt)
@@ -611,7 +679,14 @@ namespace Summit
             Vector3 n = Vector3.Slerp(Slope.Normal(p.x, p.z), Vector3.up, Mathf.Clamp01(rider.AboveGround / 1.5f));
             normal = dt <= 0f ? n : Vector3.Slerp(normal, n, 1f - Mathf.Exp(-dt * 14f));
 
-            if (rider.Crashed)
+            if (!rider.Crashed) lastVel = rider.Velocity;
+            if (ragdoll != null && ragdoll.Active)
+            {
+                if (rider.Crashed) ragdoll.LateStep();
+                else { ragdoll.End(); spray.Emit(30); }   // back up on the board
+            }
+            if (rider.Crashed && ((ragdoll != null && ragdoll.Active) || ragdollPending)) { }
+            else if (rider.Crashed)
             {
                 crashSpin += dt;
                 pivot.Rotate(crashAxis, 520f * dt * Mathf.Clamp01(1.2f - crashSpin), Space.World);
@@ -654,8 +729,15 @@ namespace Summit
             }
 
             // the track: a groove pressed into the snow under the board
-            trail.Feed(p + Vector3.down * Rider.R, normal, rider.Heading, rider.Running && !rider.Crashed && !rider.Airborne && !rider.Grinding,
-                       Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Slope.Rough(p.x, p.z)), rider.Carve);
+            trail.Feed(p + Vector3.down * Rider.R, normal, rider.TravelHeading, rider.Running && !rider.Crashed && !rider.Airborne && !rider.Grinding,
+                       Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Slope.Rough(p.x, p.z)),
+                       rider.Lean / Rider.MaxLean, rider.Skid, dt);
+
+            // bow wave off the nose: more with speed, deeper snow and when the edge bites
+            bool riding = rider.Running && !rider.Crashed && !rider.Airborne && !rider.Grinding;
+            bowEm.rateOverTime = riding && rider.Speed > 3f
+                ? rider.Speed * (4.5f + 4f * Slope.Rough(p.x, p.z)) * (1f + 1.2f * Mathf.Abs(rider.Lean) / Rider.MaxLean + rider.Skid)
+                : 0f;
 
             sprayEm.rateOverTime = rider.Running && !rider.Crashed && !rider.Airborne
                 ? rider.Carve * rider.Speed * 7f + Mathf.Max(0f, rider.Speed - 22f) * 1.5f + (rider.BoostTime > 0f ? 60f : 0f)

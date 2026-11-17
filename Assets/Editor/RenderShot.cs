@@ -37,7 +37,8 @@ public static class RenderShot
         var spots = new (string name, float z, float secs)[] {
             ("Start", Slope.StartZ, 0.6f), ("Run", Slope.StartZ, 9f),
             ("Park", Course.First + Course.ParkAt + 8f, 1.2f), ("Danger", Course.First + Course.DangerAt + 2f, 1.5f),
-            ("Pipe", Course.First + Course.PipeAt + 50f, 1.5f) };
+            ("Pipe", Course.First + Course.PipeAt + 50f, 1.5f), ("Carve", Course.First + 110f, 3.2f),
+            ("Crash", Course.First + 30f, 1.35f), ("Crash2", Course.First + 30f, 2.4f) };
         foreach (var sp in spots)
         {
             rider.ResetAt((sp.name == "Start" || sp.name == "Run" ? Slope.Centre(Slope.PadLip) : Slope.Centre(sp.z)) + (sp.name == "Park" ? -6f : 0f), sp.z);
@@ -46,8 +47,11 @@ public static class RenderShot
             float t = 0f;
             for (int i = 0; t < sp.secs; i++, t += Dt)
             {
-                rider.Steer = sp.name == "Run" ? Mathf.Clamp(0.6f * Mathf.Sin(t * 1.2f) + (Slope.Centre(rider.Z + 12f) - rider.transform.position.x) * 0.06f - rider.Heading * 0.8f, -1f, 1f) : 0f;
+                rider.Steer = sp.name == "Run" ? Mathf.Clamp(0.6f * Mathf.Sin(t * 1.2f) + (Slope.Centre(rider.Z + 12f) - rider.transform.position.x) * 0.06f - rider.Heading * 0.8f, -1f, 1f)
+                            : sp.name == "Carve" ? Mathf.Sin(t * 1.9f) * 0.9f : 0f;
+                if (sp.name.StartsWith("Crash") && !rider.Crashed && t >= 0.8f) rider.DoCrash("test");
                 rider.Tick(Dt);
+                body.PhysicsStep();
                 Physics.Simulate(Dt);
                 if (i % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
                 if (i % 4 == 0) body.Apply(4 * Dt);
@@ -60,10 +64,30 @@ public static class RenderShot
             typeof(Atmosphere).GetMethod("LateUpdate", NP).Invoke(atmo, null);
             foreach (var ps in Object.FindObjectsByType<ParticleSystem>(FindObjectsSortMode.None))
                 if (ps.name == "Snowfall") ps.Simulate(4f, true, true);
+                else if (ps.name == "Bow" || ps.name == "Spray" || ps.name == "Wake") { ps.Simulate(0.5f, true, true); Debug.Log($"SHOT ps {ps.name} n={ps.particleCount} rate={ps.emission.rateOverTime.constant:0}"); }
             // the forest draws itself in Update; do it by hand for the shot
             typeof(Forest).GetMethod("Draw", NP).Invoke(props, null);
             if (sp.name == "Start") Shoot(cam, "RenderShotWarmup.png");   // the first render comes out unlit
+            // batchmode renders do not re-skin meshes, so bake the skinned meshes to see the real pose
+            var baked = new System.Collections.Generic.List<GameObject>();
+            var skins = Object.FindObjectsByType<SkinnedMeshRenderer>(FindObjectsSortMode.None);
+            foreach (var sk in skins)
+            {
+                var m = new Mesh(); sk.BakeMesh(m);
+                var g = new GameObject("baked", typeof(MeshFilter), typeof(MeshRenderer));
+                g.GetComponent<MeshFilter>().sharedMesh = m;
+                g.GetComponent<MeshRenderer>().sharedMaterials = sk.sharedMaterials;
+                g.transform.SetPositionAndRotation(sk.transform.position, sk.transform.rotation);
+                g.transform.localScale = Vector3.one;   // BakeMesh already applies the scale
+                sk.enabled = false; baked.Add(g);
+            }
             Shoot(cam, "RenderShot" + sp.name + ".png");
+            foreach (var g in baked) Object.DestroyImmediate(g);
+            foreach (var sk in skins) sk.enabled = true;
+            if (sp.name.StartsWith("Crash"))
+                foreach (var sk in Object.FindObjectsByType<SkinnedMeshRenderer>(FindObjectsSortMode.None))
+                    Debug.Log($"SHOT skin {sk.name} bounds={sk.bounds.center} size={sk.bounds.size} root={(sk.rootBone ? sk.rootBone.name + sk.rootBone.position : "-")} model={sk.transform.root.name} {sk.transform.root.position} scale={sk.transform.lossyScale}");
+            if (sp.name.StartsWith("Crash")) foreach (var rb in Object.FindObjectsByType<Rigidbody>(FindObjectsSortMode.None)) if (!rb.isKinematic) Debug.Log($"SHOT body {rb.name} pos={rb.position} v={rb.linearVelocity.magnitude:0.0}");
             Debug.Log($"SHOT {sp.name} speed={rider.Speed * 3.6f:0} km/h air={rider.Airborne} grind={rider.Grinding} heading={rider.Heading:0.00} pos={rider.transform.position} cam={cam.transform.position} camfwd={cam.transform.forward}");
         }
 
