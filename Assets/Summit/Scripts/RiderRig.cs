@@ -160,6 +160,47 @@ namespace Summit
             Leg(ulR, llR, endR, bindR, fwd - nose * 0.25f);
         }
 
+        /// <summary>The bind-pose height of the hips above the feet, in metres.</summary>
+        public float HipHeight => hipHeight;
+
+        /// <summary>
+        /// Sitting in a snow tube: hips dropped into the ring, leaning back, legs out over the front of it,
+        /// hands on the handles. frame: +X is where the rider faces, +Y up. lean: -1..1 weight shift.
+        /// </summary>
+        public void PoseSit(Transform frame, float seatDrop, Vector3 footL, Vector3 footR, Vector3 handL, Vector3 handR,
+                            float lean, float dt, bool crashed, float t)
+        {
+            if (!Ok) return;
+            foreach (var kv in bind) kv.Key.localRotation = kv.Value;
+            if (body != null) body.localPosition = bodyBindPos;
+            Vector3 up = frame.up, fwd = frame.right;
+            Vector3 bendAxis = Vector3.Cross(up, fwd);
+            Vector3 shift = -up * seatDrop - fwd * 0.08f;
+            if (body != null) body.position += shift; else hips.position += shift;
+            // lean back against the tube, a weight shift to the side to steer, head up looking down the hill
+            float back = -24f;
+            Turn(abdomen, back * 0.4f, bendAxis); Turn(torso, back * 0.35f, bendAxis); Turn(chest, back * 0.25f, bendAxis);
+            Turn(chest, lean * 16f, fwd);
+            Turn(head, -back * 0.7f + 4f * Mathf.Sin(t * 1.7f), bendAxis);
+            if (crashed)
+            {
+                Aim(uaL, laL, (up * Mathf.Sin(t * 9f) + fwd * 0.4f).normalized); Aim(laL, wrL, (up + fwd).normalized);
+                Aim(uaR, laR, (up * Mathf.Sin(t * 8f + 1f) + fwd * 0.4f).normalized); Aim(laR, wrR, (up - fwd * 0.2f).normalized);
+            }
+            else
+            {
+                // arms out and down to the handles
+                Aim(uaL, laL, (handL - uaL.position).normalized * 0.6f + (-up * 0.4f));
+                Aim(laL, wrL, handL - laL.position);
+                Aim(uaR, laR, (handR - uaR.position).normalized * 0.6f + (-up * 0.4f));
+                Aim(laR, wrR, handR - laR.position);
+            }
+            PlaceFoot(ftL, footL, frame, 0f);
+            PlaceFoot(ftR, footR, frame, 0f);
+            Leg(ulL, llL, endL, footL, up + fwd * 0.4f);
+            Leg(ulR, llR, endR, footR, up + fwd * 0.4f);
+        }
+
         void PlaceFoot(Transform foot, Vector3 at, Transform frame, float duck)
         {
             foot.position = at;

@@ -30,6 +30,13 @@ namespace Summit
         public static float TakeoffClearance = 0.22f;
         public static float FallLinePull = 2.2f;                     // 1/s: how fast a flat board swings back down the hill
 
+        /// <summary>
+        /// Riding a snow tube instead of a board: no edges, so no carving. You lean to nudge it round, it slides
+        /// wherever momentum takes it and always drifts back down the fall line; it bounces off things that would
+        /// throw a snowboarder; no tricks, but airs still score.
+        /// </summary>
+        public bool Tube;
+
         public const float R = 0.3f;              // the collision sphere around the feet
         const float MaxHeading = 1.45f;           // about 83 degrees off the fall line
 
@@ -86,6 +93,7 @@ namespace Summit
         public System.Action ShieldHit;
         public System.Action<Course.Feature> GrindStart;
         public System.Action<Obstacle, Vector3, float> HitObstacle;
+        public System.Action<float> Bounced;                          // the tube bounced off something
         Vector3 grindOff;
         bool pipeAir;   // flying off a halfpipe wall: drift back in over the pipe   // what, where (its middle), how hard
 
@@ -235,12 +243,22 @@ namespace Summit
                 Heading = Mathf.Clamp(Mathf.Atan2(vt.x, vt.z), -MaxHeading, MaxHeading);
 
             // 1. steer: lean onto the edge; the board yaws at the carve's rate
-            float yaw = CarveTurn(dt, sp);
-            // and with the board flat (no edge pressure) gravity swings its nose back down the fall line, the
-            // way a real board drifts straight again the moment you stop holding a turn
-            float flatness = 1f - Mathf.Clamp01(Mathf.Abs(Lean) / (0.35f * MaxLean));
-            float fallBack = -Mathf.Sin(Heading) * FallLinePull * flatness * Mathf.Clamp01(sp / 6f) * Mathf.Clamp01((1f - n.y) * 4f);
-            yaw += fallBack;
+            float yaw;
+            if (Tube)
+            {
+                // a tube: leaning shifts your weight and nudges it round, slowly, and it always swings back downhill
+                Lean = Mathf.Lerp(Lean, Steer * 0.35f, 1f - Mathf.Exp(-dt * 6f)); leanVel = 0f;
+                yaw = Steer * 0.75f - Mathf.Sin(Heading) * 1.1f * Mathf.Clamp01(sp / 5f);
+            }
+            else
+            {
+                yaw = CarveTurn(dt, sp);
+                // and with the board flat (no edge pressure) gravity swings its nose back down the fall line, the
+                // way a real board drifts straight again the moment you stop holding a turn
+                float flatness = 1f - Mathf.Clamp01(Mathf.Abs(Lean) / (0.35f * MaxLean));
+                float fallBack = -Mathf.Sin(Heading) * FallLinePull * flatness * Mathf.Clamp01(sp / 6f) * Mathf.Clamp01((1f - n.y) * 4f);
+                yaw += fallBack;
+            }
             YawRate = yaw;
             Heading += yaw * dt;
             if (sp < 3f) Heading = Mathf.MoveTowards(Heading, 0f, dt * 1.4f * (1f - sp / 3f));   // stalled: swing back downhill
@@ -256,7 +274,7 @@ namespace Summit
             sp = vt.magnitude;
             if (sp > 1e-3f)
             {
-                float drag = Mathf.Lerp(DragOpen, DragTuck, Tuck) * (BoostTime > 0f ? 0.6f : 1f) * sp * sp + Friction * G * n.y;
+                float drag = (Tube ? DragOpen * 1.15f : Mathf.Lerp(DragOpen, DragTuck, Tuck)) * (BoostTime > 0f ? 0.6f : 1f) * sp * sp + (Tube ? Friction * 1.3f : Friction) * G * n.y;
                 vt -= vt / sp * Mathf.Min(sp, drag * dt);
             }
             // 4. the edge swings the velocity round to where the board points. It holds as long as the
@@ -267,7 +285,7 @@ namespace Summit
             if (sp > 0.05f)
             {
                 float beta = Mathf.Clamp(Mathf.Atan2(Vector3.Dot(vt, r), Vector3.Dot(vt, f)), -1.5f, 1.5f);
-                float beta2 = beta * Mathf.Exp(-Grip * hold * dt);
+                float beta2 = beta * Mathf.Exp(-(Tube ? 2.5f : Grip * hold) * dt);   // a tube has no edge: it slides
                 float scrub = Mathf.Abs(beta - beta2);
                 lost = scrub * sp;
                 sp *= 1f - 0.18f * scrub;
@@ -275,7 +293,7 @@ namespace Summit
                 Skid = Mathf.Lerp(Skid, Mathf.Clamp01(Mathf.Abs(beta2) * 4f), 1f - Mathf.Exp(-dt * 10f));
             }
             // 5. carving costs speed; running straight builds it
-            float brake = TurnDrag * Mathf.Abs(yaw) * sp * dt;
+            float brake = (Tube ? 0f : TurnDrag) * Mathf.Abs(yaw) * sp * dt;
             if (brake > 0f && sp > 3f) { float k = Mathf.Max(0f, sp - brake) / sp; vt *= k; sp *= k; }
             if (BoostTime > 0f) { vt += f * (BoostAccel * dt); sp = vt.magnitude; }
             if (sp < 3f) { vt += f * (6f * dt); sp = vt.magnitude; }
@@ -375,7 +393,7 @@ namespace Summit
                 u.y -= G * h; q += u * h; T += h;
                 if (i > 2 && q.y <= Slope.DrawnHeight(q.x, q.z) + R) break;
             }
-            if (T < 0.6f) return;
+            if (T < 0.6f || Tube) return;   // tubes just fly (airs still score on landing)
             TrickTime = T;
             int pick = (int)(Mathf.Abs(Mathf.Sin(Time.realtimeSinceStartup * 7.13f + p.z)) * 1000f);
             string grab = grabs[pick % grabs.Length];
@@ -471,6 +489,7 @@ namespace Summit
 
         bool TryGrind(Vector3 p, Vector3 v)
         {
+            if (Tube) return false;
             if (Course.At(p.z) != Course.Section.Park && Course.At(p.z + 10f) != Course.Section.Park) return false;
             foreach (var feat in Course.FeaturesNear(p.z))
             {
@@ -541,6 +560,18 @@ namespace Summit
             if (ob.always) into = Mathf.Max(into, 10f);   // animals always knock you down
             HitObstacle?.Invoke(ob, c.collider.bounds.center, into);
             if (invulnerable > 0f) return;
+            if (Tube && into > 6f && into < 16f && !ob.always)
+            {
+                // the tube is a big rubber ring: it bounces off, spinning, and you keep going
+                invulnerable = 0.5f;
+                Vector3 v = rb.linearVelocity;
+                Vector3 nh = new Vector3(normal.x, 0f, normal.z).normalized;
+                if (Vector3.Dot(v, nh) < 0f) v -= nh * Vector3.Dot(v, nh) * 1.7f;
+                rb.linearVelocity = v * 0.75f;
+                Heading = Mathf.Clamp(Mathf.Atan2(v.x, v.z), -MaxHeading, MaxHeading);
+                Bounced?.Invoke(into);
+                return;
+            }
             if (into > 6f && Shields > 0)
             {
                 Shields--;
@@ -583,7 +614,8 @@ namespace Summit
             if (Crashed) return;
             Crashed = true;
             Airborne = false; Grinding = false;
-            crashTimer = 1.6f;   // at least this long; then until the body has come to rest (HoldCrash)
+            crashTimer = 0.8f;   // at least this long; then until the player taps to get up (RequestUp)
+            RequestUp = false;
             rb.detectCollisions = false;
             Carve = 0f; Skid = 0f; Lean = 0f; leanVel = 0f;
             crashCause = why;
@@ -604,7 +636,8 @@ namespace Summit
             float wantY = Slope.DrawnHeight(p.x + h.x * dt, p.z + h.z * dt) + R;
             Speed = h.magnitude;
             // get up only once the thrown body has come to rest (or after a long slide, regardless)
-            if (crashTimer <= 0f && !(HoldCrash && crashTimer > -3.5f) && !StayDown) return Recover(p);
+            // back on your feet only when the player asks: watching where the body ends up is half the fun
+            if (crashTimer <= 0f && RequestUp && !StayDown) return Recover(p);
             return new Vector3(h.x, (wantY - p.y) / dt, h.z);
         }
 
@@ -615,11 +648,16 @@ namespace Summit
         public bool HoldCrash;
         /// <summary>Set by the game when this fall ends the run: no getting up.</summary>
         public bool StayDown;
+        /// <summary>The player tapped to get back up.</summary>
+        public bool RequestUp;
+        /// <summary>Down long enough that a tap will get you back up.</summary>
+        public bool CanGetUp => Crashed && crashTimer <= 0f && !StayDown;
 
         Vector3 Recover(Vector3 p)
         {
             Crashed = false;
             HasCrashFollow = false;
+            RequestUp = false;
             rb.detectCollisions = true;
             invulnerable = Mathf.Max(invulnerable, 1.5f);   // a moment to get going before anything can knock you down again
             Heading = 0f;

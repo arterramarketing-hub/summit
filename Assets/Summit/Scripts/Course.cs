@@ -25,6 +25,7 @@ namespace Summit
         public static Section At(float z)
         {
             if (z < First) return Section.Start;
+            if (z > Slope.FinishZ - 220f) return Section.Cruise;   // the last stretch to the finish is clear
             float u = Local(z);
             if (u < ParkAt) return Section.Cruise;
             if (u < DangerAt) return Section.Park;

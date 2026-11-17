@@ -18,7 +18,10 @@ namespace Summit
         public Transform target;
         public Material foliage, bark;
         public int sideCells = 12, aheadCells = 18, behindCells = 3;   // colliders, and shadow-casting trees
-        public int farSide = 28, farAhead = 52;                         // drawn out to here (~340 m), where fog hides them
+        public int farSide = 44, farAhead = 88;                         // drawn out to here (~570 m ahead, ~290 m aside)
+        const float LodRange = 300f;   // beyond this, trees are drawn as simple low-poly firs
+        readonly List<Matrix4x4> distL = new List<Matrix4x4>();
+        Mesh lodMesh; Material lodFoliage, lodBark;
 
         public enum Kind { None, Tree, Rock }
 
@@ -62,6 +65,12 @@ namespace Summit
             foreach (var g in Resources.LoadAll<GameObject>("Trees")) Add(g, treeParts, treeH);
             foreach (var g in Resources.LoadAll<GameObject>("Rocks")) Add(g, rockParts, rockH);
             if (treeParts.Count == 0) { treeParts.Add(Fallback(FirMesh(), new[] { foliage, bark })); treeH.Add(6.3f); }
+            if (lodMesh == null && foliage != null && bark != null)
+            {
+                lodMesh = FirMesh();
+                lodFoliage = new Material(foliage) { enableInstancing = true };
+                lodBark = new Material(bark) { enableInstancing = true };
+            }
             if (rockParts.Count == 0) { rockParts.Add(Fallback(RockMesh(), new[] { bark })); rockH.Add(1f); }
         }
 
@@ -172,6 +181,7 @@ namespace Summit
             lastCell = c;
             foreach (var l in nearL.Values) l.Clear();
             foreach (var l in farL.Values) l.Clear();
+            distL.Clear();
             for (int z = c.y - behindCells; z <= c.y + farAhead; z++)
                 for (int x = c.x - farSide; x <= c.x + farSide; x++)
                 {
@@ -180,7 +190,14 @@ namespace Summit
                     // shadows for every tree within the shadow range, so none pops a shadow on as it nears
                     // (the render asset fades shadows out over the last part of that range)
                     float dxm = (x - c.x) * Cell, dzm = (z - c.y) * Cell;
-                    bool isNear = dxm * dxm + dzm * dzm < ShadowRange * ShadowRange;
+                    float d2 = dxm * dxm + dzm * dzm;
+                    if (d2 > LodRange * LodRange)
+                    {
+                        // far away: one cheap fir the same height instead of the full model (rocks are left out)
+                        if (pl.kind == Kind.Tree && lodMesh != null) distL.Add(pl.m * Matrix4x4.Scale(Vector3.one * (treeH[pl.idx] / 6.3f)));
+                        continue;
+                    }
+                    bool isNear = d2 < ShadowRange * ShadowRange;
                     var parts = pl.kind == Kind.Tree ? treeParts[pl.idx] : rockParts[pl.idx];
                     var dict = isNear ? nearL : farL;
                     for (int i = 0; i < parts.Count; i++)
@@ -204,6 +221,17 @@ namespace Summit
         {
             DrawSet(nearL, UnityEngine.Rendering.ShadowCastingMode.On);
             DrawSet(farL, UnityEngine.Rendering.ShadowCastingMode.Off);
+            if (distL.Count > 0 && lodMesh != null)
+            {
+                var rf = new RenderParams(lodFoliage) { shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off, receiveShadows = false };
+                var rb = new RenderParams(lodBark) { shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off, receiveShadows = false };
+                for (int i = 0; i < distL.Count; i += 1000)
+                {
+                    int n = Mathf.Min(1000, distL.Count - i);
+                    Graphics.RenderMeshInstanced(rf, lodMesh, 0, distL, n, i);
+                    Graphics.RenderMeshInstanced(rb, lodMesh, 1, distL, n, i);
+                }
+            }
         }
 
         void DrawSet(Dictionary<int, List<Matrix4x4>> set, UnityEngine.Rendering.ShadowCastingMode shadows)

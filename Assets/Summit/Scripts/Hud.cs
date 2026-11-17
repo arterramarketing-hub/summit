@@ -10,10 +10,15 @@ namespace Summit
         RectTransform canvasRect, stickRing, stickKnob;
         Canvas canvasRef;
         Text diag;
-        RectTransform playBtn, restartBtn, modeBtn;
+        RectTransform playBtn, restartBtn, modeBtn, riderBtn;
+        Text riderLabel;
+        public void SetRider(bool tube) { riderLabel.text = tube ? "RIDER: SNOW TUBE  (tap to change)" : "RIDER: SNOWBOARD  (tap to change)"; }
+        public bool OnRider(Vector2 p) => Inside(riderBtn, p);
         Text modeLabel;
         Text playLabel;
-        Text speed, score, chain, slide, big, small, hint, timer;
+        Text speed, score, chain, slide, big, small, hint, timer, altitude, medical, prompt;
+        int lastBill = -1;
+        int lastAlt = -1;
         Image[] shieldPips;
         Image boostFill, boostBg;
         int lastTenths = -2;
@@ -59,6 +64,11 @@ namespace Summit
             chain.color = new Color(1f, 0.82f, 0.35f);
             timer = NewText("Timer", safe, new Vector2(0f, 1f), new Vector2(40f, -104f), 46, TextAnchor.UpperLeft);
             timer.color = new Color(0.85f, 0.93f, 1f);
+            medical = NewText("Medical", safe, new Vector2(1f, 1f), new Vector2(-40f, -232f), 40, TextAnchor.UpperRight);
+            medical.color = new Color(1f, 0.45f, 0.4f);
+            prompt = NewText("Prompt", safe, new Vector2(0.5f, 0f), new Vector2(0f, 230f), 58, TextAnchor.LowerCenter);
+            altitude = NewText("Altitude", safe, new Vector2(0f, 1f), new Vector2(40f, -160f), 40, TextAnchor.UpperLeft);
+            altitude.color = new Color(0.85f, 0.93f, 1f, 0.95f);
             slide = NewText("Slide", safe, new Vector2(1f, 1f), new Vector2(-40f, -40f), 44, TextAnchor.UpperRight);
 
             var barBg = NewImage("SlideBar", safe, new Color(0f, 0f, 0f, 0.35f));
@@ -86,7 +96,7 @@ namespace Summit
             {
                 var pip = NewImage("Shield" + i, safe, new Color(0.45f, 0.78f, 1f, 0.95f));
                 pip.sprite = circle;
-                Place(pip.rectTransform, new Vector2(0f, 1f), new Vector2(40f + i * 54f, -168f), new Vector2(44f, 44f), new Vector2(0f, 1f));
+                Place(pip.rectTransform, new Vector2(0f, 1f), new Vector2(40f + i * 54f, -218f), new Vector2(44f, 44f), new Vector2(0f, 1f));
                 shieldPips[i] = pip;
             }
             // falls left this run: three red crosses, top right under the slide bar
@@ -102,7 +112,7 @@ namespace Summit
                 fallPips[i] = pip;
             }
             boostBg = NewImage("BoostBar", safe, new Color(0f, 0f, 0f, 0.35f));
-            Place(boostBg.rectTransform, new Vector2(0f, 1f), new Vector2(40f, -226f), new Vector2(260f, 16f), new Vector2(0f, 1f));
+            Place(boostBg.rectTransform, new Vector2(0f, 1f), new Vector2(40f, -276f), new Vector2(260f, 16f), new Vector2(0f, 1f));
             boostFill = NewImage("Fill", boostBg.transform, new Color(0.35f, 1f, 0.3f, 0.95f));
             var bf = boostFill.rectTransform;
             bf.anchorMin = Vector2.zero; bf.anchorMax = Vector2.one; bf.offsetMin = bf.offsetMax = Vector2.zero;
@@ -129,6 +139,10 @@ namespace Summit
             Place(mb.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, -280f), new Vector2(620f, 100f), new Vector2(0.5f, 0.5f));
             modeBtn = mb.rectTransform;
             modeLabel = NewText("ModeLabel", mb.transform, new Vector2(0.5f, 0.5f), Vector2.zero, 40, TextAnchor.MiddleCenter);
+            var rbtn = NewImage("RiderButton", safe, new Color(0f, 0f, 0f, 0.4f));
+            Place(rbtn.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, -400f), new Vector2(620f, 100f), new Vector2(0.5f, 0.5f));
+            riderBtn = rbtn.rectTransform;
+            riderLabel = NewText("RiderLabel", rbtn.transform, new Vector2(0.5f, 0.5f), Vector2.zero, 40, TextAnchor.MiddleCenter);
             SetButtons(false, false, "PLAY");
         }
 
@@ -201,6 +215,7 @@ namespace Summit
         {
             playBtn.gameObject.SetActive(play);
             modeBtn.gameObject.SetActive(play);
+            riderBtn.gameObject.SetActive(play);
             restartBtn.gameObject.SetActive(restart);
             playLabel.text = playText;
         }
@@ -213,8 +228,8 @@ namespace Summit
         // ---- the pause menu: resume, camera distance, steering mode, restart
 
         GameObject pausePanel;
-        RectTransform resumeBtn, camMinus, camPlus, steerBtn, againBtn;
-        Text camLabel, steerLabel;
+        RectTransform resumeBtn, camMinus, camPlus, angMinus, angPlus, lensMinus, lensPlus, steerBtn, againBtn;
+        Text camLabel, angLabel, lensLabel, steerLabel;
 
         RectTransform Button(Transform parent, string label, Vector2 pos, Vector2 size, Color c, out Text text, int fontSize = 52)
         {
@@ -235,16 +250,22 @@ namespace Summit
             panel.anchorMin = Vector2.zero; panel.anchorMax = Vector2.one; panel.offsetMin = panel.offsetMax = Vector2.zero;
             var title = NewText("PausedTitle", panel, new Vector2(0.5f, 0.5f), new Vector2(0f, 470f), 110, TextAnchor.MiddleCenter);
             title.text = "PAUSED";
+            Text Row(string label, float y, out RectTransform minus, out RectTransform plus)
+            {
+                var t = NewText(label + "Title", panel, new Vector2(0.5f, 0.5f), new Vector2(0f, y + 85f), 38, TextAnchor.MiddleCenter);
+                t.text = label; t.color = new Color(1f, 1f, 1f, 0.75f);
+                var g = new Color(1f, 1f, 1f, 0.16f);
+                minus = Button(panel, "-", new Vector2(-230f, y), new Vector2(130f, 110f), g, out _, 76);
+                plus = Button(panel, "+", new Vector2(230f, y), new Vector2(130f, 110f), g, out _, 76);
+                return NewText(label + "Value", panel, new Vector2(0.5f, 0.5f), new Vector2(0f, y), 52, TextAnchor.MiddleCenter);
+            }
             Color blue = new Color(0.10f, 0.45f, 0.90f, 0.95f), grey = new Color(1f, 1f, 1f, 0.16f);
-            resumeBtn = Button(panel, "RESUME", new Vector2(0f, 250f), new Vector2(560f, 140f), blue, out _, 64);
-            var camTitle = NewText("CamTitle", panel, new Vector2(0.5f, 0.5f), new Vector2(0f, 95f), 40, TextAnchor.MiddleCenter);
-            camTitle.text = "CAMERA DISTANCE";
-            camTitle.color = new Color(1f, 1f, 1f, 0.75f);
-            camMinus = Button(panel, "-", new Vector2(-230f, 0f), new Vector2(130f, 120f), grey, out _, 80);
-            camPlus = Button(panel, "+", new Vector2(230f, 0f), new Vector2(130f, 120f), grey, out _, 80);
-            camLabel = NewText("CamValue", panel, new Vector2(0.5f, 0.5f), Vector2.zero, 56, TextAnchor.MiddleCenter);
-            steerBtn = Button(panel, "STEERING", new Vector2(0f, -190f), new Vector2(620f, 110f), grey, out steerLabel, 40);
-            againBtn = Button(panel, "RESTART RUN", new Vector2(0f, -350f), new Vector2(560f, 120f), new Color(0.8f, 0.2f, 0.15f, 0.9f), out _, 50);
+            resumeBtn = Button(panel, "RESUME", new Vector2(0f, 330f), new Vector2(560f, 130f), blue, out _, 64);
+            camLabel = Row("CAMERA DISTANCE", 130f, out camMinus, out camPlus);
+            angLabel = Row("CAMERA ANGLE", -60f, out angMinus, out angPlus);
+            lensLabel = Row("LENS", -250f, out lensMinus, out lensPlus);
+            steerBtn = Button(panel, "STEERING", new Vector2(0f, -400f), new Vector2(620f, 100f), grey, out steerLabel, 38);
+            againBtn = Button(panel, "RESTART RUN", new Vector2(0f, -530f), new Vector2(560f, 110f), new Color(0.8f, 0.2f, 0.15f, 0.9f), out _, 48);
             pausePanel.SetActive(false);
         }
 
@@ -253,6 +274,12 @@ namespace Summit
         public void SetCamera(string name) { camLabel.text = name; }
         public void SetPauseSteer(bool tilt) { steerLabel.text = tilt ? "STEERING: TILT  (tap to change)" : "STEERING: DRAG  (tap to change)"; }
         public bool OnResume(Vector2 p) => Inside(resumeBtn, p);
+        public void SetAngle(string name) { angLabel.text = name; }
+        public void SetLens(string name) { lensLabel.text = name; }
+        public bool OnAngMinus(Vector2 p) => Inside(angMinus, p);
+        public bool OnAngPlus(Vector2 p) => Inside(angPlus, p);
+        public bool OnLensMinus(Vector2 p) => Inside(lensMinus, p);
+        public bool OnLensPlus(Vector2 p) => Inside(lensPlus, p);
         public bool OnCamMinus(Vector2 p) => Inside(camMinus, p);
         public bool OnCamPlus(Vector2 p) => Inside(camPlus, p);
         public bool OnPauseSteer(Vector2 p) => Inside(steerBtn, p);
@@ -368,6 +395,31 @@ namespace Summit
             bool b = showRun && boost01 > 0f;
             if (boostBg.enabled != b) { boostBg.enabled = b; boostFill.enabled = b; }
             if (b) boostFill.rectTransform.anchorMax = new Vector2(Mathf.Clamp01(boost01), 1f);
+        }
+
+        /// <summary>The run's medical bill so far (hidden until there is one).</summary>
+        public void SetMedical(float dollars, bool show)
+        {
+            int d = show ? Mathf.RoundToInt(dollars) : -1;
+            if (d == lastBill) return;
+            lastBill = d;
+            medical.text = show && d > 0 ? "MEDICAL  $" + d.ToString("N0") : "";
+        }
+
+        /// <summary>A pulsing instruction near the bottom (empty to hide).</summary>
+        public void SetPrompt(string text)
+        {
+            prompt.text = text;
+            if (text.Length > 0) prompt.color = new Color(1f, 1f, 1f, 0.6f + 0.4f * Mathf.Abs(Mathf.Sin(Time.unscaledTime * 3f)));
+        }
+
+        /// <summary>Height left above the finish at the base, in feet.</summary>
+        public void SetAltitude(float feet, bool show)
+        {
+            int a = show ? Mathf.RoundToInt(feet / 10f) * 10 : -1;
+            if (a == lastAlt) return;
+            lastAlt = a;
+            altitude.text = show ? a.ToString("N0") + " ft" : "";
         }
 
         public static string FormatTime(float seconds)

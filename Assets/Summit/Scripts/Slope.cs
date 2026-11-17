@@ -12,7 +12,7 @@ namespace Summit
     /// </summary>
     public static class Slope
     {
-        public const float Fall = 0.62f;      // mean gradient of the fall line (about 32 degrees)
+        public const float Fall = 0.72f;      // mean gradient of the fall line (about 36 degrees)
         public const float Quad = 1.5f;       // terrain mesh spacing; the rider sits on exactly this mesh
         public const float PisteHalf = 20f;   // half the groomed width
         public static int Seed { get; private set; }
@@ -85,10 +85,27 @@ namespace Summit
         /// </summary>
         public static float FallLine(float z)
         {
+            if (z > FinishZ)
+            {
+                // the base: the pitch eases off into a long flat run-out past the finish
+                float u = z - FinishZ;
+                return -FinishZ * Fall - Fall * Runout * (1f - Mathf.Exp(-u / Runout));
+            }
             float y = -z * Fall;
-            y += 6f * (Noise(z * 0.014f, 13.7f) - 0.5f) + 2.6f * (Noise(z * 0.037f, 29.1f) - 0.5f) + 0.8f * (Noise(z * 0.09f, 41.3f) - 0.5f);
-            return y + Drops(z);
+            // the rollers and drops die away over the last stretch, so the finish is a clean straight
+            float k = Mathf.Clamp01((FinishZ - z) / 250f);
+            y += k * (6f * (Noise(z * 0.014f, 13.7f) - 0.5f) + 2.6f * (Noise(z * 0.037f, 29.1f) - 0.5f) + 0.8f * (Noise(z * 0.09f, 41.3f) - 0.5f) + Drops(z));
+            return y;
         }
+
+        // ---- the whole mountain: 10,000 ft (3,048 m) from the summit to the finish at the base
+        public const float VerticalFeet = 10000f, Vertical = 3048f, Runout = 70f;
+        public static float FinishZ => Vertical / Fall;
+        /// <summary>Height above the finish, in feet, at a distance z down the mountain.</summary>
+        public static float AltitudeFeet(float z) => Mathf.Max(0f, (FallLine(z) - FallLine(FinishZ)) * 3.2808f);
+
+        /// <summary>Ridged noise in [0, 1]: sharp crests, broad hollows.</summary>
+        public static float Ridged(float x, float y) { float n = 1f - Mathf.Abs(Noise(x, y) * 2f - 1f); return n * n; }
 
         public const float DropSeg = 95f;
 
@@ -101,7 +118,7 @@ namespace Summit
             float zs = s * DropSeg;
             if (Course.At(zs) == Course.Section.Pipe || Course.At(zs + DropSeg) == Course.Section.Pipe) return 0f;
             float u = z / DropSeg - s;
-            float H = 3f + 10f * Hash01(s, 12, 41);
+            float H = 2f + 7f * Hash01(s, 12, 41);
             float u0 = 0.35f + 0.4f * Hash01(s, 13, 41), w = 0.09f + 0.08f * Hash01(s, 14, 41);   // never a sudden kink
             float t = Mathf.Clamp01((u - (u0 - w)) / (2f * w));
             return H * (u - t * t * (3f - 2f * t));
@@ -122,9 +139,15 @@ namespace Summit
             // the cross-section: a shallow trough along the piste, walls climbing far off it,
             // and a camber that leans one way and then the other
             float a = x - Centre(z), aa = Mathf.Abs(a);
-            y += 0.0035f * a * a;
-            y += a * 0.07f * (Noise(z * 0.009f, 51.7f) - 0.5f) * 2f;
-            if (aa > 34f) y += (aa - 34f) * (aa - 34f) * 0.010f;
+            // the run sits in a shallow valley that levels off: no walls, the mountainside goes on either side
+            y += 0.0035f * a * a / (1f + a * a / 6400f);
+            y += Mathf.Clamp(a, -80f, 80f) * 0.07f * (Noise(z * 0.009f, 51.7f) - 0.5f) * 2f;
+            // off the run, open mountain: spurs and gullies running down the fall line, bumps on them,
+            // so you can go anywhere and every line is different
+            float wild = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((aa - PisteHalf - 6f) / 55f));
+            if (wild > 0f)
+                y += wild * (30f * (Ridged(x * 0.0075f + 3.1f, z * 0.0022f) - 0.4f) + 12f * (Noise(x * 0.017f + 9f, z * 0.006f) - 0.5f)
+                             + 4f * (Noise(x * 0.05f, z * 0.03f + 7f) - 0.5f));
             // broad lumps in the rough; a little side-to-side tilt on the piste
             float rough = Mathf.Clamp01((aa - PisteHalf) / 10f);
             y += (Noise(x * 0.045f, z * 0.045f) - 0.5f) * 2.6f * rough;
@@ -202,6 +225,7 @@ namespace Summit
             if (Hash01((int)cell, 3, 9) < 0.25f) return 0f;          // every so often there is none
             float side = (Hash01((int)cell, 4, 9) - 0.5f) * 18f;      // left, middle or right of the piste
             float z0 = 60f + cell * KickPeriod + 30f;
+            if (z0 > FinishZ - 260f) return 0f;
             if (Course.At(z0) != Course.Section.Cruise || Course.At(z0 + KickRamp + KickDrop) != Course.Section.Cruise) return 0f;
             return KickShape(x, z, z0, Centre(z0) + side, 1f);
         }

@@ -207,7 +207,7 @@ namespace Summit
         public void Puff(Vector3 at, float force)
         {
             var ep = new ParticleSystem.EmitParams();
-            int k = Mathf.RoundToInt(Mathf.Lerp(4f, 18f, Mathf.Clamp01(force / 10f)));
+            int k = Mathf.RoundToInt(Mathf.Lerp(2f, 8f, Mathf.Clamp01(force / 10f)));
             for (int i = 0; i < k; i++)
             {
                 ep.position = at + Random.insideUnitSphere * 0.2f;
@@ -225,16 +225,16 @@ namespace Summit
             float k = Mathf.Clamp01(force / 12f);
             var ep = new ParticleSystem.EmitParams();
             Vector3 n = Slope.Normal(at.x, at.z);
-            int nPuff = Mathf.RoundToInt(Mathf.Lerp(10f, 42f, k));
+            int nPuff = Mathf.RoundToInt(Mathf.Lerp(3f, 12f, k));   // a puff of snow, not smoke
             for (int i = 0; i < nPuff; i++)
             {
                 ep.position = at + Random.insideUnitSphere * 0.3f;
                 Vector3 d = (Random.insideUnitSphere * 0.9f + n * 1.4f).normalized;
                 ep.velocity = d * Random.Range(1.2f, 4.5f) * (0.6f + k) + carry * 0.25f;
-                ep.startSize = Random.Range(0.35f, 1.1f) * (0.7f + 0.6f * k);
+                ep.startSize = Random.Range(0.2f, 0.55f) * (0.7f + 0.5f * k);
                 puffs.Emit(ep, 1);
             }
-            int nChunk = Mathf.RoundToInt(Mathf.Lerp(6f, 34f, k));
+            int nChunk = Mathf.RoundToInt(Mathf.Lerp(5f, 22f, k));
             for (int i = 0; i < nChunk; i++)
             {
                 ep.position = at + Random.insideUnitSphere * 0.2f;
@@ -243,11 +243,11 @@ namespace Summit
                 ep.startSize = Random.Range(0.06f, 0.2f);
                 chunks.Emit(ep, 1);
             }
-            for (int i = 0; i < Mathf.RoundToInt(3 + 6 * k); i++)
+            for (int i = 0; i < Mathf.RoundToInt(k * 2f); i++)
             {
                 ep.position = at + Random.insideUnitSphere * 0.6f + n * 0.4f;
                 ep.velocity = Random.insideUnitSphere * 0.6f + carry * 0.15f;
-                ep.startSize = Random.Range(1.2f, 2.4f);
+                ep.startSize = Random.Range(0.8f, 1.4f);
                 mist.Emit(ep, 1);
             }
         }

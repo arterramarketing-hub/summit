@@ -33,12 +33,45 @@ namespace Summit
         int falls;
         float wipeoutTimer, hurtShake;
         string fallsNote = "", endTitle = "WIPED OUT";
-        bool crevasseWatch;
+        bool crevasseWatch;   // went over a crevasse: lost only if the body actually drops in
+
+        // the medical bill: what this run's falls are costing you
+        float medical;
+        static int BoneCost(string limb) =>
+            limb == "Head" ? 12500 : limb == "Ribs" ? 7800 : limb.EndsWith("leg") ? 9400 : limb.EndsWith("arm") ? 4600 : 3000;
+
+        bool RiderTapped()
+        {
+            if (!hud.OnRider(RiderInput.PointerPosition())) return false;
+            audioFx.Play(Sfx.Click);
+            bool tube = !rider.Tube;
+            rider.Tube = tube; body.SetTube(tube); hud.SetRider(tube);
+            PlayerPrefs.SetInt("summit_tube", tube ? 1 : 0); PlayerPrefs.Save();
+            body.ResetVisual();
+            return true;
+        }
         // pause menu and the camera distance setting
         bool paused;
         static readonly float[] CamDist = { 0.65f, 0.82f, 1f, 1.22f, 1.5f };
         static readonly string[] CamName = { "CLOSEST", "CLOSE", "NORMAL", "FAR", "FARTHEST" };
         int camLevel = 2;
+        // camera angle (height) and lens (field of view and barrel distortion), from the pause menu
+        static readonly float[] AngleHeight = { 0.55f, 0.8f, 1f, 1.5f, 2.2f };
+        static readonly string[] AngleName = { "GROUND", "LOW", "NORMAL", "HIGH", "OVERHEAD" };
+        static readonly float[] LensFov = { -14f, 0f, 8f, 18f };
+        static readonly float[] LensWarp = { 0f, -0.28f, -0.42f, -0.6f };
+        static readonly string[] LensName = { "STANDARD", "WIDE", "WIDER", "FISHEYE" };
+        int angleLevel = 1, lensLevel = 1;
+        UnityEngine.Rendering.Universal.LensDistortion lens;
+
+        void ApplyCamera()
+        {
+            chase.heightScale = AngleHeight[angleLevel];
+            chase.extraFov = LensFov[lensLevel];
+            if (lens != null) { lens.intensity.Override(LensWarp[lensLevel]); lens.scale.Override(1f + 0.12f * (lensLevel / 3f)); }
+            hud.SetAngle(AngleName[angleLevel]); hud.SetLens(LensName[lensLevel]);
+            PlayerPrefs.SetInt("summit_angle", angleLevel); PlayerPrefs.SetInt("summit_lens", lensLevel); PlayerPrefs.Save();
+        }
 
         void SetPaused(bool on)
         {
@@ -47,6 +80,7 @@ namespace Summit
             AudioListener.pause = on;
             hud.ShowPause(on);
             hud.SetCamera(CamName[camLevel]);
+            hud.SetAngle(AngleName[angleLevel]); hud.SetLens(LensName[lensLevel]);
             hud.SetPauseSteer(input.useTilt);
             input.SwallowCurrentPress();
         }
@@ -107,7 +141,9 @@ namespace Summit
                 if (state != State.Riding && state != State.Buried) return;
                 audioFx.Play(Sfx.Bone);
                 hud.Hurt(0.5f);
-                hud.Flash("CRACK!", limb + " broken  ·  " + fallsNote, 1.4f);
+                int cost = BoneCost(limb);
+                medical += cost;
+                hud.Flash("CRACK!", limb + " broken  ·  +$" + cost.ToString("N0"), 1.6f);
                 hurtShake = 1f;
             };
             rider.HitObstacle += (ob, at, into) =>
@@ -118,6 +154,7 @@ namespace Summit
             {
                 if (!isBoard && v > 6f) hurtShake = Mathf.Max(hurtShake, Mathf.Clamp01((v - 6f) / 10f) * 0.8f);
                 if (v < 1.5f || Time.time < nextImpactSound) return;
+                if (!isBoard && v > 5f && state == State.Riding) medical += (v - 5f) * 45f;   // bruises, by how hard you hit
                 nextImpactSound = Time.time + 0.07f;
                 audioFx.Play(isBoard ? Sfx.Clack : Sfx.Thump, Mathf.Clamp01(v / 10f));
             };
@@ -162,12 +199,14 @@ namespace Summit
                 cg.AddComponent<AudioListener>();
             }
             cam.nearClipPlane = 0.2f;
-            cam.farClipPlane = 900f;
+            cam.farClipPlane = 2300f;
             chase = cam.gameObject.GetComponent<ChaseCamera>();
             if (chase == null) chase = cam.gameObject.AddComponent<ChaseCamera>();
             chase.rider = rider;
             camLevel = Mathf.Clamp(PlayerPrefs.GetInt("summit_camdist", 2), 0, CamDist.Length - 1);
             chase.distScale = CamDist[camLevel];
+            angleLevel = Mathf.Clamp(PlayerPrefs.GetInt("summit_angle", 1), 0, AngleHeight.Length - 1);
+            lensLevel = Mathf.Clamp(PlayerPrefs.GetInt("summit_lens", 1), 0, LensFov.Length - 1);
 
             fx = new GameObject("SnowFX").AddComponent<SnowFX>();
             fx.Build(cam, spray);
@@ -185,6 +224,10 @@ namespace Summit
             audioFx.Build();
             audioFx.Track(wild);
 
+            ApplyCamera();
+            bool tube = PlayerPrefs.GetInt("summit_tube", 0) == 1;
+            rider.Tube = tube; body.SetTube(tube); hud.SetRider(tube);
+            rider.Bounced += into => { if (state != State.Riding) return; body.TubeKick(into); audioFx.Play(Sfx.Thump, Mathf.Clamp01(into / 12f)); hud.Flash("BOING", "", 0.6f); };
             ToReady();
         }
 
@@ -223,10 +266,13 @@ namespace Summit
                 if (vol.profile.TryGet(out UnityEngine.Rendering.Universal.ColorAdjustments ca)) { ca.contrast.Override(14f); ca.saturation.Override(10f); ca.postExposure.Override(0.1f); }
                 if (vol.profile.TryGet(out UnityEngine.Rendering.Universal.Bloom bl)) { bl.intensity.Override(0.6f); bl.threshold.Override(1.0f); }
                 if (vol.profile.TryGet(out UnityEngine.Rendering.Universal.Vignette vg)) vg.intensity.Override(0.2f);
+                // a wide-angle lens: barrel distortion, set from the pause menu
+                if (!vol.profile.TryGet(out lens)) lens = vol.profile.Add<UnityEngine.Rendering.Universal.LensDistortion>(true);
+                lens.active = true;
             }
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogDensity = 0.0056f;
+            RenderSettings.fogDensity = 0.0021f;   // just a touch of haze: the mountain below stays in view
             RenderSettings.fogColor = new Color(0.80f, 0.86f, 0.94f);
         }
 
@@ -290,7 +336,8 @@ namespace Summit
             dressing.Prewarm();
             chase.Snap();
             hud.SetWhiteout(0f);
-            falls = 0; wipeoutTimer = 0f; hurtShake = 0f; crevasseWatch = false;
+            falls = 0; wipeoutTimer = 0f; hurtShake = 0f; crevasseWatch = false; medical = 0f;
+            hud.SetPrompt("");
             if (paused) SetPaused(false);
             chase.peek = 0f;
             if (atmo != null) atmo.ResetParallax();
@@ -328,7 +375,8 @@ namespace Summit
             if (record) { best = s; PlayerPrefs.SetInt("summit_best", s); PlayerPrefs.Save(); }
             hud.Show(title, "Score " + s.ToString("N0"),
                      (record ? "NEW BEST  " : "Best ") + Mathf.RoundToInt(best).ToString("N0") +
-                     "   ·   " + Mathf.RoundToInt(rider.Distance) + " m   ·   " + Hud.FormatTime(runTime));
+                     "   ·   " + Mathf.RoundToInt(rider.Distance) + " m   ·   " + Hud.FormatTime(runTime) +
+                     (medical > 0f ? "\nMEDICAL BILL  $" + Mathf.RoundToInt(medical).ToString("N0") : "\nNo medical bills. Clean run!"));
             hud.SetButtons(true, false, "PLAY AGAIN");
         }
 
@@ -358,6 +406,7 @@ namespace Summit
             {
                 case State.Ready:
                     if (input.AnyPress() && ModeTapped()) { }
+                    else if (input.AnyPress() && RiderTapped()) { }
                     else if (input.AnyPress() && (Tapped(true) || SpacePressed())) { audioFx.Play(Sfx.Play); ToRiding(); }
                     break;
 
@@ -370,18 +419,34 @@ namespace Summit
                             if (hud.OnResume(pp)) { audioFx.Play(Sfx.Click); SetPaused(false); }
                             else if (hud.OnCamMinus(pp)) { audioFx.Play(Sfx.Click); SetCamLevel(camLevel - 1); }
                             else if (hud.OnCamPlus(pp)) { audioFx.Play(Sfx.Click); SetCamLevel(camLevel + 1); }
+                            else if (hud.OnAngMinus(pp)) { audioFx.Play(Sfx.Click); angleLevel = Mathf.Max(0, angleLevel - 1); ApplyCamera(); }
+                            else if (hud.OnAngPlus(pp)) { audioFx.Play(Sfx.Click); angleLevel = Mathf.Min(AngleHeight.Length - 1, angleLevel + 1); ApplyCamera(); }
+                            else if (hud.OnLensMinus(pp)) { audioFx.Play(Sfx.Click); lensLevel = Mathf.Max(0, lensLevel - 1); ApplyCamera(); }
+                            else if (hud.OnLensPlus(pp)) { audioFx.Play(Sfx.Click); lensLevel = Mathf.Min(LensFov.Length - 1, lensLevel + 1); ApplyCamera(); }
                             else if (hud.OnPauseSteer(pp)) { audioFx.Play(Sfx.Click); input.SetTilt(!input.useTilt); hud.SetPauseSteer(input.useTilt); hud.SetMode(input.useTilt); }
                             else if (hud.OnPauseRestart(pp)) { audioFx.Play(Sfx.Click); SetPaused(false); ToReady(); input.SwallowCurrentPress(); }
                         }
                         break;
                     }
                     if (input.AnyPress() && hud.OnRestart(RiderInput.PointerPosition())) { audioFx.Play(Sfx.Click); SetPaused(true); break; }
+                    // down in the snow: the camera stays on the body until you tap to get back up
+                    if (rider.CanGetUp && input.AnyPress()) { rider.RequestUp = true; input.SwallowCurrentPress(); }
+                    else if (rider.StayDown && rider.Crashed && wipeoutTimer > 0f && input.AnyPress() && !body.RagdollMoving) wipeoutTimer = 0.01f;
+                    hud.SetPrompt(rider.CanGetUp ? "TAP TO GET UP" : rider.StayDown && rider.Crashed && !body.RagdollMoving ? "TAP TO CONTINUE" : "");
                     runTime += dt;
                     slide.Step(dt, rider);
                     if (crevasseWatch)
                     {
-                        if (body.RagdollBelowSnow > 3f) { crevasseWatch = false; rider.StayDown = true; wipeoutTimer = 1.0f; endTitle = "LOST IN A CREVASSE"; hud.Flash("GONE", "down the crevasse", 1.5f); }
+                        if (body.RagdollBelowSnow > 3f) { crevasseWatch = false; rider.StayDown = true; wipeoutTimer = 1.0f; endTitle = "LOST IN A CREVASSE"; medical += 42000f; hud.Flash("GONE", "helicopter rescue  +$42,000", 2f); }
                         else if (!rider.Crashed) crevasseWatch = false;   // caught the lip: you live
+                    }
+                    if (!rider.Crashed && rider.Z > Slope.FinishZ + 30f)
+                    {
+                        // through the finish at the base: the whole mountain, done
+                        trickPoints += 5000;
+                        audioFx.Play(Sfx.TrickBig, 4);
+                        ToEnd("YOU MADE IT", false);
+                        break;
                     }
                     if (wipeoutTimer > 0f) { if (!body.RagdollMoving) wipeoutTimer -= dt; if (wipeoutTimer <= 0f) { ToEnd(endTitle, false); break; } }
                     if (chainCount > 0)
@@ -394,6 +459,7 @@ namespace Summit
 
                 case State.Buried:
                     if (stateTimer > 1.2f && input.AnyPress() && ModeTapped()) { }
+                    else if (stateTimer > 1.2f && input.AnyPress() && RiderTapped()) { }
                     else if (stateTimer > 1.2f && input.AnyPress() && (Tapped(true) || SpacePressed()))
                     {
                         ToReady();
@@ -409,6 +475,8 @@ namespace Summit
             float close = Mathf.Clamp01(1f - gap / 45f);
             hud.SetRun(rider.Speed * 3.6f, Score, Mult, gap, 160f, state == State.Riding);
             hud.SetPower(runTime, rider.Shields, rider.BoostTime / 4f, state == State.Riding);
+            hud.SetAltitude(Slope.AltitudeFeet(rider.Z), state == State.Riding);
+            hud.SetMedical(medical, state == State.Riding);
             hud.SetWhiteout(state == State.Buried ? Mathf.Min(0.85f, stateTimer * 2f) : close * close * 0.5f);
             hurtShake = Mathf.MoveTowards(hurtShake, 0f, dt * 2.5f);
             // fell into a crevasse: the camera leans over the edge and looks down after the body
@@ -422,7 +490,7 @@ namespace Summit
             Vector3 rpos = rider.transform.position;
             audioFx.Set(new RideSound
             {
-                speed = rider.Speed / 36f, carve = rider.Carve, skid = rider.Skid, rough = Slope.Rough(rpos.x, rpos.z),
+                speed = rider.Speed / 36f, carve = rider.Tube ? 0f : rider.Carve, skid = rider.Tube ? 0.15f * Mathf.Clamp01(rider.Speed / 20f) : rider.Skid, rough = Slope.Rough(rpos.x, rpos.z),
                 avalanche = riding ? close : 0f, pan = rider.Steer,
                 muffle = state == State.Buried ? (endBuried ? 1f : 0.45f) : rider.Crashed ? 0.3f : 0f,
                 onSnow = onSnow && !rider.Grinding, air = riding && rider.Airborne, riding = riding,
@@ -528,6 +596,20 @@ namespace Summit
                     Block(PrimitiveType.Cylinder, root, new Vector3(x, y + 0.9f, z), new Vector3(0.06f, 0.9f, 0.06f), white);
                     Block(PrimitiveType.Cube, root, new Vector3(x - sgn * 0.3f, y + 1.55f, z), new Vector3(0.6f, 0.4f, 0.03f), (i % 2 == 0) ? red : white);
                 }
+            // the finish line at the base of the mountain: a blue arch across the run
+            {
+                float fz = Slope.FinishZ + 30f, fx = Slope.Centre(fz), fy = Slope.DrawnHeight(fx, fz);
+                var blue = M(new Color(0.08f, 0.30f, 0.70f));
+                for (int sgn = -1; sgn <= 1; sgn += 2)
+                    Block(PrimitiveType.Cube, root, new Vector3(fx + sgn * 9f, fy + 2.6f, fz), new Vector3(0.45f, 5.2f, 0.45f), blue);
+                Block(PrimitiveType.Cube, root, new Vector3(fx, fy + 5.0f, fz + 0.06f), new Vector3(18.6f, 1.6f, 0.08f), blue);
+                var fb = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                Object.DestroyImmediate(fb.GetComponent<Collider>());
+                fb.transform.SetParent(root, false);
+                fb.transform.SetPositionAndRotation(new Vector3(fx, fy + 5.0f, fz - 0.01f), Quaternion.identity);
+                fb.transform.localScale = new Vector3(18.2f, 1.4f, 1f);
+                fb.GetComponent<MeshRenderer>().sharedMaterial = CourseDressing.Sign(snow.shader, "Signs/BannerFinish");
+            }
             float ly = Slope.DrawnHeight(cx, Slope.PadLip - 0.3f);
             Block(PrimitiveType.Cube, root, new Vector3(cx, ly - 0.15f, Slope.PadLip - 0.2f), new Vector3(2f * Slope.PadHalf - 4f, 0.35f, 0.3f), wood);
         }
@@ -570,6 +652,7 @@ namespace Summit
             int left = MaxFalls - falls;
             fallsNote = left <= 0 ? "that's three" : left == 1 ? "1 fall left" : left + " falls left";
             hud.Flash(why, fallsNote, 1.3f);
+            medical += rider.Tube ? 400f : 850f;   // the trip to the clinic
             if (why.StartsWith("Crevasse")) { crevasseWatch = true; hud.Flash("CREVASSE!", fallsNote, 1.6f); if (left <= 0) { wipeoutTimer = 0.9f; endTitle = "WIPED OUT"; rider.StayDown = true; } }
             else if (left <= 0) { wipeoutTimer = 0.9f; endTitle = "WIPED OUT"; rider.StayDown = true; }   // the last fall: no getting up   // let the tumble play out, then it's over
             if (why.StartsWith("Tree")) { audioFx.Play(Sfx.HitTree); audioFx.Play(Sfx.Crash, 0.6f); }

@@ -14,8 +14,8 @@ namespace Summit
         public Material snowMaterial;
         public float chunkSize = 48f;
         int quads;
-        public int sideChunks = 3;      // either side of the rider
-        public int aheadChunks = 9;     // down the hill
+        public int sideChunks = 5;      // either side of the rider (open mountain: you can see across it)
+        public int aheadChunks = 12;    // down the hill (~580 m)
         public int behindChunks = 1;
         public int buildsPerFrame = 1;
 

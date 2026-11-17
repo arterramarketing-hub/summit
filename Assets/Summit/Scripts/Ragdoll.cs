@@ -15,7 +15,7 @@ namespace Summit
         struct Part { public Transform bone; public Rigidbody rb; public Collider col; public Joint joint; }
 
         readonly RiderRig rig;
-        readonly Transform board, boardHome;
+        Transform board, boardHome;
         readonly Collider riderCollider;
         readonly List<Part> parts = new List<Part>();
         readonly PhysicsMaterial snowFeel;
@@ -55,6 +55,12 @@ namespace Summit
         /// <summary>How fast the body (and the board) are still moving: the faster of the two.</summary>
         public float Speed => !Active || parts.Count == 0 ? 0f : Mathf.Max(parts[0].rb.linearVelocity.magnitude, boardRb != null ? boardRb.linearVelocity.magnitude * 0.5f : 0f);
         public Vector3 Velocity => Active && parts.Count > 0 ? parts[0].rb.linearVelocity : Vector3.zero;
+
+        Vector3 boardSize = new Vector3(0.29f, 0.07f, 1.55f), boardCenter = new Vector3(0f, 0.04f, 0f);
+
+        /// <summary>The thing that flies off with the rider: a board by default; a tube is a big flat ring.</summary>
+        public Ragdoll(RiderRig rig, Transform board, Collider riderCollider, Vector3 size, Vector3 center) : this(rig, board, riderCollider)
+        { boardSize = size; boardCenter = center; }
 
         public Ragdoll(RiderRig rig, Transform board, Collider riderCollider)
         {
@@ -96,21 +102,14 @@ namespace Summit
             model.SetParent(null, true);
             board.SetParent(null, true);
 
-            float s = 1f;   // metres
-            // pelvis first: every later part hangs off the nearest part above it
-            // the pelvis body goes on the top bone of the skeleton that moves (vertices are skinned to it
-            // too: anything above it would stay behind and stretch the mesh back to where you crashed)
-            Add(rig.BodyBone != null ? rig.BodyBone : rig.Hips, null, 12f, Shape.Ball, 0.15f * s, 0f, 0f, 0f);
-            Add(rig.Chest, rig.Neck != null ? rig.Neck : rig.Head, 12f, Shape.Capsule, 0.15f * s, 30f, 35f, 25f, 1.6f);
-            Add(rig.Head, null, 5f, Shape.Head, 0.13f * s, 30f, 40f, 30f);
-            Add(rig.UpperL, rig.LowerL, 2.2f, Shape.Capsule, 0.055f * s, 25f, 80f, 60f);
-            Add(rig.LowerL, rig.HandL, 1.6f, Shape.Capsule, 0.05f * s, 10f, 80f, 10f, 1.35f);
-            Add(rig.UpperR, rig.LowerR, 2.2f, Shape.Capsule, 0.055f * s, 25f, 80f, 60f);
-            Add(rig.LowerR, rig.HandR, 1.6f, Shape.Capsule, 0.05f * s, 10f, 80f, 10f, 1.35f);
-            Add(rig.ThighL, rig.ShinL, 7f, Shape.Capsule, 0.08f * s, 15f, 60f, 35f);
-            Add(rig.ShinL, rig.EndL, 4f, Shape.Capsule, 0.065f * s, 5f, 75f, 5f, 1.1f);
-            Add(rig.ThighR, rig.ShinR, 7f, Shape.Capsule, 0.08f * s, 15f, 60f, 35f);
-            Add(rig.ShinR, rig.EndR, 4f, Shape.Capsule, 0.065f * s, 5f, 75f, 5f, 1.1f);
+            if (parts.Count == 0) Prebuild();
+            // switch the body over from posed to physical
+            foreach (var p in parts)
+            {
+                p.col.enabled = true;
+                p.rb.isKinematic = false;
+                p.rb.interpolation = RigidbodyInterpolation.Interpolate;
+            }
 
             for (int i = 0; i < parts.Count; i++)
             {
@@ -139,8 +138,8 @@ namespace Summit
             boardRb.interpolation = RigidbodyInterpolation.Interpolate;
             boardRb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
             boardCol = board.gameObject.AddComponent<BoxCollider>();
-            boardCol.center = new Vector3(0f, 0.04f, 0f);
-            boardCol.size = new Vector3(0.29f, 0.07f, 1.55f);
+            boardCol.center = boardCenter;
+            boardCol.size = boardSize;
             boardCol.sharedMaterial = snowFeel;
             var bimp = board.gameObject.AddComponent<Impact>(); bimp.owner = this; bimp.board = true;
             if (riderCollider != null) Physics.IgnoreCollision(boardCol, riderCollider);
@@ -158,6 +157,47 @@ namespace Summit
             boardGroundBody.gameObject.SetActive(true);
             PlaceSlab(groundBody, Centre, true);
             PlaceSlab(boardGroundBody, board.position, true);
+        }
+
+        /// <summary>
+        /// Build the physical body once, on the skeleton at rest, like Unity's Ragdoll Wizard: every part a
+        /// rigidbody with a collider and a joint to the part above it, kept kinematic and switched off until a
+        /// crash switches it on. Nothing is added or destroyed during play.
+        /// </summary>
+        public void Prebuild()
+        {
+            if (parts.Count > 0 || rig == null || !rig.Ok) return;
+            float s = 1f;   // metres
+            // pelvis first: every later part hangs off the nearest part above it
+            // the pelvis body goes on the top bone of the skeleton that moves (vertices are skinned to it
+            // too: anything above it would stay behind and stretch the mesh back to where you crashed)
+            Add(rig.BodyBone != null ? rig.BodyBone : rig.Hips, null, 12f, Shape.Ball, 0.15f * s, 0f, 0f, 0f);
+            Add(rig.Chest, rig.Neck != null ? rig.Neck : rig.Head, 12f, Shape.Capsule, 0.15f * s, 30f, 35f, 25f, 1.6f);
+            Add(rig.Head, null, 5f, Shape.Head, 0.13f * s, 30f, 40f, 30f);
+            Add(rig.UpperL, rig.LowerL, 2.2f, Shape.Capsule, 0.055f * s, 25f, 80f, 60f);
+            Add(rig.LowerL, rig.HandL, 1.6f, Shape.Capsule, 0.05f * s, 10f, 80f, 10f, 1.35f);
+            Add(rig.UpperR, rig.LowerR, 2.2f, Shape.Capsule, 0.055f * s, 25f, 80f, 60f);
+            Add(rig.LowerR, rig.HandR, 1.6f, Shape.Capsule, 0.05f * s, 10f, 80f, 10f, 1.35f);
+            Add(rig.ThighL, rig.ShinL, 7f, Shape.Capsule, 0.08f * s, 15f, 60f, 35f);
+            Add(rig.ShinL, rig.EndL, 4f, Shape.Capsule, 0.065f * s, 5f, 75f, 5f, 1.1f);
+            Add(rig.ThighR, rig.ShinR, 7f, Shape.Capsule, 0.08f * s, 15f, 60f, 35f);
+            Add(rig.ShinR, rig.EndR, 4f, Shape.Capsule, 0.065f * s, 5f, 75f, 5f, 1.1f);
+            foreach (var p in parts) Sleep(p);
+        }
+
+        static void Sleep(Part p)
+        {
+            p.rb.interpolation = RigidbodyInterpolation.None;
+            if (!p.rb.isKinematic) { p.rb.linearVelocity = Vector3.zero; p.rb.angularVelocity = Vector3.zero; }
+            p.rb.isKinematic = true;
+            p.col.enabled = false;
+        }
+
+        /// <summary>Switch what flies off with the rider: the board, or the tube.</summary>
+        public void SetBoard(Transform b, Vector3 size, Vector3 center)
+        {
+            if (Active) End();
+            board = b; boardHome = b.parent; boardSize = size; boardCenter = center;
         }
 
         enum Shape { Ball, Capsule, Head }
@@ -289,11 +329,8 @@ namespace Summit
         {
             if (!Active) return;
             Active = false;
-            foreach (var p in parts) { p.rb.isKinematic = true; p.col.enabled = false; }
-            foreach (var p in parts) { if (p.joint != null) Kill(p.joint); }
-            foreach (var p in parts) { Kill(p.col); Kill(p.rb); var im = p.bone.GetComponent<Impact>(); if (im != null) Kill(im); }
+            foreach (var p in parts) Sleep(p);   // back to posed: kept, not destroyed
             var bi = board.GetComponent<Impact>(); if (bi != null) Kill(bi);
-            parts.Clear();
             if (boardRb != null) { boardRb.isKinematic = true; boardCol.enabled = false; Kill(boardCol); Kill(boardRb); boardRb = null; }
             groundBody.gameObject.SetActive(false);
             boardGroundBody.gameObject.SetActive(false);

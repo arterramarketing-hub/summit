@@ -15,7 +15,8 @@ namespace Summit
     {
         Camera cam;
         Rider rider;
-        ParticleSystem snow, streaks, mist;
+        ParticleSystem snow, streaks, mist, wind;
+        ParticleSystem.EmissionModule windEm;
         ParticleSystem.EmissionModule snowEm, streakEm;
         Transform backdrop;
         Vignette vignette;
@@ -28,6 +29,7 @@ namespace Summit
             snow = MakeSnow(flake);
             mist = MakeMist(flake);
             streaks = MakeStreaks(flake);
+            wind = MakeWind(flake);
             // the mountains are painted into the sky now (Materials/SkyPanorama.png); the old low-poly rings are off
             backdrop = MakeBackdrop();
             backdrop.gameObject.SetActive(false);
@@ -137,6 +139,45 @@ namespace Summit
 
         // ---------------------------------------------------------------- speed lines
 
+        /// <summary>
+        /// Wind at speed: fine snow dust hanging in the air ahead, left in the world as you rush through it,
+        /// and stretched by the camera's own motion into long streaks, so the faster you go the longer they are.
+        /// </summary>
+        ParticleSystem MakeWind(Material mat)
+        {
+            var go = new GameObject("WindStreaks");
+            go.transform.SetParent(transform, false);
+            var ps = go.AddComponent<ParticleSystem>();
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            var main = ps.main;
+            main.loop = true;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(0.6f, 1.1f);
+            main.startSpeed = 0f;
+            main.startSize = new ParticleSystem.MinMaxCurve(0.025f, 0.06f);
+            main.startColor = new Color(1f, 1f, 1f, 0.55f);
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            main.maxParticles = 900;
+            main.playOnAwake = false;
+            var shape = ps.shape;
+            shape.shapeType = ParticleSystemShapeType.Box;
+            shape.scale = new Vector3(9f, 4.5f, 16f);
+            var col = ps.colorOverLifetime; col.enabled = true;
+            var g = new Gradient();
+            g.SetKeys(new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
+                      new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(0.6f, 0.25f), new GradientAlphaKey(0.6f, 0.7f), new GradientAlphaKey(0f, 1f) });
+            col.color = g;
+            windEm = ps.emission; windEm.rateOverTime = 0f;
+            var pr = go.GetComponent<ParticleSystemRenderer>();
+            pr.material = mat;
+            pr.renderMode = ParticleSystemRenderMode.Stretch;
+            pr.cameraVelocityScale = 0.06f;
+            pr.velocityScale = 0f;
+            pr.lengthScale = 1f;
+            pr.shadowCastingMode = ShadowCastingMode.Off;
+            ps.Play();
+            return ps;
+        }
+
         ParticleSystem MakeStreaks(Material mat)
         {
             var go = new GameObject("SpeedLines");
@@ -149,8 +190,8 @@ namespace Summit
             main.loop = true;
             main.startLifetime = 0.42f;
             main.startSpeed = 42f;
-            main.startSize = new ParticleSystem.MinMaxCurve(0.025f, 0.05f);
-            main.startColor = new Color(1f, 1f, 1f, 0.5f);
+            main.startSize = new ParticleSystem.MinMaxCurve(0.03f, 0.07f);
+            main.startColor = new Color(1f, 1f, 1f, 0.6f);
             main.simulationSpace = ParticleSystemSimulationSpace.Local;
             main.maxParticles = 300;
             main.playOnAwake = false;
@@ -185,7 +226,7 @@ namespace Summit
         // follows the camera, but lags behind it by its own small fraction, so as you ride the near
         // ridges slide across the far peaks: depth, without real mountains kilometres away.
 
-        struct Band { public Transform t; public float lag; }
+        struct Band { public Transform t; public float lag, lagUp; }
         Band[] bands;
         Vector3 bandAnchor;
         const float E0 = -0.07f, E1 = 0.33f;   // the elevations the band textures cover (Tools/MakeSky.swift)
@@ -193,8 +234,9 @@ namespace Summit
         void MakeParallax()
         {
             var names = new[] { "Far", "Mid", "Near" };
-            var radius = new[] { 780f, 650f, 520f };
-            var lag = new[] { 0.015f, 0.04f, 0.09f };
+            var radius = new[] { 2050f, 1750f, 1450f };   // beyond the drawn terrain
+            var lag = new[] { 0.01f, 0.025f, 0.05f };
+            var lagUp = new[] { 0.002f, 0.005f, 0.01f };
             var list = new System.Collections.Generic.List<Band>();
             for (int k = 0; k < 3; k++)
             {
@@ -209,7 +251,7 @@ namespace Summit
                 r.sharedMaterial = m;
                 r.shadowCastingMode = ShadowCastingMode.Off;
                 r.receiveShadows = false;
-                list.Add(new Band { t = go.transform, lag = lag[k] });
+                list.Add(new Band { t = go.transform, lag = lag[k], lagUp = lagUp[k] });
             }
             bands = list.ToArray();
             bandAnchor = rider != null ? rider.transform.position : Vector3.zero;
@@ -250,7 +292,12 @@ namespace Summit
         {
             if (bands == null) return;
             foreach (var b in bands)
-                b.t.position = cp - (cp - bandAnchor) * b.lag;
+            {
+                // across and along the mountain the bands lag by their own amount; vertically only a little,
+                // or 3 km of descent would lift them clean off the horizon
+                Vector3 d = cp - bandAnchor;
+                b.t.position = cp - new Vector3(d.x * b.lag, d.y * b.lagUp, d.z * b.lag);
+            }
         }
 
         Transform MakeBackdrop()
@@ -353,10 +400,13 @@ namespace Summit
             // banks of mist sit low on the slope ahead and drift across it
             mist.transform.position = cp + fwd * 70f + Vector3.down * 18f;
 
-            float s = rider.Running ? Mathf.Clamp01((rider.Speed * 3.6f - 55f) / 60f) : 0f;   // 55 to 115 km/h
+            float s = rider.Running ? Mathf.Clamp01((rider.Speed * 3.6f - 40f) / 70f) : 0f;   // 40 to 110 km/h
             if (rider.Running && rider.BoostTime > 0f) s = Mathf.Max(s, 0.9f);
             speed01 = Mathf.Lerp(speed01, s, 1f - Mathf.Exp(-Time.deltaTime * 4f));
-            streakEm.rateOverTime = speed01 * speed01 * 110f;
+            streakEm.rateOverTime = speed01 * speed01 * 220f;
+            // the wind box sits just ahead of the lens and a little low, where the rider is heading
+            wind.transform.SetPositionAndRotation(cp + cam.transform.forward * 9f + Vector3.down * 0.5f, Quaternion.LookRotation(fwd));
+            windEm.rateOverTime = speed01 * 650f;
             snowEm.rateOverTime = 2300f + 900f * speed01;
             if (vignette != null) vignette.intensity.value = baseVignette + 0.17f * speed01;
         }

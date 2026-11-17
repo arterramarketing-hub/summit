@@ -118,6 +118,27 @@ public static class RenderShot
             Debug.Log($"SHOT {sp.name} speed={rider.Speed * 3.6f:0} km/h air={rider.Airborne} grind={rider.Grinding} heading={rider.Heading:0.00} pos={rider.transform.position} cam={cam.transform.position} camfwd={cam.transform.forward}");
         }
 
+        // the snow tube, riding down the open mountain
+        {
+            rider.Tube = true; body.SetTube(true);
+            rider.ResetAt(Slope.Centre(400f), 400f); body.ResetVisual(); rider.Begin(); rider.Body.linearVelocity = Vector3.forward * 14f;
+            terrain.Prewarm(); props.Prewarm(); dress.Prewarm();
+            for (int i = 0; i < 120 * 2; i++) { rider.Steer = 0.4f * Mathf.Sin(i * Dt); rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); if (i % 4 == 0) body.Apply(4 * Dt); }
+            body.Apply(Dt);
+            var skins = Object.FindObjectsByType<SkinnedMeshRenderer>(FindObjectsSortMode.None);
+            var baked = new System.Collections.Generic.List<GameObject>();
+            foreach (var sk in skins) { var m = new Mesh(); sk.BakeMesh(m); var g = new GameObject("baked", typeof(MeshFilter), typeof(MeshRenderer)); g.GetComponent<MeshFilter>().sharedMesh = m; g.GetComponent<MeshRenderer>().sharedMaterials = sk.sharedMaterials; g.transform.SetPositionAndRotation(sk.transform.position, sk.transform.rotation); sk.enabled = false; baked.Add(g); }
+            chase.enabled = true; chase.Snap(); late.Invoke(chase, null);
+            typeof(Atmosphere).GetMethod("LateUpdate", NP).Invoke(atmo, null);
+            typeof(Forest).GetMethod("Draw", NP).Invoke(props, null);
+            Shoot(cam, "RenderShotTube.png");
+            var c0 = rider.transform.position + Vector3.up * 0.6f;
+            cam.transform.SetPositionAndRotation(c0 + new Vector3(2.6f, 0.9f, 2.2f), Quaternion.LookRotation(c0 - (c0 + new Vector3(2.6f, 0.9f, 2.2f))));
+            Shoot(cam, "RenderShotTubeClose.png");
+            foreach (var g in baked) Object.DestroyImmediate(g);
+            foreach (var sk in skins) sk.enabled = true;
+            rider.Tube = false; body.SetTube(false);
+        }
         // a fall into a crevasse: ride straight into one, let the body drop, then the camera looks down after it
         {
             var cv = Course.CrevassesOf(0)[0];

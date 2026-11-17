@@ -81,6 +81,8 @@ namespace Summit
             Part(PrimitiveType.Cube, boardRoot, new Vector3(0f, 0.07f, 0.27f), new Vector3(0.22f, 0.06f, 0.13f), new Vector3(0f, 12f, 0f), dark);
             Part(PrimitiveType.Cube, boardRoot, new Vector3(0f, 0.07f, -0.27f), new Vector3(0.22f, 0.06f, 0.13f), new Vector3(0f, -12f, 0f), dark);
 
+            BuildTube(board, dark);
+
             upper = new GameObject("Body").transform;
             upper.SetParent(roll, false);
             var prefab = Resources.Load<GameObject>("Rider/Character");
@@ -411,8 +413,98 @@ namespace Summit
             }
         }
 
+        // ---- the snow tube: an inflatable ring with two handles, the rider sat in it facing down the hill
+
+        Transform tubeRoot;
+        /// <summary>The one ragdoll, built once on the skeleton at rest (switched on at a crash).</summary>
+        void MakeRagdoll()
+        {
+            if (ragdoll != null || rig == null) return;
+            ragdoll = new Ragdoll(rig, boardRoot, rider.GetComponent<Collider>());
+            ragdoll.Hit += OnRagdollHit;
+            ragdoll.Drag += OnRagdollDrag;
+            ragdoll.Prebuild();
+        }
+        float tubeSpin, tubeSpinRate;
+        public bool Tube { get; private set; }
+
+        void BuildTube(Material accent, Material dark)
+        {
+            tubeRoot = new GameObject("Tube").transform;
+            tubeRoot.SetParent(roll, false);
+            var sh = accent != null ? accent.shader : Shader.Find("Universal Render Pipeline/Lit");
+            var rubber = new Material(sh); rubber.SetColor("_BaseColor", new Color(0.95f, 0.22f, 0.12f)); rubber.SetFloat("_Smoothness", 0.55f);
+            var band = new Material(sh); band.SetColor("_BaseColor", new Color(0.98f, 0.97f, 0.94f)); band.SetFloat("_Smoothness", 0.4f);
+            var ring = new GameObject("Ring", typeof(MeshFilter), typeof(MeshRenderer));
+            ring.transform.SetParent(tubeRoot, false);
+            ring.transform.localPosition = new Vector3(0f, 0.22f, 0f);
+            ring.GetComponent<MeshFilter>().sharedMesh = Torus(0.62f, 0.22f, 40, 16);
+            ring.GetComponent<MeshRenderer>().sharedMaterial = rubber;
+            var stripe = new GameObject("Stripe", typeof(MeshFilter), typeof(MeshRenderer));
+            stripe.transform.SetParent(tubeRoot, false);
+            stripe.transform.localPosition = new Vector3(0f, 0.43f, 0f);
+            stripe.GetComponent<MeshFilter>().sharedMesh = Torus(0.62f, 0.035f, 40, 8);
+            stripe.GetComponent<MeshRenderer>().sharedMaterial = band;
+            // handles either side of the rider (the rider faces +X here, so the sides are +-Z)
+            for (int s = -1; s <= 1; s += 2)
+                Part(PrimitiveType.Cylinder, tubeRoot, new Vector3(-0.05f, 0.47f, s * 0.6f), new Vector3(0.05f, 0.14f, 0.05f), new Vector3(0f, 0f, 90f), dark);
+            tubeRoot.gameObject.SetActive(false);
+        }
+
+        static Mesh Torus(float R, float r, int seg, int side)
+        {
+            var v = new Vector3[(seg + 1) * (side + 1)]; var t = new int[seg * side * 6];
+            for (int i = 0; i <= seg; i++)
+            {
+                float a = i / (float)seg * Mathf.PI * 2f;
+                Vector3 c = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a));
+                for (int j = 0; j <= side; j++)
+                {
+                    float b = j / (float)side * Mathf.PI * 2f;
+                    v[i * (side + 1) + j] = c * (R + r * Mathf.Cos(b)) + Vector3.up * r * Mathf.Sin(b);
+                }
+            }
+            int k = 0;
+            for (int i = 0; i < seg; i++)
+                for (int j = 0; j < side; j++)
+                {
+                    int a = i * (side + 1) + j, b = a + 1, c = a + side + 1, d = c + 1;
+                    t[k++] = a; t[k++] = b; t[k++] = c; t[k++] = b; t[k++] = d; t[k++] = c;
+                }
+            var m = new Mesh { name = "Tube" }; m.vertices = v; m.triangles = t; m.RecalculateNormals(); m.RecalculateBounds();
+            return m;
+        }
+
+        /// <summary>Board or tube.</summary>
+        public void SetTube(bool on)
+        {
+            Tube = on;
+            if (ragdoll != null && ragdoll.Active) ragdoll.End();
+            boardRoot.gameObject.SetActive(!on);
+            tubeRoot.gameObject.SetActive(on);
+            MakeRagdoll();
+            if (on) ragdoll.SetBoard(tubeRoot, new Vector3(1.6f, 0.44f, 1.6f), new Vector3(0f, 0.22f, 0f));
+            else ragdoll.SetBoard(boardRoot, new Vector3(0.29f, 0.07f, 1.55f), new Vector3(0f, 0.04f, 0f));
+            tubeSpin = 0f; tubeSpinRate = 0f;
+        }
+
+        /// <summary>A bounce off something: the tube spins away from it.</summary>
+        public void TubeKick(float into) { tubeSpinRate += (Random.value < 0.5f ? -1f : 1f) * Mathf.Clamp(into * 0.5f, 2f, 7f); }
+
+        void PoseTube(float dt)
+        {
+            Flutter(dt);
+            float t = Time.time;
+            // feet out over the front of the ring, hands on the handles, hips down in the hole
+            Vector3 fl = roll.TransformPoint(new Vector3(0.78f, 0.36f, 0.14f)), fr = roll.TransformPoint(new Vector3(0.78f, 0.36f, -0.14f));
+            Vector3 hl = roll.TransformPoint(new Vector3(-0.05f, 0.5f, 0.6f)), hr = roll.TransformPoint(new Vector3(-0.05f, 0.5f, -0.6f));
+            float seat = Mathf.Max(0f, rig.HipHeight + BoardTop - 0.32f);
+            rig.PoseSit(roll, seat, fl, fr, hl, hr, Mathf.Clamp(rider.Steer, -1f, 1f), dt, rider.Crashed, t);
+        }
+
         void PoseRig(float dt)
         {
+            if (Tube) { PoseTube(dt); return; }
             Flutter(dt);
             float t = Time.time;
             compV += (-comp * 140f - compV * 16f) * dt;
@@ -751,6 +843,13 @@ namespace Summit
 
         static Vector3 OnSnow(Vector3 at) => new Vector3(at.x, Slope.DrawnHeight(at.x, at.z), at.z);
 
+        void OnRagdollDrag(Vector3 at, float v)
+        {
+            if (v < 1.2f) return;
+            if (v > 2f && Time.time > nextDragCrater) { nextDragCrater = Time.time + 0.2f; craters.Add(OnSnow(at), ragdoll != null ? ragdoll.Velocity : Vector3.zero, 0.3f + 0.025f * v, 0.04f + 0.008f * v); }
+            if (Random.value < 0.15f) fx?.Puff(at, v * 0.3f);
+        }
+
         void OnRagdollHit(float v, bool isBoard, Vector3 at, Transform bone)
         {
             RagdollHit?.Invoke(v, isBoard);
@@ -853,16 +952,7 @@ namespace Summit
             {
                 ragdollPending = false;
                 if (ragdoll == null)
-                {
-                    ragdoll = new Ragdoll(rig, boardRoot, rider.GetComponent<Collider>());
-                    ragdoll.Hit += OnRagdollHit;
-                    ragdoll.Drag += (at, v) =>
-                    {
-                        if (v < 1.2f) return;
-                        if (v > 2f && Time.time > nextDragCrater) { nextDragCrater = Time.time + 0.2f; craters.Add(OnSnow(at), ragdoll != null ? ragdoll.Velocity : Vector3.zero, 0.3f + 0.025f * v, 0.04f + 0.008f * v); }
-                        if (Random.value < 0.4f) fx?.Puff(at, v * 0.5f);
-                    };
-                }
+                    MakeRagdoll();
                 if (ragdoll.Active)
                 {
                     // crashed again before the last one was tidied away: patch up, then throw again
@@ -962,13 +1052,21 @@ namespace Summit
                     rot = baseRot * Quaternion.AngleAxis(rider.TrickSpin * k * Mathf.Rad2Deg, Vector3.up)
                                   * Quaternion.AngleAxis(rider.TrickFlip * k * Mathf.Rad2Deg, Vector3.forward);
                 }
+                if (Tube)
+                {
+                    // the rider faces down the line (the model faces the board's +X), and the tube turns slowly
+                    // after a bounce
+                    tubeSpinRate *= Mathf.Exp(-dt * 0.8f);
+                    tubeSpin += tubeSpinRate * dt;
+                    rot = baseRot * Quaternion.Euler(0f, -90f + tubeSpin * Mathf.Rad2Deg, 0f);
+                }
                 Vector3 mid = new Vector3(0f, 0.9f, 0f);
                 pivot.rotation = rot;
                 pivot.position = p + Vector3.down * Rider.R + baseRot * mid - rot * mid;
 
                 // the lean IS the steering readout: the body is on exactly the edge the thumb asked for
                 float leanDeg = rider.Lean * Mathf.Rad2Deg;
-                roll.localRotation = Quaternion.Euler(0f, 0f, -leanDeg * 0.75f);
+                roll.localRotation = Tube ? Quaternion.Euler(leanDeg * 0.5f, 0f, 0f) : Quaternion.Euler(0f, 0f, -leanDeg * 0.75f);
                 upper.localRotation = Quaternion.Euler(0f, 0f, -leanDeg * 0.25f);
                 if (poser != null) Pose(dt);
                 else if (rig != null) PoseRig(dt);
@@ -977,12 +1075,12 @@ namespace Summit
 
             // the track: a groove pressed into the snow under the board
             trail.Feed(p + Vector3.down * Rider.R, normal, rider.TravelHeading, rider.Running && !rider.Crashed && !rider.Airborne && !rider.Grinding,
-                       Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Slope.Rough(p.x, p.z)),
-                       rider.Lean / Rider.MaxLean, rider.Skid, dt);
+                       Tube ? 1.5f : Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Slope.Rough(p.x, p.z)),
+                       Tube ? 0f : rider.Lean / Rider.MaxLean, Tube ? 0.7f : rider.Skid, dt);   // a tube leaves a wide, shallow chute
 
             // bow wave off the nose: more with speed, deeper snow and when the edge bites
             bool riding = rider.Running && !rider.Crashed && !rider.Airborne && !rider.Grinding;
-            bowEm.rateOverTime = riding && rider.Speed > 3f
+            bowEm.rateOverTime = riding && rider.Speed > 3f && !Tube
                 ? rider.Speed * (4.5f + 4f * Slope.Rough(p.x, p.z)) * (1f + 1.2f * Mathf.Abs(rider.Lean) / Rider.MaxLean + rider.Skid)
                 : 0f;
 

@@ -13,6 +13,8 @@ namespace Summit
         public Rider rider;
         public float shake;           // 0..1, set by the game (the slide closing in)
         public float distScale = 1f;  // the player's camera distance setting
+        public float heightScale = 1f;  // the player's camera angle setting (low .. high)
+        public float extraFov;          // the lens setting: wider angle
         public Vector3 peekAt;        // look down into a crevasse at this point...
         public float peek;            // ...this much (0..1)
 
@@ -45,7 +47,7 @@ namespace Summit
             yaw = first ? wantYaw : Mathf.Lerp(yaw, wantYaw, 1f - Mathf.Exp(-dt * 4f));
             var f = new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw));
 
-            float dist = Mathf.Lerp(5.8f, 8.2f, s01) * distScale;
+            float dist = Mathf.Lerp(4.6f, 6.6f, s01) * distScale;   // low and close: the snow rushes past
             // never behind a tree trunk: slide in front of it
             if (Physics.SphereCast(focus, 0.35f, -f, out RaycastHit hit, dist, ~0, QueryTriggerInteraction.Ignore) &&
                 hit.collider.GetComponentInParent<Obstacle>() != null)
@@ -53,7 +55,7 @@ namespace Summit
             camDist = first ? dist : Mathf.Lerp(camDist, dist, 1f - Mathf.Exp(-dt * (dist < camDist ? 20f : 3f)));
             dist = camDist;
             Vector3 pos = focus - f * dist;
-            float wantH = focus.y + Mathf.Lerp(2.2f, 2.9f, s01) * Mathf.Lerp(1f, distScale, 0.7f);
+            float wantH = focus.y + Mathf.Lerp(1.15f, 1.5f, s01) * heightScale * Mathf.Lerp(1f, distScale, 0.7f);
             // never inside the hill behind you
             wantH = Mathf.Max(wantH, Slope.Height(pos.x, pos.z) + 1.3f);
             height = first ? wantH : Mathf.Lerp(height, wantH, 1f - Mathf.Exp(-dt * 7f));
@@ -80,7 +82,7 @@ namespace Summit
             }
             transform.SetPositionAndRotation(pos, Quaternion.LookRotation(look - pos, Vector3.up));
 
-            float wantFov = Mathf.Lerp(60f, 74f, s01 * s01) + (rider.BoostTime > 0f ? 8f : 0f);
+            float wantFov = Mathf.Lerp(80f, 94f, s01 * s01) + extraFov + (rider.BoostTime > 0f ? 8f : 0f);   // a wide-angle lens
             fov = first ? wantFov : Mathf.Lerp(fov, wantFov, 1f - Mathf.Exp(-dt * 2f));
             cam.fieldOfView = fov;
             first = false;
