@@ -239,9 +239,9 @@ namespace Summit
             {
                 var go = new GameObject("Mountains Photo");
                 go.transform.SetParent(transform, false);
-                // the texture is the photo (top 918 rows, spanning -0.186..0.478 rad) plus forest carried on down
-                // to the valley below it, so it reaches 0.783 rad below the horizon
-                go.AddComponent<MeshFilter>().sharedMesh = Arc(1500f, 1.483f, -0.783f, 0.478f);
+                // the texture is the picture (its top 497 rows, spanning -0.527..0.21 rad: the summit sits low, a few
+                // degrees above the horizon) with a plain fade into valley haze below it, down to -0.85 rad
+                go.AddComponent<MeshFilter>().sharedMesh = Arc(1500f, 1.483f, -0.85f, 0.21f);
                 var r = go.AddComponent<MeshRenderer>();
                 r.sharedMaterial = photo;
                 r.shadowCastingMode = ShadowCastingMode.Off; r.receiveShadows = false;

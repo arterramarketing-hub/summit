@@ -27,7 +27,7 @@ public static class StartShot
         Physics.simulationMode = SimulationMode.Script;
         typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
         rider.input = null;
-        float[] shots = { 6.5f, 6.8f, 6.9f, 7.0f, 7.1f, 7.4f };
+        float[] shots = { 1f, 5f, 7.6f, 8.4f, 9.5f, 12f };
         ChaseCamera.TestDt = 1f / 60f;
         int next = 0;
         const float dt = 1f / 60f;

@@ -7,14 +7,17 @@ import AppKit
 
 let args = CommandLine.arguments
 let inPath = args.count > 1 ? args[1] : "rainier.jpg", outPath = args.count > 2 ? args[2] : "BackdropPhoto.png"
+// "edited": an already-cropped picture with the forest running to its bottom edge (Tools/art/rainier-edit.jpg):
+// used whole, at its own resolution, with only a plain haze fade below it (nothing copied or mirrored)
+let edited = args.count > 3 && args[3] == "edited"
 // the part of the photo to keep (fractions of its width and height)
-let cropX0 = 0.0, cropX1 = 0.775, cropY0 = 0.0, cropY1 = 0.70
+let cropX0 = 0.0, cropX1 = edited ? 1.0 : 0.775, cropY0 = 0.0, cropY1 = edited ? 1.0 : 0.70
 
 let src = NSBitmapImageRep(data: try! Data(contentsOf: URL(fileURLWithPath: inPath)))!
 let SW = src.pixelsWide, SH = src.pixelsHigh
 let x0 = Int(Double(SW) * cropX0), x1 = Int(Double(SW) * cropX1), y0 = Int(Double(SH) * cropY0), y1 = Int(Double(SH) * cropY1)
 let CW = x1 - x0, CH = y1 - y0
-let W = 4096, H = Int(Double(W) * Double(CH) / Double(CW))
+let W = edited ? min(4096, CW) : 4096, H = Int(Double(W) * Double(CH) / Double(CW))
 print("source \(SW)x\(SH) crop \(CW)x\(CH) -> \(W)x\(H)")
 
 func ss(_ a: Double, _ b: Double, _ x: Double) -> Double { let t = max(0, min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t) }
@@ -86,6 +89,49 @@ for j in 0..<H {
         out[o] = UInt8(max(0, min(255, r * 255))); out[o + 1] = UInt8(max(0, min(255, g * 255)))
         out[o + 2] = UInt8(max(0, min(255, b * 255))); out[o + 3] = UInt8(max(0, min(255, a * 255)))
     }
+}
+if edited {
+    // the picture covers PhotoTop..PhotoBottom radians of elevation in the game; below it, down to HazeBottom,
+    // each column's own forest colour (the average of its last rows, softened sideways) fades into the haze
+    let photoSpan = 0.737, hazeSpan = 0.85 - 0.527
+    let extra = Int((Double(H) * hazeSpan / photoSpan).rounded()), H2 = H + extra
+    var ext = [UInt8](repeating: 0, count: W * H2 * 4)
+    for k in 0..<(W * H * 4) { ext[k] = out[k] }
+    let haze = (0.80, 0.86, 0.94)
+    let rows = 10
+    var avg = [(Double, Double, Double)](repeating: (0, 0, 0), count: W)
+    for i in 0..<W {
+        var r = 0.0, g = 0.0, b = 0.0
+        for j in (H - rows)..<H { let o = (j * W + i) * 4; r += Double(out[o]); g += Double(out[o + 1]); b += Double(out[o + 2]) }
+        avg[i] = (r / Double(rows * 255), g / Double(rows * 255), b / Double(rows * 255))
+    }
+    var soft = avg
+    let R = 30
+    for i in 0..<W {
+        var r = 0.0, g = 0.0, b = 0.0, n = 0.0
+        for d in -R...R { let k = min(W - 1, max(0, i + d)); r += avg[k].0; g += avg[k].1; b += avg[k].2; n += 1 }
+        soft[i] = (r / n, g / n, b / n)
+    }
+    for j in H..<H2 {
+        let f = Double(j - H) / Double(extra)
+        let toSoft = ss(0, 0.06, f), toHaze = 0.95 * ss(0.02, 0.9, f)
+        for i in 0..<W {
+            let so = ((H - 1) * W + i) * 4, o = (j * W + i) * 4
+            let last = (Double(out[so]) / 255, Double(out[so + 1]) / 255, Double(out[so + 2]) / 255)
+            var c = (last.0 + (soft[i].0 - last.0) * toSoft, last.1 + (soft[i].1 - last.1) * toSoft, last.2 + (soft[i].2 - last.2) * toSoft)
+            c = (c.0 + (haze.0 - c.0) * toHaze, c.1 + (haze.1 - c.1) * toHaze, c.2 + (haze.2 - c.2) * toHaze)
+            let u = Double(i) / Double(W - 1)
+            ext[o] = UInt8(c.0 * 255); ext[o + 1] = UInt8(c.1 * 255); ext[o + 2] = UInt8(c.2 * 255)
+            ext[o + 3] = UInt8(255 * ss(0.0, 0.07, u) * ss(1.0, 0.93, u))
+        }
+    }
+    print("edited: \(W)x\(H2), the picture is the top \(H) rows, haze below")
+    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: W, pixelsHigh: H2, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                               isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: W * 4, bitsPerPixel: 32)!
+    ext.withUnsafeBufferPointer { memcpy(rep.bitmapData!, $0.baseAddress!, W * H2 * 4) }
+    try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: outPath))
+    print("wrote", outPath)
+    exit(0)
 }
 // below the photo: the forest carries on down into the valley and fades into the game's fog haze, so
 // there is never a blank strip between the end of the drawn terrain and the bottom of the picture.
