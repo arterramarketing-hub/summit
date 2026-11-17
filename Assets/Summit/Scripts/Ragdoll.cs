@@ -51,6 +51,9 @@ namespace Summit
             }
         }
         public Vector3 Centre => Active && parts.Count > 0 ? parts[0].rb.position : Vector3.zero;
+        /// <summary>How fast the body (and the board) are still moving: the faster of the two.</summary>
+        public float Speed => !Active || parts.Count == 0 ? 0f : Mathf.Max(parts[0].rb.linearVelocity.magnitude, boardRb != null ? boardRb.linearVelocity.magnitude * 0.5f : 0f);
+        public Vector3 Velocity => Active && parts.Count > 0 ? parts[0].rb.linearVelocity : Vector3.zero;
 
         public Ragdoll(RiderRig rig, Transform board, Collider riderCollider)
         {

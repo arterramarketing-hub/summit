@@ -36,7 +36,9 @@ namespace Summit
         readonly System.Collections.Generic.HashSet<Transform> bandaged = new System.Collections.Generic.HashSet<Transform>();
         readonly System.Collections.Generic.List<GameObject> bandages = new System.Collections.Generic.List<GameObject>();
         Material bandageMat, bandageLine;
-        float crashClock;
+        float crashClock, stillFor;
+        /// <summary>The thrown body is still tumbling or sliding.</summary>
+        public bool RagdollMoving { get; private set; }
         Vector3 crashAxis;
 
         // humanoid
@@ -190,7 +192,8 @@ namespace Summit
             {
                 if (impact > 5f) spray.Emit(Mathf.Clamp((int)(impact * 2.5f), 8, 50));
                 comp = Mathf.Min(0.6f, comp + impact * 0.035f);
-                if (impact > 3f) marks.Add(transform.position + Vector3.down * Rider.R, normal, 0.9f + impact * 0.06f, rider.Heading);
+                if (impact > 3f) marks.Add(transform.position + Vector3.down * Rider.R, normal, 0.9f + impact * 0.07f, rider.Heading);
+                if (impact > 2.5f) fx?.Landing(transform.position + Vector3.down * Rider.R, normal, impact, rider.Velocity);
             };
             rider.ShieldHit += () => { shieldFlash = 1f; spray.Emit(40); };
             rider.Crash += _ =>
@@ -739,9 +742,10 @@ namespace Summit
             RagdollHit?.Invoke(v, isBoard);
             if (v > 2.2f)
             {
-                // a crater where it landed, and snow thrown up
-                marks.Add(OnSnow(at), Slope.Normal(at.x, at.z), Mathf.Min(1.3f, 0.45f + 0.06f * v), Random.value * 6.3f);
-                fx?.Puff(at, v);
+                // a crater where it landed, and snow thrown everywhere
+                marks.Add(OnSnow(at), Slope.Normal(at.x, at.z), Mathf.Min(1.9f, 0.6f + 0.1f * v), Random.value * 6.3f);
+                if (v > 3.5f) fx?.Impact(at, v, ragdoll != null ? ragdoll.Velocity : Vector3.zero);
+                else fx?.Puff(at, v);
             }
             if (isBoard || bone == null || rig == null || LimbOf(bone) == null || brokenThisCrash.Contains(bone)) return;
             // the first real hit breaks whatever took it; a second only on a big one
@@ -846,6 +850,8 @@ namespace Summit
                     };
                 }
                 ragdoll.Begin(lastVel);
+                stillFor = 0f;
+                fx?.Impact(transform.position, Mathf.Max(6f, lastVel.magnitude * 0.6f), lastVel * 0.6f);   // the wipeout itself
                 brokenThisCrash.Clear();
                 crashClock = 0f;
             }
@@ -862,6 +868,10 @@ namespace Summit
                 ragdoll.PhysicsStep();
                 rider.CrashFollow = ragdoll.Centre;
                 rider.HasCrashFollow = rider.Crashed;
+                // stay down while still sliding or tumbling, and a beat after it stops
+                if (ragdoll.Speed > 0.8f) stillFor = 0f; else stillFor += Time.fixedDeltaTime;
+                rider.HoldCrash = rider.Crashed && stillFor < 0.6f;
+                RagdollMoving = rider.HoldCrash;
             }
         }
 

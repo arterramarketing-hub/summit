@@ -548,7 +548,7 @@ namespace Summit
             if (Crashed) return;
             Crashed = true;
             Airborne = false; Grinding = false;
-            crashTimer = 2.6f;   // long enough to tumble and come to rest
+            crashTimer = 1.6f;   // at least this long; then until the body has come to rest (HoldCrash)
             rb.detectCollisions = false;
             Carve = 0f; Skid = 0f; Lean = 0f; leanVel = 0f;
             crashCause = why;
@@ -568,13 +568,16 @@ namespace Summit
             }
             float wantY = Slope.DrawnHeight(p.x + h.x * dt, p.z + h.z * dt) + R;
             Speed = h.magnitude;
-            if (crashTimer <= 0f) return Recover(p);
+            // get up only once the thrown body has come to rest (or after a long slide, regardless)
+            if (crashTimer <= 0f && !(HoldCrash && crashTimer > -6f)) return Recover(p);
             return new Vector3(h.x, (wantY - p.y) / dt, h.z);
         }
 
         /// <summary>Where the thrown rider is, set by the ragdoll while a crash plays out.</summary>
         public Vector3 CrashFollow;
         public bool HasCrashFollow;
+        /// <summary>Set while the thrown body is still moving: stay down until it stops.</summary>
+        public bool HoldCrash;
 
         Vector3 Recover(Vector3 p)
         {

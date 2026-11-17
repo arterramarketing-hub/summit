@@ -13,7 +13,7 @@ namespace Summit
     public class SnowFX : MonoBehaviour
     {
         public Camera cam;
-        ParticleSystem glints, clumps, mist, puffs, stars;
+        ParticleSystem glints, clumps, mist, puffs, stars, chunks;
         Transform groundPlane;
         float glintCarry;
 
@@ -24,7 +24,7 @@ namespace Summit
             glints = System("Glints", add, 1400);
             var gm = glints.main;
             gm.startLifetime = new ParticleSystem.MinMaxCurve(0.12f, 0.5f);
-            gm.startSize = new ParticleSystem.MinMaxCurve(0.08f, 0.2f);
+            gm.startSize = new ParticleSystem.MinMaxCurve(0.05f, 0.13f);
             // mostly white, some with the faint colour a snow crystal splits the sun into
             var tints = new Gradient();
             tints.mode = GradientMode.Fixed;
@@ -53,7 +53,7 @@ namespace Summit
             var mm = mist.main;
             mm.startLifetime = new ParticleSystem.MinMaxCurve(1.2f, 2.2f);
             mm.startSize = new ParticleSystem.MinMaxCurve(0.6f, 1.5f);
-            mm.startColor = new Color(1f, 1f, 1f, 0.45f);
+            mm.startColor = new ParticleSystem.MinMaxGradient(new Color(1f, 1f, 1f, 0.45f), new Color(0.84f, 0.89f, 0.97f, 0.45f));
             mm.gravityModifier = 0.12f;
             Fade(mist, 0.5f);
             var msz = mist.sizeOverLifetime; msz.enabled = true; msz.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 0.6f, 1f, 1.8f));
@@ -62,10 +62,20 @@ namespace Summit
             var pm = puffs.main;
             pm.startLifetime = new ParticleSystem.MinMaxCurve(0.5f, 1.1f);
             pm.startSize = new ParticleSystem.MinMaxCurve(0.25f, 0.7f);
-            pm.startColor = new Color(1f, 1f, 1f, 0.8f);
+            pm.startColor = new ParticleSystem.MinMaxGradient(new Color(1f, 1f, 1f, 0.85f), new Color(0.80f, 0.86f, 0.95f, 0.85f));   // some in shade, so a burst reads against the snow
             pm.gravityModifier = 0.35f;
             Fade(puffs, 0.8f);
             var psz = puffs.sizeOverLifetime; psz.enabled = true; psz.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 0.6f, 1f, 1.7f));
+
+            // lumps of snow thrown by an impact: they arc out and drop
+            chunks = System("Chunks", soft, 500);
+            var km = chunks.main;
+            km.startLifetime = new ParticleSystem.MinMaxCurve(0.6f, 1.2f);
+            km.startSize = new ParticleSystem.MinMaxCurve(0.06f, 0.2f);
+            km.startColor = new ParticleSystem.MinMaxGradient(new Color(1f, 1f, 1f, 1f), new Color(0.85f, 0.89f, 0.96f, 1f));
+            km.gravityModifier = 1.3f;
+            var ksz = chunks.sizeOverLifetime; ksz.enabled = true; ksz.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 1f, 1f, 0.4f));
+            Fade(chunks, 1f);
 
             stars = System("CrackStars", add, 200);
             var sm = stars.main;
@@ -129,7 +139,7 @@ namespace Summit
             var sh = Shader.Find("Universal Render Pipeline/Particles/Unlit");
             var m = new Material(sh);
             m.SetTexture("_BaseMap", tex);
-            m.SetColor("_BaseColor", new Color(3.2f, 3.2f, 3.2f, 1f));   // far brighter than white snow, so bloom gives each a halo
+            m.SetColor("_BaseColor", new Color(2.1f, 2.1f, 2.1f, 1f));   // brighter than white snow, so bloom gives each a soft halo
             m.SetFloat("_Surface", 1f);
             m.SetFloat("_Blend", 2f);
             m.SetFloat("_SrcBlend", (float)BlendMode.SrcAlpha);
@@ -144,7 +154,7 @@ namespace Summit
         {
             if (cam == null || glints == null) return;
             // fresh snow glitters: a steady sprinkle of glints on the surface in view, densest close by
-            glintCarry += Time.deltaTime * 1000f;
+            glintCarry += Time.deltaTime * 420f;
             int n = (int)glintCarry; glintCarry -= n;
             Sprinkle(n);
         }
@@ -206,6 +216,80 @@ namespace Summit
             }
         }
 
+        /// <summary>
+        /// A body slamming into the snow: an explosion of powder, lumps thrown out in arcs, and a cloud that
+        /// hangs and drifts. force is the impact speed (m/s).
+        /// </summary>
+        public void Impact(Vector3 at, float force, Vector3 carry)
+        {
+            float k = Mathf.Clamp01(force / 12f);
+            var ep = new ParticleSystem.EmitParams();
+            Vector3 n = Slope.Normal(at.x, at.z);
+            int nPuff = Mathf.RoundToInt(Mathf.Lerp(10f, 42f, k));
+            for (int i = 0; i < nPuff; i++)
+            {
+                ep.position = at + Random.insideUnitSphere * 0.3f;
+                Vector3 d = (Random.insideUnitSphere * 0.9f + n * 1.4f).normalized;
+                ep.velocity = d * Random.Range(1.2f, 4.5f) * (0.6f + k) + carry * 0.25f;
+                ep.startSize = Random.Range(0.35f, 1.1f) * (0.7f + 0.6f * k);
+                puffs.Emit(ep, 1);
+            }
+            int nChunk = Mathf.RoundToInt(Mathf.Lerp(6f, 34f, k));
+            for (int i = 0; i < nChunk; i++)
+            {
+                ep.position = at + Random.insideUnitSphere * 0.2f;
+                Vector3 d = (Random.insideUnitSphere + n * 1.6f).normalized;
+                ep.velocity = d * Random.Range(2.5f, 7f) * (0.5f + k) + carry * 0.35f;
+                ep.startSize = Random.Range(0.06f, 0.2f);
+                chunks.Emit(ep, 1);
+            }
+            for (int i = 0; i < Mathf.RoundToInt(3 + 6 * k); i++)
+            {
+                ep.position = at + Random.insideUnitSphere * 0.6f + n * 0.4f;
+                ep.velocity = Random.insideUnitSphere * 0.6f + carry * 0.15f;
+                ep.startSize = Random.Range(1.2f, 2.4f);
+                mist.Emit(ep, 1);
+            }
+        }
+
+        /// <summary>
+        /// Coming down from a jump: a ring of powder blasted out low along the snow, a spray thrown
+        /// ahead in the direction you are going, and lumps for a hard one. impact is the speed into the snow.
+        /// </summary>
+        public void Landing(Vector3 at, Vector3 n, float impact, Vector3 travel)
+        {
+            float k = Mathf.Clamp01((impact - 2f) / 12f);
+            var ep = new ParticleSystem.EmitParams();
+            Vector3 t1 = Vector3.Cross(n, Vector3.right).normalized, t2 = Vector3.Cross(n, t1);
+            Vector3 fwd = Vector3.ProjectOnPlane(travel, n);
+            int ring = Mathf.RoundToInt(Mathf.Lerp(14f, 44f, k));
+            for (int i = 0; i < ring; i++)
+            {
+                float a = i / (float)ring * Mathf.PI * 2f + Random.Range(-0.1f, 0.1f);
+                Vector3 d = t1 * Mathf.Cos(a) + t2 * Mathf.Sin(a);
+                ep.position = at + d * 0.35f + n * 0.1f;
+                ep.velocity = d * Random.Range(2.5f, 5.5f) * (0.6f + k) + n * Random.Range(0.4f, 1.6f) + fwd * 0.35f;
+                ep.startSize = Random.Range(0.3f, 0.8f) * (0.8f + 0.6f * k);
+                puffs.Emit(ep, 1);
+            }
+            int ahead = Mathf.RoundToInt(Mathf.Lerp(8f, 26f, k));
+            for (int i = 0; i < ahead; i++)
+            {
+                ep.position = at + n * 0.15f;
+                ep.velocity = fwd * Random.Range(0.45f, 0.8f) + n * Random.Range(1.5f, 4f) * (0.6f + k) + Random.insideUnitSphere * 1.2f;
+                ep.startSize = Random.Range(0.25f, 0.6f);
+                puffs.Emit(ep, 1);
+            }
+            int lumps = Mathf.RoundToInt(Mathf.Lerp(0f, 22f, k));
+            for (int i = 0; i < lumps; i++)
+            {
+                ep.position = at + n * 0.1f;
+                ep.velocity = (Random.insideUnitSphere + n * 1.3f).normalized * Random.Range(2f, 5.5f) + fwd * 0.5f;
+                ep.startSize = Random.Range(0.05f, 0.16f);
+                chunks.Emit(ep, 1);
+            }
+        }
+
         /// <summary>A bone giving way: a flash of white stars and a burst of snow.</summary>
         public void Crack(Vector3 at)
         {
@@ -222,7 +306,7 @@ namespace Summit
         public void Clear()
         {
             if (clumps == null) return;
-            clumps.Clear(); mist.Clear(); puffs.Clear(); stars.Clear();
+            clumps.Clear(); mist.Clear(); puffs.Clear(); stars.Clear(); chunks.Clear();
         }
     }
 }

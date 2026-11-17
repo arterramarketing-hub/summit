@@ -116,7 +116,7 @@ namespace Summit
         /// <summary>A rebuilt mountain: drop everything built for the old one.</summary>
         public void Rebuild()
         {
-            foreach (var kv in built) if (kv.Value != null) Destroy(kv.Value);
+            foreach (var kv in built) if (kv.Value != null) { if (Application.isPlaying) Destroy(kv.Value); else DestroyImmediate(kv.Value); }
             built.Clear();
             Update();
         }

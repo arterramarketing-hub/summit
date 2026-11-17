@@ -68,11 +68,20 @@ public static class RenderShot
                 if (ps.name == "Snowfall") ps.Simulate(4f, true, true);
                 else if (ps.name == "Glints" && sp.name == "Run") { fx.Sprinkle(0); }
                 else if (ps.name == "Bow" || ps.name == "Spray" || ps.name == "Wake") { ps.Simulate(0.5f, true, true); Debug.Log($"SHOT ps {ps.name} n={ps.particleCount} rate={ps.emission.rateOverTime.constant:0}"); }
-            fx.Clear();
+            if (sp.name != "Crash") fx.Clear();
             var gl = fx.transform.Find("Glints").GetComponent<ParticleSystem>(); gl.Clear();
             fx.Sprinkle(260); gl.Simulate(0.1f, true, false, false);
             { var arr = new ParticleSystem.Particle[3]; int got = gl.GetParticles(arr); for (int q = 0; q < got; q++) Debug.Log($"SHOT glint p={arr[q].position} size={arr[q].GetCurrentSize(gl)} col={arr[q].GetCurrentColor(gl)} life={arr[q].remainingLifetime} cam={cam.transform.position}"); }
             Debug.Log($"SHOT glints n={gl.particleCount} playing={gl.isPlaying} mat={gl.GetComponent<ParticleSystemRenderer>().sharedMaterial.shader.name} rq={gl.GetComponent<ParticleSystemRenderer>().sharedMaterial.renderQueue}");
+            if (sp.name == "Run")
+            {
+                fx.Landing(rider.transform.position + Vector3.down * Rider.R, Slope.Normal(rider.transform.position.x, rider.transform.position.z), 12f, rider.Velocity);
+                foreach (var nm in new[] { "ImpactPuffs", "Chunks" }) fx.transform.Find(nm).GetComponent<ParticleSystem>().Simulate(0.25f, true, false, false);
+            }
+            if (sp.name == "Crash")
+            {
+                foreach (var nm in new[] { "ImpactPuffs", "Chunks", "TreeMist" }) fx.transform.Find(nm).GetComponent<ParticleSystem>().Simulate(0.2f, true, false, false);
+            }
             if (sp.name == "Carve")
             {
                 // a tree shaken by a hit, a few metres ahead to the side

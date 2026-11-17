@@ -72,6 +72,7 @@ namespace Summit
             {
                 if (state != State.Riding || impact <= 3f) return;
                 if (impact > 11f) audioFx.Play(Sfx.LandHard);
+                hurtShake = Mathf.Max(hurtShake, Mathf.Clamp01((impact - 7f) / 12f) * 0.7f);
                 audioFx.Play(Sfx.Land, Mathf.Clamp01(impact / 14f));
             };
             rider.Scraped += hit => { if (state == State.Riding) audioFx.Play(Sfx.Scrape, hit); };
@@ -89,6 +90,7 @@ namespace Summit
             };
             body.RagdollHit += (v, isBoard) =>
             {
+                if (!isBoard && v > 6f) hurtShake = Mathf.Max(hurtShake, Mathf.Clamp01((v - 6f) / 10f) * 0.8f);
                 if (v < 1.5f || Time.time < nextImpactSound) return;
                 nextImpactSound = Time.time + 0.07f;
                 audioFx.Play(isBoard ? Sfx.Clack : Sfx.Thump, Mathf.Clamp01(v / 10f));
@@ -331,7 +333,7 @@ namespace Summit
                     if (input.AnyPress() && hud.OnRestart(RiderInput.PointerPosition())) { audioFx.Play(Sfx.Click); ToReady(); input.SwallowCurrentPress(); break; }
                     runTime += dt;
                     slide.Step(dt, rider);
-                    if (wipeoutTimer > 0f) { wipeoutTimer -= dt; if (wipeoutTimer <= 0f) { ToEnd(endTitle, false); break; } }
+                    if (wipeoutTimer > 0f) { if (!body.RagdollMoving) wipeoutTimer -= dt; if (wipeoutTimer <= 0f) { ToEnd(endTitle, false); break; } }
                     if (chainCount > 0)
                     {
                         chainTimer -= dt;
@@ -440,7 +442,7 @@ namespace Summit
         Transform gateRoot;
         void RebuildGate()
         {
-            if (gateRoot != null) Destroy(gateRoot.gameObject);
+            if (gateRoot != null) { if (Application.isPlaying) Destroy(gateRoot.gameObject); else DestroyImmediate(gateRoot.gameObject); }
             BuildStartGate();
         }
 
@@ -514,8 +516,8 @@ namespace Summit
             int left = MaxFalls - falls;
             fallsNote = left <= 0 ? "that's three" : left == 1 ? "1 fall left" : left + " falls left";
             hud.Flash(why, fallsNote, 1.3f);
-            if (why.StartsWith("Crevasse")) { wipeoutTimer = 2.4f; endTitle = "LOST IN A CREVASSE"; hud.Flash("CREVASSE!", "you fell in", 2f); }
-            else if (left <= 0) { wipeoutTimer = 2.3f; endTitle = "WIPED OUT"; }   // let the tumble play out, then it's over
+            if (why.StartsWith("Crevasse")) { wipeoutTimer = 1.2f; endTitle = "LOST IN A CREVASSE"; hud.Flash("CREVASSE!", "you fell in", 2f); }
+            else if (left <= 0) { wipeoutTimer = 0.9f; endTitle = "WIPED OUT"; }   // let the tumble play out, then it's over
             if (why.StartsWith("Tree")) { audioFx.Play(Sfx.HitTree); audioFx.Play(Sfx.Crash, 0.6f); }
             else if (why.StartsWith("Rock")) { audioFx.Play(Sfx.HitRock); audioFx.Play(Sfx.Crash, 0.6f); }
             else if (why.StartsWith("Crevasse")) audioFx.Play(Sfx.Crevasse);
