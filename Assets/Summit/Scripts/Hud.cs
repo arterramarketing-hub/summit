@@ -17,7 +17,10 @@ namespace Summit
         Image[] shieldPips;
         Image boostFill, boostBg;
         int lastTenths = -2;
-        Image slideFill, whiteout;
+        Image slideFill, whiteout, hurt;
+        Image[] fallPips;
+        Text fallsLabel;
+        float hurtA;
         RectTransform safe;
         float flashT;
         Rect lastSafe;
@@ -40,6 +43,11 @@ namespace Summit
             whiteout = NewImage("Whiteout", transform, new Color(1f, 1f, 1f, 0f));
             Stretch(whiteout.rectTransform);
             whiteout.raycastTarget = false;
+
+            // a red flash when something breaks
+            hurt = NewImage("Hurt", transform, new Color(0.85f, 0.05f, 0.05f, 0f));
+            Stretch(hurt.rectTransform);
+            hurt.raycastTarget = false;
 
             safe = new GameObject("Safe", typeof(RectTransform)).GetComponent<RectTransform>();
             safe.SetParent(transform, false);
@@ -81,6 +89,18 @@ namespace Summit
                 Place(pip.rectTransform, new Vector2(0f, 1f), new Vector2(40f + i * 54f, -168f), new Vector2(44f, 44f), new Vector2(0f, 1f));
                 shieldPips[i] = pip;
             }
+            // falls left this run: three red crosses, top right under the slide bar
+            fallsLabel = NewText("FallsLabel", safe, new Vector2(1f, 1f), new Vector2(-40f, -136f), 30, TextAnchor.UpperRight);
+            fallsLabel.text = "";
+            fallPips = new Image[3];
+            var cross = MakeCross(64);
+            for (int i = 0; i < fallPips.Length; i++)
+            {
+                var pip = NewImage("Fall" + i, safe, new Color(0.95f, 0.2f, 0.18f, 0.95f));
+                pip.sprite = cross;
+                Place(pip.rectTransform, new Vector2(1f, 1f), new Vector2(-40f - i * 52f, -176f), new Vector2(42f, 42f), new Vector2(1f, 1f));
+                fallPips[i] = pip;
+            }
             boostBg = NewImage("BoostBar", safe, new Color(0f, 0f, 0f, 0.35f));
             Place(boostBg.rectTransform, new Vector2(0f, 1f), new Vector2(40f, -226f), new Vector2(260f, 16f), new Vector2(0f, 1f));
             boostFill = NewImage("Fill", boostBg.transform, new Color(0.35f, 1f, 0.3f, 0.95f));
@@ -110,6 +130,35 @@ namespace Summit
             modeLabel = NewText("ModeLabel", mb.transform, new Vector2(0.5f, 0.5f), Vector2.zero, 40, TextAnchor.MiddleCenter);
             SetButtons(false, false, "PLAY");
         }
+
+        static Sprite MakeCross(int px)
+        {
+            var t = new Texture2D(px, px, TextureFormat.RGBA32, false);
+            for (int y = 0; y < px; y++)
+                for (int x = 0; x < px; x++)
+                {
+                    float u = Mathf.Abs(x - (px - 1) * 0.5f) / px, v = Mathf.Abs(y - (px - 1) * 0.5f) / px;
+                    bool on = (u < 0.15f && v < 0.44f) || (v < 0.15f && u < 0.44f);
+                    bool edge = (u < 0.19f && v < 0.48f) || (v < 0.19f && u < 0.48f);
+                    t.SetPixel(x, y, on ? Color.white : edge ? new Color(1f, 1f, 1f, 0.5f) : new Color(1f, 1f, 1f, 0f));
+                }
+            t.Apply();
+            return Sprite.Create(t, new Rect(0, 0, px, px), new Vector2(0.5f, 0.5f), 100f);
+        }
+
+        /// <summary>Falls left this run (shown as red crosses; a used one goes dark).</summary>
+        public void SetFalls(int left, int max, bool show)
+        {
+            for (int i = 0; i < fallPips.Length; i++)
+            {
+                fallPips[i].enabled = show && i < max;
+                fallPips[i].color = i < left ? new Color(0.95f, 0.2f, 0.18f, 0.95f) : new Color(0.2f, 0.2f, 0.22f, 0.6f);
+            }
+            fallsLabel.text = show ? "FALLS" : "";
+        }
+
+        /// <summary>A red flash across the screen.</summary>
+        public void Hurt(float a = 0.45f) { hurtA = Mathf.Max(hurtA, a); }
 
         static Sprite MakeCircle(int px)
         {
@@ -227,6 +276,7 @@ namespace Summit
 
         void Update()
         {
+            if (hurtA > 0f) { hurtA = Mathf.MoveTowards(hurtA, 0f, Time.deltaTime * 1.2f); hurt.color = new Color(0.85f, 0.05f, 0.05f, hurtA); }
             if (safe != null && Screen.safeArea != lastSafe) ApplySafeArea();
             if (flashT > 0f)
             {

@@ -46,8 +46,9 @@ namespace Summit
                 {
                     float u = (x + 0.5f) / n, e = Mathf.Abs(u - 0.5f) * 2f;   // 0 centre .. 1 edge
                     Color snow = new Color(0.90f, 0.92f, 0.97f), crest = new Color(0.97f, 0.98f, 1f);
-                    Color wall = row == 0 ? new Color(0.62f, 0.70f, 0.90f) : new Color(0.76f, 0.81f, 0.94f);
-                    Color floor = row == 0 ? new Color(0.36f, 0.47f, 0.79f) : new Color(0.64f, 0.71f, 0.90f);
+                    // packed snow is shaded, not blue: only the faintest cool tint in the cut
+                    Color wall = row == 0 ? new Color(0.84f, 0.87f, 0.93f) : new Color(0.88f, 0.90f, 0.95f);
+                    Color floor = row == 0 ? new Color(0.74f, 0.78f, 0.86f) : new Color(0.83f, 0.86f, 0.92f);
                     Color col = e < 0.26f ? Color.Lerp(floor, wall, Mathf.SmoothStep(0f, 1f, e / 0.26f))
                               : e < 0.44f ? Color.Lerp(wall, crest, Mathf.SmoothStep(0f, 1f, (e - 0.26f) / 0.18f))
                               : Color.Lerp(crest, snow, (e - 0.44f) / 0.56f);

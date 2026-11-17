@@ -107,7 +107,7 @@ public class SummitImport : AssetPostprocessor
         mat.SetTextureOffset("_DetailAlbedoMap", new Vector2(0.37f, 0.71f));
         mat.SetFloat("_DetailAlbedoMapScale", 1f);
         mat.SetFloat("_DetailNormalMapScale", 0.5f);
-        mat.SetColor("_BaseColor", new Color(0.95f, 0.97f, 1f));
+        mat.SetColor("_BaseColor", new Color(0.88f, 0.905f, 0.95f));   // just under white, so glints and highlights can stand out
         mat.SetFloat("_Smoothness", 0.32f);
         mat.EnableKeyword("_NORMALMAP");
         mat.EnableKeyword("_DETAIL_MULX2");

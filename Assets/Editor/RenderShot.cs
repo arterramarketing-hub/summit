@@ -33,6 +33,7 @@ public static class RenderShot
         var atmo = Object.FindFirstObjectByType<Atmosphere>();
 
         var dress = Object.FindFirstObjectByType<CourseDressing>();
+        var fx = Object.FindFirstObjectByType<SnowFX>();
         // (name, z to start from, seconds to ride before the shot)
         var spots = new (string name, float z, float secs)[] {
             ("Start", Slope.StartZ, 0.6f), ("Run", Slope.StartZ, 9f),
@@ -65,7 +66,20 @@ public static class RenderShot
             typeof(Atmosphere).GetMethod("LateUpdate", NP).Invoke(atmo, null);
             foreach (var ps in Object.FindObjectsByType<ParticleSystem>(FindObjectsSortMode.None))
                 if (ps.name == "Snowfall") ps.Simulate(4f, true, true);
+                else if (ps.name == "Glints" && sp.name == "Run") { fx.Sprinkle(0); }
                 else if (ps.name == "Bow" || ps.name == "Spray" || ps.name == "Wake") { ps.Simulate(0.5f, true, true); Debug.Log($"SHOT ps {ps.name} n={ps.particleCount} rate={ps.emission.rateOverTime.constant:0}"); }
+            fx.Clear();
+            var gl = fx.transform.Find("Glints").GetComponent<ParticleSystem>(); gl.Clear();
+            fx.Sprinkle(260); gl.Simulate(0.1f, true, false, false);
+            { var arr = new ParticleSystem.Particle[3]; int got = gl.GetParticles(arr); for (int q = 0; q < got; q++) Debug.Log($"SHOT glint p={arr[q].position} size={arr[q].GetCurrentSize(gl)} col={arr[q].GetCurrentColor(gl)} life={arr[q].remainingLifetime} cam={cam.transform.position}"); }
+            Debug.Log($"SHOT glints n={gl.particleCount} playing={gl.isPlaying} mat={gl.GetComponent<ParticleSystemRenderer>().sharedMaterial.shader.name} rq={gl.GetComponent<ParticleSystemRenderer>().sharedMaterial.renderQueue}");
+            if (sp.name == "Carve")
+            {
+                // a tree shaken by a hit, a few metres ahead to the side
+                Vector3 tp = rider.transform.position + new Vector3(4f, 0f, 9f);
+                fx.TreeShake(tp, 12f);
+                foreach (var nm in new[] { "TreeSnow", "TreeMist" }) { var ps2 = fx.transform.Find(nm).GetComponent<ParticleSystem>(); ps2.Simulate(0.5f, true, false, false); Debug.Log($"SHOT {nm} n={ps2.particleCount}"); }
+            }
             // the forest draws itself in Update; do it by hand for the shot
             typeof(Forest).GetMethod("Draw", NP).Invoke(props, null);
             if (sp.name == "Start") Shoot(cam, "RenderShotWarmup.png");   // the first render comes out unlit
@@ -93,7 +107,9 @@ public static class RenderShot
             Debug.Log($"SHOT {sp.name} speed={rider.Speed * 3.6f:0} km/h air={rider.Airborne} grind={rider.Grinding} heading={rider.Heading:0.00} pos={rider.transform.position} cam={cam.transform.position} camfwd={cam.transform.forward}");
         }
 
-        // close-ups of the rider standing still, from the side and from behind
+        // back up after the crash (bandages on), then close-ups standing still, from the side and from behind
+        rider.ResetAt(Slope.Centre(Slope.StartZ), Slope.StartZ);
+        body.Apply(Dt);
         rider.Stop();
         rider.Heading = 0f;
         chase.enabled = false;

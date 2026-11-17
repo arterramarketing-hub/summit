@@ -25,14 +25,30 @@ namespace Summit
         Vector3 modelPos, boardPos; Quaternion modelRot, boardRot; Vector3 modelScale;
         Quaternion footRelL, footRelR;
         public bool Active { get; private set; }
-        /// <summary>Something hit something: speed of the impact (m/s), and whether it was the board.</summary>
-        public System.Action<float, bool> Hit;
+        /// <summary>Something hit something: impact speed (m/s), the board?, where, and which bone (null for the board).</summary>
+        public System.Action<float, bool, Vector3, Transform> Hit;
+        /// <summary>A part sliding along the snow, every half metre or so: where, how fast.</summary>
+        public System.Action<Vector3, float> Drag;
 
-        /// <summary>Reports a ragdoll part's or the board's impacts.</summary>
+        /// <summary>Reports a ragdoll part's or the board's impacts, and its slides along the snow.</summary>
         class Impact : MonoBehaviour
         {
             public Ragdoll owner; public bool board;
-            void OnCollisionEnter(Collision c) { owner?.Hit?.Invoke(c.relativeVelocity.magnitude, board); }
+            Vector3 lastMark; float lastTime;
+            void OnCollisionEnter(Collision c)
+            {
+                Vector3 at = c.contactCount > 0 ? c.GetContact(0).point : transform.position;
+                lastMark = at; lastTime = Time.time;
+                owner?.Hit?.Invoke(c.relativeVelocity.magnitude, board, at, board ? null : transform);
+            }
+            void OnCollisionStay(Collision c)
+            {
+                if (c.contactCount == 0) return;
+                Vector3 at = c.GetContact(0).point;
+                if ((at - lastMark).sqrMagnitude < 0.36f || Time.time - lastTime < 0.05f) return;
+                lastMark = at; lastTime = Time.time;
+                owner?.Drag?.Invoke(at, c.relativeVelocity.magnitude);
+            }
         }
         public Vector3 Centre => Active && parts.Count > 0 ? parts[0].rb.position : Vector3.zero;
 

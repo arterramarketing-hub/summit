@@ -29,6 +29,14 @@ namespace Summit
         Vector3 lastVel;
         /// <summary>The thrown body or board hit something: impact speed, and whether it was the board.</summary>
         public System.Action<float, bool> RagdollHit;
+        /// <summary>A bone gave way: which limb ("Left arm", "Ribs", ...), and where.</summary>
+        public System.Action<string, Vector3> BoneBroke;
+        public SnowFX fx;
+        readonly System.Collections.Generic.List<Transform> brokenThisCrash = new System.Collections.Generic.List<Transform>();
+        readonly System.Collections.Generic.HashSet<Transform> bandaged = new System.Collections.Generic.HashSet<Transform>();
+        readonly System.Collections.Generic.List<GameObject> bandages = new System.Collections.Generic.List<GameObject>();
+        Material bandageMat, bandageLine;
+        float crashClock;
         Vector3 crashAxis;
 
         // humanoid
@@ -176,7 +184,7 @@ namespace Summit
             bpr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             bow.Play();
 
-            marks = new SnowMarks(transform.parent, Imprint(trailMat, CraterTexture()));
+            marks = new SnowMarks(transform.parent, Imprint(trailMat, CraterTexture()), 80);
             BuildShield(trailMat);
             rider.Landed += impact =>
             {
@@ -640,6 +648,8 @@ namespace Summit
             pivot.localRotation = Quaternion.identity;
             if (ragdoll != null) ragdoll.End();
             ragdollPending = false;
+            foreach (var g in bandages) if (g != null) { if (Application.isPlaying) Destroy(g); else DestroyImmediate(g); }
+            bandages.Clear(); bandaged.Clear(); brokenThisCrash.Clear();
             trail.Clear();
             spray.Clear();
             bow.Clear();
@@ -652,6 +662,101 @@ namespace Summit
 
         void FixedUpdate() { PhysicsStep(); }
 
+        static Vector3 OnSnow(Vector3 at) => new Vector3(at.x, Slope.DrawnHeight(at.x, at.z), at.z);
+
+        void OnRagdollHit(float v, bool isBoard, Vector3 at, Transform bone)
+        {
+            RagdollHit?.Invoke(v, isBoard);
+            if (v > 2.2f)
+            {
+                // a crater where it landed, and snow thrown up
+                marks.Add(OnSnow(at), Slope.Normal(at.x, at.z), Mathf.Min(1.3f, 0.45f + 0.06f * v), Random.value * 6.3f);
+                fx?.Puff(at, v);
+            }
+            if (isBoard || bone == null || rig == null || LimbOf(bone) == null || brokenThisCrash.Contains(bone)) return;
+            // the first real hit breaks whatever took it; a second only on a big one
+            if ((brokenThisCrash.Count == 0 && v > 3.2f) || (brokenThisCrash.Count == 1 && v > 9f)) Break(bone, at);
+        }
+
+        void Break(Transform bone, Vector3 at)
+        {
+            brokenThisCrash.Add(bone);
+            fx?.Crack(at);
+            BoneBroke?.Invoke(LimbOf(bone), at);
+        }
+
+        string LimbOf(Transform b)
+        {
+            if (b == rig.UpperL || b == rig.LowerL) return "Left arm";
+            if (b == rig.UpperR || b == rig.LowerR) return "Right arm";
+            if (b == rig.ThighL || b == rig.ShinL) return "Left leg";
+            if (b == rig.ThighR || b == rig.ShinR) return "Right leg";
+            if (b == rig.Head) return "Head";
+            if (b == rig.Chest || b == rig.BodyBone || b == rig.Hips) return "Ribs";
+            return null;
+        }
+
+        // ---- bandages: wrapped round each limb that broke, for the rest of the run
+
+        void Bandage(Transform bone)
+        {
+            if (bone == null || bandaged.Contains(bone)) return;
+            bandaged.Add(bone);
+            if (bandageMat == null)
+            {
+                var sh = jacketShader != null ? jacketShader : Shader.Find("Universal Render Pipeline/Lit");
+                bandageMat = new Material(sh); bandageMat.SetColor("_BaseColor", new Color(0.97f, 0.96f, 0.91f)); bandageMat.SetFloat("_Smoothness", 0.08f);
+                bandageLine = new Material(sh); bandageLine.SetColor("_BaseColor", new Color(0.82f, 0.80f, 0.74f)); bandageLine.SetFloat("_Smoothness", 0.05f);
+            }
+            Transform child = bone == rig.UpperL ? rig.LowerL : bone == rig.LowerL ? rig.HandL : bone == rig.UpperR ? rig.LowerR : bone == rig.LowerR ? rig.HandR
+                            : bone == rig.ThighL ? rig.ShinL : bone == rig.ShinL ? rig.EndL : bone == rig.ThighR ? rig.ShinR : bone == rig.ShinR ? rig.EndR : null;
+            if (child != null)
+            {
+                bool leg = bone == rig.ThighL || bone == rig.ShinL || bone == rig.ThighR || bone == rig.ShinR;
+                float r = leg ? (bone == rig.ThighL || bone == rig.ThighR ? 0.105f : 0.09f) : 0.07f;
+                Wrap(bone, bone.position, child.position, r, 0.2f, 0.75f);
+            }
+            else if (bone == rig.Head)
+            {
+                // round the jaw and over the top of the head, under the beanie
+                Vector3 up = rig.Neck != null ? (rig.Head.position - rig.Neck.position).normalized : Vector3.up;
+                Vector3 c = rig.Head.position + up * 0.03f;
+                Wrap(bone, c - up * 0.03f, c + up * 0.03f, 0.118f, 0f, 1f);
+                var side = Vector3.Cross(up, upper.forward).normalized;
+                Wrap(bone, c - side * 0.012f, c + side * 0.012f, 0.13f, 0f, 1f, false);
+            }
+            else
+            {
+                // ribs: strapped round the chest
+                Vector3 up = rig.Neck != null ? (rig.Neck.position - rig.Chest.position).normalized : Vector3.up;
+                Wrap(bone, rig.Chest.position - up * 0.04f, rig.Chest.position + up * 0.12f, 0.19f, 0.05f, 0.95f);
+            }
+        }
+
+        /// <summary>A bandage round the segment a..b (from t0 to t1 along it), with wrap lines, fixed to the bone.</summary>
+        void Wrap(Transform bone, Vector3 a, Vector3 b, float r, float t0, float t1, bool lines = true)
+        {
+            Vector3 p0 = Vector3.Lerp(a, b, t0), p1 = Vector3.Lerp(a, b, t1), d = p1 - p0;
+            float len = Mathf.Max(0.02f, d.magnitude);
+            var rot = Quaternion.FromToRotation(Vector3.up, d.normalized);
+            GameObject Cyl(Vector3 at, float radius, float half, Material m)
+            {
+                var g = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                Object.DestroyImmediate(g.GetComponent<Collider>());
+                g.GetComponent<MeshRenderer>().sharedMaterial = m;
+                g.transform.SetPositionAndRotation(at, rot);
+                g.transform.localScale = new Vector3(radius * 2f, half, radius * 2f);
+                g.transform.SetParent(bone, true);
+                bandages.Add(g);
+                return g;
+            }
+            Cyl((p0 + p1) * 0.5f, r, len * 0.5f, bandageMat);
+            if (!lines) return;
+            int k = Mathf.Clamp(Mathf.RoundToInt(len / 0.06f), 2, 6);
+            for (int i = 1; i <= k; i++)
+                Cyl(Vector3.Lerp(p0, p1, i / (k + 1f)) + d.normalized * (i % 2 == 0 ? 0.004f : -0.004f), r * 1.06f, 0.006f, bandageLine);
+        }
+
         /// <summary>Per physics step (public so the test harness can call it).</summary>
         public void PhysicsStep()
         {
@@ -662,12 +767,28 @@ namespace Summit
                 if (ragdoll == null)
                 {
                     ragdoll = new Ragdoll(rig, boardRoot, rider.GetComponent<Collider>());
-                    ragdoll.Hit += (v, b) => RagdollHit?.Invoke(v, b);
+                    ragdoll.Hit += OnRagdollHit;
+                    ragdoll.Drag += (at, v) =>
+                    {
+                        if (v < 1.2f) return;
+                        marks.Add(OnSnow(at), Slope.Normal(at.x, at.z), 0.35f + 0.03f * v, Random.value * 6.3f);
+                        if (Random.value < 0.4f) fx?.Puff(at, v * 0.5f);
+                    };
                 }
                 ragdoll.Begin(lastVel);
+                brokenThisCrash.Clear();
+                crashClock = 0f;
             }
             if (ragdoll != null && ragdoll.Active)
             {
+                crashClock += Time.fixedDeltaTime;
+                // a wipeout always costs something: if nothing hit hard enough, the landing did it
+                if (brokenThisCrash.Count == 0 && crashClock > 0.9f && rig != null)
+                {
+                    var pick = new[] { rig.LowerL, rig.LowerR, rig.ShinL, rig.ShinR, rig.ThighL, rig.UpperR };
+                    var b = pick[Random.Range(0, pick.Length)];
+                    Break(b, b.position);
+                }
                 ragdoll.PhysicsStep();
                 rider.CrashFollow = ragdoll.Centre;
                 rider.HasCrashFollow = rider.Crashed;
@@ -689,7 +810,12 @@ namespace Summit
             if (ragdoll != null && ragdoll.Active)
             {
                 if (rider.Crashed) ragdoll.LateStep();
-                else { ragdoll.End(); spray.Emit(30); }   // back up on the board
+                else
+                {
+                    ragdoll.End(); spray.Emit(30);   // back up on the board, patched up
+                    foreach (var b in brokenThisCrash) Bandage(b);
+                    brokenThisCrash.Clear();
+                }
             }
             if (rider.Crashed && ((ragdoll != null && ragdoll.Active) || ragdollPending)) { }
             else if (rider.Crashed)

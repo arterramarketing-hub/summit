@@ -84,6 +84,7 @@ namespace Summit
         public System.Action<float> Scraped;
         public System.Action ShieldHit;
         public System.Action<Course.Feature> GrindStart;
+        public System.Action<Obstacle, Vector3, float> HitObstacle;   // what, where (its middle), how hard
 
         // ---- power-ups
         public const int MaxShields = 3;
@@ -497,6 +498,7 @@ namespace Summit
             Vector3 normal = c.contactCount > 0 ? c.GetContact(0).normal : -rb.linearVelocity.normalized;
             float into = Mathf.Abs(Vector3.Dot(c.relativeVelocity, normal));
             if (ob.always) into = Mathf.Max(into, 10f);   // animals always knock you down
+            HitObstacle?.Invoke(ob, c.collider.bounds.center, into);
             if (invulnerable > 0f) return;
             if (into > 6f && Shields > 0)
             {

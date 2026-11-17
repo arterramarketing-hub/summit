@@ -26,6 +26,13 @@ namespace Summit
         ChaseCamera chase;
         Hud hud;
         SoundMix audioFx;
+        SnowFX fx;
+        // three falls a run; the third one ends it
+        public const int MaxFalls = 3;
+        int falls;
+        float wipeoutTimer, hurtShake;
+        string fallsNote = "";
+        bool endBuried;
         readonly Avalanche slide = new Avalanche();
 
         PowerUps power;
@@ -68,6 +75,18 @@ namespace Summit
                 audioFx.Play(Sfx.Land, Mathf.Clamp01(impact / 14f));
             };
             rider.Scraped += hit => { if (state == State.Riding) audioFx.Play(Sfx.Scrape, hit); };
+            body.BoneBroke += (limb, at) =>
+            {
+                if (state != State.Riding && state != State.Buried) return;
+                audioFx.Play(Sfx.Bone);
+                hud.Hurt(0.5f);
+                hud.Flash("CRACK!", limb + " broken  ·  " + fallsNote, 1.4f);
+                hurtShake = 1f;
+            };
+            rider.HitObstacle += (ob, at, into) =>
+            {
+                if (ob.label == "Tree" && fx != null) fx.TreeShake(at, into);   // the branches dump their snow
+            };
             body.RagdollHit += (v, isBoard) =>
             {
                 if (v < 1.5f || Time.time < nextImpactSound) return;
@@ -120,6 +139,10 @@ namespace Summit
             if (chase == null) chase = cam.gameObject.AddComponent<ChaseCamera>();
             chase.rider = rider;
 
+            fx = new GameObject("SnowFX").AddComponent<SnowFX>();
+            fx.Build(cam, spray);
+            body.fx = fx;
+
             var atmo = new GameObject("Atmosphere").AddComponent<Atmosphere>();
             atmo.Build(cam, rider, spray);
 
@@ -168,7 +191,7 @@ namespace Summit
             if (vol != null && vol.profile != null)
             {
                 if (vol.profile.TryGet(out UnityEngine.Rendering.Universal.ColorAdjustments ca)) { ca.contrast.Override(14f); ca.saturation.Override(10f); ca.postExposure.Override(0.1f); }
-                if (vol.profile.TryGet(out UnityEngine.Rendering.Universal.Bloom bl)) { bl.intensity.Override(0.4f); bl.threshold.Override(1.0f); }
+                if (vol.profile.TryGet(out UnityEngine.Rendering.Universal.Bloom bl)) { bl.intensity.Override(0.6f); bl.threshold.Override(1.0f); }
                 if (vol.profile.TryGet(out UnityEngine.Rendering.Universal.Vignette vg)) vg.intensity.Override(0.2f);
             }
             RenderSettings.fog = true;
@@ -230,6 +253,8 @@ namespace Summit
             dressing.Prewarm();
             chase.Snap();
             hud.SetWhiteout(0f);
+            falls = 0; wipeoutTimer = 0f; hurtShake = 0f;
+            if (fx != null) fx.Clear();
             hud.Show("", "Best " + Mathf.RoundToInt(best).ToString("N0"),
                 Application.isMobilePlatform ? "Drag a finger left / right to steer  ·  add a second finger to tuck  ·  lift it to jump"
                               : "A / D to steer  ·  hold Space to tuck  ·  let go to jump");
@@ -248,16 +273,20 @@ namespace Summit
             hud.Flash("GO", "the mountain is moving", 1.2f);
         }
 
-        void ToBuried()
+        void ToBuried() => ToEnd("BURIED", true);
+
+        void ToEnd(string title, bool buried)
         {
             state = State.Buried;
-            audioFx.Play(Sfx.Buried);   // the world goes muffled under the snow (see the mix below)
+            wipeoutTimer = 0f;
+            endBuried = buried;
+            if (buried) audioFx.Play(Sfx.Buried);   // the world goes muffled under the snow (see the mix below)
             stateTimer = 0f;
             rider.Stop();
             int s = Score;
             bool record = s > best;
             if (record) { best = s; PlayerPrefs.SetInt("summit_best", s); PlayerPrefs.Save(); }
-            hud.Show("BURIED", "Score " + s.ToString("N0"),
+            hud.Show(title, "Score " + s.ToString("N0"),
                      (record ? "NEW BEST  " : "Best ") + Mathf.RoundToInt(best).ToString("N0") +
                      "   ·   " + Mathf.RoundToInt(rider.Distance) + " m   ·   " + Hud.FormatTime(runTime));
             hud.SetButtons(true, false, "PLAY AGAIN");
@@ -296,6 +325,7 @@ namespace Summit
                     if (input.AnyPress() && hud.OnRestart(RiderInput.PointerPosition())) { audioFx.Play(Sfx.Click); ToReady(); input.SwallowCurrentPress(); break; }
                     runTime += dt;
                     slide.Step(dt, rider);
+                    if (wipeoutTimer > 0f) { wipeoutTimer -= dt; if (wipeoutTimer <= 0f) { ToEnd("WIPED OUT", false); break; } }
                     if (chainCount > 0)
                     {
                         chainTimer -= dt;
@@ -322,7 +352,9 @@ namespace Summit
             hud.SetRun(rider.Speed * 3.6f, Score, Mult, gap, 160f, state == State.Riding);
             hud.SetPower(runTime, rider.Shields, rider.BoostTime / 4f, state == State.Riding);
             hud.SetWhiteout(state == State.Buried ? Mathf.Min(0.85f, stateTimer * 2f) : close * close * 0.5f);
-            chase.shake = state == State.Riding ? close * close + (rider.Crashed ? 0.2f : 0f) : 0f;
+            hurtShake = Mathf.MoveTowards(hurtShake, 0f, dt * 2.5f);
+            chase.shake = (state == State.Riding ? close * close + (rider.Crashed ? 0.2f : 0f) : 0f) + hurtShake * hurtShake * 0.8f;
+            hud.SetFalls(MaxFalls - falls, MaxFalls, state == State.Riding);
             bool onSnow = state == State.Riding && !rider.Airborne && !rider.Crashed;
             bool riding = state == State.Riding;
             Vector3 rpos = rider.transform.position;
@@ -330,7 +362,7 @@ namespace Summit
             {
                 speed = rider.Speed / 36f, carve = rider.Carve, skid = rider.Skid, rough = Slope.Rough(rpos.x, rpos.z),
                 avalanche = riding ? close : 0f, pan = rider.Steer,
-                muffle = state == State.Buried ? 1f : rider.Crashed ? 0.3f : 0f,
+                muffle = state == State.Buried ? (endBuried ? 1f : 0.45f) : rider.Crashed ? 0.3f : 0f,
                 onSnow = onSnow && !rider.Grinding, air = riding && rider.Airborne, riding = riding,
                 boost = riding && rider.BoostTime > 0f,
                 grind = riding && rider.Grinding ? (rider.GrindFeature.kind == Course.Kind.Rail ? 1 : 2) : 0,
@@ -464,7 +496,11 @@ namespace Summit
         {
             if (state != State.Riding) return;
             chainCount = 0;
-            hud.Flash(why, "the slide is gaining", 1.3f);
+            falls++;
+            int left = MaxFalls - falls;
+            fallsNote = left <= 0 ? "that's three" : left == 1 ? "1 fall left" : left + " falls left";
+            hud.Flash(why, fallsNote, 1.3f);
+            if (left <= 0) wipeoutTimer = 2.3f;   // let the tumble play out, then it's over
             if (why.StartsWith("Tree")) { audioFx.Play(Sfx.HitTree); audioFx.Play(Sfx.Crash, 0.6f); }
             else if (why.StartsWith("Rock")) { audioFx.Play(Sfx.HitRock); audioFx.Play(Sfx.Crash, 0.6f); }
             else if (why.StartsWith("Crevasse")) audioFx.Play(Sfx.Crevasse);

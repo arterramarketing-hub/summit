@@ -6,7 +6,7 @@ namespace Summit
     {
         Pop, Takeoff, Land, LandHard, Crash, HitTree, HitRock, Crevasse, Thump, Clack, Spin,
         Trick, TrickBig, CloseCall, Soda, ShieldGet, ShieldHit, ShieldFull, Click, Play, Buried,
-        Scrape, GrindRail, GrindBox, BearRoar
+        Scrape, GrindRail, GrindBox, BearRoar, Bone
     }
 
     /// <summary>What the ride sounds like this frame (all 0..1 unless noted).</summary>
@@ -38,7 +38,7 @@ namespace Summit
 
         AudioClip pop, whoosh, spin, landHard, crash, hitTree, hitRock, crevasse, clack, clank, chime, trickBig,
                   closeCall, soda, shieldGet, shieldHit, click, play, buried, bearRoar, flap;
-        AudioClip[] lands, thumps, crows, chirps;
+        AudioClip[] lands, thumps, crows, chirps, bones;
 
         // the bear, followed through the world
         Transform bearSound;
@@ -72,6 +72,7 @@ namespace Summit
             thumps = new[] { C("thump_1"), C("thump_2"), C("thump_3") };
             crows = new[] { C("crow_1"), C("crow_2") };
             chirps = new[] { C("chirp_1"), C("chirp_2"), C("chirp_3") };
+            bones = new[] { C("bone_1"), C("bone_2"), C("bone_3") };
         }
 
         Layer Loop(string name)
@@ -216,6 +217,7 @@ namespace Summit
                 case Sfx.Play: c = play; vol = 0.5f; pitch = 1f; break;
                 case Sfx.Buried: c = buried; vol = 1f; pitch = 1f; break;
                 case Sfx.BearRoar: c = bearRoar; vol = 0.9f; break;
+                case Sfx.Bone: c = bones[Random.Range(0, bones.Length)]; vol = 1f; pitch = Random.Range(0.9f, 1.1f); break;
             }
             if (c == null || vol <= 0.001f) return;
             var s = shots[nextShot];

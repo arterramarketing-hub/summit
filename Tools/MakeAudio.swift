@@ -630,6 +630,24 @@ func chirp(_ seed: UInt64) -> [Double] {
     return normalize(fade(reverb(x, wet: 0.15), out: 0.1), 0.6)
 }
 
+/// A bone giving way: two or three dry snaps, a gritty crackle and a dull knock under them.
+func boneCrack(_ seed: UInt64) -> [Double] {
+    var r = RNG(seed); let n = samples(0.6)
+    var x = buf(0.6)
+    var at = 0.0
+    for _ in 0..<(2 + Int(r.u() * 2)) {
+        var k = [Double](repeating: 0, count: samples(0.08))
+        for i in 0..<samples(0.0015) { k[i] = r.bi() }
+        let snap = modes(filt(k, .hp, 1500), [r.r(1600, 2000), r.r(3100, 3700), r.r(4800, 5600)], [0.025, 0.018, 0.012], [1, 0.8, 0.5])
+        add(&x, snap, r.r(14, 22), at: at)
+        add(&x, filt(k, .hp, 2500), 0.8, at: at)
+        at += r.r(0.012, 0.035)
+    }
+    add(&x, mul(filt(grains(n, rate: { _ in 6000 }, len: 0.0003...0.0015, &r), .bp, 2600, 0.8)) { i in env(i, attack: 0.001, decay: 0.04) }, 1.2)
+    add(&x, thump(0.3, f0: 120, f1: 70, decay: 0.06), 0.7)
+    return normalize(fade(reverb(x, wet: 0.08, tail: 0.3), out: 0.1), 0.95)
+}
+
 // ------------------------------------------------------------------ write them all
 
 if CommandLine.arguments.count > 1 { outDir = CommandLine.arguments[1] }
@@ -680,3 +698,6 @@ write("flap", flap())
 write("chirp_1", chirp(70))
 write("chirp_2", chirp(71))
 write("chirp_3", chirp(72))
+write("bone_1", boneCrack(80))
+write("bone_2", boneCrack(81))
+write("bone_3", boneCrack(82))
