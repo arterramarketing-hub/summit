@@ -632,8 +632,44 @@ namespace Summit
                 fb.transform.localScale = new Vector3(18.2f, 1.4f, 1f);
                 fb.GetComponent<MeshRenderer>().sharedMaterial = CourseDressing.Sign(snow.shader, "Signs/BannerFinish");
             }
+            // the last chance: safety signs either side of the in-run before the lip and the drop
+            var post = M(new Color(0.55f, 0.57f, 0.6f));
+            WarningSign(root, cx, Slope.PadLip - 22f, 0f, "Signs/SignTurnAround", post);    // overhead: you ride right under it
+            WarningSign(root, cx, Slope.PadLip - 11f, -1f, "Signs/SignWarning", post);
+            WarningSign(root, cx, Slope.PadLip - 11f, 1f, "Signs/SignDangerStart", post);
             float ly = Slope.DrawnHeight(cx, Slope.PadLip - 0.3f);
             Block(PrimitiveType.Cube, root, new Vector3(cx, ly - 0.15f, Slope.PadLip - 0.2f), new Vector3(2f * Slope.PadHalf - 4f, 0.35f, 0.3f), wood);
+        }
+
+        /// <summary>
+        /// A 3:2 safety sign facing up the in-run. side 0: a big one on a gantry over the middle; -1 / 1: on
+        /// posts either side, turned in toward the rider coming down.
+        /// </summary>
+        void WarningSign(Transform root, float cx, float z, float side, string face, Material post)
+        {
+            bool over = side == 0f;
+            float W = over ? 5.4f : 3.6f, H = W / 1.5f, lift = over ? 3.4f : 1.3f;
+            float x = cx + side * 6.5f;
+            var t = new GameObject("WarningSign").transform;
+            t.SetParent(root, false);
+            t.SetPositionAndRotation(new Vector3(x, Slope.DrawnHeight(x, z), z), Quaternion.Euler(0f, side * 28f, 0f));
+            void Local(PrimitiveType type, Vector3 at, Vector3 scale, Material m)
+            {
+                var go = GameObject.CreatePrimitive(type);
+                Object.DestroyImmediate(go.GetComponent<Collider>());
+                go.transform.SetParent(t, false);
+                go.transform.localPosition = at; go.transform.localScale = scale;
+                go.GetComponent<MeshRenderer>().sharedMaterial = m;
+                if (type == PrimitiveType.Quad) go.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            }
+            // posts run a little into the snow, so they stand on the bank whatever its tilt; a gantry's stand
+            // clear of the in-run
+            float px = over ? 4.6f : W * 0.4f, top = lift + H;
+            for (int s = -1; s <= 1; s += 2)
+                Local(PrimitiveType.Cylinder, new Vector3(s * px, top * 0.5f - 0.3f, 0.08f), new Vector3(over ? 0.16f : 0.1f, (top + 0.6f) * 0.5f, over ? 0.16f : 0.1f), post);
+            if (over) Local(PrimitiveType.Cube, new Vector3(0f, top - 0.1f, 0.08f), new Vector3(2f * px, 0.14f, 0.14f), post);
+            Local(PrimitiveType.Cube, new Vector3(0f, lift + H * 0.5f, 0.03f), new Vector3(W + 0.1f, H + 0.1f, 0.04f), post);
+            Local(PrimitiveType.Quad, new Vector3(0f, lift + H * 0.5f, -0.001f), new Vector3(W, H, 1f), CourseDressing.Sign(snow.shader, face));
         }
 
         static void Block(PrimitiveType t, Transform parent, Vector3 pos, Vector3 scale, Material m)
