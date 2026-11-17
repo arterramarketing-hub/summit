@@ -17,6 +17,8 @@ namespace Summit
         public float extraFov;          // the lens setting: wider angle
         public Vector3 peekAt;        // look down into a crevasse at this point...
         public float peek;            // ...this much (0..1)
+        public Vector3 holdAt;        // the avalanche has buried the rider here: hold on a shot of the grave...
+        public float hold;            // ...this much (0..1)
 
         Camera cam;
         float speedCam = 5f, yaw, height, fov = 62f, focusVy, camDist = 6f, lookDrop;
@@ -85,6 +87,16 @@ namespace Summit
                 Vector3 rim = new Vector3(peekAt.x, Mathf.Max(focus.y, Slope.Height(peekAt.x, peekAt.z) + 1f), peekAt.z);
                 pos = Vector3.Lerp(pos, rim - f * 1.8f + Vector3.up * 3.2f, k);
                 look = Vector3.Lerp(look, peekAt, k);
+            }
+            if (hold > 0.001f)
+            {
+                // buried: rise and stand off to one side, uphill of the pile, looking down on it with the
+                // settling cloud rolling on beyond
+                float k = Mathf.SmoothStep(0f, 1f, hold);
+                Vector3 stand = holdAt + new Vector3(4.5f, 0f, -8.5f);
+                stand.y = Mathf.Max(holdAt.y, Slope.Height(stand.x, stand.z)) + 5.5f;
+                pos = Vector3.Lerp(pos, stand, k);
+                look = Vector3.Lerp(look, holdAt + new Vector3(0f, 0.4f, 3f), k);
             }
             transform.SetPositionAndRotation(pos, Quaternion.LookRotation(look - pos, Vector3.up));
 

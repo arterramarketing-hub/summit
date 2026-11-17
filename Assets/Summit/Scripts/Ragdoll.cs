@@ -30,6 +30,9 @@ namespace Summit
         public System.Action<float, bool, Vector3, Transform> Hit;
         /// <summary>A part sliding along the snow, every half metre or so: where, how fast.</summary>
         public System.Action<Vector3, float> Drag;
+        /// <summary>Every physics step, each part ploughing through the snow: which bone, the way down into the snow, how hard (m/s).</summary>
+        public System.Action<Transform, Vector3, float> Ploughed;
+        public static float LimbMaxRel = 14f;   // m/s: the fastest a limb can swing past the pelvis (about its spin cap times its reach)
 
         /// <summary>Reports a ragdoll part's or the board's impacts, and its slides along the snow.</summary>
         class Impact : MonoBehaviour
@@ -279,6 +282,22 @@ namespace Summit
             parts.Add(new Part { bone = bone, rb = rb, col = col, joint = joint });
         }
 
+        /// <summary>
+        /// Carried off in an avalanche: every part (and the board) is pulled toward the flow of the debris, and the
+        /// body is rolled over and over in it.
+        /// </summary>
+        public void Carry(Vector3 flow, float rate, float dt)
+        {
+            if (!Active) return;
+            float k = 1f - Mathf.Exp(-rate * dt);
+            foreach (var p in parts)
+            {
+                p.rb.linearVelocity = Vector3.Lerp(p.rb.linearVelocity, flow, k);
+                p.rb.angularVelocity += Random.insideUnitSphere * (6f * k);
+            }
+            if (boardRb != null) boardRb.linearVelocity = Vector3.Lerp(boardRb.linearVelocity, flow, k * 0.7f);
+        }
+
         /// <summary>Each physics step: keep a slab of snow under the body and under the board.</summary>
         public void PhysicsStep()
         {
@@ -291,10 +310,53 @@ namespace Summit
                 float h = Vector3.Dot(p.rb.position - gp, gn);
                 if (h > 0.28f) continue;
                 Vector3 v = Vector3.ProjectOnPlane(p.rb.linearVelocity, gn);
-                p.rb.AddForce(-v * (Plough * p.rb.mass * Mathf.Clamp01(1.2f - h / 0.28f)), ForceMode.Force);
+                float deep = Mathf.Clamp01(1.2f - h / 0.28f);
+                p.rb.AddForce(-v * (Plough * p.rb.mass * deep), ForceMode.Force);
+                if (Ploughed != null && v.sqrMagnitude > 0.25f) Ploughed(p.bone, -gn, v.magnitude * deep);
             }
+            // now and then the solver kicks a limb out at two or three times the body's speed for a step (with
+            // nothing near it): no arm or leg can swing past the pelvis faster than its spin cap allows, so clip it
+            Vector3 pv = parts[0].rb.linearVelocity;
+            for (int i = 1; i < parts.Count; i++)
+            {
+                Vector3 rel = parts[i].rb.linearVelocity - pv;
+                if (rel.sqrMagnitude > LimbMaxRel * LimbMaxRel) parts[i].rb.linearVelocity = pv + rel * (LimbMaxRel / rel.magnitude);
+            }
+            Guide(gp, gn);
             PlaceSlab(groundBody, BodyFloorPoint(), false);
             if (boardRb != null) PlaceSlab(boardGroundBody, boardRb.position, false);
+        }
+
+        /// <summary>The player's thumb while thrown: -1..1, the same drag that steers the board.</summary>
+        public float Steer;
+        public static float GuideSlide = 4.5f, GuideAir = 1.8f;   // m/s^2 sideways, for the whole body
+        public static float GuideMaxSide = 5f;                     // sideways speed (m/s) past which the thumb stops pushing
+
+        /// <summary>
+        /// A controlled fall: the thumb nudges the tumbling body sideways, across the way it is sliding, so
+        /// you can steer a wipeout away from a tree or into the soft stuff. The sliding pelvis and chest decide
+        /// which way is sideways and when you are on the snow, but every part gets the same push for its
+        /// weight: pushing the pelvis and chest alone dragged the limbs after them, whipping a forearm out at
+        /// 28 m/s and stretching the joints. An even push is like tilting the hill under you, so the joints
+        /// and spin caps never feel it. It fades as the sideways speed builds, so it guides the fall rather
+        /// than flinging it, and grips better sliding through the snow than in the air.
+        /// </summary>
+        void Guide(Vector3 gp, Vector3 gn)
+        {
+            if (Mathf.Abs(Steer) < 0.05f || parts.Count < 2) return;
+            var pelvis = parts[0].rb; var chest = parts[1].rb;
+            // sideways is across the slide (or across the hill once it has stopped), in the plane of the snow
+            Vector3 v = Vector3.ProjectOnPlane(pelvis.linearVelocity, gn);
+            Vector3 along = v.sqrMagnitude > 1f ? v.normalized : Vector3.ProjectOnPlane(Vector3.forward, gn).normalized;
+            Vector3 side = Vector3.Cross(gn, along).normalized;
+            // nothing to steer once the body has all but stopped: it would crawl along the snow
+            float moving = Mathf.Clamp01((v.magnitude - 0.5f) / 2.5f);
+            bool onSnow = Vector3.Dot(pelvis.position - gp, gn) < 0.35f || Vector3.Dot(chest.position - gp, gn) < 0.35f;
+            float a = (onSnow ? GuideSlide : GuideAir) * Steer * moving;
+            float sideSpeed = Vector3.Dot(v, side) * Mathf.Sign(Steer);
+            a *= Mathf.Clamp01(1f - sideSpeed / GuideMaxSide);
+            if (a == 0f) return;
+            foreach (var p in parts) p.rb.AddForce(side * a, ForceMode.Acceleration);
         }
 
         /// <summary>

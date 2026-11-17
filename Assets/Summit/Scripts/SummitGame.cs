@@ -4,7 +4,7 @@ namespace Summit
 {
     /// <summary>
     /// Builds the whole game at start-up and runs the loop:
-    /// ready → riding → buried → ready. Drop it on one empty GameObject.
+    /// camp → ready → riding → buried → camp. Drop it on one empty GameObject.
     /// The Summit ▸ Build Scene menu does that for you and makes the materials.
     /// </summary>
     public class SummitGame : MonoBehaviour
@@ -15,8 +15,10 @@ namespace Summit
         public Material jacket, pants, board, skin, dark;
         public Material trail, spray;
 
-        enum State { Ready, Riding, Buried }
+        enum State { Hub, Ready, Riding, Buried }   // Hub: walking round the summit camp before a run
         State state;
+        Camp camp;
+        MetaUi meta;
 
         Rider rider;
         RiderInput input;
@@ -63,14 +65,25 @@ namespace Summit
         static readonly string[] LensName = { "STANDARD", "WIDE", "WIDER", "FISHEYE" };
         int angleLevel = 1, lensLevel = 1;
         UnityEngine.Rendering.Universal.LensDistortion lens;
+        // colour filter (LookGrade) and its strength in tenths, and the lens type (LensFX), from the pause menu
+        int filterLevel, filterStrength = 10, lensMode;
+        LensFX lensFx;
+        UnityEngine.Rendering.VolumeProfile post;
 
         void ApplyCamera()
         {
             chase.heightScale = AngleHeight[angleLevel];
             chase.extraFov = LensFov[lensLevel];
-            if (lens != null) { lens.intensity.Override(LensWarp[lensLevel]); lens.scale.Override(1f + 0.12f * (lensLevel / 3f)); }
-            hud.SetAngle(AngleName[angleLevel]); hud.SetLens(LensName[lensLevel]);
-            PlayerPrefs.SetInt("summit_angle", angleLevel); PlayerPrefs.SetInt("summit_lens", lensLevel); PlayerPrefs.Save();
+            lensFx.Apply(lens, LensWarp[lensLevel], lensLevel, lensMode);
+            hud.SetAngle(AngleName[angleLevel]); hud.SetLens(LensName[lensLevel]); hud.SetLensType(LensFX.ModeName[lensMode]);
+            PlayerPrefs.SetInt("summit_angle", angleLevel); PlayerPrefs.SetInt("summit_lens", lensLevel); PlayerPrefs.SetInt("summit_lenstype", lensMode); PlayerPrefs.Save();
+        }
+
+        void ApplyLook()
+        {
+            atmo.BaseVignette = LookGrade.Apply(post, filterLevel, filterStrength / 10f);
+            hud.SetFilter(LookGrade.Names[filterLevel]); hud.SetFilterStrength(filterStrength * 10 + "%");
+            PlayerPrefs.SetInt("summit_filter", filterLevel); PlayerPrefs.SetInt("summit_filterstrength", filterStrength); PlayerPrefs.Save();
         }
 
         void SetPaused(bool on)
@@ -94,10 +107,15 @@ namespace Summit
         }   // went over a crevasse: lost only if the body actually drops into it
         bool endBuried;
         readonly Avalanche slide = new Avalanche();
+        AvalancheView slideView;
 
         PowerUps power;
+        Smasher smasher;
+        PowerAura aura;
+        const float ZoomSeconds = 3f, SuperJumpSeconds = 10f, InvincibleSeconds = 8f;   // how long each pickup lasts
         CourseDressing dressing;
         Wildlife wild;
+        FallFlags flags;
         int trickPoints, chainCount;
         float chainTimer, stateTimer, best, runTime;
 
@@ -195,6 +213,10 @@ namespace Summit
             wild.Build(snow.shader);
             wild.BearSpotted += () => { if (state == State.Riding) hud.Flash("BEAR!", "outrun it - keep going straight", 1.6f); };
             rider.GrindStart += f => { if (state == State.Riding) audioFx.Play(f.kind == Course.Kind.Rail ? Sfx.GrindRail : Sfx.GrindBox); };
+            // a numbered flag wherever a fall came to rest, for the rest of the run
+            flags = new GameObject("FallFlags").AddComponent<FallFlags>();
+            flags.Build(jacket != null ? jacket.shader : null);
+            body.FallRested += at => { if (state == State.Riding) flags.Plant(at, falls); };
 
             var cam = Camera.main;
             if (cam == null)
@@ -213,13 +235,34 @@ namespace Summit
             chase.distScale = CamDist[camLevel];
             angleLevel = Mathf.Clamp(PlayerPrefs.GetInt("summit_angle", 1), 0, AngleHeight.Length - 1);
             lensLevel = Mathf.Clamp(PlayerPrefs.GetInt("summit_lens", 1), 0, LensFov.Length - 1);
+            lensMode = Mathf.Clamp(PlayerPrefs.GetInt("summit_lenstype", 0), 0, LensFX.ModeName.Length - 1);
+            filterLevel = Mathf.Clamp(PlayerPrefs.GetInt("summit_filter", 0), 0, LookGrade.Names.Length - 1);
+            filterStrength = Mathf.Clamp(PlayerPrefs.GetInt("summit_filterstrength", 10), 0, 10);
 
             fx = new GameObject("SnowFX").AddComponent<SnowFX>();
             fx.Build(cam, spray);
             body.fx = fx;
 
+            // invincible: what you run through is smashed, not crashed into
+            smasher = new GameObject("Smasher").AddComponent<Smasher>();
+            smasher.Build(fx, props, wild, spray);
+            aura = rg.AddComponent<PowerAura>();
+            aura.Build(rider, spray);
+            rider.Smashed += (ob, at, v) =>
+            {
+                if (state != State.Riding) return;
+                smasher.Hit(ob, at, v);
+                audioFx.Play(ob.label == "Rock" ? Sfx.SmashRock : Sfx.SmashWood);
+                if (ob.always) audioFx.Play(Sfx.BearRoar);
+                hurtShake = Mathf.Max(hurtShake, 0.35f);
+                OnTrick(ob.always ? "BEAR BOWLED" : ob.label == "Rock" ? "ROCK SMASH" : "TIMBER!", ob.always ? 500 : 100);
+            };
+
             atmo = new GameObject("Atmosphere").AddComponent<Atmosphere>();
             atmo.Build(cam, rider, spray);
+
+            slideView = new GameObject("Avalanche").AddComponent<AvalancheView>();
+            slideView.Build(cam, rider, body, slide, snow, spray);
 
             var hg = new GameObject("HUD");
             hud = hg.AddComponent<Hud>();
@@ -230,11 +273,50 @@ namespace Summit
             audioFx.Build();
             audioFx.Track(wild);
 
+            var vol = Object.FindFirstObjectByType<UnityEngine.Rendering.Volume>();
+            post = vol != null ? vol.profile : null;
+            lensFx = cam.gameObject.AddComponent<LensFX>();
+            lensFx.Build(cam, spray);
             ApplyCamera();
+            ApplyLook();
             bool tube = PlayerPrefs.GetInt("summit_tube", 0) == 1;
             rider.Tube = tube; body.SetTube(tube); hud.SetRider(tube);
             rider.Bounced += into => { if (state != State.Riding) return; body.TubeKick(into); audioFx.Play(Sfx.Thump, Mathf.Clamp01(into / 12f)); hud.Flash("BOING", "", 0.6f); };
-            ToReady();
+            BuildMeta();
+            ToHub();
+        }
+
+        // ---------------------------------------------------------------- the meta game: camp, points, missions
+
+        void BuildMeta()
+        {
+            meta = new GameObject("MetaUi").AddComponent<MetaUi>();
+            meta.Build();
+            meta.Clicked = () => audioFx.Play(Sfx.Click);
+            meta.Bought = () => audioFx.Play(Sfx.ShieldGet, 2);
+            meta.Denied = () => audioFx.Play(Sfx.Scrape, 0.4f);
+            camp = new GameObject("SummitCamp").AddComponent<Camp>();
+            camp.soft = spray;
+            camp.Build(snow.shader);
+            Missions.Track(rider, power);
+            Missions.Completed += m => { meta.Toast(m); audioFx.Play(Sfx.ShieldFull); };
+            Progress.Changed += ApplyOutfit;
+            ApplyOutfit();
+        }
+
+        void ApplyOutfit() => body.SetColours(Progress.Jackets[Progress.Jacket], Progress.Boards[Progress.Board]);
+
+        /// <summary>To the camp: on foot, with the menus. A fresh mountain unless you just came up from the start pad.</summary>
+        void ToHub(bool fresh = true)
+        {
+            if (fresh) ToReady();
+            state = State.Hub;
+            hud.Clear(); hud.SetButtons(false, false, "PLAY"); hud.SetPrompt("");
+            chase.enabled = false;
+            terrain.behindChunks = 4; props.behindCells = 16;   // you can turn round and look up the hill here
+            camp.Enter(rider, body, chase.GetComponent<Camera>());
+            terrain.Prewarm(); props.Prewarm();
+            meta.SetMode(MetaUi.Mode.Hub);
         }
 
         // ---------------------------------------------------------------- world
@@ -320,29 +402,40 @@ namespace Summit
 
         // ---------------------------------------------------------------- loop
 
-        void ToReady()
+        void ToReady() => ToReady(true);
+
+        void ToReady(bool newMountain)
         {
             state = State.Ready;
-            // a new mountain every run: new pitches, drops, kickers, crevasses and trees
-            Slope.Init(Slope.RandomSeed());
-            rider.ResetAt(Slope.Centre(Slope.PadLip), Slope.StartZ);   // build the new mountain round the start, once
-            terrain.Rebuild();
-            props.Rebuild();
-            dressing.Rebuild();
-            RebuildGate();
+            camp.Leave(); chase.enabled = true; terrain.behindChunks = 1; props.behindCells = 3;
+            if (newMountain)
+            {
+                // a new mountain every run: new pitches, drops, kickers, crevasses and trees
+                Slope.Init(Slope.RandomSeed());
+                rider.ResetAt(Slope.Centre(Slope.PadLip), Slope.StartZ);   // build the new mountain round the start, once
+                terrain.Rebuild();
+                props.Rebuild();
+                dressing.Rebuild();
+                RebuildGate();
+                camp.Rebuild();
+            }
             float x = Slope.Centre(Slope.PadLip);
             rider.ResetAt(x, Slope.StartZ);
             body.ResetVisual();
             slide.Reset(Slope.StartZ);
+            if (slideView != null) slideView.Clear();
+            chase.hold = 0f;
             trickPoints = 0; chainCount = 0; chainTimer = 0f; runTime = 0f;
             power.ResetRun();
             wild.ResetRun();
+            smasher.Clear(); aura.Clear();
             terrain.Prewarm();
             props.Prewarm();
             dressing.Prewarm();
             chase.Snap();
             hud.SetWhiteout(0f);
             falls = 0; wipeoutTimer = 0f; hurtShake = 0f; crevasseWatch = false; medical = 0f;
+            flags.Clear();
             hud.SetPrompt("");
             if (paused) SetPaused(false);
             chase.peek = 0f;
@@ -353,6 +446,7 @@ namespace Summit
                               : "A / D to steer  ·  hold Space to tuck  ·  let go to jump");
             hud.SetButtons(true, false, "PLAY");
             hud.SetMode(input.useTilt);
+            meta.SetMode(MetaUi.Mode.Ready);
         }
 
         void ToRiding()
@@ -360,6 +454,9 @@ namespace Summit
             state = State.Riding;
             input.Calibrate();
             input.SwallowCurrentPress();
+            Progress.ApplyRider();   // upgrades bought in camp
+            Missions.RunStart();
+            meta.SetMode(MetaUi.Mode.Riding);
             rider.Begin();
             hud.Clear();
             hud.SetButtons(false, true, "");
@@ -370,6 +467,7 @@ namespace Summit
 
         void ToEnd(string title, bool buried)
         {
+            if (rider.Crashed) flags.Plant(body.RagdollCentre, falls);   // the fall that ended it gets its flag too
             state = State.Buried;
             hud.SetPrompt("");
             wipeoutTimer = 0f;
@@ -384,7 +482,12 @@ namespace Summit
                      (record ? "NEW BEST  " : "Best ") + Mathf.RoundToInt(best).ToString("N0") +
                      "   ·   " + Mathf.RoundToInt(rider.Distance) + " m   ·   " + Hud.FormatTime(runTime) +
                      (medical > 0f ? "\nMEDICAL BILL  $" + Mathf.RoundToInt(medical).ToString("N0") : "\nNo medical bills. Clean run!"));
-            hud.SetButtons(true, false, "PLAY AGAIN");
+            hud.SetButtons(true, false, "TO CAMP");
+            // points for the run (mission rewards were paid as they happened)
+            Missions.RunEnd();
+            var reward = Progress.EndRun(s, rider.Distance, Missions.RunTricks, title == "YOU SURVIVED", Missions.RunPoints);
+            meta.ShowEnd(reward, Mathf.RoundToInt(rider.Distance), title == "YOU SURVIVED");
+            meta.SetMode(MetaUi.Mode.End);
         }
 
         const bool showDiag = false;
@@ -411,12 +514,24 @@ namespace Summit
             stateTimer += dt;
             switch (state)
             {
+                case State.Hub:
+                    if (autoplay)
+                    {
+                        // device testing: a look at the camp, then on to the run
+                        float before = readyT; readyT += Time.unscaledDeltaTime;
+                        if (before < 2.5f && readyT >= 2.5f) ScreenCapture.CaptureScreenshot("auto-hub.png");
+                        if (readyT >= 3.5f) { readyT = 0f; ToReady(false); }
+                    }
+                    else if (camp.Step(dt, meta)) { audioFx.Play(Sfx.Play); ToReady(false); input.SwallowCurrentPress(); }
+                    break;
+
                 case State.Ready:
                     traceT = 0f;
                     if (autoplay && (readyT += dt) > 3f) { readyT = 0f; ToRiding(); }
                     else if (autoplay && readyT > 2f && readyT - dt <= 2f) ScreenCapture.CaptureScreenshot("auto-ready.png");
                     else if (input.AnyPress() && ModeTapped()) { }
                     else if (input.AnyPress() && RiderTapped()) { }
+                    else if (input.AnyPress() && meta.Hit(RiderInput.PointerPosition()) == "camp") { audioFx.Play(Sfx.Click); ToHub(false); }
                     else if (input.AnyPress() && (Tapped(true) || SpacePressed())) { audioFx.Play(Sfx.Play); ToRiding(); }
                     break;
 
@@ -433,6 +548,11 @@ namespace Summit
                             else if (hud.OnAngPlus(pp)) { audioFx.Play(Sfx.Click); angleLevel = Mathf.Min(AngleHeight.Length - 1, angleLevel + 1); ApplyCamera(); }
                             else if (hud.OnLensMinus(pp)) { audioFx.Play(Sfx.Click); lensLevel = Mathf.Max(0, lensLevel - 1); ApplyCamera(); }
                             else if (hud.OnLensPlus(pp)) { audioFx.Play(Sfx.Click); lensLevel = Mathf.Min(LensFov.Length - 1, lensLevel + 1); ApplyCamera(); }
+                            else if (hud.OnLensTypeMinus(pp) || hud.OnLensTypePlus(pp)) { audioFx.Play(Sfx.Click); lensMode = (lensMode + 1) % LensFX.ModeName.Length; ApplyCamera(); }
+                            else if (hud.OnFilterMinus(pp)) { audioFx.Play(Sfx.Click); filterLevel = (filterLevel + LookGrade.Names.Length - 1) % LookGrade.Names.Length; ApplyLook(); }
+                            else if (hud.OnFilterPlus(pp)) { audioFx.Play(Sfx.Click); filterLevel = (filterLevel + 1) % LookGrade.Names.Length; ApplyLook(); }
+                            else if (hud.OnStrengthMinus(pp)) { audioFx.Play(Sfx.Click); filterStrength = Mathf.Max(0, filterStrength - 1); ApplyLook(); }
+                            else if (hud.OnStrengthPlus(pp)) { audioFx.Play(Sfx.Click); filterStrength = Mathf.Min(10, filterStrength + 1); ApplyLook(); }
                             else if (hud.OnPauseSteer(pp)) { audioFx.Play(Sfx.Click); input.SetTilt(!input.useTilt); hud.SetPauseSteer(input.useTilt); hud.SetMode(input.useTilt); }
                             else if (hud.OnPauseRestart(pp)) { audioFx.Play(Sfx.Click); SetPaused(false); ToReady(); input.SwallowCurrentPress(); }
                         }
@@ -442,37 +562,45 @@ namespace Summit
                     // down in the snow: the camera stays on the body until you tap to get back up
                     if (rider.CanGetUp && input.AnyPress()) { rider.RequestUp = true; input.SwallowCurrentPress(); audioFx.Play(Sfx.Groan); }
                     else if (rider.StayDown && rider.Crashed && wipeoutTimer > 0f && input.AnyPress() && !body.RagdollMoving) wipeoutTimer = 0.01f;
-                    hud.SetPrompt(rider.CanGetUp ? "TAP TO GET UP" : rider.StayDown && rider.Crashed && !body.RagdollMoving ? "TAP TO CONTINUE" : "");
+                    hud.SetPrompt(rider.CanGetUp ? "TAP TO GET UP" : rider.StayDown && rider.Crashed && !body.RagdollMoving && !slide.Caught ? "TAP TO CONTINUE" : "");
                     runTime += dt;
-                    slide.Step(dt, rider);
+                    slide.Step(dt, rider, body);
+                    Missions.Step(dt, slide.Gap(rider), Score);
                     if (crevasseWatch)
                     {
                         if (body.RagdollBelowSnow > 3f) { crevasseWatch = false; rider.StayDown = true; wipeoutTimer = 1.0f; endTitle = "LOST IN A CREVASSE"; medical += 42000f; hud.Flash("GONE", "helicopter rescue  +$42,000", 2f); }
                         else if (!rider.Crashed) crevasseWatch = false;   // caught the lip: you live
                     }
-                    if (!rider.Crashed && !rider.Airborne && rider.Z > Slope.FinishZ + 30f)
+                    if (!rider.Crashed && !rider.Airborne && !slide.Caught && rider.Z > Slope.FinishZ + 30f)
                     {
                         // through the finish at the base: the whole mountain, done
                         trickPoints += 5000;
+                        Missions.Finished();
                         audioFx.Play(Sfx.TrickBig, 4);
                         ToEnd("YOU SURVIVED", false);
                         break;
                     }
-                    if (wipeoutTimer > 0f) { if (!body.RagdollMoving) wipeoutTimer -= dt; if (wipeoutTimer <= 0f) { ToEnd(endTitle, false); break; } }
+                    if (wipeoutTimer > 0f && !slide.Caught) { if (!body.RagdollMoving) wipeoutTimer -= dt; if (wipeoutTimer <= 0f) { ToEnd(endTitle, false); break; } }
                     if (chainCount > 0)
                     {
                         chainTimer -= dt;
                         if (chainTimer <= 0f) chainCount = 0;
                     }
-                    if (slide.Gap(rider) <= 0f) ToBuried();
+                    if (slide.Done) ToBuried();   // caught, carried off and buried, and the camera has held on the pile
                     break;
 
                 case State.Buried:
                     if (stateTimer > 1.2f && input.AnyPress() && ModeTapped()) { }
 
+                    else if (stateTimer > 1.2f && input.AnyPress() && meta.Hit(RiderInput.PointerPosition()) == "ride")
+                    {
+                        audioFx.Play(Sfx.Click);
+                        ToReady();
+                        input.SwallowCurrentPress();
+                    }
                     else if (stateTimer > 1.2f && input.AnyPress() && (Tapped(true) || SpacePressed()))
                     {
-                        ToReady();
+                        ToHub();
                         input.SwallowCurrentPress();
                     }
                     break;
@@ -481,8 +609,12 @@ namespace Summit
             if (autoplay && state == State.Riding && traceT < 16f)
             {
                 // device testing: launched with SUMMIT_AUTOPLAY=1 the game starts runs by itself and logs the first seconds
-                float before = traceT;
-                traceT += dt; traceNext -= dt;
+                float before = traceT, udt = Time.unscaledDeltaTime;   // real time: it keeps counting while paused
+                traceT += udt; traceNext -= udt;
+                // a look at the pause menu as it is on the phone
+                if (before < 4.5f && traceT >= 4.5f) SetPaused(true);
+                if (before < 5.0f && traceT >= 5.0f) ScreenCapture.CaptureScreenshot("auto-pause.png");
+                if (before < 5.5f && traceT >= 5.5f) SetPaused(false);
                 foreach (float at in new[] { 3f, 7.6f, 8.4f, 10f, 14f })
                     if (before < at && traceT >= at) ScreenCapture.CaptureScreenshot("auto-" + at.ToString("0.0") + ".png");
                 if (traceNext <= 0f)
@@ -490,34 +622,39 @@ namespace Summit
                     traceNext = 0.25f;
                     var rp = rider.Body.position; var tp = rider.transform.position;
                     Debug.Log($"SUMMIT TRACE t={traceT:0.00} body={rp} tf={tp} ground={Slope.DrawnHeight(rp.x, rp.z):0.00} v={rider.Body.linearVelocity} " +
-                              $"air={rider.Airborne} crash={rider.Crashed} kin={rider.Body.isKinematic} run={rider.Running} cam={chase.transform.position}");
+                              $"air={rider.Airborne} crash={rider.Crashed} kin={rider.Body.isKinematic} run={rider.Running} cam={chase.transform.position} fps={1f / Mathf.Max(1e-4f, Time.smoothDeltaTime):0}");
                 }
             }
 
             // no stick graphic: the thumb steers the rider directly and the rider's lean shows the steering
             hud.SetStick(false, input.StickOrigin, input.StickPos, 1f);
 
-            float gap = state == State.Ready ? 120f : slide.Gap(rider);
+            float gap = state == State.Ready || state == State.Hub ? 120f : Mathf.Max(0f, slide.Gap(rider));
             float close = Mathf.Clamp01(1f - gap / 45f);
             hud.SetRun(rider.Speed * 3.6f, Score, Mult, gap, 160f, state == State.Riding);
-            hud.SetPower(runTime, rider.Shields, rider.BoostTime / 4f, state == State.Riding);
+            hud.SetPower(runTime, rider.Shields, state == State.Riding);
+            hud.SetTimers(state == State.Riding, rider.BoostTime, ZoomSeconds, rider.SuperJumpTime, SuperJumpSeconds, rider.InvincibleTime, InvincibleSeconds);
             hud.SetAltitude(Slope.AltitudeFeet(rider.Z), state == State.Riding);
             hud.SetMedical(medical, state == State.Riding);
-            hud.SetWhiteout(state == State.Buried ? Mathf.Min(0.85f, stateTimer * 2f) : close * close * 0.5f);
+            // the slide: white powder in the air when the camera is in it, and a softer white over the pile at the end
+            hud.SetWhiteout(state == State.Buried ? Mathf.Min(endBuried ? 0.55f : 0.85f, stateTimer * (endBuried ? 0.7f : 2f))
+                            : Mathf.Max(slideView.Whiteout, close * close * 0.12f));
+            chase.hold = Mathf.MoveTowards(chase.hold, state != State.Ready && slide.Caught && slide.Cover > 0.2f ? 1f : 0f, dt * (state == State.Ready ? 10f : 0.55f));
+            chase.holdAt = slide.BuryAt;
             hurtShake = Mathf.MoveTowards(hurtShake, 0f, dt * 2.5f);
             // fell into a crevasse: the camera leans over the edge and looks down after the body
             bool deep = rider.Crashed && body.RagdollBelowSnow > 0.8f;
             chase.peek = Mathf.MoveTowards(chase.peek, deep ? 1f : 0f, Time.unscaledDeltaTime * (deep ? 1.2f : 3f));
             chase.peekAt = body.RagdollCentre;
-            chase.shake = (state == State.Riding ? close * close + (rider.Crashed ? 0.2f : 0f) : 0f) + hurtShake * hurtShake * 0.8f;
-            hud.SetFalls(MaxFalls - falls, MaxFalls, state == State.Riding);
+            chase.shake = (state == State.Riding ? slide.Shake + (rider.Crashed && !slide.Caught ? 0.2f : 0f) : 0f) + hurtShake * hurtShake * 0.8f;
+            hud.SetFalls(Progress.Falls(MaxFalls) - falls, Progress.Falls(MaxFalls), state == State.Riding);
             bool onSnow = state == State.Riding && !rider.Airborne && !rider.Crashed;
             bool riding = state == State.Riding;
             Vector3 rpos = rider.transform.position;
             audioFx.Set(new RideSound
             {
                 speed = rider.Speed / 36f, carve = rider.Tube ? 0f : rider.Carve, skid = rider.Tube ? 0.15f * Mathf.Clamp01(rider.Speed / 20f) : rider.Skid, rough = Slope.Rough(rpos.x, rpos.z),
-                avalanche = riding ? close : 0f, pan = rider.Steer,
+                avalanche = riding ? slide.Closeness(rider) : 0f, pan = rider.Steer,
                 muffle = state == State.Buried ? (endBuried ? 1f : 0.45f) : rider.Crashed ? 0.3f : 0f,
                 onSnow = onSnow && !rider.Grinding, air = riding && rider.Airborne, riding = riding,
                 boost = riding && rider.BoostTime > 0f,
@@ -568,9 +705,21 @@ namespace Summit
             if (state != State.Riding) return;
             if (kind == PowerUps.Kind.Soda)
             {
-                rider.AddBoost(3f);
-                hud.Flash("SUMMIT DEW", "speed boost", 0.9f);
+                rider.AddBoost(ZoomSeconds * Progress.PowerUpTime);
+                hud.Flash("MOUNTAIN ZOOM", "speed boost", 0.9f);
                 audioFx.Play(Sfx.Soda);
+            }
+            else if (kind == PowerUps.Kind.SuperJump)
+            {
+                rider.AddSuperJump(SuperJumpSeconds * Progress.PowerUpTime);
+                hud.Flash("SUPER JUMP", "lift your thumb for big air", 1.2f);
+                audioFx.Play(Sfx.PowerJump);
+            }
+            else if (kind == PowerUps.Kind.Invincible)
+            {
+                rider.AddInvincible(InvincibleSeconds * Progress.PowerUpTime);
+                hud.Flash("INVINCIBLE", "smash through anything", 1.2f);
+                audioFx.Play(Sfx.PowerStar);
             }
             else if (rider.Shields >= Rider.MaxShields)
             {
@@ -709,9 +858,21 @@ namespace Summit
         void OnCrash(string why)
         {
             if (state != State.Riding) return;
+            if (why == Avalanche.Cause)
+            {
+                // the slide took the board out from under you: no fall counted, no getting up (see Avalanche)
+                chainCount = 0;
+                hud.Flash("CAUGHT", "the mountain has you", 1.8f);
+                audioFx.Play(Sfx.SlideHit);
+                audioFx.Play(Sfx.Scream);
+#if UNITY_IOS || UNITY_ANDROID
+                Handheld.Vibrate();
+#endif
+                return;
+            }
             chainCount = 0;
             falls++;
-            int left = MaxFalls - falls;
+            int left = Progress.Falls(MaxFalls) - falls;   // a spare helmet from the camp adds one
             fallsNote = left <= 0 ? "that's three" : left == 1 ? "1 fall left" : left + " falls left";
             hud.Flash(why, fallsNote, 1.3f);
             medical += rider.Tube ? 400f : 850f;   // the trip to the clinic

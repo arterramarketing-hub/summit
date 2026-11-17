@@ -46,6 +46,21 @@ public class SummitImport : AssetPostprocessor
 
     void OnPreprocessTexture()
     {
+        if (assetPath.Contains("Summit/Resources/Avalanche/"))
+        {
+            // the powder puffs hold a surface shape (normals and thickness), not colours: keep the numbers as they are
+            var a = (TextureImporter)assetImporter;
+            a.sRGBTexture = false;
+            a.alphaSource = TextureImporterAlphaSource.FromInput;
+            a.alphaIsTransparency = true;
+            a.mipmapEnabled = true;
+            a.wrapMode = TextureWrapMode.Clamp;
+            a.maxTextureSize = 1024;
+            var ios = a.GetPlatformTextureSettings("iPhone");
+            ios.overridden = true; ios.maxTextureSize = 1024; ios.format = TextureImporterFormat.ASTC_5x5;
+            a.SetPlatformTextureSettings(ios);
+            return;
+        }
         if (!assetPath.Contains("Summit/Resources/Rider")) return;
         var t = (TextureImporter)assetImporter;
         t.filterMode = FilterMode.Point;    // a flat-colour palette: keep the colours crisp
@@ -142,6 +157,22 @@ public class SummitImport : AssetPostprocessor
             m.renderQueue = 2940 + (n == "Far" ? 0 : n == "Mid" ? 1 : n == "Near" ? 2 : 3);   // far, then mid, then near
             EditorUtility.SetDirty(m);
         }
+        AssetDatabase.SaveAssets();
+    }
+
+    /// <summary>The avalanche's powder cloud material (Resources/Avalanche/Powder.mat), kept in Resources so its shader ships.</summary>
+    public static void EnsureAvalanche()
+    {
+        const string path = "Assets/Summit/Resources/Avalanche/Powder.mat";
+        var sh = AssetDatabase.LoadAssetAtPath<Shader>("Assets/Summit/Shaders/Powder.shader");
+        if (sh == null) return;
+        var m = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (m == null) { m = new Material(sh); AssetDatabase.CreateAsset(m, path); }
+        m.shader = sh;
+        m.SetTexture("_MainTex", AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/Summit/Resources/Avalanche/PuffAtlas.png"));
+        m.SetFloat("_Sun", 0.8f);
+        m.renderQueue = 3000;
+        EditorUtility.SetDirty(m);
         AssetDatabase.SaveAssets();
     }
 
@@ -269,7 +300,7 @@ public class SummitImport : AssetPostprocessor
 
     // the long, continuously playing layers: compressed; everything short stays sharp (ADPCM)
     static readonly string[] LoopClips = { "wind_low", "wind_high", "glide", "carve", "skid", "powder", "grind_rail", "grind_box",
-                                           "avalanche", "boost", "ambience", "bear_growl", "bear_steps" };
+                                           "avalanche", "boost", "ambience", "bear_growl", "bear_steps", "avalanche_near" };
 
     void OnPreprocessAudio()
     {
@@ -296,6 +327,7 @@ public class SummitImport : AssetPostprocessor
         EnsureSnowTextures();
         EnsureSky();
         EnsureBackdrop();
+        EnsureAvalanche();
         if (Application.isBatchMode) EditorApplication.Exit(0);
     }
 }

@@ -79,6 +79,7 @@ make("BannerSummit", w: 1024, h: 128, bg: red, fg: .white, text: "MT. VERTIGO", 
 make("SignPark", w: 1024, h: 256, bg: NSColor(calibratedRed: 0.95, green: 0.45, blue: 0.08, alpha: 1), fg: .white, text: "TERRAIN PARK", sub: "BOXES  ·  RAILS  ·  JUMP LINE", hazard: false, stripe: .white)
 make("SignDanger", w: 1024, h: 256, bg: NSColor(calibratedRed: 0.98, green: 0.80, blue: 0.10, alpha: 1), fg: NSColor(calibratedWhite: 0.08, alpha: 1), text: "DANGER", sub: "CREVASSES  ·  WILDLIFE", hazard: true, stripe: .black)
 make("SignPipe", w: 1024, h: 256, bg: NSColor(calibratedRed: 0.10, green: 0.38, blue: 0.80, alpha: 1), fg: .white, text: "HALFPIPE", sub: "STAY IN THE CENTRE", hazard: false, stripe: .white)
+make("SignRidge", w: 1024, h: 256, bg: NSColor(calibratedWhite: 0.07, alpha: 1), fg: .white, text: "◆◆  RIDGE", sub: "EXPERTS ONLY  ·  CLIFFS  ·  STAY ON THE CREST", hazard: false, stripe: NSColor(calibratedRed: 1.0, green: 0.52, blue: 0.0, alpha: 1))
 make("BannerFinish", w: 1024, h: 128, bg: NSColor(calibratedRed: 0.08, green: 0.30, blue: 0.70, alpha: 1), fg: .white, text: "FINISH", sub: nil, hazard: false, stripe: .white)
 
 // ---- the in-run warning signs: big safety-style panels (3:2) on posts before the lip

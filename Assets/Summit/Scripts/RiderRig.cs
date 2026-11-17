@@ -160,6 +160,45 @@ namespace Summit
             Leg(ulR, llR, endR, bindR, fwd - nose * 0.25f);
         }
 
+        /// <summary>
+        /// On foot in the camp: upright, legs stepping, the left arm swinging and the right one down at the
+        /// side carrying the board. frame: +X is the way the rider walks, +Y up, its origin on the snow.
+        /// phase: the walk cycle (radians); amp: 0 standing .. 1 full pace.
+        /// </summary>
+        public void PoseWalk(Transform frame, float phase, float amp, float t)
+        {
+            if (!Ok) return;
+            foreach (var kv in bind) kv.Key.localRotation = kv.Value;
+            if (body != null) body.localPosition = bodyBindPos;
+            Vector3 up = frame.up, fwd = frame.right, left = frame.forward;
+            Vector3 bendAxis = Vector3.Cross(up, fwd);
+            float s = Mathf.Sin(phase), c = Mathf.Cos(phase);
+            // ankles just above the snow, stepping: each foot swings forward and lifts as it comes through
+            float stride = 0.3f * amp, lift = 0.13f * amp;
+            Vector3 baseL = frame.position + up * 0.09f + left * 0.11f, baseR = frame.position + up * 0.09f - left * 0.11f;
+            Vector3 footL = baseL + fwd * (stride * s) + up * (lift * Mathf.Max(0f, c));
+            Vector3 footR = baseR - fwd * (stride * s) + up * (lift * Mathf.Max(0f, -c));
+            // hips at the height that leaves the legs nearly straight
+            float reach = (thighLen + shinLen) * 0.97f;
+            float hipY = Vector3.Dot((ulL.position + ulR.position) * 0.5f - frame.position, up);
+            Vector3 shift = up * (reach + 0.09f - hipY + 0.02f * Mathf.Abs(c) * amp);
+            if (body != null) body.position += shift; else hips.position += shift;
+            // a slight lean into the walk, shoulders turning against the hips
+            Turn(abdomen, 3f + 4f * amp, bendAxis);
+            Turn(chest, 2f, bendAxis);
+            Turn(chest, -9f * s * amp, up);
+            Turn(head, (1f - amp) * 25f * Mathf.Sin(t * 0.45f), up);   // standing about: look round the camp
+            Vector3 down = -up;
+            Aim(uaL, laL, (down + fwd * (-0.5f * s * amp) + left * 0.12f).normalized);
+            Aim(laL, wrL, (down + fwd * (0.25f - 0.45f * s * amp) + left * 0.05f).normalized);
+            Aim(uaR, laR, (down - left * 0.18f + fwd * 0.04f).normalized);
+            Aim(laR, wrR, (down - left * 0.1f + fwd * 0.12f).normalized);
+            PlaceFoot(ftL, footL, frame, 0f);
+            PlaceFoot(ftR, footR, frame, 0f);
+            Leg(ulL, llL, endL, footL, fwd);
+            Leg(ulR, llR, endR, footR, fwd);
+        }
+
         /// <summary>The bind-pose height of the hips above the feet, in metres.</summary>
         public float HipHeight => hipHeight;
 

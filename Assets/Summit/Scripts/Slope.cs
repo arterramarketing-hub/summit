@@ -117,6 +117,7 @@ namespace Summit
             if (Hash01(s, 11, 41) < 0.25f) return 0f;               // some stretches just keep their pitch
             float zs = s * DropSeg;
             if (Course.At(zs) == Course.Section.Pipe || Course.At(zs + DropSeg) == Course.Section.Pipe) return 0f;
+            if (Ridge.Has(zs) || Ridge.Has(zs + DropSeg)) return 0f;   // a roll-over on a crest would throw you off it
             float u = z / DropSeg - s;
             float H = 2f + 7f * Hash01(s, 12, 41);
             float u0 = 0.35f + 0.4f * Hash01(s, 13, 41), w = 0.09f + 0.08f * Hash01(s, 14, 41);   // never a sudden kink
@@ -164,6 +165,7 @@ namespace Summit
                 if (aa > deckEnd) yp = Mathf.Lerp(yp, y, Mathf.Clamp01((aa - deckEnd) / 10f));
                 y = Mathf.Lerp(y, yp, pw);
             }
+            y = Ridge.Shape(x, z, y);   // a narrow crest with cliffs either side, once a cycle
             if (cut) y -= Course.CrevasseCut(x, z);
             return Start(x, z, y);
         }
@@ -198,7 +200,7 @@ namespace Summit
         }
 
         /// <summary>True on the start pad (no trees, no pickups).</summary>
-        public static bool OnPad(float x, float z) => z < PadLip + 8f && z > PadBack - 20f && Mathf.Abs(x - Centre(PadLip)) < PadHalf + 12f;
+        public static bool OnPad(float x, float z) => (z < PadLip + 8f && z > PadBack - 20f && Mathf.Abs(x - Centre(PadLip)) < PadHalf + 12f) || Camp.InCamp(x, z);
 
         // Kickers sit on the piste every so often: a curved ramp you can see coming,
         // a crisp lip, then a long smooth landing below it.
@@ -267,6 +269,8 @@ namespace Summit
             // in the halfpipe, ride the true curve: its 1.5 m facets would jolt the board at every edge
             // (the drawn facets sit at most a few centimetres off it)
             if (Course.PipeWeight(z) > 0.01f && Mathf.Abs(x - Centre(z)) < Course.PipeHalfWidth + 1.5f) return Height(x, z);
+            // likewise the rounded shoulder at a ridge crest's edge
+            if (Ridge.OnShoulder(x, z)) return Height(x, z);
             float gx = x / Quad, gz = z / Quad;
             int i = Mathf.FloorToInt(gx), j = Mathf.FloorToInt(gz);
             float u = gx - i, v = gz - j;

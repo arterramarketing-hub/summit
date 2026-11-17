@@ -11,7 +11,7 @@ namespace Summit
     /// figure made from simple shapes.
     /// </summary>
     [DefaultExecutionOrder(100)]
-    public class RiderBody : MonoBehaviour
+    public partial class RiderBody : MonoBehaviour
     {
         public Rider rider;
         Transform pivot, roll, upper, trailAnchor;
@@ -59,6 +59,10 @@ namespace Summit
         Material shieldMat;
         float comp, compV, shieldFlash, shieldShown;
         Shader jacketShader;
+        /// <summary>Snow caked on the jacket and trousers after a fall (null on a model without them).</summary>
+        public SnowyClothes snowy;
+        /// <summary>Getting up after a fall: where the body came to rest.</summary>
+        public System.Action<Vector3> FallRested;
 
         public void Build(Rider r, Material jacket, Material pants, Material board, Material skin, Material dark,
                           Material trailMat, Material sprayMat)
@@ -89,6 +93,8 @@ namespace Summit
             jacketShader = jacket != null ? jacket.shader : null;
             if (prefab != null && (SetUpHumanoid(prefab) || SetUpRig(prefab))) { }
             else ShapesFigure(jacket, pants, skin, dark);
+            // what the outfit colours paint (see RiderBodyWalk)
+            FindJacket(upper.gameObject); boardMat = board; if (jacket != null) { jacketMats.Add(jacket); jacketShade.Add(1f); }
 
             // a groove pressed into the snow behind the board
             trail = new SnowTrail(jacket != null ? jacket.shader : Shader.Find("Universal Render Pipeline/Lit"));
@@ -303,10 +309,13 @@ namespace Summit
             model = go.transform;
             // winter colours: a red shell jacket, charcoal snow pants, dark pack
             Shader sh = jacketShader != null ? jacketShader : Shader.Find("Universal Render Pipeline/Lit");
+            snowy = new SnowyClothes();
+            if (!snowy.Ok) snowy = null;
             foreach (var smr in go.GetComponentsInChildren<Renderer>())
             {
                 var mats = smr.sharedMaterials;
                 bool pack = smr.name.Contains("Backpack");
+                bool clothes = smr is SkinnedMeshRenderer && (smr.name.Contains("Body") || smr.name.Contains("Legs"));
                 for (int i = 0; i < mats.Length; i++)
                 {
                     if (mats[i] == null) continue;
@@ -320,6 +329,9 @@ namespace Summit
                     else if (n.StartsWith("Brown")) c = new Color(0.17f, 0.19f, 0.24f);
                     m.SetColor("_BaseColor", c);
                     m.SetFloat("_Smoothness", n.StartsWith("Skin") || n.StartsWith("Hair") ? 0.25f : 0.35f);
+                    // the jacket and trousers can be caked in snow (the skin, hair and pack stay as they are)
+                    if (clothes && snowy != null && !pack && (n.StartsWith("Green") || n.StartsWith("LightGreen") || n.StartsWith("Brown")))
+                    { if (Application.isPlaying) Destroy(m); else DestroyImmediate(m); m = snowy.Make(c, 0.35f); }
                     mats[i] = m;
                 }
                 smr.sharedMaterials = mats;
@@ -333,7 +345,9 @@ namespace Summit
             float h = HeightOf(go);
             if (h > 0.01f) model.localScale *= 1.75f / h;
             r.CaptureBind();
+            snowy?.SetFrame(model, r.BodyBone != null ? r.BodyBone : r.Hips);
             Gear(r.Head, r.HandL, r.HandR, r.UpperL, r.LowerL, r.UpperR, r.LowerR, false);
+            snowy?.BakeRigid(go.transform);
             Loosen(go);
             rig = r;
             return true;
@@ -390,6 +404,7 @@ namespace Summit
                 mesh.AddBlendShapeFrame("FlapA", 100f, flapA, null, null);
                 mesh.AddBlendShapeFrame("FlapB", 100f, flapB, null, null);
                 mesh.RecalculateBounds();
+                snowy?.Bake(smr, mesh);
                 smr.sharedMesh = mesh;
                 cloth.Add(smr);
             }
@@ -423,6 +438,7 @@ namespace Summit
             ragdoll = new Ragdoll(rig, boardRoot, rider.GetComponent<Collider>());
             ragdoll.Hit += OnRagdollHit;
             ragdoll.Drag += OnRagdollDrag;
+            ragdoll.Ploughed += (bone, down, v) => snowy?.Plough(down, v, Time.fixedDeltaTime);   // snow packed onto the clothes
             ragdoll.Prebuild();
         }
         float tubeSpin, tubeSpinRate;
@@ -506,6 +522,7 @@ namespace Summit
         void PoseRig(float dt)
         {
             if (Tube) { PoseTube(dt); return; }
+            if (Walking) { rig.PoseWalk(roll, walkPhase, walkAmp, Time.time); return; }   // on foot in the camp
             Flutter(dt);
             float t = Time.time;
             compV += (-comp * 140f - compV * 16f) * dt;
@@ -544,7 +561,8 @@ namespace Summit
                 if (emit.maxColorComponent > 0f) { m.EnableKeyword("_EMISSION"); m.SetColor("_EmissionColor", emit); }
                 return m;
             }
-            var jacketM = M(new Color(0.93f, 0.31f, 0.14f), 0.35f);
+            var jacketM = snowy != null ? snowy.Make(new Color(0.93f, 0.31f, 0.14f), 0.35f) : M(new Color(0.93f, 0.31f, 0.14f), 0.35f);   // the cuffs get snowy too
+            gearJacket = jacketM;
             var gloveM = M(new Color(0.09f, 0.10f, 0.12f), 0.3f);
             var lensM = M(new Color(1f, 0.55f, 0.1f), 0.95f, new Color(0.35f, 0.15f, 0f));
             var strapM = M(new Color(0.1f, 0.1f, 0.12f), 0.2f);
@@ -662,12 +680,13 @@ namespace Summit
                 W(mArmFL, Mathf.Sin(t * 7f) * 0.8f); W(mArmFR, Mathf.Sin(t * 6f + 2f) * 0.8f);
                 W(mKneeL, Mathf.Sin(t * 5f) * 0.6f); W(mKneeR, Mathf.Sin(t * 6f + 1f) * 0.6f);
             }
+            if (Walking) WalkMuscles(t);
             // ease every muscle toward its target, so nothing snaps
             float k = dt <= 0f ? 1f : 1f - Mathf.Exp(-dt * (crashed ? 20f : 11f));
             for (int i = 0; i < m.Length; i++) m[i] = Mathf.Lerp(m[i], want[i], k);
             poser.SetHumanPose(ref pose);
             PlantFeet();
-            if (!crashed)
+            if (!crashed && !Walking)
             {
                 // lock each foot onto its binding (left foot forward, at the nose end)
                 Vector3 tl = roll.TransformPoint(new Vector3(0f, BoardTop + 0.09f, 0.27f));
@@ -835,6 +854,7 @@ namespace Summit
             bow.Clear();
             marks.Clear();
             craters.Clear();
+            snowy?.Clear();
             comp = 0f; compV = 0f; shieldFlash = 0f;
             Apply(0f);
         }
@@ -855,6 +875,7 @@ namespace Summit
         void OnRagdollHit(float v, bool isBoard, Vector3 at, Transform bone)
         {
             RagdollHit?.Invoke(v, isBoard);
+            if (!isBoard) snowy?.Hit(at, bone != null ? bone.position : RagdollCentre, v);
             if (v > 2.2f)
             {
                 // a crater where it landed, and snow thrown everywhere
@@ -946,6 +967,9 @@ namespace Summit
                 Cyl(Vector3.Lerp(p0, p1, i / (k + 1f)) + d.normalized * (i % 2 == 0 ? 0.004f : -0.004f), r * 1.06f, 0.006f, bandageLine);
         }
 
+        /// <summary>The avalanche carrying the thrown body along in its debris (see Ragdoll.Carry).</summary>
+        public void Carry(Vector3 flow, float rate, float dt) { if (ragdoll != null && ragdoll.Active) ragdoll.Carry(flow, rate, dt); }
+
         /// <summary>Per physics step (public so the test harness can call it).</summary>
         public void PhysicsStep()
         {
@@ -977,6 +1001,7 @@ namespace Summit
                     var b = pick[Random.Range(0, pick.Length)];
                     Break(b, b.position);
                 }
+                ragdoll.Steer = rider.Crashed ? rider.Steer : 0f;   // steer the fall with the same thumb
                 ragdoll.PhysicsStep();
                 rider.CrashFollow = ragdoll.Centre;
                 rider.HasCrashFollow = rider.Crashed;
@@ -1015,6 +1040,7 @@ namespace Summit
                 }
                 else
                 {
+                    FallRested?.Invoke(ragdoll.Centre);   // a flag where you came to rest
                     ragdoll.End(); spray.Emit(30);   // back up on the board, patched up
                     RagdollMoving = false; rider.HoldCrash = false;
                     bodyTrail.Feed(Vector3.zero, Vector3.up, 0f, false, 1f, 0f, 0f, dt);
@@ -1023,6 +1049,7 @@ namespace Summit
                     brokenThisCrash.Clear();
                 }
             }
+            snowy?.Step(dt, rider.Crashed, rider.Speed);
             if (rider.Crashed && ((ragdoll != null && ragdoll.Active) || ragdollPending)) { }
             else if (rider.Crashed)
             {
@@ -1072,13 +1099,14 @@ namespace Summit
                 float leanDeg = rider.Lean * Mathf.Rad2Deg;
                 roll.localRotation = Tube ? Quaternion.Euler(leanDeg * 0.5f, 0f, 0f) : Quaternion.Euler(0f, 0f, -leanDeg * 0.75f);
                 upper.localRotation = Quaternion.Euler(0f, 0f, -leanDeg * 0.25f);
+                if (Walking) WalkFrame(dt);   // on foot in the camp
                 if (poser != null) Pose(dt);
                 else if (rig != null) PoseRig(dt);
                 else upper.localScale = new Vector3(1f, 1f - 0.24f * rider.Tuck, 1f);
             }
 
-            // the track: a groove pressed into the snow under the board
-            trail.Feed(p + Vector3.down * Rider.R, normal, rider.TravelHeading, rider.Running && !rider.Crashed && !rider.Airborne && !rider.Grinding,
+            // the track: a groove pressed into the snow under the board (none in snow the avalanche is churning)
+            trail.Feed(p + Vector3.down * Rider.R, normal, rider.TravelHeading, rider.Running && !rider.Crashed && !rider.Airborne && !rider.Grinding && rider.Undercut < 0.05f,
                        Tube ? 1.25f : Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Slope.Rough(p.x, p.z)),
                        Tube ? 0f : rider.Lean / Rider.MaxLean, Tube ? 0.5f : rider.Skid, dt);   // a tube leaves a wide, shallow chute
 

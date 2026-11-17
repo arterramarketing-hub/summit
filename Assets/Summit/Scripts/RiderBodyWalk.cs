@@ -1,0 +1,144 @@
+using UnityEngine;
+
+namespace Summit
+{
+    /// <summary>
+    /// The rider on foot in the summit camp, and the outfit colours. Kept apart from RiderBody's riding
+    /// code: RiderBody only calls WalkFrame and WalkMuscles while Walking is set.
+    /// </summary>
+    public partial class RiderBody
+    {
+        /// <summary>On foot in the camp: the board is strapped to the back and the legs walk.</summary>
+        public bool Walking { get; private set; }
+        /// <summary>0 standing still .. 1 full walking pace (the camp sets it every frame).</summary>
+        public float WalkPace;
+        float walkPhase, walkAmp;
+        Vector3 boardHomePos; Quaternion boardHomeRot; bool boardHomeSet, tubeBeforeWalk;
+
+        public void SetWalking(bool on)
+        {
+            if (Walking == on) return;
+            if (!boardHomeSet) { boardHomePos = boardRoot.localPosition; boardHomeRot = boardRoot.localRotation; boardHomeSet = true; }
+            Walking = on;
+            if (on)
+            {
+                // nobody walks round camp sitting in a tube: on foot, and the board on your back
+                tubeBeforeWalk = Tube;
+                if (Tube) SetTube(false);
+                // the model faces +X with its left side to +Z: carry the board upright in the right hand,
+                // at the side, its base just off the snow
+                boardRoot.localPosition = new Vector3(0.04f, 0.78f, -0.36f);
+                boardRoot.localRotation = Quaternion.LookRotation(Vector3.up, Vector3.back);
+            }
+            else
+            {
+                boardRoot.localPosition = boardHomePos;
+                boardRoot.localRotation = boardHomeRot;
+                walkPhase = 0f; walkAmp = 0f; WalkPace = 0f;
+                if (tubeBeforeWalk) SetTube(true);
+            }
+        }
+
+        /// <summary>Upright on foot: no edge lean, a bob in step, a slight lean into the walk.</summary>
+        void WalkFrame(float dt)
+        {
+            walkAmp = Mathf.MoveTowards(walkAmp, WalkPace, dt * 4f);
+            walkPhase += dt * Mathf.PI * 2f * Mathf.Lerp(0.55f, 1.0f, walkAmp) * (walkAmp > 0.02f ? 1f : 0f);
+            roll.localRotation = Quaternion.identity;
+            upper.localRotation = Quaternion.identity;
+            // the humanoid's feet are planted at a board's height: stand them on the snow instead
+            // (the rig plants its own feet, see RiderRig.PoseWalk)
+            if (poser != null) pivot.position += pivot.up * (Mathf.Abs(Mathf.Sin(walkPhase)) * 0.05f * walkAmp - BoardTop - 0.02f);
+        }
+
+        /// <summary>Muscle targets for a walk cycle (over the snowboard pose RiderBody built this frame).</summary>
+        void WalkMuscles(float t)
+        {
+            float a = walkAmp, s = Mathf.Sin(walkPhase), c = Mathf.Cos(walkPhase);
+            // legs swing opposite each other; the leg coming forward bends at the knee
+            W(mHipL, 0.08f + 0.7f * s * a); W(mHipR, 0.08f - 0.7f * s * a);
+            W(mKneeL, 0.95f - a * (0.15f + 1.2f * Mathf.Max(0f, c)));
+            W(mKneeR, 0.95f - a * (0.15f + 1.2f * Mathf.Max(0f, -c)));
+            W(mSpreadL, 0.02f); W(mSpreadR, 0.02f);
+            W(mSpine, 0.06f + 0.08f * a); W(mChest, 0.02f);
+            W(mTwist, -0.15f * s * a);
+            // arms down at the sides, swinging against the legs
+            W(mArmL, -0.8f); W(mArmR, -0.8f);
+            W(mArmFL, -0.55f * s * a + 0.05f); W(mArmFR, 0.55f * s * a + 0.05f);
+            W(mElbowL, 0.7f); W(mElbowR, 0.7f);
+            // standing about: look round the camp
+            W(mNeck, 0f);
+            W(mHead, (1f - a) * 0.25f * Mathf.Sin(t * 0.45f));
+        }
+
+        // ---- outfit colours (bought at the board rack)
+
+        Material boardMat, gearJacket;
+        readonly System.Collections.Generic.List<Material> jacketMats = new System.Collections.Generic.List<Material>();
+        readonly System.Collections.Generic.List<float> jacketShade = new System.Collections.Generic.List<float>();
+
+        bool ownMats;
+
+        /// <summary>Paint the jacket and the board.</summary>
+        public void SetColours(Color jacket, Color board)
+        {
+            if (!ownMats) OwnMaterials();
+            if (boardMat != null) boardMat.SetColor("_BaseColor", board);
+            if (gearJacket != null) gearJacket.SetColor("_BaseColor", jacket);
+            // each jacket material keeps its own shade (the trim is lighter than the body)
+            for (int i = 0; i < jacketMats.Count; i++) jacketMats[i].SetColor("_BaseColor", jacket * (i < jacketShade.Count ? jacketShade[i] : 1f));
+        }
+
+        /// <summary>
+        /// Swap the shared board and jacket materials on this rider for copies, so painting them never
+        /// writes into the project's material assets (in the editor that would stick after Play).
+        /// </summary>
+        void OwnMaterials()
+        {
+            ownMats = true;
+            var copies = new System.Collections.Generic.Dictionary<Material, Material>();
+            Material Copy(Material m) { if (!copies.TryGetValue(m, out var c)) { c = new Material(m); copies[m] = c; } return c; }
+            foreach (var r in GetComponentsInChildren<Renderer>(true))
+            {
+                var ms = r.sharedMaterials;
+                bool changed = false;
+                for (int i = 0; i < ms.Length; i++)
+                    if (ms[i] != null && (ms[i] == boardMat || jacketMats.Contains(ms[i]))) { ms[i] = Copy(ms[i]); changed = true; }
+                if (changed) r.sharedMaterials = ms;
+            }
+            if (boardMat != null) boardMat = Copy(boardMat);
+            for (int i = 0; i < jacketMats.Count; i++) jacketMats[i] = Copy(jacketMats[i]);
+        }
+
+        /// <summary>The model's own jacket materials (by name), so a new colour reaches the body too.</summary>
+        void FindJacket(GameObject model)
+        {
+            jacketMats.Clear(); jacketShade.Clear();
+            foreach (var r in model.GetComponentsInChildren<Renderer>())
+                foreach (var m in r.sharedMaterials)
+                {
+                    if (m == null) continue;
+                    string n = m.name.ToLowerInvariant();
+                    // the model's materials have no useful names: the jacket is the orange-red one
+                    var c = m.HasProperty("_BaseColor") ? m.GetColor("_BaseColor") : Color.white;
+                    bool orange = c.r > 0.6f && c.g < 0.45f && c.b < 0.3f;
+                    if ((orange || n.Contains("jacket") || n.Contains("coat")) && !jacketMats.Contains(m))
+                    {
+                        jacketMats.Add(m);
+                        jacketShade.Add(orange ? Mathf.Clamp(c.maxColorComponent / 0.93f, 0.7f, 1.1f) : 1f);
+                    }
+                }
+        }
+
+        /// <summary>For the test tools: the names of the rider model's materials.</summary>
+        public string MaterialNames()
+        {
+            var sb = new System.Text.StringBuilder();
+            if (upper != null)
+                foreach (var r in upper.GetComponentsInChildren<Renderer>())
+                    foreach (var m in r.sharedMaterials)
+                        if (m != null) sb.Append(r.name).Append(':').Append(m.name).Append(' ').Append(m.HasProperty("_BaseColor") ? m.GetColor("_BaseColor").ToString() : "").Append(" | ");
+            return sb.ToString();
+        }
+    }
+}

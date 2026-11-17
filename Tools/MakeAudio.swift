@@ -333,20 +333,53 @@ func grindBox() -> [Double] {
     return normalize(loop(x, xf: 0.5), 0.7)
 }
 
+/// The slide behind you, heard from a distance: a deep rumble you feel more than hear, a roar like a
+/// waterfall on top that swells and ebbs, far-off crackling, and the knock of big blocks rolling.
 func avalanche() -> [Double] {
-    var r = RNG(9); let n = samples(7)
-    let d = drift(n, 0.5, &r), d2 = drift(n, 2, &r)
-    let deep = filt(brown(n, &r), .lp, 90, 0.7), mid = filt(brown(n, &r), .lp, 400)
-    let roar = filt(pink(n, &r), .bp, 250, 0.6)
+    var r = RNG(9); let n = samples(8)
+    let d = drift(n, 0.4, &r), d2 = drift(n, 1.5, &r), d3 = drift(n, 0.8, &r)
+    let sub = filt(filt(brown(n, &r), .lp, 55, 0.9), .lp, 70)
+    let deep = filt(brown(n, &r), .lp, 110, 0.7), mid = filt(brown(n, &r), .lp, 420)
+    let roar = sweep(pink(n, &r), .bp, 0.55) { 170 + 120 * d3[$0] }
+    let crackle = filt(grains(n, rate: { 300 + 500 * d2[$0] }, len: 0.002...0.01, &r), .lp, 900)
     var x = [Double](repeating: 0, count: n)
-    for i in 0..<n { x[i] = deep[i] + 0.35 * mid[i] * d2[i] + 0.3 * roar[i] }
+    for i in 0..<n { x[i] = 1.6 * sub[i] + deep[i] + 0.35 * mid[i] * d2[i] + 0.4 * roar[i] * (0.6 + 0.4 * d3[i]) + 0.25 * crackle[i] }
     var at = 0.05
-    while at < 6.8 {
-        add(&x, thump(0.3, f0: r.r(60, 80), f1: r.r(35, 45), decay: 0.12), r.r(0.3, 1.0), at: at)
-        at += r.r(0.12, 0.4)
+    while at < 7.8 {
+        add(&x, thump(0.4, f0: r.r(55, 80), f1: r.r(28, 40), decay: r.r(0.1, 0.2)), r.r(0.25, 0.9), at: at)
+        at += r.r(0.1, 0.38)
     }
-    x = mul(x) { 0.75 + 0.25 * d[$0] }
-    return normalize(loop(x, xf: 1), 0.85)
+    x = mul(x) { 0.7 + 0.3 * d[$0] }
+    return normalize(loop(softclip(x, 0.9), xf: 1), 0.88)
+}
+
+/// The slide right on you: a wall of roaring white noise, the hiss of powder in the air, snow crunching and
+/// cracking everywhere at once, and blocks knocking together. Mixed in only in the last stretch.
+func avalancheNear() -> [Double] {
+    var r = RNG(33); let n = samples(6)
+    let d = drift(n, 0.7, &r), d2 = drift(n, 2.5, &r)
+    let roar = sweep(pink(n, &r), .lp, 0.7) { 900 + 1400 * d[$0] }
+    let hiss = filt(filt(white(n, &r), .hp, 2500), .lp, 7000)
+    let crunch = filt(grains(n, rate: { 1400 + 1600 * d2[$0] }, len: 0.001...0.006, &r), .bp, 1500, 0.6)
+    let rumble = filt(brown(n, &r), .lp, 140)
+    var x = [Double](repeating: 0, count: n)
+    for i in 0..<n { x[i] = 0.7 * roar[i] + 0.08 * hiss[i] * (0.5 + d2[i]) + 0.55 * crunch[i] + 1.2 * rumble[i] }
+    var at = 0.03
+    while at < 5.8 {
+        add(&x, thump(0.25, f0: r.r(90, 140), f1: r.r(45, 70), decay: r.r(0.04, 0.09)), r.r(0.2, 0.7), at: at)
+        at += r.r(0.05, 0.22)
+    }
+    return normalize(loop(softclip(x, 1.1), xf: 0.8), 0.8)
+}
+
+/// The blow that takes the board out from under you: a huge soft whump, and the snow pouring over.
+func slideHit() -> [Double] {
+    var r = RNG(34); let n = samples(2.4)
+    var x = thump(2.4, f0: 75, f1: 26, decay: 0.55)
+    add(&x, mul(filt(brown(n, &r), .lp, 700)) { env($0, attack: 0.01, decay: 0.8) }, 1.6)
+    add(&x, mul(filt(white(n, &r), .lp, 3000)) { env($0, attack: 0.003, decay: 0.35) }, 0.5)
+    add(&x, mul(filt(grains(n, rate: { _ in 2500 }, len: 0.001...0.006, &r), .bp, 1800)) { env($0, attack: 0.01, decay: 0.9) }, 1.2)
+    return normalize(fade(reverb(softclip(x, 1.2), wet: 0.25), out: 0.4), 0.95)
 }
 
 func boost() -> [Double] {
@@ -811,6 +844,68 @@ func groan() -> [Double] {
     return normalize(fade(x, out: 0.1), 0.6)
 }
 
+// ------------------------------------------------------------------ invincible smashes and the new pickups
+
+/// A tree trunk snapping as an invincible rider goes through it: a sharp crack, the wood's hollow knock,
+/// a tearing crackle of splinters, then the snow coming down off the branches.
+func smashWood() -> [Double] {
+    var r = RNG(130); let n = samples(1.6)
+    var x = mul(filt(white(n, &r), .hp, 1200)) { env($0, attack: 0.0005, decay: 0.012) }.map { $0 * 1.6 }   // the crack
+    var k = [Double](repeating: 0, count: n); for i in 0..<60 { k[i] = r.bi() * (1 - Double(i) / 60) }
+    add(&x, modes(k, [160, 340, 610, 980], [0.22, 0.16, 0.1, 0.07], [1, 0.8, 0.5, 0.3]).map { $0 * 28 }, 0.9)    // the trunk
+    add(&x, thump(0.5, f0: 95, f1: 50, decay: 0.12), 0.9)
+    // splintering: a fast crackle that tears on for a moment
+    add(&x, mul(filt(grains(n, rate: { i in 5000 * exp(-t(i) / 0.18) }, len: 0.0003...0.002, &r), .bp, 2600, 0.9)) { env($0, attack: 0.002, decay: 0.25) }, 2.2, at: 0.01)
+    for at in [0.06, 0.13, 0.22] {
+        var kk = [Double](repeating: 0, count: samples(0.15)); for i in 0..<8 { kk[i] = r.bi() }
+        add(&x, modes(kk, [r.r(700, 1100), r.r(1800, 2600)], [0.04, 0.03], [1, 0.6]).map { $0 * 18 }, 0.5, at: at)
+    }
+    var shower = filt(pink(n, &r), .lp, 2200)
+    shower = mul(shower) { i in let s = t(i) - 0.15; return s < 0 ? 0 : min(1, s / 0.12) * exp(-s / 0.5) }
+    add(&x, shower, 0.55)
+    return normalize(fade(reverb(x, wet: 0.08), out: 0.25), 0.95)
+}
+
+/// A rock bursting: a deep hit, a gravelly crunch, and chunks clattering away.
+func smashRock() -> [Double] {
+    var r = RNG(131); let n = samples(1.3)
+    var x = thump(0.6, f0: 120, f1: 45, decay: 0.14)
+    add(&x, mul(filt(white(n, &r), .lp, 5000)) { env($0, attack: 0.0008, decay: 0.05) }, 0.9)
+    add(&x, mul(filt(grains(n, rate: { i in 7000 * exp(-t(i) / 0.12) }, len: 0.0002...0.0012, &r), .hp, 1500)) { env($0, attack: 0.001, decay: 0.3) }, 2.0)
+    var k = [Double](repeating: 0, count: n); for i in 0..<12 { k[i] = r.bi() }
+    add(&x, modes(k, [900, 1700, 2900], [0.05, 0.04, 0.03], [1, 0.6, 0.4]).map { $0 * 22 }, 0.7)
+    for _ in 0..<7 {   // the pieces landing
+        var kk = [Double](repeating: 0, count: samples(0.1)); for i in 0..<5 { kk[i] = r.bi() }
+        add(&x, modes(kk, [r.r(1100, 2400), r.r(2600, 4200)], [0.03, 0.02], [1, 0.5]).map { $0 * 14 }, r.r(0.15, 0.4), at: r.r(0.25, 0.9))
+    }
+    return normalize(fade(reverb(x, wet: 0.1), out: 0.2), 0.95)
+}
+
+/// The Super Jump pickup: a springy boing that wobbles upward.
+func powerJump() -> [Double] {
+    var r = RNG(132); let n = samples(0.9)
+    var x = buf(0.9); var ph = 0.0
+    for i in 0..<n {
+        let s = t(i)
+        let f = 180 + 520 * min(1, s / 0.35) + 60 * sin(TAU * 13 * s) * exp(-s / 0.4)   // the spring's wobble
+        ph += TAU * f / SR
+        x[i] = (sin(ph) + 0.3 * sin(2 * ph)) * env(i, attack: 0.004, decay: 0.3)
+    }
+    add(&x, thump(0.3, f0: 140, f1: 70, decay: 0.06), 0.5)
+    add(&x, notes([1046.5, 1568], gap: 0.09, sec: 0.6, wet: 0.2), 0.35, at: 0.18)
+    add(&x, filt(white(samples(0.003), &r), .hp, 3000), 0.3)
+    return normalize(fade(x, out: 0.15), 0.8)
+}
+
+/// The Invincibility pickup: a bright rising run of bells over a shimmering swell.
+func powerStar() -> [Double] {
+    var r = RNG(133); let n = samples(1.6)
+    var x = notes([784, 988, 1175, 1568, 1976, 2349], gap: 0.06, sec: 1.4, wet: 0.3, chorus: true)
+    add(&x, surge(1.0, f0: 200, f1: 800, seed: 134), 0.35)
+    add(&x, mul(filt(white(n, &r), .bp, 7000, 2)) { i in let s = t(i); return (0.5 + 0.5 * sin(TAU * 18 * s)) * min(1, s * 4) * exp(-s / 0.6) }, 0.3)
+    return normalize(fade(x, out: 0.3), 0.75)
+}
+
 // ------------------------------------------------------------------ write them all
 
 if CommandLine.arguments.count > 1 { outDir = CommandLine.arguments[1] }
@@ -825,6 +920,8 @@ write("powder", powder())
 write("grind_rail", grindRail())
 write("grind_box", grindBox())
 write("avalanche", avalanche())
+write("avalanche_near", avalancheNear())
+write("slide_hit", slideHit())
 write("boost", boost())
 write("ambience", ambience())
 write("bear_growl", bearGrowl())
@@ -875,3 +972,7 @@ write("grunt_4", grunt(113, base: 128, vowel: EH))
 write("yelp_1", yelp(115, base: 300))
 write("yelp_2", yelp(116, base: 260))
 write("groan", groan())
+write("smash_wood", smashWood())
+write("smash_rock", smashRock())
+write("power_jump", powerJump())
+write("power_star", powerStar())

@@ -21,6 +21,8 @@ namespace Summit
         Transform backdrop;
         Vignette vignette;
         float baseVignette = 0.2f, speed01;
+        /// <summary>The vignette at rest, set by the colour filter (LookGrade); speed widens it from here.</summary>
+        public float BaseVignette { get => baseVignette; set => baseVignette = value; }
 
         public void Build(Camera camera, Rider r, Material flake)
         {

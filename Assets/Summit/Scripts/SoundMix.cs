@@ -6,7 +6,8 @@ namespace Summit
     {
         Pop, Takeoff, Land, LandHard, Crash, HitTree, HitRock, Crevasse, Thump, Clack, Spin,
         Trick, TrickBig, CloseCall, Soda, ShieldGet, ShieldHit, ShieldFull, Click, Play, Buried,
-        Scrape, GrindRail, GrindBox, BearRoar, Bone, Scream, Grunt, Yelp, Groan
+        Scrape, GrindRail, GrindBox, BearRoar, Bone, Scream, Grunt, Yelp, Groan,
+        SmashWood, SmashRock, PowerJump, PowerStar, SlideHit
     }
 
     /// <summary>What the ride sounds like this frame (all 0..1 unless noted).</summary>
@@ -41,6 +42,10 @@ namespace Summit
                   closeCall, soda, shieldGet, shieldHit, click, play, buried, bearRoar, flap;
         AudioClip[] lands, thumps, crows, chirps, bones, screams, grunts, yelps;
         AudioClip groan;
+        AudioClip smashWood, smashRock, powerJump, powerStar;
+        // the avalanche up close: the hiss and crackle of the churning front, and the blow that takes you off
+        Layer slideNear;
+        AudioClip slideHit;
         AudioSource voice;   // one voice: a new cry cuts the last one off, like a real throat
 
         // the bear, followed through the world
@@ -56,6 +61,7 @@ namespace Summit
             ambience = Loop("ambience"); windLow = Loop("wind_low"); windHigh = Loop("wind_high");
             glide = Loop("glide"); carve = Loop("carve"); skid = Loop("skid"); powder = Loop("powder");
             grindRail = Loop("grind_rail"); grindBox = Loop("grind_box"); avalanche = Loop("avalanche"); boost = Loop("boost");
+            slideNear = Loop("avalanche_near"); slideHit = C("slide_hit");
 
             shots = new AudioSource[10];
             for (int i = 0; i < shots.Length; i++) { shots[i] = gameObject.AddComponent<AudioSource>(); shots[i].playOnAwake = false; shots[i].spatialBlend = 0f; }
@@ -72,6 +78,7 @@ namespace Summit
             chime = C("trick"); powerShort = C("power_short"); trickBig = C("trick_big"); closeCall = C("close_call"); soda = C("soda");
             shieldGet = C("shield_get"); shieldHit = C("shield_hit"); click = C("click"); play = C("play"); buried = C("buried");
             bearRoar = C("bear_roar"); flap = C("flap");
+            smashWood = C("smash_wood"); smashRock = C("smash_rock"); powerJump = C("power_jump"); powerStar = C("power_star");
             lands = new[] { C("land_1"), C("land_2"), C("land_3") };
             thumps = new[] { C("thump_1"), C("thump_2"), C("thump_3") };
             crows = new[] { C("crow_1"), C("crow_2") };
@@ -153,6 +160,7 @@ namespace Summit
             Mix(grindRail, r.grind == 1 ? 0.55f : 0f, 0.9f + 0.3f * s, 40f, 20f, dt);
             Mix(grindBox, r.grind == 2 ? 0.5f : 0f, 0.9f + 0.25f * s, 40f, 20f, dt);
             Mix(avalanche, Mathf.Pow(Mathf.Clamp01(r.avalanche), 1.5f) * 0.9f, 0.9f + 0.15f * r.avalanche, 3f, 1.5f, dt);
+            Mix(slideNear, Mathf.Pow(Mathf.Clamp01((r.avalanche - 0.55f) / 0.45f), 1.6f) * 0.85f, 0.95f + 0.1f * r.avalanche, 3f, 1.2f, dt);
             Mix(boost, r.boost ? 0.45f : 0f, 1f + 0.2f * s, 10f, 4f, dt);
 
             muffle = Mathf.Lerp(muffle, r.muffle, 1f - Mathf.Exp(-dt * 5f));
@@ -227,6 +235,11 @@ namespace Summit
                 case Sfx.Buried: c = buried; vol = 1f; pitch = 1f; break;
                 case Sfx.BearRoar: c = bearRoar; vol = 0.9f; break;
                 case Sfx.Bone: c = bones[Random.Range(0, bones.Length)]; vol = 1f; pitch = Random.Range(0.9f, 1.1f); break;
+                case Sfx.SmashWood: c = smashWood; vol = 1f; pitch = Random.Range(0.9f, 1.1f); break;
+                case Sfx.SmashRock: c = smashRock; vol = 1f; pitch = Random.Range(0.9f, 1.1f); break;
+                case Sfx.PowerJump: c = powerJump; vol = 0.7f; pitch = 1f; break;
+                case Sfx.PowerStar: c = powerStar; vol = 0.65f; pitch = 1f; break;
+                case Sfx.SlideHit: c = slideHit; vol = 1f; pitch = 1f; break;
             }
             if (kind == Sfx.Scream || kind == Sfx.Grunt || kind == Sfx.Yelp || kind == Sfx.Groan)
             {

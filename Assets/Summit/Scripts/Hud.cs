@@ -20,7 +20,9 @@ namespace Summit
         int lastBill = -1;
         int lastAlt = -1;
         Image[] shieldPips;
-        Image boostFill, boostBg;
+        Image[] timerBg, timerFill;
+        Text[] timerText;
+        int[] lastTimer;
         int lastTenths = -2;
         Image slideFill, whiteout, hurt;
         Image[] fallPips;
@@ -102,7 +104,7 @@ namespace Summit
             // falls left this run: three red crosses, top right under the slide bar
             fallsLabel = NewText("FallsLabel", safe, new Vector2(1f, 1f), new Vector2(-40f, -136f), 30, TextAnchor.UpperRight);
             fallsLabel.text = "";
-            fallPips = new Image[3];
+            fallPips = new Image[4];   // three, and a fourth with the spare-helmet upgrade
             var cross = MakeCross(64);
             for (int i = 0; i < fallPips.Length; i++)
             {
@@ -111,11 +113,22 @@ namespace Summit
                 Place(pip.rectTransform, new Vector2(1f, 1f), new Vector2(-40f - i * 52f, -176f), new Vector2(42f, 42f), new Vector2(1f, 1f));
                 fallPips[i] = pip;
             }
-            boostBg = NewImage("BoostBar", safe, new Color(0f, 0f, 0f, 0.35f));
-            Place(boostBg.rectTransform, new Vector2(0f, 1f), new Vector2(40f, -276f), new Vector2(260f, 16f), new Vector2(0f, 1f));
-            boostFill = NewImage("Fill", boostBg.transform, new Color(0.35f, 1f, 0.3f, 0.95f));
-            var bf = boostFill.rectTransform;
-            bf.anchorMin = Vector2.zero; bf.anchorMax = Vector2.one; bf.offsetMin = bf.offsetMax = Vector2.zero;
+            // the timed power-ups running (Mountain Zoom, Super Jump, Invincible): a name, the seconds left
+            // and a bar draining, one row each, stacked under the shields
+            timerBg = new Image[TimerNames.Length]; timerFill = new Image[TimerNames.Length];
+            timerText = new Text[TimerNames.Length]; lastTimer = new int[TimerNames.Length];
+            for (int i = 0; i < TimerNames.Length; i++)
+            {
+                timerText[i] = NewText("Timer" + i, safe, new Vector2(0f, 1f), Vector2.zero, 34, TextAnchor.UpperLeft);
+                timerText[i].color = TimerColors[i];
+                timerBg[i] = NewImage("TimerBar" + i, safe, new Color(0f, 0f, 0f, 0.35f));
+                Place(timerBg[i].rectTransform, new Vector2(0f, 1f), Vector2.zero, new Vector2(260f, 14f), new Vector2(0f, 1f));
+                timerFill[i] = NewImage("Fill", timerBg[i].transform, TimerColors[i]);
+                var bf = timerFill[i].rectTransform;
+                bf.anchorMin = Vector2.zero; bf.anchorMax = Vector2.one; bf.offsetMin = bf.offsetMax = Vector2.zero;
+                timerText[i].enabled = timerBg[i].enabled = timerFill[i].enabled = false;
+                lastTimer[i] = -1;
+            }
             var ring = NewImage("StickRing", transform, new Color(1f, 1f, 1f, 0.22f));
             ring.sprite = circle; stickRing = ring.rectTransform;
             var knob = NewImage("StickKnob", transform, new Color(1f, 1f, 1f, 0.7f));
@@ -214,7 +227,7 @@ namespace Summit
         public void SetButtons(bool play, bool restart, string playText)
         {
             playBtn.gameObject.SetActive(play);
-            modeBtn.gameObject.SetActive(play);
+            modeBtn.gameObject.SetActive(play && playText == "PLAY");   // steering is set at the start, not on the results
             riderBtn.gameObject.SetActive(play && playText == "PLAY");   // choose your rider before a run, not on the results
             restartBtn.gameObject.SetActive(restart);
             playLabel.text = playText;
@@ -230,6 +243,8 @@ namespace Summit
         GameObject pausePanel;
         RectTransform resumeBtn, camMinus, camPlus, angMinus, angPlus, lensMinus, lensPlus, steerBtn, againBtn;
         Text camLabel, angLabel, lensLabel, steerLabel;
+        RectTransform lensTypeMinus, lensTypePlus, filterMinus, filterPlus, strengthMinus, strengthPlus;
+        Text lensTypeLabel, filterLabel, strengthLabel;
 
         RectTransform Button(Transform parent, string label, Vector2 pos, Vector2 size, Color c, out Text text, int fontSize = 52)
         {
@@ -248,24 +263,28 @@ namespace Summit
             var panel = new GameObject("PauseSafe", typeof(RectTransform)).GetComponent<RectTransform>();
             panel.SetParent(pausePanel.transform, false);
             panel.anchorMin = Vector2.zero; panel.anchorMax = Vector2.one; panel.offsetMin = panel.offsetMax = Vector2.zero;
-            var title = NewText("PausedTitle", panel, new Vector2(0.5f, 0.5f), new Vector2(0f, 470f), 110, TextAnchor.MiddleCenter);
+            var title = NewText("PausedTitle", panel, new Vector2(0.5f, 0.5f), new Vector2(0f, 690f), 110, TextAnchor.MiddleCenter);
             title.text = "PAUSED";
             Text Row(string label, float y, out RectTransform minus, out RectTransform plus)
             {
-                var t = NewText(label + "Title", panel, new Vector2(0.5f, 0.5f), new Vector2(0f, y + 85f), 38, TextAnchor.MiddleCenter);
+                var t = NewText(label + "Title", panel, new Vector2(0.5f, 0.5f), new Vector2(0f, y + 64f), 36, TextAnchor.MiddleCenter);
                 t.text = label; t.color = new Color(1f, 1f, 1f, 0.75f);
                 var g = new Color(1f, 1f, 1f, 0.16f);
-                minus = Button(panel, "-", new Vector2(-230f, y), new Vector2(130f, 110f), g, out _, 76);
-                plus = Button(panel, "+", new Vector2(230f, y), new Vector2(130f, 110f), g, out _, 76);
+                minus = Button(panel, "-", new Vector2(-250f, y), new Vector2(130f, 96f), g, out _, 76);
+                plus = Button(panel, "+", new Vector2(250f, y), new Vector2(130f, 96f), g, out _, 76);
                 return NewText(label + "Value", panel, new Vector2(0.5f, 0.5f), new Vector2(0f, y), 52, TextAnchor.MiddleCenter);
             }
             Color blue = new Color(0.10f, 0.45f, 0.90f, 0.95f), grey = new Color(1f, 1f, 1f, 0.16f);
-            resumeBtn = Button(panel, "RESUME", new Vector2(0f, 330f), new Vector2(560f, 130f), blue, out _, 64);
-            camLabel = Row("CAMERA DISTANCE", 130f, out camMinus, out camPlus);
-            angLabel = Row("CAMERA ANGLE", -60f, out angMinus, out angPlus);
-            lensLabel = Row("LENS", -250f, out lensMinus, out lensPlus);
-            steerBtn = Button(panel, "STEERING", new Vector2(0f, -400f), new Vector2(620f, 100f), grey, out steerLabel, 38);
-            againBtn = Button(panel, "RESTART RUN", new Vector2(0f, -530f), new Vector2(560f, 110f), new Color(0.8f, 0.2f, 0.15f, 0.9f), out _, 48);
+            // rows 160 apart so the camera, lens and filter settings all fit on a tall phone
+            resumeBtn = Button(panel, "RESUME", new Vector2(0f, 550f), new Vector2(560f, 120f), blue, out _, 64);
+            camLabel = Row("CAMERA DISTANCE", 360f, out camMinus, out camPlus);
+            angLabel = Row("CAMERA ANGLE", 200f, out angMinus, out angPlus);
+            lensLabel = Row("LENS", 40f, out lensMinus, out lensPlus);
+            lensTypeLabel = Row("LENS TYPE", -120f, out lensTypeMinus, out lensTypePlus);
+            filterLabel = Row("FILTER", -280f, out filterMinus, out filterPlus);
+            strengthLabel = Row("FILTER STRENGTH", -440f, out strengthMinus, out strengthPlus);
+            steerBtn = Button(panel, "STEERING", new Vector2(0f, -580f), new Vector2(620f, 96f), grey, out steerLabel, 38);
+            againBtn = Button(panel, "RESTART RUN", new Vector2(0f, -710f), new Vector2(560f, 106f), new Color(0.8f, 0.2f, 0.15f, 0.9f), out _, 48);
             pausePanel.SetActive(false);
         }
 
@@ -284,6 +303,15 @@ namespace Summit
         public bool OnCamPlus(Vector2 p) => Inside(camPlus, p);
         public bool OnPauseSteer(Vector2 p) => Inside(steerBtn, p);
         public bool OnPauseRestart(Vector2 p) => Inside(againBtn, p);
+        public void SetLensType(string name) { lensTypeLabel.text = name; }
+        public void SetFilter(string name) { filterLabel.text = name; }
+        public void SetFilterStrength(string value) { strengthLabel.text = value; }
+        public bool OnLensTypeMinus(Vector2 p) => Inside(lensTypeMinus, p);
+        public bool OnLensTypePlus(Vector2 p) => Inside(lensTypePlus, p);
+        public bool OnFilterMinus(Vector2 p) => Inside(filterMinus, p);
+        public bool OnFilterPlus(Vector2 p) => Inside(filterPlus, p);
+        public bool OnStrengthMinus(Vector2 p) => Inside(strengthMinus, p);
+        public bool OnStrengthPlus(Vector2 p) => Inside(strengthPlus, p);
 
         static Font LoadFont()
         {
@@ -382,8 +410,8 @@ namespace Summit
             slideFill.color = gap < 40f ? new Color(1f, 0.45f, 0.35f) : Color.white;
         }
 
-        /// <summary>Run time, shields held and boost left (0..1); hidden when not riding.</summary>
-        public void SetPower(float seconds, int shields, float boost01, bool showRun)
+        /// <summary>Run time and shields held; hidden when not riding.</summary>
+        public void SetPower(float seconds, int shields, bool showRun)
         {
             int tenths = showRun ? Mathf.FloorToInt(seconds * 10f) : -1;
             if (tenths != lastTenths) { lastTenths = tenths; timer.text = showRun ? FormatTime(seconds) : ""; }
@@ -392,9 +420,35 @@ namespace Summit
                 bool on = showRun && i < shields;
                 if (shieldPips[i].enabled != on) shieldPips[i].enabled = on;
             }
-            bool b = showRun && boost01 > 0f;
-            if (boostBg.enabled != b) { boostBg.enabled = b; boostFill.enabled = b; }
-            if (b) boostFill.rectTransform.anchorMax = new Vector2(Mathf.Clamp01(boost01), 1f);
+        }
+
+        static readonly string[] TimerNames = { "MOUNTAIN ZOOM", "SUPER JUMP", "INVINCIBLE" };
+        static readonly Color[] TimerColors = { new Color(0.55f, 1f, 0.3f, 0.95f), new Color(1f, 0.5f, 0.78f, 0.95f), new Color(1f, 0.85f, 0.25f, 0.95f) };
+
+        /// <summary>
+        /// The timed power-ups: seconds left of each (0 = not running) and how long a full one lasts.
+        /// The running ones stack up from the top, with the last couple of seconds blinking.
+        /// </summary>
+        public void SetTimers(bool show, float zoom, float zoomFull, float jump, float jumpFull, float invincible, float invincibleFull)
+        {
+            int row = 0;
+            for (int i = 0; i < TimerNames.Length; i++)
+            {
+                float left = i == 0 ? zoom : i == 1 ? jump : invincible, full = i == 0 ? zoomFull : i == 1 ? jumpFull : invincibleFull;
+                bool on = show && left > 0f;
+                if (timerBg[i].enabled != on) timerText[i].enabled = timerBg[i].enabled = timerFill[i].enabled = on;
+                if (!on) { lastTimer[i] = -1; continue; }
+                float y = -262f - row * 66f;
+                row++;
+                timerText[i].rectTransform.anchoredPosition = new Vector2(40f, y);
+                timerBg[i].rectTransform.anchoredPosition = new Vector2(40f, y - 42f);
+                timerFill[i].rectTransform.anchorMax = new Vector2(Mathf.Clamp01(left / Mathf.Max(full, left)), 1f);
+                int tenths = Mathf.CeilToInt(left * 10f);
+                if (tenths != lastTimer[i]) { lastTimer[i] = tenths; timerText[i].text = TimerNames[i] + "  " + (tenths / 10f).ToString("0.0") + "s"; }
+                float a = left < 2f && Mathf.Repeat(left * 4f, 1f) < 0.4f ? 0.35f : 1f;
+                var c = TimerColors[i]; c.a *= a;
+                timerText[i].color = c; timerFill[i].color = c;
+            }
         }
 
         /// <summary>The run's medical bill so far (hidden until there is one).</summary>

@@ -123,6 +123,7 @@ namespace Summit
         Placed Get(int x, int z)
         {
             var key = new Vector2Int(x, z);
+            if (felled.Contains(key)) return default;   // smashed this run: gone until the next
             if (cache.TryGetValue(key, out var pl)) return pl;
             var kind = At(x, z, out Vector3 p, out float s, out int variant);
             pl = new Placed { kind = kind, size = s };
@@ -160,6 +161,7 @@ namespace Summit
         public void Rebuild()
         {
             cache.Clear();
+            felled.Clear();
             foreach (var kv in live)
             {
                 var g = kv.Value; g.SetActive(false);
@@ -276,6 +278,7 @@ namespace Summit
                     var q = tree ? spareTree : spareRock;
                     var g = q.Count > 0 ? q.Dequeue() : NewCollider(tree);
                     g.SetActive(true);
+                    g.GetComponent<Collider>().enabled = true;   // (an invincible rider switches off what it smashes)
                     g.transform.position = pl.m.GetColumn(3);
                     if (tree)
                     {
@@ -291,6 +294,39 @@ namespace Summit
                     }
                     live[key] = g;
                 }
+        }
+
+        // ---- smashed by an invincible rider
+
+        /// <summary>One piece of a tree or rock as drawn: mesh, sub-mesh, material, and where in the world.</summary>
+        public struct Piece { public Mesh mesh; public int sub; public Material mat; public Matrix4x4 m; }
+        readonly HashSet<Vector2Int> felled = new HashSet<Vector2Int>();
+
+        /// <summary>
+        /// Takes the tree or rock behind this collider out of the forest for the rest of the run and hands back
+        /// the pieces it was drawn with, so the smash can knock them over or break them up. False if it is not ours.
+        /// </summary>
+        public bool Fell(GameObject hit, List<Piece> into, out Vector3 basePos, out float size)
+        {
+            basePos = Vector3.zero; size = 1f;
+            foreach (var kv in live)
+            {
+                if (kv.Value != hit) continue;
+                var pl = Get(kv.Key.x, kv.Key.y);
+                felled.Add(kv.Key);
+                live.Remove(kv.Key);
+                hit.SetActive(false);
+                (hit.GetComponent<CapsuleCollider>() != null ? spareTree : spareRock).Enqueue(hit);
+                if (pl.kind == Kind.None) return false;
+                basePos = pl.m.GetColumn(3); size = pl.size;
+                foreach (var part in pl.kind == Kind.Tree ? treeParts[pl.idx] : rockParts[pl.idx])
+                    into.Add(new Piece { mesh = part.mesh, sub = part.sub, mat = part.mat, m = pl.m * part.local });
+                // redraw without it
+                lastCell = new Vector2Int(int.MinValue, int.MinValue);
+                Refresh(false);
+                return true;
+            }
+            return false;
         }
 
         GameObject NewCollider(bool tree)

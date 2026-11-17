@@ -98,7 +98,8 @@ namespace Summit
                 mesh.MarkDynamic();
                 go.AddComponent<MeshFilter>().sharedMesh = mesh;
                 var mr = go.AddComponent<MeshRenderer>();
-                mr.sharedMaterial = snowMaterial;
+                // snow, and bare rock on the faces too steep to hold it (the second submesh: see SplitRock)
+                mr.sharedMaterials = new[] { snowMaterial, RockFace.Material(snowMaterial.shader) };
                 mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
                 mr.receiveShadows = true;
             }
@@ -114,6 +115,51 @@ namespace Summit
         float[] grid;   // heights with a one-cell border, reused between chunks
         bool[] holeMask;
         readonly List<int> holed = new List<int>();
+
+        readonly List<Vector3> allV = new List<Vector3>(), allN = new List<Vector3>();
+        readonly List<Vector2> allUV = new List<Vector2>();
+        readonly List<Color> allC = new List<Color>();
+        readonly List<int> snowTris = new List<int>(), rockTris = new List<int>();
+        int[] rockOf;
+
+        /// <summary>
+        /// Sorts the triangles into snow and rock. A rock triangle gets its own copies of its corners, with the
+        /// texture mapped straight onto the face (across and down it), so a cliff's rock is never smeared out the
+        /// way the snow's top-down mapping would smear it. The copies keep the snow's smooth normals, so the
+        /// light runs on unbroken across the snow line.
+        /// </summary>
+        void SplitRock(int[] use, int n)
+        {
+            allV.Clear(); allN.Clear(); allUV.Clear(); allC.Clear();
+            allV.AddRange(verts); allN.AddRange(norms); allUV.AddRange(uvs); allC.AddRange(cols);
+            snowTris.Clear(); rockTris.Clear();
+            if (rockOf == null || rockOf.Length != n * n) rockOf = new int[n * n];
+            for (int i = 0; i < rockOf.Length; i++) rockOf[i] = -1;
+            for (int t = 0; t < use.Length; t += 3)
+            {
+                int a = use[t], b = use[t + 1], c = use[t + 2];
+                Vector3 va = verts[a], vb = verts[b], vc = verts[c];
+                Vector3 fn = Vector3.Cross(vb - va, vc - va);
+                if (!RockFace.IsRock(fn, (va.x + vb.x + vc.x) / 3f, (va.z + vb.z + vc.z) / 3f))
+                {
+                    snowTris.Add(a); snowTris.Add(b); snowTris.Add(c);
+                    continue;
+                }
+                for (int k = 0; k < 3; k++)
+                {
+                    int i = use[t + k];
+                    if (rockOf[i] < 0)
+                    {
+                        rockOf[i] = allV.Count;
+                        Vector3 p = verts[i], nn = norms[i];
+                        allV.Add(p); allN.Add(nn); allC.Add(Color.white);
+                        // project onto the plane the face mostly looks across: cliffs run down the hill, so mostly x
+                        allUV.Add(Mathf.Abs(nn.x) >= Mathf.Abs(nn.z) ? new Vector2(p.z, p.y) / RockFace.Tile : new Vector2(p.x, p.y) / RockFace.Tile);
+                    }
+                    rockTris.Add(rockOf[i]);
+                }
+            }
+        }
 
         /// <summary>A new mountain: throw away every chunk and build again around the target.</summary>
         public void Rebuild()
@@ -197,12 +243,17 @@ namespace Summit
                     use = holed.ToArray();
                 }
             }
+            SplitRock(use, n);
             mesh.Clear();
-            mesh.vertices = verts;
-            mesh.normals = norms;
-            mesh.uv = uvs;
-            mesh.colors = cols;
-            mesh.triangles = use;
+            mesh.SetVertices(allV);
+            mesh.SetNormals(allN);
+            mesh.SetUVs(0, allUV);
+            mesh.SetColors(allC);
+            // always two submeshes, even with no rock: a renderer with more materials than submeshes draws the
+            // last submesh again in each extra material
+            mesh.subMeshCount = 2;
+            mesh.SetTriangles(snowTris, 0);
+            mesh.SetTriangles(rockTris, 1);
             mesh.RecalculateTangents();   // the snow's normal map needs them
             mesh.RecalculateBounds();
         }

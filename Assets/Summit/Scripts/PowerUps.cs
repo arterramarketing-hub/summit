@@ -4,23 +4,29 @@ using UnityEngine;
 namespace Summit
 {
     /// <summary>
-    /// Pickups floating over the piste: green soda cans (a speed boost) and shields
-    /// (each one absorbs a crash; up to three stack). Where they sit is a pure function
-    /// of the slot, so a run is the same for everyone on the same day; anything you
-    /// collect stays collected until the next run.
+    /// Pickups floating over the piste:
+    ///  - Mountain Zoom, a can of green citrus soda: a speed boost
+    ///  - shields: each one absorbs a crash; up to three stack
+    ///  - Super Jump, a spring: for a while your jumps launch you far higher
+    ///  - Invincibility, a gold star: for a while you smash through whatever you hit
+    /// Where they sit, and which is which, is a pure function of the slot, so a run is the
+    /// same for everyone on the same day; anything you collect stays collected until the next run.
     /// </summary>
     public class PowerUps : MonoBehaviour
     {
-        public enum Kind { Soda, Shield }
+        // (Soda is the Mountain Zoom can; the old name is kept so saved code and tests still read)
+        public enum Kind { Soda, Shield, SuperJump, Invincible }
+        public static string NameOf(Kind k) => k == Kind.Soda ? "MOUNTAIN ZOOM" : k == Kind.Shield ? "SHIELD" : k == Kind.SuperJump ? "SUPER JUMP" : "INVINCIBLE";
         public const float Spacing = 38f;
         public Rider rider;
         public System.Action<Kind> Collected;
 
-        Material canBody, canBand, canTop, bubble, core, glow;
+        Material canLabel, canTop, bubble, core, glow, spring, arrow, star;
+        Mesh canMesh, lidMesh, coilMesh, starMesh, arrowMesh;
         readonly Dictionary<int, GameObject> live = new Dictionary<int, GameObject>();
         readonly Dictionary<int, Kind> kindOf = new Dictionary<int, Kind>();
         readonly HashSet<int> taken = new HashSet<int>();
-        readonly Queue<GameObject>[] spare = { new Queue<GameObject>(), new Queue<GameObject>() };
+        readonly Queue<GameObject>[] spare = { new Queue<GameObject>(), new Queue<GameObject>(), new Queue<GameObject>(), new Queue<GameObject>() };
         readonly List<int> drop = new List<int>();
 
         public static bool At(int slot, out Vector3 pos, out Kind kind)
@@ -33,16 +39,34 @@ namespace Summit
             if (Slope.OnPad(x, z) || Mathf.Abs(Slope.Kicker(x, z)) > 0.01f) return false;
             if (Course.CrevasseNear(x, z, 2f, out _, out _)) return false;
             if (Course.PipeWeight(z) > 0f) x = Slope.Centre(z) + (Slope.Hash01(slot, 15, 21) - 0.5f) * 8f;   // on the pipe floor
-            kind = Slope.Hash01(slot, 14, 21) < 0.3f ? Kind.Shield : Kind.Soda;
+            // the mix: the boost is the common one, invincibility the rare one
+            float k = Slope.Hash01(slot, 14, 21);
+            kind = k < 0.44f ? Kind.Soda : k < 0.70f ? Kind.Shield : k < 0.87f ? Kind.SuperJump : Kind.Invincible;
+            if (Ridge.Weight(z) > 0f) x = Ridge.OnCrest(z, (Slope.Hash01(slot, 13, 21) - 0.5f) * 2f);   // on the crest, never over the drop
             pos = new Vector3(x, Slope.DrawnHeight(x, z) + 1.25f, z);
             return true;
         }
 
         public void Build(Shader lit, Material plain, Material soft)
         {
-            canBody = Mat(lit, new Color(0.10f, 0.72f, 0.18f), 0.75f, new Color(0.05f, 0.45f, 0.08f));
-            canBand = Mat(lit, new Color(0.98f, 0.82f, 0.12f), 0.6f, new Color(0.5f, 0.35f, 0.02f));
-            canTop = Mat(lit, new Color(0.85f, 0.87f, 0.9f), 0.9f, Color.black);
+            // the can's printed label glows a little, so it reads from far up the slope even in shade
+            var label = Resources.Load<Texture2D>("PowerUps/MountainZoomLabel");
+            canLabel = Mat(lit, Color.white, 0.8f, new Color(0.35f, 0.35f, 0.35f));
+            if (label != null) { canLabel.SetTexture("_BaseMap", label); canLabel.SetTexture("_EmissionMap", label); }
+            canTop = Mat(lit, Color.white, 0.85f, Color.black);
+            canTop.SetFloat("_Metallic", 0.8f);
+            var lid = Resources.Load<Texture2D>("PowerUps/CanLid");
+            if (lid != null) canTop.SetTexture("_BaseMap", lid);
+            spring = Mat(lit, new Color(1f, 0.32f, 0.62f), 0.85f, new Color(0.7f, 0.08f, 0.35f));
+            spring.SetFloat("_Metallic", 0.7f);
+            arrow = Mat(lit, new Color(1f, 0.95f, 0.9f), 0.5f, new Color(0.9f, 0.75f, 0.85f));
+            star = Mat(lit, new Color(1f, 0.80f, 0.15f), 0.9f, new Color(1.1f, 0.65f, 0.05f));
+            star.SetFloat("_Metallic", 0.6f);
+            canMesh = Shapes.Tube(0.27f, 0.95f, 40, true);
+            lidMesh = Shapes.Disc(0.255f, 32);
+            coilMesh = Shapes.Coil(0.36f, 0.075f, 4.5f, 0.8f, 18, 8);
+            starMesh = Shapes.Star(0.62f, 0.27f, 0.22f);
+            arrowMesh = Shapes.Chevron(0.55f, 0.32f, 0.16f, 0.14f);
             core = Mat(lit, new Color(0.35f, 0.75f, 1f), 0.8f, new Color(0.25f, 0.6f, 1.2f));
             bubble = new Material(plain);
             bubble.SetColor("_BaseColor", new Color(0.45f, 0.75f, 1f, 0.28f));
@@ -79,7 +103,7 @@ namespace Summit
 
         void Update()
         {
-            if (rider == null || canBody == null) return;
+            if (rider == null || canLabel == null) return;
             Vector3 rp = rider.transform.position;
             int first = Mathf.FloorToInt(rp.z / Spacing) - 1, last = first + 9;
 
@@ -120,21 +144,34 @@ namespace Summit
 
         GameObject Make(Kind kind)
         {
-            var root = new GameObject(kind == Kind.Soda ? "Soda" : "Shield");
+            var root = new GameObject(kind == Kind.Soda ? "MountainZoom" : kind.ToString());
             root.transform.SetParent(transform, false);
             if (kind == Kind.Soda)
             {
-                // a big, bright soda can, so it reads from far up the slope
-                Part(PrimitiveType.Cylinder, root.transform, Vector3.zero, new Vector3(0.48f, 0.42f, 0.48f), canBody);
-                Part(PrimitiveType.Cylinder, root.transform, new Vector3(0f, 0.02f, 0f), new Vector3(0.49f, 0.12f, 0.49f), canBand);
-                Part(PrimitiveType.Cylinder, root.transform, new Vector3(0f, 0.43f, 0f), new Vector3(0.42f, 0.02f, 0.42f), canTop);
-                Part(PrimitiveType.Cylinder, root.transform, new Vector3(0f, -0.43f, 0f), new Vector3(0.42f, 0.02f, 0.42f), canTop);
+                // a big, bright can of Mountain Zoom (its label is made by Tools/MakeCans.swift and carries the logo
+                // twice round, so it shows whichever way the can has spun)
+                var can = new GameObject("Can").transform;
+                can.SetParent(root.transform, false);
+                Mesh(can, canMesh, canLabel, new Vector3(0f, -0.475f, 0f), Quaternion.identity);
+                Mesh(can, lidMesh, canTop, new Vector3(0f, 0.476f, 0f), Quaternion.identity);
+                Mesh(can, lidMesh, canTop, new Vector3(0f, -0.476f, 0f), Quaternion.Euler(180f, 0f, 0f));
             }
-            else
+            else if (kind == Kind.Shield)
             {
                 Part(PrimitiveType.Sphere, root.transform, Vector3.zero, Vector3.one * 1.1f, bubble);
                 var c = Part(PrimitiveType.Cube, root.transform, Vector3.zero, Vector3.one * 0.38f, core);
                 c.localRotation = Quaternion.Euler(45f, 0f, 45f);
+            }
+            else if (kind == Kind.SuperJump)
+            {
+                // a pink spring with a white arrow over it: up!
+                Mesh(root.transform, coilMesh, spring, new Vector3(0f, -0.55f, 0f), Quaternion.identity);
+                Mesh(root.transform, arrowMesh, arrow, new Vector3(0f, 0.55f, 0f), Quaternion.identity);
+            }
+            else
+            {
+                // a fat gold star
+                Mesh(root.transform, starMesh, star, Vector3.zero, Quaternion.identity);
             }
             // a soft halo behind it
             var halo = new GameObject("Halo");
@@ -143,7 +180,8 @@ namespace Summit
             ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
             var main = ps.main;
             main.loop = true; main.startLifetime = 1.2f; main.startSpeed = 0.3f; main.startSize = new ParticleSystem.MinMaxCurve(0.25f, 0.5f);
-            main.startColor = kind == Kind.Soda ? new Color(0.6f, 1f, 0.4f, 0.8f) : new Color(0.6f, 0.85f, 1f, 0.8f);
+            main.startColor = kind == Kind.Soda ? new Color(0.6f, 1f, 0.4f, 0.8f) : kind == Kind.Shield ? new Color(0.6f, 0.85f, 1f, 0.8f)
+                            : kind == Kind.SuperJump ? new Color(1f, 0.55f, 0.8f, 0.8f) : new Color(1f, 0.9f, 0.4f, 0.9f);
             main.simulationSpace = ParticleSystemSimulationSpace.World;
             main.playOnAwake = false;
             var em = ps.emission; em.rateOverTime = 10f;
@@ -158,6 +196,17 @@ namespace Summit
             pr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             ps.Play();
             return root;
+        }
+
+        static void Mesh(Transform parent, Mesh mesh, Material m, Vector3 pos, Quaternion rot)
+        {
+            var go = new GameObject(mesh.name, typeof(MeshFilter), typeof(MeshRenderer));
+            go.transform.SetParent(parent, false);
+            go.transform.SetLocalPositionAndRotation(pos, rot);
+            go.GetComponent<MeshFilter>().sharedMesh = mesh;
+            var r = go.GetComponent<MeshRenderer>();
+            r.sharedMaterial = m;
+            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         }
 
         static Transform Part(PrimitiveType type, Transform parent, Vector3 pos, Vector3 scale, Material m)

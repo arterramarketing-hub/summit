@@ -12,7 +12,7 @@ public static class StartTest
     {
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
         var game = Object.FindFirstObjectByType<SummitGame>();
-        typeof(SummitGame).GetMethod("Awake", NP).Invoke(game, null);
+        TestBoot.Boot(game);
         var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
         var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
         Physics.simulationMode = SimulationMode.Script;

@@ -22,7 +22,7 @@ public static class RenderShot
         SummitImport.EnsureBackdrop();
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
         var game = Object.FindFirstObjectByType<SummitGame>();
-        typeof(SummitGame).GetMethod("Awake", NP).Invoke(game, null);
+        TestBoot.Boot(game);
         Physics.simulationMode = SimulationMode.Script;
         var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
         var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
@@ -202,7 +202,7 @@ public static class RenderShot
     {
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
         var game = Object.FindFirstObjectByType<SummitGame>();
-        typeof(SummitGame).GetMethod("Awake", NP).Invoke(game, null);
+        TestBoot.Boot(game);
         var wild = Object.FindFirstObjectByType<Wildlife>();
         var bear = (GameObject)typeof(Wildlife).GetField("bear", NP).GetValue(wild);
         var anim = (Animation)typeof(Wildlife).GetField("bearAnim", NP).GetValue(wild);

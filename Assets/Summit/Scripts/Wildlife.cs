@@ -65,7 +65,7 @@ namespace Summit
 
         public void ResetRun()
         {
-            bearCycle = -1;
+            bearCycle = -1; bearKnocked = false;
             if (bear != null) { bear.SetActive(false); bearActive = false; }
             foreach (var f in flocks) Respawn(f, true);
             nextPerch = 0f;
@@ -246,6 +246,34 @@ namespace Summit
             bear.SetActive(false);
         }
 
+        // ---- an invincible rider ran it down: it goes cartwheeling off and is gone
+
+        bool bearKnocked;
+        Vector3 knockV, knockSpin;
+        float knockT;
+
+        public void Knock(Vector3 riderVelocity)
+        {
+            if (bear == null || !bearActive) return;
+            bearKnocked = true; knockT = 0f;
+            Vector3 flat = new Vector3(riderVelocity.x, 0f, riderVelocity.z);
+            knockV = flat * 0.8f + Vector3.up * (7f + 0.15f * flat.magnitude) + Random.insideUnitSphere * 2f;
+            knockSpin = new Vector3(Random.Range(300f, 520f), Random.Range(-200f, 200f), Random.Range(-260f, 260f));
+            if (bearAnim != null) foreach (AnimationState st in bearAnim) st.speed = 0f;
+        }
+
+        void Tumble(float dt)
+        {
+            knockT += dt;
+            knockV.y -= 22f * dt;
+            Vector3 p = bearRb.position + knockV * dt;
+            float g = Slope.DrawnHeight(p.x, p.z);
+            if (p.y < g && knockV.y < 0f) { p.y = g; knockV = new Vector3(knockV.x * 0.6f, -knockV.y * 0.3f, knockV.z * 0.6f); knockSpin *= 0.5f; }
+            bearRb.MovePosition(p);
+            bearRb.MoveRotation(bearRb.rotation * Quaternion.Euler(knockSpin * dt));
+            if (knockT > 3.5f) { bear.SetActive(false); bearActive = false; bearKnocked = false; }
+        }
+
         public bool BearActive => bearActive;
         public float BearSpeed => bearActive ? bearSpeed : 0f;
         public Vector3 BearPosition => bear != null ? bear.transform.position : Vector3.zero;
@@ -266,6 +294,8 @@ namespace Summit
                     float x = Slope.Centre(z) + side * (16f + 7f * Slope.Hash01(cyc, 8, 77));
                     var p = new Vector3(x, Slope.DrawnHeight(x, z), z);
                     bear.SetActive(true);
+                    bear.GetComponent<Collider>().enabled = true;   // (switched off if it was smashed last time)
+                    bearKnocked = false;
                     bear.transform.position = p;
                     bearRb.position = p;
                     bearYaw = side > 0f ? -90f : 90f;
@@ -275,6 +305,7 @@ namespace Summit
                 }
             }
             if (!bearActive) return;
+            if (bearKnocked) { Tumble(dt); return; }
             Vector3 bp = bearRb.position;
             Vector3 toRider = rp - bp; toRider.y = 0f;
             if (bearMode != BearMode.Chasing)

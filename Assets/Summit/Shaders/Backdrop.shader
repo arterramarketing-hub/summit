@@ -23,6 +23,7 @@ Shader "Summit/Backdrop"
             CBUFFER_START(UnityPerMaterial)
                 float4 _MainTex_ST;
             CBUFFER_END
+            float _SummitNight;   // the summit camp's blue hour (global; 0 unless the camp sets it)
             struct Attributes { float4 positionOS : POSITION; float2 uv : TEXCOORD0; };
             struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; };
             Varyings vert(Attributes i)
@@ -32,7 +33,12 @@ Shader "Summit/Backdrop"
                 o.uv = i.uv;
                 return o;
             }
-            half4 frag(Varyings i) : SV_Target { return SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv); }
+            half4 frag(Varyings i) : SV_Target
+            {
+                half4 c = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv);
+                c.rgb *= lerp(half3(1, 1, 1), half3(0.3, 0.36, 0.58), _SummitNight);
+                return c;
+            }
             ENDHLSL
         }
     }

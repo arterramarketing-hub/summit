@@ -9,11 +9,12 @@ namespace Summit
     ///   Park    - ride-on boxes and rails you grind automatically, and a jump line
     ///   Danger  - long crevasses down the slope to steer between; a bear may come out of the trees
     ///   Pipe    - a halfpipe cut into the slope (switched off: see HalfpipeOn)
+    ///   Ridge   - the piste narrows onto a crest with cliffs falling away beside it (in the pipe's old stretch: see Ridge)
     /// Everything here is a pure function of position, like the rest of the mountain.
     /// </summary>
     public static class Course
     {
-        public enum Section { Start, Cruise, Park, Danger, Pipe }
+        public enum Section { Start, Cruise, Park, Danger, Pipe, Ridge }
         public const float First = 60f, Cycle = 900f;
         /// <summary>The halfpipe is switched off: its stretch of each cycle is open cruising piste instead.</summary>
         public const bool HalfpipeOn = false;
@@ -32,6 +33,7 @@ namespace Summit
             if (u < ParkAt) return Section.Cruise;
             if (u < DangerAt) return Section.Park;
             if (u < PipeAt) return Section.Danger;
+            if (Ridge.Has(z)) return Section.Ridge;
             if (u < PipeEnd) return HalfpipeOn ? Section.Pipe : Section.Cruise;
             return Section.Cruise;
         }
@@ -216,6 +218,7 @@ namespace Summit
         {
             if (PipeWeight(z) > 0f && Mathf.Abs(x - Slope.Centre(z)) < PipeHalfWidth + PipeDeck + 6f + margin) return true;
             if (CrevasseNear(x, z, margin + 2f, out _, out _)) return true;
+            if (Ridge.Keep(x, z, margin)) return true;
             if (At(z) == Section.Park || At(z + 20f) == Section.Park)
                 foreach (var f in FeaturesNear(z))
                 {
