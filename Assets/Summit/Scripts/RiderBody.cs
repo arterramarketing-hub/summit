@@ -37,6 +37,9 @@ namespace Summit
         readonly System.Collections.Generic.List<GameObject> bandages = new System.Collections.Generic.List<GameObject>();
         Material bandageMat, bandageLine;
         float crashClock, stillFor;
+        SnowTrail bodyTrail;
+        /// <summary>How far the thrown body is below the snow surface (in a crevasse), metres.</summary>
+        public float RagdollBelowSnow { get; private set; }
         /// <summary>The thrown body is still tumbling or sliding.</summary>
         public bool RagdollMoving { get; private set; }
         Vector3 crashAxis;
@@ -84,6 +87,8 @@ namespace Summit
 
             // a groove pressed into the snow behind the board
             trail = new SnowTrail(jacket != null ? jacket.shader : Shader.Find("Universal Render Pipeline/Lit"));
+            // the furrow a tumbling body ploughs through the snow
+            bodyTrail = new SnowTrail(jacket != null ? jacket.shader : Shader.Find("Universal Render Pipeline/Lit"));
 
             // powder off the edge
             var sg = new GameObject("Spray");
@@ -724,6 +729,8 @@ namespace Summit
             foreach (var g in bandages) if (g != null) { if (Application.isPlaying) Destroy(g); else DestroyImmediate(g); }
             bandages.Clear(); bandaged.Clear(); brokenThisCrash.Clear();
             trail.Clear();
+            bodyTrail.Clear();
+            RagdollBelowSnow = 0f;
             spray.Clear();
             bow.Clear();
             marks.Clear();
@@ -889,10 +896,21 @@ namespace Summit
             if (!rider.Crashed) lastVel = rider.Velocity;
             if (ragdoll != null && ragdoll.Active)
             {
-                if (rider.Crashed) ragdoll.LateStep();
+                if (rider.Crashed)
+                {
+                    ragdoll.LateStep();
+                    // a furrow where the body slides and rolls through the snow
+                    Vector3 c = ragdoll.Centre, vel = ragdoll.Velocity;
+                    float ground = Slope.DrawnHeight(c.x, c.z);
+                    RagdollBelowSnow = Mathf.Max(0f, ground - c.y);
+                    bool inSnow = c.y - ground < 0.45f && RagdollBelowSnow < 1f && vel.sqrMagnitude > 0.25f;
+                    bodyTrail.Feed(new Vector3(c.x, ground, c.z), Slope.Normal(c.x, c.z), Mathf.Atan2(vel.x, vel.z), inSnow, 2.0f, 0f, 0.35f, dt);
+                }
                 else
                 {
                     ragdoll.End(); spray.Emit(30);   // back up on the board, patched up
+                    bodyTrail.Feed(Vector3.zero, Vector3.up, 0f, false, 1f, 0f, 0f, dt);
+                    RagdollBelowSnow = 0f;
                     foreach (var b in brokenThisCrash) Bandage(b);
                     brokenThisCrash.Clear();
                 }

@@ -35,6 +35,9 @@ namespace Summit
         bool stickPrev;
         bool wasDown, swallow;
 
+        /// <summary>Thumb throw (0..1, past the dead zone) to edge: fine near the middle, full lock at the end.</summary>
+        public static float Curve(float a) => a * (0.55f + 0.45f * a);   // the whole throw does something
+
         void OnEnable()
         {
 #if ENABLE_INPUT_SYSTEM
@@ -90,7 +93,7 @@ namespace Summit
                 a = a < 0.025f ? 0f : (a - 0.025f) / 0.975f;
                 // expo response: the first half of the throw is gentle fine carving (a fifth of the edge at
                 // half throw); only the outer part opens to a full edge
-                target = Mathf.Sign(d) * a * (0.2f + 0.8f * a * a);
+                target = Mathf.Sign(d) * Curve(a);
                 // a second finger held down tucks; a quick overlap does not count
                 twoTime = fingers >= 2 ? twoTime + Time.unscaledDeltaTime : 0f;
             }

@@ -80,6 +80,29 @@ public static class SimTest
             Debug.Log($"SIM steer {st:0.00} (thumb {(st >= 1f ? 1f : Mathf.Pow(st / 0.8f, 1f / 3f)):0.00} approx) at {v0 * 3.6f:0} km/h: yaw {Mathf.Abs(r.YawRate) * Mathf.Rad2Deg:0} deg/s, radius {r.Speed / Mathf.Max(1e-3f, Mathf.Abs(r.YawRate)):0} m, heading moved {Mathf.Abs(r.Heading - h0) * Mathf.Rad2Deg:0} deg in 0.6 s");
         }
 
+        // step response: from riding straight at ~60 km/h, the thumb goes to a fixed throw and stays
+        foreach (float thumb in new[] { 0.3f, 0.6f, 1f })
+        {
+            r.ResetAt(Slope.Centre(Slope.PadLip), Slope.StartZ); r.Begin();
+            for (int i = 0; i < 120 * 8; i++) { r.Steer = Mathf.Clamp((Slope.Centre(r.Z + 12f) - r.Body.position.x) * 0.06f - r.Heading, -1f, 1f); r.Tick(Dt); Physics.Simulate(Dt); }
+            float v0 = r.Speed, tr0 = r.TravelHeading, steer = 0f, target = RiderInput.Curve(thumb);
+            float t50 = -1f, t90 = -1f, slip = 0f, travel25 = 0f, travel50 = 0f, yawSS = 0f;
+            var yaws = new float[120];
+            for (int i = 0; i < 120; i++)
+            {
+                steer = Mathf.Lerp(steer, target, 1f - Mathf.Exp(-Dt * 60f));
+                r.Steer = steer; r.Tick(Dt); Physics.Simulate(Dt);
+                yaws[i] = Mathf.Abs(r.YawRate);
+                if (false && thumb >= 1f && i % 12 == 0) Debug.Log($"SIM trace t={i * Dt:0.00} yaw={r.YawRate * Mathf.Rad2Deg:0} lean={r.Lean * Mathf.Rad2Deg:0} v={r.Speed * 3.6f:0} head={r.Heading * Mathf.Rad2Deg:0} travel={r.TravelHeading * Mathf.Rad2Deg:0} skid={r.Skid:0.00} air={r.Airborne}");
+                slip = Mathf.Max(slip, Mathf.Abs(Mathf.DeltaAngle(r.Heading * Mathf.Rad2Deg, r.TravelHeading * Mathf.Rad2Deg)));
+                if (i == 29) travel25 = Mathf.Abs(Mathf.DeltaAngle(tr0 * Mathf.Rad2Deg, r.TravelHeading * Mathf.Rad2Deg));
+                if (i == 59) travel50 = Mathf.Abs(Mathf.DeltaAngle(tr0 * Mathf.Rad2Deg, r.TravelHeading * Mathf.Rad2Deg));
+            }
+            yawSS = yaws[119];
+            for (int i = 0; i < 120; i++) { if (t50 < 0f && yaws[i] >= 0.5f * yawSS) t50 = i * Dt; if (t90 < 0f && yaws[i] >= 0.9f * yawSS) t90 = i * Dt; }
+            Debug.Log($"SIM step thumb={thumb:0.0} edge={target:0.00} at {v0 * 3.6f:0} km/h: yaw {yawSS * Mathf.Rad2Deg:0} deg/s (radius {r.Speed / Mathf.Max(1e-3f, yawSS):0} m), 50% in {t50:0.00}s, 90% in {t90:0.00}s, travel turned {travel25:0} deg by 0.25s, {travel50:0} deg by 0.5s, board-travel slip peak {slip:0.0} deg");
+        }
+
         // straight line vs constant carving, 25 s each from the start
         foreach (float amp in new[] { 0f, 0.8f })
         {

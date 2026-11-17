@@ -21,11 +21,11 @@ namespace Summit
         public static float DragOpen = 0.0105f, DragTuck = 0.0068f; // air drag per (m/s)^2
         public static float Friction = 0.035f;                       // snow friction coefficient
         public static float MaxLean = 0.72f;                         // full-thumb edge angle (rad, ~41 degrees)
-        public static float LeanSpring = 10f;                        // how fast the body gets onto its edge (rad/s)
+        public static float LeanSpring = 13f;                        // how fast the body gets onto its edge (rad/s)
         public static float CarveK = 22f;                            // turn rate = CarveK * tan(lean) / speed
         public static float MinCarveSpeed = 7f, MaxYawRate = 1.9f;
         public static float GripLimit = 34f;                         // sideways acceleration the edge can hold (m/s^2)
-        public static float Grip = 22f;                              // 1/s: how fast slip dies when the edge holds
+        public static float Grip = 42f;                              // 1/s: how fast slip dies when the edge holds (high: the edge bites, no drifting)
         public static float TurnDrag = 0.12f;                        // speed lost per radian of turning
         public static float TakeoffClearance = 0.22f;
 

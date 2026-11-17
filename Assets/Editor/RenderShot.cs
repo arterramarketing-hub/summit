@@ -131,7 +131,7 @@ public static class RenderShot
         Shoot(cam, "RenderShotBack.png");
         // a crevasse, from beside its rim
         {
-            var cv = Course.CrevassesOf(0)[1];
+            var cv = Course.CrevassesOf(0)[0];
             float zm = (cv.z0 + cv.z1) * 0.5f;
             float open = Course.Opening(cv, zm, out float ccx);
             rider.ResetAt(ccx + 12f, zm - 6f); terrain.Prewarm(); props.Prewarm(); dress.Prewarm();

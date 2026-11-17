@@ -25,6 +25,7 @@ namespace Summit
         Vector3 modelPos, boardPos; Quaternion modelRot, boardRot; Vector3 modelScale;
         Quaternion footRelL, footRelR;
         public bool Active { get; private set; }
+        public static float Plough = 2.2f;   // 1/s: how hard snow drags a body sliding through it
         /// <summary>Something hit something: impact speed (m/s), the board?, where, and which bone (null for the board).</summary>
         public System.Action<float, bool, Vector3, Transform> Hit;
         /// <summary>A part sliding along the snow, every half metre or so: where, how fast.</summary>
@@ -61,8 +62,9 @@ namespace Summit
             this.board = board;
             boardHome = board.parent;
             this.riderCollider = riderCollider;
-            snowFeel = new PhysicsMaterial("RagdollSnow") { dynamicFriction = 0.85f, staticFriction = 1f, bounciness = 0.1f,
-                                                            frictionCombine = PhysicsMaterialCombine.Average, bounceCombine = PhysicsMaterialCombine.Average };
+            // snow grabs a body: high friction (it tumbles rather than skates), a little give
+            snowFeel = new PhysicsMaterial("RagdollSnow") { dynamicFriction = 1.1f, staticFriction = 1.3f, bounciness = 0.12f,
+                                                            frictionCombine = PhysicsMaterialCombine.Maximum, bounceCombine = PhysicsMaterialCombine.Average };
             groundBody = Slab("RagdollGround");
             boardGroundBody = Slab("BoardGround");
         }
@@ -115,8 +117,11 @@ namespace Summit
                 if (riderCollider != null) Physics.IgnoreCollision(parts[i].col, riderCollider);
                 for (int j = i + 1; j < parts.Count; j++) Physics.IgnoreCollision(parts[i].col, parts[j].col);
             }
-            // thrown forward and up, tumbling
-            var spin = new Vector3(Random.Range(-1f, 1f), Random.Range(-0.5f, 0.5f), Random.Range(-1f, 1f)) * 6f;
+            // thrown forward and up, tumbling head over heels about the axis across the line of travel
+            Vector3 flat = new Vector3(velocity.x, 0f, velocity.z);
+            Vector3 roll = flat.sqrMagnitude > 0.01f ? Vector3.Cross(Vector3.up, flat.normalized) : Vector3.right;
+            float spinRate = Mathf.Clamp(flat.magnitude * 0.45f, 4f, 13f);
+            var spin = roll * spinRate + new Vector3(Random.Range(-1f, 1f), Random.Range(-1f, 1f), Random.Range(-1f, 1f)) * 3f;
             foreach (var p in parts)
             {
                 p.rb.linearVelocity = velocity * 0.85f + Vector3.up * 2.5f;
@@ -152,7 +157,7 @@ namespace Summit
             float scale = Mathf.Max(1e-4f, bone.lossyScale.x);
             var rb = bone.gameObject.AddComponent<Rigidbody>();
             rb.mass = mass;
-            rb.linearDamping = 0.25f; rb.angularDamping = 0.8f;
+            rb.linearDamping = 0.02f; rb.angularDamping = 0.15f;   // the snow does the slowing (see PhysicsStep)
             rb.interpolation = RigidbodyInterpolation.Interpolate;
             rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
             rb.solverIterations = 12;
@@ -209,6 +214,16 @@ namespace Summit
         public void PhysicsStep()
         {
             if (!Active) return;
+            // ploughing through snow: any part down in it is dragged back in proportion to its speed
+            // (snow has to be pushed aside), on top of the contact friction
+            Vector3 gp = groundBody.position, gn = groundBody.rotation * Vector3.up;
+            foreach (var p in parts)
+            {
+                float h = Vector3.Dot(p.rb.position - gp, gn);
+                if (h > 0.28f) continue;
+                Vector3 v = Vector3.ProjectOnPlane(p.rb.linearVelocity, gn);
+                p.rb.AddForce(-v * (Plough * p.rb.mass * Mathf.Clamp01(1.2f - h / 0.28f)), ForceMode.Force);
+            }
             PlaceSlab(groundBody, Centre, false);
             if (boardRb != null) PlaceSlab(boardGroundBody, boardRb.position, false);
         }
@@ -218,8 +233,9 @@ namespace Summit
             Vector3 n = Slope.Normal(at.x, at.z);
             var pos = new Vector3(at.x, Slope.DrawnHeight(at.x, at.z) - Course.CrevasseCut(at.x, at.z), at.z);   // the bottom, in a crevasse
             var rot = Quaternion.FromToRotation(Vector3.up, n);
-            if (snap) { slab.position = pos; slab.rotation = rot; slab.transform.SetPositionAndRotation(pos, rot); }
-            else { slab.MovePosition(pos); slab.MoveRotation(rot); }
+            // teleport, never MovePosition: a slab moved along with the body would carry it like a
+            // conveyor and its friction would have nothing to grip
+            slab.position = pos; slab.rotation = rot; slab.transform.SetPositionAndRotation(pos, rot);
         }
 
         /// <summary>Every frame while thrown: the feet are separate bones, so carry them on the shins.</summary>

@@ -36,9 +36,10 @@ namespace Summit
             focus.y = Mathf.SmoothDamp(focus.y, raw.y, ref focusVy, 0.11f, Mathf.Infinity, Mathf.Max(dt, 1e-4f));
 
             // look where the rider is going, not just where the board points
-            float wantYaw = rider.Crashed ? yaw
-                : Mathf.Lerp(rider.Heading, rider.TravelHeading, 0.7f) * 0.85f;
-            yaw = first ? wantYaw : Mathf.Lerp(yaw, wantYaw, 1f - Mathf.Exp(-dt * 6.5f));
+            // follow the line you are travelling, part way and a little behind: you see the rider carve
+            // across the frame instead of the whole world swinging round with the board
+            float wantYaw = rider.Crashed ? yaw : rider.TravelHeading * 0.7f;
+            yaw = first ? wantYaw : Mathf.Lerp(yaw, wantYaw, 1f - Mathf.Exp(-dt * 4f));
             var f = new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw));
 
             float dist = Mathf.Lerp(5.8f, 8.2f, s01);

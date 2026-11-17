@@ -32,6 +32,7 @@ namespace Summit
         int falls;
         float wipeoutTimer, hurtShake;
         string fallsNote = "", endTitle = "WIPED OUT";
+        bool crevasseWatch;   // went over a crevasse: lost only if the body actually drops into it
         bool endBuried;
         readonly Avalanche slide = new Avalanche();
 
@@ -261,7 +262,7 @@ namespace Summit
             dressing.Prewarm();
             chase.Snap();
             hud.SetWhiteout(0f);
-            falls = 0; wipeoutTimer = 0f; hurtShake = 0f;
+            falls = 0; wipeoutTimer = 0f; hurtShake = 0f; crevasseWatch = false;
             if (fx != null) fx.Clear();
             hud.Show("", "Best " + Mathf.RoundToInt(best).ToString("N0"),
                 Application.isMobilePlatform ? "Drag a finger left / right to steer  ·  add a second finger to tuck  ·  lift it to jump"
@@ -333,6 +334,11 @@ namespace Summit
                     if (input.AnyPress() && hud.OnRestart(RiderInput.PointerPosition())) { audioFx.Play(Sfx.Click); ToReady(); input.SwallowCurrentPress(); break; }
                     runTime += dt;
                     slide.Step(dt, rider);
+                    if (crevasseWatch)
+                    {
+                        if (body.RagdollBelowSnow > 3f) { crevasseWatch = false; wipeoutTimer = 1.0f; endTitle = "LOST IN A CREVASSE"; hud.Flash("GONE", "down the crevasse", 1.5f); }
+                        else if (!rider.Crashed) crevasseWatch = false;   // caught the lip: you live
+                    }
                     if (wipeoutTimer > 0f) { if (!body.RagdollMoving) wipeoutTimer -= dt; if (wipeoutTimer <= 0f) { ToEnd(endTitle, false); break; } }
                     if (chainCount > 0)
                     {
@@ -516,7 +522,7 @@ namespace Summit
             int left = MaxFalls - falls;
             fallsNote = left <= 0 ? "that's three" : left == 1 ? "1 fall left" : left + " falls left";
             hud.Flash(why, fallsNote, 1.3f);
-            if (why.StartsWith("Crevasse")) { wipeoutTimer = 1.2f; endTitle = "LOST IN A CREVASSE"; hud.Flash("CREVASSE!", "you fell in", 2f); }
+            if (why.StartsWith("Crevasse")) { crevasseWatch = true; hud.Flash("CREVASSE!", fallsNote, 1.6f); if (left <= 0) { wipeoutTimer = 0.9f; endTitle = "WIPED OUT"; } }
             else if (left <= 0) { wipeoutTimer = 0.9f; endTitle = "WIPED OUT"; }   // let the tumble play out, then it's over
             if (why.StartsWith("Tree")) { audioFx.Play(Sfx.HitTree); audioFx.Play(Sfx.Crash, 0.6f); }
             else if (why.StartsWith("Rock")) { audioFx.Play(Sfx.HitRock); audioFx.Play(Sfx.Crash, 0.6f); }

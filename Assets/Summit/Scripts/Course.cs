@@ -83,12 +83,13 @@ namespace Summit
         public static Crevasse[] CrevassesOf(int cycle)
         {
             if (crevCache.TryGetValue(cycle, out var list)) return list;
-            list = new Crevasse[5];
-            float zs = First + cycle * Cycle + DangerAt + 12f;
+            // rare: one or two per danger zone, well apart
+            list = new Crevasse[Slope.Hash01(cycle, 9, 31) < 0.45f ? 1 : 2];
+            float zs = First + cycle * Cycle + DangerAt + 18f;
             for (int k = 0; k < list.Length; k++)
             {
                 float h1 = Slope.Hash01(cycle, k, 31), h2 = Slope.Hash01(cycle, k, 32), h3 = Slope.Hash01(cycle, k, 33);
-                float z0 = zs + k * 24f + h1 * 6f;
+                float z0 = zs + k * 60f + h1 * 20f;
                 float len = 20f + h2 * 14f;
                 // alternate sides so there is always a line between them
                 float side = (k % 2 == 0 ? -1f : 1f) * (3f + h3 * 9f);
