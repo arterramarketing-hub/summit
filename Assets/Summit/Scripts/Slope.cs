@@ -102,7 +102,7 @@ namespace Summit
             if (Course.At(zs) == Course.Section.Pipe || Course.At(zs + DropSeg) == Course.Section.Pipe) return 0f;
             float u = z / DropSeg - s;
             float H = 3f + 10f * Hash01(s, 12, 41);
-            float u0 = 0.35f + 0.4f * Hash01(s, 13, 41), w = 0.06f + 0.09f * Hash01(s, 14, 41);
+            float u0 = 0.35f + 0.4f * Hash01(s, 13, 41), w = 0.09f + 0.08f * Hash01(s, 14, 41);   // never a sudden kink
             float t = Mathf.Clamp01((u - (u0 - w)) / (2f * w));
             return H * (u - t * t * (3f - 2f * t));
         }
@@ -240,6 +240,9 @@ namespace Summit
         /// <summary>Height of the drawn triangle under (x, z): the rider stands on exactly what you see.</summary>
         public static float DrawnHeight(float x, float z)
         {
+            // in the halfpipe, ride the true curve: its 1.5 m facets would jolt the board at every edge
+            // (the drawn facets sit at most a few centimetres off it)
+            if (Course.PipeWeight(z) > 0.01f && Mathf.Abs(x - Centre(z)) < Course.PipeHalfWidth + 1.5f) return Height(x, z);
             float gx = x / Quad, gz = z / Quad;
             int i = Mathf.FloorToInt(gx), j = Mathf.FloorToInt(gz);
             float u = gx - i, v = gz - j;

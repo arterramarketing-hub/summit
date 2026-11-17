@@ -41,7 +41,7 @@ namespace Summit
         GameObject bear;
         Rigidbody bearRb;
         Animation bearAnim;
-        float bearSpeed, bearTimer, bearYaw, bearRise;
+        float bearSpeed, bearTimer, bearYaw, bearRise, bearCalm;
         Transform bearRear;
         enum BearMode { Standing, Rousing, Chasing }
         BearMode bearMode;
@@ -307,7 +307,9 @@ namespace Summit
             // charge at where the rider is about to be; a bear tops out near 50 km/h, so speed is your escape
             Vector3 aim = rp + rider.Velocity * 0.7f;
             Vector3 to = aim - bp; to.y = 0f;
-            bool chasing = bearTimer < 14f && rp.z - bp.z < 28f;
+            // it loses interest in someone already down, and gives them a moment after they get up
+            if (rider.Crashed) bearCalm = 2f; else bearCalm -= dt;
+            bool chasing = bearTimer < 14f && rp.z - bp.z < 28f && bearCalm <= 0f;
             float want = chasing ? 14f : 0f;
             bearSpeed = Mathf.MoveTowards(bearSpeed, want, dt * (chasing ? 7f : 10f));
             if (to.sqrMagnitude > 1f && chasing)

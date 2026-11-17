@@ -70,7 +70,7 @@ namespace Summit
             return PipeWallTop;   // the deck
         }
 
-        public static bool InPipe(float x, float z) => PipeWeight(z) > 0.5f && Mathf.Abs(x - Slope.Centre(z)) < PipeHalfWidth + 0.5f;
+        public static bool InPipe(float x, float z) => PipeWeight(z) > 0.15f && Mathf.Abs(x - Slope.Centre(z)) < PipeHalfWidth + 0.5f;
 
         // ---------------------------------------------------------------- crevasses
 

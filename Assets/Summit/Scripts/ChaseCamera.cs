@@ -41,7 +41,7 @@ namespace Summit
             // look where the rider is going, not just where the board points
             // follow the line you are travelling, part way and a little behind: you see the rider carve
             // across the frame instead of the whole world swinging round with the board
-            float wantYaw = rider.Crashed ? yaw : rider.TravelHeading * 0.7f;
+            float wantYaw = rider.Crashed ? yaw : Mathf.Clamp(rider.TravelHeading, -1.4f, 1.4f) * 0.7f;   // never round to face uphill
             yaw = first ? wantYaw : Mathf.Lerp(yaw, wantYaw, 1f - Mathf.Exp(-dt * 4f));
             var f = new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw));
 

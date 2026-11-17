@@ -113,57 +113,81 @@ func mountain(_ r: Range, _ az: Double, _ e: Double, top: Double) -> C {
     return c
 }
 
-var px = [UInt8](repeating: 255, count: W * H * 4)
+func savePNG(_ px: [UInt8], _ w: Int, _ h: Int, _ path: String) {
+    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                               isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: w * 4, bitsPerPixel: 32)!
+    px.withUnsafeBufferPointer { memcpy(rep.bitmapData!, $0.baseAddress!, w * h * 4) }
+    try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: path))
+    print("wrote", path)
+}
+func put(_ px: inout [UInt8], _ o: Int, _ c: C, _ a: Double) {
+    px[o] = UInt8(max(0, min(255, c.r * 255))); px[o + 1] = UInt8(max(0, min(255, c.g * 255)))
+    px[o + 2] = UInt8(max(0, min(255, c.b * 255))); px[o + 3] = UInt8(max(0, min(255, a * 255)))
+}
+
+/// A cloud bank: its colour and density at (az, e).
+func bank(_ az: Double, _ e: Double, _ lo: Double, _ hi: Double, _ s: Int, _ amt: Double) -> (C, Double) {
+    if e < lo - 0.02 || e > hi + 0.04 { return (haze, 0) }
+    let b = fbm(az * 7 + 3, e * 26, s, 6)
+    let profile = ss(hi + 0.04, lo, e) * ss(lo - 0.02, lo + 0.01, e)
+    let dens = ss(0.45, 0.62, b * 0.6 + profile * 0.55) * amt
+    if dens <= 0 { return (haze, 0) }
+    let up = fbm(az * 7 + 3, (e + 0.01) * 26, s, 6)
+    let shade = 0.78 + 0.25 * max(0, min(1, (b - up) * 8 + 0.5))   // tops bright, bellies grey-blue
+    return (C(r: 0.92 * shade, g: 0.95 * shade, b: 1.0 * min(1, shade + 0.05)), dens)
+}
+
+let outDir = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "."
 let sunDir = (x: -0.49, y: 0.77, z: -0.41)
+
+// ---- the sky alone (the mountains are separate layers in front of it, for parallax)
+var px = [UInt8](repeating: 255, count: W * H * 4)
 for j in 0..<H {
     let e = (0.5 - (Double(j) + 0.5) / Double(H)) * PI      // elevation: top row is straight up
     for i in 0..<W {
         let az = (Double(i) + 0.5) / Double(W) * 2 * PI
         let dx = cos(e) * sin(az), dy = sin(e), dz = cos(e) * cos(az)
-        // sky
         var c = mix(horizon, zenith, pow(max(0, e) / (PI / 2), 0.42))
         let sunDot = max(0, dx * sunDir.x + dy * sunDir.y + dz * sunDir.z)
         c = c + C(r: 1, g: 0.95, b: 0.85) * (0.25 * pow(sunDot, 24))
-        // high wispy cloud, seen in perspective on a ceiling
         if e > 0.02 {
+            // high wispy cloud, seen in perspective on a ceiling
             let k = 1 / max(0.05, dy)
             let cx = dx * k * 1.2, cz = dz * k * 1.2
             let warp = fbm(cx * 0.6, cz * 0.6, 51, 4)
             let wisp = fbm(cx * 0.9 + warp * 1.8, cz * 2.6 + warp, 53, 6)
-            let dens = ss(0.52, 0.78, wisp) * ss(0.02, 0.18, e) * 0.85
-            c = mix(c, C(r: 0.97, g: 0.98, b: 1.0), dens)
+            c = mix(c, C(r: 0.97, g: 0.98, b: 1.0), ss(0.52, 0.78, wisp) * ss(0.02, 0.18, e) * 0.85)
         }
-        // big cumulus banks sitting on the far peaks
-        func bank(_ lo: Double, _ hi: Double, _ s: Int, _ amt: Double) {
-            if e < lo - 0.02 || e > hi + 0.04 { return }
-            let b = fbm(az * 7 + 3, e * 26, s, 6)
-            let profile = ss(hi + 0.04, lo, e) * ss(lo - 0.02, lo + 0.01, e)
-            let dens = ss(0.45, 0.62, b * 0.6 + profile * 0.55) * amt
-            if dens <= 0 { return }
-            let up = fbm(az * 7 + 3, (e + 0.01) * 26, s, 6)
-            let shade = 0.78 + 0.25 * max(0, min(1, (b - up) * 8 + 0.5))   // tops bright, bellies grey-blue
-            c = mix(c, C(r: 0.92 * shade, g: 0.95 * shade, b: 1.0 * min(1, shade + 0.05)), dens)
-        }
-        bank(0.10, 0.22, 61, 0.8)
-        // the ranges, far to near, each fading into the haze with distance
-        for (n, r) in ranges.enumerated() {
-            let top = ridgeTop(r, az)
-            if e < top {
-                c = mix(mountain(r, az, e, top: top), haze, r.hazeAmt)
-            }
-            if n == 0 { bank(0.05, 0.11, 67, 0.55) }          // cloud wrapping between the far and mid ranges
-        }
-        // the feet of the ranges and the valley below are lost in the same haze the game's fog fades to,
-        // so the painted distance meets the real terrain without a seam
-        c = mix(c, haze, ss(0.045, -0.005, e) * 0.92)
-        let o = (j * W + i) * 4
-        px[o] = UInt8(max(0, min(255, c.r * 255))); px[o + 1] = UInt8(max(0, min(255, c.g * 255))); px[o + 2] = UInt8(max(0, min(255, c.b * 255)))
+        let (bc, bd) = bank(az, e, 0.10, 0.22, 61, 0.8)        // big cumulus behind the peaks
+        c = mix(c, bc, bd)
+        c = mix(c, haze, ss(0.045, -0.005, e) * 0.92)         // the valley lost in the fog's haze
+        put(&px, (j * W + i) * 4, c, 1)
     }
 }
+savePNG(px, W, H, outDir + "/SkyPanorama.png")
 
-let out = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "SkyPanorama.png"
-let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: W, pixelsHigh: H, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
-                           isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: W * 4, bitsPerPixel: 32)!
-px.withUnsafeBufferPointer { memcpy(rep.bitmapData!, $0.baseAddress!, W * H * 4) }
-try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: out))
-print("wrote", out)
+// ---- the three ranges as transparent bands, elevation E0..E1 (top row is E1)
+let LH = 640, E0 = -0.07, E1 = 0.33
+let names = ["BackdropFar", "BackdropMid", "BackdropNear"]
+for (n, r) in ranges.enumerated() {
+    var lp = [UInt8](repeating: 0, count: W * LH * 4)
+    let pix = (E1 - E0) / Double(LH)
+    for j in 0..<LH {
+        let e = E1 - (Double(j) + 0.5) * pix
+        for i in 0..<W {
+            let az = (Double(i) + 0.5) / Double(W) * 2 * PI
+            let top = ridgeTop(r, az)
+            var a = max(0, min(1, (top - e) / pix + 0.5))       // antialiased crest
+            var c = haze
+            if a > 0 { c = mix(mountain(r, az, e, top: top), haze, r.hazeAmt) }
+            if n == 0 {
+                // cloud wrapping between the far and the mid range
+                let (bc, bd) = bank(az, e, 0.05, 0.11, 67, 0.55)
+                if bd > 0 { c = a > 0 ? mix(c, bc, bd) : bc; a = a + bd * (1 - a) }
+            }
+            c = mix(c, haze, ss(0.045, -0.005, e) * 0.92)
+            put(&lp, (j * W + i) * 4, c, a)
+        }
+    }
+    savePNG(lp, W, LH, outDir + "/" + names[n] + ".png")
+}

@@ -103,6 +103,16 @@ public static class SimTest
             Debug.Log($"SIM step thumb={thumb:0.0} edge={target:0.00} at {v0 * 3.6f:0} km/h: yaw {yawSS * Mathf.Rad2Deg:0} deg/s (radius {r.Speed / Mathf.Max(1e-3f, yawSS):0} m), 50% in {t50:0.00}s, 90% in {t90:0.00}s, travel turned {travel25:0} deg by 0.25s, {travel50:0} deg by 0.5s, board-travel slip peak {slip:0.0} deg");
         }
 
+        // let go: after a full-lock turn the thumb is released; how fast does the board come back down the hill?
+        {
+            r.ResetAt(Slope.Centre(Slope.PadLip), Slope.StartZ); r.Begin();
+            for (int i = 0; i < 120 * 8; i++) { r.Steer = Mathf.Clamp((Slope.Centre(r.Z + 12f) - r.Body.position.x) * 0.06f - r.Heading, -1f, 1f); r.Tick(Dt); Physics.Simulate(Dt); }
+            for (int i = 0; i < 60; i++) { r.Steer = 1f; r.Tick(Dt); Physics.Simulate(Dt); }
+            float h0 = r.Heading * Mathf.Rad2Deg; string trace = "";
+            for (int i = 0; i <= 180; i++) { r.Steer = 0f; r.Tick(Dt); Physics.Simulate(Dt); if (i % 30 == 0) trace += $" {i * Dt:0.0}s:{r.Heading * Mathf.Rad2Deg:0}";  }
+            Debug.Log($"SIM release: heading after the turn {h0:0} deg, then with the thumb off:{trace}");
+        }
+
         // straight line vs constant carving, 25 s each from the start
         foreach (float amp in new[] { 0f, 0.8f })
         {

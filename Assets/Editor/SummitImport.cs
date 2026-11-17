@@ -116,6 +116,35 @@ public class SummitImport : AssetPostprocessor
         AssetDatabase.SaveAssets();
     }
 
+    /// <summary>The mountain bands (Resources/Backdrop/*.png from Tools/MakeSky.swift) and their materials.</summary>
+    public static void EnsureBackdrop()
+    {
+        var sh = AssetDatabase.LoadAssetAtPath<Shader>("Assets/Summit/Shaders/Backdrop.shader");
+        if (sh == null) return;
+        foreach (var n in new[] { "Far", "Mid", "Near" })
+        {
+            string tex = "Assets/Summit/Resources/Backdrop/Backdrop" + n + ".png", mp = "Assets/Summit/Resources/Backdrop/" + n + ".mat";
+            var ti = (TextureImporter)AssetImporter.GetAtPath(tex);
+            if (ti == null) continue;
+            if (ti.mipmapEnabled || !ti.alphaIsTransparency || ti.wrapModeU != TextureWrapMode.Repeat)
+            {
+                ti.mipmapEnabled = false; ti.alphaIsTransparency = true; ti.alphaSource = TextureImporterAlphaSource.FromInput;
+                ti.wrapModeU = TextureWrapMode.Repeat; ti.wrapModeV = TextureWrapMode.Clamp; ti.maxTextureSize = 4096;
+                var ios = ti.GetPlatformTextureSettings("iPhone");
+                ios.overridden = true; ios.maxTextureSize = 4096; ios.format = TextureImporterFormat.ASTC_6x6;
+                ti.SetPlatformTextureSettings(ios);
+                ti.SaveAndReimport();
+            }
+            var m = AssetDatabase.LoadAssetAtPath<Material>(mp);
+            if (m == null) { m = new Material(sh); AssetDatabase.CreateAsset(m, mp); }
+            m.shader = sh;
+            m.SetTexture("_MainTex", AssetDatabase.LoadAssetAtPath<Texture2D>(tex));
+            m.renderQueue = 2940 + (n == "Far" ? 0 : n == "Mid" ? 1 : 2);   // far, then mid, then near
+            EditorUtility.SetDirty(m);
+        }
+        AssetDatabase.SaveAssets();
+    }
+
     /// <summary>The sky: Materials/SkyPanorama.png (painted by Tools/MakeSky.swift) on Skybox/Panoramic.</summary>
     public static void EnsureSky()
     {
@@ -266,6 +295,7 @@ public class SummitImport : AssetPostprocessor
         EnsureVertexColorMaterial();
         EnsureSnowTextures();
         EnsureSky();
+        EnsureBackdrop();
         if (Application.isBatchMode) EditorApplication.Exit(0);
     }
 }

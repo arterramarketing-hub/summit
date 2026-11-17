@@ -19,6 +19,7 @@ public static class RenderShot
     {
         SummitImport.EnsureSnowTextures();
         SummitImport.EnsureSky();
+        SummitImport.EnsureBackdrop();
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
         var game = Object.FindFirstObjectByType<SummitGame>();
         typeof(SummitGame).GetMethod("Awake", NP).Invoke(game, null);

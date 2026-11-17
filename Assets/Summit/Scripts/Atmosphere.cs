@@ -31,6 +31,7 @@ namespace Summit
             // the mountains are painted into the sky now (Materials/SkyPanorama.png); the old low-poly rings are off
             backdrop = MakeBackdrop();
             backdrop.gameObject.SetActive(false);
+            MakeParallax();
 
             var vol = Object.FindFirstObjectByType<Volume>();
             if (vol != null && vol.profile != null && vol.profile.TryGet(out vignette))
@@ -179,6 +180,79 @@ namespace Summit
 
         // ---------------------------------------------------------------- distant peaks
 
+        // ---------------------------------------------------------------- parallax mountains
+        // Three painted bands of mountains on rings round the camera at different distances. Each ring
+        // follows the camera, but lags behind it by its own small fraction, so as you ride the near
+        // ridges slide across the far peaks: depth, without real mountains kilometres away.
+
+        struct Band { public Transform t; public float lag; }
+        Band[] bands;
+        Vector3 bandAnchor;
+        const float E0 = -0.07f, E1 = 0.33f;   // the elevations the band textures cover (Tools/MakeSky.swift)
+
+        void MakeParallax()
+        {
+            var names = new[] { "Far", "Mid", "Near" };
+            var radius = new[] { 780f, 650f, 520f };
+            var lag = new[] { 0.015f, 0.04f, 0.09f };
+            var list = new System.Collections.Generic.List<Band>();
+            for (int k = 0; k < 3; k++)
+            {
+                var m = Resources.Load<Material>("Backdrop/" + names[k]);
+                if (m == null) continue;
+                var go = new GameObject("Mountains " + names[k]);
+                go.transform.SetParent(transform, false);
+                // turned so the biggest massif in the painting stands ahead, down the fall line
+                go.transform.rotation = Quaternion.Euler(0f, -95f, 0f);
+                go.AddComponent<MeshFilter>().sharedMesh = Ring(radius[k]);
+                var r = go.AddComponent<MeshRenderer>();
+                r.sharedMaterial = m;
+                r.shadowCastingMode = ShadowCastingMode.Off;
+                r.receiveShadows = false;
+                list.Add(new Band { t = go.transform, lag = lag[k] });
+            }
+            bands = list.ToArray();
+            bandAnchor = rider != null ? rider.transform.position : Vector3.zero;
+        }
+
+        static Mesh Ring(float r)
+        {
+            const int N = 192, Rows = 9;
+            var v = new Vector3[(N + 1) * Rows]; var uv = new Vector2[v.Length];
+            var t = new int[N * (Rows - 1) * 6];
+            for (int i = 0; i <= N; i++)
+            {
+                float u = i / (float)N, az = u * Mathf.PI * 2f;
+                for (int k = 0; k < Rows; k++)
+                {
+                    float f = k / (float)(Rows - 1), e = Mathf.Lerp(E0, E1, f);
+                    v[i * Rows + k] = new Vector3(Mathf.Sin(az) * r, Mathf.Tan(e) * r, Mathf.Cos(az) * r);
+                    uv[i * Rows + k] = new Vector2(u, f);
+                }
+            }
+            int q = 0;
+            for (int i = 0; i < N; i++)
+                for (int k = 0; k < Rows - 1; k++)
+                {
+                    int a = i * Rows + k, b = a + 1, c = a + Rows, d = c + 1;
+                    t[q++] = a; t[q++] = b; t[q++] = c; t[q++] = b; t[q++] = d; t[q++] = c;
+                }
+            var m = new Mesh { name = "MountainRing" };
+            m.vertices = v; m.uv = uv; m.triangles = t;
+            m.bounds = new Bounds(Vector3.zero, Vector3.one * r * 3f);
+            return m;
+        }
+
+        /// <summary>A new run (a new mountain): the bands start from here again.</summary>
+        public void ResetParallax() { if (rider != null) bandAnchor = rider.transform.position; }
+
+        void UpdateParallax(Vector3 cp)
+        {
+            if (bands == null) return;
+            foreach (var b in bands)
+                b.t.position = cp - (cp - bandAnchor) * b.lag;
+        }
+
         Transform MakeBackdrop()
         {
             var root = new GameObject("Backdrop").transform;
@@ -269,6 +343,7 @@ namespace Summit
 
             // the peaks are infinitely far away: they travel with the camera
             backdrop.position = cp;
+            UpdateParallax(cp);
 
             // keep the snow box ahead of the camera, where the rider is heading
             Vector3 fwd = cam.transform.forward; fwd.y = 0f;

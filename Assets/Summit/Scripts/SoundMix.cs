@@ -32,6 +32,7 @@ namespace Summit
 
         Layer ambience, windLow, windHigh, glide, carve, skid, powder, grindRail, grindBox, avalanche, boost;
         AudioSource[] shots, shots3d;
+        AudioSource ui;
         int nextShot, next3d;
         AudioLowPassFilter muffler;
         float muffle;
@@ -56,6 +57,7 @@ namespace Summit
 
             shots = new AudioSource[10];
             for (int i = 0; i < shots.Length; i++) { shots[i] = gameObject.AddComponent<AudioSource>(); shots[i].playOnAwake = false; shots[i].spatialBlend = 0f; }
+            ui = gameObject.AddComponent<AudioSource>(); ui.playOnAwake = false; ui.ignoreListenerPause = true;   // menu clicks still sound while paused
             muffler = gameObject.AddComponent<AudioLowPassFilter>();
             muffler.cutoffFrequency = 22000f;
 
@@ -220,6 +222,7 @@ namespace Summit
                 case Sfx.Bone: c = bones[Random.Range(0, bones.Length)]; vol = 1f; pitch = Random.Range(0.9f, 1.1f); break;
             }
             if (c == null || vol <= 0.001f) return;
+            if (kind == Sfx.Click || kind == Sfx.Play) { ui.pitch = pitch; ui.PlayOneShot(c, vol); return; }
             var s = shots[nextShot];
             nextShot = (nextShot + 1) % shots.Length;
             s.pitch = pitch;

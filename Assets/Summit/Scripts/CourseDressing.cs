@@ -56,7 +56,7 @@ namespace Summit
                 if (!built.ContainsKey(k)) built[k] = BuildCycle(k);
             drop.Clear();
             foreach (var kv in built) if (kv.Key < c - 0 && target.position.z > Course.First + (kv.Key + 1) * Course.Cycle + 80f) drop.Add(kv.Key);
-            foreach (int k in drop) { Destroy(built[k]); built.Remove(k); }
+            foreach (int k in drop) { FreeMeshes(built[k]); Destroy(built[k]); built.Remove(k); }
         }
 
         public void Prewarm() { Update(); }
@@ -113,10 +113,17 @@ namespace Summit
             return root;
         }
 
+        /// <summary>The crevasse meshes are made here, so they are freed here (primitives share Unity's).</summary>
+        static void FreeMeshes(GameObject g)
+        {
+            foreach (var mf in g.GetComponentsInChildren<MeshFilter>(true))
+                if (mf.name.StartsWith("Crevasse") && mf.sharedMesh != null) { if (Application.isPlaying) Destroy(mf.sharedMesh); else DestroyImmediate(mf.sharedMesh); }
+        }
+
         /// <summary>A rebuilt mountain: drop everything built for the old one.</summary>
         public void Rebuild()
         {
-            foreach (var kv in built) if (kv.Value != null) { if (Application.isPlaying) Destroy(kv.Value); else DestroyImmediate(kv.Value); }
+            foreach (var kv in built) if (kv.Value != null) { FreeMeshes(kv.Value); if (Application.isPlaying) Destroy(kv.Value); else DestroyImmediate(kv.Value); }
             built.Clear();
             Update();
         }

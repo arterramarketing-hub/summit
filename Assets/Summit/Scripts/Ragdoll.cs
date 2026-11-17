@@ -120,17 +120,22 @@ namespace Summit
             // thrown forward and up, tumbling head over heels about the axis across the line of travel
             Vector3 flat = new Vector3(velocity.x, 0f, velocity.z);
             Vector3 roll = flat.sqrMagnitude > 0.01f ? Vector3.Cross(Vector3.up, flat.normalized) : Vector3.right;
-            float spinRate = Mathf.Clamp(flat.magnitude * 0.45f, 4f, 13f);
-            var spin = roll * spinRate + new Vector3(Random.Range(-1f, 1f), Random.Range(-1f, 1f), Random.Range(-1f, 1f)) * 3f;
+            float spinRate = Mathf.Clamp(flat.magnitude * 0.35f, 3f, 9f);
+            var spin = roll * spinRate + new Vector3(Random.Range(-1f, 1f), Random.Range(-1f, 1f), Random.Range(-1f, 1f)) * 2f;
+            // as one rigid body: each part moves with the pelvis plus the spin about it, so no joint starts
+            // out torn
+            Vector3 pivot = parts[0].rb.worldCenterOfMass, lin = velocity * 0.85f + Vector3.up * 2.5f;
             foreach (var p in parts)
             {
-                p.rb.linearVelocity = velocity * 0.85f + Vector3.up * 2.5f;
+                p.rb.linearVelocity = lin + Vector3.Cross(spin, p.rb.worldCenterOfMass - pivot);
                 p.rb.angularVelocity = spin;
             }
 
             // the board flies off on its own
             boardRb = board.gameObject.AddComponent<Rigidbody>();
             boardRb.mass = 4f;
+            boardRb.maxAngularVelocity = 25f;
+            boardRb.maxDepenetrationVelocity = 2.5f;
             boardRb.interpolation = RigidbodyInterpolation.Interpolate;
             boardRb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
             boardCol = board.gameObject.AddComponent<BoxCollider>();
@@ -140,6 +145,12 @@ namespace Summit
             var bimp = board.gameObject.AddComponent<Impact>(); bimp.owner = this; bimp.board = true;
             if (riderCollider != null) Physics.IgnoreCollision(boardCol, riderCollider);
             foreach (var p in parts) Physics.IgnoreCollision(boardCol, p.col);
+            // each slab of snow is only for its own body: the body's for the body, the board's for the board
+            // (and neither for the rider's own sphere, which turns collisions back on when it gets up)
+            var gCol = groundBody.GetComponent<Collider>(); var bgCol = boardGroundBody.GetComponent<Collider>();
+            Physics.IgnoreCollision(gCol, boardCol);
+            foreach (var p in parts) Physics.IgnoreCollision(bgCol, p.col);
+            if (riderCollider != null) { Physics.IgnoreCollision(gCol, riderCollider); Physics.IgnoreCollision(bgCol, riderCollider); }
             boardRb.linearVelocity = velocity * 0.75f + Vector3.up * 3.5f + Random.insideUnitSphere * 2f;
             boardRb.angularVelocity = new Vector3(Random.Range(-9f, 9f), Random.Range(-4f, 4f), Random.Range(-9f, 9f));
 
@@ -157,10 +168,14 @@ namespace Summit
             float scale = Mathf.Max(1e-4f, bone.lossyScale.x);
             var rb = bone.gameObject.AddComponent<Rigidbody>();
             rb.mass = mass;
-            rb.linearDamping = 0.02f; rb.angularDamping = 0.15f;   // the snow does the slowing (see PhysicsStep)
+            rb.linearDamping = 0.02f; rb.angularDamping = 0.45f;   // the snow does the slowing (see PhysicsStep)
             rb.interpolation = RigidbodyInterpolation.Interpolate;
             rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
-            rb.solverIterations = 12;
+            rb.solverIterations = 14;
+            rb.solverVelocityIterations = 6;
+            // a human body cannot spin a limb a hundred times a second, nor be shot out of the snow
+            rb.maxAngularVelocity = 18f;
+            rb.maxDepenetrationVelocity = 2.5f;
             Collider col;
             Vector3 axisLocal = Vector3.up;
             if (shape == Shape.Capsule && child != null)
@@ -207,6 +222,11 @@ namespace Summit
                 j.enablePreprocessing = false;
                 joint = j;
             }
+            // thin limbs have almost no inertia about their length and the solver spins them wildly; give
+            // every part at least the inertia of a solid ball its size
+            float floorI = 0.4f * mass * 0.06f * 0.06f * 2.5f;
+            var it = rb.inertiaTensor;
+            rb.inertiaTensor = new Vector3(Mathf.Max(it.x, floorI), Mathf.Max(it.y, floorI), Mathf.Max(it.z, floorI));
             parts.Add(new Part { bone = bone, rb = rb, col = col, joint = joint });
         }
 
@@ -224,8 +244,22 @@ namespace Summit
                 Vector3 v = Vector3.ProjectOnPlane(p.rb.linearVelocity, gn);
                 p.rb.AddForce(-v * (Plough * p.rb.mass * Mathf.Clamp01(1.2f - h / 0.28f)), ForceMode.Force);
             }
-            PlaceSlab(groundBody, Centre, false);
+            PlaceSlab(groundBody, BodyFloorPoint(), false);
             if (boardRb != null) PlaceSlab(boardGroundBody, boardRb.position, false);
+        }
+
+        /// <summary>
+        /// Where to put the body's floor: under the pelvis, except once it has dropped into a crevasse, where
+        /// it stays on the crevasse's bottom even if the pelvis drifts past the line of the opening (the ice
+        /// walls have no colliders of their own).
+        /// </summary>
+        Vector3 BodyFloorPoint()
+        {
+            Vector3 c = Centre;
+            float surface = Slope.DrawnHeight(c.x, c.z);
+            if (c.y < surface - 1f && Course.CrevasseNear(c.x, c.z, 4f, out float cx, out _))
+                return new Vector3(cx, c.y, c.z);
+            return c;
         }
 
         static void PlaceSlab(Rigidbody slab, Vector3 at, bool snap)
@@ -246,7 +280,9 @@ namespace Summit
             rig.FootR.SetPositionAndRotation(rig.EndR.position, rig.ShinR.rotation * footRelR);
         }
 
-        static void Kill(Object o) { if (Application.isPlaying) Object.Destroy(o); else Object.DestroyImmediate(o); }
+        // immediately, never deferred: a new crash can start in the very next physics step, and a deferred
+        // Rigidbody would still be there (AddComponent would fail and the ragdoll would be half built)
+        static void Kill(Object o) { if (o != null) Object.DestroyImmediate(o); }
 
         /// <summary>Back on the board: physics off, bones home, model and board back on the rider.</summary>
         public void End()

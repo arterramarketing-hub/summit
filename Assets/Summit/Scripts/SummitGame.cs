@@ -27,6 +27,7 @@ namespace Summit
         Hud hud;
         SoundMix audioFx;
         SnowFX fx;
+        Atmosphere atmo;
         // three falls a run; the third one ends it
         public const int MaxFalls = 3;
         int falls;
@@ -172,7 +173,7 @@ namespace Summit
             fx.Build(cam, spray);
             body.fx = fx;
 
-            var atmo = new GameObject("Atmosphere").AddComponent<Atmosphere>();
+            atmo = new GameObject("Atmosphere").AddComponent<Atmosphere>();
             atmo.Build(cam, rider, spray);
 
             var hg = new GameObject("HUD");
@@ -272,6 +273,7 @@ namespace Summit
             state = State.Ready;
             // a new mountain every run: new pitches, drops, kickers, crevasses and trees
             Slope.Init(Slope.RandomSeed());
+            rider.ResetAt(Slope.Centre(Slope.PadLip), Slope.StartZ);   // build the new mountain round the start, once
             terrain.Rebuild();
             props.Rebuild();
             dressing.Rebuild();
@@ -291,6 +293,7 @@ namespace Summit
             falls = 0; wipeoutTimer = 0f; hurtShake = 0f; crevasseWatch = false;
             if (paused) SetPaused(false);
             chase.peek = 0f;
+            if (atmo != null) atmo.ResetParallax();
             if (fx != null) fx.Clear();
             hud.Show("", "Best " + Mathf.RoundToInt(best).ToString("N0"),
                 Application.isMobilePlatform ? "Drag a finger left / right to steer  ·  add a second finger to tuck  ·  lift it to jump"
@@ -377,7 +380,7 @@ namespace Summit
                     slide.Step(dt, rider);
                     if (crevasseWatch)
                     {
-                        if (body.RagdollBelowSnow > 3f) { crevasseWatch = false; wipeoutTimer = 1.0f; endTitle = "LOST IN A CREVASSE"; hud.Flash("GONE", "down the crevasse", 1.5f); }
+                        if (body.RagdollBelowSnow > 3f) { crevasseWatch = false; rider.StayDown = true; wipeoutTimer = 1.0f; endTitle = "LOST IN A CREVASSE"; hud.Flash("GONE", "down the crevasse", 1.5f); }
                         else if (!rider.Crashed) crevasseWatch = false;   // caught the lip: you live
                     }
                     if (wipeoutTimer > 0f) { if (!body.RagdollMoving) wipeoutTimer -= dt; if (wipeoutTimer <= 0f) { ToEnd(endTitle, false); break; } }
@@ -567,8 +570,8 @@ namespace Summit
             int left = MaxFalls - falls;
             fallsNote = left <= 0 ? "that's three" : left == 1 ? "1 fall left" : left + " falls left";
             hud.Flash(why, fallsNote, 1.3f);
-            if (why.StartsWith("Crevasse")) { crevasseWatch = true; hud.Flash("CREVASSE!", fallsNote, 1.6f); if (left <= 0) { wipeoutTimer = 0.9f; endTitle = "WIPED OUT"; } }
-            else if (left <= 0) { wipeoutTimer = 0.9f; endTitle = "WIPED OUT"; }   // let the tumble play out, then it's over
+            if (why.StartsWith("Crevasse")) { crevasseWatch = true; hud.Flash("CREVASSE!", fallsNote, 1.6f); if (left <= 0) { wipeoutTimer = 0.9f; endTitle = "WIPED OUT"; rider.StayDown = true; } }
+            else if (left <= 0) { wipeoutTimer = 0.9f; endTitle = "WIPED OUT"; rider.StayDown = true; }   // the last fall: no getting up   // let the tumble play out, then it's over
             if (why.StartsWith("Tree")) { audioFx.Play(Sfx.HitTree); audioFx.Play(Sfx.Crash, 0.6f); }
             else if (why.StartsWith("Rock")) { audioFx.Play(Sfx.HitRock); audioFx.Play(Sfx.Crash, 0.6f); }
             else if (why.StartsWith("Crevasse")) audioFx.Play(Sfx.Crevasse);

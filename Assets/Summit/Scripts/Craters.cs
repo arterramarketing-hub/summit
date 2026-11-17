@@ -11,7 +11,7 @@ namespace Summit
     /// </summary>
     public class Craters
     {
-        const int Seg = 24, Rings = 6, Max = 48;
+        const int Seg = 24, Rings = 6, Max = 64;
         static readonly float[] Frac = { 0f, 0.45f, 0.78f, 0.95f, 1.12f, 1.55f };   // outline fractions, centre to foot
         static readonly float[] U = { 0.5f, 0.45f, 0.36f, 0.26f, 0.2f, 0f };
         readonly Material mat;
@@ -22,6 +22,7 @@ namespace Summit
         readonly Vector3[] v = new Vector3[Seg * Rings + 1];
         readonly Vector2[] uv = new Vector2[Seg * Rings + 1];
         readonly int[] tri;
+        readonly float[] wob = new float[Seg], lump = new float[Seg], lumpS = new float[Seg];
 
         public Craters(Shader lit)
         {
@@ -95,7 +96,7 @@ namespace Summit
             float stretch = 1f + Mathf.Clamp01(spd / 10f) * 0.8f;     // a skid of a crater when it was moving fast
             int seed = Random.Range(0, 100000);
             // a wobbly outline: a few lobes plus finer bumps
-            var wob = new float[Seg]; var lump = new float[Seg];
+            var wob = this.wob; var lump = this.lump;
             float ph1 = Hash(seed, 1) * 6.28f, ph2 = Hash(seed, 2) * 6.28f;
             for (int s = 0; s < Seg; s++)
             {
@@ -104,7 +105,7 @@ namespace Summit
                 lump[s] = 0.6f + 0.8f * Hash(seed + s, 4);
             }
             // smooth the lumps a little so the rim is clods, not spikes
-            var lumpS = new float[Seg];
+            var lumpS = this.lumpS;
             for (int s = 0; s < Seg; s++) lumpS[s] = (lump[(s + Seg - 1) % Seg] + 2f * lump[s] + lump[(s + 1) % Seg]) * 0.25f;
 
             v[0] = Lift(at, n, 0.012f);

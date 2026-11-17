@@ -36,7 +36,7 @@ namespace Summit
         readonly System.Collections.Generic.HashSet<Transform> bandaged = new System.Collections.Generic.HashSet<Transform>();
         readonly System.Collections.Generic.List<GameObject> bandages = new System.Collections.Generic.List<GameObject>();
         Material bandageMat, bandageLine;
-        float crashClock, stillFor;
+        float crashClock, stillFor, visYaw, nextDragCrater;
         SnowTrail bodyTrail;
         Craters craters;
         /// <summary>Where the thrown body is (its pelvis).</summary>
@@ -205,9 +205,10 @@ namespace Summit
                 if (impact > 2.5f) fx?.Landing(transform.position + Vector3.down * Rider.R, normal, impact, rider.Velocity);
             };
             rider.ShieldHit += () => { shieldFlash = 1f; spray.Emit(40); };
-            rider.Crash += _ =>
+            rider.Crash += why =>
             {
                 spray.Emit(70);
+                if (why.StartsWith("Crevasse")) lastVel *= 0.4f;   // a drop, not a throw
                 crashSpin = 0f;
                 ragdollPending = rig != null;   // thrown on the next physics step, not inside the collision
                 craters.Add(transform.position + Vector3.down * Rider.R, lastVel, 1.0f, 0.2f);
@@ -735,6 +736,7 @@ namespace Summit
             trail.Clear();
             bodyTrail.Clear();
             RagdollBelowSnow = 0f;
+            RagdollMoving = false;
             spray.Clear();
             bow.Clear();
             marks.Clear();
@@ -857,7 +859,7 @@ namespace Summit
                     ragdoll.Drag += (at, v) =>
                     {
                         if (v < 1.2f) return;
-                        if (v > 2f) craters.Add(OnSnow(at), ragdoll != null ? ragdoll.Velocity : Vector3.zero, 0.3f + 0.025f * v, 0.04f + 0.008f * v);
+                        if (v > 2f && Time.time > nextDragCrater) { nextDragCrater = Time.time + 0.2f; craters.Add(OnSnow(at), ragdoll != null ? ragdoll.Velocity : Vector3.zero, 0.3f + 0.025f * v, 0.04f + 0.008f * v); }
                         if (Random.value < 0.4f) fx?.Puff(at, v * 0.5f);
                     };
                 }
@@ -920,6 +922,7 @@ namespace Summit
                 else
                 {
                     ragdoll.End(); spray.Emit(30);   // back up on the board, patched up
+                    RagdollMoving = false; rider.HoldCrash = false;
                     bodyTrail.Feed(Vector3.zero, Vector3.up, 0f, false, 1f, 0f, 0f, dt);
                     RagdollBelowSnow = 0f;
                     foreach (var b in brokenThisCrash) Bandage(b);
@@ -936,7 +939,10 @@ namespace Summit
             }
             else
             {
-                float yaw = rider.Heading;
+                // the board's yaw on screen follows the physics a touch behind, so a correction at landing
+                // or a grind turns it smoothly instead of snapping
+                visYaw = dt <= 0f ? rider.Heading : Mathf.LerpAngle(visYaw * Mathf.Rad2Deg, rider.Heading * Mathf.Rad2Deg, 1f - Mathf.Exp(-dt * 16f)) * Mathf.Deg2Rad;
+                float yaw = visYaw;
                 Vector3 up = normal;
                 if (rider.Grinding)
                 {

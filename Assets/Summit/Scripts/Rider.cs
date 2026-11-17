@@ -28,6 +28,7 @@ namespace Summit
         public static float Grip = 42f;                              // 1/s: how fast slip dies when the edge holds (high: the edge bites, no drifting)
         public static float TurnDrag = 0.12f;                        // speed lost per radian of turning
         public static float TakeoffClearance = 0.22f;
+        public static float FallLinePull = 2.2f;                     // 1/s: how fast a flat board swings back down the hill
 
         public const float R = 0.3f;              // the collision sphere around the feet
         const float MaxHeading = 1.45f;           // about 83 degrees off the fall line
@@ -84,7 +85,9 @@ namespace Summit
         public System.Action<float> Scraped;
         public System.Action ShieldHit;
         public System.Action<Course.Feature> GrindStart;
-        public System.Action<Obstacle, Vector3, float> HitObstacle;   // what, where (its middle), how hard
+        public System.Action<Obstacle, Vector3, float> HitObstacle;
+        Vector3 grindOff;
+        bool pipeAir;   // flying off a halfpipe wall: drift back in over the pipe   // what, where (its middle), how hard
 
         // ---- power-ups
         public const int MaxShields = 3;
@@ -142,7 +145,7 @@ namespace Summit
             StartZ = z;
             Heading = 0f; Speed = 0f; Steer = 0f; groundVy = 0f;
             Airborne = false; Crashed = false; Running = false; Grinding = false;
-            HasCrashFollow = false; rb.detectCollisions = true;
+            HasCrashFollow = false; rb.detectCollisions = true; StayDown = false; HoldCrash = false;
             AirTime = 0f; Tuck = 0f; Carve = 0f; Skid = 0f; Peak = 0f; AboveGround = 0f;
             Lean = 0f; leanVel = 0f; YawRate = 0f;
             ClearTrick();
@@ -233,6 +236,12 @@ namespace Summit
 
             // 1. steer: lean onto the edge; the board yaws at the carve's rate
             float yaw = CarveTurn(dt, sp);
+            // and with the board flat (no edge pressure) gravity swings its nose back down the fall line, the
+            // way a real board drifts straight again the moment you stop holding a turn
+            float flatness = 1f - Mathf.Clamp01(Mathf.Abs(Lean) / (0.35f * MaxLean));
+            float fallBack = -Mathf.Sin(Heading) * FallLinePull * flatness * Mathf.Clamp01(sp / 6f) * Mathf.Clamp01((1f - n.y) * 4f);
+            yaw += fallBack;
+            YawRate = yaw;
             Heading += yaw * dt;
             if (sp < 3f) Heading = Mathf.MoveTowards(Heading, 0f, dt * 1.4f * (1f - sp / 3f));   // stalled: swing back downhill
             Heading = Mathf.Clamp(Heading, -MaxHeading, MaxHeading);
@@ -286,7 +295,10 @@ namespace Summit
             {
                 popPending = false;
                 Jumped?.Invoke();
-                return TakeOff(p, vt + n * Mathf.Lerp(5.5f, 8f, Mathf.Clamp01(popHold / 0.8f)), 0.15f);
+                // pop up off the snow; on a face that tilts back up the hill, push straight up rather than
+                // along its normal, which would send a slow rider backwards
+                Vector3 popDir = n.z < 0f ? Vector3.Slerp(n, Vector3.up, 0.85f) : n;
+                return TakeOff(p, vt + popDir * Mathf.Lerp(5.5f, 8f, Mathf.Clamp01(popHold / 0.8f)), 0.15f);
             }
             // a face too steep to ride: you are falling, not riding (pipe walls are ridden almost to vertical)
             bool inPipe = Course.InPipe(p.x, p.z);
@@ -315,12 +327,13 @@ namespace Summit
         /// Leaving a pipe wall: the air goes straight up off the coping and drops back in, never out over
         /// the deck, and tops out around 5 m however hard you hit the wall.
         /// </summary>
-        static Vector3 PipeAir(Vector3 p, Vector3 v)
+        Vector3 PipeAir(Vector3 p, Vector3 v)
         {
             float side = Mathf.Sign(p.x - Slope.Centre(p.z));
-            float vMax = Mathf.Sqrt(2f * G * 5f);
-            v.y = Mathf.Min(v.y, vMax);
-            v.x = -side * 1.2f;   // a little drift back toward the middle
+            // (height is held to a few metres by extra pull while rising in AirStep, not by clipping speed here)
+            // keep a little of the outward speed (the wall is nearly vertical up there); AirStep then curves
+            // the flight back over the pipe, so nothing changes in a single step
+            pipeAir = true;   // the near-vertical lip has already turned most of the speed upward
             return v;
         }
 
@@ -335,6 +348,9 @@ namespace Summit
         Vector3 TakeOff(Vector3 p, Vector3 v, float lockTime)
         {
             Airborne = true;
+            // leaving a pipe wall or its deck by any route: the air arcs back over the pipe
+            float off = Mathf.Abs(p.x - Slope.Centre(p.z));
+            if (Course.PipeWeight(p.z) > 0.5f && off > Course.PipeFlat + 1f && off < Course.PipeHalfWidth + Course.PipeDeck) pipeAir = true;
             airLock = lockTime;
             AirTime = 0f; Peak = 0f;
             Carve = 0f; Skid = 0f;
@@ -366,10 +382,11 @@ namespace Summit
             int pts;
             bool pipe = Course.InPipe(p.x, p.z);
             if (T < 0.85f) { TrickGrab = 1 + pick % grabs.Length; TrickName = grab; pts = 150; }
-            else if (T < 1.15f) { TrickSpin = Mathf.PI * (pipe ? 1f : 2f); TrickGrab = 1 + pick % grabs.Length; TrickName = (pipe ? "180 " : "360 ") + grab; pts = pipe ? 300 : 450; }
+            // whole turns only: a half turn (180, 540) would leave the board backwards and snap it at landing
+            else if (T < 1.15f) { TrickSpin = Mathf.PI * 2f; TrickGrab = 1 + pick % grabs.Length; TrickName = "360 " + grab; pts = pipe ? 500 : 450; }
             else if (T < 1.5f)
             {
-                if (pick % 2 == 0) { TrickSpin = Mathf.PI * 3f; TrickGrab = 1 + pick % grabs.Length; TrickName = "540 " + grab; pts = 700; }
+                if (pick % 2 == 0) { TrickSpin = Mathf.PI * 2f; TrickGrab = 1 + pick % grabs.Length; TrickName = "Stalled 360 " + grab; pts = 650; }
                 else { TrickFlip = -Mathf.PI * 2f; TrickName = "Backflip"; pts = 800; }
             }
             else
@@ -392,10 +409,23 @@ namespace Summit
             v.y -= G * dt;
             float sp = v.magnitude;
             v -= v * Mathf.Min(1f, 0.0025f * sp * dt);
-            // relax the edge; a little steering lines the board up for the landing
-            Steer *= 1f;
+            if (pipeAir)
+            {
+                // back over the pipe: a steady pull toward the middle, ending with the board pointing back down
+                float side = Mathf.Sign(p.x - Slope.Centre(p.z));
+                v.x -= side * 28f * dt;
+                if (v.y > 0f) v.y -= 0.8f * G * dt;   // pipe airs top out at a few metres, smoothly
+            }
+            // relax the edge; in the air the board swings round to line up with where you are going, so the
+            // landing never has to snap it, and a little steering adds to that
             CarveTurn(dt, 30f);
-            Heading = Mathf.Clamp(Heading + Steer * 1.2f * dt, -MaxHeading, MaxHeading);
+            float flat = v.x * v.x + v.z * v.z;
+            if (flat > 4f && TrickName == null)
+            {
+                float travel = Mathf.Clamp(Mathf.Atan2(v.x, v.z), -MaxHeading, MaxHeading);
+                Heading = Mathf.MoveTowardsAngle(Heading * Mathf.Rad2Deg, travel * Mathf.Rad2Deg, 220f * dt) * Mathf.Deg2Rad;
+            }
+            Heading = Mathf.Clamp(Heading + Steer * 0.8f * dt, -MaxHeading, MaxHeading);
             Speed = new Vector2(v.x, v.z).magnitude;
 
             float nx = p.x + v.x * dt, nz = p.z + v.z * dt;
@@ -412,7 +442,9 @@ namespace Summit
             float impact = Mathf.Max(0f, -Vector3.Dot(v, n));
             Airborne = false;
             AboveGround = 0f;
+            pipeAir = false;
             Vector3 vt = Vector3.ProjectOnPlane(v, n);
+            if (v.z > 0f && vt.z < 0.2f * v.z) vt.z = 0.2f * v.z;   // landing on an up-facing slope never reverses you
             // land facing where you are going: a trick always comes round clean
             if (vt.sqrMagnitude > 1f) Heading = Mathf.Clamp(Mathf.Atan2(vt.x, vt.z), -MaxHeading, MaxHeading);
             Lean = 0f; leanVel = 0f;
@@ -461,6 +493,8 @@ namespace Summit
                 lastGrind = feat.id;
                 grindS = Mathf.Max(0f, s);
                 grindSpeed = along;
+                // ease onto the line over a few frames instead of snapping onto it
+                grindOff = p - (feat.a + dir * grindS + Vector3.up * R);
                 Airborne = false;
                 ClearTrick();
                 Lean = 0f; leanVel = 0f;
@@ -490,7 +524,8 @@ namespace Summit
                 Trick?.Invoke(name, 150 + Mathf.RoundToInt(len * 25f));
                 return TakeOff(p, dir * grindSpeed + Vector3.up * 3.5f, 0.1f);
             }
-            Vector3 target = feat.a + dir * grindS + Vector3.up * R;
+            grindOff *= Mathf.Exp(-dt * 12f);
+            Vector3 target = feat.a + dir * grindS + Vector3.up * R + grindOff;
             return (target - p) / dt;
         }
 
@@ -569,7 +604,7 @@ namespace Summit
             float wantY = Slope.DrawnHeight(p.x + h.x * dt, p.z + h.z * dt) + R;
             Speed = h.magnitude;
             // get up only once the thrown body has come to rest (or after a long slide, regardless)
-            if (crashTimer <= 0f && !(HoldCrash && crashTimer > -6f)) return Recover(p);
+            if (crashTimer <= 0f && !(HoldCrash && crashTimer > -3.5f) && !StayDown) return Recover(p);
             return new Vector3(h.x, (wantY - p.y) / dt, h.z);
         }
 
@@ -578,12 +613,15 @@ namespace Summit
         public bool HasCrashFollow;
         /// <summary>Set while the thrown body is still moving: stay down until it stops.</summary>
         public bool HoldCrash;
+        /// <summary>Set by the game when this fall ends the run: no getting up.</summary>
+        public bool StayDown;
 
         Vector3 Recover(Vector3 p)
         {
             Crashed = false;
             HasCrashFollow = false;
             rb.detectCollisions = true;
+            invulnerable = Mathf.Max(invulnerable, 1.5f);   // a moment to get going before anything can knock you down again
             Heading = 0f;
             // climb out of a crevasse onto its nearer rim
             if (Course.CrevasseNear(p.x, p.z, 0.5f, out float cx, out float half))
