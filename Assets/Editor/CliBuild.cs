@@ -38,6 +38,7 @@ public static class CliBuild
     public static void BuildIOS()
     {
         SummitImport.EnsureImprintMaterial();
+        SummitImport.EnsureVertexColorMaterial();
         SummitImport.EnsureSnowTextures();
         PlayerSettings.productName = "Summit";
         PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.iOS, "com.paulartuso.summit");

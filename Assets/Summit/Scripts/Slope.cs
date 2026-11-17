@@ -90,6 +90,19 @@ namespace Summit
             y += (Noise(x * 0.045f, z * 0.045f) - 0.5f) * 2.6f * rough;
             y += (Noise(x * 0.011f + 50f, z * 0.009f) - 0.5f) * 7f;
             y += Kicker(x, z);
+            // the halfpipe: a U cut along the piste, with decks either side, easing in and out
+            float pw = Course.PipeWeight(z);
+            if (pw > 0f)
+            {
+                float c = Centre(z);
+                float floor = -z * Fall + 2.6f * Mathf.Sin(z * 0.031f + ph) + 1.3f * Mathf.Sin(z * 0.073f + 2.0f + ph * 1.3f)
+                            + (Noise(c * 0.011f + 50f, z * 0.009f) - 0.5f) * 7f;
+                float deckEnd = Course.PipeHalfWidth + Course.PipeDeck;
+                float yp = floor + Course.PipeProfile(a);
+                if (aa > deckEnd) yp = Mathf.Lerp(yp, y, Mathf.Clamp01((aa - deckEnd) / 10f));
+                y = Mathf.Lerp(y, yp, pw);
+            }
+            y -= Course.CrevasseCut(x, z);
             return Start(x, z, y);
         }
 
@@ -129,21 +142,41 @@ namespace Summit
 
         public static float Kicker(float x, float z)
         {
+            var sec = Course.At(z);
+            if (sec == Course.Section.Park)
+            {
+                // the park's jump line: two big kickers in the middle of the piste
+                float zs = Course.CycleBase(z) + Course.ParkAt;
+                foreach (float at in Course.ParkKickers)
+                {
+                    float z0p = zs + at;
+                    float hk = KickShape(x, z, z0p, Centre(z0p), 1.15f);
+                    if (hk > 0f) return hk;
+                }
+                return 0f;
+            }
+            if (sec != Course.Section.Cruise) return 0f;
             float cell = Mathf.Floor((z - 60f) / KickPeriod);
             if (cell < 0f) return 0f;
             if (Hash01((int)cell, 3, 9) < 0.25f) return 0f;          // every so often there is none
             float side = (Hash01((int)cell, 4, 9) - 0.5f) * 18f;      // left, middle or right of the piste
             float z0 = 60f + cell * KickPeriod + 30f;
+            if (Course.At(z0) != Course.Section.Cruise || Course.At(z0 + KickRamp + KickDrop) != Course.Section.Cruise) return 0f;
+            return KickShape(x, z, z0, Centre(z0) + side, 1f);
+        }
+
+        static float KickShape(float x, float z, float z0, float cx, float scale)
+        {
+            float ramp = KickRamp * scale, drop = KickDrop * scale;
             float u = z - z0;
-            if (u < 0f || u > KickRamp + KickDrop) return 0f;
-            float cx = Centre(z0) + side;
-            float w = Mathf.Abs(x - cx) / KickWidth;
+            if (u < 0f || u > ramp + drop) return 0f;
+            float w = Mathf.Abs(x - cx) / (KickWidth * scale);
             if (w >= 1f) return 0f;
             float m = 1f - w * w; m *= m;                                // rounded shoulders
             float h;
-            if (u < KickRamp) { float t = u / KickRamp; h = t * t; }   // curved ramp: the lip is steepest
-            else { float t = (u - KickRamp) / KickDrop; h = 1f - t * t * (3f - 2f * t); }
-            return h * KickHeight * m;
+            if (u < ramp) { float t = u / ramp; h = t * t; }           // curved ramp: the lip is steepest
+            else { float t = (u - ramp) / drop; h = 1f - t * t * (3f - 2f * t); }
+            return h * KickHeight * scale * m;
         }
 
         /// <summary>Where the next kicker is from z, for the HUD or a hint.</summary>

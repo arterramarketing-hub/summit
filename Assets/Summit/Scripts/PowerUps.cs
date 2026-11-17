@@ -31,6 +31,8 @@ namespace Summit
             float z = slot * Spacing + (Slope.Hash01(slot, 12, 21) - 0.5f) * 14f;
             float x = Slope.Centre(z) + (Slope.Hash01(slot, 13, 21) - 0.5f) * 2f * (Slope.PisteHalf - 4f);
             if (Slope.OnPad(x, z) || Mathf.Abs(Slope.Kicker(x, z)) > 0.01f) return false;
+            if (Course.CrevasseNear(x, z, 2f, out _, out _)) return false;
+            if (Course.PipeWeight(z) > 0f) x = Slope.Centre(z) + (Slope.Hash01(slot, 15, 21) - 0.5f) * 8f;   // on the pipe floor
             kind = Slope.Hash01(slot, 14, 21) < 0.3f ? Kind.Shield : Kind.Soda;
             pos = new Vector3(x, Slope.DrawnHeight(x, z) + 1.25f, z);
             return true;

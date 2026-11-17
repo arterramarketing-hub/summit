@@ -31,33 +31,43 @@ public static class RenderShot
         var late = typeof(ChaseCamera).GetMethod("LateUpdate", NP);
         var atmo = Object.FindFirstObjectByType<Atmosphere>();
 
-        rider.Begin();
-        float[] shots = { 0.6f, 9f, 14f };
-        float t = 0f; int shot = 0;
-        for (int i = 0; shot < shots.Length; i++, t += Dt)
+        var dress = Object.FindFirstObjectByType<CourseDressing>();
+        // (name, z to start from, seconds to ride before the shot)
+        var spots = new (string name, float z, float secs)[] {
+            ("Start", Slope.StartZ, 0.6f), ("Run", Slope.StartZ, 9f),
+            ("Park", Course.First + Course.ParkAt + 8f, 1.2f), ("Danger", Course.First + Course.DangerAt + 2f, 1.5f),
+            ("Pipe", Course.First + Course.PipeAt + 50f, 1.5f) };
+        foreach (var sp in spots)
         {
-            rider.Steer = Mathf.Clamp(0.6f * Mathf.Sin(t * 1.2f) + (Slope.Centre(rider.Z + 12f) - rider.transform.position.x) * 0.06f - rider.Heading * 0.8f, -1f, 1f);
-            rider.Tick(Dt);
-            Physics.Simulate(Dt);
-            if (i % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
-            if (i % 4 == 0) { body.Apply(4 * Dt); }
-            if (t >= shots[shot])
+            rider.ResetAt(Slope.Centre(sp.z) + (sp.name == "Park" ? -6f : 0f), sp.z);
+            rider.Begin();
+            if (sp.name != "Start" && sp.name != "Run") rider.Body.linearVelocity = Vector3.forward * 18f;
+            float t = 0f;
+            for (int i = 0; t < sp.secs; i++, t += Dt)
             {
-                terrain.Prewarm(); props.Prewarm();
-                body.Apply(Dt);
-                chase.Snap();
-                late.Invoke(chase, null);
-                typeof(Atmosphere).GetMethod("LateUpdate", NP).Invoke(atmo, null);
-                foreach (var ps in Object.FindObjectsByType<ParticleSystem>(FindObjectsSortMode.None))
-                    if (ps.name == "Snowfall") ps.Simulate(4f, true, true);
-                Shoot(cam, "RenderShot" + shot + ".png");
-                Debug.Log($"SHOT {shot} speed={rider.Speed * 3.6f:0} km/h air={rider.Airborne} tuck={rider.Tuck:0.0}");
-                shot++;
+                rider.Steer = sp.name == "Run" ? Mathf.Clamp(0.6f * Mathf.Sin(t * 1.2f) + (Slope.Centre(rider.Z + 12f) - rider.transform.position.x) * 0.06f - rider.Heading * 0.8f, -1f, 1f) : 0f;
+                rider.Tick(Dt);
+                Physics.Simulate(Dt);
+                if (i % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
+                if (i % 4 == 0) body.Apply(4 * Dt);
             }
+            terrain.Prewarm(); props.Prewarm();
+            if (dress != null) dress.Prewarm();
+            body.Apply(Dt);
+            chase.Snap();
+            late.Invoke(chase, null);
+            typeof(Atmosphere).GetMethod("LateUpdate", NP).Invoke(atmo, null);
+            foreach (var ps in Object.FindObjectsByType<ParticleSystem>(FindObjectsSortMode.None))
+                if (ps.name == "Snowfall") ps.Simulate(4f, true, true);
+            // the forest draws itself in Update; do it by hand for the shot
+            typeof(Forest).GetMethod("Draw", NP).Invoke(props, null);
+            Shoot(cam, "RenderShot" + sp.name + ".png");
+            Debug.Log($"SHOT {sp.name} speed={rider.Speed * 3.6f:0} km/h air={rider.Airborne} grind={rider.Grinding}");
         }
+
         // close-ups of the rider standing still, from the side and from behind
         rider.Stop();
-        rider.Heading = 0f; rider.Spin = 0f; rider.SpinVisual = 0f;
+        rider.Heading = 0f;
         chase.enabled = false;
         body.Apply(0.5f);
         Vector3 c = rider.transform.position + Vector3.up * 0.6f;
@@ -66,13 +76,6 @@ public static class RenderShot
         Shoot(cam, "RenderShotSide.png");
         cam.transform.SetPositionAndRotation(c + new Vector3(0f, 0.8f, -4.5f), Quaternion.LookRotation(Vector3.forward + Vector3.down * 0.15f));
         Shoot(cam, "RenderShotBack.png");
-        var an = rider.GetComponentInChildren<Animator>();
-        if (an != null)
-        {
-            var roll = rider.transform.Find("Pivot/Roll");
-            Debug.Log("FEET L=" + roll.InverseTransformPoint(an.GetBoneTransform(HumanBodyBones.LeftFoot).position) +
-                      " R=" + roll.InverseTransformPoint(an.GetBoneTransform(HumanBodyBones.RightFoot).position));
-        }
         Physics.simulationMode = SimulationMode.FixedUpdate;   // do not leave the project on manual physics
         EditorApplication.Exit(0);
     }

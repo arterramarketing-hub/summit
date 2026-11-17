@@ -29,6 +29,8 @@ namespace Summit
         readonly Avalanche slide = new Avalanche();
 
         PowerUps power;
+        CourseDressing dressing;
+        Wildlife wild;
         int trickPoints, chainCount;
         float chainTimer, stateTimer, best, runTime;
 
@@ -84,6 +86,14 @@ namespace Summit
                 audioFx.Play(Sfx.Scrape, 1f);
             };
             BuildStartGate();
+            dressing = new GameObject("Course").AddComponent<CourseDressing>();
+            dressing.target = rg.transform;
+            dressing.Build(snow.shader);
+            wild = new GameObject("Wildlife").AddComponent<Wildlife>();
+            wild.rider = rider;
+            wild.Build(snow.shader);
+            wild.BearSpotted += () => { if (state == State.Riding) { hud.Flash("BEAR!", "outrun it - keep going straight", 1.6f); audioFx.Play(Sfx.Buried, 0.5f); } };
+            rider.GrindStart += f => { if (state == State.Riding) audioFx.Play(Sfx.Scrape, 0.6f); };
 
             var cam = Camera.main;
             if (cam == null)
@@ -128,7 +138,7 @@ namespace Summit
             sun.intensity = 1.45f;
             sun.shadows = LightShadows.Soft;
             sun.shadowStrength = 0.8f;
-            sun.transform.rotation = Quaternion.Euler(48f, 120f, 0f);
+            sun.transform.rotation = Quaternion.Euler(50f, 50f, 0f);   // behind and to the left of the rider: faces you see are lit
             RenderSettings.sun = sun;
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
             RenderSettings.ambientSkyColor = new Color(0.60f, 0.70f, 0.90f);
@@ -151,7 +161,7 @@ namespace Summit
             }
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogDensity = 0.0048f;
+            RenderSettings.fogDensity = 0.0056f;
             RenderSettings.fogColor = new Color(0.80f, 0.86f, 0.94f);
         }
 
@@ -202,11 +212,13 @@ namespace Summit
             slide.Reset(Slope.StartZ);
             trickPoints = 0; chainCount = 0; chainTimer = 0f; runTime = 0f;
             power.ResetRun();
+            wild.ResetRun();
             terrain.Prewarm();
             props.Prewarm();
+            dressing.Prewarm();
             chase.Snap();
             hud.SetWhiteout(0f);
-            hud.Show("SUMMIT", "Best " + Mathf.RoundToInt(best).ToString("N0"),
+            hud.Show("", "Best " + Mathf.RoundToInt(best).ToString("N0"),
                 Application.isMobilePlatform ? "Drag a finger left / right to steer  ·  add a second finger to tuck  ·  lift it to jump"
                               : "A / D to steer  ·  hold Space to tuck  ·  let go to jump");
             hud.SetButtons(true, false, "PLAY");
@@ -375,15 +387,14 @@ namespace Summit
             float gy = Slope.DrawnHeight(cx, gz);
             for (int sgn = -1; sgn <= 1; sgn += 2)
                 Block(PrimitiveType.Cube, root, new Vector3(cx + sgn * 4.2f, gy + 2.2f, gz), new Vector3(0.35f, 4.4f, 0.35f), red);
-            Block(PrimitiveType.Cube, root, new Vector3(cx, gy + 4.3f, gz), new Vector3(8.8f, 1.1f, 0.25f), red);
-            var label = new GameObject("Label").AddComponent<TextMesh>();
-            label.transform.SetParent(root, false);
-            label.text = "SUMMIT";
-            label.fontSize = 90; label.characterSize = 0.06f; label.anchor = TextAnchor.MiddleCenter; label.color = Color.white;
-            label.fontStyle = FontStyle.Bold;
-            var f = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            if (f != null) { label.font = f; label.GetComponent<MeshRenderer>().sharedMaterial = f.material; }
-            label.transform.SetPositionAndRotation(new Vector3(cx, gy + 4.3f, gz - 0.14f), Quaternion.identity);   // faces the rider coming down
+            // the banner: a printed vinyl strip in a frame, hung between the posts
+            Block(PrimitiveType.Cube, root, new Vector3(cx, gy + 4.3f, gz + 0.06f), new Vector3(8.6f, 1.2f, 0.08f), red);
+            var banner = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            Object.DestroyImmediate(banner.GetComponent<Collider>());
+            banner.transform.SetParent(root, false);
+            banner.transform.SetPositionAndRotation(new Vector3(cx, gy + 4.3f, gz), Quaternion.Euler(0f, 180f, 0f));   // faces the rider coming down
+            banner.transform.localScale = new Vector3(8.4f, 1.05f, 1f);
+            banner.GetComponent<MeshRenderer>().sharedMaterial = CourseDressing.Sign(snow.shader, "Signs/BannerSummit");
             // flags lining the lip and a wooden kicker edge
             for (int i = 0; i < 6; i++)
                 for (int sgn = -1; sgn <= 1; sgn += 2)

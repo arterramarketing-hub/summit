@@ -15,7 +15,7 @@ namespace Summit
     {
         public Rider rider;
         Transform pivot, roll, upper, trailAnchor;
-        TrailRenderer trail;
+        SnowTrail trail;
         ParticleSystem spray;
         ParticleSystem.EmissionModule sprayEm, wakeEm;
         ParticleSystem wake;
@@ -59,27 +59,11 @@ namespace Summit
             upper.SetParent(roll, false);
             var prefab = Resources.Load<GameObject>("Rider/Character");
             jacketShader = jacket != null ? jacket.shader : null;
-            if (prefab != null && SetUpHumanoid(prefab)) { }
+            if (prefab != null && (SetUpHumanoid(prefab) || SetUpRig(prefab))) { }
             else ShapesFigure(jacket, pants, skin, dark);
 
-            // a groove in the snow behind the board
-            trailAnchor = new GameObject("Trail").transform;
-            trailAnchor.SetParent(transform, false);
-            trail = trailAnchor.gameObject.AddComponent<TrailRenderer>();
-            trail.alignment = LineAlignment.TransformZ;
-            trail.time = 30f;
-            trail.minVertexDistance = 0.25f;
-            trail.widthMultiplier = 0.5f;
-            trail.material = Imprint(trailMat, GrooveTexture());
-            trail.textureMode = LineTextureMode.Stretch;
-            trail.generateLightingData = true;
-            var tg = new Gradient();
-            tg.SetKeys(new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
-                       new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(0.9f, 0.7f), new GradientAlphaKey(0f, 1f) });
-            trail.colorGradient = tg;
-            trail.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            trail.receiveShadows = true;
-            trail.numCapVertices = 0;
+            // a groove pressed into the snow behind the board
+            trail = new SnowTrail(jacket != null ? jacket.shader : Shader.Find("Universal Render Pipeline/Lit"));
 
             // powder off the edge
             var sg = new GameObject("Spray");
@@ -211,7 +195,9 @@ namespace Summit
             float h = HeightOf(go);
             if (h > 0.01f) model.localScale *= 1.75f / h;
 
-            Gear();
+            Gear(anim.GetBoneTransform(HumanBodyBones.Head), anim.GetBoneTransform(HumanBodyBones.LeftHand), anim.GetBoneTransform(HumanBodyBones.RightHand),
+                 anim.GetBoneTransform(HumanBodyBones.LeftUpperArm), anim.GetBoneTransform(HumanBodyBones.LeftLowerArm),
+                 anim.GetBoneTransform(HumanBodyBones.RightUpperArm), anim.GetBoneTransform(HumanBodyBones.RightLowerArm), true);
             poser = new HumanPoseHandler(anim.avatar, anim.transform);
             poser.GetHumanPose(ref pose);
             footL = anim.GetBoneTransform(HumanBodyBones.LeftFoot);
@@ -233,6 +219,72 @@ namespace Summit
             return true;
         }
 
+        RiderRig rig;
+
+        /// <summary>A Quaternius-style model whose feet are separate from its legs: posed by RiderRig.</summary>
+        bool SetUpRig(GameObject prefab)
+        {
+            var go = Instantiate(prefab, upper, false);
+            go.name = "Character";
+            var r = new RiderRig(go.transform);
+            if (!r.Ok) { DestroyImmediate(go); return false; }
+            foreach (var a in go.GetComponentsInChildren<Animator>()) a.enabled = false;
+            foreach (var c in go.GetComponentsInChildren<Collider>()) DestroyImmediate(c);
+            model = go.transform;
+            // winter colours: a red shell jacket, charcoal snow pants, dark pack
+            Shader sh = jacketShader != null ? jacketShader : Shader.Find("Universal Render Pipeline/Lit");
+            foreach (var smr in go.GetComponentsInChildren<Renderer>())
+            {
+                var mats = smr.sharedMaterials;
+                bool pack = smr.name.Contains("Backpack");
+                for (int i = 0; i < mats.Length; i++)
+                {
+                    if (mats[i] == null) continue;
+                    var m = new Material(sh);
+                    Color c = mats[i].color;
+                    string n = mats[i].name;
+                    if (pack) c = n.StartsWith("Gold") ? c : n.Contains("Green") ? new Color(0.15f, 0.17f, 0.2f) : new Color(0.08f, 0.08f, 0.1f);
+                    else if (n.StartsWith("Green")) c = new Color(0.82f, 0.18f, 0.10f);
+                    else if (n.StartsWith("LightGreen")) c = new Color(0.95f, 0.30f, 0.16f);
+                    else if (n.StartsWith("Brown2")) c = new Color(0.12f, 0.13f, 0.17f);
+                    else if (n.StartsWith("Brown")) c = new Color(0.17f, 0.19f, 0.24f);
+                    m.SetColor("_BaseColor", c);
+                    m.SetFloat("_Smoothness", n.StartsWith("Skin") || n.StartsWith("Hair") ? 0.25f : 0.35f);
+                    mats[i] = m;
+                }
+                smr.sharedMaterials = mats;
+                if (smr is SkinnedMeshRenderer sk) sk.updateWhenOffscreen = true;
+                smr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+            }
+            // side-on, left foot forward, about 1.75 m tall
+            Vector3 left = upper.InverseTransformDirection(r.ThighL.position - r.ThighR.position); left.y = 0f;
+            if (left.sqrMagnitude > 1e-8f)
+                model.localRotation = Quaternion.Euler(0f, Vector3.SignedAngle(left, Vector3.forward, Vector3.up), 0f) * model.localRotation;
+            float h = HeightOf(go);
+            if (h > 0.01f) model.localScale *= 1.75f / h;
+            r.CaptureBind();
+            Gear(r.Head, r.HandL, r.HandR, r.UpperL, r.LowerL, r.UpperR, r.LowerR, false);
+            rig = r;
+            return true;
+        }
+
+        void PoseRig(float dt)
+        {
+            float t = Time.time;
+            compV += (-comp * 140f - compV * 16f) * dt;
+            comp = Mathf.Clamp(comp + compV * dt, -0.15f, 0.6f);
+            bool idle = !rider.Running, crashed = rider.Crashed, air = rider.Airborne;
+            bool grab = air && rider.TrickGrab > 0 && rider.TrickProgress > 0.1f && rider.TrickProgress < 0.95f;
+            bool flip = air && Mathf.Abs(rider.TrickFlip) > 0f;
+            float toe = Mathf.Clamp(rider.Lean / Rider.MaxLean, -1f, 1f);
+            float chatterV = idle || air ? 0f : (Mathf.PerlinNoise(t * 9f, 1.3f) - 0.5f) * 0.1f * Mathf.Clamp01(rider.Speed / 30f);
+            float crouch = idle ? 0.15f + 0.04f * Mathf.Sin(t * 2.1f) : 0.45f + 0.35f * rider.Tuck + comp + Mathf.Abs(toe) * 0.2f + chatterV;
+            if (grab || flip) crouch = 1f;
+            Vector3 bl = roll.TransformPoint(new Vector3(0f, BoardTop + 0.09f, 0.27f));
+            Vector3 br = roll.TransformPoint(new Vector3(0f, BoardTop + 0.09f, -0.27f));
+            rig.Pose(roll, bl, br, dt, crouch, toe, rider.Tuck, grab, flip, idle, crashed, t);
+        }
+
         static float HeightOf(GameObject go)
         {
             var rs = go.GetComponentsInChildren<Renderer>();
@@ -244,7 +296,7 @@ namespace Summit
 
         // ---- gear: a helmet, goggles, jacket sleeves and gloves, fixed to the bones so they move with them
 
-        void Gear()
+        void Gear(Transform headBone, Transform handL, Transform handR, Transform uL, Transform lL, Transform uR, Transform lR, bool sleeves)
         {
             Shader sh = jacketShader != null ? jacketShader : Shader.Find("Universal Render Pipeline/Lit");
             Material M(Color c, float smooth, Color emit = default)
@@ -260,18 +312,23 @@ namespace Summit
             var lensM = M(new Color(1f, 0.55f, 0.1f), 0.95f, new Color(0.35f, 0.15f, 0f));
             var strapM = M(new Color(0.1f, 0.1f, 0.12f), 0.2f);
 
-            Transform B(HumanBodyBones b) => anim.GetBoneTransform(b);
-            Limb(B(HumanBodyBones.LeftUpperArm), B(HumanBodyBones.LeftLowerArm), 0.075f, jacketM);
-            Limb(B(HumanBodyBones.LeftLowerArm), B(HumanBodyBones.LeftHand), 0.065f, jacketM);
-            Limb(B(HumanBodyBones.RightUpperArm), B(HumanBodyBones.RightLowerArm), 0.075f, jacketM);
-            Limb(B(HumanBodyBones.RightLowerArm), B(HumanBodyBones.RightHand), 0.065f, jacketM);
-            Blob(B(HumanBodyBones.LeftHand), Vector3.zero, new Vector3(0.10f, 0.10f, 0.10f), gloveM, PrimitiveType.Sphere);
-            Blob(B(HumanBodyBones.RightHand), Vector3.zero, new Vector3(0.10f, 0.10f, 0.10f), gloveM, PrimitiveType.Sphere);
+            if (sleeves)
+            {
+                Limb(uL, lL, 0.075f, jacketM); Limb(lL, handL, 0.065f, jacketM);
+                Limb(uR, lR, 0.075f, jacketM); Limb(lR, handR, 0.065f, jacketM);
+            }
+            else
+            {
+                // jacket cuffs over the forearms
+                Limb(lL, handL, 0.06f, jacketM); Limb(lR, handR, 0.06f, jacketM);
+            }
+            Blob(handL, Vector3.zero, new Vector3(0.10f, 0.10f, 0.10f), gloveM, PrimitiveType.Sphere);
+            Blob(handR, Vector3.zero, new Vector3(0.10f, 0.10f, 0.10f), gloveM, PrimitiveType.Sphere);
 
             var beanieM = M(new Color(0.08f, 0.55f, 0.62f), 0.1f);
             var pomM = M(new Color(0.97f, 0.97f, 0.97f), 0.05f);
             var frameM = M(new Color(0.06f, 0.06f, 0.07f), 0.4f);
-            var head = B(HumanBodyBones.Head);
+            var head = headBone;
             if (head != null)
             {
                 Vector3 fwd = upper.TransformDirection(Vector3.right);   // the rider faces the toe edge
@@ -331,13 +388,14 @@ namespace Summit
 
             float tuck = rider.Tuck, carve = rider.Carve, steer = rider.Steer, speed01 = Mathf.Clamp01(rider.Speed / 30f);
             bool idle = !rider.Running, crashed = rider.Crashed, air = rider.Airborne;
-            bool grab = air && rider.AirTime > 0.3f;
+            bool grab = air && rider.TrickGrab > 0 && rider.TrickProgress > 0.1f && rider.TrickProgress < 0.95f;
+            bool flip = air && Mathf.Abs(rider.TrickFlip) > 0f;
             // the board chatters a little at speed: tiny fast flex in the knees
             chatter = idle || air ? 0f : (Mathf.PerlinNoise(t * 9f, 1.3f) - 0.5f) * 0.08f * speed01;
             float toe = Mathf.Clamp(steer, -1f, 1f);   // + = toe-side (right) turn, - = heel-side
             float crouch = idle ? 0.25f + 0.03f * Mathf.Sin(t * 2.1f)
                          : Mathf.Lerp(0.5f, 0.9f, tuck) + comp + Mathf.Abs(toe) * 0.18f + chatter;
-            if (grab) crouch = 1f;
+            if (grab || flip) crouch = 1f;
 
             // legs: bent and loaded; toe-side drives the knees forward, heel-side sits the hips back
             W(mKneeL, Mathf.Lerp(1f, -0.95f, crouch)); W(mKneeR, Mathf.Lerp(1f, -0.95f, crouch));
@@ -363,7 +421,8 @@ namespace Summit
             {
                 // arms out wide for balance; a grab on longer air
                 W(mArmL, 0.45f); W(mArmR, 0.3f); W(mArmFL, 0.2f); W(mArmFR, -0.2f);
-                if (Mathf.Abs(rider.Spin) > 0.3f) { W(mArmL, 0.2f); W(mArmR, 0.2f); W(mTwist, 0.3f + Mathf.Sign(rider.Spin) * 0.6f); }
+                if (Mathf.Abs(rider.TrickSpin) > 0.3f && rider.TrickProgress < 0.15f) { W(mTwist, 0.3f - Mathf.Sign(rider.TrickSpin) * 0.6f); }   // wind up against the spin
+                if (flip) { W(mKneeL, -1f); W(mKneeR, -1f); W(mHipL, 1f); W(mHipR, 1f); }
                 if (grab) { W(mArmR, -0.95f); W(mArmFR, 0.75f); W(mElbowR, 0.9f); }
             }
             if (crashed)
@@ -557,34 +616,46 @@ namespace Summit
                 crashSpin += dt;
                 pivot.Rotate(crashAxis, 520f * dt * Mathf.Clamp01(1.2f - crashSpin), Space.World);
                 if (poser != null) Pose(dt);
+                else if (rig != null) PoseRig(dt);
             }
             else
             {
-                rider.SpinVisual = Mathf.Lerp(rider.SpinVisual, 0f, 1f - Mathf.Exp(-dt * 10f));
-                float yaw = rider.Heading + rider.Spin + rider.SpinVisual;
+                float yaw = rider.Heading;
+                Vector3 up = normal;
+                if (rider.Grinding)
+                {
+                    // 50-50 along a box; across the rail for a boardslide
+                    var fd = rider.GrindFeature.Dir;
+                    yaw = Mathf.Atan2(fd.x, fd.z) + (rider.GrindFeature.kind == Course.Kind.Rail ? Mathf.PI * 0.5f : 0f);
+                    up = Vector3.up;
+                }
                 var f = new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw));
-                Vector3 fp = Vector3.ProjectOnPlane(f, normal);
-                if (fp.sqrMagnitude > 1e-4f) pivot.rotation = Quaternion.LookRotation(fp.normalized, normal);
+                Vector3 fp = Vector3.ProjectOnPlane(f, up);
+                Quaternion baseRot = fp.sqrMagnitude > 1e-4f ? Quaternion.LookRotation(fp.normalized, up) : pivot.rotation;
+                // an automatic trick: spin about the body's up axis and flip about the board, round the middle of the body
+                Quaternion rot = baseRot;
+                if (rider.Airborne && rider.TrickName != null)
+                {
+                    float k = rider.TrickProgress;
+                    rot = baseRot * Quaternion.AngleAxis(rider.TrickSpin * k * Mathf.Rad2Deg, Vector3.up)
+                                  * Quaternion.AngleAxis(rider.TrickFlip * k * Mathf.Rad2Deg, Vector3.forward);
+                }
+                Vector3 mid = new Vector3(0f, 0.9f, 0f);
+                pivot.rotation = rot;
+                pivot.position = p + Vector3.down * Rider.R + baseRot * mid - rot * mid;
 
-                // lean into the turn by the angle that balances it against gravity
-                float th = rider.TravelHeading;
-                float rate = dt > 0f ? Mathf.DeltaAngle(lastTravel * Mathf.Rad2Deg, th * Mathf.Rad2Deg) * Mathf.Deg2Rad / dt : 0f;
-                lastTravel = th;
-                yawRate = Mathf.Lerp(yawRate, rate, 1f - Mathf.Exp(-dt * 10f));
-                float want = rider.Airborne ? 0f : Mathf.Clamp(Mathf.Atan2(rider.Speed * yawRate, 9.81f) * Mathf.Rad2Deg, -45f, 45f);
-                lean = Mathf.Lerp(lean, want, 1f - Mathf.Exp(-dt * 14f));
-                // the rider's lean is the steering readout: it follows the turn and the thumb
-                roll.localRotation = Quaternion.Euler(0f, 0f, -lean * 0.5f - rider.Steer * 6f);
-                upper.localRotation = Quaternion.Euler(0f, 0f, -lean * 0.4f);
+                // the lean IS the steering readout: the body is on exactly the edge the thumb asked for
+                float leanDeg = rider.Lean * Mathf.Rad2Deg;
+                roll.localRotation = Quaternion.Euler(0f, 0f, -leanDeg * 0.75f);
+                upper.localRotation = Quaternion.Euler(0f, 0f, -leanDeg * 0.25f);
                 if (poser != null) Pose(dt);
+                else if (rig != null) PoseRig(dt);
                 else upper.localScale = new Vector3(1f, 1f - 0.24f * rider.Tuck, 1f);
             }
 
-            // the groove lies flat on the snow just above it
-            var tf = new Vector3(Mathf.Sin(rider.Heading), 0f, Mathf.Cos(rider.Heading));
-            trailAnchor.position = p + Vector3.down * Rider.R + normal * 0.03f;
-            trailAnchor.rotation = Quaternion.LookRotation(normal, Vector3.ProjectOnPlane(tf, normal) + Vector3.forward * 1e-4f);
-            trail.emitting = rider.Running && !rider.Crashed && rider.AboveGround < 0.12f;
+            // the track: a groove pressed into the snow under the board
+            trail.Feed(p + Vector3.down * Rider.R, normal, rider.Heading, rider.Running && !rider.Crashed && !rider.Airborne && !rider.Grinding,
+                       Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Slope.Rough(p.x, p.z)), rider.Carve);
 
             sprayEm.rateOverTime = rider.Running && !rider.Crashed && !rider.Airborne
                 ? rider.Carve * rider.Speed * 7f + Mathf.Max(0f, rider.Speed - 22f) * 1.5f + (rider.BoostTime > 0f ? 60f : 0f)

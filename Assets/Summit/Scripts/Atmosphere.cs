@@ -224,7 +224,7 @@ namespace Summit
                 float a = i / (float)N * Mathf.PI * 2f;
                 float top = tops[i];
                 // faces turned toward the sun are lighter, the others in blue shadow
-                float slope = (tops[Mathf.Min(N, i + 3)] - tops[Mathf.Max(0, i - 3)]) * 0.035f;
+                float slope = (tops[Mathf.Min(N, i + 6)] - tops[Mathf.Max(0, i - 6)]) * 0.012f;
                 float lit = Mathf.Clamp(0.5f + slope, 0f, 1f);
                 Color rockLit = Color.Lerp(rock * 0.7f, Color.Lerp(rock, cap, 0.3f), lit); rockLit.a = 1f;
                 Color capLit = Color.Lerp(Color.Lerp(cap, rock, 0.45f), cap, lit); capLit.a = 1f;
@@ -234,8 +234,11 @@ namespace Summit
                 v[k] = dir + Vector3.up * top;                 c[k] = capLit;           // peak
                 v[k + 1] = dir + Vector3.up * snowLine;        c[k + 1] = capLit;       // snow line
                 v[k + 2] = dir + Vector3.up * (snowLine - 70f); c[k + 2] = rockLit;     // bare rock below the snow
-                v[k + 3] = dir + Vector3.up * (snowLine - 170f); c[k + 3] = fog;        // fades into the valley haze
-                v[k + 4] = dir + Vector3.up * -1200f;          c[k + 4] = fog;          // haze all the way down
+                // below the rock the range dissolves into the haze: fade it out so the sky shows, no curtain
+                Color fogClear = fog; fogClear.a = 0f;
+                Color rockFade = Color.Lerp(rockLit, fog, 0.5f); rockFade.a = 0.5f;
+                v[k + 3] = dir + Vector3.up * (snowLine - 130f); c[k + 3] = rockFade;
+                v[k + 4] = dir + Vector3.up * (snowLine - 220f); c[k + 4] = fogClear;
                 if (i < N)
                     for (int r = 0; r < Rows - 1; r++)
                     {

@@ -27,6 +27,9 @@ public static class SimTest
         r.Crash += _ => crashes++;
         r.Scraped += _ => scrapes++;
         r.RoughLanding += _ => rough++;
+        r.Landed += imp => { if (r.Peak > 3f) Debug.Log($"SIMAIR peak={r.Peak:0.0} air={r.AirTime:0.00} z={r.Z:0} sec={Course.At(r.Z)} x-c={r.Body.position.x - Slope.Centre(r.Z):0.0} imp={imp:0}"); };
+        r.Trick += (n, p) => Debug.Log($"SIMTRICK {n} {p} z={r.Z:0} sec={Course.At(r.Z)}");
+        r.Crash += w => Debug.Log($"SIMCRASH {w} z={r.Z:0} sec={Course.At(r.Z)}");
         r.Trick += (n, p) => { if (n == "Close call") calls++; };
         int takeoffs = 0; bool wasAir = false;
 

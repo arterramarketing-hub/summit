@@ -31,7 +31,7 @@ namespace Summit
         /// <summary>One-finger drag stick: where the finger first touched and where it is now (screen pixels).</summary>
         public bool StickActive;
         public Vector2 StickOrigin, StickPos;
-        public float stickRadiusFrac = 0.13f;   // full lock at this fraction of the screen width
+        public float stickRadiusFrac = 0.16f;   // full lock at this fraction of the screen width
         bool stickPrev;
         bool wasDown, swallow;
 
@@ -77,11 +77,19 @@ namespace Summit
                 StickActive = on;
                 StickPos = fingerPos;
                 float radius = Mathf.Max(60f, Screen.width * stickRadiusFrac);
+                // the start point trails the thumb once it passes full lock, so reversing is instant
+                // and you never run out of screen
+                if (on)
+                {
+                    float off = fingerPos.x - StickOrigin.x;
+                    if (off > radius) StickOrigin.x = fingerPos.x - radius;
+                    else if (off < -radius) StickOrigin.x = fingerPos.x + radius;
+                }
                 float d = on ? Mathf.Clamp((fingerPos.x - StickOrigin.x) / radius, -1f, 1f) : 0f;
                 float a = Mathf.Abs(d);
-                a = a < 0.03f ? 0f : (a - 0.03f) / 0.97f;
-                // a curved response: the first part of the throw gives fine carving, the end full lock
-                target = Mathf.Sign(d) * Mathf.Lerp(a * a, a, 0.35f);
+                a = a < 0.025f ? 0f : (a - 0.025f) / 0.975f;
+                // curved response: the first half of the throw is fine carving, the rest opens to a full edge
+                target = Mathf.Sign(d) * a * (0.35f + 0.65f * a);
                 // a second finger held down tucks; a quick overlap does not count
                 twoTime = fingers >= 2 ? twoTime + Time.unscaledDeltaTime : 0f;
             }
@@ -97,7 +105,7 @@ namespace Summit
             float key = KeyAxis();
             if (key != 0f) target = key;
             // a short low-pass takes the jitter out of the finger or sensor without feeling laggy
-            Steer = Mathf.Lerp(Steer, target, 1f - Mathf.Exp(-Time.unscaledDeltaTime * (useTilt ? 16f : 22f)));
+            Steer = Mathf.Lerp(Steer, target, 1f - Mathf.Exp(-Time.unscaledDeltaTime * (useTilt ? 16f : 60f)));
 
             // hold / release
             // stick mode: a second finger (or Space) tucks; tilt mode: any press tucks
