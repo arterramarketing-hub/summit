@@ -13,6 +13,10 @@ using Summit;
 ///   Shots: renders riding a ridge, looking down a drop, the cliffs from below, a fall, and the sign.
 ///          Unity -batchmode -projectPath . -executeMethod RidgeTest.Shots -logFile shots.log
 ///          (no -nographics: it needs the GPU). Writes RidgeShot*.png to $RIDGE_SHOTS, or the project folder.
+///   Fit:   that what is drawn fits what is ridden: rays down onto the built terrain chunks across the crest's
+///          rounded edge (how far the rider would hover over or sink into the drawn snow, and any cracks), the
+///          marker poles' feet, and that wherever a fall on a cliff ends, the rider gets up clear of every rock.
+///          Unity -batchmode -nographics -projectPath . -executeMethod RidgeTest.Fit -logFile fit.log
 /// </summary>
 public static class RidgeTest
 {
@@ -261,6 +265,152 @@ public static class RidgeTest
             }
         }
         ChaseCamera.TestDt = 0f;
+        Physics.simulationMode = SimulationMode.FixedUpdate;
+        EditorApplication.Exit(0);
+    }
+
+    public static void Fit()
+    {
+        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
+        var game = Object.FindFirstObjectByType<SummitGame>();
+        TestBoot.Boot(game);
+        Physics.simulationMode = SimulationMode.Script;
+        var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
+        var terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
+        var props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        var dress = Object.FindFirstObjectByType<CourseDressing>();
+        rider.input = null;
+        const int RockLayer = 31, GroundLayer = 30;
+        int problems = 0;
+        void Bad(string m) { problems++; if (problems < 40) Debug.Log("RIDGEFIT BAD " + m); }
+
+        // mountains with both kinds of ridge
+        var seeds = new System.Collections.Generic.List<int>();
+        int both = 0, one = 0;
+        for (int s = 1; s < 400 && seeds.Count < 4; s++)
+        {
+            Slope.Init(s);
+            if (!Ridge.Built(0)) continue;
+            if (Ridge.Sides(0) == 0 ? both++ < 2 : one++ < 2) seeds.Add(s);
+        }
+        foreach (int seed in seeds)
+        {
+            Slope.Init(seed);
+            terrain.Rebuild(); props.Rebuild(); dress.Rebuild();
+            float zr = Course.First + Ridge.At, ze = Course.First + Ridge.End;
+            rider.ResetAt(Slope.Centre(zr - 20f), zr - 20f);
+            for (int k = 0; k < 6; k++) { terrain.Prewarm(); props.Prewarm(); dress.Prewarm(); }
+            foreach (var mf in terrain.GetComponentsInChildren<MeshFilter>())
+            {
+                var mc = mf.GetComponent<MeshCollider>();
+                if (mc == null) mc = mf.gameObject.AddComponent<MeshCollider>();
+                mc.sharedMesh = null; mc.sharedMesh = mf.sharedMesh;
+                mf.gameObject.layer = GroundLayer;   // so the rays below see only the terrain
+            }
+            var rocks = new System.Collections.Generic.List<GameObject>();
+            foreach (var t in dress.GetComponentsInChildren<Transform>())
+                if (t.name == "RidgeRock") rocks.Add(t.gameObject);
+            foreach (var g in rocks)
+                foreach (var mf in g.GetComponentsInChildren<MeshFilter>())
+                {
+                    mf.gameObject.layer = RockLayer;
+                    mf.gameObject.AddComponent<MeshCollider>().sharedMesh = mf.sharedMesh;
+                }
+            Physics.SyncTransforms();
+            bool Ground(float x, float z, out float y)
+            {
+                y = 0f;
+                if (!Physics.Raycast(new Vector3(x, Slope.Height(x, z) + 60f, z), Vector3.down, out var hit, 200f, 1 << GroundLayer)) return false;
+                y = hit.point.y; return true;
+            }
+            // the coarse facet the mesh used to draw everywhere, for comparison
+            float Coarse(float x, float z)
+            {
+                float q = Slope.Quad, gx = x / q, gz = z / q;
+                int i = Mathf.FloorToInt(gx), j = Mathf.FloorToInt(gz);
+                float u = gx - i, v = gz - j, x0 = i * q, z0 = j * q;
+                float hb = Slope.Height(x0 + q, z0), hc = Slope.Height(x0, z0 + q);
+                if (u + v <= 1f) { float ha = Slope.Height(x0, z0); return ha + (hb - ha) * u + (hc - ha) * v; }
+                float hd = Slope.Height(x0 + q, z0 + q);
+                return hd + (hc - hd) * (1f - u) + (hb - hd) * (1f - v);
+            }
+
+            // 1. the crest's rounded edge: the rider (on DrawnHeight) against the drawn mesh
+            float hover = 0f, sink = 0f, was = 0f, hoverAt = 0f, off = 0f, cracks = 0, samples = 0;
+            for (float z = zr + 1f; z < ze - 1f; z += 0.37f)
+            {
+                float w = Ridge.Weight(z);
+                if (w < 0.05f) continue;
+                float half = Ridge.HalfWidth(z);
+                for (int sd = -1; sd <= 1; sd += 2)
+                    for (float d = half - 1.5f; d < half + Ridge.Shoulder + 2.5f; d += 0.11f)
+                    {
+                        float x = Slope.Centre(z) + sd * d;
+                        samples++;
+                        if (!Ground(x, z, out float my)) { cracks++; if (cracks < 5) Bad($"seed{seed} no terrain under x={x:0.00} z={z:0.00}"); continue; }
+                        float gap = Slope.DrawnHeight(x, z) - my;
+                        if (gap > hover) { hover = gap; hoverAt = z; off = sd * d; }
+                        sink = Mathf.Min(sink, gap);
+                        was = Mathf.Max(was, Slope.Height(x, z) - Coarse(x, z));
+                    }
+            }
+            Debug.Log($"RIDGEFIT seed{seed} sides={Ridge.Sides(0)} edge: rider over drawn snow at most {hover * 100f:0.0} cm (z={hoverAt:0} off={off:0.0}), into it at most {-sink * 100f:0.0} cm, " +
+                      $"{cracks} cracks in {samples} rays (whole 1.5 m facets would have left a {was * 100f:0} cm gap)");
+            if (hover > 0.005f) Bad($"seed{seed} rider hovers {hover * 100f:0.0} cm over the crest edge at z={hoverAt:0} off={off:0.0}");
+            if (sink < -0.005f) Bad($"seed{seed} rider sinks {-sink * 100f:0.0} cm into the crest edge");
+            // 2. everywhere else round the ridge, the rider stands on exactly the drawn mesh, and it has no holes
+            float worst = 0f; int holes = 0, n2 = 0;
+            for (float z = zr - 40f; z < ze + 40f; z += 0.53f)
+                for (float a = -60f; a <= 60f; a += 0.71f)
+                {
+                    float x = Slope.Centre(z) + a + 0.013f * (z % 7f);
+                    n2++;
+                    // a crevasse's hole (the terrain leaves out any quad with a corner in it: its walls are their own mesh)
+                    float q = Slope.Quad, cx0 = Mathf.Floor(x / q) * q, cz0 = Mathf.Floor(z / q) * q;
+                    if (Mathf.Max(Mathf.Max(Course.CrevasseCut(cx0, cz0), Course.CrevasseCut(cx0 + q, cz0)),
+                                  Mathf.Max(Course.CrevasseCut(cx0, cz0 + q), Course.CrevasseCut(cx0 + q, cz0 + q))) > 0.25f) continue;
+                    if (!Ground(x, z, out float my)) { holes++; if (holes < 5) Bad($"seed{seed} hole in the terrain at x={x:0.00} z={z:0.00}"); continue; }
+                    worst = Mathf.Max(worst, Mathf.Abs(Slope.DrawnHeight(x, z) - my));
+                }
+            Debug.Log($"RIDGEFIT seed{seed} around the ridge: {holes} holes in {n2} rays, the mesh is ridden to within {worst * 1000f:0.0} mm");
+            if (worst > 0.005f) Bad($"seed{seed} rider and mesh disagree by {worst * 100f:0.0} cm round the ridge");
+            // 3. the marker poles stand in the snow, not over it
+            float poleHigh = -9f, poleLow = 9f; int poles = 0;
+            foreach (var t in dress.GetComponentsInChildren<Transform>())
+            {
+                if (t.name != "RidgePole" || t.localScale.y < 0.5f) continue;
+                if (!Ground(t.position.x, t.position.z, out float my)) continue;
+                float foot = t.position.y - t.localScale.y - my;
+                poleHigh = Mathf.Max(poleHigh, foot); poleLow = Mathf.Min(poleLow, foot); poles++;
+            }
+            Debug.Log($"RIDGEFIT seed{seed}: {poles} poles, feet from {poleLow * 100f:0.0} to {poleHigh * 100f:0.0} cm off the drawn snow");
+            if (poles > 0 && (poleHigh > 0f || poleLow < -0.2f)) Bad($"seed{seed} pole feet {poleLow * 100f:0.0}..{poleHigh * 100f:0.0} cm off the snow");
+            // 4. a fall that ends anywhere on or below a cliff gets up clear of the rocks
+            int inRock = 0, ups = 0;
+            for (float z = zr; z < ze; z += 1.3f)
+            {
+                if (Ridge.Weight(z) < 0.4f) continue;
+                for (int sd = -1; sd <= 1; sd += 2)
+                {
+                    if (!Ridge.CliffSide(z, sd)) continue;
+                    float half = Ridge.HalfWidth(z), reach = Ridge.Reach(z, sd);
+                    for (float d = half + 0.5f; d < reach + 14f; d += 0.9f)
+                    {
+                        float x = Ridge.SafeX(Slope.Centre(z) + sd * d, z);
+                        var p = new Vector3(x, Slope.DrawnHeight(x, z), z);
+                        ups++;
+                        if (Physics.CheckCapsule(p + Vector3.up * 0.45f, p + Vector3.up * 1.5f, 0.4f, 1 << RockLayer))
+                        {
+                            inRock++;
+                            if (inRock < 6) Bad($"seed{seed} a fall {d:0.0} m out at z={z:0} gets up inside a rock at off={x - Slope.Centre(z):0.0} (reach {reach:0.0})");
+                        }
+                    }
+                }
+            }
+            Debug.Log($"RIDGEFIT seed{seed}: {rocks.Count} rocks; {inRock} of {ups} get-ups inside one");
+            foreach (var g in rocks) foreach (var mc in g.GetComponentsInChildren<MeshCollider>()) Object.DestroyImmediate(mc);
+        }
+        Debug.Log($"RIDGEFIT done: {problems} problem(s)");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         EditorApplication.Exit(0);
     }

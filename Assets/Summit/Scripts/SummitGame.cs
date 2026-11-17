@@ -355,6 +355,7 @@ namespace Summit
             terrain.behindChunks = 4; props.behindCells = 16;   // you can turn round and look up the hill here
             camp.Enter(rider, body, chase.GetComponent<Camera>());
             if (slideView != null) slideView.gameObject.SetActive(false);   // its toe waits just uphill of the camp: not drawn here
+            lensFx.Strength = 0.3f;   // the camp's gentle lens at once (it's a cut); dropping in eases back to yours
             terrain.Prewarm(); props.Prewarm();
             meta.SetMode(MetaUi.Mode.Hub);
         }
@@ -416,6 +417,7 @@ namespace Summit
             if (skin == null) skin = Plain(new Color(0.88f, 0.70f, 0.58f), 0.3f);
             if (dark == null) dark = Plain(new Color(0.05f, 0.05f, 0.07f), 0.9f);
             if (trail == null) trail = Particle();
+            else trail = new Material(trail);   // a copy: the time of day tints it, and the asset itself must stay as made
             if (spray == null) spray = Particle();
         }
 
@@ -559,6 +561,8 @@ namespace Summit
             Diagnostics();
             float dt = Time.deltaTime;
             stateTimer += dt;
+            // a gentler lens in the camp (its camera is close, among straight lines), the player's own on the slope
+            lensFx.Strength = Mathf.MoveTowards(lensFx.Strength, state == State.Hub ? 0.3f : 1f, Time.unscaledDeltaTime * 1.4f);
             switch (state)
             {
                 case State.Hub:

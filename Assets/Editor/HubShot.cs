@@ -61,6 +61,26 @@ public static class HubShot
         // the first real frame still comes out with the warm lights red (batchmode only; the next is right)
         Shoot("HubShot0_arrive.png"); Frames(2);
         Shoot("HubShot0_arrive.png");
+        // the lens: the player's own (default WIDE) as the run has it, then the camp's gentler one
+        var lensFx = (LensFX)typeof(SummitGame).GetField("lensFx", NP).GetValue(game);
+        Debug.Log($"HUBSHOT saved lens level={typeof(SummitGame).GetField("lensLevel", NP).GetValue(game)} type={typeof(SummitGame).GetField("lensMode", NP).GetValue(game)} (shots use the default WIDE spherical)");
+        typeof(SummitGame).GetField("lensLevel", NP).SetValue(game, 1);
+        typeof(SummitGame).GetField("lensMode", NP).SetValue(game, 0);
+        typeof(SummitGame).GetMethod("ApplyCamera", NP).Invoke(game, null);
+        float cy0 = camp.ChaletYaw;
+        var lensAt = camp.ChaletPoint(-2f, 0f, 16f);
+        camp.TeleportTo(lensAt, cy0 + 180f + 20f);
+        Frames(30);
+        var lensComp = (UnityEngine.Rendering.Universal.LensDistortion)typeof(SummitGame).GetField("lens", NP).GetValue(game);
+        lensFx.Strength = 1f; Shoot("HubShotL1_lens_before.png");
+        Debug.Log($"HUBSHOT lens at strength 1: intensity={lensComp.intensity.value} override={lensComp.intensity.overrideState} active={lensComp.active} post={cam.GetComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>().renderPostProcessing}");
+        lensFx.Strength = 0.3f; Shoot("HubShotL2_lens_after.png");
+        Debug.Log($"HUBSHOT lens at strength 0.3: intensity={lensComp.intensity.value}");
+        camp.TeleportTo(camp.ChaletPoint(1f, 0f, 3.5f), cy0 + 200f);
+        Frames(40);
+        lensFx.Strength = 1f; Shoot("HubShotL3_inside_before.png");
+        lensFx.Strength = 0.3f; Shoot("HubShotL4_inside_after.png");
+        lensFx.Strength = 0f;   // the rest flat, so the menus (drawn by this camera here) aren't bent
         float cy = camp.ChaletYaw;
         Vector3 C(float x, float y, float z) => camp.ChaletPoint(x, y, z);
         float Toward(Vector3 from, Vector3 to) { var d = to - from; return Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg; }
@@ -133,6 +153,20 @@ public static class HubShot
         Debug.Log("HUBSHOT steps running: " + camp.FootstepsState);
         Walk(new Vector2(0f, 1f), 0.17f);
         Shoot("HubShot12b_run.png");
+        // footprints: walk a loop on open snow, then run; look back along them
+        camp.Teleport(-4f, -88f, 90f);
+        Walk(new Vector2(0f, 0.75f), 2.6f);
+        Walk(new Vector2(-0.5f, 0.6f), 1.2f);
+        Frames(30);
+        Debug.Log($"HUBSHOT footprints walking: {camp.FootprintCount}");
+        Shoot("HubShotP1_walked.png");
+        PrintCam(camp.WalkerPosition, -2.5f);
+        Shoot("HubShotP2_walked_close.png");
+        Walk(new Vector2(0f, 1f), 1.6f); Frames(30);
+        Debug.Log($"HUBSHOT footprints after running: {camp.FootprintCount}");
+        Shoot("HubShotP3_ran.png");
+        PrintCam(camp.WalkerPosition, -3.5f);
+        Shoot("HubShotP4_ran_close.png");
         // 13: the chalet at night (as the day/night cycle would set it)
         camp.SetNight(1f);
         camp.TeleportTo(from, Toward(from, C(0f, 0f, 0f)));
@@ -185,6 +219,16 @@ public static class HubShot
         EditorApplication.Exit(0);
     }
 
+    /// <summary>The camera looking down at the snow just behind the walker (the prints), not following.</summary>
+    static void PrintCam(Vector3 walker, float back)
+    {
+        var f = Quaternion.Euler(0f, camp.WalkerYaw, 0f) * Vector3.forward;
+        var look = walker + f * back;
+        var at = look - f * 1.6f + Vector3.up * 2.2f + Vector3.Cross(Vector3.up, f) * 0.8f;
+        cam.transform.SetPositionAndRotation(at, Quaternion.LookRotation(look - at, Vector3.up));
+        cam.fieldOfView = 55f;
+    }
+
     static void Frames(int n)
     {
         for (int i = 0; i < n; i++) Step(Vector2.zero);
@@ -198,6 +242,7 @@ public static class HubShot
     static void Step(Vector2 stick)
     {
         camp.Walk(stick, dt);
+        body.PhysicsStep();   // keeps the deformable snow round the walker (as FixedUpdate does)
         body.Apply(dt);
         camp.CameraStep(dt);
         tUpd.Invoke(terrain, null); fUpd.Invoke(props, null);

@@ -119,17 +119,80 @@ namespace Summit
             return Mathf.Lerp(y, r, w);
         }
 
+        /// <summary>Into how many strips across the slope a quad on the crest's rounded edge is cut (see Fine).</summary>
+        public const int Split = 4;
+
         /// <summary>
-        /// On the rounded edge of the crest, where the rider stands on the true surface rather than the drawn mesh
-        /// (as in the halfpipe): its 1.5 m facets bend sharply enough there to jolt the board at speed, and the
-        /// mesh sits only a few centimetres off the curve.
+        /// Is terrain quad (i, j) of the world grid (Slope.Quad apart) on the rounded edge of the crest? The edge
+        /// bends too sharply for 1.5 m facets: one sags up to 40 cm under the curve, enough to throw the board at
+        /// speed (or, ridden on the curve instead, to leave the rider hovering over what is drawn). So the terrain
+        /// cuts these quads into Split strips across the slope (SlopeStreamer), and the rider stands on exactly
+        /// those strips (MeshHeight), as everywhere else on the mountain: they bend a quarter as sharply, well
+        /// inside what the board rides over without leaving the snow.
         /// </summary>
-        public static bool OnShoulder(float x, float z)
+        public static bool Fine(int i, int j)
+        {
+            float q = Slope.Quad;
+            return Across(i * q, j * q) || Across(i * q, (j + 1) * q);
+        }
+
+        /// <summary>
+        /// Height of the drawn strips at (x, z), in a quad that is Fine. A strip's corners on a row of the grid sit
+        /// on the true curve where the quads either side of that row are both cut; where one is whole they sit on
+        /// its straight edge, so the two meet without a crack (SlopeStreamer builds them by the same rule).
+        /// Each strip is split corner to corner the same way as a whole quad.
+        /// </summary>
+        public static float MeshHeight(float x, float z)
+        {
+            float q = Slope.Quad, gx = x / q, gz = z / q;
+            int i = Mathf.FloorToInt(gx), j = Mathf.FloorToInt(gz);
+            int at = Corners(i, j);
+            float u = (gx - i) * Split, v = gz - j;
+            int s = Mathf.Clamp((int)u, 0, Split - 1);
+            u -= s;
+            float ha = cornerH[at + s], hb = cornerH[at + s + 1], hc = cornerH[at + Split + 1 + s], hd = cornerH[at + Split + 2 + s];
+            if (u + v <= 1f) return ha + (hb - ha) * u + (hc - ha) * v;
+            return hd + (hc - hd) * (1f - u) + (hb - hd) * (1f - v);
+        }
+
+        // the strips' corner heights of the last few dozen quads asked about (the rider, the snow layer and the
+        // dressing ask about the same few quads over and over): lower row, then upper, Split + 1 each
+        const int Cached = 64;
+        static readonly int[] cacheI = new int[Cached], cacheJ = new int[Cached], cacheSeed = new int[Cached];
+        static readonly bool[] cacheSet = new bool[Cached];
+        static readonly float[] cornerH = new float[Cached * 2 * (Split + 1)];
+
+        static int Corners(int i, int j)
+        {
+            int c = ((i * 73856093) ^ (j * 19349663)) & (Cached - 1);
+            int at = c * 2 * (Split + 1);
+            if (cacheSet[c] && cacheI[c] == i && cacheJ[c] == j && cacheSeed[c] == Slope.Seed) return at;
+            Row(i, j, Fine(i, j - 1), at);
+            Row(i, j + 1, Fine(i, j + 1), at + Split + 1);
+            cacheI[c] = i; cacheJ[c] = j; cacheSeed[c] = Slope.Seed; cacheSet[c] = true;
+            return at;
+        }
+
+        // the corners along quad column i's edge on grid row j, given whether the quad on its far side is cut too
+        static void Row(int i, int j, bool bothCut, int at)
+        {
+            float q = Slope.Quad, x0 = i * q, z = j * q;
+            float h0 = Slope.Height(x0, z), h1 = Slope.Height(x0 + q, z);
+            cornerH[at] = h0; cornerH[at + Split] = h1;
+            for (int s = 1; s < Split; s++)
+                cornerH[at + s] = bothCut ? Slope.Height(x0 + s * (q / Split), z) : Mathf.Lerp(h0, h1, s / (float)Split);
+        }
+
+        // does the quad edge from x to x + Quad at z cross the rounded edge (with a little to spare either side)?
+        // Both of a quad's edges are tested, so the two quads either side of an edge that crosses it are both cut.
+        static bool Across(float x, float z)
         {
             float w = Weight(z);
             if (w <= 0.01f) return false;
-            float d = Mathf.Abs(x - Slope.Centre(z)), half = Mathf.Lerp(Slope.PisteHalf, CrestHalf, w);
-            return d > half - 1.5f && d < half + Shoulder + 1.5f;
+            float half = Mathf.Lerp(Slope.PisteHalf, CrestHalf, w);
+            float lo = half - 0.5f, hi = half + Shoulder + 0.75f;
+            float a0 = x - Slope.Centre(z), a1 = a0 + Slope.Quad;
+            return (a1 > lo && a0 < hi) || (a1 > -hi && a0 < -lo);
         }
 
         /// <summary>How far out from the crest's centre line the cliff (or side slope) reaches before the gully floor.</summary>
@@ -172,19 +235,25 @@ namespace Summit
             return false;
         }
 
+        /// <summary>How far short of Reach the rocks on a cliff stop (RidgeDressing), so where you get up is clear.</summary>
+        public const float Clear = 4f;
+
         /// <summary>
         /// Somewhere to stand after a fall: off the rock, onto the nearest snow that is not too steep (normally the
         /// gully floor below, since the crest is a long way back up).
         /// </summary>
         public static float SafeX(float x, float z)
         {
-            if (Weight(z) <= 0f || Slope.Normal(x, z).y > 0.8f) return x;
-            float a = x - Slope.Centre(z);
+            if (Weight(z) <= 0f) return x;
+            float a = x - Slope.Centre(z), d = Mathf.Abs(a);
             float half = HalfWidth(z);
-            if (Mathf.Abs(a) < half) return x;   // on the crest itself
+            if (d < half) return x;   // on the crest itself
             float dir = a < 0f ? -1f : 1f;
-            // beside a cliff, start past its foot: a ledge part way down would only throw you off again
-            if (CliffSide(z, dir)) x = Slope.Centre(z) + dir * Mathf.Max(Mathf.Abs(a), Reach(z, dir));
+            // anywhere on a cliff, get up past its foot: a ledge part way down would only throw you off again, and
+            // the rocks on the face and piled at its foot all stop short of there. Only a fall at the very top of the
+            // edge, onto snow you can stand on, gets up where it is.
+            if (CliffSide(z, dir) && d < Reach(z, dir) && (d > half + Shoulder * 0.5f || Slope.Normal(x, z).y <= 0.8f))
+                x = Slope.Centre(z) + dir * Reach(z, dir);
             if (Slope.Normal(x, z).y > 0.8f) return x;
             for (int i = 1; i <= 40; i++)
             {

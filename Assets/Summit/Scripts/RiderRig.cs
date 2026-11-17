@@ -175,7 +175,7 @@ namespace Summit
             float s = Mathf.Sin(phase), c = Mathf.Cos(phase);
             // ankles just above the snow, stepping: each foot swings forward and lifts as it comes through
             // running: longer strides, the foot kicked up high behind, the knee driven through
-            float stride = Mathf.Lerp(0.3f, 0.5f, run) * amp, lift = Mathf.Lerp(0.13f, 0.34f, run) * amp;
+            float stride = Mathf.Lerp(0.36f, 0.62f, run) * amp, lift = Mathf.Lerp(0.13f, 0.34f, run) * amp;
             Vector3 baseL = frame.position + up * 0.09f + left * 0.11f, baseR = frame.position + up * 0.09f - left * 0.11f;
             Vector3 footL = baseL + fwd * (stride * s) + up * (lift * Mathf.Max(0f, c));
             Vector3 footR = baseR - fwd * (stride * s) + up * (lift * Mathf.Max(0f, -c));

@@ -26,7 +26,10 @@ namespace Summit
             public float sunI, shadow;      // the sun's (or moon's) strength; its colour is the photo's
             public Color sunTint;
             public float ambient, fogGain, fogDensity, reflect;
-            public Color bdLo, bdHi;        // the photo backdrop: forest tint, snow tint
+            public Color bdLo, bdHi;        // the photo backdrop: shade tint (forest, snow out of the sun), light tint
+            public float bdSat;             // its colour kept (moonlight shows little)
+            public Vector2 bdGlow;          // the band of height (photo v) up which its snow is in the sun: at dusk
+                                            // only the high snowfields catch it (-1..0: all of it)
             public float camp, headlamp, glintRate, signGain;
             public Color glint, particles;
         }
@@ -39,7 +42,7 @@ namespace Summit
             sky = 0, exposure = 1.1f, tint = Color.white,
             sunI = 1.9f, shadow = 0.7f, sunTint = C(1f, 1.15f, 1.35f),   // the photo's sun is deep orange: a softer gold
             ambient = 1.25f, fogGain = 1.05f, fogDensity = 0.0024f, reflect = 0.8f,
-            bdLo = C(0.66f, 0.64f, 0.78f), bdHi = C(1.05f, 0.88f, 0.84f),
+            bdLo = C(0.70f, 0.68f, 0.80f), bdHi = C(1.10f, 0.94f, 0.84f), bdSat = 0.95f, bdGlow = new Vector2(-1f, 0f),   // soft warm light
             camp = 0.25f, headlamp = 0f, glintRate = 0.8f, signGain = 1f,
             glint = C(1f, 0.88f, 0.78f), particles = C(1f, 0.93f, 0.9f),
         };
@@ -49,7 +52,7 @@ namespace Summit
             sky = 1, exposure = 1f, tint = Color.white,
             sunI = 1.15f, shadow = 0.8f, sunTint = Color.white,
             ambient = 0.45f, fogGain = 1.15f, fogDensity = 0.0021f, reflect = 1f,
-            bdLo = Color.white, bdHi = Color.white,
+            bdLo = Color.white, bdHi = Color.white, bdSat = 1f, bdGlow = new Vector2(-1f, 0f),
             camp = 0f, headlamp = 0f, glintRate = 1f, signGain = 1f,
             glint = Color.white, particles = Color.white,
         };
@@ -59,7 +62,8 @@ namespace Summit
             sky = 2, exposure = 1.3f, tint = C(1.12f, 1f, 0.86f),
             sunI = 1.8f, shadow = 0.7f, sunTint = C(1f, 1.05f, 1.15f),
             ambient = 0.85f, fogGain = 1.2f, fogDensity = 0.0021f, reflect = 0.8f,
-            bdLo = C(0.62f, 0.55f, 0.62f), bdHi = C(1.12f, 0.88f, 0.72f),
+            // alpenglow: the upper snowfields gold-orange, the lower slopes and forest already in blue shade
+            bdLo = C(0.34f, 0.31f, 0.42f), bdHi = C(1.30f, 0.86f, 0.55f), bdSat = 0.9f, bdGlow = new Vector2(0.60f, 0.74f),
             camp = 0.3f, headlamp = 0f, glintRate = 0.9f, signGain = 1.05f,
             glint = C(1f, 0.84f, 0.6f), particles = C(1f, 0.88f, 0.78f),
         };
@@ -69,7 +73,8 @@ namespace Summit
             sky = 2, exposure = 0.75f, tint = C(1f, 0.86f, 1.02f),
             sunI = 0.9f, shadow = 0.5f, sunTint = C(1f, 0.82f, 1.3f),
             ambient = 1.3f, fogGain = 1.2f, fogDensity = 0.0022f, reflect = 0.6f,
-            bdLo = C(0.42f, 0.40f, 0.58f), bdHi = C(0.98f, 0.70f, 0.80f),
+            // the last pink light on the summit snow only
+            bdLo = C(0.22f, 0.22f, 0.36f), bdHi = C(1.20f, 0.55f, 0.72f), bdSat = 0.9f, bdGlow = new Vector2(0.78f, 0.90f),
             camp = 0.65f, headlamp = 0.45f, glintRate = 0.55f, signGain = 1.4f,
             glint = C(1f, 0.74f, 0.86f), particles = C(0.82f, 0.7f, 0.8f),
         };
@@ -80,7 +85,9 @@ namespace Summit
             sky = 3, exposure = 0.2f, tint = C(0.62f, 0.8f, 1.3f),
             sunI = 0.45f, shadow = 0.6f, sunTint = C(0.75f, 0.85f, 1f),
             ambient = 1.6f, fogGain = 1.2f, fogDensity = 0.0024f, reflect = 0.5f,
-            bdLo = C(0.13f, 0.16f, 0.26f), bdHi = C(0.32f, 0.38f, 0.60f),
+            // moonlit: about five times darker than day, nearly colourless and blue, the snow just catching the
+            // moon and the forest near black
+            bdLo = C(0.028f, 0.036f, 0.06f), bdHi = C(0.11f, 0.135f, 0.22f), bdSat = 0.3f, bdGlow = new Vector2(-1f, 0f),
             camp = 1f, headlamp = 1f, glintRate = 0.35f, signGain = 2.2f,
             glint = C(0.62f, 0.72f, 1f), particles = C(0.34f, 0.40f, 0.56f),
         };
@@ -244,7 +251,10 @@ namespace Summit
         }
 
         /// <summary>Put the light for the clock on now (the test tools call it; batchmode runs no LateUpdate).</summary>
-        public void ApplyNow() { shown = TimeOfDay.Clock; Apply(shown); }
+        public void ApplyNow() { shown = TimeOfDay.Clock; capturedAt = -1f; Apply(shown); }
+
+        /// <summary>Whether the reflections are the captured sky (true) or the nearer photo (false): the tests log it.</summary>
+        public bool ReflectionCaptured => reflCam != null && !reflFailed;
 
         void OnApplicationPause(bool paused) { if (paused) TimeOfDay.Save(); }
         void OnApplicationQuit() { TimeOfDay.Save(); }
@@ -264,6 +274,42 @@ namespace Summit
         static Key EndOf(int p) => p == 2 ? Pink : StartOf(p);
 
         static Color Mul(Color a, Color b) => new Color(a.r * b.r, a.g * b.g, a.b * b.b, 1f);
+
+        // the same measure for the light the impostors were baked in (RealFir.BakeImpostors: flat ambient
+        // (0.55, 0.6, 0.68), a (1, 0.96, 0.9) sun at 1.15, 48 degrees up)
+        static readonly Color BakeLight = new Color(0.55f, 0.6f, 0.68f).linear + new Color(1f, 0.96f, 0.9f).linear * 1.15f * 0.743f * 0.6f;
+
+        /// <summary>
+        /// Draw the sky now showing into the reflection cubemap, at most a few times a second and only when the
+        /// clock has moved (128 a face: the snow's sheen is rough, it needs no more). False where it can't.
+        /// </summary>
+        bool CaptureReflection(float clock)
+        {
+            if (reflFailed) return false;
+            if (reflCam == null)
+            {
+                reflRT = new RenderTexture(128, 128, 16, RenderTextureFormat.ARGBHalf)
+                    { dimension = TextureDimension.Cube, useMipMap = true, autoGenerateMips = true, name = "SkyReflection" };
+                reflRT.Create();
+                var go = new GameObject("SkyReflectionCamera");
+                go.transform.SetParent(transform, false);
+                reflCam = go.AddComponent<Camera>();
+                reflCam.enabled = false; reflCam.cullingMask = 0; reflCam.clearFlags = CameraClearFlags.Skybox; reflCam.allowHDR = true;
+                reflCam.nearClipPlane = 0.1f; reflCam.farClipPlane = 10f;
+                var data = go.AddComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>();
+                data.renderPostProcessing = false; data.renderShadows = false;
+            }
+            if (Mathf.Abs(clock - capturedAt) < 0.003f && capturedAt >= 0f) return true;
+            if (Time.unscaledTime < nextCapture && capturedAt >= 0f) return true;
+            if (!reflCam.RenderToCubemap(reflRT)) { reflFailed = true; return false; }
+            capturedAt = clock; nextCapture = Time.unscaledTime + 0.25f;
+            if (probe.customBakedTexture != reflRT) probe.customBakedTexture = reflRT;
+            return true;
+        }
+        RenderTexture reflRT;
+        Camera reflCam;
+        bool reflFailed;
+        float capturedAt = -1f, nextCapture;
 
         void Apply(float clock)
         {
@@ -302,9 +348,17 @@ namespace Summit
                 Color fa = Mul(sa.horizon, gradeA) * a.fogGain, fb = Mul(sb.horizon, gradeB) * b.fogGain;
                 RenderSettings.fogColor = Color.Lerp(fa, fb, t).gamma;
                 // reflections: the nearer sky's cubemap (it is stored squeezed, so a little dimmer than it shows)
-                var refl = t < 0.5f ? sa.cube : sb.cube;
-                if (refl != lastReflection) { lastReflection = refl; probe.customBakedTexture = refl; }
-                probe.intensity = Mathf.Lerp(a.reflect * a.exposure, b.reflect * b.exposure, t);
+                // reflections: the sky as shown (both photos blended, graded), drawn into a small cubemap now and
+                // then as the light changes, so they turn with the day rather than jump half-way through a blend
+                if (CaptureReflection(clock))
+                    probe.intensity = Mathf.Lerp(a.reflect, b.reflect, t);
+                else
+                {
+                    // (no cubemap capture on this platform: the nearer photo, stored squeezed so a little dimmer)
+                    var refl = t < 0.5f ? sa.cube : sb.cube;
+                    if (refl != lastReflection) { lastReflection = refl; probe.customBakedTexture = refl; }
+                    probe.intensity = Mathf.Lerp(a.reflect * a.exposure, b.reflect * b.exposure, t);
+                }
 
                 if (sun != null)
                 {
@@ -314,6 +368,11 @@ namespace Summit
                     sun.color = Color.Lerp(ca, cb, t).gamma;
                     sun.intensity = Mathf.Lerp(a.sunI, b.sunI, t);
                     sun.shadowStrength = Mathf.Lerp(a.shadow, b.shadow, t);
+
+                    // the far trees are pictures baked in a fixed daylight (RealFir.BakeImpostors): give them the
+                    // light a tree gets now relative to that (sky light from the side, plus the sun as high as it is)
+                    Color now = Color.Lerp(Mul(sa.ambEq, ka), Mul(sb.ambEq, kb), t) + sun.color.linear * sun.intensity * Mathf.Max(0.15f, SunDirection.y) * 0.6f;
+                    RealFir.PhaseTint = new Color(now.r / BakeLight.r, now.g / BakeLight.g, now.b / BakeLight.b, 1f);
                 }
             }
             RenderSettings.fogDensity = Mathf.Lerp(a.fogDensity, b.fogDensity, t);
@@ -321,6 +380,8 @@ namespace Summit
             Shader.SetGlobalFloat("_BackdropOn", 1f);
             Shader.SetGlobalColor("_BackdropLo", Color.Lerp(a.bdLo, b.bdLo, t));
             Shader.SetGlobalColor("_BackdropHi", Color.Lerp(a.bdHi, b.bdHi, t));
+            Shader.SetGlobalFloat("_BackdropSat", Mathf.Lerp(a.bdSat, b.bdSat, t));
+            Shader.SetGlobalVector("_BackdropGlow", Vector2.Lerp(a.bdGlow, b.bdGlow, t));
             // the photo backdrop's own (daytime) sky always gives way to the photographed sky behind it
             Shader.SetGlobalFloat("_BackdropKey", photoSky ? 1f : 0f);
 

@@ -48,6 +48,14 @@ namespace Summit
 
         Camera cam;
         int halation;
+        /// <summary>
+        /// How much of the chosen lens to use (1 on the slope). The summit camp turns it down: its camera is close to
+        /// the rider among straight walls, rails and timbers, where the same barrel warp and edge softness that the
+        /// open slope hides bend every line, so it eases to about a third there and back to 1 when you drop in.
+        /// </summary>
+        public float Strength = 1f;
+        LensDistortion lensRef;
+        float warpBase, scaleBase = 1f, shown = -1f;
         DayNight dayNight; bool lookedForDayNight;
         Material mat;
         EdgePass pass;
@@ -82,10 +90,13 @@ namespace Summit
             bool anamorphic = mode == 1;
             if (lens != null)
             {
-                lens.intensity.Override(anamorphic ? 0f : warp);
+                lensRef = lens;
+                warpBase = anamorphic ? 0f : warp;
+                scaleBase = anamorphic ? 1f : 1f + 0.12f * (level / 3f);
+                shown = -1f;   // (set, at this strength, as the next frame is drawn)
                 lens.xMultiplier.Override(1f);
                 lens.yMultiplier.Override(1f);
-                lens.scale.Override(anamorphic ? 1f : 1f + 0.12f * (level / 3f));
+                SetWarp();
             }
             if (anamorphic)
             {
@@ -99,14 +110,24 @@ namespace Summit
             }
         }
 
+        void SetWarp()
+        {
+            if (lensRef == null || Mathf.Abs(shown - Strength) < 0.001f) return;
+            shown = Strength;
+            lensRef.intensity.Override(warpBase * Strength);
+            lensRef.scale.Override(1f + (scaleBase - 1f) * Strength);
+        }
+
         /// <summary>Halation: 0 OFF, 1 SUBTLE, 2 STRONG.</summary>
         public void SetHalation(int level) { halation = Mathf.Clamp(level, 0, HalationName.Length - 1); }
 
         void OnBeginCamera(ScriptableRenderContext ctx, Camera c)
         {
             if (c != cam || pass == null) return;
-            mat.SetVector(EdgeId, edge);
-            mat.SetVector(AnaId, ana);
+            SetWarp();
+            // the fringe and softness, and the anamorphic squeeze, scale with the strength; its vignette and bars don't
+            mat.SetVector(EdgeId, new Vector4(edge.x * Strength, edge.y * Strength, edge.z, edge.w));
+            mat.SetVector(AnaId, new Vector4(ana.x * Strength, ana.y * Strength, ana.z, ana.w));
             mat.SetFloat(AspectId, c.aspect);
             float dark = 0f;
             if (!lookedForDayNight) { dayNight = FindFirstObjectByType<DayNight>(); lookedForDayNight = dayNight != null; }

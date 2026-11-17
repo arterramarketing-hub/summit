@@ -22,6 +22,7 @@ namespace Summit
         Font font;
         Sprite round, coin, disc, ring;
         RectTransform safe, hubRoot, panelRoot, card, endRoot, toastRoot, stickRing, stickKnob, campBtn, rideBtn, contextBtn;
+        Image contextImg;
         Text pointsText, missionsText, contextText, hintText, toastHead, toastTitle, toastReward, endTotal, endLines, endBalance, cardMsg;
         CanvasGroup toastGroup;
         readonly List<KeyValuePair<RectTransform, string>> buttons = new List<KeyValuePair<RectTransform, string>>();
@@ -54,6 +55,7 @@ namespace Summit
             var cb = Img("Context", hubRoot, Blue, round);
             Place(cb.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 230f), new Vector2(660f, 140f), new Vector2(0.5f, 0f));
             contextBtn = cb.rectTransform;
+            contextImg = cb;
             contextText = Label(cb.transform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(640f, 120f), 52, TextAnchor.MiddleCenter);
             buttons.Add(new KeyValuePair<RectTransform, string>(contextBtn, "context"));
             hintText = Label(hubRoot, new Vector2(0.5f, 0f), new Vector2(0f, 120f), new Vector2(1000f, 60f), 38, TextAnchor.MiddleCenter);
@@ -136,7 +138,7 @@ namespace Summit
                          : st == Camp.Station.Style ? "OUTFITS" : st == Camp.Station.DropIn ? "DROP IN" : null;
             bool on = label != null && !PanelOpen;
             if (contextBtn.gameObject.activeSelf != on) contextBtn.gameObject.SetActive(on);
-            if (on) { contextText.text = label; contextBtn.GetComponent<Image>().color = st == Camp.Station.DropIn ? new Color(0.85f, 0.2f, 0.12f, 0.97f) : Blue; }
+            if (on) { contextText.text = label; contextImg.color = st == Camp.Station.DropIn ? new Color(0.85f, 0.2f, 0.12f, 0.97f) : Blue; }
             hintText.text = PanelOpen ? "" : on ? "" : "Drag to walk  ·  tap the board, bench, rack or gate";
         }
 
@@ -183,6 +185,9 @@ namespace Summit
             var c = Img("Card", cardSafe, Navy, round);
             Place(c.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 30f), new Vector2(1010f, height), new Vector2(0.5f, 0f));
             card = c.rectTransform;
+            // laid out 1010 wide; on a narrower screen (a 19.5:9 phone's canvas is ~978) the whole card shrinks to fit
+            float room = cardSafe.rect.width - 40f;
+            if (room > 1f && room < 1010f) card.localScale = Vector3.one * (room / 1010f);
             var t = Label(card, new Vector2(0.5f, 1f), new Vector2(0f, -34f), new Vector2(900f, 90f), 66, TextAnchor.UpperCenter);
             t.text = title;
             if (sub != null) { var s = Label(card, new Vector2(0.5f, 1f), new Vector2(0f, -116f), new Vector2(900f, 50f), 34, TextAnchor.UpperCenter); s.text = sub; s.color = Dim; }
@@ -357,6 +362,9 @@ namespace Summit
         {
             if (safe != null && Screen.safeArea != lastSafe) ApplySafeArea();
             float dt = Time.unscaledDeltaTime;
+            // paused (time stopped): the toast waits, hidden, so it never covers the pause menu's RESUME
+            bool paused = Time.timeScale == 0f;
+            if (paused) { if (toastT >= 0f) toastGroup.alpha = 0f; return; }
             if (toastT < 0f && toasts.Count > 0)
             {
                 var m = toasts.Dequeue();

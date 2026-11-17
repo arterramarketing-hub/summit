@@ -232,6 +232,7 @@ namespace Summit
                 float fz = cz * Cell / q;
                 int qj = Mathf.FloorToInt(fz), lj = qj - gj0;
                 float v = fz - qj;
+                bool ridge = Ridge.Has(qj * q) || Ridge.Has((qj + 1) * q);
                 int row = Mod(cz) * Slots;
                 for (int cx = cx0; cx <= cx1; cx++)
                 {
@@ -257,6 +258,8 @@ namespace Summit
                         nx = gnx[a + gw + 1] * wd + gnx[a + gw] * wc + gnx[a + 1] * wb;
                         nz = gnz[a + gw + 1] * wd + gnz[a + gw] * wc + gnz[a + 1] * wb;
                     }
+                    // a ridge crest's rounded edge, where the terrain cuts its quads into narrower strips (Ridge.Fine)
+                    if (ridge && Ridge.Fine(qi, qj)) y = Ridge.MeshHeight(cx * Cell, cz * Cell);
                     float inv = 1f / Mathf.Sqrt(nx * nx + 1f + nz * nz);
                     bool hole = danger && (gcut[a] || gcut[a + 1] || gcut[a + gw] || gcut[a + gw + 1]);
                     if (grock[a] < 0) grock[a] = Rock(qi, qj, a, gw);

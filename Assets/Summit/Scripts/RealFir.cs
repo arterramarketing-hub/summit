@@ -61,17 +61,23 @@ namespace Summit
             return g;
         }
 
-        /// <summary>The impostors are unlit pictures taken in daylight: dim and cool them with the camp's evening.</summary>
+        /// <summary>
+        /// The time of day's light on a tree, relative to the neutral daylight the impostors were baked in
+        /// (DayNight sets it every frame), so the far pictures match the lit near trees in every phase.
+        /// </summary>
+        public static Color PhaseTint = Color.white;
+
+        /// <summary>The impostors are unlit pictures taken in daylight: put the time of day's light on them.</summary>
         public static void Dusk()
         {
             if (ImpostorMats == null) return;
-            float k = Shader.GetGlobalFloat("_SummitNight");
-            if (Mathf.Abs(k - lastDusk) < 0.002f) return;
+            var k = PhaseTint;
+            if (Mathf.Abs(k.r - lastDusk.r) + Mathf.Abs(k.g - lastDusk.g) + Mathf.Abs(k.b - lastDusk.b) < 0.004f) return;
             lastDusk = k;
-            var c = Color.Lerp(ImpostorDay, new Color(0.26f, 0.31f, 0.46f), k);
+            var c = ImpostorDay * k; c.a = ImpostorDay.a;
             foreach (var m in ImpostorMats) m.SetColor("_BaseColor", c);
         }
-        static float lastDusk = -1f;
+        static Color lastDusk = new Color(-1f, -1f, -1f);
         static Color ImpostorDay = Color.white;
 
         // ---- the atlas: 2 columns x 4 rows of 512x256 cells

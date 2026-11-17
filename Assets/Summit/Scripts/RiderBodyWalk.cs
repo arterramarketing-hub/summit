@@ -14,7 +14,13 @@ namespace Summit
         public float WalkPace;
         /// <summary>0 walking .. 1 running flat out (the camp sets it every frame).</summary>
         public float RunBlend;
-        float runAmp;
+        /// <summary>Walk cycles a second (two steps each), from how fast you're going; 0: work it out from the pace.</summary>
+        public float Cadence;
+        float runAmp, cadence;
+        /// <summary>The walk cycle (radians): the left heel strikes at pi/2, the right at 3pi/2 (see RiderRig.PoseWalk).</summary>
+        public float WalkPhase => walkPhase;
+        /// <summary>How far into a run the legs are (0 walking .. 1 running), eased.</summary>
+        public float RunAmount => runAmp;
         float walkPhase, walkAmp;
         Vector3 boardHomePos; Quaternion boardHomeRot; bool boardHomeSet, tubeBeforeWalk;
 
@@ -48,7 +54,9 @@ namespace Summit
             walkAmp = Mathf.MoveTowards(walkAmp, WalkPace, dt * 4f);
             runAmp = Mathf.MoveTowards(runAmp, RunBlend, dt * 3f);   // eases into and out of the run
             // strides come quicker as you speed up: about one a second walking, nearly three running
-            walkPhase += dt * Mathf.PI * 2f * Mathf.Lerp(Mathf.Lerp(0.55f, 1.0f, walkAmp), 1.45f, runAmp) * (walkAmp > 0.02f ? 1f : 0f);
+            float want = Cadence > 0f ? Cadence : Mathf.Lerp(Mathf.Lerp(0.55f, 1.0f, walkAmp), 1.45f, runAmp);
+            cadence = Mathf.MoveTowards(cadence, want, dt * 4f);
+            walkPhase += dt * Mathf.PI * 2f * cadence * (walkAmp > 0.02f ? 1f : 0f);
             roll.localRotation = Quaternion.identity;
             upper.localRotation = Quaternion.identity;
             // the humanoid's feet are planted at a board's height: stand them on the snow instead

@@ -210,3 +210,24 @@ save(canvas(256, 256) { W, H in
 // light oak boards for the modern interior (grain along U)
 save(canvas(512, 512) { W, H in wood(W, H, base: NSColor(calibratedRed: 0.86, green: 0.72, blue: 0.54, alpha: 1), planks: 6, seed: 81) }, "Oak")
 print("stone and oak written")
+
+// one boot print (toe up, a left foot; mirrored for the right): pressed, shaded snow with the tread in it
+save(canvas(128, 256) { W, H in
+    NSColor.clear.setFill(); NSRect(x: 0, y: 0, width: W, height: H).fill()
+    func sole(_ inset: CGFloat, _ col: NSColor) {
+        col.setFill()
+        let fore = NSBezierPath(ovalIn: NSRect(x: W * 0.12 + inset, y: H * 0.36 + inset, width: W * 0.74 - 2 * inset, height: H * 0.58 - 2 * inset))
+        fore.fill()
+        NSBezierPath(roundedRect: NSRect(x: W * 0.2 + inset, y: H * 0.05 + inset, width: W * 0.58 - 2 * inset, height: H * 0.3 - 2 * inset), xRadius: W * 0.25, yRadius: W * 0.25).fill()
+        NSRect(x: W * 0.3 + inset, y: H * 0.3, width: W * 0.42 - 2 * inset, height: H * 0.1).fill()   // the arch
+    }
+    // soft outer edge, then the pressed sole, then a darker floor
+    sole(0, NSColor(calibratedRed: 0.42, green: 0.5, blue: 0.66, alpha: 0.28))
+    sole(5, NSColor(calibratedRed: 0.36, green: 0.44, blue: 0.6, alpha: 0.45))
+    sole(11, NSColor(calibratedRed: 0.3, green: 0.37, blue: 0.52, alpha: 0.55))
+    // the tread: ridges across the sole and the heel
+    NSColor(calibratedRed: 0.62, green: 0.68, blue: 0.8, alpha: 0.5).setFill()
+    for k in 0..<7 { NSRect(x: W * 0.24, y: H * 0.44 + CGFloat(k) * H * 0.06, width: W * 0.52, height: H * 0.022).fill() }
+    for k in 0..<3 { NSRect(x: W * 0.28, y: H * 0.1 + CGFloat(k) * H * 0.07, width: W * 0.44, height: H * 0.022).fill() }
+}, "Boot")
+print("boot print written")

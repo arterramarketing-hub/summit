@@ -269,10 +269,10 @@ namespace Summit
             // in the halfpipe, ride the true curve: its 1.5 m facets would jolt the board at every edge
             // (the drawn facets sit at most a few centimetres off it)
             if (Course.PipeWeight(z) > 0.01f && Mathf.Abs(x - Centre(z)) < Course.PipeHalfWidth + 1.5f) return Height(x, z);
-            // likewise the rounded shoulder at a ridge crest's edge
-            if (Ridge.OnShoulder(x, z)) return Height(x, z);
             float gx = x / Quad, gz = z / Quad;
             int i = Mathf.FloorToInt(gx), j = Mathf.FloorToInt(gz);
+            // the rounded edge of a ridge's crest, where the mesh is cut into narrower strips to follow the curve
+            if (Ridge.Fine(i, j)) return Ridge.MeshHeight(x, z);
             float u = gx - i, v = gz - j;
             float x0 = i * Quad, z0 = j * Quad;
             float hb = Height(x0 + Quad, z0), hc = Height(x0, z0 + Quad);

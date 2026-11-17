@@ -36,12 +36,15 @@ namespace Summit
                 {
                     if (!Ridge.CliffSide(z, s)) continue;
                     float half = Ridge.HalfWidth(z), reach = Ridge.Reach(z, s);
+                    // nothing reaches out past a few metres short of the cliff's foot: a fall ends past it, and
+                    // that is where you get up (Ridge.SafeX), so no one stands up inside a rock
+                    float clear = reach - Ridge.Clear;
                     float h1 = Slope.Hash01(cycle * 7 + s, i, 72), h2 = Slope.Hash01(cycle * 7 + s, i, 73), h3 = Slope.Hash01(cycle * 7 + s, i, 74);
                     // an outcrop on the face, kept below the crest so it never blocks the line
                     float e = Ridge.Shoulder + 2.5f + h1 * Mathf.Max(1f, reach - half - Ridge.Shoulder - 8f);
-                    Outcrop(root, models, rock, Slope.Centre(z) + s * (half + e), z + (h2 - 0.5f) * 4f, 2.2f + 4f * h2, (int)(h3 * 977f));
+                    Outcrop(root, models, rock, s, half + e, clear, z + (h2 - 0.5f) * 4f, 2.2f + 4f * h2, (int)(h3 * 977f));
                     // and a boulder fallen to the foot of the cliff, every so often
-                    if (h3 < 0.45f) Outcrop(root, models, rock, Slope.Centre(z) + s * (reach - 2f + h1 * 5f), z + 3f, 3f + 4f * h1, (int)(h2 * 613f));
+                    if (h3 < 0.45f) Outcrop(root, models, rock, s, clear, clear, z + 3f, 2.5f + 3f * h1, (int)(h2 * 613f));
                 }
             }
             // marker poles along the edge above a cliff, every 12 m
@@ -52,22 +55,19 @@ namespace Summit
                 {
                     if (!Ridge.CliffSide(z, s)) continue;
                     float x = Slope.Centre(z) + s * (Ridge.HalfWidth(z) + 0.4f);
-                    float y = Slope.Height(x, z);
+                    float y = Slope.DrawnHeight(x, z) - 0.05f;   // planted a little into the snow
                     Pole(root, new Vector3(x, y + 0.75f, z), new Vector3(0.05f, 0.75f, 0.05f), poleOrange);
                     Pole(root, new Vector3(x, y + 1.38f, z), new Vector3(0.055f, 0.1f, 0.055f), poleBlack);
                 }
             }
         }
 
-        static void Outcrop(Transform root, GameObject[] models, Material rock, float x, float z, float size, int pick)
+        /// <summary>
+        /// A rock on side s of the crest, its middle d out from the centre line but pulled in so that no part of it
+        /// reaches past `limit` (however it ends up turned).
+        /// </summary>
+        static void Outcrop(Transform root, GameObject[] models, Material rock, float s, float d, float limit, float z, float size, int pick)
         {
-            float y = Slope.Height(x, z);
-            // keep its top well below the crest beside it
-            size = Mathf.Min(size, (Ridge.Top(z) - Ridge.Crown - 1.2f - y) / 0.6f);
-            if (size < 1.2f) return;
-            Vector3 n = Slope.Normal(x, z);
-            // stand it half in the face: leaned with the slope, yawed at random, sunk a third of its height
-            var rot = Quaternion.FromToRotation(Vector3.up, Vector3.Slerp(Vector3.up, n, 0.6f)) * Quaternion.Euler(0f, pick * 37f % 360f, 0f);
             // a holder, so the model keeps its own root rotation (the Blender axis fix) under ours
             var g = new GameObject("RidgeRock");
             g.transform.SetParent(root, false);
@@ -79,9 +79,20 @@ namespace Summit
             }
             foreach (var c in g.GetComponentsInChildren<Collider>(true)) Object.DestroyImmediate(c);
             g.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
-            // scale it to the size wanted, from the model's own height
             var b = Bounds(g);
-            float k = size / Mathf.Max(0.05f, b.size.y);
+            float tall = Mathf.Max(0.05f, b.size.y);
+            // how far it reaches out from its pivot, per metre of size: any way round, and leaned over a little
+            float reach = (new Vector2(b.center.x, b.center.z).magnitude + new Vector2(b.extents.x, b.extents.z).magnitude) / tall + 0.3f;
+            d = Mathf.Min(d, limit - reach * size);
+            float x = Slope.Centre(z) + s * d, y = Slope.Height(x, z);
+            // keep its top well below the crest beside it
+            size = Mathf.Min(size, (Ridge.Top(z) - Ridge.Crown - 1.2f - y) / 0.6f);
+            if (size < 1.2f || d < Ridge.HalfWidth(z) + Ridge.Shoulder + 1f) { Object.DestroyImmediate(g); return; }
+            Vector3 n = Slope.Normal(x, z);
+            // stand it half in the face: leaned with the slope, yawed at random, sunk a third of its height
+            var rot = Quaternion.FromToRotation(Vector3.up, Vector3.Slerp(Vector3.up, n, 0.6f)) * Quaternion.Euler(0f, pick * 37f % 360f, 0f);
+            // scale it to the size wanted, from the model's own height
+            float k = size / tall;
             g.transform.localScale = new Vector3(k, k * 0.8f, k);
             g.transform.SetPositionAndRotation(new Vector3(x, y - size * 0.35f - b.min.y * k * 0.8f, z), rot);
             foreach (var r in g.GetComponentsInChildren<MeshRenderer>(true))

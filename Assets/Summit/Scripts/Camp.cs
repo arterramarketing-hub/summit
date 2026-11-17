@@ -116,7 +116,7 @@ namespace Summit
             if (root != null) { if (Application.isPlaying) Destroy(root.gameObject); else DestroyImmediate(root.gameObject); }
             root = new GameObject("Camp").transform;
             root.SetParent(transform, false);
-            spots.Clear(); boxes.Clear(); lamps.Clear(); lampPower.Clear(); lampDay.Clear();
+            spots.Clear(); boxes.Clear(); lamps.Clear(); lampPower.Clear(); lampDay.Clear(); cameraWalls.Clear();
 
             tapRoots.Clear();
             Chalet(Frame(-9f, -118.5f, 12f));
@@ -306,7 +306,9 @@ namespace Summit
                 // (the camera stops at anything named COL_; CAM_ ones don't block walking: you climb up past a slab's edge)
                 var g = new GameObject(name.StartsWith("CAM_") ? "COL_" + name : name).transform;
                 g.SetParent(t, false); g.localPosition = c;
-                g.gameObject.AddComponent<BoxCollider>().size = size;
+                var bc = g.gameObject.AddComponent<BoxCollider>();
+                bc.size = size;
+                if (!name.StartsWith("TAP_")) cameraWalls.Add(bc);
                 if (name.StartsWith("TAP_"))
                 {
                     var st = name == "TAP_Missions" ? Station.Missions : name == "TAP_Upgrades" ? Station.Upgrades : Station.Style;
@@ -332,6 +334,9 @@ namespace Summit
             }
         }
         readonly Dictionary<Station, Transform> tapRoots = new Dictionary<Station, Transform>();
+        // what stops the camera (the chalet's COL_ and CAM_ boxes), and a reused buffer for its ray (no garbage a frame)
+        readonly HashSet<Collider> cameraWalls = new HashSet<Collider>();
+        readonly RaycastHit[] rayHits = new RaycastHit[24];
 
         /// <summary>The game's material for one of the model's (by its name in the file).</summary>
         Material ChaletMat(string name, Dictionary<string, Material> made)
@@ -820,7 +825,7 @@ namespace Summit
             if (lights != null) lights.SetActive(Progress.Has(Progress.Up.Lights));
             if (snowman != null) snowman.SetActive(Progress.Has(Progress.Up.Snowman));
             if (boardPaint != null) boardPaint.SetColor("_BaseColor", Progress.Boards[Progress.Board]);
-            Missions.Refresh();
+            if (Active) Missions.Refresh();   // (not mid-run: a mission completing pays out, and Progress.Changed lands here)
             for (int i = 0; i < noteMats.Length && i < Missions.Today.Count; i++)
                 noteMats[i].SetColor("_BaseColor", Missions.Today[i].done ? new Color(0.62f, 0.95f, 0.62f) : Color.white);
         }
@@ -831,6 +836,8 @@ namespace Summit
         Vector3 pos; float yaw, speed, camYaw, lookBlend, showBlend, inBlend;
         bool snap;
         public Vector3 WalkerPosition => pos;
+        /// <summary>The way the walker faces (degrees).</summary>
+        public float WalkerYaw => yaw * Mathf.Rad2Deg;
 
         /// <summary>Put the rider in the camp on foot, by the lodge, and take over the camera.</summary>
         public void Enter(Rider r, RiderBody b, Camera c)
@@ -844,7 +851,12 @@ namespace Summit
             snap = true;
             Near = Station.None;
             body.SetWalking(true);
+            ClearFootprints();   // a fresh visit: fresh snow
+            // a finger already down (the tap on TO CAMP or < CAMP that brought you here) is not a walk or a tap here:
+            // ignore it until it lifts
+            wasDown = Pointer(out _); pressOnUi = true; dragging = false; pressedContext = false; pressAt = Vector2.zero;
             Place();
+            lastStep = body.WalkPhase;
             Redress();
         }
 
@@ -900,6 +912,7 @@ namespace Summit
             }
             if (Near == Station.Lookout) { OnLookout = true; Near = Station.None; }
             Footsteps(dt);
+            Footprints(dt);
             return false;
         }
 
@@ -928,6 +941,7 @@ namespace Summit
         float FloorAt(Vector3 p, float feet)
         {
             float y = Slope.DrawnHeight(p.x, p.z);
+            onSnow = true;
             foreach (var b in boxes)
             {
                 if (!b.floor) continue;
@@ -936,7 +950,7 @@ namespace Summit
                 if (Mathf.Abs(q.x) > b.h.x || Mathf.Abs(q.y) > b.h.y) continue;
                 // a ramp (stairs) falls by drop from its -z end to its +z end
                 float top = b.top - b.drop * (q.y + b.h.y) / (2f * b.h.y);
-                if (top <= feet + 0.55f && top > y) y = top;
+                if (top <= feet + 0.55f && top > y) { y = top; onSnow = false; }   // on a floor, a deck or steps
             }
             return y;
         }
@@ -950,6 +964,7 @@ namespace Summit
             // the model faces the board's toe edge (+X): turn it a quarter so it faces where it walks
             rider.Heading = yaw - Mathf.PI * 0.5f;
             body.WalkPace = Mathf.Clamp01(speed / MaxSpeed);
+            body.Cadence = Cadence;
             body.RunBlend = Mathf.Clamp01((speed - MaxSpeed) / (RunSpeed - MaxSpeed));
         }
 
@@ -958,9 +973,10 @@ namespace Summit
         {
             if (cam == null) return Station.None;
             var ray = cam.ScreenPointToRay(screen);
-            foreach (var h in Physics.RaycastAll(ray, 80f, ~0, QueryTriggerInteraction.Collide))
+            int nh = Physics.RaycastNonAlloc(ray, rayHits, 80f, ~0, QueryTriggerInteraction.Collide);
+            for (int i = 0; i < nh; i++)
                 foreach (var s in spots)
-                    if (h.collider.transform == s.root) return s.st;
+                    if (rayHits[i].collider.transform == s.root) return s.st;
             return Station.None;
         }
 
@@ -1003,16 +1019,142 @@ namespace Summit
             else if (stepVol <= 0.001f && steps.isPlaying) steps.Stop();
             steps.volume = stepVol;
             // the recording is a walking pace: a slow walk slows it a touch, running quickens it
-            steps.pitch = moving ? Mathf.Lerp(Mathf.Lerp(0.85f, 1f, Mathf.Clamp01(speed / MaxSpeed)), 1.45f, run) : steps.pitch;
+            // (as quick as the feet: the cadence at a full walk plays it at its own speed)
+            steps.pitch = moving ? Mathf.Clamp(Cadence / (MaxSpeed / 2f), 0.8f, 1.5f) : steps.pitch;
             stepTone.cutoffFrequency = Mathf.Lerp(22000f, 1400f, stepIn);
         }
 
         /// <summary>Test tools: how the footsteps are playing right now.</summary>
         public string FootstepsState => steps == null ? "no clip" : $"playing={steps.isPlaying} vol={steps.volume:0.00} pitch={steps.pitch:0.00} cutoff={stepTone.cutoffFrequency:0}";
 
+        // ---------------------------------------------------------------- footprints
+
+        // A boot print for every step, left and right in turn as each heel strikes (RiderRig's walk cycle), along
+        // the way you're going. Running, the strides are longer and the prints deeper (darker). None on floors,
+        // decks or steps. Up to 200 at once in one mesh, the oldest fading after a minute and a half; a new visit
+        // starts on clean snow. (Not pressed into SnowLayer: in the camp its touched cells draw as lighter, faceted
+        // patches that don't match the camp's snow, so a print was a pale polygon round a dent.)
+        const int MaxPrints = 200;
+        const float PrintLife = 90f, PrintFade = 30f;
+        Mesh printMesh;
+        Vector3[] printV;
+        Color[] printC;
+        float[] printBorn, printAlpha;
+        int printNext;
+        float lastStep, fadeTick, printClock;
+        bool onSnow = true;
+
+        void Footprints(float dt)
+        {
+            printClock += dt;
+            if (printMesh == null) BuildPrints();
+            // a heel strikes each time the cycle passes pi/2 (left) or 3pi/2 (right)
+            float ph = body.WalkPhase;
+            if (ph < lastStep - 0.01f) lastStep = ph;   // the cycle was reset
+            if (speed > 0.25f && onSnow)
+            {
+                float k0 = Mathf.Floor((lastStep - Mathf.PI * 0.5f) / Mathf.PI), k1 = Mathf.Floor((ph - Mathf.PI * 0.5f) / Mathf.PI);
+                if (k1 > k0) Step(Mathf.RoundToInt(k1) % 2 == 0);
+            }
+            lastStep = ph;
+            // fade the old ones, a few times a second
+            fadeTick -= dt;
+            if (fadeTick <= 0f)
+            {
+                fadeTick = 0.25f;
+                bool changed = false;
+                for (int i = 0; i < MaxPrints; i++)
+                {
+                    if (printAlpha[i] <= 0f) continue;
+                    float age = printClock - printBorn[i];
+                    float a = printAlpha[i] * Mathf.Clamp01(1f - (age - PrintLife) / PrintFade);
+                    if (age > PrintLife + PrintFade) { printAlpha[i] = 0f; a = 0f; }
+                    var c = new Color(1f, 1f, 1f, a);
+                    if (printC[i * 4] != c) { printC[i * 4] = printC[i * 4 + 1] = printC[i * 4 + 2] = printC[i * 4 + 3] = c; changed = true; }
+                }
+                if (changed) printMesh.colors = printC;
+            }
+        }
+
+        /// <summary>Put a foot down: a print where it lands, in front of you and to its side.</summary>
+        void Step(bool left)
+        {
+            float run = body.RunAmount, amp = Mathf.Clamp01(speed / MaxSpeed);
+            var f = new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw));
+            var side = new Vector3(-f.z, 0f, f.x);   // to your left
+            float stride = Mathf.Lerp(0.36f, 0.62f, run) * amp;
+            Vector3 at = pos + f * stride + side * (left ? 0.11f : -0.11f);
+            AddPrint(at, f, left, Mathf.Lerp(0.7f, 0.95f, run));
+        }
+
+        /// <summary>
+        /// Walk cycles a second (two steps each) for the speed you're going: about a metre a step walking, nearly two
+        /// running, so the feet keep up with the ground and the prints fall a stride apart.
+        /// </summary>
+        float Cadence => speed / (2f * Mathf.Lerp(1.0f, 1.8f, Mathf.Clamp01((speed - MaxSpeed) / (RunSpeed - MaxSpeed))));
+
+        void AddPrint(Vector3 at, Vector3 f, bool left, float alpha)
+        {
+            int i = printNext;
+            printNext = (printNext + 1) % MaxPrints;
+            var r = new Vector3(f.z, 0f, -f.x);   // to the right
+            const float hw = 0.07f, hl = 0.15f;
+            Vector3 P(float u, float v) { var p = at + r * u + f * v; p.y = Slope.DrawnHeight(p.x, p.z) + 0.012f; return p; }
+            printV[i * 4] = P(-hw, -hl); printV[i * 4 + 1] = P(hw, -hl); printV[i * 4 + 2] = P(hw, hl); printV[i * 4 + 3] = P(-hw, hl);
+            // the texture is a left boot: a right one is it mirrored
+            float u0 = left ? 0f : 1f, u1 = left ? 1f : 0f;
+            var uv = printMesh.uv;
+            uv[i * 4] = new Vector2(u0, 0f); uv[i * 4 + 1] = new Vector2(u1, 0f); uv[i * 4 + 2] = new Vector2(u1, 1f); uv[i * 4 + 3] = new Vector2(u0, 1f);
+            printBorn[i] = printClock; printAlpha[i] = alpha;
+            var c = new Color(1f, 1f, 1f, alpha);
+            printC[i * 4] = printC[i * 4 + 1] = printC[i * 4 + 2] = printC[i * 4 + 3] = c;
+            printMesh.vertices = printV; printMesh.uv = uv; printMesh.colors = printC;
+            printMesh.RecalculateBounds();
+        }
+
+        void BuildPrints()
+        {
+            printV = new Vector3[MaxPrints * 4];
+            printC = new Color[MaxPrints * 4];
+            printBorn = new float[MaxPrints]; printAlpha = new float[MaxPrints];
+            var tri = new int[MaxPrints * 6];
+            for (int i = 0; i < MaxPrints; i++)
+            {
+                int v = i * 4;
+                tri[i * 6] = v; tri[i * 6 + 1] = v + 2; tri[i * 6 + 2] = v + 1;
+                tri[i * 6 + 3] = v; tri[i * 6 + 4] = v + 3; tri[i * 6 + 5] = v + 2;
+            }
+            printMesh = new Mesh { name = "Footprints" };
+            printMesh.MarkDynamic();
+            printMesh.vertices = printV; printMesh.uv = new Vector2[MaxPrints * 4]; printMesh.colors = printC;
+            printMesh.triangles = tri;
+            var go = new GameObject("Footprints", typeof(MeshFilter), typeof(MeshRenderer));
+            go.transform.SetParent(transform, false);
+            go.GetComponent<MeshFilter>().sharedMesh = printMesh;
+            var mr = go.GetComponent<MeshRenderer>();
+            mr.sharedMaterial = Imprint(Resources.Load<Texture2D>("Camp/Boot"));
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        }
+
+        void ClearFootprints()
+        {
+            if (printMesh != null)
+            {
+                System.Array.Clear(printV, 0, printV.Length);
+                System.Array.Clear(printC, 0, printC.Length);
+                System.Array.Clear(printAlpha, 0, printAlpha.Length);
+                printMesh.vertices = printV; printMesh.colors = printC;
+                printMesh.RecalculateBounds();
+            }
+            printNext = 0;
+        }
+
+        /// <summary>Test tools: how many prints are on the snow.</summary>
+        public int FootprintCount { get { int n = 0; if (printAlpha != null) foreach (var a in printAlpha) if (a > 0f) n++; return n; } }
+
         // ---------------------------------------------------------------- the controls
 
-        bool wasDown, dragging, pressOnUi;
+        bool wasDown, dragging, pressOnUi, pressedContext;
         Vector2 pressAt, lastP;
         float pressT;
 
@@ -1029,16 +1171,21 @@ namespace Summit
                 pressAt = p; pressT = 0f; dragging = false;
                 string id = ui.Hit(p);
                 pressOnUi = id != null || ui.PanelOpen;
-                if (id != null)
+                if (id == "context")
+                {
+                    // it sits where a thumb goes down to walk: it opens on lifting a tap, never on touching down
+                    pressedContext = true;
+                }
+                else if (id != null)
                 {
                     wasDown = true;
-                    if (id == "context") return Open(Near, ui);
                     ui.Act(id);
                     return false;
                 }
             }
             float radius = Mathf.Max(60f, Mathf.Min(Screen.width, Screen.height) * 0.14f);
-            if (down && !pressOnUi)
+            if (down && pressedContext) pressT += dt;   // (a press on the context button never walks)
+            else if (down && !pressOnUi)
             {
                 pressT += dt;
                 var d = p - pressAt;
@@ -1046,6 +1193,12 @@ namespace Summit
                 // the stick's centre trails the thumb past full throw, so turning round is instant
                 if (d.magnitude > radius) { pressAt = p - d.normalized * radius; d = p - pressAt; }
                 if (dragging) stick = d / radius;
+            }
+            else if (!down && wasDown && pressedContext)
+            {
+                pressedContext = false;
+                wasDown = false;
+                if ((lastP - pressAt).magnitude < radius * 0.12f && ui.Hit(lastP) == "context") return Open(Near, ui);
             }
             else if (!down && wasDown && !pressOnUi && !dragging && pressT < 0.4f)
             {
@@ -1132,16 +1285,17 @@ namespace Summit
             // never through a wall, a floor or the roof: come in in front of it
             Vector3 dir = want - target;
             float reach = dir.magnitude;
-            foreach (var h in Physics.RaycastAll(target, dir / Mathf.Max(reach, 1e-4f), reach, ~0, QueryTriggerInteraction.Collide))
-                if (h.collider.name.StartsWith("COL_") && h.distance - 0.3f < reach)
-                    reach = Mathf.Max(0.6f, h.distance - 0.3f);
+            int nh = Physics.RaycastNonAlloc(target, dir / Mathf.Max(reach, 1e-4f), rayHits, reach, ~0, QueryTriggerInteraction.Collide);
+            for (int i = 0; i < nh; i++)
+                if (cameraWalls.Contains(rayHits[i].collider) && rayHits[i].distance - 0.3f < reach)
+                    reach = Mathf.Max(0.6f, rayHits[i].distance - 0.3f);
             // pulled in close: rise a little and look down, so you don't fill the screen
             float pulled = Mathf.Clamp01((dir.magnitude - reach) / Mathf.Max(1f, dir.magnitude));
             want = target + dir.normalized * reach + Vector3.up * (0.9f * pulled * (1f - showBlend));
             if (!Indoors) want.y = Mathf.Max(want.y, Slope.DrawnHeight(want.x, want.z) + 0.8f);
             Vector3 cp = snap ? want : Vector3.Lerp(cam.transform.position, want, k(6f));
             cam.transform.SetPositionAndRotation(cp, Quaternion.LookRotation(look - cp, Vector3.up));
-            cam.fieldOfView = Mathf.Lerp(Mathf.Lerp(Mathf.Lerp(62f, 70f, inBlend), 54f, lookBlend), Mathf.Lerp(42f, 50f, inBlend), showBlend);
+            cam.fieldOfView = Mathf.Lerp(Mathf.Lerp(Mathf.Lerp(62f, 64f, inBlend), 54f, lookBlend), Mathf.Lerp(42f, 50f, inBlend), showBlend);
             snap = false;
         }
 
