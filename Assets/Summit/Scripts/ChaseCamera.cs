@@ -19,7 +19,7 @@ namespace Summit
         public float peek;            // ...this much (0..1)
 
         Camera cam;
-        float yaw, height, fov = 62f, focusVy, camDist = 6f, lookDrop;
+        float speedCam = 5f, yaw, height, fov = 62f, focusVy, camDist = 6f, lookDrop;
         Vector3 focus;
         bool first = true;
 
@@ -47,15 +47,19 @@ namespace Summit
             yaw = first ? wantYaw : Mathf.Lerp(yaw, wantYaw, 1f - Mathf.Exp(-dt * 4f));
             var f = new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw));
 
-            float dist = Mathf.Lerp(4.6f, 6.6f, s01) * distScale;   // low and close: the snow rushes past
-            // never behind a tree trunk: slide in front of it
+            // low and close when slow; the faster you go the further back it pulls, to show what is coming
+            // (eased both ways, so slowing down or a crash glides it back in rather than snapping)
+            float speedDist = Mathf.Lerp(4.4f, 10.5f, Mathf.SmoothStep(0f, 1f, s01)) * distScale;
+            speedCam = first ? speedDist : Mathf.Lerp(speedCam, speedDist, 1f - Mathf.Exp(-dt * 1.8f));
+            float dist = speedCam;
+            // never behind a tree trunk: slide in front of it (quickly), and ease back out after
             if (Physics.SphereCast(focus, 0.35f, -f, out RaycastHit hit, dist, ~0, QueryTriggerInteraction.Ignore) &&
                 hit.collider.GetComponentInParent<Obstacle>() != null)
                 dist = Mathf.Max(2.5f, hit.distance);
             camDist = first ? dist : Mathf.Lerp(camDist, dist, 1f - Mathf.Exp(-dt * (dist < camDist ? 20f : 3f)));
             dist = camDist;
             Vector3 pos = focus - f * dist;
-            float wantH = focus.y + Mathf.Lerp(1.15f, 1.5f, s01) * heightScale * Mathf.Lerp(1f, distScale, 0.7f);
+            float wantH = focus.y + Mathf.Lerp(1.15f, 2.3f, Mathf.SmoothStep(0f, 1f, s01)) * heightScale * Mathf.Lerp(1f, distScale, 0.7f);
             // never inside the hill behind you
             wantH = Mathf.Max(wantH, Slope.Height(pos.x, pos.z) + 1.3f);
             height = first ? wantH : Mathf.Lerp(height, wantH, 1f - Mathf.Exp(-dt * 7f));

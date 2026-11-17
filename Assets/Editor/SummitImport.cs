@@ -121,7 +121,7 @@ public class SummitImport : AssetPostprocessor
     {
         var sh = AssetDatabase.LoadAssetAtPath<Shader>("Assets/Summit/Shaders/Backdrop.shader");
         if (sh == null) return;
-        foreach (var n in new[] { "Far", "Mid", "Near" })
+        foreach (var n in new[] { "Far", "Mid", "Near", "Photo" })
         {
             string tex = "Assets/Summit/Resources/Backdrop/Backdrop" + n + ".png", mp = "Assets/Summit/Resources/Backdrop/" + n + ".mat";
             var ti = (TextureImporter)AssetImporter.GetAtPath(tex);
@@ -139,7 +139,7 @@ public class SummitImport : AssetPostprocessor
             if (m == null) { m = new Material(sh); AssetDatabase.CreateAsset(m, mp); }
             m.shader = sh;
             m.SetTexture("_MainTex", AssetDatabase.LoadAssetAtPath<Texture2D>(tex));
-            m.renderQueue = 2940 + (n == "Far" ? 0 : n == "Mid" ? 1 : 2);   // far, then mid, then near
+            m.renderQueue = 2940 + (n == "Far" ? 0 : n == "Mid" ? 1 : n == "Near" ? 2 : 3);   // far, then mid, then near
             EditorUtility.SetDirty(m);
         }
         AssetDatabase.SaveAssets();

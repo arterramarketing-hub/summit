@@ -152,7 +152,7 @@ namespace Summit
             transform.position = p;
             StartZ = z;
             Heading = 0f; Speed = 0f; Steer = 0f; groundVy = 0f;
-            Airborne = false; Crashed = false; Running = false; Grinding = false;
+            Airborne = false; Crashed = false; Running = false; Grinding = false; pipeAir = false;
             HasCrashFollow = false; rb.detectCollisions = true; StayDown = false; HoldCrash = false;
             AirTime = 0f; Tuck = 0f; Carve = 0f; Skid = 0f; Peak = 0f; AboveGround = 0f;
             Lean = 0f; leanVel = 0f; YawRate = 0f;
@@ -613,6 +613,7 @@ namespace Summit
         {
             if (Crashed) return;
             Crashed = true;
+            pipeAir = false;
             Airborne = false; Grinding = false;
             crashTimer = 0.8f;   // at least this long; then until the player taps to get up (RequestUp)
             RequestUp = false;
@@ -651,7 +652,7 @@ namespace Summit
         /// <summary>The player tapped to get back up.</summary>
         public bool RequestUp;
         /// <summary>Down long enough that a tap will get you back up.</summary>
-        public bool CanGetUp => Crashed && crashTimer <= 0f && !StayDown;
+        public bool CanGetUp => Crashed && crashTimer <= 0f && !StayDown && !HoldCrash;
 
         Vector3 Recover(Vector3 p)
         {

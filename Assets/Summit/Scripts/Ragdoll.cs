@@ -103,7 +103,9 @@ namespace Summit
             board.SetParent(null, true);
 
             if (parts.Count == 0) Prebuild();
-            // switch the body over from posed to physical
+            // switch the body over from posed to physical. Each joint first re-captures the pose the body is
+            // in right now as its rest, so a crouched knee or a lowered arm is never "outside its limits"
+            foreach (var p in parts) if (p.joint != null) { var cb = p.joint.connectedBody; p.joint.connectedBody = null; p.joint.connectedBody = cb; }
             foreach (var p in parts)
             {
                 p.col.enabled = true;
@@ -145,7 +147,12 @@ namespace Summit
             if (riderCollider != null) Physics.IgnoreCollision(boardCol, riderCollider);
             foreach (var p in parts) Physics.IgnoreCollision(boardCol, p.col);
             // each slab of snow is only for its own body: the body's for the body, the board's for the board
-            // (and neither for the rider's own sphere, which turns collisions back on when it gets up)
+            // (and neither for the rider's own sphere, which turns collisions back on when it gets up).
+            // Unity only accepts IgnoreCollision between active colliders, so the slabs go live first
+            groundBody.gameObject.SetActive(true);
+            boardGroundBody.gameObject.SetActive(true);
+            PlaceSlab(groundBody, Centre, true);
+            PlaceSlab(boardGroundBody, board.position, true);
             var gCol = groundBody.GetComponent<Collider>(); var bgCol = boardGroundBody.GetComponent<Collider>();
             Physics.IgnoreCollision(gCol, boardCol);
             foreach (var p in parts) Physics.IgnoreCollision(bgCol, p.col);
@@ -153,10 +160,6 @@ namespace Summit
             boardRb.linearVelocity = velocity * 0.75f + Vector3.up * 3.5f + Random.insideUnitSphere * 2f;
             boardRb.angularVelocity = new Vector3(Random.Range(-9f, 9f), Random.Range(-4f, 4f), Random.Range(-9f, 9f));
 
-            groundBody.gameObject.SetActive(true);
-            boardGroundBody.gameObject.SetActive(true);
-            PlaceSlab(groundBody, Centre, true);
-            PlaceSlab(boardGroundBody, board.position, true);
         }
 
         /// <summary>

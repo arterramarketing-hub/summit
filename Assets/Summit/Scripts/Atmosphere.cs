@@ -233,6 +233,22 @@ namespace Summit
 
         void MakeParallax()
         {
+            // a real photograph of a mountain range, if there is one: an arc ahead, down the fall line
+            var photo = Resources.Load<Material>("Backdrop/Photo");
+            if (photo != null)
+            {
+                var go = new GameObject("Mountains Photo");
+                go.transform.SetParent(transform, false);
+                // the texture is the photo (top 918 rows, spanning -0.186..0.478 rad) plus forest carried on down
+                // to the valley below it, so it reaches 0.783 rad below the horizon
+                go.AddComponent<MeshFilter>().sharedMesh = Arc(1500f, 1.483f, -0.783f, 0.478f);
+                var r = go.AddComponent<MeshRenderer>();
+                r.sharedMaterial = photo;
+                r.shadowCastingMode = ShadowCastingMode.Off; r.receiveShadows = false;
+                bands = new[] { new Band { t = go.transform, lag = 0.012f, lagUp = 0.004f } };
+                bandAnchor = rider != null ? rider.transform.position : Vector3.zero;
+                return;
+            }
             var names = new[] { "Far", "Mid", "Near" };
             var radius = new[] { 2050f, 1750f, 1450f };   // beyond the drawn terrain
             var lag = new[] { 0.01f, 0.025f, 0.05f };
@@ -255,6 +271,38 @@ namespace Summit
             }
             bands = list.ToArray();
             bandAnchor = rider != null ? rider.transform.position : Vector3.zero;
+        }
+
+        /// <summary>
+        /// Part of a ring round the camera: half-angle `half` either side of +Z (down the hill), covering
+        /// elevations e0..e1 (radians), with the texture stretched across it.
+        /// </summary>
+        static Mesh Arc(float r, float half, float e0, float e1)
+        {
+            const int N = 96, Rows = 24;
+            var v = new Vector3[(N + 1) * Rows]; var uv = new Vector2[v.Length];
+            var t = new int[N * (Rows - 1) * 6];
+            for (int i = 0; i <= N; i++)
+            {
+                float u = i / (float)N, az = Mathf.Lerp(-half, half, u);
+                for (int k = 0; k < Rows; k++)
+                {
+                    float f = k / (float)(Rows - 1), e = Mathf.Lerp(e0, e1, f);
+                    v[i * Rows + k] = new Vector3(Mathf.Sin(az) * r, Mathf.Tan(e) * r, Mathf.Cos(az) * r);
+                    uv[i * Rows + k] = new Vector2(u, f);
+                }
+            }
+            int q = 0;
+            for (int i = 0; i < N; i++)
+                for (int k = 0; k < Rows - 1; k++)
+                {
+                    int a = i * Rows + k, b = a + 1, c = a + Rows, d = c + 1;
+                    t[q++] = a; t[q++] = b; t[q++] = c; t[q++] = b; t[q++] = d; t[q++] = c;
+                }
+            var m = new Mesh { name = "MountainArc" };
+            m.vertices = v; m.uv = uv; m.triangles = t;
+            m.bounds = new Bounds(Vector3.zero, Vector3.one * r * 3f);
+            return m;
         }
 
         static Mesh Ring(float r)

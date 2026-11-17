@@ -107,9 +107,9 @@ namespace Summit
             }
 
             // a sign at the start of each section, at the side of the piste, facing up the hill
-            SignAt(root.transform, zb + Course.ParkAt - 30f, signPark, 1f);
-            SignAt(root.transform, zb + Course.DangerAt - 30f, signDanger, -1f);
-            SignAt(root.transform, zb + Course.PipeAt - 30f, signPipe, 1f);
+            if (zb + Course.ParkAt + 180f < Course.ClearFrom) SignAt(root.transform, zb + Course.ParkAt - 30f, signPark, 1f);
+            if (Course.CrevassesOf(k).Length > 0) SignAt(root.transform, zb + Course.DangerAt - 30f, signDanger, -1f);
+            if (Course.PipeWeight(zb + (Course.PipeAt + Course.PipeEnd) * 0.5f) > 0f) SignAt(root.transform, zb + Course.PipeAt - 30f, signPipe, 1f);
             return root;
         }
 

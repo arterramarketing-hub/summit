@@ -51,9 +51,14 @@ namespace Summit
         public static float PipeHalfWidth => PipeFlat + PipeCap * PipeR;
 
         /// <summary>0 outside the pipe, 1 inside, easing in and out at the ends.</summary>
+        /// <summary>Nothing is built past here: the last stretch to the finish is a clean run.</summary>
+        public static float ClearFrom => Slope.FinishZ - 260f;
+
         public static float PipeWeight(float z)
         {
             if (z < First) return 0f;
+            float pipeStart = z - Local(z) + PipeAt;
+            if (pipeStart + (PipeEnd - PipeAt) > ClearFrom) return 0f;   // a pipe that would run into the finish is not built
             float u = Local(z);
             if (u < PipeAt || u > PipeEnd) return 0f;
             float w = Mathf.Min((u - PipeAt) / PipeRamp, (PipeEnd - u) / PipeRamp);
@@ -85,8 +90,9 @@ namespace Summit
         {
             if (crevCache.TryGetValue(cycle, out var list)) return list;
             // rare: one or two per danger zone, well apart
-            list = new Crevasse[Slope.Hash01(cycle, 9, 31) < 0.45f ? 1 : 2];
             float zs = First + cycle * Cycle + DangerAt + 18f;
+            if (zs + 140f > ClearFrom) { list = new Crevasse[0]; crevCache[cycle] = list; return list; }
+            list = new Crevasse[Slope.Hash01(cycle, 9, 31) < 0.45f ? 1 : 2];
             for (int k = 0; k < list.Length; k++)
             {
                 float h1 = Slope.Hash01(cycle, k, 31), h2 = Slope.Hash01(cycle, k, 32), h3 = Slope.Hash01(cycle, k, 33);
@@ -168,8 +174,9 @@ namespace Summit
         public static Feature[] FeaturesOf(int cycle)
         {
             if (featCache.TryGetValue(cycle, out var list)) return list;
-            list = new Feature[spotAt.Length];
             float zs = First + cycle * Cycle + ParkAt;
+            if (zs + 180f > ClearFrom) { list = new Feature[0]; featCache[cycle] = list; return list; }
+            list = new Feature[spotAt.Length];
             for (int i = 0; i < list.Length; i++)
             {
                 var k = spotKind[i];

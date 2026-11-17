@@ -67,7 +67,9 @@ namespace Summit
                     drop.Add(kv.Key);
             foreach (var k in drop) { live[k].SetActive(false); spare.Enqueue(live[k]); live.Remove(k); }
 
-            int budget = all ? int.MaxValue : buildsPerFrame;
+            // a full rebuild (a new mountain) builds only what is round the rider at once; the far chunks
+            // stream in over the next frames, so PLAY AGAIN does not freeze
+            int budget = all ? 48 : buildsPerFrame;
             pending = false;
             foreach (var k in wanted)
             {

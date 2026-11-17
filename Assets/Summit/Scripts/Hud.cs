@@ -215,7 +215,7 @@ namespace Summit
         {
             playBtn.gameObject.SetActive(play);
             modeBtn.gameObject.SetActive(play);
-            riderBtn.gameObject.SetActive(play);
+            riderBtn.gameObject.SetActive(play && playText == "PLAY");   // choose your rider before a run, not on the results
             restartBtn.gameObject.SetActive(restart);
             playLabel.text = playText;
         }

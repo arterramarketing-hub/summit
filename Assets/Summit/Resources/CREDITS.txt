@@ -10,3 +10,5 @@ Bear: Running Brown Bear by Google Data Arts Team [CC-BY 3.0] (https://creativec
   via Poly Pizza (https://poly.pizza/m/Coppphok4P)
 Sign and banner lettering rendered to textures by Tools/MakeSigns.swift
 All sounds are synthesised from scratch by Tools/MakeAudio.swift (no recordings)
+Backdrop photo: "Mount Rainier panorama" by Deathgleaner, stitched by Richardprins, public domain
+  https://commons.wikimedia.org/wiki/File:Mount_Rainier_panorama.jpg (cropped, sky keyed out, colour graded by Tools/MakePhotoBand.swift)

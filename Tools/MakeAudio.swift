@@ -729,6 +729,88 @@ func goSound() -> [Double] {
     return normalize(fade(x, out: 0.1), 0.8)
 }
 
+// ---- the rider's voice: a breathy, jittery voiced source shaped through vowel formants
+
+struct Vowel { var f1, f2, f3, f4: Double }
+let AH = Vowel(f1: 760, f2: 1180, f3: 2550, f4: 3500), UH = Vowel(f1: 620, f2: 1180, f3: 2400, f4: 3400)
+let OO = Vowel(f1: 360, f2: 760, f3: 2300, f4: 3300), OH = Vowel(f1: 480, f2: 880, f3: 2450, f4: 3400)
+let EH = Vowel(f1: 560, f2: 1780, f3: 2500, f4: 3500)
+func mixV(_ a: Vowel, _ b: Vowel, _ t: Double) -> Vowel {
+    Vowel(f1: a.f1 + (b.f1 - a.f1) * t, f2: a.f2 + (b.f2 - a.f2) * t, f3: a.f3 + (b.f3 - a.f3) * t, f4: a.f4 + (b.f4 - a.f4) * t)
+}
+
+/// f0(s) and vowel(s) over normalised time s in 0..1; amp(s) the loudness; rough: growl in a scream.
+func vocal(_ sec: Double, seed: UInt64, f0: (Double) -> Double, vowel: (Double) -> Vowel, amp: (Double) -> Double,
+           breath: Double, rough: Double) -> [Double] {
+    var r = RNG(seed); let n = samples(sec)
+    let jit = drift(n, 30, &r), shim = drift(n, 18, &r), vib = drift(n, 2.5, &r)
+    var src = [Double](repeating: 0, count: n)
+    var ph = 0.0
+    for i in 0..<n {
+        let s = Double(i) / Double(n)
+        let f = f0(s) * (1 + 0.025 * (jit[i] - 0.5) + 0.03 * sin(TAU * 5.5 * t(i)) * vib[i])
+        ph += f / SR; if ph >= 1 { ph -= 1 }
+        // a glottal pulse: harmonics falling off at about -12 dB an octave
+        var g = 0.0
+        let kmax = min(40, Int(SR * 0.45 / f))
+        for k in 1...max(1, kmax) { g += sin(TAU * Double(k) * ph) / pow(Double(k), 1.25) }
+        g *= (0.9 + 0.2 * shim[i]) * (1 + rough * sin(TAU * 0.5 * Double(i) * f / SR) * 0.6)
+        src[i] = g * 0.25 + r.bi() * breath * 0.25
+    }
+    // formants, moving with the vowel
+    var out = [Double](repeating: 0, count: n)
+    var b1 = Biquad(.bp, 700, 6), b2 = Biquad(.bp, 1200, 9), b3 = Biquad(.bp, 2500, 14), b4 = Biquad(.bp, 3500, 16)
+    for i in 0..<n {
+        if i % 32 == 0 {
+            let v = vowel(Double(i) / Double(n))
+            b1.set(v.f1, v.f1 / 90); b2.set(v.f2, v.f2 / 110); b3.set(v.f3, v.f3 / 160); b4.set(v.f4, v.f4 / 220)
+        }
+        let x = src[i]
+        out[i] = (b1.run(x) * 1.0 + b2.run(x) * 0.6 + b3.run(x) * 0.3 + b4.run(x) * 0.15) * amp(Double(i) / Double(n))
+    }
+    return out
+}
+
+/// "AAAAHH!" while flying through the air: up in pitch, holding, cracking and falling away.
+func scream(_ seed: UInt64, base: Double, sec: Double) -> [Double] {
+    var r = RNG(seed)
+    let peak = base * r.r(1.35, 1.55), end = base * r.r(0.75, 0.9)
+    var x = vocal(sec, seed: seed, f0: { s in s < 0.2 ? base + (peak - base) * s / 0.2 : peak + (end - peak) * pow((s - 0.2) / 0.8, 1.5) },
+                  vowel: { s in mixV(AH, s < 0.7 ? AH : UH, s < 0.7 ? 0 : (s - 0.7) / 0.3) },
+                  amp: { s in min(1, s / 0.06) * (s > 0.75 ? max(0, (1 - s) / 0.25) : 1) * (0.85 + 0.15 * sin(s * 9)) },
+                  breath: 0.35, rough: 0.25)
+    x = softclip(normalize(x, 1), 1.6)
+    return normalize(fade(reverb(x, wet: 0.12, tail: 0.5), out: 0.15), 0.9)
+}
+
+/// "Oof" / "ugh": the wind knocked out on landing.
+func grunt(_ seed: UInt64, base: Double, vowel: Vowel) -> [Double] {
+    var r = RNG(seed)
+    let sec = r.r(0.2, 0.32)
+    var x = vocal(sec, seed: seed, f0: { s in base * (1.1 - 0.35 * s) }, vowel: { s in mixV(vowel, OO, s * 0.4) },
+                  amp: { s in min(1, s / 0.05) * pow(max(0, 1 - s), 1.4) }, breath: 0.55, rough: 0.1)
+    // a puff of breath at the start: the "h"
+    var h = filt(white(samples(0.05), &r), .bp, 1200, 0.8); h = mul(h) { env($0, attack: 0.003, decay: 0.02) }
+    add(&x, h, 0.15)
+    return normalize(fade(x, out: 0.04), 0.85)
+}
+
+/// "OW!": sharp, high, sliding from "ah" to "oo".
+func yelp(_ seed: UInt64, base: Double) -> [Double] {
+    let x = vocal(0.5, seed: seed, f0: { s in base * (1.25 - 0.45 * s) }, vowel: { s in mixV(AH, OO, ss(0.25, 0.85, s)) },
+                  amp: { s in min(1, s / 0.03) * (s > 0.55 ? max(0, (1 - s) / 0.45) : 1) }, breath: 0.3, rough: 0.15)
+    return normalize(fade(reverb(softclip(normalize(x, 1), 1.4), wet: 0.08, tail: 0.3), out: 0.1), 0.85)
+}
+
+func ss(_ a: Double, _ b: Double, _ x: Double) -> Double { let k = max(0, min(1, (x - a) / (b - a))); return k * k * (3 - 2 * k) }
+
+/// "Uuuhh...": picking yourself up out of the snow.
+func groan() -> [Double] {
+    let x = vocal(0.9, seed: 120, f0: { s in 118 - 30 * s }, vowel: { s in mixV(UH, OH, s) },
+                  amp: { s in min(1, s / 0.12) * max(0, 1 - s) }, breath: 0.6, rough: 0.05)
+    return normalize(fade(x, out: 0.1), 0.6)
+}
+
 // ------------------------------------------------------------------ write them all
 
 if CommandLine.arguments.count > 1 { outDir = CommandLine.arguments[1] }
@@ -783,3 +865,13 @@ write("chirp_3", chirp(72))
 write("bone_1", boneCrack(80))
 write("bone_2", boneCrack(81))
 write("bone_3", boneCrack(82))
+write("scream_1", scream(100, base: 255, sec: 1.5))
+write("scream_2", scream(101, base: 290, sec: 1.2))
+write("scream_3", scream(102, base: 230, sec: 1.7))
+write("grunt_1", grunt(110, base: 135, vowel: UH))
+write("grunt_2", grunt(111, base: 120, vowel: OO))
+write("grunt_3", grunt(112, base: 150, vowel: AH))
+write("grunt_4", grunt(113, base: 128, vowel: EH))
+write("yelp_1", yelp(115, base: 300))
+write("yelp_2", yelp(116, base: 260))
+write("groan", groan())

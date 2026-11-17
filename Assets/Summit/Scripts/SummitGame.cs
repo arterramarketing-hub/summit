@@ -138,8 +138,9 @@ namespace Summit
             rider.Scraped += hit => { if (state == State.Riding) audioFx.Play(Sfx.Scrape, hit); };
             body.BoneBroke += (limb, at) =>
             {
-                if (state != State.Riding && state != State.Buried) return;
+                if (state != State.Riding) return;   // the bill is closed once the run is over
                 audioFx.Play(Sfx.Bone);
+                audioFx.Play(Sfx.Yelp);
                 hud.Hurt(0.5f);
                 int cost = BoneCost(limb);
                 medical += cost;
@@ -155,6 +156,7 @@ namespace Summit
                 if (!isBoard && v > 6f) hurtShake = Mathf.Max(hurtShake, Mathf.Clamp01((v - 6f) / 10f) * 0.8f);
                 if (v < 1.5f || Time.time < nextImpactSound) return;
                 if (!isBoard && v > 5f && state == State.Riding) medical += (v - 5f) * 45f;   // bruises, by how hard you hit
+                if (!isBoard && v > 4.5f && Time.time > nextGrunt) { nextGrunt = Time.time + 0.45f; audioFx.Play(Sfx.Grunt, Mathf.Clamp01((v - 4f) / 8f)); }
                 nextImpactSound = Time.time + 0.07f;
                 audioFx.Play(isBoard ? Sfx.Clack : Sfx.Thump, Mathf.Clamp01(v / 10f));
             };
@@ -365,6 +367,7 @@ namespace Summit
         void ToEnd(string title, bool buried)
         {
             state = State.Buried;
+            hud.SetPrompt("");
             wipeoutTimer = 0f;
             endBuried = buried;
             if (buried) audioFx.Play(Sfx.Buried);   // the world goes muffled under the snow (see the mix below)
@@ -430,7 +433,7 @@ namespace Summit
                     }
                     if (input.AnyPress() && hud.OnRestart(RiderInput.PointerPosition())) { audioFx.Play(Sfx.Click); SetPaused(true); break; }
                     // down in the snow: the camera stays on the body until you tap to get back up
-                    if (rider.CanGetUp && input.AnyPress()) { rider.RequestUp = true; input.SwallowCurrentPress(); }
+                    if (rider.CanGetUp && input.AnyPress()) { rider.RequestUp = true; input.SwallowCurrentPress(); audioFx.Play(Sfx.Groan); }
                     else if (rider.StayDown && rider.Crashed && wipeoutTimer > 0f && input.AnyPress() && !body.RagdollMoving) wipeoutTimer = 0.01f;
                     hud.SetPrompt(rider.CanGetUp ? "TAP TO GET UP" : rider.StayDown && rider.Crashed && !body.RagdollMoving ? "TAP TO CONTINUE" : "");
                     runTime += dt;
@@ -440,7 +443,7 @@ namespace Summit
                         if (body.RagdollBelowSnow > 3f) { crevasseWatch = false; rider.StayDown = true; wipeoutTimer = 1.0f; endTitle = "LOST IN A CREVASSE"; medical += 42000f; hud.Flash("GONE", "helicopter rescue  +$42,000", 2f); }
                         else if (!rider.Crashed) crevasseWatch = false;   // caught the lip: you live
                     }
-                    if (!rider.Crashed && rider.Z > Slope.FinishZ + 30f)
+                    if (!rider.Crashed && !rider.Airborne && rider.Z > Slope.FinishZ + 30f)
                     {
                         // through the finish at the base: the whole mountain, done
                         trickPoints += 5000;
@@ -459,7 +462,7 @@ namespace Summit
 
                 case State.Buried:
                     if (stateTimer > 1.2f && input.AnyPress() && ModeTapped()) { }
-                    else if (stateTimer > 1.2f && input.AnyPress() && RiderTapped()) { }
+
                     else if (stateTimer > 1.2f && input.AnyPress() && (Tapped(true) || SpacePressed()))
                     {
                         ToReady();
@@ -626,7 +629,7 @@ namespace Summit
 
         // airborne sounds: a whoosh as you leave the snow without popping, and one for each half turn of a spin
         bool popped, wasAir;
-        float spinSounded, nextImpactSound;
+        float spinSounded, nextImpactSound, nextGrunt;
         void AirSounds(bool riding)
         {
             bool air = riding && rider.Airborne;
@@ -653,6 +656,7 @@ namespace Summit
             fallsNote = left <= 0 ? "that's three" : left == 1 ? "1 fall left" : left + " falls left";
             hud.Flash(why, fallsNote, 1.3f);
             medical += rider.Tube ? 400f : 850f;   // the trip to the clinic
+            audioFx.Play(Sfx.Scream);
             if (why.StartsWith("Crevasse")) { crevasseWatch = true; hud.Flash("CREVASSE!", fallsNote, 1.6f); if (left <= 0) { wipeoutTimer = 0.9f; endTitle = "WIPED OUT"; rider.StayDown = true; } }
             else if (left <= 0) { wipeoutTimer = 0.9f; endTitle = "WIPED OUT"; rider.StayDown = true; }   // the last fall: no getting up   // let the tumble play out, then it's over
             if (why.StartsWith("Tree")) { audioFx.Play(Sfx.HitTree); audioFx.Play(Sfx.Crash, 0.6f); }

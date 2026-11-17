@@ -198,7 +198,7 @@ namespace Summit
                 // the cut: narrow when carving, a wide sweep when the board is sideways
                 float hw = (0.13f - 0.03f * a + 0.42f * sk) * s;
                 float bwBase = 0.13f * s * (1f + 1.6f * sk);
-                float bhBase = 0.045f * s;
+                float bhBase = 0.03f * s;   // low: seen from a low camera, taller berms read as walls
                 // carving throws a tall berm to the outside of the turn; skidding a long low ridge either side
                 float outBh = bhBase * (1f + 2.2f * a + 1.0f * sk), inBh = bhBase * (1f - 0.4f * a) * (1f - 0.3f * sk);
                 float outBw = bwBase * (1f + 0.9f * a), inBw = bwBase * (1f - 0.25f * a);

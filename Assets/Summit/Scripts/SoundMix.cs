@@ -6,7 +6,7 @@ namespace Summit
     {
         Pop, Takeoff, Land, LandHard, Crash, HitTree, HitRock, Crevasse, Thump, Clack, Spin,
         Trick, TrickBig, CloseCall, Soda, ShieldGet, ShieldHit, ShieldFull, Click, Play, Buried,
-        Scrape, GrindRail, GrindBox, BearRoar, Bone
+        Scrape, GrindRail, GrindBox, BearRoar, Bone, Scream, Grunt, Yelp, Groan
     }
 
     /// <summary>What the ride sounds like this frame (all 0..1 unless noted).</summary>
@@ -39,7 +39,9 @@ namespace Summit
 
         AudioClip powerShort, pop, whoosh, spin, landHard, crash, hitTree, hitRock, crevasse, clack, clank, chime, trickBig,
                   closeCall, soda, shieldGet, shieldHit, click, play, buried, bearRoar, flap;
-        AudioClip[] lands, thumps, crows, chirps, bones;
+        AudioClip[] lands, thumps, crows, chirps, bones, screams, grunts, yelps;
+        AudioClip groan;
+        AudioSource voice;   // one voice: a new cry cuts the last one off, like a real throat
 
         // the bear, followed through the world
         Transform bearSound;
@@ -75,6 +77,11 @@ namespace Summit
             crows = new[] { C("crow_1"), C("crow_2") };
             chirps = new[] { C("chirp_1"), C("chirp_2"), C("chirp_3") };
             bones = new[] { C("bone_1"), C("bone_2"), C("bone_3") };
+            screams = new[] { C("scream_1"), C("scream_2"), C("scream_3") };
+            grunts = new[] { C("grunt_1"), C("grunt_2"), C("grunt_3"), C("grunt_4") };
+            yelps = new[] { C("yelp_1"), C("yelp_2") };
+            groan = C("groan");
+            voice = gameObject.AddComponent<AudioSource>(); voice.playOnAwake = false; voice.spatialBlend = 0f;
         }
 
         Layer Loop(string name)
@@ -220,6 +227,17 @@ namespace Summit
                 case Sfx.Buried: c = buried; vol = 1f; pitch = 1f; break;
                 case Sfx.BearRoar: c = bearRoar; vol = 0.9f; break;
                 case Sfx.Bone: c = bones[Random.Range(0, bones.Length)]; vol = 1f; pitch = Random.Range(0.9f, 1.1f); break;
+            }
+            if (kind == Sfx.Scream || kind == Sfx.Grunt || kind == Sfx.Yelp || kind == Sfx.Groan)
+            {
+                // the rider's voice: one at a time, and a scream is not cut short by a grunt
+                if (voice.isPlaying && voice.clip != null && voice.clip.name.StartsWith("scream") && kind == Sfx.Grunt) return;
+                var set = kind == Sfx.Scream ? screams : kind == Sfx.Grunt ? grunts : kind == Sfx.Yelp ? yelps : new[] { groan };
+                voice.clip = set[Random.Range(0, set.Length)];
+                voice.pitch = Random.Range(0.94f, 1.06f) * (kind == Sfx.Grunt ? 1f : 1f);
+                voice.volume = kind == Sfx.Scream ? 0.85f : kind == Sfx.Yelp ? 0.8f : kind == Sfx.Groan ? 0.5f : 0.4f + 0.4f * Mathf.Clamp01(amount);
+                voice.Play();
+                return;
             }
             if (c == null || vol <= 0.001f) return;
             if (kind == Sfx.Click || kind == Sfx.Play) { ui.pitch = pitch; ui.PlayOneShot(c, vol); return; }

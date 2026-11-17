@@ -483,6 +483,7 @@ namespace Summit
             boardRoot.gameObject.SetActive(!on);
             tubeRoot.gameObject.SetActive(on);
             MakeRagdoll();
+            if (ragdoll == null) return;
             if (on) ragdoll.SetBoard(tubeRoot, new Vector3(1.6f, 0.44f, 1.6f), new Vector3(0f, 0.22f, 0f));
             else ragdoll.SetBoard(boardRoot, new Vector3(0.29f, 0.07f, 1.55f), new Vector3(0f, 0.04f, 0f));
             tubeSpin = 0f; tubeSpinRate = 0f;
@@ -818,6 +819,7 @@ namespace Summit
 
         public void ResetVisual()
         {
+            tubeSpin = 0f; tubeSpinRate = 0f;
             normal = Slope.Normal(rider.transform.position.x, rider.transform.position.z);
             lean = 0f; yawRate = 0f; lastTravel = rider.Heading;
             pivot.localRotation = Quaternion.identity;
@@ -980,7 +982,9 @@ namespace Summit
                 rider.HasCrashFollow = rider.Crashed;
                 // stay down while still sliding or tumbling, and a beat after it stops
                 if (ragdoll.Speed > 0.8f) stillFor = 0f; else stillFor += Time.fixedDeltaTime;
-                rider.HoldCrash = rider.Crashed && stillFor < 0.6f;
+                // you can tap to get up once the body has (nearly) come to rest, and never while it is
+                // falling into a crevasse
+                rider.HoldCrash = rider.Crashed && (ragdoll.Speed > 2.5f || RagdollBelowSnow > 0.5f);
                 RagdollMoving = rider.HoldCrash;
             }
         }
@@ -1075,8 +1079,8 @@ namespace Summit
 
             // the track: a groove pressed into the snow under the board
             trail.Feed(p + Vector3.down * Rider.R, normal, rider.TravelHeading, rider.Running && !rider.Crashed && !rider.Airborne && !rider.Grinding,
-                       Tube ? 1.5f : Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Slope.Rough(p.x, p.z)),
-                       Tube ? 0f : rider.Lean / Rider.MaxLean, Tube ? 0.7f : rider.Skid, dt);   // a tube leaves a wide, shallow chute
+                       Tube ? 1.25f : Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Slope.Rough(p.x, p.z)),
+                       Tube ? 0f : rider.Lean / Rider.MaxLean, Tube ? 0.5f : rider.Skid, dt);   // a tube leaves a wide, shallow chute
 
             // bow wave off the nose: more with speed, deeper snow and when the edge bites
             bool riding = rider.Running && !rider.Crashed && !rider.Airborne && !rider.Grinding;
