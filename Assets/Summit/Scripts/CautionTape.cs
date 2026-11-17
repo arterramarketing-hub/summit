@@ -1,0 +1,173 @@
+using UnityEngine;
+
+namespace Summit
+{
+    /// <summary>
+    /// A strip of caution tape tied between two posts across the in-run. It sags and flutters in the wind,
+    /// and when the rider rides through it, it tears where they hit it and the two ends stream off their posts.
+    /// A little rope of points (Verlet), drawn as a ribbon with the printed tape on both faces.
+    /// </summary>
+    public class CautionTape : MonoBehaviour
+    {
+        const int N = 34;
+        const float Width = 0.13f, Tile = 2.1f;   // ribbon height; metres per repeat of the print
+        readonly Vector3[] p = new Vector3[N], prev = new Vector3[N];
+        float rest;
+        int broken = -1;                           // the link that tore (-1: whole)
+        Rider rider;
+        Mesh mesh;
+        Vector3[] verts; Vector2[] uvs; int[] tris;
+        float t0;
+
+        public bool Broken => broken >= 0;
+        public System.Action<Vector3> Torn;
+
+        public static CautionTape Make(Transform parent, Vector3 a, Vector3 b, Rider rider, Material mat)
+        {
+            var go = new GameObject("CautionTape", typeof(MeshFilter), typeof(MeshRenderer));
+            go.transform.SetParent(parent, false);
+            var tape = go.AddComponent<CautionTape>();
+            tape.rider = rider;
+            var r = go.GetComponent<MeshRenderer>();
+            r.sharedMaterial = mat;
+            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            tape.Init(a, b);
+            return tape;
+        }
+
+        void Init(Vector3 a, Vector3 b)
+        {
+            rest = (b - a).magnitude / (N - 1) * 1.03f;   // a little slack: it sags
+            for (int i = 0; i < N; i++)
+            {
+                float u = i / (N - 1f);
+                p[i] = prev[i] = Vector3.Lerp(a, b, u) + Vector3.down * (0.12f * 4f * u * (1f - u));
+            }
+            mesh = new Mesh { name = "Tape" };
+            mesh.MarkDynamic();
+            GetComponent<MeshFilter>().sharedMesh = mesh;
+            verts = new Vector3[N * 4]; uvs = new Vector2[N * 4];
+            tris = new int[(N - 1) * 12];
+            t0 = Random.value * 10f;
+            for (int k = 0; k < 40; k++) Step(1f / 60f);   // settle into its sag before anyone sees it
+            Draw();
+        }
+
+        void LateUpdate()
+        {
+            float dt = Mathf.Min(ChaseCamera.TestDt > 0f ? ChaseCamera.TestDt : Time.deltaTime, 1f / 30f);
+            if (dt <= 0f) return;
+            if (broken < 0 && rider != null && rider.Running) CheckHit();
+            Step(dt);
+            Draw();
+        }
+
+        void CheckHit()
+        {
+            Vector3 r = rider.transform.position;
+            float z = (p[0].z + p[N - 1].z) * 0.5f;
+            if (r.z < z - 0.4f || r.z > z + 1.5f) return;
+            // which link the rider went through (they must be between the posts and not flying high over it)
+            float lo = Mathf.Min(p[0].x, p[N - 1].x), hi = Mathf.Max(p[0].x, p[N - 1].x);
+            if (r.x < lo || r.x > hi) return;
+            int k = Mathf.Clamp(Mathf.FloorToInt((r.x - p[0].x) / (p[N - 1].x - p[0].x) * (N - 1)), 1, N - 3);
+            if (r.y - p[k].y > 2.2f) return;
+            broken = k;
+            // the ends near the tear are dragged along with the rider
+            Vector3 v = rider.Velocity;
+            for (int i = 0; i < N; i++)
+            {
+                float d = Mathf.Abs(i - (k + 0.5f));
+                float w = Mathf.Exp(-d / 4f);
+                prev[i] = p[i] - (v * 0.75f + Vector3.up * 1.5f) * w * (1f / 60f);
+            }
+            Torn?.Invoke(r);
+        }
+
+        void Step(float dt)
+        {
+            float t = Time.time + t0;
+            for (int i = 1; i < N - 1; i++)
+            {
+                Vector3 vel = (p[i] - prev[i]) * (broken < 0 ? 0.96f : 0.985f);
+                prev[i] = p[i];
+                // wind blowing down the mountain, gusting, and a flutter that runs along the tape
+                float gust = 0.6f + 0.4f * Mathf.Sin(t * 0.9f) + 0.25f * Mathf.Sin(t * 2.3f + 1f);
+                Vector3 wind = new Vector3(0.6f * Mathf.Sin(t * 5.1f + i * 0.9f), 1.6f * Mathf.Sin(t * 7.3f + i * 1.3f),
+                                           (broken < 0 ? 1.2f : 6f) * gust);
+                p[i] += vel + (Vector3.down * 9.8f + wind) * dt * dt;
+            }
+            // the loose ends after the tear are free; the posts' ends stay tied on
+            if (broken >= 0)
+            {
+                for (int s = 0; s < 2; s++)
+                {
+                    int i = s == 0 ? broken : broken + 1;
+                    Vector3 vel = (p[i] - prev[i]) * 0.985f; prev[i] = p[i];
+                    float gust = 0.6f + 0.4f * Mathf.Sin(t * 0.9f);
+                    p[i] += vel + (Vector3.down * 9.8f + new Vector3(0f, 2f * Mathf.Sin(t * 8f + i), 6f * gust)) * dt * dt;
+                }
+            }
+            for (int it = 0; it < 10; it++)
+                for (int i = 0; i < N - 1; i++)
+                {
+                    if (i == broken) continue;
+                    Vector3 d = p[i + 1] - p[i];
+                    float len = d.magnitude;
+                    if (len < 1e-5f) continue;
+                    Vector3 c = d * (0.5f * (len - rest) / len);
+                    bool pinA = i == 0, pinB = i + 1 == N - 1;
+                    if (pinA && pinB) continue;
+                    if (pinA) p[i + 1] -= 2f * c;
+                    else if (pinB) p[i] += 2f * c;
+                    else { p[i] += c; p[i + 1] -= c; }
+                }
+            // never through the snow
+            for (int i = 1; i < N - 1; i++)
+            {
+                float g = Slope.DrawnHeight(p[i].x, p[i].z) + 0.03f;
+                if (p[i].y < g) { p[i].y = g; prev[i] = Vector3.Lerp(prev[i], p[i], 0.5f); }
+            }
+        }
+
+        void Draw()
+        {
+            float t = Time.time + t0;
+            float u = 0f;
+            for (int i = 0; i < N; i++)
+            {
+                Vector3 dir = i < N - 1 ? p[i + 1] - p[i] : p[i] - p[i - 1];
+                if (i == broken) dir = p[i] - p[Mathf.Max(0, i - 1)];
+                dir = dir.sqrMagnitude > 1e-8f ? dir.normalized : Vector3.right;
+                Vector3 up = Vector3.up - dir * Vector3.Dot(Vector3.up, dir);
+                up = up.sqrMagnitude > 1e-6f ? up.normalized : Vector3.forward;
+                // the tape twists as it flutters (more once it is loose)
+                float twist = (broken < 0 ? 0.25f : 0.9f) * Mathf.Sin(t * 6f + i * 0.6f);
+                up = Quaternion.AngleAxis(twist * Mathf.Rad2Deg, dir) * up;
+                Vector3 local = transform.InverseTransformPoint(p[i]);
+                Vector3 h = transform.InverseTransformVector(up * (Width * 0.5f));
+                if (i > 0 && i - 1 != broken) u += (p[i] - p[i - 1]).magnitude / Tile;
+                else if (i > 0) u += 0.5f;
+                // front face and back face (separate vertices, so each lights from its own side)
+                verts[i * 4] = local - h; verts[i * 4 + 1] = local + h;
+                verts[i * 4 + 2] = local - h; verts[i * 4 + 3] = local + h;
+                uvs[i * 4] = new Vector2(u, 0f); uvs[i * 4 + 1] = new Vector2(u, 1f);
+                uvs[i * 4 + 2] = new Vector2(-u, 0f); uvs[i * 4 + 3] = new Vector2(-u, 1f);   // reads the right way round from behind
+            }
+            int n = 0;
+            for (int i = 0; i < N - 1; i++)
+            {
+                if (i == broken) { for (int k = 0; k < 12; k++) tris[n++] = 0; continue; }
+                int a = i * 4, b = (i + 1) * 4;
+                tris[n++] = a; tris[n++] = a + 1; tris[n++] = b;
+                tris[n++] = b; tris[n++] = a + 1; tris[n++] = b + 1;
+                tris[n++] = a + 2; tris[n++] = b + 2; tris[n++] = a + 3;
+                tris[n++] = b + 2; tris[n++] = b + 3; tris[n++] = a + 3;
+            }
+            mesh.vertices = verts; mesh.uv = uvs;
+            if (mesh.triangles.Length != tris.Length) mesh.triangles = tris; else mesh.SetTriangles(tris, 0);
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+        }
+    }
+}

@@ -154,4 +154,33 @@ panel("SignDangerStart", w: 768, h: 512) { W, H in
     text("BAD DECISIONS", H * 0.17, red, in: NSRect(x: 0, y: H * 0.09, width: W, height: H * 0.24))
     let b = NSBezierPath(rect: NSRect(x: 0, y: 0, width: W, height: H)); b.lineWidth = H * 0.03; black.setStroke(); b.stroke()
 }
+
+panel("SignRemote", w: 768, h: 512) { W, H in
+    white.setFill(); NSRect(x: 0, y: 0, width: W, height: H).fill()
+    let blue = NSColor(calibratedRed: 0.05, green: 0.30, blue: 0.68, alpha: 1)
+    blue.setFill(); NSRect(x: 0, y: H * 0.64, width: W, height: H * 0.36).fill()
+    let it = NSFontManager.shared.convert(font(H * 0.25), toHaveTrait: .italicFontMask)
+    let para = NSMutableParagraphStyle(); para.alignment = .center
+    let ns = NSAttributedString(string: "NOTICE", attributes: [.font: it, .foregroundColor: white, .paragraphStyle: para, .kern: H * 0.02])
+    let sz = ns.size(); ns.draw(in: NSRect(x: 0, y: H * 0.82 - sz.height / 2 - H * 0.015, width: W, height: sz.height))
+    text("REMOTE AREA", H * 0.22, black, in: NSRect(x: 0, y: H * 0.35, width: W, height: H * 0.26))
+    text("NO SIGNAL · NO PATROL · NO HELP", H * 0.11, blue, in: NSRect(x: 0, y: H * 0.12, width: W, height: H * 0.18))
+    let b = NSBezierPath(rect: NSRect(x: 0, y: 0, width: W, height: H)); b.lineWidth = H * 0.03; black.setStroke(); b.stroke()
+}
+
+// caution tape: tiles along its length (a repeat every 1024 px), the phrase twice with a cross between
+do {
+    let w = 1024, h = 64
+    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h, bitsPerSample: 8, samplesPerPixel: 4,
+                               hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+    let W = CGFloat(w), H = CGFloat(h)
+    NSColor(calibratedRed: 1.0, green: 0.83, blue: 0.0, alpha: 1).setFill(); NSRect(x: 0, y: 0, width: W, height: H).fill()
+    black.setFill(); NSRect(x: 0, y: 0, width: W, height: H * 0.09).fill(); NSRect(x: 0, y: H * 0.91, width: W, height: H * 0.09).fill()
+    for cx in [W * 0.25, W * 0.75] { text("POINT OF NO RETURN", H * 0.62, black, in: NSRect(x: cx - W * 0.25, y: H * 0.1, width: W * 0.5, height: H * 0.8), kern: 0.08) }
+    for cx in [CGFloat(0), W * 0.5, W] { text("✕", H * 0.55, black, in: NSRect(x: cx - 40, y: H * 0.1, width: 80, height: H * 0.8)) }
+    NSGraphicsContext.restoreGraphicsState()
+    try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: "\(out)/Tape.png"))
+}
 print("signs written to \(out)")

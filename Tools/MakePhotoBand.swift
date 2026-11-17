@@ -87,23 +87,53 @@ for j in 0..<H {
         out[o + 2] = UInt8(max(0, min(255, b * 255))); out[o + 3] = UInt8(max(0, min(255, a * 255)))
     }
 }
-// below the photo: the forest carries on down into the valley (the photo's lowest rows mirrored downward,
-// so the texture stays real) and fades into the game's fog haze, so there is never a blank strip between
-// the end of the drawn terrain and the bottom of the picture
+// below the photo: the forest carries on down into the valley and fades into the game's fog haze, so
+// there is never a blank strip between the end of the drawn terrain and the bottom of the picture.
+// The fill is made only from distant forest with no near trees in it (the donor stretch below), so the
+// big foreground firs never get copied and mirrored into a kaleidoscope; the photo's own bottom rows
+// blend into that fill, so the near trees' trunks sink into the forest rather than stopping at a line.
 let extra = Int(Double(H) * 0.9), H2 = H + extra
 var ext = [UInt8](repeating: 0, count: W * H2 * 4)
 for k in 0..<(W * H * 4) { ext[k] = out[k] }
 let haze = (0.80, 0.86, 0.94)
-for j in H..<H2 {
-    let d = j - H
-    let band = max(8, H / 12), k = d % (2 * band)          // only the lowest forest rows, back and forth (no seams)
-    let srcRow = max(0, H - 1 - (k < band ? k : 2 * band - 1 - k))
-    let f = Double(d) / Double(extra)
-    let toHaze = 0.92 * ss(0.0, 0.85, f)                  // further down the slope is further away: hazier (none at the seam)
+let donorX0 = Int(Double(W) * 0.185), donorX1 = Int(Double(W) * 0.50)
+let cut = 16                                   // the photo's last rows are a pale hazy strip: neither kept nor copied
+let Hs = H - cut                               // where the fill takes over completely
+let band = max(8, H / 9)                       // the donor rows: the photo's lowest forest, above that strip
+let dy0 = Hs - band
+let blend = H / 16                             // photo rows that fade into the fill
+// the donor patch made seamlessly periodic (its far edge cross-faded into its near one), so it repeats
+// with no mirror lines: Px across, Py down
+let Fx = 90, Fy = band / 3
+let Px = donorX1 - donorX0 - Fx, Py = band - Fy
+func at(_ x: Int, _ y: Int) -> (Double, Double, Double, Double) {
+    let o = (y * W + x) * 4
+    return (Double(out[o]) / 255, Double(out[o + 1]) / 255, Double(out[o + 2]) / 255, Double(out[o + 3]) / 255)
+}
+func mix(_ a: (Double, Double, Double, Double), _ b: (Double, Double, Double, Double), _ t: Double) -> (Double, Double, Double, Double) {
+    (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t, a.2 + (b.2 - a.2) * t, a.3 + (b.3 - a.3) * t)
+}
+func row(_ tx: Int, _ y: Int) -> (Double, Double, Double, Double) {
+    tx < Fx ? mix(at(donorX0 + Px + tx, y), at(donorX0 + tx, y), Double(tx) / Double(Fx)) : at(donorX0 + tx, y)
+}
+func fill(_ i: Int, _ j: Int) -> (Double, Double, Double, Double) {
+    let tx = ((i % Px) + Px) % Px, ty = (((j - Hs) % Py) + Py) % Py
+    return ty < Fy ? mix(row(tx, dy0 + Py + ty), row(tx, dy0 + ty), Double(ty) / Double(Fy)) : row(tx, dy0 + ty)
+}
+for j in (Hs - blend)..<H2 {
+    let f = j >= H ? Double(j - H) / Double(extra) : 0
+    let toHaze = 0.92 * ss(0.0, 0.85, f)       // further down the slope is further away: hazier (none at the seam)
+    let mixIn = j >= Hs ? 1.0 : ss(0, 1, Double(j - (Hs - blend)) / Double(blend))
     for i in 0..<W {
-        let so = (srcRow * W + i) * 4, o = (j * W + i) * 4
-        let r = Double(out[so]) / 255, g = Double(out[so + 1]) / 255, b = Double(out[so + 2]) / 255
-        let a = Double(out[so + 3]) / 255
+        let o = (j * W + i) * 4
+        let u = Double(i) / Double(W - 1)
+        let feather = ss(0.0, 0.07, u) * ss(1.0, 0.93, u)
+        var (r, g, b, a) = fill(i, j)
+        a = feather                            // the fill is solid forest, feathered at the band's ends
+        if mixIn < 1 {
+            let p = at(i, j)
+            (r, g, b, a) = mix(p, (r, g, b, a), mixIn)
+        }
         ext[o] = UInt8(max(0, min(255, (r + (haze.0 - r) * toHaze) * 255)))
         ext[o + 1] = UInt8(max(0, min(255, (g + (haze.1 - g) * toHaze) * 255)))
         ext[o + 2] = UInt8(max(0, min(255, (b + (haze.2 - b) * toHaze) * 255)))

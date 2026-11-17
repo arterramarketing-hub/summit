@@ -8,13 +8,15 @@ namespace Summit
     ///   Cruise  - open piste with kickers through the trees
     ///   Park    - ride-on boxes and rails you grind automatically, and a jump line
     ///   Danger  - long crevasses down the slope to steer between; a bear may come out of the trees
-    ///   Pipe    - a halfpipe cut into the slope
+    ///   Pipe    - a halfpipe cut into the slope (switched off: see HalfpipeOn)
     /// Everything here is a pure function of position, like the rest of the mountain.
     /// </summary>
     public static class Course
     {
         public enum Section { Start, Cruise, Park, Danger, Pipe }
         public const float First = 60f, Cycle = 900f;
+        /// <summary>The halfpipe is switched off: its stretch of each cycle is open cruising piste instead.</summary>
+        public const bool HalfpipeOn = false;
         // where each section begins within a cycle
         public const float ParkAt = 200f, DangerAt = 380f, PipeAt = 520f, PipeEnd = 760f;
 
@@ -30,7 +32,7 @@ namespace Summit
             if (u < ParkAt) return Section.Cruise;
             if (u < DangerAt) return Section.Park;
             if (u < PipeAt) return Section.Danger;
-            if (u < PipeEnd) return Section.Pipe;
+            if (u < PipeEnd) return HalfpipeOn ? Section.Pipe : Section.Cruise;
             return Section.Cruise;
         }
 
@@ -56,7 +58,7 @@ namespace Summit
 
         public static float PipeWeight(float z)
         {
-            if (z < First) return 0f;
+            if (!HalfpipeOn || z < First) return 0f;
             float pipeStart = z - Local(z) + PipeAt;
             if (pipeStart + (PipeEnd - PipeAt) > ClearFrom) return 0f;   // a pipe that would run into the finish is not built
             float u = Local(z);

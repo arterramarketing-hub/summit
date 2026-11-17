@@ -27,7 +27,7 @@ public static class StartShot
         Physics.simulationMode = SimulationMode.Script;
         typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
         rider.input = null;
-        float[] shots = { 2.5f, 4f, 5f, 5.6f, 6.2f, 6.8f };
+        float[] shots = { 6.6f, 7.3f, 8.0f, 8.6f, 9.5f, 11f };
         ChaseCamera.TestDt = 1f / 60f;
         int next = 0;
         const float dt = 1f / 60f;
@@ -38,6 +38,7 @@ public static class StartShot
             fUpd.Invoke(props, null);
             body.Apply(dt);
             late.Invoke(chase, null);
+            foreach (var tp in Object.FindObjectsByType<CautionTape>(FindObjectsSortMode.None)) typeof(CautionTape).GetMethod("LateUpdate", NP).Invoke(tp, null);
             typeof(Atmosphere).GetMethod("LateUpdate", NP).Invoke(atmo, null);
             if (t >= shots[next])
             {
@@ -49,7 +50,8 @@ public static class StartShot
                 foreach (var g in baked) Object.DestroyImmediate(g);
                 foreach (var sk in skins) sk.enabled = true;
                 var hips = rider.transform.Find("Pivot");
-                Debug.Log($"STARTSHOT {next} t={t:0.00} rider={p} ground={Slope.DrawnHeight(p.x, p.z):0.00} cam={cam.transform.position} chunks={terrain.transform.childCount} model={(skins.Length > 0 ? skins[0].bounds.center.ToString() : "-")}");
+                var tape0 = Object.FindFirstObjectByType<CautionTape>();
+                Debug.Log($"STARTSHOT {next} tape={(tape0 != null && tape0.Broken)} t={t:0.00} rider={p} ground={Slope.DrawnHeight(p.x, p.z):0.00} cam={cam.transform.position} chunks={terrain.transform.childCount} model={(skins.Length > 0 ? skins[0].bounds.center.ToString() : "-")}");
                 next++;
             }
         }
