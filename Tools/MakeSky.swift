@@ -115,7 +115,7 @@ func mountain(_ r: Range, _ az: Double, _ e: Double, top: Double) -> C {
 
 func savePNG(_ px: [UInt8], _ w: Int, _ h: Int, _ path: String) {
     let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
-                               isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: w * 4, bitsPerPixel: 32)!
+                               isPlanar: false, colorSpaceName: .deviceRGB, bitmapFormat: .alphaNonpremultiplied, bytesPerRow: w * 4, bitsPerPixel: 32)!
     px.withUnsafeBufferPointer { memcpy(rep.bitmapData!, $0.baseAddress!, w * h * 4) }
     try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: path))
     print("wrote", path)
@@ -147,19 +147,23 @@ for j in 0..<H {
     for i in 0..<W {
         let az = (Double(i) + 0.5) / Double(W) * 2 * PI
         let dx = cos(e) * sin(az), dy = sin(e), dz = cos(e) * cos(az)
-        var c = mix(horizon, zenith, pow(max(0, e) / (PI / 2), 0.42))
+        // the colours of the backdrop photo's own sky (Tools/art/rainier-edit.jpg, measured row by row): it covers
+        // up to 0.21 rad, and this carries on from it, deepening to the zenith
+        let photoHorizon = C(r: 0.628, g: 0.787, b: 0.906), photoTop = C(r: 0.489, g: 0.674, b: 0.820)
+        var c: C
+        if e <= 0.21 { c = mix(photoHorizon, photoTop, max(-0.7, e) / 0.21) }
+        else { c = mix(photoTop, C(r: 0.20, g: 0.42, b: 0.76), pow((e - 0.21) / (PI / 2 - 0.21), 0.6)) }
         let sunDot = max(0, dx * sunDir.x + dy * sunDir.y + dz * sunDir.z)
         c = c + C(r: 1, g: 0.95, b: 0.85) * (0.25 * pow(sunDot, 24))
-        if e > 0.02 {
-            // high wispy cloud, seen in perspective on a ceiling
+        if e > 0.25 {
+            // high wispy cloud, seen in perspective on a ceiling: only well above the mountain, so the photo's
+            // clear sky meets plain sky
             let k = 1 / max(0.05, dy)
             let cx = dx * k * 1.2, cz = dz * k * 1.2
             let warp = fbm(cx * 0.6, cz * 0.6, 51, 4)
             let wisp = fbm(cx * 0.9 + warp * 1.8, cz * 2.6 + warp, 53, 6)
-            c = mix(c, C(r: 0.97, g: 0.98, b: 1.0), ss(0.52, 0.78, wisp) * ss(0.02, 0.18, e) * 0.85)
+            c = mix(c, C(r: 0.97, g: 0.98, b: 1.0), ss(0.52, 0.78, wisp) * ss(0.28, 0.55, e) * 0.85)
         }
-        let (bc, bd) = bank(az, e, 0.10, 0.22, 61, 0.8)        // big cumulus behind the peaks
-        c = mix(c, bc, bd)
         c = mix(c, haze, ss(0.045, -0.005, e) * 0.92)         // the valley lost in the fog's haze
         put(&px, (j * W + i) * 4, c, 1)
     }

@@ -63,7 +63,8 @@ for j in 0..<H {
 // shadows in the snow are never punched out
 var seen = [Bool](repeating: false, count: W * H)
 var stack = [Int]()
-for i in 0..<W where skyMask[i] > 0.3 { stack.append(i); seen[i] = true }
+// (an edited picture keeps its own sky: the game's sky is painted to carry on from it)
+if !edited { for i in 0..<W where skyMask[i] > 0.3 { stack.append(i); seen[i] = true } }
 while let k = stack.popLast() {
     alpha[k] = 1 - skyMask[k]
     let i = k % W, j = k / W
@@ -84,6 +85,7 @@ for j in 0..<H {
         a /= n
         let u = Double(i) / Double(W - 1)
         a *= ss(0.0, 0.07, u) * ss(1.0, 0.93, u)
+        if edited { a *= ss(0.0, 0.12, Double(j) / Double(H)) }   // the top of its sky melts into the painted sky
         let (r, g, b) = cols[j * W + i]
         let o = (j * W + i) * 4
         out[o] = UInt8(max(0, min(255, r * 255))); out[o + 1] = UInt8(max(0, min(255, g * 255)))
@@ -127,7 +129,7 @@ if edited {
     }
     print("edited: \(W)x\(H2), the picture is the top \(H) rows, haze below")
     let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: W, pixelsHigh: H2, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
-                               isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: W * 4, bitsPerPixel: 32)!
+                               isPlanar: false, colorSpaceName: .deviceRGB, bitmapFormat: .alphaNonpremultiplied, bytesPerRow: W * 4, bitsPerPixel: 32)!
     ext.withUnsafeBufferPointer { memcpy(rep.bitmapData!, $0.baseAddress!, W * H2 * 4) }
     try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: outPath))
     print("wrote", outPath)
@@ -188,7 +190,7 @@ for j in (Hs - blend)..<H2 {
 }
 print("extended to \(W)x\(H2): the photo is the top \(H) rows")
 let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: W, pixelsHigh: H2, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
-                           isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: W * 4, bitsPerPixel: 32)!
+                           isPlanar: false, colorSpaceName: .deviceRGB, bitmapFormat: .alphaNonpremultiplied, bytesPerRow: W * 4, bitsPerPixel: 32)!
 ext.withUnsafeBufferPointer { memcpy(rep.bitmapData!, $0.baseAddress!, W * H2 * 4) }
 try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: outPath))
 print("wrote", outPath)

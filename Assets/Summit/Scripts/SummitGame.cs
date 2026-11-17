@@ -414,6 +414,7 @@ namespace Summit
                 case State.Ready:
                     traceT = 0f;
                     if (autoplay && (readyT += dt) > 3f) { readyT = 0f; ToRiding(); }
+                    else if (autoplay && readyT > 2f && readyT - dt <= 2f) ScreenCapture.CaptureScreenshot("auto-ready.png");
                     else if (input.AnyPress() && ModeTapped()) { }
                     else if (input.AnyPress() && RiderTapped()) { }
                     else if (input.AnyPress() && (Tapped(true) || SpacePressed())) { audioFx.Play(Sfx.Play); ToRiding(); }
@@ -480,7 +481,10 @@ namespace Summit
             if (autoplay && state == State.Riding && traceT < 16f)
             {
                 // device testing: launched with SUMMIT_AUTOPLAY=1 the game starts runs by itself and logs the first seconds
+                float before = traceT;
                 traceT += dt; traceNext -= dt;
+                foreach (float at in new[] { 3f, 7.6f, 8.4f, 10f, 14f })
+                    if (before < at && traceT >= at) ScreenCapture.CaptureScreenshot("auto-" + at.ToString("0.0") + ".png");
                 if (traceNext <= 0f)
                 {
                     traceNext = 0.25f;
