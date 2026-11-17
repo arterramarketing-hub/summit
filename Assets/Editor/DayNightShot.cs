@@ -41,8 +41,8 @@ public static class DayNightShot
         rider.input = null;
         ChaseCamera.TestDt = 1f / 60f;
         const float dt = 1f / 60f;
-        float[] at = { 1.2f, 22f };
-        string[] where = { "start", "midrun" };
+        float[] at = { 1.2f, 12f, 22f };
+        string[] where = { "start", "midrun", "late" };
         int next = 0;
         for (float t = 0f; next < at.Length; t += dt)
         {
@@ -54,13 +54,14 @@ public static class DayNightShot
             aLate.Invoke(atmo, null);
             if (t < at[next]) continue;
             if (next == 0) for (int i = 0; i < 3; i++) Shoot("DayNight_warmup.png");   // placeholder materials, then the real ones
+            if (next == 0) { SkyScan(dayNight); SkyViews(dayNight); }
             foreach (var (name, clock) in Times)
             {
                 TimeOfDay.TestClock = clock; dayNight.ApplyNow();
                 fx.Sprinkle(400);
                 Shoot($"DayNight_{where[next]}_{name}.png");
             }
-            if (next == 1)
+            if (next == 2)
             {
                 // the pause menu with its TIME row, at phone size (an overlay canvas doesn't reach a render texture)
                 var hud = Get<Hud>("hud"); var hc = hud.GetComponent<Canvas>();
@@ -80,22 +81,67 @@ public static class DayNightShot
         typeof(SummitGame).GetMethod("ToHub", NP).Invoke(game, new object[] { true });
         ChaseCamera.TestDt = dt;
         foreach (var ps in Object.FindObjectsByType<ParticleSystem>(FindObjectsSortMode.None)) if (ps.transform.IsChildOf(camp.transform)) ps.Simulate(3f, true, true);
-        camp.Teleport(1.5f, -82f, 185f);
-        for (int i = 0; i < 40; i++)
-        {
-            camp.Walk(Vector2.zero, dt); body.Apply(dt); camp.CameraStep(dt);
-            tUpd.Invoke(terrain, null); fUpd.Invoke(props, null); aLate.Invoke(atmo, null);
-        }
-        foreach (var (name, clock) in Times)
-        {
-            TimeOfDay.TestClock = clock; dayNight.ApplyNow();
-            Shoot($"DayNight_camp_{name}.png");
-        }
+        void Settle() { for (int i = 0; i < 40; i++) { camp.Walk(Vector2.zero, dt); body.Apply(dt); camp.CameraStep(dt); tUpd.Invoke(terrain, null); fUpd.Invoke(props, null); aLate.Invoke(atmo, null); } }
+        // where you arrive, then the chalet from across the camp (HubShot's views)
+        Settle();
+        foreach (var (name, clock) in Times) { TimeOfDay.TestClock = clock; dayNight.ApplyNow(); Shoot($"DayNight_camp_{name}.png"); }
+        var from = camp.ChaletPoint(9f, 0f, 22f); var to = camp.ChaletPoint(0f, 0f, 0f);
+        camp.TeleportTo(from, Mathf.Atan2(to.x - from.x, to.z - from.z) * Mathf.Rad2Deg);
+        Settle();
+        foreach (var (name, clock) in Times) { TimeOfDay.TestClock = clock; dayNight.ApplyNow(); Shoot($"DayNight_chalet_{name}.png"); }
         ChaseCamera.TestDt = 0f;
         // back to day before quitting: the particle materials are project assets, and the editor saves them on exit
         TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt; dayNight.ApplyNow();
         TimeOfDay.TestClock = -1f;
         EditorApplication.Exit(0);
+    }
+
+    /// <summary>
+    /// Is the light where the sky's sun is? For each phase, turn a sky-only camera round at the light's height
+    /// and find the brightest heading; log it next to the light's own heading.
+    /// </summary>
+    static void SkyScan(DayNight dayNight)
+    {
+        var go = new GameObject("SkyScan"); var c = go.AddComponent<Camera>();
+        c.cullingMask = 0; c.clearFlags = CameraClearFlags.Skybox; c.fieldOfView = 12f; c.aspect = 1f;
+        var rt = new RenderTexture(16, 16, 24); c.targetTexture = rt;
+        var tex = new Texture2D(16, 16, TextureFormat.RGB24, false);
+        foreach (var (name, clock) in Times)
+        {
+            if (name.Contains("-to-")) continue;
+            TimeOfDay.TestClock = clock; dayNight.ApplyNow();
+            Vector3 s = dayNight.SunDirection;
+            float el = Mathf.Asin(s.y) * Mathf.Rad2Deg, az = Mathf.Atan2(s.x, s.z) * Mathf.Rad2Deg;
+            float best = -1f, bestAz = 0f;
+            for (int k = 0; k < 120; k++)
+            {
+                float h = k * 3f;
+                go.transform.rotation = Quaternion.Euler(-el, h, 0f);
+                c.Render(); RenderTexture.active = rt; tex.ReadPixels(new Rect(0, 0, 16, 16), 0, 0); tex.Apply();
+                float sum = 0f; foreach (var p in tex.GetPixels()) sum += p.grayscale;
+                if (sum > best) { best = sum; bestAz = h; }
+            }
+            Debug.Log($"DAYNIGHTSHOT skyscan {name}: light az {Mathf.Repeat(az, 360f):0} el {el:0.0}, brightest sky at az {bestAz:0}; ambient sky {RenderSettings.ambientSkyColor} eq {RenderSettings.ambientEquatorColor} fog {RenderSettings.fogColor} sun {RenderSettings.sun.color} x{RenderSettings.sun.intensity:0.00}");
+        }
+        RenderTexture.active = null; c.targetTexture = null; rt.Release(); Object.DestroyImmediate(go);
+        var probe = Object.FindFirstObjectByType<ReflectionProbe>();
+        var cube = probe != null ? probe.customBakedTexture as Cubemap : null;
+        Debug.Log($"DAYNIGHTSHOT reflection cube {(cube != null ? cube.name + " " + cube.width + " mips " + cube.mipmapCount : "none")}, ambient {RenderSettings.ambientMode} sky {RenderSettings.ambientSkyColor} eq {RenderSettings.ambientEquatorColor} ground {RenderSettings.ambientGroundColor}");
+    }
+
+    /// <summary>The sky alone: up overhead (no pinch at the top) and round behind (no seam), in each phase.</summary>
+    static void SkyViews(DayNight dayNight)
+    {
+        var keep = (cam.transform.position, cam.transform.rotation, cam.fieldOfView);
+        foreach (var (name, clock) in Times)
+        {
+            if (name.Contains("-to-")) continue;
+            TimeOfDay.TestClock = clock; dayNight.ApplyNow();
+            cam.fieldOfView = 70f;
+            cam.transform.rotation = Quaternion.Euler(-75f, 0f, 0f); Shoot($"DayNight_up_{name}.png");
+            cam.transform.rotation = Quaternion.Euler(-12f, 180f, 0f); Shoot($"DayNight_back_{name}.png");
+        }
+        cam.transform.SetPositionAndRotation(keep.Item1, keep.Item2); cam.fieldOfView = keep.Item3;
     }
 
     static void Shoot(string file)

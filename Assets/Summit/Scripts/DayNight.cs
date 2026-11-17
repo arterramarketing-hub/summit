@@ -5,110 +5,158 @@ using UnityEngine.Rendering;
 namespace Summit
 {
     /// <summary>
-    /// Lights the world for the time of day (TimeOfDay.Clock): the sun or moon, the sky light and fog, the
-    /// sky itself (Resources/Sky/SkyCycle.shader blending painted panoramas, stars and the moon), the grade on
-    /// the photo backdrop, the snow's glints and the unlit snow particles, a headlamp on the rider at dusk and
-    /// night, and the summit camp's evening (Camp.SetNight). The colour filters (LookGrade) are post-processing
-    /// and sit on top of all of this untouched.
+    /// Lights the world for the time of day (TimeOfDay.Clock) from a photographed sky per phase
+    /// (Resources/Sky, made by Tools/MakeSkies.swift from Poly Haven HDRIs): the sky itself
+    /// (Resources/Sky/SkyCycle.shader blends two of them), the sun or moon where the photo has it, the ambient
+    /// light (measured from the photo) and reflections (a probe holding it) taken from that same sky, the fog in its horizon's colour, the grade on the photo
+    /// backdrop, the snow's glints and unlit snow particles, a headlamp at dusk and night, and the summit camp's
+    /// evening (Camp.SetNight). The colour filters (LookGrade) are post-processing and sit on top, untouched.
     /// Each phase is one look (a Key); the clock holds a phase's look most of the time and blends to the next
-    /// one over the last part of it. Everything per frame is a handful of property sets, no allocation.
+    /// one over the last part of it. Per frame it is a handful of property sets and no allocation.
     /// </summary>
     [DefaultExecutionOrder(300)]
     public class DayNight : MonoBehaviour
     {
-        /// <summary>One time of day's light.</summary>
+        /// <summary>One time of day's light, on top of its photographed sky.</summary>
         struct Key
         {
-            public Vector3 sun;             // toward the sun (or moon) from the world
-            public Color sunCol; public float sunI, shadow;
-            public Color ambSky, ambEq, ambGround, fog; public float fogDensity;
-            public float reflect;           // how much the snow's sheen reflects the baked (daytime) sky
-            public int sky; public Color skyTint; public float skyExp, stars, moon;
-            public Color bdLo, bdHi; public float bdKey;   // the photo backdrop: forest tint, snow tint, its sky let through
+            public int sky;                 // 0 morning, 1 day, 2 evening, 3 night (SkyInfo.json's order)
+            public float exposure;          // how bright that sky is shown (they are stored at one level)
+            public Color tint;              // a grade on the sky, and so on its ambient light and fog
+            public float sunI, shadow;      // the sun's (or moon's) strength; its colour is the photo's
+            public Color sunTint;
+            public float ambient, fogGain, fogDensity, reflect;
+            public Color bdLo, bdHi;        // the photo backdrop: forest tint, snow tint
             public float camp, headlamp, glintRate, signGain;
             public Color glint, particles;
         }
 
-        // where the moon hangs (azimuth from straight down the mountain, toward +X; elevation): ahead and a
-        // little right of the big peak, above the photo's top. Its glow is painted there (Tools/MakeSkyCycle.swift).
-        const float MoonAz = 22f, MoonE = 14f;
-
-        static Vector3 Dir(float azDeg, float eDeg)
-        {
-            float a = azDeg * Mathf.Deg2Rad, e = eDeg * Mathf.Deg2Rad;
-            return new Vector3(Mathf.Cos(e) * Mathf.Sin(a), Mathf.Sin(e), Mathf.Cos(e) * Mathf.Cos(a));
-        }
-
         static Color C(float r, float g, float b) => new Color(r, g, b, 1f);
 
-        // the looks. Sky textures: 0 morning, 1 day (the original SkyPanorama), 2 evening, 3 night.
-        // A phase's fog is the colour its sky is painted down to at the horizon, so slope and sky meet.
         static readonly Key Morning = new Key
         {
-            // dawn: a low warm sun ahead-left (low suns sit ahead, or the slope falling away from them would be
-            // all in shade), long shadows, pink-lavender sky light, a soft valley haze
-            sun = Dir(290f, 13f), sunCol = C(1f, 0.80f, 0.60f), sunI = 1.95f, shadow = 0.7f,
-            ambSky = C(0.60f, 0.62f, 0.84f), ambEq = C(0.88f, 0.74f, 0.70f), ambGround = C(0.50f, 0.46f, 0.54f),
-            fog = C(0.86f, 0.77f, 0.80f), fogDensity = 0.0025f, reflect = 0.75f,
-            sky = 0, skyTint = Color.white, skyExp = 1f, stars = 0f, moon = 0f,
-            bdLo = C(0.62f, 0.60f, 0.78f), bdHi = C(1.04f, 0.86f, 0.86f), bdKey = 1f,
+            // dawn: a low gold sun ahead-left through scattered cloud, cool blue sky, pink on the peak
+            sky = 0, exposure = 1.1f, tint = Color.white,
+            sunI = 1.9f, shadow = 0.7f, sunTint = C(1f, 1.15f, 1.35f),   // the photo's sun is deep orange: a softer gold
+            ambient = 1.25f, fogGain = 1.05f, fogDensity = 0.0024f, reflect = 0.8f,
+            bdLo = C(0.66f, 0.64f, 0.78f), bdHi = C(1.05f, 0.88f, 0.84f),
             camp = 0.25f, headlamp = 0f, glintRate = 0.8f, signGain = 1f,
-            glint = C(1f, 0.88f, 0.80f), particles = C(1f, 0.92f, 0.92f),
+            glint = C(1f, 0.88f, 0.78f), particles = C(1f, 0.93f, 0.9f),
         };
         static readonly Key Day = new Key
         {
-            // the run's clear day, as it was before there was a clock (SummitGame.SetUpWorld)
-            sun = Dir(230f, 50f), sunCol = C(1f, 0.97f, 0.92f), sunI = 1.45f, shadow = 0.8f,
-            ambSky = C(0.60f, 0.70f, 0.90f), ambEq = C(0.66f, 0.72f, 0.82f), ambGround = C(0.50f, 0.54f, 0.62f),
-            fog = C(0.80f, 0.86f, 0.94f), fogDensity = 0.0021f, reflect = 1f,
-            sky = 1, skyTint = Color.white, skyExp = 1f, stars = 0f, moon = 0f,
-            bdLo = Color.white, bdHi = Color.white, bdKey = 0f,
+            // midday: a high white sun behind-left, blue sky and cumulus
+            sky = 1, exposure = 1f, tint = Color.white,
+            sunI = 1.15f, shadow = 0.8f, sunTint = Color.white,
+            ambient = 0.45f, fogGain = 1.15f, fogDensity = 0.0021f, reflect = 1f,
+            bdLo = Color.white, bdHi = Color.white,
             camp = 0f, headlamp = 0f, glintRate = 1f, signGain = 1f,
             glint = Color.white, particles = Color.white,
         };
         static readonly Key Golden = new Key
         {
-            // early evening: a gold sun low ahead-right, warm faces and violet shade
-            sun = Dir(70f, 15f), sunCol = C(1f, 0.74f, 0.44f), sunI = 1.75f, shadow = 0.72f,
-            ambSky = C(0.54f, 0.54f, 0.76f), ambEq = C(0.82f, 0.64f, 0.54f), ambGround = C(0.44f, 0.40f, 0.46f),
-            fog = C(0.90f, 0.72f, 0.64f), fogDensity = 0.0021f, reflect = 0.75f,
-            sky = 2, skyTint = C(1.10f, 0.98f, 0.80f), skyExp = 1.05f, stars = 0f, moon = 0f,
-            bdLo = C(0.62f, 0.54f, 0.62f), bdHi = C(1.10f, 0.86f, 0.70f), bdKey = 1f,
+            // early evening: the sun on the horizon ahead-right under a lid of cloud, gold light, violet shade
+            sky = 2, exposure = 1.3f, tint = C(1.12f, 1f, 0.86f),
+            sunI = 1.8f, shadow = 0.7f, sunTint = C(1f, 1.05f, 1.15f),
+            ambient = 0.85f, fogGain = 1.2f, fogDensity = 0.0021f, reflect = 0.8f,
+            bdLo = C(0.62f, 0.55f, 0.62f), bdHi = C(1.12f, 0.88f, 0.72f),
             camp = 0.3f, headlamp = 0f, glintRate = 0.9f, signGain = 1.05f,
-            glint = C(1f, 0.84f, 0.60f), particles = C(1f, 0.88f, 0.78f),
+            glint = C(1f, 0.84f, 0.6f), particles = C(1f, 0.88f, 0.78f),
         };
         static readonly Key Pink = new Key
         {
-            // late evening: the sun on the horizon, pink alpenglow on the snow, the valley going blue, first stars
-            sun = Dir(70f, 5f), sunCol = C(1f, 0.58f, 0.60f), sunI = 1.05f, shadow = 0.5f,
-            ambSky = C(0.40f, 0.40f, 0.64f), ambEq = C(0.56f, 0.44f, 0.54f), ambGround = C(0.28f, 0.27f, 0.38f),
-            fog = C(0.78f, 0.62f, 0.72f), fogDensity = 0.0022f, reflect = 0.5f,
-            sky = 2, skyTint = C(0.94f, 0.80f, 1.0f), skyExp = 0.82f, stars = 0.12f, moon = 0.25f,
-            bdLo = C(0.40f, 0.38f, 0.56f), bdHi = C(0.98f, 0.68f, 0.78f), bdKey = 1f,
+            // late evening: the same sky after the sun has gone, pinker and dimmer, the valley going blue
+            sky = 2, exposure = 0.75f, tint = C(1f, 0.86f, 1.02f),
+            sunI = 0.9f, shadow = 0.5f, sunTint = C(1f, 0.82f, 1.3f),
+            ambient = 1.3f, fogGain = 1.2f, fogDensity = 0.0022f, reflect = 0.6f,
+            bdLo = C(0.42f, 0.40f, 0.58f), bdHi = C(0.98f, 0.70f, 0.80f),
             camp = 0.65f, headlamp = 0.45f, glintRate = 0.55f, signGain = 1.4f,
-            glint = C(1f, 0.74f, 0.86f), particles = C(0.82f, 0.70f, 0.80f),
+            glint = C(1f, 0.74f, 0.86f), particles = C(0.82f, 0.7f, 0.8f),
         };
         static readonly Key Night = new Key
         {
-            // night: cold moonlight from ahead (the moon is in the sky there), deep blue shade, a starry sky,
-            // the camp's lamps and the rider's headlamp. Snow still reads: it is the brightest thing about.
-            sun = Dir(22f, 38f), sunCol = C(0.56f, 0.68f, 1f), sunI = 0.42f, shadow = 0.6f,
-            ambSky = C(0.19f, 0.26f, 0.48f), ambEq = C(0.15f, 0.20f, 0.37f), ambGround = C(0.07f, 0.09f, 0.17f),
-            fog = C(0.10f, 0.14f, 0.25f), fogDensity = 0.0024f, reflect = 0.18f,
-            sky = 3, skyTint = Color.white, skyExp = 1f, stars = 1f, moon = 1f,
-            bdLo = C(0.13f, 0.16f, 0.26f), bdHi = C(0.32f, 0.38f, 0.60f), bdKey = 1f,
+            // night: the moon ahead-right, its photo (a long exposure) brought down to a dark blue with the stars
+            // still in it, cold moonlight, the camp's lamps and the rider's headlamp. The snow still reads.
+            sky = 3, exposure = 0.2f, tint = C(0.62f, 0.8f, 1.3f),
+            sunI = 0.45f, shadow = 0.6f, sunTint = C(0.75f, 0.85f, 1f),
+            ambient = 1.6f, fogGain = 1.2f, fogDensity = 0.0024f, reflect = 0.5f,
+            bdLo = C(0.13f, 0.16f, 0.26f), bdHi = C(0.32f, 0.38f, 0.60f),
             camp = 1f, headlamp = 1f, glintRate = 0.35f, signGain = 2.2f,
             glint = C(0.62f, 0.72f, 1f), particles = C(0.34f, 0.40f, 0.56f),
         };
 
         /// <summary>The share of each phase it holds its look before blending into the next.</summary>
         const float Hold = 0.8f;
+        /// <summary>The light never comes in lower than this (degrees), or the snow facing away would be all shade.</summary>
+        const float MinLightEl = 7f;
+
+        // ---------------------------------------------------------------- the photographed skies
+
+        [System.Serializable] class PhaseInfo { public string name; public float sunAz, sunEl; public float[] sunColour, horizon, grid; }
+        [System.Serializable] class SkyInfo { public PhaseInfo[] phases; public int gridW, gridH; }
+
+        struct Sky
+        {
+            public Cubemap cube;
+            public Vector3 sun;             // toward the sun or moon
+            public Color sunCol, horizon;   // linear
+            public Color ambSky, ambEq, ambGround;  // the sky's light on surfaces facing up, sideways and down (linear, exposure 1)
+        }
+        readonly Sky[] skies = new Sky[4];
+
+        static Vector3 Dir(float azDeg, float elDeg)
+        {
+            float a = azDeg * Mathf.Deg2Rad, e = elDeg * Mathf.Deg2Rad;
+            return new Vector3(Mathf.Cos(e) * Mathf.Sin(a), Mathf.Sin(e), Mathf.Cos(e) * Mathf.Cos(a));
+        }
+
+        /// <summary>Read SkyInfo.json: each sky's sun, horizon, and its radiance grid as an ambient probe.</summary>
+        bool LoadSkies()
+        {
+            var txt = Resources.Load<TextAsset>("Sky/SkyInfo");
+            if (txt == null) return false;
+            var info = JsonUtility.FromJson<SkyInfo>(txt.text);
+            string[] names = { "Morning", "Day", "Evening", "Night" };
+            for (int i = 0; i < 4; i++)
+            {
+                var p = System.Array.Find(info.phases, q => q.name == names[i]);
+                var cube = Resources.Load<Cubemap>("Sky/Sky" + names[i]);
+                if (p == null || cube == null) return false;
+                var s = new Sky { cube = cube };
+                s.sun = Dir(p.sunAz, Mathf.Max(p.sunEl, MinLightEl));
+                s.sunCol = C(p.sunColour[0], p.sunColour[1], p.sunColour[2]);
+                s.horizon = C(p.horizon[0], p.horizon[1], p.horizon[2]);
+                // each cell of the grid is a patch of sky shining on the world: added as a directional light of its
+                // radiance times its solid angle over pi, which is what a surface would take from it in Unity's terms
+                var sh = new SphericalHarmonicsL2();
+                int gw = info.gridW, gh = info.gridH;
+                for (int y = 0; y < gh; y++)
+                {
+                    float e0 = 90f - y * 180f / gh, e1 = 90f - (y + 1) * 180f / gh;
+                    float omega = 2f * Mathf.PI / gw * (Mathf.Sin(e0 * Mathf.Deg2Rad) - Mathf.Sin(e1 * Mathf.Deg2Rad));
+                    for (int x = 0; x < gw; x++)
+                    {
+                        int g = (y * gw + x) * 3;
+                        var c = C(p.grid[g], p.grid[g + 1], p.grid[g + 2]);
+                        // (AddDirectionalLight takes the direction toward the light)
+                        sh.AddDirectionalLight(Dir((x + 0.5f) * 360f / gw, (e0 + e1) * 0.5f), c, omega / Mathf.PI);
+                    }
+                }
+                // as the three colours of Unity's trilight ambient (the mode the game has always lit with)
+                var dirs = new[] { Vector3.up, Vector3.forward, Vector3.right, Vector3.back, Vector3.left, Vector3.down };
+                var res = new Color[dirs.Length];
+                sh.Evaluate(dirs, res);
+                s.ambSky = res[0]; s.ambEq = (res[1] + res[2] + res[3] + res[4]) * 0.25f; s.ambGround = res[5];
+                skies[i] = s;
+            }
+            return true;
+        }
 
         // ---------------------------------------------------------------- set up
 
         Light sun;
         Material skyMat;
-        readonly Texture[] skies = new Texture[4];
+        bool photoSky;
         Rider rider;
         Camp camp;
         SnowFX fx;
@@ -117,6 +165,8 @@ namespace Summit
         float shown = -1f;
         Color lastParticles = new Color(-1f, 0f, 0f), lastGlint = new Color(-1f, 0f, 0f);
         float lastSignGain = -1f;
+        Cubemap lastReflection;
+        ReflectionProbe probe;
         static readonly List<Material> reflective = new List<Material>();
 
         /// <summary>
@@ -127,18 +177,19 @@ namespace Summit
         {
             var dn = new GameObject("DayNight").AddComponent<DayNight>();
             dn.sun = sun;
-            var old = RenderSettings.skybox;
-            dn.skies[1] = old != null && old.HasProperty("_MainTex") ? old.GetTexture("_MainTex") : null;
-            dn.skies[0] = Resources.Load<Texture2D>("Sky/SkyMorning");
-            dn.skies[2] = Resources.Load<Texture2D>("Sky/SkyEvening");
-            dn.skies[3] = Resources.Load<Texture2D>("Sky/SkyNight");
-            if (dn.skies[1] == null) dn.skies[1] = dn.skies[0];
             var sh = Resources.Load<Shader>("Sky/SkyCycle");
-            if (sh != null && dn.skies[0] != null)
+            if (sh != null && dn.LoadSkies())
             {
+                dn.photoSky = true;
                 dn.skyMat = new Material(sh) { name = "SkyCycle" };
-                dn.skyMat.SetVector("_MoonDir", Dir(MoonAz, MoonE));
                 RenderSettings.skybox = dn.skyMat;
+                // the snow's reflections: of the photographed sky, through one probe round everything
+                dn.probe = new GameObject("SkyReflection").AddComponent<ReflectionProbe>();
+                dn.probe.transform.SetParent(dn.transform, false);
+                dn.probe.mode = ReflectionProbeMode.Custom;
+                dn.probe.size = Vector3.one * 100000f;
+                dn.probe.boxProjection = false;
+                dn.probe.importance = 0;
             }
             dn.ApplyNow();
             return dn;
@@ -167,6 +218,9 @@ namespace Summit
 
         /// <summary>How dark it is, 0 midday to 1 night (the camp's lamps follow it).</summary>
         public float Darkness { get; private set; }
+
+        /// <summary>The sky now being shown (the test tools check the light against it).</summary>
+        public Vector3 SunDirection { get; private set; }
 
         // ---------------------------------------------------------------- per frame
 
@@ -202,6 +256,8 @@ namespace Summit
         static Key StartOf(int p) => p == 0 ? Morning : p == 1 ? Day : p == 2 ? Golden : Night;
         static Key EndOf(int p) => p == 2 ? Pink : StartOf(p);
 
+        static Color Mul(Color a, Color b) => new Color(a.r * b.r, a.g * b.g, a.b * b.b, 1f);
+
         void Apply(float clock)
         {
             int p = Mathf.Clamp((int)clock, 0, 3);
@@ -216,36 +272,50 @@ namespace Summit
             // everything after it puts back to the time of day (only its lamps are kept)
             if (camp != null) camp.SetNight(Darkness);
 
-            if (sun != null)
+            // what each end shows: its sky, times its exposure and tint (linear)
+            Color gradeA = a.tint * a.exposure, gradeB = b.tint * b.exposure;
+            if (photoSky)
             {
-                Vector3 to = Vector3.Slerp(a.sun, b.sun, t);
-                sun.transform.rotation = Quaternion.LookRotation(-to);
-                sun.color = Color.Lerp(a.sunCol, b.sunCol, t);
-                sun.intensity = Mathf.Lerp(a.sunI, b.sunI, t);
-                sun.shadowStrength = Mathf.Lerp(a.shadow, b.shadow, t);
-            }
-            RenderSettings.ambientSkyColor = Color.Lerp(a.ambSky, b.ambSky, t);
-            RenderSettings.ambientEquatorColor = Color.Lerp(a.ambEq, b.ambEq, t);
-            RenderSettings.ambientGroundColor = Color.Lerp(a.ambGround, b.ambGround, t);
-            RenderSettings.fogColor = Color.Lerp(a.fog, b.fog, t);
-            RenderSettings.fogDensity = Mathf.Lerp(a.fogDensity, b.fogDensity, t);
-            RenderSettings.reflectionIntensity = Mathf.Lerp(a.reflect, b.reflect, t);
+                Sky sa = skies[a.sky], sb = skies[b.sky];
+                SunDirection = SunBetween(sa.sun, sb.sun, t);
 
-            if (skyMat != null)
-            {
-                skyMat.SetTexture("_TexA", skies[a.sky]);
-                skyMat.SetTexture("_TexB", skies[b.sky]);
+                skyMat.SetTexture("_CubeA", sa.cube);
+                skyMat.SetTexture("_CubeB", sb.cube);
                 skyMat.SetFloat("_Blend", a.sky == b.sky ? 0f : t);
-                skyMat.SetColor("_Tint", Color.Lerp(a.skyTint, b.skyTint, t));
-                skyMat.SetFloat("_Exposure", Mathf.Lerp(a.skyExp, b.skyExp, t));
-                skyMat.SetFloat("_Stars", Mathf.Lerp(a.stars, b.stars, t));
-                skyMat.SetFloat("_Moon", Mathf.Lerp(a.moon, b.moon, t));
+                // the grade lives in the tint (exposure stays 1), so a blend between two grades is one colour
+                skyMat.SetColor("_Tint", Color.Lerp(gradeA, gradeB, t));
+                skyMat.SetFloat("_Exposure", 1f);
+
+                // ambient: each sky's own light, graded the same way, then blended (RenderSettings wants gamma colours)
+                Color ka = gradeA * a.ambient, kb = gradeB * b.ambient;
+                RenderSettings.ambientSkyColor = Color.Lerp(Mul(sa.ambSky, ka), Mul(sb.ambSky, kb), t).gamma;
+                RenderSettings.ambientEquatorColor = Color.Lerp(Mul(sa.ambEq, ka), Mul(sb.ambEq, kb), t).gamma;
+                RenderSettings.ambientGroundColor = Color.Lerp(Mul(sa.ambGround, ka), Mul(sb.ambGround, kb), t).gamma;
+                // fog: the horizon's colour (RenderSettings wants it gamma-encoded)
+                Color fa = Mul(sa.horizon, gradeA) * a.fogGain, fb = Mul(sb.horizon, gradeB) * b.fogGain;
+                RenderSettings.fogColor = Color.Lerp(fa, fb, t).gamma;
+                // reflections: the nearer sky's cubemap (it is stored squeezed, so a little dimmer than it shows)
+                var refl = t < 0.5f ? sa.cube : sb.cube;
+                if (refl != lastReflection) { lastReflection = refl; probe.customBakedTexture = refl; }
+                probe.intensity = Mathf.Lerp(a.reflect * a.exposure, b.reflect * b.exposure, t);
+
+                if (sun != null)
+                {
+                    sun.transform.rotation = Quaternion.LookRotation(-SunDirection);
+                    Color ca = Mul(sa.sunCol, a.sunTint), cb = Mul(sb.sunCol, b.sunTint);
+                    ca /= Mathf.Max(ca.r, Mathf.Max(ca.g, ca.b)); cb /= Mathf.Max(cb.r, Mathf.Max(cb.g, cb.b));
+                    sun.color = Color.Lerp(ca, cb, t).gamma;
+                    sun.intensity = Mathf.Lerp(a.sunI, b.sunI, t);
+                    sun.shadowStrength = Mathf.Lerp(a.shadow, b.shadow, t);
+                }
             }
+            RenderSettings.fogDensity = Mathf.Lerp(a.fogDensity, b.fogDensity, t);
 
             Shader.SetGlobalFloat("_BackdropOn", 1f);
             Shader.SetGlobalColor("_BackdropLo", Color.Lerp(a.bdLo, b.bdLo, t));
             Shader.SetGlobalColor("_BackdropHi", Color.Lerp(a.bdHi, b.bdHi, t));
-            Shader.SetGlobalFloat("_BackdropKey", Mathf.Lerp(a.bdKey, b.bdKey, t));
+            // the photo backdrop's own (daytime) sky always gives way to the photographed sky behind it
+            Shader.SetGlobalFloat("_BackdropKey", photoSky ? 1f : 0f);
 
             // unlit snow particles (falling snow, mist, spray) would glow white in the dark: dim them with the light
             Color pc = Color.Lerp(a.particles, b.particles, t);
@@ -268,6 +338,17 @@ namespace Summit
                 foreach (var m in reflective) if (m != null) m.SetColor("_BaseColor", new Color(sg, sg, sg, 1f));
             }
             Headlamp(Mathf.Lerp(a.headlamp, b.headlamp, t));
+        }
+
+        /// <summary>
+        /// The light between two skies' suns: round the horizon the short way and down (or up) in step, not
+        /// straight across the sky, which from the midday sun to a sunset behind you would pass right overhead.
+        /// </summary>
+        static Vector3 SunBetween(Vector3 a, Vector3 b, float t)
+        {
+            float azA = Mathf.Atan2(a.x, a.z) * Mathf.Rad2Deg, azB = Mathf.Atan2(b.x, b.z) * Mathf.Rad2Deg;
+            float elA = Mathf.Asin(Mathf.Clamp(a.y, -1f, 1f)) * Mathf.Rad2Deg, elB = Mathf.Asin(Mathf.Clamp(b.y, -1f, 1f)) * Mathf.Rad2Deg;
+            return Dir(Mathf.LerpAngle(azA, azB, t), Mathf.Lerp(elA, elB, t));
         }
 
         static bool Same(Color x, Color y) => Mathf.Abs(x.r - y.r) + Mathf.Abs(x.g - y.g) + Mathf.Abs(x.b - y.b) < 0.003f;

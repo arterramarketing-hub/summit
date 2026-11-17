@@ -246,13 +246,14 @@ public class SummitImport : AssetPostprocessor
         AssetDatabase.SaveAssets();
     }
 
-    /// <summary>The sky: Materials/SkyPanorama.png (painted by Tools/MakeSky.swift) on Skybox/Panoramic.</summary>
+    /// <summary>The scene's own sky (Materials/SkyPanorama.png on Skybox/Panoramic, a fallback: DayNight replaces it with the
+    /// photographed time-of-day skies in Resources/Sky), and those skies' cubemap import.</summary>
     public static void EnsureSky()
     {
         const string tex = "Assets/Summit/Materials/SkyPanorama.png", matPath = "Assets/Summit/Materials/Sky.mat";
-        // the time-of-day skies (Resources/Sky, Tools/MakeSkyCycle.swift) are imported just like the day's
-        foreach (var t in new[] { tex, "Assets/Summit/Resources/Sky/SkyMorning.png", "Assets/Summit/Resources/Sky/SkyEvening.png", "Assets/Summit/Resources/Sky/SkyNight.png" })
-            ImportPanorama(t);
+        ImportPanorama(tex);
+        // the photographed time-of-day skies (Resources/Sky, Tools/MakeSkies.swift), as cubemaps
+        foreach (var n in new[] { "Morning", "Day", "Evening", "Night" }) ImportSkyCube("Assets/Summit/Resources/Sky/Sky" + n + ".jpg");
         var mat = AssetDatabase.LoadAssetAtPath<Material>(matPath);
         var sh = Shader.Find("Skybox/Panoramic");
         if (mat == null || sh == null) return;
@@ -265,6 +266,31 @@ public class SummitImport : AssetPostprocessor
         mat.SetColor("_Tint", new Color(0.5f, 0.5f, 0.5f, 1f));
         EditorUtility.SetDirty(mat);
         AssetDatabase.SaveAssets();
+    }
+
+    /// <summary>
+    /// A lat-long sky picture as a cubemap: no seam where the picture's ends meet and no pinch overhead, as a
+    /// panorama has; 1024 a face, which is as sharp as the 4096-wide photos are; with mips, for the snow's
+    /// reflections of it (DayNight uses them as the reflection cubemap).
+    /// </summary>
+    static void ImportSkyCube(string tex)
+    {
+        var ti = (TextureImporter)AssetImporter.GetAtPath(tex);
+        if (ti == null) return;
+        var ios = ti.GetPlatformTextureSettings("iPhone");
+        if (ti.textureShape == TextureImporterShape.TextureCube && ti.mipmapEnabled && ios.overridden && ios.format == TextureImporterFormat.ASTC_5x5) return;
+        ti.textureShape = TextureImporterShape.TextureCube;
+        var st = new TextureImporterSettings(); ti.ReadTextureSettings(st);
+        st.generateCubemap = TextureImporterGenerateCubemap.Cylindrical;
+        st.cubemapConvolution = TextureImporterCubemapConvolution.None;
+        st.seamlessCubemap = true;
+        ti.SetTextureSettings(st);
+        ti.mipmapEnabled = true; ti.sRGBTexture = true;
+        ti.wrapMode = TextureWrapMode.Clamp; ti.filterMode = FilterMode.Trilinear;
+        ti.maxTextureSize = 1024;
+        ios.overridden = true; ios.maxTextureSize = 1024; ios.format = TextureImporterFormat.ASTC_5x5;
+        ti.SetPlatformTextureSettings(ios);
+        ti.SaveAndReimport();
     }
 
     static void ImportPanorama(string tex)
