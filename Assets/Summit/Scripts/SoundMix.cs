@@ -7,7 +7,8 @@ namespace Summit
         Pop, Takeoff, Land, LandHard, Crash, HitTree, HitRock, Crevasse, Thump, Clack, Spin,
         Trick, TrickBig, CloseCall, Soda, ShieldGet, ShieldHit, ShieldFull, Click, Play, Buried,
         Scrape, GrindRail, GrindBox, BearRoar, Bone, Scream, Grunt, Yelp, Groan,
-        SmashWood, SmashRock, PowerJump, PowerStar, SlideHit
+        SmashWood, SmashRock, PowerJump, PowerStar, SlideHit,
+        Nooo, Ledge   // the player's own clips (Resources/Audio/user_*.mp3)
     }
 
     /// <summary>What the ride sounds like this frame (all 0..1 unless noted).</summary>
@@ -47,6 +48,10 @@ namespace Summit
         Layer slideNear;
         AudioClip slideHit;
         AudioSource voice;   // one voice: a new cry cuts the last one off, like a real throat
+        // the player's own clips: a long "nooo" down a crevasse, and the suspense sting at the first ledge, on its
+        // own source so it can be faded out once the jump is over
+        AudioClip nooo, ledge;
+        AudioSource cue;
 
         // the bear, followed through the world
         Transform bearSound;
@@ -89,6 +94,8 @@ namespace Summit
             yelps = new[] { C("yelp_1"), C("yelp_2") };
             groan = C("groan");
             voice = gameObject.AddComponent<AudioSource>(); voice.playOnAwake = false; voice.spatialBlend = 0f;
+            nooo = C("user_crevasse_nooo"); ledge = C("user_ledge_suspense");
+            cue = gameObject.AddComponent<AudioSource>(); cue.playOnAwake = false; cue.spatialBlend = 0f;
         }
 
         Layer Loop(string name)
@@ -204,6 +211,15 @@ namespace Summit
         // pentatonic steps up the scale as a trick chain grows
         static readonly int[] Scale = { 0, 2, 4, 7, 9, 12, 14, 16, 19 };
 
+        /// <summary>Ease the ledge sting out (call each frame once it should go); stops it when silent.</summary>
+        public void FadeCue(float dt)
+        {
+            if (cue == null || !cue.isPlaying) return;
+            cue.volume = Mathf.MoveTowards(cue.volume, 0f, dt / 1.5f);
+            if (cue.volume <= 0.001f) cue.Stop();
+        }
+        public void StopCue() { if (cue != null) cue.Stop(); }
+
         public void Play(Sfx kind, float amount = 1f)
         {
             AudioClip c = null; float vol = 0.7f, pitch = Random.Range(0.96f, 1.04f);
@@ -240,6 +256,16 @@ namespace Summit
                 case Sfx.PowerJump: c = powerJump; vol = 0.7f; pitch = 1f; break;
                 case Sfx.PowerStar: c = powerStar; vol = 0.65f; pitch = 1f; break;
                 case Sfx.SlideHit: c = slideHit; vol = 1f; pitch = 1f; break;
+            }
+            if (kind == Sfx.Nooo)
+            {
+                if (nooo == null) { kind = Sfx.Scream; }
+                else { voice.clip = nooo; voice.pitch = 1f; voice.volume = 1f; voice.Play(); return; }
+            }
+            if (kind == Sfx.Ledge)
+            {
+                if (ledge != null) { cue.clip = ledge; cue.volume = 0.9f; cue.pitch = 1f; cue.Play(); }
+                return;
             }
             if (kind == Sfx.Scream || kind == Sfx.Grunt || kind == Sfx.Yelp || kind == Sfx.Groan)
             {

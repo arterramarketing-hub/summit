@@ -206,6 +206,25 @@ public class SummitImport : AssetPostprocessor
             m.shader = sh;
             m.SetTexture("_MainTex", AssetDatabase.LoadAssetAtPath<Texture2D>(tex));
             m.renderQueue = 2940 + (n == "Far" ? 0 : n == "Mid" ? 1 : n == "Near" ? 2 : 3);   // far, then mid, then near
+            if (n == "Photo")
+            {
+                // where its sky is (Tools/MakePhotoSky.swift), for the time of day to show the game's sky through it,
+                // and where the picture ends and its haze begins (Tools/MakePhotoBand.swift: 0.323 of 1.06 rad)
+                const string mask = "Assets/Summit/Resources/Backdrop/BackdropPhotoSky.png";
+                var mi = (TextureImporter)AssetImporter.GetAtPath(mask);
+                if (mi != null && (mi.mipmapEnabled || mi.sRGBTexture || mi.textureType != TextureImporterType.SingleChannel))
+                {
+                    mi.textureType = TextureImporterType.SingleChannel; mi.sRGBTexture = false; mi.mipmapEnabled = false;
+                    mi.wrapModeU = TextureWrapMode.Repeat; mi.wrapModeV = TextureWrapMode.Clamp; mi.maxTextureSize = 4096;
+                    var ms = new TextureImporterSettings(); mi.ReadTextureSettings(ms); ms.singleChannelComponent = TextureImporterSingleChannelComponent.Red; mi.SetTextureSettings(ms);
+                    var ios = mi.GetPlatformTextureSettings("iPhone");
+                    ios.overridden = true; ios.maxTextureSize = 2048; ios.format = TextureImporterFormat.R8;
+                    mi.SetPlatformTextureSettings(ios);
+                    mi.SaveAndReimport();
+                }
+                m.SetTexture("_SkyMask", AssetDatabase.LoadAssetAtPath<Texture2D>(mask));
+                m.SetFloat("_HazeBottom", 0.323f / 1.06f);
+            }
             EditorUtility.SetDirty(m);
         }
         AssetDatabase.SaveAssets();
@@ -231,6 +250,25 @@ public class SummitImport : AssetPostprocessor
     public static void EnsureSky()
     {
         const string tex = "Assets/Summit/Materials/SkyPanorama.png", matPath = "Assets/Summit/Materials/Sky.mat";
+        // the time-of-day skies (Resources/Sky, Tools/MakeSkyCycle.swift) are imported just like the day's
+        foreach (var t in new[] { tex, "Assets/Summit/Resources/Sky/SkyMorning.png", "Assets/Summit/Resources/Sky/SkyEvening.png", "Assets/Summit/Resources/Sky/SkyNight.png" })
+            ImportPanorama(t);
+        var mat = AssetDatabase.LoadAssetAtPath<Material>(matPath);
+        var sh = Shader.Find("Skybox/Panoramic");
+        if (mat == null || sh == null) return;
+        mat.shader = sh;
+        mat.SetTexture("_MainTex", AssetDatabase.LoadAssetAtPath<Texture2D>(tex));
+        mat.SetFloat("_Mapping", 1f);       // latitude-longitude
+        mat.SetFloat("_ImageType", 0f);     // 360 degrees
+        mat.SetFloat("_Exposure", 1f);
+        mat.SetFloat("_Rotation", 0f);
+        mat.SetColor("_Tint", new Color(0.5f, 0.5f, 0.5f, 1f));
+        EditorUtility.SetDirty(mat);
+        AssetDatabase.SaveAssets();
+    }
+
+    static void ImportPanorama(string tex)
+    {
         var ti = (TextureImporter)AssetImporter.GetAtPath(tex);
         if (ti == null) return;
         bool dirty = ti.mipmapEnabled || ti.maxTextureSize != 4096 || ti.wrapModeU != TextureWrapMode.Repeat;
@@ -246,18 +284,6 @@ public class SummitImport : AssetPostprocessor
             ti.SetPlatformTextureSettings(ios);
             ti.SaveAndReimport();
         }
-        var mat = AssetDatabase.LoadAssetAtPath<Material>(matPath);
-        var sh = Shader.Find("Skybox/Panoramic");
-        if (mat == null || sh == null) return;
-        mat.shader = sh;
-        mat.SetTexture("_MainTex", AssetDatabase.LoadAssetAtPath<Texture2D>(tex));
-        mat.SetFloat("_Mapping", 1f);       // latitude-longitude
-        mat.SetFloat("_ImageType", 0f);     // 360 degrees
-        mat.SetFloat("_Exposure", 1f);
-        mat.SetFloat("_Rotation", 0f);
-        mat.SetColor("_Tint", new Color(0.5f, 0.5f, 0.5f, 1f));
-        EditorUtility.SetDirty(mat);
-        AssetDatabase.SaveAssets();
     }
 
     static float Smooth(float a, float b, float x) { float t = Mathf.Clamp01((x - a) / (b - a)); return t * t * (3f - 2f * t); }

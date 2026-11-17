@@ -46,6 +46,7 @@ namespace Summit
             if (t != null) m.SetTexture("_BaseMap", t);
             m.SetColor("_BaseColor", Color.white);
             m.SetFloat("_Smoothness", 0.25f);
+            DayNight.Reflective(m);   // brighter in the dark, like real reflective signs
             return m;
         }
 

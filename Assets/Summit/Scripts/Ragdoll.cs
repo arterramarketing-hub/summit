@@ -30,6 +30,12 @@ namespace Summit
         public System.Action<float, bool, Vector3, Transform> Hit;
         /// <summary>A part sliding along the snow, every half metre or so: where, how fast.</summary>
         public System.Action<Vector3, float> Drag;
+        /// <summary>A part (or the board: bone null) struck something: what, where, the surface's normal there (out of it, toward the part), and how fast into it (m/s).</summary>
+        public System.Action<Collider, Vector3, Vector3, float, Transform> Struck;
+        /// <summary>Is this collider the snow under the body (the slab), rather than a tree, rock or sign?</summary>
+        public bool IsSnow(Collider c) => c != null && groundBody != null && c.attachedRigidbody == groundBody;
+        /// <summary>The body's parts (for the test tools).</summary>
+        public IEnumerable<Rigidbody> Bodies { get { foreach (var p in parts) yield return p.rb; } }
         /// <summary>Every physics step, each part ploughing through the snow: which bone, the way down into the snow, how hard (m/s).</summary>
         public System.Action<Transform, Vector3, float> Ploughed;
         public static float LimbMaxRel = 14f;   // m/s: the fastest a limb can swing past the pelvis (about its spin cap times its reach)
@@ -44,6 +50,11 @@ namespace Summit
                 Vector3 at = c.contactCount > 0 ? c.GetContact(0).point : transform.position;
                 lastMark = at; lastTime = Time.time;
                 owner?.Hit?.Invoke(c.relativeVelocity.magnitude, board, at, board ? null : transform);
+                if (owner?.Struck != null && c.contactCount > 0)
+                {
+                    Vector3 n = c.GetContact(0).normal;
+                    owner.Struck(c.collider, at, n, Mathf.Abs(Vector3.Dot(c.relativeVelocity, n)), board ? null : transform);
+                }
             }
             void OnCollisionStay(Collision c)
             {

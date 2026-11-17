@@ -29,6 +29,7 @@ namespace Summit
         Hud hud;
         SoundMix audioFx;
         SnowFX fx;
+        Blood blood;
         Atmosphere atmo;
         // three falls a run; the third one ends it
         public const int MaxFalls = 3;
@@ -68,6 +69,7 @@ namespace Summit
         // colour filter (LookGrade) and its strength in tenths, and the lens type (LensFX), from the pause menu
         int filterLevel, filterStrength = 10, lensMode;
         LensFX lensFx;
+        DayNight dayNight;   // the time of day's light (TimeOfDay, DayNight.cs), and the pause menu's TIME row
         UnityEngine.Rendering.VolumeProfile post;
 
         void ApplyCamera()
@@ -96,6 +98,8 @@ namespace Summit
             hud.SetAngle(AngleName[angleLevel]); hud.SetLens(LensName[lensLevel]);
             hud.SetPauseSteer(input.useTilt);
             hud.SetPauseTrees(props.IsRealistic);
+            if (blood != null) hud.SetBlood(blood.On);
+            hud.SetTime(TimeOfDay.LockLabel);
             input.SwallowCurrentPress();
         }
 
@@ -124,6 +128,7 @@ namespace Summit
         float Mult => 1f + 0.5f * chainCount;
 
         float traceT, traceNext, readyT;
+        bool ledgeCued;   // the first-ledge sting has played this run
         static readonly bool autoplay = System.Environment.GetEnvironmentVariable("SUMMIT_AUTOPLAY") == "1";
 
         void Awake()
@@ -243,6 +248,12 @@ namespace Summit
             fx = new GameObject("SnowFX").AddComponent<SnowFX>();
             fx.Build(cam, spray);
             body.fx = fx;
+            // blood on the hardest crashes (can be switched off in the pause menu: it raises the age rating)
+            blood = new GameObject("Blood").AddComponent<Blood>();
+            blood.Build(spray);
+            blood.SetOn(PlayerPrefs.GetInt("summit_blood", 1) == 1);
+            body.blood = blood;
+            blood.forest = props;
 
             // invincible: what you run through is smashed, not crashed into
             smasher = new GameObject("Smasher").AddComponent<Smasher>();
@@ -277,13 +288,14 @@ namespace Summit
             var vol = Object.FindFirstObjectByType<UnityEngine.Rendering.Volume>();
             post = vol != null ? vol.profile : null;
             lensFx = cam.gameObject.AddComponent<LensFX>();
-            lensFx.Build(cam, spray);
+            lensFx.Build(cam);
             ApplyCamera();
             ApplyLook();
             bool tube = PlayerPrefs.GetInt("summit_tube", 0) == 1;
             rider.Tube = tube; body.SetTube(tube); hud.SetRider(tube);
             rider.Bounced += into => { if (state != State.Riding) return; body.TubeKick(into); audioFx.Play(Sfx.Thump, Mathf.Clamp01(into / 12f)); hud.Flash("BOING", "", 0.6f); };
             BuildMeta();
+            dayNight.Hook(rider, fx, camp, spray, trail);
             ToHub();
             // device testing: launched with SUMMIT_TREEBENCH=1 (and SUMMIT_AUTOPLAY=1) it times both tree looks
             if (System.Environment.GetEnvironmentVariable("SUMMIT_TREEBENCH") == "1") gameObject.AddComponent<TreeBench>().forest = props;
@@ -365,6 +377,7 @@ namespace Summit
             RenderSettings.fogMode = FogMode.ExponentialSquared;
             RenderSettings.fogDensity = 0.0021f;   // just a touch of haze: the mountain below stays in view
             RenderSettings.fogColor = new Color(0.80f, 0.86f, 0.94f);
+            dayNight = DayNight.Build(sun);   // morning, day, evening or night: relights all of the above
         }
 
         void MakeMissingMaterials()
@@ -410,6 +423,7 @@ namespace Summit
         void ToReady(bool newMountain)
         {
             state = State.Ready;
+            ledgeCued = false; if (audioFx != null) audioFx.StopCue();
             camp.Leave(); chase.enabled = true; terrain.behindChunks = 1; props.behindCells = 3;
             if (newMountain)
             {
@@ -444,6 +458,7 @@ namespace Summit
             chase.peek = 0f;
             if (atmo != null) atmo.ResetParallax();
             if (fx != null) fx.Clear();
+            if (blood != null) blood.Clear();
             hud.Show("", "Best " + Mathf.RoundToInt(best).ToString("N0"),
                 Application.isMobilePlatform ? "Drag a finger left / right to steer  ·  add a second finger to tuck  ·  lift it to jump"
                               : "A / D to steer  ·  hold Space to tuck  ·  let go to jump");
@@ -471,6 +486,7 @@ namespace Summit
         void ToEnd(string title, bool buried)
         {
             if (rider.Crashed) flags.Plant(body.RagdollCentre, falls);   // the fall that ended it gets its flag too
+            audioFx.StopCue();
             state = State.Buried;
             hud.SetPrompt("");
             wipeoutTimer = 0f;
@@ -556,8 +572,10 @@ namespace Summit
                             else if (hud.OnFilterPlus(pp)) { audioFx.Play(Sfx.Click); filterLevel = (filterLevel + 1) % LookGrade.Names.Length; ApplyLook(); }
                             else if (hud.OnStrengthMinus(pp)) { audioFx.Play(Sfx.Click); filterStrength = Mathf.Max(0, filterStrength - 1); ApplyLook(); }
                             else if (hud.OnStrengthPlus(pp)) { audioFx.Play(Sfx.Click); filterStrength = Mathf.Min(10, filterStrength + 1); ApplyLook(); }
+                            else if (hud.OnTimeMinus(pp) || hud.OnTimePlus(pp)) { audioFx.Play(Sfx.Click); TimeOfDay.StepLock(hud.OnTimePlus(pp) ? 1 : -1); hud.SetTime(TimeOfDay.LockLabel); }
                             else if (hud.OnPauseSteer(pp)) { audioFx.Play(Sfx.Click); input.SetTilt(!input.useTilt); hud.SetPauseSteer(input.useTilt); hud.SetMode(input.useTilt); }
                             else if (hud.OnPauseTrees(pp)) { audioFx.Play(Sfx.Click); props.SetRealistic(!props.IsRealistic); hud.SetPauseTrees(props.IsRealistic); }
+                            else if (hud.OnPauseBlood(pp)) { audioFx.Play(Sfx.Click); blood.SetOn(!blood.On); hud.SetBlood(blood.On); PlayerPrefs.SetInt("summit_blood", blood.On ? 1 : 0); PlayerPrefs.Save(); }
                             else if (hud.OnPauseRestart(pp)) { audioFx.Play(Sfx.Click); SetPaused(false); ToReady(); input.SwallowCurrentPress(); }
                         }
                         break;
@@ -569,6 +587,9 @@ namespace Summit
                     hud.SetPrompt(rider.CanGetUp ? "TAP TO GET UP" : rider.StayDown && rider.Crashed && !body.RagdollMoving && !slide.Caught ? "TAP TO CONTINUE" : "");
                     runTime += dt;
                     slide.Step(dt, rider, body);
+                    // the first ledge: the suspense sting as you roll up to the lip, eased out once you've landed below it
+                    if (!ledgeCued && !rider.Crashed && rider.Z > Slope.PadLip - 14f && rider.Z < Slope.PadLip + 1f) { ledgeCued = true; audioFx.Play(Sfx.Ledge); }
+                    if (ledgeCued && (rider.Crashed || (rider.Z > Slope.PadLip + 8f && !rider.Airborne))) audioFx.FadeCue(dt);
                     Missions.Step(dt, slide.Gap(rider), Score);
                     if (crevasseWatch)
                     {
@@ -880,7 +901,7 @@ namespace Summit
             fallsNote = left <= 0 ? "that's three" : left == 1 ? "1 fall left" : left + " falls left";
             hud.Flash(why, fallsNote, 1.3f);
             medical += rider.Tube ? 400f : 850f;   // the trip to the clinic
-            audioFx.Play(Sfx.Scream);
+            audioFx.Play(why.StartsWith("Crevasse") ? Sfx.Nooo : Sfx.Scream);   // down a crevasse: the long "nooo"
             if (why.StartsWith("Crevasse")) { crevasseWatch = true; hud.Flash("CREVASSE!", fallsNote, 1.6f); if (left <= 0) { wipeoutTimer = 0.9f; endTitle = "WIPED OUT"; rider.StayDown = true; } }
             else if (left <= 0) { wipeoutTimer = 0.9f; endTitle = "WIPED OUT"; rider.StayDown = true; }   // the last fall: no getting up   // let the tumble play out, then it's over
             if (why.StartsWith("Tree")) { audioFx.Play(Sfx.HitTree); audioFx.Play(Sfx.Crash, 0.6f); }

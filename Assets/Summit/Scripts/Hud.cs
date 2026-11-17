@@ -245,6 +245,7 @@ namespace Summit
         Text camLabel, angLabel, lensLabel, steerLabel, treesLabel;
         RectTransform lensTypeMinus, lensTypePlus, filterMinus, filterPlus, strengthMinus, strengthPlus;
         Text lensTypeLabel, filterLabel, strengthLabel;
+        RectTransform timeMinus, timePlus; Text timeLabel;
 
         RectTransform Button(Transform parent, string label, Vector2 pos, Vector2 size, Color c, out Text text, int fontSize = 52)
         {
@@ -263,7 +264,7 @@ namespace Summit
             var panel = new GameObject("PauseSafe", typeof(RectTransform)).GetComponent<RectTransform>();
             panel.SetParent(pausePanel.transform, false);
             panel.anchorMin = Vector2.zero; panel.anchorMax = Vector2.one; panel.offsetMin = panel.offsetMax = Vector2.zero;
-            var title = NewText("PausedTitle", panel, new Vector2(0.5f, 0.5f), new Vector2(0f, 690f), 110, TextAnchor.MiddleCenter);
+            var title = NewText("PausedTitle", panel, new Vector2(0.5f, 0.5f), new Vector2(0f, 750f), 110, TextAnchor.MiddleCenter);
             title.text = "PAUSED";
             Text Row(string label, float y, out RectTransform minus, out RectTransform plus)
             {
@@ -275,17 +276,20 @@ namespace Summit
                 return NewText(label + "Value", panel, new Vector2(0.5f, 0.5f), new Vector2(0f, y), 52, TextAnchor.MiddleCenter);
             }
             Color blue = new Color(0.10f, 0.45f, 0.90f, 0.95f), grey = new Color(1f, 1f, 1f, 0.16f);
-            // rows 160 apart so the camera, lens and filter settings all fit on a tall phone
-            resumeBtn = Button(panel, "RESUME", new Vector2(0f, 550f), new Vector2(560f, 120f), blue, out _, 64);
-            camLabel = Row("CAMERA DISTANCE", 360f, out camMinus, out camPlus);
-            angLabel = Row("CAMERA ANGLE", 200f, out angMinus, out angPlus);
-            lensLabel = Row("LENS", 40f, out lensMinus, out lensPlus);
-            lensTypeLabel = Row("LENS TYPE", -120f, out lensTypeMinus, out lensTypePlus);
-            filterLabel = Row("FILTER", -280f, out filterMinus, out filterPlus);
-            strengthLabel = Row("FILTER STRENGTH", -440f, out strengthMinus, out strengthPlus);
-            steerBtn = Button(panel, "STEERING", new Vector2(0f, -580f), new Vector2(620f, 96f), grey, out steerLabel, 38);
-            againBtn = Button(panel, "RESTART RUN", new Vector2(0f, -710f), new Vector2(560f, 106f), new Color(0.8f, 0.2f, 0.15f, 0.9f), out _, 48);
-            treesBtn = Button(panel, "TREES", new Vector2(0f, -830f), new Vector2(620f, 96f), grey, out treesLabel, 38);
+            // every setting on one page for now, rows 150 apart, toggles stacked thin: about +775..-800 of the 1920-high
+            // layout, inside a portrait iPhone's safe area (about +-940). Due to be split into tabs.
+            resumeBtn = Button(panel, "RESUME", new Vector2(0f, 720f), new Vector2(560f, 110f), blue, out _, 60);
+            camLabel = Row("CAMERA DISTANCE", 560f, out camMinus, out camPlus);
+            angLabel = Row("CAMERA ANGLE", 410f, out angMinus, out angPlus);
+            lensLabel = Row("LENS", 260f, out lensMinus, out lensPlus);
+            lensTypeLabel = Row("LENS TYPE", 110f, out lensTypeMinus, out lensTypePlus);
+            filterLabel = Row("FILTER", -40f, out filterMinus, out filterPlus);
+            strengthLabel = Row("FILTER STRENGTH", -190f, out strengthMinus, out strengthPlus);
+            timeLabel = Row("TIME", -340f, out timeMinus, out timePlus);   // the time of day: CYCLE, or one phase held
+            steerBtn = Button(panel, "STEERING", new Vector2(0f, -455f), new Vector2(620f, 76f), grey, out steerLabel, 34);
+            bloodBtn = Button(panel, "BLOOD", new Vector2(0f, -545f), new Vector2(620f, 76f), grey, out bloodLabel, 34);
+            treesBtn = Button(panel, "TREES", new Vector2(0f, -635f), new Vector2(620f, 76f), grey, out treesLabel, 34);
+            againBtn = Button(panel, "RESTART RUN", new Vector2(0f, -750f), new Vector2(560f, 100f), new Color(0.8f, 0.2f, 0.15f, 0.9f), out _, 46);
             pausePanel.SetActive(false);
         }
 
@@ -304,6 +308,9 @@ namespace Summit
         public bool OnCamPlus(Vector2 p) => Inside(camPlus, p);
         public bool OnPauseSteer(Vector2 p) => Inside(steerBtn, p);
         public bool OnPauseRestart(Vector2 p) => Inside(againBtn, p);
+        RectTransform bloodBtn; Text bloodLabel;
+        public void SetBlood(bool on) { bloodLabel.text = on ? "BLOOD: ON  (tap to change)" : "BLOOD: OFF  (tap to change)"; }
+        public bool OnPauseBlood(Vector2 p) => Inside(bloodBtn, p);
         public void SetLensType(string name) { lensTypeLabel.text = name; }
         public void SetFilter(string name) { filterLabel.text = name; }
         public void SetFilterStrength(string value) { strengthLabel.text = value; }
@@ -315,6 +322,9 @@ namespace Summit
         public bool OnStrengthPlus(Vector2 p) => Inside(strengthPlus, p);
         public bool OnPauseTrees(Vector2 p) => Inside(treesBtn, p);
         public void SetPauseTrees(bool realistic) { treesLabel.text = realistic ? "TREES: REALISTIC  (tap to change)" : "TREES: ORIGINAL  (tap to change)"; }
+        public void SetTime(string value) { timeLabel.text = value; }
+        public bool OnTimeMinus(Vector2 p) => Inside(timeMinus, p);
+        public bool OnTimePlus(Vector2 p) => Inside(timePlus, p);
 
         static Font LoadFont()
         {

@@ -223,6 +223,7 @@ namespace Summit
                 crashAxis = new Vector3(Random.Range(-1f, 1f), 0.2f, Random.Range(0.4f, 1f)).normalized;
             };
             rider.Scraped += _ => spray.Emit(25);
+            rider.HitObstacle += OnRiderHitObstacle; rider.Crash += OnCrashBleed;   // blood on a hard hit (RiderBodyBlood)
         }
 
         // ---------------------------------------------------------------- the person
@@ -439,6 +440,7 @@ namespace Summit
             ragdoll.Hit += OnRagdollHit;
             ragdoll.Drag += OnRagdollDrag;
             ragdoll.Ploughed += (bone, down, v) => snowy?.Plough(down, v, Time.fixedDeltaTime);   // snow packed onto the clothes
+            ragdoll.Struck += OnRagdollStruck; ragdoll.Ploughed += BleedAlong;   // blood on a hard hit (RiderBodyBlood)
             ragdoll.Prebuild();
         }
         float tubeSpin, tubeSpinRate;

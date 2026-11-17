@@ -409,6 +409,81 @@ namespace Summit
             return false;
         }
 
+        /// <summary>
+        /// Where a blow coming from a point meets the tree or rock behind this collider as it is drawn (the
+        /// colliders are rough shapes round them): a fir's branches, a rock's face. Worked out from the models'
+        /// bounds alone (their meshes are not kept readable), so marks left there sit on what you see rather
+        /// than floating on an invisible capsule. False if the collider is not one of ours.
+        /// </summary>
+        public bool SurfaceOf(Collider hit, Vector3 from, out Vector3 at, out Vector3 normal)
+        {
+            at = normal = Vector3.zero;
+            if (hit == null) return false;
+            foreach (var kv in live)
+            {
+                if (kv.Value != hit.gameObject) continue;
+                var pl = Get(kv.Key.x, kv.Key.y);
+                if (pl.kind == Kind.None) return false;
+                var part = (pl.kind == Kind.Tree ? treeParts : rockParts)[pl.idx][0];
+                var M = pl.m * part.local; var inv = M.inverse;
+                var b = part.mesh.bounds;
+                if (pl.kind == Kind.Tree)
+                {
+                    // the model's parts, boxed in the world (the meshes are not authored Y-up, so this is the safe way
+                    // round): the narrowest is the trunk, the widest the branches. Below where the branches start a
+                    // blow lands on the trunk; above, on a cone fitted inside the branches
+                    Bounds trunk = default, crown = default; float tr = float.MaxValue, cr = 0f;
+                    foreach (var tp in treeParts[pl.idx])
+                    {
+                        if (tp.sub >= tp.mesh.subMeshCount) continue;
+                        var wb = WorldBox(pl.m * tp.local, tp.mesh.GetSubMesh(tp.sub).bounds);
+                        float r = Mathf.Min(wb.extents.x, wb.extents.z);
+                        if (r <= 1e-4f) continue;
+                        if (r < tr) { tr = r; trunk = wb; }
+                        if (r > cr) { cr = r; crown = wb; }
+                    }
+                    if (cr <= 0f) return false;
+                    Vector3 d = from - crown.center; d.y = 0f;
+                    d = d.sqrMagnitude > 1e-6f ? d.normalized : Vector3.back;
+                    if (from.y < crown.min.y + 0.15f && tr < cr * 0.6f)
+                    {
+                        float y = Mathf.Clamp(from.y, trunk.min.y + 0.3f, crown.min.y);
+                        at = new Vector3(trunk.center.x, y, trunk.center.z) + d * (tr * 0.9f);
+                        normal = d;
+                    }
+                    else
+                    {
+                        float h = crown.size.y, r0 = cr * 0.75f;
+                        float y = Mathf.Clamp(from.y, crown.min.y + 0.15f, crown.min.y + 0.35f * h);
+                        at = new Vector3(crown.center.x, y, crown.center.z) + d * (r0 * (1f - (y - crown.min.y) / h));
+                        normal = (d * h + Vector3.up * r0).normalized;
+                    }
+                    return true;
+                }
+                // a rock: an egg fitted just inside its model's bounds, met on the line from the blow to its middle
+                Vector3 ext = b.extents * 0.85f;
+                Vector3 o = inv.MultiplyPoint3x4(from), c = b.center;
+                Vector3 os = new Vector3((o.x - c.x) / ext.x, (o.y - c.y) / ext.y, (o.z - c.z) / ext.z);
+                if (os.sqrMagnitude <= 1f) os = os.sqrMagnitude > 1e-6f ? os.normalized : Vector3.up;   // started inside: straight out
+                Vector3 ps = os.normalized;   // aiming at the middle, the ray meets the unit sphere here
+                Vector3 pLocal = c + Vector3.Scale(ps, ext);
+                Vector3 nLocal = new Vector3(ps.x / ext.x, ps.y / ext.y, ps.z / ext.z);
+                at = M.MultiplyPoint3x4(pLocal);
+                normal = inv.transpose.MultiplyVector(nLocal).normalized;
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>A box in a mesh's own space, as an upright box round it in the world.</summary>
+        static Bounds WorldBox(Matrix4x4 m, Bounds b)
+        {
+            var w = new Bounds(m.MultiplyPoint3x4(b.center), Vector3.zero);
+            for (int i = 0; i < 8; i++)
+                w.Encapsulate(m.MultiplyPoint3x4(b.center + Vector3.Scale(b.extents, new Vector3((i & 1) == 0 ? -1 : 1, (i & 2) == 0 ? -1 : 1, (i & 4) == 0 ? -1 : 1))));
+            return w;
+        }
+
         GameObject NewCollider(bool tree)
         {
             var g = new GameObject(tree ? "TreeHit" : "RockHit");

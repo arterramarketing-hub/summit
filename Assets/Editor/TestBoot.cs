@@ -20,6 +20,8 @@ public static class TestBoot
         // SUMMIT_TREES=classic|real picks the tree look for before/after shots (otherwise whatever is saved)
         var trees = System.Environment.GetEnvironmentVariable("SUMMIT_TREES");
         if (!string.IsNullOrEmpty(trees)) PlayerPrefs.SetInt(Forest.TreesPref, trees == "classic" ? 0 : 1);
+        // midday, whatever the clock saved in the editor's PlayerPrefs says (DayNightShot picks its own times)
+        TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt;
         typeof(SummitGame).GetMethod("Awake", NP).Invoke(game, null);
         if (!toStart) return;
         typeof(SummitGame).GetMethod("ToReady", NP, null, new[] { typeof(bool) }, null).Invoke(game, new object[] { true });

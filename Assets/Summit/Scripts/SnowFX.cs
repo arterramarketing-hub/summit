@@ -16,11 +16,16 @@ namespace Summit
         ParticleSystem glints, clumps, mist, puffs, stars, chunks;
         Transform groundPlane;
         float glintCarry;
+        /// <summary>Glints per second relative to full sun, and their colour (DayNight: fewer and bluer by moonlight).</summary>
+        public float glintRate = 1f;
+        Material glintMat;
+        public void TintGlints(Color c) { if (glintMat != null) glintMat.SetColor("_BaseColor", new Color(2.1f * c.r, 2.1f * c.g, 2.1f * c.b, 1f)); }
 
         public void Build(Camera c, Material soft)
         {
             cam = c;
             var add = Additive(Sparkle());
+            glintMat = add;
             glints = System("Glints", add, 1400);
             var gm = glints.main;
             gm.startLifetime = new ParticleSystem.MinMaxCurve(0.12f, 0.5f);
@@ -154,7 +159,7 @@ namespace Summit
         {
             if (cam == null || glints == null) return;
             // fresh snow glitters: a steady sprinkle of glints on the surface in view, densest close by
-            glintCarry += Time.deltaTime * 420f;
+            glintCarry += Time.deltaTime * 420f * glintRate;
             int n = (int)glintCarry; glintCarry -= n;
             Sprinkle(n);
         }

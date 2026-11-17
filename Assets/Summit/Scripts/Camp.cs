@@ -566,11 +566,7 @@ namespace Summit
                 if (lamps[i] != null) { lamps[i].intensity = lampPower[i] * k; lamps[i].enabled = k > 0.01f; }
         }
 
-        void Update()
-        {
-            float want = Active ? 1f : 0f;
-            if (Mathf.Abs(Night - want) > 0.0001f) SetNight(Mathf.MoveTowards(Night, want, Time.deltaTime / 1.2f));
-        }
+        // (no fade of its own any more: DayNight calls SetNight every frame with the time of day's darkness)
 
         // never leave the project's sky or grade in the evening (in the editor they are assets)
         void OnDisable() { if (dayKnown) SetNight(0f); }
