@@ -380,7 +380,7 @@ namespace Summit
             int s = Score;
             bool record = s > best;
             if (record) { best = s; PlayerPrefs.SetInt("summit_best", s); PlayerPrefs.Save(); }
-            hud.Show(title, "Score " + s.ToString("N0"),
+            hud.Show(title, (title == "YOU SURVIVED" ? "MT. VERTIGO  ·  " : "") + "Score " + s.ToString("N0"),
                      (record ? "NEW BEST  " : "Best ") + Mathf.RoundToInt(best).ToString("N0") +
                      "   ·   " + Mathf.RoundToInt(rider.Distance) + " m   ·   " + Hud.FormatTime(runTime) +
                      (medical > 0f ? "\nMEDICAL BILL  $" + Mathf.RoundToInt(medical).ToString("N0") : "\nNo medical bills. Clean run!"));
@@ -454,7 +454,7 @@ namespace Summit
                         // through the finish at the base: the whole mountain, done
                         trickPoints += 5000;
                         audioFx.Play(Sfx.TrickBig, 4);
-                        ToEnd("YOU MADE IT", false);
+                        ToEnd("YOU SURVIVED", false);
                         break;
                     }
                     if (wipeoutTimer > 0f) { if (!body.RagdollMoving) wipeoutTimer -= dt; if (wipeoutTimer <= 0f) { ToEnd(endTitle, false); break; } }

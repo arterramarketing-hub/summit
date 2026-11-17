@@ -14,6 +14,9 @@ namespace Summit
         readonly Vector3[] p = new Vector3[N], prev = new Vector3[N];
         float rest;
         int broken = -1;                           // the link that tore (-1: whole)
+        int pull = -1;                             // the link the rider is dragging along before it snaps
+        float pullZ;                               // where the tape hung across the run
+        const float SnapStretch = 2.4f;            // how far past its line the rider drags it before it gives
         Rider rider;
         Mesh mesh;
         Vector3[] verts; Vector2[] uvs; int[] tris;
@@ -57,7 +60,7 @@ namespace Summit
         {
             float dt = Mathf.Min(ChaseCamera.TestDt > 0f ? ChaseCamera.TestDt : Time.deltaTime, 1f / 30f);
             if (dt <= 0f) return;
-            if (broken < 0 && rider != null && rider.Running) CheckHit();
+            if (broken < 0 && rider != null && rider.Running) { if (pull < 0) CheckHit(); else CheckSnap(); }
             Step(dt);
             Draw();
         }
@@ -72,14 +75,36 @@ namespace Summit
             if (r.x < lo || r.x > hi) return;
             int k = Mathf.Clamp(Mathf.FloorToInt((r.x - p[0].x) / (p[N - 1].x - p[0].x) * (N - 1)), 1, N - 3);
             if (r.y - p[k].y > 2.2f) return;
+            // caught on the rider: it stretches round them, dragged downhill, until it snaps
+            pull = k; pullZ = z;
+        }
+
+        Vector3 Grab(int i)
+        {
+            // where the tape is held on the rider: across their shins, either side of the middle
+            Vector3 r = rider.transform.position + Vector3.up * 0.55f;
+            Vector3 along = (p[N - 1] - p[0]).normalized;
+            return r + along * (i == pull ? -0.15f : 0.15f);
+        }
+
+        void CheckSnap()
+        {
+            Vector3 r = rider.transform.position;
+            float lo = Mathf.Min(p[0].x, p[N - 1].x) - 1f, hi = Mathf.Max(p[0].x, p[N - 1].x) + 1f;
+            bool gone = r.z - pullZ > SnapStretch || rider.Crashed || r.x < lo || r.x > hi || r.z < pullZ - 1f;
+            if (!gone) return;
+            int k = pull;
+            pull = -1;
             broken = k;
-            // the ends near the tear are dragged along with the rider
-            Vector3 v = rider.Velocity;
-            for (int i = 0; i < N; i++)
+            // it snaps back toward its posts, harder the further it was stretched, with a flick upward
+            float stretch = Mathf.Clamp01((r.z - pullZ) / SnapStretch);
+            for (int i = 1; i < N - 1; i++)
             {
+                Vector3 post = i <= k ? p[0] : p[N - 1];
                 float d = Mathf.Abs(i - (k + 0.5f));
-                float w = Mathf.Exp(-d / 4f);
-                prev[i] = p[i] - (v * 0.75f + Vector3.up * 1.5f) * w * (1f / 60f);
+                float w = Mathf.Exp(-d / 6f);
+                Vector3 v = (post - p[i]) * (2.5f * stretch) * w + Vector3.up * 2f * w + rider.Velocity * 0.2f * w;
+                prev[i] = p[i] - v * (1f / 60f);
             }
             Torn?.Invoke(r);
         }
@@ -108,6 +133,7 @@ namespace Summit
                     p[i] += vel + (Vector3.down * 9.8f + new Vector3(0f, 2f * Mathf.Sin(t * 8f + i), 6f * gust)) * dt * dt;
                 }
             }
+            if (pull >= 0) { p[pull] = Grab(pull); p[pull + 1] = Grab(pull + 1); prev[pull] = p[pull]; prev[pull + 1] = p[pull + 1]; }
             for (int it = 0; it < 10; it++)
                 for (int i = 0; i < N - 1; i++)
                 {
@@ -116,7 +142,8 @@ namespace Summit
                     float len = d.magnitude;
                     if (len < 1e-5f) continue;
                     Vector3 c = d * (0.5f * (len - rest) / len);
-                    bool pinA = i == 0, pinB = i + 1 == N - 1;
+                    bool pinA = i == 0 || (pull >= 0 && (i == pull || i == pull + 1));
+                    bool pinB = i + 1 == N - 1 || (pull >= 0 && (i + 1 == pull || i + 1 == pull + 1));
                     if (pinA && pinB) continue;
                     if (pinA) p[i + 1] -= 2f * c;
                     else if (pinB) p[i] += 2f * c;
@@ -146,7 +173,7 @@ namespace Summit
                 up = Quaternion.AngleAxis(twist * Mathf.Rad2Deg, dir) * up;
                 Vector3 local = transform.InverseTransformPoint(p[i]);
                 Vector3 h = transform.InverseTransformVector(up * (Width * 0.5f));
-                if (i > 0 && i - 1 != broken) u += (p[i] - p[i - 1]).magnitude / Tile;
+                if (i > 0 && i - 1 != broken) u += rest / Tile;   // the print stretches with the plastic
                 else if (i > 0) u += 0.5f;
                 // front face and back face (separate vertices, so each lights from its own side)
                 verts[i * 4] = local - h; verts[i * 4 + 1] = local + h;
