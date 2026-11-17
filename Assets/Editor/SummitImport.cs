@@ -84,33 +84,29 @@ public class SummitImport : AssetPostprocessor
     public static void EnsureSnowTextures()
     {
         const string dir = "Assets/Summit/Materials/";
-        string macroA = dir + "SnowMacro.png", macroN = dir + "SnowMacroNormal.png", detA = dir + "SnowDetail.png", detN = dir + "SnowDetailNormal.png";
+        string macroA = dir + "SnowGroovesAlbedo.png", macroN = dir + "SnowGroovesNormal.png", detA = dir + "SnowGrain.png", detN = dir + "SnowGrainNormal.png";
         if (AssetDatabase.LoadAssetAtPath<Texture2D>(detN) == null)
         {
-            // large: domain-warped drifts, no periodic stripes
-            MakePair(512, macroA, macroN, (u, v) =>
-            {
-                float wu = u + 0.08f * Tile(u, v, 3, 2.2f), wv = v + 0.08f * Tile(u + 0.3f, v, 3, 5.1f);
-                return 0.55f * Tile(wu, wv, 5, 1.7f) + 0.30f * Tile(wu, wv, 11, 3.3f) + 0.15f * Tile(wu, wv, 23, 8.8f);
-            }, 3f, 0.05f);
-            // fine: grain and tiny wind ridges
-            MakePair(256, detA, detN, (u, v) =>
-            {
-                float wu = u + 0.05f * Tile(u, v, 4, 6.2f);
-                return 0.6f * Tile(wu, v, 16, 4.4f) + 0.4f * Tile(wu, v, 48, 9.9f);
-            }, 2.2f, 0.10f);
+            foreach (var old in new[] { "SnowMacro.png", "SnowMacroNormal.png", "SnowDetail.png", "SnowDetailNormal.png", "SnowAlbedo.png", "SnowNormal.png" })
+                AssetDatabase.DeleteAsset(dir + old);
+            // one 2048 tile spans ~36 m: wind grooves ~22 cm apart, bent by warps, swinging between three
+            // directions and fading out in patches, over broad drifts, so no two spots in a tile look alike
+            MakePair(2048, macroA, macroN, Grooves, 0.9f, 0.035f, false);
+            // a fine grain layer (~2.7 m) on a tiling that never lines up with the grooves
+            MakePair(512, detA, detN, (u, v) => 0.55f * Tile(u, v, 24, 4.4f) + 0.3f * Tile(u, v, 64, 9.9f) + 0.15f * Tile(u, v, 128, 2.7f), 0.5f, 0.06f, true);
         }
         var mat = AssetDatabase.LoadAssetAtPath<Material>(dir + "Snow.mat");
         if (mat == null) return;
         mat.SetTexture("_BaseMap", AssetDatabase.LoadAssetAtPath<Texture2D>(macroA));
         mat.SetTexture("_BumpMap", AssetDatabase.LoadAssetAtPath<Texture2D>(macroN));
-        mat.SetFloat("_BumpScale", 0.6f);
-        mat.SetTextureScale("_BaseMap", new Vector2(0.25f, 0.25f));     // uv is metres / 9, so ~36 m per tile
+        mat.SetFloat("_BumpScale", 1f);
+        mat.SetTextureScale("_BaseMap", new Vector2(0.25f, 0.25f));        // uv is metres / 9, so ~36 m per tile
         mat.SetTexture("_DetailAlbedoMap", AssetDatabase.LoadAssetAtPath<Texture2D>(detA));
         mat.SetTexture("_DetailNormalMap", AssetDatabase.LoadAssetAtPath<Texture2D>(detN));
-        mat.SetTextureScale("_DetailAlbedoMap", new Vector2(4.37f, 4.37f)); // ~2 m, an odd ratio to the large map
+        mat.SetTextureScale("_DetailAlbedoMap", new Vector2(3.37f, 3.37f));  // ~2.7 m, an odd ratio to the grooves
+        mat.SetTextureOffset("_DetailAlbedoMap", new Vector2(0.37f, 0.71f));
         mat.SetFloat("_DetailAlbedoMapScale", 1f);
-        mat.SetFloat("_DetailNormalMapScale", 0.8f);
+        mat.SetFloat("_DetailNormalMapScale", 0.5f);
         mat.SetColor("_BaseColor", new Color(0.95f, 0.97f, 1f));
         mat.SetFloat("_Smoothness", 0.32f);
         mat.EnableKeyword("_NORMALMAP");
@@ -119,7 +115,31 @@ public class SummitImport : AssetPostprocessor
         AssetDatabase.SaveAssets();
     }
 
-    static void MakePair(int N, string albedoPath, string normalPath, System.Func<float, float, float> height, float bump, float contrast)
+    static float Smooth(float a, float b, float x) { float t = Mathf.Clamp01((x - a) / (b - a)); return t * t * (3f - 2f * t); }
+
+    // a wind ripple: a gentle windward face and a short steep lee side
+    static float Ridge(float phase)
+    {
+        float s = phase - Mathf.Floor(phase);
+        float r = s < 0.72f ? s / 0.72f : (1f - s) / 0.28f;
+        return r * r * (3f - 2f * r);
+    }
+
+    static float Grooves(float u, float v)
+    {
+        // one groove field, its phase pushed around by big, slow warps: the grooves swing up to ~35 degrees
+        // either way, bunch up and spread out, and bend, with no cross-hatching (integer frequencies keep
+        // the tile seamless)
+        float w = 26f * Tile(u, v, 2, 1.3f) + 9f * Tile(u, v, 5, 6.6f) + 2.2f * Tile(u, v, 13, 3.9f) + 0.4f * Tile(u, v, 41, 2.2f);
+        float ripple = Ridge(164f * v + w);
+        // the wind has scoured some places smooth and left deep grooves in others
+        float amount = Smooth(0.42f, 0.62f, Tile(u, v, 4, 4.8f) * 0.65f + Tile(u, v, 9, 8.1f) * 0.35f);
+        amount = 0.05f + 0.95f * amount * (0.55f + 0.45f * Tile(u, v, 13, 5.2f));
+        float drift = 0.6f * Tile(u, v, 5, 1.7f) + 0.3f * Tile(u, v, 11, 3.3f) + 0.1f * Tile(u, v, 23, 8.8f);
+        return drift * 0.55f + ripple * amount * 0.035f + Tile(u, v, 256, 5.5f) * 0.004f;
+    }
+
+    static void MakePair(int N, string albedoPath, string normalPath, System.Func<float, float, float> height, float bump, float contrast, bool detail)
     {
         var h = new float[N * N];
         for (int y = 0; y < N; y++)
@@ -127,30 +147,43 @@ public class SummitImport : AssetPostprocessor
         var alb = new Texture2D(N, N, TextureFormat.RGB24, true);
         var nrm = new Texture2D(N, N, TextureFormat.RGB24, true);
         var rng = new System.Random(N);
-        bool detail = N < 512;
+        // slope per metre-ish: scale the per-pixel difference by the resolution
+        float k = bump * N / 64f;
         for (int y = 0; y < N; y++)
             for (int x = 0; x < N; x++)
             {
                 float c = h[y * N + x];
                 float dx = h[y * N + (x + 1) % N] - h[y * N + (x + N - 1) % N];
                 float dy = h[((y + 1) % N) * N + x] - h[((y + N - 1) % N) * N + x];
-                var n = new Vector3(-dx * bump * N / 64f, -dy * bump * N / 64f, 1f).normalized;
+                var n = new Vector3(-dx * k, -dy * k, 1f).normalized;
                 nrm.SetPixel(x, y, new Color(n.x * 0.5f + 0.5f, n.y * 0.5f + 0.5f, n.z * 0.5f + 0.5f));
-                // detail maps multiply around mid-grey (x2); the large map is the snow colour itself
+                // detail maps multiply around mid-grey (x2); the large map is the snow colour itself,
+                // a touch darker in the groove troughs and on lee faces
                 float g = detail ? 0.5f + (c - 0.5f) * contrast * 2f + (rng.NextDouble() < 0.003 ? 0.05f : 0f)
-                                 : 0.94f + (c - 0.5f) * contrast * 2f;
+                                 : 0.95f + (c - 0.5f) * contrast * 2f - Mathf.Max(0f, -n.y) * 0.05f;
                 alb.SetPixel(x, y, new Color(g * 0.99f, g, Mathf.Min(1f, g * 1.015f)));
             }
         System.IO.File.WriteAllBytes(albedoPath, alb.EncodeToPNG());
         System.IO.File.WriteAllBytes(normalPath, nrm.EncodeToPNG());
         AssetDatabase.ImportAsset(albedoPath);
         AssetDatabase.ImportAsset(normalPath);
-        var ti = (TextureImporter)AssetImporter.GetAtPath(normalPath);
-        ti.textureType = TextureImporterType.NormalMap;
-        ti.SaveAndReimport();
-        var ta = (TextureImporter)AssetImporter.GetAtPath(albedoPath);
-        ta.sRGBTexture = !detail;
-        ta.SaveAndReimport();
+        foreach (var path in new[] { albedoPath, normalPath })
+        {
+            var ti = (TextureImporter)AssetImporter.GetAtPath(path);
+            bool isNormal = path == normalPath;
+            if (isNormal) ti.textureType = TextureImporterType.NormalMap;
+            else ti.sRGBTexture = !detail;
+            ti.maxTextureSize = 2048;
+            ti.anisoLevel = 8;                       // stays sharp at the low angle you see the slope from
+            ti.filterMode = FilterMode.Trilinear;
+            ti.wrapMode = TextureWrapMode.Repeat;
+            var ios = ti.GetPlatformTextureSettings("iPhone");
+            ios.overridden = true;
+            ios.maxTextureSize = 2048;
+            ios.format = isNormal ? TextureImporterFormat.ASTC_4x4 : TextureImporterFormat.ASTC_5x5;
+            ti.SetPlatformTextureSettings(ios);
+            ti.SaveAndReimport();
+        }
     }
 
     // value noise that wraps every `period` cells

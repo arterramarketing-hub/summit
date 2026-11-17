@@ -28,23 +28,23 @@ Material:
     serializedVersion: 3
     m_TexEnvs:
     - _BaseMap:
-        m_Texture: {fileID: 2800000, guid: a22246af725264c93b6c43a1375fb913, type: 3}
+        m_Texture: {fileID: 2800000, guid: d712ac7cbe1f44e678670f3ae03cf805, type: 3}
         m_Scale: {x: 0.25, y: 0.25}
         m_Offset: {x: 0, y: 0}
     - _BumpMap:
-        m_Texture: {fileID: 2800000, guid: e52c441aa26f54b68b027086195928a0, type: 3}
+        m_Texture: {fileID: 2800000, guid: 05e2b3d0e01c345adbd17e405dabdd5b, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _DetailAlbedoMap:
-        m_Texture: {fileID: 2800000, guid: 5e844d55309fa401da118f66060a86ee, type: 3}
-        m_Scale: {x: 4.37, y: 4.37}
-        m_Offset: {x: 0, y: 0}
+        m_Texture: {fileID: 2800000, guid: d6db3715c2aea44b39ed74dc7deef923, type: 3}
+        m_Scale: {x: 3.37, y: 3.37}
+        m_Offset: {x: 0.37, y: 0.71}
     - _DetailMask:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _DetailNormalMap:
-        m_Texture: {fileID: 2800000, guid: 9e916f9d6a42243a69853cca7468c6b4, type: 3}
+        m_Texture: {fileID: 2800000, guid: 11e61eb01ca6e48dab134b1e73f2ddbb, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _EmissionMap:
@@ -52,7 +52,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MainTex:
-        m_Texture: {fileID: 2800000, guid: a22246af725264c93b6c43a1375fb913, type: 3}
+        m_Texture: {fileID: 2800000, guid: d712ac7cbe1f44e678670f3ae03cf805, type: 3}
         m_Scale: {x: 0.25, y: 0.25}
         m_Offset: {x: 0, y: 0}
     - _MetallicGlossMap:
@@ -90,13 +90,13 @@ Material:
     - _AlphaToMask: 0
     - _Blend: 0
     - _BlendModePreserveSpecular: 1
-    - _BumpScale: 0.6
+    - _BumpScale: 1
     - _ClearCoatMask: 0
     - _ClearCoatSmoothness: 0
     - _Cull: 2
     - _Cutoff: 0.5
     - _DetailAlbedoMapScale: 1
-    - _DetailNormalMapScale: 0.8
+    - _DetailNormalMapScale: 0.5
     - _DstBlend: 0
     - _DstBlendAlpha: 0
     - _EnvironmentReflections: 1
