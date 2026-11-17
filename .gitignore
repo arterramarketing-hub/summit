@@ -18,3 +18,9 @@ RenderShot.png
 # made by Unity's performance-testing package during a build, and removed again after
 /Assets/Resources/PerformanceTestRun*
 /Assets/Resources.meta
+
+# test-render output from the batchmode harnesses (Assets/Editor/*Shot.cs), written to the project root
+/*.png
+/*Shots/
+/audit/
+/LookShots/
