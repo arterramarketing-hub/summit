@@ -40,6 +40,7 @@ namespace Summit
             else
                 density = Mathf.Lerp(0.16f, 0.62f, Mathf.Clamp01((off - Slope.PisteHalf) / 30f)) * Mathf.Lerp(0.35f, 1.3f, glade);
             if (wz < 70f && off < 34f) density *= 0.1f;                  // a clean start
+            if (Slope.OnPad(wx, wz)) return Kind.None;
             if (Slope.Hash01(cx, cz, 1) >= density) return Kind.None;
             float x = wx + (Slope.Hash01(cx, cz, 2) - 0.5f) * Cell * 0.75f;
             float z = wz + (Slope.Hash01(cx, cz, 3) - 0.5f) * Cell * 0.75f;

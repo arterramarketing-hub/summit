@@ -37,6 +37,7 @@ public static class CliBuild
 
     public static void BuildIOS()
     {
+        SummitImport.EnsureImprintMaterial();
         PlayerSettings.productName = "Summit";
         PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.iOS, "com.paulartuso.summit");
         var icon = MakeIcon();

@@ -30,7 +30,7 @@ public static class SimTest
         r.Trick += (n, p) => { if (n == "Close call") calls++; };
         int takeoffs = 0; bool wasAir = false;
 
-        r.ResetAt(Slope.Centre(0f), 0f);
+        r.ResetAt(Slope.Centre(Slope.PadLip), Slope.StartZ);
         forest.Prewarm();
         r.Begin();
         float t = 0f, airT = 0f, sumV = 0f, maxV = 0f; int n = 0;
@@ -56,7 +56,7 @@ public static class SimTest
         Debug.Log($"SIM ride: dist={r.Distance:0} m  avg={sumV / n:0} km/h  max={maxV:0} km/h  airborne={100f * airT / 60f:0.0}%  takeoffs={takeoffs}  maxHeight={maxAir:0.0} m  crashes={crashes}  scrapes={scrapes}  rough={rough}  closeCalls={calls}");
 
         // response: get up to speed straight, then full stick right
-        r.ResetAt(Slope.Centre(0f), 0f);
+        r.ResetAt(Slope.Centre(Slope.PadLip), Slope.StartZ);
         r.Begin();
         for (int i = 0; i < 120 * 8; i++) { r.Steer = Mathf.Clamp((Slope.Centre(r.Z + 12f) - r.Body.position.x) * 0.06f - r.Heading, -1f, 1f); r.Tick(Dt); Physics.Simulate(Dt); }
         float th0 = r.TravelHeading, sp0 = r.Speed * 3.6f, tt = 0f, maxSlip = 0f;

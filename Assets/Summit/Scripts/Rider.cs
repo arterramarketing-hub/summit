@@ -17,7 +17,8 @@ namespace Summit
         public static float DragOpen = 0.0105f, DragTuck = 0.0068f; // air drag per (m/s)^2
         public static float Friction = 0.035f;                       // snow friction coefficient
         public static float Grip = 22f, GripTuck = 16f;              // 1/s: how fast sideways slip dies (higher = tighter)
-        public static float TurnSlow = 3.3f, TurnFast = 2.0f;        // rad/s of board yaw at full stick, slow and fast
+        public static float TurnSlow = 2.9f, TurnFast = 1.7f;        // rad/s of board yaw at full stick, slow and fast
+        public static float TurnBuild = 8f;                          // 1/s: how quickly a turn builds to the stick
         public static float TakeoffClearance = 0.22f;
 
         public const float R = 0.3f;              // the collision sphere around the feet
@@ -50,9 +51,23 @@ namespace Summit
         public System.Action<string> RoughLanding;
         public System.Action Jumped;
         public System.Action<float> Scraped;         // glanced off something: how hard
+        public System.Action ShieldHit;              // a shield took a hit that would have been a crash
+
+        // power-ups
+        public const int MaxShields = 3;
+        public int Shields { get; private set; }
+        public float BoostTime { get; private set; }
+        public const float BoostAccel = 10f;          // extra push along the board while boosting (m/s^2)
+        float invulnerable;
+        public void AddShield() { Shields = Mathf.Min(MaxShields, Shields + 1); }
+        public void AddBoost(float seconds)
+        {
+            BoostTime = Mathf.Max(BoostTime, 0f) + seconds;
+            if (Running && !Crashed && rb != null) rb.linearVelocity += Velocity.normalized * 4f;   // an instant kick
+        }
 
         Rigidbody rb;
-        float groundVy, airLock, crashTimer, popHold, missClock;
+        float groundVy, airLock, crashTimer, popHold, missClock, yawRate;
         bool popPending;
         int lastMiss;
         readonly Collider[] near = new Collider[16];
@@ -101,7 +116,8 @@ namespace Summit
             Heading = 0f; Speed = 0f; Steer = 0f; groundVy = 0f;
             Airborne = false; Crashed = false; Running = false;
             AirTime = 0f; Spin = 0f; SpinVisual = 0f; Tuck = 0f; Carve = 0f; Peak = 0f; AboveGround = 0f;
-            popPending = false; airLock = 0f;
+            popPending = false; airLock = 0f; yawRate = 0f;
+            Shields = 0; BoostTime = 0f; invulnerable = 0f;
         }
 
         public void Begin()
@@ -140,6 +156,8 @@ namespace Summit
                 Steer = input.Steer;
                 Tuck = Mathf.MoveTowards(Tuck, input.Hold && !Airborne ? 1f : 0f, dt * 5f);
             }
+            BoostTime = Mathf.Max(0f, BoostTime - dt);
+            invulnerable -= dt;
             Vector3 p = rb.position, v = rb.linearVelocity;
             if (Crashed) v = CrashStep(dt, p, v);
             else if (Airborne) v = AirStep(dt, p, v);
@@ -165,7 +183,7 @@ namespace Summit
             float sp = vt.magnitude;
             if (sp > 1e-3f)
             {
-                float drag = Mathf.Lerp(DragOpen, DragTuck, Tuck) * sp * sp + Friction * G * n.y;
+                float drag = Mathf.Lerp(DragOpen, DragTuck, Tuck) * (BoostTime > 0f ? 0.6f : 1f) * sp * sp + Friction * G * n.y;
                 vt -= vt / sp * Mathf.Min(sp, drag * dt);
             }
             // 3. the edge: the velocity swings round to where the board points. The slip angle
@@ -183,13 +201,17 @@ namespace Summit
                 sp *= 1f - 0.08f * scrub;
                 vt = (f * Mathf.Cos(beta2) + r * Mathf.Sin(beta2)) * sp;
             }
+            if (BoostTime > 0f) { vt += f * (BoostAccel * dt); sp = vt.magnitude; }
             if (sp < 3f) { vt += f * (6f * dt); sp = vt.magnitude; }   // never stuck: skate along the board when slow
             Carve = Mathf.Lerp(Carve, Mathf.Clamp01(lost / dt / 16f + Mathf.Abs(Steer) * 0.25f) * Mathf.Clamp01(sp / 8f),
                                1f - Mathf.Exp(-dt * 12f));
 
             // 4. steer: the board turns, the velocity follows through the grip next step
-            float turn = Mathf.Lerp(TurnSlow, TurnFast, Mathf.Clamp01(sp / 34f)) * Mathf.Lerp(1f, 0.75f, Tuck);
-            Heading += Steer * turn * dt;
+            // the turn builds up over a tenth of a second or so instead of snapping: gradual to the eye,
+            // but it starts at once, so small corrections still land precisely
+            float turn = Mathf.Lerp(TurnSlow, TurnFast, Mathf.Clamp01(sp / 40f)) * Mathf.Lerp(1f, 0.75f, Tuck);
+            yawRate = Mathf.Lerp(yawRate, Steer * turn, 1f - Mathf.Exp(-dt * TurnBuild));
+            Heading += yawRate * dt;
             if (sp < 3f) Heading = Mathf.MoveTowards(Heading, 0f, dt * 1.4f * (1f - sp / 3f));   // stalled: swing back downhill
             Heading = Mathf.Clamp(Heading, -MaxHeading, MaxHeading);
             Speed = sp;
@@ -207,6 +229,8 @@ namespace Summit
                 Jumped?.Invoke();
                 return TakeOff(vt + n * Mathf.Lerp(5.5f, 8f, Mathf.Clamp01(popHold / 0.8f)), 0.15f);
             }
+            // a face too steep to ride (the drop below the start, a cliff): you are falling, not riding
+            if (n.y < 0.62f) return TakeOff(new Vector3(vt.x, Mathf.Min(groundVy, 0f), vt.z), 0.05f);
             // the snow falls away faster than gravity can follow (a kicker's lip, a crest): fly
             if (sp > 7f && vy < groundVy - G * dt * 1.2f && FallsAway(p, new Vector3(vt.x, groundVy, vt.z)))
                 return TakeOff(new Vector3(vt.x, groundVy, vt.z), 0.08f);
@@ -294,7 +318,19 @@ namespace Summit
             if (!Running || Crashed || c.collider.GetComponentInParent<Obstacle>() == null) return;
             Vector3 normal = c.contactCount > 0 ? c.GetContact(0).normal : -rb.linearVelocity.normalized;
             float into = Mathf.Abs(Vector3.Dot(c.relativeVelocity, normal));
-            if (into > 6f) DoCrash(c.collider.GetComponent<SphereCollider>() != null ? "Rock" : "Tree");
+            if (invulnerable > 0f) return;
+            if (into > 6f && Shields > 0)
+            {
+                // the shield takes it: bounce off and keep riding
+                Shields--;
+                invulnerable = 0.7f;
+                Vector3 v = rb.linearVelocity;
+                Vector3 nh = new Vector3(normal.x, 0f, normal.z).normalized;
+                if (Vector3.Dot(v, nh) < 0f) v -= nh * Vector3.Dot(v, nh) * 1.6f;
+                rb.linearVelocity = v * 0.8f;
+                ShieldHit?.Invoke();
+            }
+            else if (into > 6f) DoCrash(c.collider.GetComponent<SphereCollider>() != null ? "Rock" : "Tree");
             else
             {
                 // a glancing blow: bounce off and lose a little speed, but keep riding

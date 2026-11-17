@@ -32,7 +32,7 @@ public static class RenderShot
         var atmo = Object.FindFirstObjectByType<Atmosphere>();
 
         rider.Begin();
-        float[] shots = { 6f, 11f };
+        float[] shots = { 0.6f, 9f, 14f };
         float t = 0f; int shot = 0;
         for (int i = 0; shot < shots.Length; i++, t += Dt)
         {
@@ -45,7 +45,8 @@ public static class RenderShot
             {
                 terrain.Prewarm(); props.Prewarm();
                 body.Apply(Dt);
-                for (int k = 0; k < 30; k++) late.Invoke(chase, null);
+                chase.Snap();
+                late.Invoke(chase, null);
                 typeof(Atmosphere).GetMethod("LateUpdate", NP).Invoke(atmo, null);
                 foreach (var ps in Object.FindObjectsByType<ParticleSystem>(FindObjectsSortMode.None))
                     if (ps.name == "Snowfall") ps.Simulate(4f, true, true);
@@ -65,6 +66,13 @@ public static class RenderShot
         Shoot(cam, "RenderShotSide.png");
         cam.transform.SetPositionAndRotation(c + new Vector3(0f, 0.8f, -4.5f), Quaternion.LookRotation(Vector3.forward + Vector3.down * 0.15f));
         Shoot(cam, "RenderShotBack.png");
+        var an = rider.GetComponentInChildren<Animator>();
+        if (an != null)
+        {
+            var roll = rider.transform.Find("Pivot/Roll");
+            Debug.Log("FEET L=" + roll.InverseTransformPoint(an.GetBoneTransform(HumanBodyBones.LeftFoot).position) +
+                      " R=" + roll.InverseTransformPoint(an.GetBoneTransform(HumanBodyBones.RightFoot).position));
+        }
         Physics.simulationMode = SimulationMode.FixedUpdate;   // do not leave the project on manual physics
         EditorApplication.Exit(0);
     }

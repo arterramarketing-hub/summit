@@ -29,6 +29,25 @@ public class SummitImport : AssetPostprocessor
         }
     }
 
+    void OnPreprocessTexture()
+    {
+        if (!assetPath.Contains("Summit/Resources/Rider")) return;
+        var t = (TextureImporter)assetImporter;
+        t.filterMode = FilterMode.Point;    // a flat-colour palette: keep the colours crisp
+        t.mipmapEnabled = false;
+    }
+
+    /// <summary>A lit see-through particle material kept in Resources, so its shader ships in the build.</summary>
+    public static void EnsureImprintMaterial()
+    {
+        const string path = "Assets/Summit/Resources/ImprintBase.mat";
+        if (AssetDatabase.LoadAssetAtPath<Material>(path) != null) return;
+        var sh = Shader.Find("Universal Render Pipeline/Particles/Lit");
+        if (sh == null) return;
+        AssetDatabase.CreateAsset(new Material(sh), path);
+        AssetDatabase.SaveAssets();
+    }
+
     void OnPreprocessAudio()
     {
         if (!assetPath.Contains("Summit/Resources/Audio")) return;
@@ -48,6 +67,7 @@ public class SummitImport : AssetPostprocessor
     public static void Reimport()
     {
         AssetDatabase.ImportAsset("Assets/Summit/Resources", ImportAssetOptions.ImportRecursive | ImportAssetOptions.ForceUpdate);
+        EnsureImprintMaterial();
         if (Application.isBatchMode) EditorApplication.Exit(0);
     }
 }

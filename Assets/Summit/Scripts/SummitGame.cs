@@ -28,8 +28,9 @@ namespace Summit
         SoundMix audioFx;
         readonly Avalanche slide = new Avalanche();
 
+        PowerUps power;
         int trickPoints, chainCount;
-        float chainTimer, stateTimer, best;
+        float chainTimer, stateTimer, best, runTime;
 
         int Score => Mathf.RoundToInt(rider.Distance) + trickPoints;
         float Mult => 1f + 0.5f * chainCount;
@@ -72,6 +73,18 @@ namespace Summit
             props.bark = bark;
             props.target = rg.transform;
 
+            power = new GameObject("PowerUps").AddComponent<PowerUps>();
+            power.rider = rider;
+            power.Build(snow.shader, trail, spray);
+            power.Collected += OnPickup;
+            rider.ShieldHit += () =>
+            {
+                if (state != State.Riding) return;
+                hud.Flash("SHIELD SAVED YOU", rider.Shields + " left", 1.1f);
+                audioFx.Play(Sfx.Scrape, 1f);
+            };
+            BuildStartGate();
+
             var cam = Camera.main;
             if (cam == null)
             {
@@ -104,27 +117,42 @@ namespace Summit
 
         void SetUpWorld()
         {
-            if (Object.FindFirstObjectByType<Light>() == null)
+            var sun = Object.FindFirstObjectByType<Light>();
+            if (sun == null)
             {
-                var lg = new GameObject("Sun");
-                var l = lg.AddComponent<Light>();
-                l.type = LightType.Directional;
-                l.color = new Color(1f, 0.95f, 0.86f);
-                l.intensity = 1.1f;
-                l.shadows = LightShadows.Soft;
-                lg.transform.rotation = Quaternion.Euler(38f, -35f, 0f);
+                sun = new GameObject("Sun").AddComponent<Light>();
+                sun.type = LightType.Directional;
+            }
+            // late-afternoon sun low on the left: warm light, long blue shadows across the slope
+            sun.color = new Color(1f, 0.80f, 0.58f);
+            sun.intensity = 2.1f;
+            sun.shadows = LightShadows.Soft;
+            sun.shadowStrength = 0.92f;
+            sun.transform.rotation = Quaternion.Euler(17f, 112f, 0f);
+            RenderSettings.sun = sun;
+            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
+            RenderSettings.ambientSkyColor = new Color(0.36f, 0.46f, 0.72f);
+            RenderSettings.ambientEquatorColor = new Color(0.46f, 0.50f, 0.64f);
+            RenderSettings.ambientGroundColor = new Color(0.30f, 0.32f, 0.42f);
+            var sky = RenderSettings.skybox;
+            if (sky != null && sky.HasProperty("_SkyTint"))
+            {
+                sky.SetColor("_SkyTint", new Color(0.36f, 0.48f, 0.80f));
+                sky.SetFloat("_AtmosphereThickness", 1.35f);
+                sky.SetFloat("_SunSize", 0.06f);
+                sky.SetFloat("_Exposure", 1.05f);
+            }
+            var vol = Object.FindFirstObjectByType<UnityEngine.Rendering.Volume>();
+            if (vol != null && vol.profile != null)
+            {
+                if (vol.profile.TryGet(out UnityEngine.Rendering.Universal.ColorAdjustments ca)) { ca.contrast.Override(24f); ca.saturation.Override(14f); ca.postExposure.Override(0.05f); }
+                if (vol.profile.TryGet(out UnityEngine.Rendering.Universal.Bloom bl)) { bl.intensity.Override(0.7f); bl.threshold.Override(0.95f); }
+                if (vol.profile.TryGet(out UnityEngine.Rendering.Universal.Vignette vg)) vg.intensity.Override(0.28f);
             }
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogDensity = 0.0052f;
-            RenderSettings.fogColor = new Color(0.80f, 0.87f, 0.95f);
-            if (RenderSettings.skybox == null)
-            {
-                RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
-                RenderSettings.ambientSkyColor = new Color(0.62f, 0.72f, 0.88f);
-                RenderSettings.ambientEquatorColor = new Color(0.70f, 0.76f, 0.84f);
-                RenderSettings.ambientGroundColor = new Color(0.55f, 0.58f, 0.66f);
-            }
+            RenderSettings.fogDensity = 0.0046f;
+            RenderSettings.fogColor = new Color(0.70f, 0.75f, 0.88f);
         }
 
         void MakeMissingMaterials()
@@ -168,11 +196,12 @@ namespace Summit
         void ToReady()
         {
             state = State.Ready;
-            float x = Slope.Centre(0f);
-            rider.ResetAt(x, 0f);
+            float x = Slope.Centre(Slope.PadLip);
+            rider.ResetAt(x, Slope.StartZ);
             body.ResetVisual();
-            slide.Reset(0f);
-            trickPoints = 0; chainCount = 0; chainTimer = 0f;
+            slide.Reset(Slope.StartZ);
+            trickPoints = 0; chainCount = 0; chainTimer = 0f; runTime = 0f;
+            power.ResetRun();
             terrain.Prewarm();
             props.Prewarm();
             chase.Snap();
@@ -206,7 +235,7 @@ namespace Summit
             if (record) { best = s; PlayerPrefs.SetInt("summit_best", s); PlayerPrefs.Save(); }
             hud.Show("BURIED", "Score " + s.ToString("N0"),
                      (record ? "NEW BEST  " : "Best ") + Mathf.RoundToInt(best).ToString("N0") +
-                     "   ·   " + Mathf.RoundToInt(rider.Distance) + " m");
+                     "   ·   " + Mathf.RoundToInt(rider.Distance) + " m   ·   " + Hud.FormatTime(runTime));
             hud.SetButtons(true, false, "PLAY AGAIN");
         }
 
@@ -241,6 +270,7 @@ namespace Summit
 
                 case State.Riding:
                     if (input.AnyPress() && hud.OnRestart(RiderInput.PointerPosition())) { audioFx.Play(Sfx.Click); ToReady(); input.SwallowCurrentPress(); break; }
+                    runTime += dt;
                     slide.Step(dt, rider);
                     if (chainCount > 0)
                     {
@@ -266,6 +296,7 @@ namespace Summit
             float gap = state == State.Ready ? 120f : slide.Gap(rider);
             float close = Mathf.Clamp01(1f - gap / 45f);
             hud.SetRun(rider.Speed * 3.6f, Score, Mult, gap, 160f, state == State.Riding);
+            hud.SetPower(runTime, rider.Shields, rider.BoostTime / 4f, state == State.Riding);
             hud.SetWhiteout(state == State.Buried ? Mathf.Min(0.85f, stateTimer * 2f) : close * close * 0.5f);
             chase.shake = state == State.Riding ? close * close + (rider.Crashed ? 0.2f : 0f) : 0f;
             bool onSnow = state == State.Riding && !rider.Airborne && !rider.Crashed;
@@ -307,6 +338,73 @@ namespace Summit
             hud.Flash(name, "+" + got);
             if (name == "Close call") audioFx.Play(Sfx.CloseCall);
             else audioFx.Play(Sfx.Trick, chainCount - 1);
+        }
+
+        void OnPickup(PowerUps.Kind kind)
+        {
+            if (state != State.Riding) return;
+            if (kind == PowerUps.Kind.Soda)
+            {
+                rider.AddBoost(3f);
+                hud.Flash("SUMMIT DEW", "speed boost", 0.9f);
+                audioFx.Play(Sfx.Jump);
+                audioFx.Play(Sfx.Trick, 4);
+            }
+            else if (rider.Shields >= Rider.MaxShields)
+            {
+                trickPoints += 250;
+                hud.Flash("SHIELDS FULL", "+250", 0.9f);
+                audioFx.Play(Sfx.Trick, 2);
+            }
+            else
+            {
+                rider.AddShield();
+                hud.Flash("SHIELD", rider.Shields + " / " + Rider.MaxShields, 0.9f);
+                audioFx.Play(Sfx.Trick, rider.Shields * 2);
+            }
+        }
+
+        // the start: a gate over the in-run and flags along the lip you jump from
+        void BuildStartGate()
+        {
+            var sh = snow.shader;
+            Material M(Color c) { var m = new Material(sh); m.SetColor("_BaseColor", c); m.SetFloat("_Smoothness", 0.3f); return m; }
+            var red = M(new Color(0.85f, 0.12f, 0.10f)); var white = M(new Color(0.95f, 0.95f, 0.97f)); var wood = M(new Color(0.45f, 0.30f, 0.18f));
+            var root = new GameObject("StartGate").transform;
+            float cx = Slope.Centre(Slope.PadLip), gz = Slope.StartZ + 5f;
+            float gy = Slope.DrawnHeight(cx, gz);
+            for (int sgn = -1; sgn <= 1; sgn += 2)
+                Block(PrimitiveType.Cube, root, new Vector3(cx + sgn * 4.2f, gy + 2.2f, gz), new Vector3(0.35f, 4.4f, 0.35f), red);
+            Block(PrimitiveType.Cube, root, new Vector3(cx, gy + 4.3f, gz), new Vector3(8.8f, 1.1f, 0.25f), red);
+            var label = new GameObject("Label").AddComponent<TextMesh>();
+            label.transform.SetParent(root, false);
+            label.text = "SUMMIT";
+            label.fontSize = 90; label.characterSize = 0.06f; label.anchor = TextAnchor.MiddleCenter; label.color = Color.white;
+            label.fontStyle = FontStyle.Bold;
+            var f = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            if (f != null) { label.font = f; label.GetComponent<MeshRenderer>().sharedMaterial = f.material; }
+            label.transform.SetPositionAndRotation(new Vector3(cx, gy + 4.3f, gz - 0.14f), Quaternion.identity);   // faces the rider coming down
+            // flags lining the lip and a wooden kicker edge
+            for (int i = 0; i < 6; i++)
+                for (int sgn = -1; sgn <= 1; sgn += 2)
+                {
+                    float z = Slope.PadLip - 2f - i * 6f, x = cx + sgn * (Slope.PadHalf - 1f);
+                    float y = Slope.DrawnHeight(x, z);
+                    Block(PrimitiveType.Cylinder, root, new Vector3(x, y + 0.9f, z), new Vector3(0.06f, 0.9f, 0.06f), white);
+                    Block(PrimitiveType.Cube, root, new Vector3(x - sgn * 0.3f, y + 1.55f, z), new Vector3(0.6f, 0.4f, 0.03f), (i % 2 == 0) ? red : white);
+                }
+            float ly = Slope.DrawnHeight(cx, Slope.PadLip - 0.3f);
+            Block(PrimitiveType.Cube, root, new Vector3(cx, ly - 0.15f, Slope.PadLip - 0.2f), new Vector3(2f * Slope.PadHalf - 4f, 0.35f, 0.3f), wood);
+        }
+
+        static void Block(PrimitiveType t, Transform parent, Vector3 pos, Vector3 scale, Material m)
+        {
+            var go = GameObject.CreatePrimitive(t);
+            Object.DestroyImmediate(go.GetComponent<Collider>());
+            go.transform.SetParent(parent, false);
+            go.transform.position = pos;
+            go.transform.localScale = scale;
+            go.GetComponent<MeshRenderer>().sharedMaterial = m;
         }
 
         void OnCrash(string why)

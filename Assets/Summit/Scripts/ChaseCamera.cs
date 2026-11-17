@@ -14,7 +14,7 @@ namespace Summit
         public float shake;           // 0..1, set by the game (the slide closing in)
 
         Camera cam;
-        float yaw, height, fov = 62f, focusVy, camDist = 6f;
+        float yaw, height, fov = 62f, focusVy, camDist = 6f, lookDrop;
         Vector3 focus;
         bool first = true;
 
@@ -61,10 +61,14 @@ namespace Summit
                 pos += new Vector3(Mathf.PerlinNoise(t, 0.3f) - 0.5f, Mathf.PerlinNoise(0.7f, t) - 0.5f, 0f) * shake * 0.5f;
             }
 
-            Vector3 look = focus + f * 5f - Vector3.up * 0.4f;
+            // aim along the slope ahead, but only part way down it, so the horizon and the far ranges stay in view
+            Vector3 ahead = focus + f * 12f;
+            float drop = Slope.Height(ahead.x, ahead.z) - Slope.Height(focus.x, focus.z);
+            lookDrop = first ? drop : Mathf.Lerp(lookDrop, drop, 1f - Mathf.Exp(-dt * 3f));
+            Vector3 look = ahead + Vector3.up * (lookDrop * 0.55f - 0.6f);
             transform.SetPositionAndRotation(pos, Quaternion.LookRotation(look - pos, Vector3.up));
 
-            float wantFov = Mathf.Lerp(60f, 74f, s01 * s01);
+            float wantFov = Mathf.Lerp(60f, 74f, s01 * s01) + (rider.BoostTime > 0f ? 8f : 0f);
             fov = first ? wantFov : Mathf.Lerp(fov, wantFov, 1f - Mathf.Exp(-dt * 2f));
             cam.fieldOfView = fov;
             first = false;

@@ -47,23 +47,23 @@ namespace Summit
             main.duration = 5f;
             main.startLifetime = new ParticleSystem.MinMaxCurve(3.5f, 5.5f);
             main.startSpeed = 0f;
-            main.startSize = new ParticleSystem.MinMaxCurve(0.05f, 0.13f);
+            main.startSize = new ParticleSystem.MinMaxCurve(0.06f, 0.17f);
             main.startColor = new Color(1f, 1f, 1f, 0.9f);
             main.simulationSpace = ParticleSystemSimulationSpace.World;   // flakes stay put in the world, so speed shows as rush
-            main.maxParticles = 2600;
+            main.maxParticles = 9000;
             main.playOnAwake = false;
             var shape = ps.shape;
             shape.shapeType = ParticleSystemShapeType.Box;
-            shape.scale = new Vector3(46f, 18f, 60f);
+            shape.scale = new Vector3(56f, 22f, 70f);
             var vel = ps.velocityOverLifetime;
             vel.enabled = true;
             vel.space = ParticleSystemSimulationSpace.World;
-            vel.x = new ParticleSystem.MinMaxCurve(0.3f, 1.1f);     // a light cross-wind
-            vel.y = new ParticleSystem.MinMaxCurve(-1.9f, -1.1f);
+            vel.x = new ParticleSystem.MinMaxCurve(0.8f, 2.4f);     // a steady cross-wind
+            vel.y = new ParticleSystem.MinMaxCurve(-2.6f, -1.4f);
             vel.z = new ParticleSystem.MinMaxCurve(-0.3f, 0.3f);
             var noise = ps.noise;
             noise.enabled = true;
-            noise.strength = 0.45f;
+            noise.strength = 0.8f;
             noise.frequency = 0.35f;
             noise.scrollSpeed = 0.25f;
             var col = ps.colorOverLifetime;
@@ -73,7 +73,7 @@ namespace Summit
                       new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(0.9f, 0.12f), new GradientAlphaKey(0.9f, 0.85f), new GradientAlphaKey(0f, 1f) });
             col.color = g;
             snowEm = ps.emission;
-            snowEm.rateOverTime = 420f;
+            snowEm.rateOverTime = 1300f;
             var pr = go.GetComponent<ParticleSystemRenderer>();
             pr.material = mat;
             pr.shadowCastingMode = ShadowCastingMode.Off;
@@ -136,19 +136,21 @@ namespace Summit
             // the sky and before other see-through things, and hidden wherever the mountain is nearer
             var sh = Shader.Find("Sprites/Default");
             if (sh == null) sh = Shader.Find("UI/Default");
-            var far = new Material(sh) { renderQueue = 2510 };
-            var near = new Material(sh) { renderQueue = 2511 };
-            Ring(root, "FarPeaks", far, 860f, 70f, 230f, 3.1f,
-                 new Color(0.70f, 0.78f, 0.90f), new Color(0.90f, 0.93f, 0.98f));
-            Ring(root, "NearPeaks", near, 800f, 25f, 140f, 7.7f,
-                 new Color(0.56f, 0.65f, 0.80f), new Color(0.95f, 0.97f, 1f));
+            // three ranges, each a clear step darker and crisper as it comes closer: that
+            // stepping is what makes the distance read
+            Ring(root, "FarPeaks", new Material(sh) { renderQueue = 2508 }, 885f, 110f, 330f, 3.1f,
+                 new Color(0.68f, 0.72f, 0.86f), new Color(1.00f, 0.90f, 0.80f));
+            Ring(root, "MidPeaks", new Material(sh) { renderQueue = 2509 }, 760f, 50f, 210f, 7.7f,
+                 new Color(0.40f, 0.47f, 0.64f), new Color(0.96f, 0.90f, 0.86f));
+            Ring(root, "NearRidge", new Material(sh) { renderQueue = 2510 }, 640f, 10f, 120f, 12.3f,
+                 new Color(0.20f, 0.25f, 0.37f), new Color(0.86f, 0.86f, 0.92f));
             return root;
         }
 
         static void Ring(Transform parent, string name, Material mat, float radius, float minH, float maxH,
                          float seed, Color rock, Color cap)
         {
-            const int N = 360, Rows = 4;
+            const int N = 360, Rows = 5;
             var v = new Vector3[(N + 1) * Rows];
             var c = new Color[v.Length];
             var t = new int[N * (Rows - 1) * 6];
@@ -173,17 +175,18 @@ namespace Summit
                 float a = i / (float)N * Mathf.PI * 2f;
                 float top = tops[i];
                 // faces turned toward the sun are lighter, the others in blue shadow
-                float slope = (tops[Mathf.Min(N, i + 1)] - tops[Mathf.Max(0, i - 1)]) * 0.05f;
+                float slope = (tops[Mathf.Min(N, i + 3)] - tops[Mathf.Max(0, i - 3)]) * 0.035f;
                 float lit = Mathf.Clamp(0.5f + slope, 0f, 1f);
-                Color rockLit = Color.Lerp(rock * 0.82f, Color.Lerp(rock, cap, 0.25f), lit); rockLit.a = 1f;
-                Color capLit = Color.Lerp(Color.Lerp(cap, rock, 0.25f), cap, lit); capLit.a = 1f;
+                Color rockLit = Color.Lerp(rock * 0.7f, Color.Lerp(rock, cap, 0.3f), lit); rockLit.a = 1f;
+                Color capLit = Color.Lerp(Color.Lerp(cap, rock, 0.45f), cap, lit); capLit.a = 1f;
                 var dir = new Vector3(Mathf.Sin(a), 0f, Mathf.Cos(a)) * radius;
                 float snowLine = top - Mathf.Lerp(20f, 55f, Mathf.InverseLerp(minH, maxH, top));
                 int k = i * Rows;
                 v[k] = dir + Vector3.up * top;                 c[k] = capLit;           // peak
                 v[k + 1] = dir + Vector3.up * snowLine;        c[k + 1] = capLit;       // snow line
-                v[k + 2] = dir + Vector3.up * (snowLine - 90f); c[k + 2] = rockLit;     // bare rock below the snow
-                v[k + 3] = dir + Vector3.up * -380f;           c[k + 3] = fog;          // fades into the valley haze
+                v[k + 2] = dir + Vector3.up * (snowLine - 70f); c[k + 2] = rockLit;     // bare rock below the snow
+                v[k + 3] = dir + Vector3.up * (snowLine - 170f); c[k + 3] = fog;        // fades into the valley haze
+                v[k + 4] = dir + Vector3.up * -1200f;          c[k + 4] = fog;          // haze all the way down
                 if (i < N)
                     for (int r = 0; r < Rows - 1; r++)
                     {
@@ -220,9 +223,10 @@ namespace Summit
             snow.transform.position = cp + fwd * 22f + Vector3.up * 6f;
 
             float s = rider.Running ? Mathf.Clamp01((rider.Speed * 3.6f - 55f) / 60f) : 0f;   // 55 to 115 km/h
+            if (rider.Running && rider.BoostTime > 0f) s = Mathf.Max(s, 0.9f);
             speed01 = Mathf.Lerp(speed01, s, 1f - Mathf.Exp(-Time.deltaTime * 4f));
             streakEm.rateOverTime = speed01 * speed01 * 110f;
-            snowEm.rateOverTime = 420f + 300f * speed01;
+            snowEm.rateOverTime = 1300f + 700f * speed01;
             if (vignette != null) vignette.intensity.value = baseVignette + 0.17f * speed01;
         }
     }

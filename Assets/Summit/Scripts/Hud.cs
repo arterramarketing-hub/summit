@@ -13,7 +13,10 @@ namespace Summit
         RectTransform playBtn, restartBtn, modeBtn;
         Text modeLabel;
         Text playLabel;
-        Text speed, score, chain, slide, big, small, hint;
+        Text speed, score, chain, slide, big, small, hint, timer;
+        Image[] shieldPips;
+        Image boostFill, boostBg;
+        int lastTenths = -2;
         Image slideFill, whiteout;
         RectTransform safe;
         float flashT;
@@ -46,6 +49,8 @@ namespace Summit
             score = NewText("Score", safe, new Vector2(0.5f, 1f), new Vector2(0f, -34f), 84, TextAnchor.UpperCenter);
             chain = NewText("Chain", safe, new Vector2(0.5f, 1f), new Vector2(0f, -132f), 44, TextAnchor.UpperCenter);
             chain.color = new Color(1f, 0.82f, 0.35f);
+            timer = NewText("Timer", safe, new Vector2(0f, 1f), new Vector2(40f, -104f), 46, TextAnchor.UpperLeft);
+            timer.color = new Color(0.85f, 0.93f, 1f);
             slide = NewText("Slide", safe, new Vector2(1f, 1f), new Vector2(-40f, -40f), 44, TextAnchor.UpperRight);
 
             var barBg = NewImage("SlideBar", safe, new Color(0f, 0f, 0f, 0.35f));
@@ -66,6 +71,21 @@ namespace Summit
 
             // the drag stick: a ring where the finger lands and a knob that follows it
             var circle = MakeCircle(96);
+
+            // shields held (up to three) and the boost left in the tank
+            shieldPips = new Image[Rider.MaxShields];
+            for (int i = 0; i < shieldPips.Length; i++)
+            {
+                var pip = NewImage("Shield" + i, safe, new Color(0.45f, 0.78f, 1f, 0.95f));
+                pip.sprite = circle;
+                Place(pip.rectTransform, new Vector2(0f, 1f), new Vector2(40f + i * 54f, -168f), new Vector2(44f, 44f), new Vector2(0f, 1f));
+                shieldPips[i] = pip;
+            }
+            boostBg = NewImage("BoostBar", safe, new Color(0f, 0f, 0f, 0.35f));
+            Place(boostBg.rectTransform, new Vector2(0f, 1f), new Vector2(40f, -226f), new Vector2(260f, 16f), new Vector2(0f, 1f));
+            boostFill = NewImage("Fill", boostBg.transform, new Color(0.35f, 1f, 0.3f, 0.95f));
+            var bf = boostFill.rectTransform;
+            bf.anchorMin = Vector2.zero; bf.anchorMax = Vector2.one; bf.offsetMin = bf.offsetMax = Vector2.zero;
             var ring = NewImage("StickRing", transform, new Color(1f, 1f, 1f, 0.22f));
             ring.sprite = circle; stickRing = ring.rectTransform;
             var knob = NewImage("StickKnob", transform, new Color(1f, 1f, 1f, 0.7f));
@@ -234,6 +254,28 @@ namespace Summit
             float k = Mathf.Clamp01(gap / gapMax);
             slideFill.rectTransform.anchorMax = new Vector2(showRun ? k : 0f, 1f);
             slideFill.color = gap < 40f ? new Color(1f, 0.45f, 0.35f) : Color.white;
+        }
+
+        /// <summary>Run time, shields held and boost left (0..1); hidden when not riding.</summary>
+        public void SetPower(float seconds, int shields, float boost01, bool showRun)
+        {
+            int tenths = showRun ? Mathf.FloorToInt(seconds * 10f) : -1;
+            if (tenths != lastTenths) { lastTenths = tenths; timer.text = showRun ? FormatTime(seconds) : ""; }
+            for (int i = 0; i < shieldPips.Length; i++)
+            {
+                bool on = showRun && i < shields;
+                if (shieldPips[i].enabled != on) shieldPips[i].enabled = on;
+            }
+            bool b = showRun && boost01 > 0f;
+            if (boostBg.enabled != b) { boostBg.enabled = b; boostFill.enabled = b; }
+            if (b) boostFill.rectTransform.anchorMax = new Vector2(Mathf.Clamp01(boost01), 1f);
+        }
+
+        public static string FormatTime(float seconds)
+        {
+            int m = Mathf.FloorToInt(seconds / 60f);
+            float sec = seconds - m * 60f;
+            return m + ":" + sec.ToString("00.0");
         }
 
         public void SetWhiteout(float a) { whiteout.color = new Color(1f, 1f, 1f, Mathf.Clamp01(a)); }

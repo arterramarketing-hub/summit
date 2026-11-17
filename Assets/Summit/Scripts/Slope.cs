@@ -12,7 +12,7 @@ namespace Summit
     /// </summary>
     public static class Slope
     {
-        public const float Fall = 0.34f;      // mean gradient of the fall line (about 19 degrees)
+        public const float Fall = 0.50f;      // mean gradient of the fall line (about 27 degrees)
         public const float Quad = 1.5f;       // terrain mesh spacing; the rider sits on exactly this mesh
         public const float PisteHalf = 20f;   // half the groomed width
         public static int Seed { get; private set; }
@@ -90,8 +90,38 @@ namespace Summit
             y += (Noise(x * 0.045f, z * 0.045f) - 0.5f) * 2.6f * rough;
             y += (Noise(x * 0.011f + 50f, z * 0.009f) - 0.5f) * 7f;
             y += Kicker(x, z);
-            return y;
+            return Start(x, z, y);
         }
+
+        // ---------------------------------------------------------------- the start
+        // A groomed pad cut into the top of the run: you stand at the back, push off,
+        // ride down a gentle in-run and launch off a lip into the steep face below.
+        public const float PadBack = -46f, PadLip = 0f, PadHalf = 13f, PadDrop = 4.5f, LipRise = 0.8f, LipLen = 7f;
+        public static float StartZ => PadBack + 8f;
+
+        static float Start(float x, float z, float y)
+        {
+            if (z > PadLip + 0.01f) return y;
+            // the summit: a sunlit plateau above the face, with the in-run down its middle
+            float cx = Centre(PadLip);
+            float pad = BaseAt(cx, PadLip) + PadDrop + (PadLip - z) * 0.22f;
+            float u = (z - (PadLip - LipLen)) / LipLen;
+            float d = Mathf.Abs(x - cx) - PadHalf;
+            if (u > 0f) pad += LipRise * u * u * Mathf.Clamp01(1f - d / 3f);
+            if (d > 0f) pad += d * d * 0.02f + (Noise(x * 0.05f, z * 0.05f) - 0.5f) * 2f * Mathf.Clamp01(d / 10f);
+            return pad;
+        }
+
+        /// <summary>The slope without the start pad (where the pad's height is measured from).</summary>
+        static float BaseAt(float x, float z)
+        {
+            float y = -z * Fall + 2.6f * Mathf.Sin(z * 0.031f + ph) + 1.3f * Mathf.Sin(z * 0.073f + 2.0f + ph * 1.3f);
+            float a = x - Centre(z);
+            return y + 0.0035f * a * a + (Noise(x * 0.011f + 50f, z * 0.009f) - 0.5f) * 7f;
+        }
+
+        /// <summary>True on the start pad (no trees, no pickups).</summary>
+        public static bool OnPad(float x, float z) => z < PadLip + 8f && z > PadBack - 20f && Mathf.Abs(x - Centre(PadLip)) < PadHalf + 12f;
 
         // Kickers sit on the piste every so often: a curved ramp you can see coming,
         // a crisp lip, then a long smooth landing below it.
@@ -153,9 +183,12 @@ namespace Summit
         public static Vector2 Gradient(float x, float z)
         {
             const float e = 0.75f;
-            return new Vector2(
-                (Height(x + e, z) - Height(x - e, z)) / (2f * e),
-                (Height(x, z + e) - Height(x, z - e)) / (2f * e));
+            float gz;
+            // never sample across the drop at the start lip: on the pad, look only uphill
+            if (z > PadLip - 2f * e && z <= PadLip + 0.01f) gz = (Height(x, z) - Height(x, z - e)) / e;
+            else if (z > PadLip && z < PadLip + e) gz = (Height(x, z + e) - Height(x, z)) / e;
+            else gz = (Height(x, z + e) - Height(x, z - e)) / (2f * e);
+            return new Vector2((Height(x + e, z) - Height(x - e, z)) / (2f * e), gz);
         }
 
         public static Vector3 Normal(float x, float z)
