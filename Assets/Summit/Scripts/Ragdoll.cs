@@ -26,6 +26,7 @@ namespace Summit
         Quaternion footRelL, footRelR;
         public bool Active { get; private set; }
         public static float Plough = 2.2f;   // 1/s: how hard snow drags a body sliding through it
+        public static float Sink = 0.05f, SinkPowder = 0.07f;   // m: how far the body settles into the snow, groomed and in powder
         /// <summary>Something hit something: impact speed (m/s), the board?, where, and which bone (null for the board).</summary>
         public System.Action<float, bool, Vector3, Transform> Hit;
         /// <summary>A part sliding along the snow, every half metre or so: where, how fast.</summary>
@@ -69,6 +70,44 @@ namespace Summit
         /// <summary>How fast the body (and the board) are still moving: the faster of the two.</summary>
         public float Speed => !Active || parts.Count == 0 ? 0f : Mathf.Max(parts[0].rb.linearVelocity.magnitude, boardRb != null ? boardRb.linearVelocity.magnitude * 0.5f : 0f);
         public Vector3 Velocity => Active && parts.Count > 0 ? parts[0].rb.linearVelocity : Vector3.zero;
+
+        /// <summary>How many solid shapes the thrown body has, its parts and then the board (see Capsule).</summary>
+        public int ShapeCount => Active ? parts.Count + (boardRb != null ? 1 : 0) : 0;
+
+        /// <summary>
+        /// One of the thrown body's shapes as a capsule, for pressing it into the snow: the ends of its core line,
+        /// how far it reaches out round that line, how far its underside reaches below it (the board is flat), and
+        /// its velocity and mass. A ball has both ends at its centre.
+        /// </summary>
+        public bool Capsule(int i, out Vector3 a, out Vector3 b, out float r, out float rDown, out Vector3 v, out float mass)
+        {
+            a = b = v = Vector3.zero; r = rDown = mass = 0f;
+            Collider col; Rigidbody rb;
+            if (!Active) return false;
+            if (i < parts.Count) { col = parts[i].col; rb = parts[i].rb; }
+            else if (boardRb != null && boardCol != null) { col = boardCol; rb = boardRb; }
+            else return false;
+            var t = col.transform;
+            float s = Mathf.Abs(t.lossyScale.x);
+            v = rb.linearVelocity; mass = rb.mass;
+            if (col is CapsuleCollider cc)
+            {
+                Vector3 axis = cc.direction == 0 ? Vector3.right : cc.direction == 1 ? Vector3.up : Vector3.forward;
+                Vector3 c = t.TransformPoint(cc.center), d = t.TransformVector(axis * Mathf.Max(0f, cc.height * 0.5f - cc.radius));
+                a = c - d; b = c + d; r = rDown = cc.radius * s;
+            }
+            else if (col is SphereCollider sc) { a = b = t.TransformPoint(sc.center); r = rDown = sc.radius * s; }
+            else if (col is BoxCollider bc)
+            {
+                // the board: a flat capsule down its length, as wide as the board, its underside half its thickness down
+                Vector3 c = t.TransformPoint(bc.center), d = t.TransformVector(Vector3.forward * Mathf.Max(0f, (bc.size.z - bc.size.x) * 0.5f));
+                a = c - d; b = c + d; r = bc.size.x * 0.5f * s;
+                Vector3 up = t.TransformVector(Vector3.up * bc.size.y * 0.5f), side = t.TransformVector(Vector3.right * bc.size.x * 0.5f);
+                rDown = Mathf.Max(Mathf.Abs(up.y), Mathf.Abs(side.y));   // on its edge, it cuts in as deep as it is wide
+            }
+            else return false;
+            return true;
+        }
 
         Vector3 boardSize = new Vector3(0.29f, 0.07f, 1.55f), boardCenter = new Vector3(0f, 0.04f, 0f);
 
@@ -388,6 +427,7 @@ namespace Summit
         {
             Vector3 n = Slope.Normal(at.x, at.z);
             var pos = new Vector3(at.x, Slope.DrawnHeight(at.x, at.z) - Course.CrevasseCut(at.x, at.z), at.z);   // the bottom, in a crevasse
+            pos.y -= Sink + SinkPowder * Slope.Rough(at.x, at.z);   // the body settles into the snow (SnowLayer draws the hole)
             var rot = Quaternion.FromToRotation(Vector3.up, n);
             // teleport, never MovePosition: a slab moved along with the body would carry it like a
             // conveyor and its friction would have nothing to grip

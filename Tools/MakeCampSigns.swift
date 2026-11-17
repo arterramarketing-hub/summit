@@ -185,3 +185,28 @@ save(canvas(128, 512) { W, H in
     }
 }, "Birch")
 print("footpath and birch textures written")
+
+// stone base: rounded field stones in grey mortar (tiles both ways)
+save(canvas(256, 256) { W, H in
+    srand48(71)
+    NSColor(calibratedRed: 0.42, green: 0.41, blue: 0.40, alpha: 1).setFill(); NSRect(x: 0, y: 0, width: W, height: H).fill()
+    var y: CGFloat = 0
+    var row = 0
+    while y < H {
+        let h = 30 + CGFloat(drand48()) * 22
+        var x: CGFloat = row % 2 == 0 ? 0 : -24
+        while x < W {
+            let w = 40 + CGFloat(drand48()) * 44, g = 0.52 + 0.22 * CGFloat(drand48())
+            NSColor(calibratedRed: g, green: g * 0.98, blue: g * 0.94, alpha: 1).setFill()
+            for dx in [-W, 0, W] { NSBezierPath(roundedRect: NSRect(x: x + dx + 3, y: y + 3, width: w - 6, height: h - 6), xRadius: 12, yRadius: 12).fill() }
+            NSColor(calibratedWhite: 1, alpha: 0.10).setFill()
+            for dx in [-W, 0, W] { NSBezierPath(roundedRect: NSRect(x: x + dx + 8, y: y + h * 0.5, width: w * 0.6, height: h * 0.3), xRadius: 8, yRadius: 8).fill() }
+            x += w
+        }
+        y += h; row += 1
+    }
+}, "Stone")
+
+// light oak boards for the modern interior (grain along U)
+save(canvas(512, 512) { W, H in wood(W, H, base: NSColor(calibratedRed: 0.86, green: 0.72, blue: 0.54, alpha: 1), planks: 6, seed: 81) }, "Oak")
+print("stone and oak written")

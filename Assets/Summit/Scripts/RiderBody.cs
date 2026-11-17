@@ -37,7 +37,6 @@ namespace Summit
         readonly System.Collections.Generic.List<GameObject> bandages = new System.Collections.Generic.List<GameObject>();
         Material bandageMat, bandageLine;
         float crashClock, stillFor, visYaw, nextDragCrater;
-        SnowTrail bodyTrail;
         Craters craters;
         /// <summary>Where the thrown body is (its pelvis).</summary>
         public Vector3 RagdollCentre => ragdoll != null && ragdoll.Active ? ragdoll.Centre : transform.position;
@@ -98,8 +97,6 @@ namespace Summit
 
             // a groove pressed into the snow behind the board
             trail = new SnowTrail(jacket != null ? jacket.shader : Shader.Find("Universal Render Pipeline/Lit"));
-            // the furrow a tumbling body ploughs through the snow
-            bodyTrail = new SnowTrail(jacket != null ? jacket.shader : Shader.Find("Universal Render Pipeline/Lit"));
             craters = new Craters(jacket != null ? jacket.shader : Shader.Find("Universal Render Pipeline/Lit"));
 
             // powder off the edge
@@ -219,7 +216,7 @@ namespace Summit
                 if (why.StartsWith("Crevasse")) lastVel *= 0.4f;   // a drop, not a throw
                 crashSpin = 0f;
                 ragdollPending = rig != null;   // thrown on the next physics step, not inside the collision
-                craters.Add(transform.position + Vector3.down * Rider.R, lastVel, 1.0f, 0.2f);
+                if (rig == null) craters.Add(transform.position + Vector3.down * Rider.R, lastVel, 1.0f, 0.2f);   // a thrown body digs its own (SnowLayer)
                 crashAxis = new Vector3(Random.Range(-1f, 1f), 0.2f, Random.Range(0.4f, 1f)).normalized;
             };
             rider.Scraped += _ => spray.Emit(25);
@@ -524,7 +521,7 @@ namespace Summit
         void PoseRig(float dt)
         {
             if (Tube) { PoseTube(dt); return; }
-            if (Walking) { rig.PoseWalk(roll, walkPhase, walkAmp, Time.time); return; }   // on foot in the camp
+            if (Walking) { rig.PoseWalk(roll, walkPhase, walkAmp, Time.time, runAmp); return; }   // on foot in the camp
             Flutter(dt);
             float t = Time.time;
             compV += (-comp * 140f - compV * 16f) * dt;
@@ -849,13 +846,13 @@ namespace Summit
             foreach (var g in bandages) if (g != null) { if (Application.isPlaying) Destroy(g); else DestroyImmediate(g); }
             bandages.Clear(); bandaged.Clear(); brokenThisCrash.Clear();
             trail.Clear();
-            bodyTrail.Clear();
             RagdollBelowSnow = 0f;
             RagdollMoving = false;
             spray.Clear();
             bow.Clear();
             marks.Clear();
             craters.Clear();
+            SnowLayer.Instance?.Clear();
             snowy?.Clear();
             comp = 0f; compV = 0f; shieldFlash = 0f;
             Apply(0f);
@@ -865,26 +862,18 @@ namespace Summit
 
         void FixedUpdate() { PhysicsStep(); }
 
-        static Vector3 OnSnow(Vector3 at) => new Vector3(at.x, Slope.DrawnHeight(at.x, at.z), at.z);
-
         void OnRagdollDrag(Vector3 at, float v)
         {
             if (v < 1.2f) return;
-            if (v > 2f && Time.time > nextDragCrater) { nextDragCrater = Time.time + 0.2f; craters.Add(OnSnow(at), ragdoll != null ? ragdoll.Velocity : Vector3.zero, 0.3f + 0.025f * v, 0.04f + 0.008f * v); }
-            if (Random.value < 0.15f) fx?.Puff(at, v * 0.3f);
+            if (v > 4f && Random.value < 0.06f) fx?.Puff(at, v * 0.25f);   // the furrow itself is in the SnowLayer
         }
 
         void OnRagdollHit(float v, bool isBoard, Vector3 at, Transform bone)
         {
             RagdollHit?.Invoke(v, isBoard);
             if (!isBoard) snowy?.Hit(at, bone != null ? bone.position : RagdollCentre, v);
-            if (v > 2.2f)
-            {
-                // a crater where it landed, and snow thrown everywhere
-                craters.Add(OnSnow(at), ragdoll != null ? ragdoll.Velocity : Vector3.zero, Mathf.Min(1.1f, 0.35f + 0.055f * v), Mathf.Min(0.22f, 0.05f + 0.015f * v));
-                if (v > 3.5f) fx?.Impact(at, v, ragdoll != null ? ragdoll.Velocity : Vector3.zero);
-                else fx?.Puff(at, v);
-            }
+            // the hole is pressed by the part itself (SnowLayer); only a genuinely hard hit throws up a little powder
+            if (v > 5f && Time.time > nextDragCrater) { nextDragCrater = Time.time + 0.15f; fx?.Thud(at, v, ragdoll != null ? ragdoll.Velocity : Vector3.zero); }
             if (isBoard || bone == null || rig == null || LimbOf(bone) == null || brokenThisCrash.Contains(bone)) return;
             // the first real hit breaks whatever took it; a second only on a big one
             if ((brokenThisCrash.Count == 0 && v > 3.2f) || (brokenThisCrash.Count == 1 && v > 9f)) Break(bone, at);
@@ -976,6 +965,7 @@ namespace Summit
         public void PhysicsStep()
         {
             if (rider == null) return;
+            SnowLayer.Instance?.Focus(RagdollCentre);
             if (ragdollPending && rider.Crashed)
             {
                 ragdollPending = false;
@@ -989,7 +979,7 @@ namespace Summit
                 }
                 ragdoll.Begin(lastVel);
                 stillFor = 0f;
-                fx?.Impact(transform.position, Mathf.Max(6f, lastVel.magnitude * 0.6f), lastVel * 0.6f);   // the wipeout itself
+                fx?.Thud(transform.position, Mathf.Max(6f, lastVel.magnitude * 0.6f), lastVel * 0.6f);   // the wipeout itself
                 brokenThisCrash.Clear();
                 crashClock = 0f;
             }
@@ -1005,6 +995,7 @@ namespace Summit
                 }
                 ragdoll.Steer = rider.Crashed ? rider.Steer : 0f;   // steer the fall with the same thumb
                 ragdoll.PhysicsStep();
+                SnowLayer.Instance?.PressBody(ragdoll);   // every part presses its own shape into the snow
                 rider.CrashFollow = ragdoll.Centre;
                 rider.HasCrashFollow = rider.Crashed;
                 // stay down while still sliding or tumbling, and a beat after it stops
@@ -1033,19 +1024,15 @@ namespace Summit
                 if (rider.Crashed)
                 {
                     ragdoll.LateStep();
-                    // a furrow where the body slides and rolls through the snow
-                    Vector3 c = ragdoll.Centre, vel = ragdoll.Velocity;
+                    Vector3 c = ragdoll.Centre;
                     float ground = Slope.DrawnHeight(c.x, c.z);
                     RagdollBelowSnow = Mathf.Max(0f, ground - c.y);
-                    bool inSnow = c.y - ground < 0.45f && RagdollBelowSnow < 1f && vel.sqrMagnitude > 0.25f;
-                    bodyTrail.Feed(new Vector3(c.x, ground, c.z), Slope.Normal(c.x, c.z), Mathf.Atan2(vel.x, vel.z), inSnow, 2.0f, 0f, 0.35f, dt);
                 }
                 else
                 {
                     FallRested?.Invoke(ragdoll.Centre);   // a flag where you came to rest
                     ragdoll.End(); spray.Emit(30);   // back up on the board, patched up
                     RagdollMoving = false; rider.HoldCrash = false;
-                    bodyTrail.Feed(Vector3.zero, Vector3.up, 0f, false, 1f, 0f, 0f, dt);
                     RagdollBelowSnow = 0f;
                     foreach (var b in brokenThisCrash) Bandage(b);
                     brokenThisCrash.Clear();

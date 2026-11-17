@@ -31,7 +31,7 @@ namespace Summit
         public bool OnLookout { get; private set; }
         /// <summary>The camera shows the rider from the front (while picking an outfit).</summary>
         public bool Showcase;
-        public const float MaxSpeed = 3.4f;
+        public const float MaxSpeed = 3.4f, RunSpeed = 7.2f;   // walking; running with the stick pushed right out
 
         Shader lit;
         Transform root;
@@ -39,11 +39,10 @@ namespace Summit
         readonly Material[] flagCols = new Material[5];
         Material[] noteMats;
         GameObject firePit, flags, lights, snowman;
-        Renderer benchBoard;
 
         class Spot { public Station st; public Vector3 at; public float radius; public Transform root; }
         readonly List<Spot> spots = new List<Spot>();
-        struct Box { public Vector2 c, h; public float cos, sin, top, drop; public GameObject owner; public bool floor; }
+        struct Box { public Vector2 c, h; public float cos, sin, top, drop, lo, hi; public GameObject owner; public bool floor; }
         readonly List<Box> boxes = new List<Box>();
 
         // ---------------------------------------------------------------- materials
@@ -58,7 +57,7 @@ namespace Summit
             darkWood = M(new Color(0.55f, 0.45f, 0.38f), 0.2f, woodTex);
             roof = M(new Color(0.28f, 0.20f, 0.17f), 0.15f, woodTex, new Vector2(2f, 3f));
             snowCap = M(new Color(0.92f, 0.95f, 1f), 0.35f);
-            stone = M(new Color(0.52f, 0.52f, 0.55f), 0.1f);
+            stone = M(new Color(0.95f, 0.95f, 0.95f), 0.1f, Resources.Load<Texture2D>("Camp/Stone"), new Vector2(1f, 1f));
             metal = M(new Color(0.35f, 0.37f, 0.4f), 0.75f); metal.SetFloat("_Metallic", 0.8f);
             // (emission is given in gamma space and raised per channel in linear: keep it near 1 and scale it)
             glass = M(new Color(0.25f, 0.2f, 0.14f), 0.2f, null, default, new Color(1f, 0.7f, 0.38f) * 1.45f);   // warm rooms behind the glass
@@ -77,6 +76,7 @@ namespace Summit
             for (int i = 0; i < 3; i++) noteMats[i] = Sign("Camp/Note" + i);
             Progress.Changed += Redress;
             CaptureDay();
+            SetNight(0f);   // daylight until the day/night cycle says otherwise
         }
 
         Material M(Color c, float smooth, Texture2D tex = null, Vector2 tile = default, Color emit = default)
@@ -116,12 +116,10 @@ namespace Summit
             if (root != null) { if (Application.isPlaying) Destroy(root.gameObject); else DestroyImmediate(root.gameObject); }
             root = new GameObject("Camp").transform;
             root.SetParent(transform, false);
-            spots.Clear(); boxes.Clear(); lamps.Clear();
+            spots.Clear(); boxes.Clear(); lamps.Clear(); lampPower.Clear(); lampDay.Clear();
 
-            Lodge(Frame(-14f, -118f, 15f));
-            Board(Frame(-11f, -99f, 90f));
-            Bench(Frame(12f, -104f, -90f));
-            Rack(Frame(-19.6f, -105.2f, 25f));
+            tapRoots.Clear();
+            Chalet(Frame(-9f, -118.5f, 12f));
             Gate();
             Lookout(Frame(16f, -84f, 0f));
             Benches();
@@ -178,11 +176,13 @@ namespace Summit
             P(PrimitiveType.Quad, parent, pos, new Vector3(w, h, 1f), new Vector3(0f, 180f, 0f), m);
 
         /// <summary>Somewhere the walker can't go: a box in the parent's frame (half sizes), or a floor it steps onto.</summary>
-        void Block(Transform frame, Vector3 local, Vector2 half, GameObject owner = null, bool floor = false, float top = 0f, float drop = 0f)
+        /// <summary>(lo and hi: the heights it blocks at, in the frame; a walker is blocked if its body overlaps them.)</summary>
+        void Block(Transform frame, Vector3 local, Vector2 half, GameObject owner = null, bool floor = false, float top = 0f, float drop = 0f, float lo = -1000f, float hi = 1000f)
         {
             Vector3 w = frame.TransformPoint(local);
             float yaw = frame.eulerAngles.y * Mathf.Deg2Rad;
-            boxes.Add(new Box { c = new Vector2(w.x, w.z), h = half, cos = Mathf.Cos(yaw), sin = Mathf.Sin(yaw), owner = owner, floor = floor, top = frame.position.y + top, drop = drop });
+            float y0 = frame.position.y;
+            boxes.Add(new Box { c = new Vector2(w.x, w.z), h = half, cos = Mathf.Cos(yaw), sin = Mathf.Sin(yaw), owner = owner, floor = floor, top = y0 + top, drop = drop, lo = y0 + lo, hi = y0 + hi });
         }
 
         /// <summary>A station: where you stand to use it, and a collider so a tap on it opens it.</summary>
@@ -199,227 +199,199 @@ namespace Summit
             col.size = new Vector3(Mathf.Abs(e.x), Mathf.Abs(e.y), Mathf.Abs(e.z));
         }
 
-        static Mesh gableMesh;
-        /// <summary>A triangular wedge (base 1 wide on the floor, apex 1 up, 1 deep), for gable ends.</summary>
-        static Mesh Gable()
-        {
-            if (gableMesh != null) return gableMesh;
-            Vector3 a = new Vector3(-0.5f, 0f, 0.5f), b = new Vector3(0.5f, 0f, 0.5f), c = new Vector3(0f, 1f, 0.5f);
-            Vector3 a2 = a - Vector3.forward, b2 = b - Vector3.forward, c2 = c - Vector3.forward;
-            var v = new List<Vector3>(); var uv = new List<Vector2>(); var tri = new List<int>();
-            void Quad(Vector3 p, Vector3 q, Vector3 r, Vector3 s)
-            {
-                int i = v.Count; v.Add(p); v.Add(q); v.Add(r); v.Add(s);
-                uv.Add(new Vector2(0, 0)); uv.Add(new Vector2(1, 0)); uv.Add(new Vector2(1, 1)); uv.Add(new Vector2(0, 1));
-                tri.AddRange(new[] { i, i + 2, i + 1, i, i + 3, i + 2 });
-            }
-            void Tri(Vector3 p, Vector3 q, Vector3 r)
-            {
-                int i = v.Count; v.Add(p); v.Add(q); v.Add(r);
-                foreach (var x in new[] { p, q, r }) uv.Add(new Vector2(x.x + 0.5f, x.y) * 2f);
-                tri.AddRange(new[] { i, i + 1, i + 2 });
-            }
-            Tri(a, b, c); Tri(b2, a2, c2);
-            Quad(a2, a, c, c2); Quad(b, b2, c2, c);
-            gableMesh = new Mesh { name = "Gable" };
-            gableMesh.SetVertices(v); gableMesh.SetUVs(0, uv); gableMesh.SetTriangles(tri, 0);
-            gableMesh.RecalculateNormals(); gableMesh.RecalculateBounds();
-            return gableMesh;
-        }
+        // ---------------------------------------------------------------- the chalet
 
-        // the lodge: an A-frame chalet. A timber lower storey, a steep snowy roof down to a wraparound deck,
-        // and a front gable that is all glass in a timber grid, glowing from inside
-        const float LodgeHalf = 5f, LodgePitch = 57f, Eave = 1.9f;
+        // Modelled in Blender by Tools/MakeChalet.py (Resources/Camp/Chalet.fbx): a Swiss chalet outside, a
+        // modern great room inside with the stations in it. Its helper boxes say where the walls, floors,
+        // stairs, stations and lamps are; this turns them into walking, the camera's walls and lights.
+        public const float ChaletHalfX = 8f, ChaletHalfZ = 6f;
+        Transform chalet;
         Vector3 lodgeApex, deckL, deckR, stairsFoot;
+        Material boardPaint;
+        readonly Material[] swatches = new Material[5];
 
-        void Lodge(Transform t)
+        void Chalet(Transform t)
         {
-            t.name = "Lodge";
-            // level on the highest snow under the house and its deck; a stone footing fills down to the snow
-            float baseY = t.position.y;
-            foreach (var c in new[] { new Vector2(-6.4f, -5.4f), new Vector2(7.8f, -5.4f), new Vector2(-6.4f, 7.9f), new Vector2(7.8f, 7.9f) })
+            t.name = "Chalet";
+            chalet = t;
+            // the floor sits level on the highest snow under the house; the stone base runs down into the rest
+            float baseY = float.MinValue;
+            for (int i = 0; i <= 6; i++)
+                for (int j = 0; j <= 4; j++)
+                {
+                    var w = t.TransformPoint(new Vector3(-ChaletHalfX + i * 2f * ChaletHalfX / 6f, 0f, -ChaletHalfZ + j * 2f * ChaletHalfZ / 4f));
+                    baseY = Mathf.Max(baseY, Slope.DrawnHeight(w.x, w.z));
+                }
+            t.position = new Vector3(t.position.x, baseY + 0.25f, t.position.z);
+            var prefab = Resources.Load<GameObject>("Camp/Chalet");
+            if (prefab == null) { Debug.LogWarning("Camp: Resources/Camp/Chalet.fbx is missing"); return; }
+            var model = Instantiate(prefab, t, false).transform;
+            model.name = "Model";
+            // (keep the importer's own rotation and scale on the root: it's how Blender's units and axes come in)
+            model.localPosition = Vector3.zero;
+            // the file is made with its front door on +Z: check, and turn it round if the axes came in otherwise
+            var front = Find(model, "MARK_front");
+            if (front != null)
             {
-                var w = t.TransformPoint(new Vector3(c.x, 0f, c.y));
-                baseY = Mathf.Max(baseY, Slope.DrawnHeight(w.x, w.z));
+                var fl = t.InverseTransformPoint(front.GetComponent<Renderer>().bounds.center); fl.y = 0f;
+                float turn = fl.sqrMagnitude > 0.01f ? Vector3.SignedAngle(fl, Vector3.forward, Vector3.up) : 0f;
+                if (Mathf.Abs(turn) > 1f) { Debug.LogWarning("Camp: chalet came in turned " + turn.ToString("0") + " degrees"); model.RotateAround(t.position, t.up, turn); }
             }
-            t.position = new Vector3(t.position.x, baseY, t.position.z);
-            float half = LodgeHalf, rise = half * Mathf.Tan(LodgePitch * Mathf.Deg2Rad);
-            P(PrimitiveType.Cube, t, new Vector3(0f, -1.1f, 0f), new Vector3(10.6f, 2.4f, 10.6f), Vector3.zero, stone);
-            P(PrimitiveType.Cube, t, new Vector3(0f, Eave * 0.5f, 0f), new Vector3(10.2f, Eave, 10.2f), Vector3.zero, darkWood);
-
-            // the lower storey's lit windows and door, under the deck
-            foreach (var x in new[] { -3.4f, -1.6f, 4.0f }) Window(t, new Vector3(x, 1.0f, 5.1f), 0f, 1.1f, 0.85f);
-            Window(t, new Vector3(5.1f, 1.0f, 2.2f), 90f, 1.1f, 0.85f);
-            Window(t, new Vector3(-5.1f, 1.0f, 0f), -90f, 1.1f, 0.85f);
-            P(PrimitiveType.Cube, t, new Vector3(1.4f, 0.9f, 5.12f), new Vector3(1.1f, 1.8f, 0.1f), Vector3.zero, wood);
-            P(PrimitiveType.Cube, t, new Vector3(1.4f, 1.15f, 5.16f), new Vector3(0.6f, 0.9f, 0.06f), Vector3.zero, glass, false);
-
-            // the roof: two steep planes from the deck to the ridge, deep snow on both
-            Vector3 ridge = new Vector3(0f, Eave + rise, 0f);
-            for (int s = -1; s <= 1; s += 2)
+            Physics.SyncTransforms();
+            var mats = new Dictionary<string, Material>();
+            var helpers = new List<Renderer>();
+            foreach (var r in model.GetComponentsInChildren<Renderer>(true))
             {
-                Vector3 eave = new Vector3(s * (half + 0.55f), Eave - 0.55f * Mathf.Tan(LodgePitch * Mathf.Deg2Rad), 0f);
-                Slab(t, ridge + new Vector3(0f, 0.2f, 0f), eave, 11.4f, 0.32f, roof, 0.38f);
+                if (r.name.Contains("__")) { helpers.Add(r); continue; }
+                var ms = r.sharedMaterials;
+                for (int i = 0; i < ms.Length; i++) ms[i] = ChaletMat(ms[i] != null ? ms[i].name.Split(' ')[0] : r.name, mats);
+                r.sharedMaterials = ms;
+                bool glassy = r.name == "Glass" || r.name == "LED";
+                r.shadowCastingMode = glassy ? UnityEngine.Rendering.ShadowCastingMode.Off : UnityEngine.Rendering.ShadowCastingMode.On;
             }
-            // the back gable in boards; the front one all glass, a timber grid over it
-            var back = Wedge(t, new Vector3(0f, Eave, -5.1f), 2f * half, rise, 0.25f, darkWood);
-            var front = Wedge(t, new Vector3(0f, Eave, 5.05f), 2f * half - 0.25f, rise - 0.15f, 0.1f, glass);
-            front.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            foreach (var x in new[] { -3.3f, -1.65f, 0f, 1.65f, 3.3f })
+            // the helper boxes: their extents, in the chalet's own frame
+            foreach (var r in helpers)
             {
-                float h = rise * (1f - Mathf.Abs(x) / half) - 0.1f;
-                P(PrimitiveType.Cube, t, new Vector3(x, Eave + h * 0.5f, 5.12f), new Vector3(0.15f, h, 0.16f), Vector3.zero, darkWood);
+                var mf = r.GetComponent<MeshFilter>();
+                var b = mf.sharedMesh.bounds;
+                Vector3 lo = Vector3.one * float.MaxValue, hi = Vector3.one * float.MinValue;
+                for (int c = 0; c < 8; c++)
+                {
+                    var p = t.InverseTransformPoint(r.transform.TransformPoint(b.center + Vector3.Scale(b.extents, new Vector3((c & 1) == 0 ? -1 : 1, (c & 2) == 0 ? -1 : 1, (c & 4) == 0 ? -1 : 1))));
+                    lo = Vector3.Min(lo, p); hi = Vector3.Max(hi, p);
+                }
+                Helper(t, r.name.Substring(0, r.name.IndexOf("__")), lo, hi);
+                if (Application.isPlaying) Destroy(r.gameObject); else DestroyImmediate(r.gameObject);
             }
-            for (int k = 1; k <= 3; k++)
-            {
-                float y = rise * k / 4f, w = 2f * half * (1f - y / rise);
-                P(PrimitiveType.Cube, t, new Vector3(0f, Eave + y, 5.12f), new Vector3(w, 0.15f, 0.16f), Vector3.zero, darkWood);
-            }
-            P(PrimitiveType.Cube, t, new Vector3(0f, Eave + 0.1f, 5.12f), new Vector3(2f * half + 0.2f, 0.25f, 0.24f), Vector3.zero, darkWood);
-            // a dormer wing on the right slope, its own window lit
-            float dTop = Eave + rise * (1f - 1.2f / half);
-            P(PrimitiveType.Cube, t, new Vector3(2.75f, (Eave + 2.4f + dTop) * 0.5f, -1.8f), new Vector3(3.1f, dTop - Eave - 2.4f, 3.2f), Vector3.zero, darkWood);
-            Window(t, new Vector3(4.32f, (Eave + 2.4f + dTop) * 0.5f, -1.8f), 90f, 1.4f, 1.0f);
-            Slab(t, new Vector3(1.0f, dTop + 0.25f, -1.8f), new Vector3(4.7f, Eave + 2.3f + 0.25f, -1.8f), 3.8f, 0.22f, roof, 0.3f);
-            // chimney on the left slope, smoking
-            var ch = P(PrimitiveType.Cube, t, new Vector3(-2.6f, Eave + rise * 0.62f + 1.1f, -2.2f), new Vector3(0.95f, 3.2f, 0.95f), Vector3.zero, stone);
-            Smoke(t, new Vector3(-2.6f, ch.localPosition.y + 1.7f, -2.2f));
-            P(PrimitiveType.Cube, t, new Vector3(-2.6f, ch.localPosition.y + 1.62f, -2.2f), new Vector3(1.1f, 0.18f, 1.1f), Vector3.zero, snowCap);
-
-            // the deck: across the front and down the right side, on posts, with a rail round it
-            float d = Eave - 0.1f;
-            P(PrimitiveType.Cube, t, new Vector3(0.7f, d, 6.45f), new Vector3(14f, 0.2f, 2.9f), Vector3.zero, wood);
-            P(PrimitiveType.Cube, t, new Vector3(6.4f, d, 1.8f), new Vector3(2.6f, 0.2f, 12f), Vector3.zero, wood);
-            foreach (var pp in new[] { new Vector2(-6.2f, 7.75f), new Vector2(-2.2f, 7.75f), new Vector2(0.95f, 7.75f), new Vector2(3.05f, 7.75f), new Vector2(7.6f, 7.75f),
-                                       new Vector2(7.6f, 3.6f), new Vector2(7.6f, -0.4f), new Vector2(7.6f, -4.1f) })
-                Log(t, new Vector3(pp.x, -1.6f, pp.y), new Vector3(pp.x, d, pp.y), 0.24f, logs);
-            Rail(t, new Vector3(-6.25f, Eave, 5.2f), new Vector3(-6.25f, Eave, 7.75f));
-            Rail(t, new Vector3(-6.25f, Eave, 7.75f), new Vector3(0.95f, Eave, 7.75f));
-            Rail(t, new Vector3(3.05f, Eave, 7.75f), new Vector3(7.65f, Eave, 7.75f));
-            Rail(t, new Vector3(7.65f, Eave, 7.75f), new Vector3(7.65f, Eave, -4.15f));
-            Rail(t, new Vector3(7.65f, Eave, -4.15f), new Vector3(5.1f, Eave, -4.15f));
-            // warm lamps under the deck, lighting the snow
-            foreach (var x in new[] { -5f, -2.6f, 4.6f, 6.9f })
-                P(PrimitiveType.Cube, t, new Vector3(x, d - 0.18f, 7.6f), new Vector3(0.3f, 0.08f, 0.12f), Vector3.zero, bulb, false);
-            Lamp(t, new Vector3(0.6f, 0.8f, 6.8f), 7f, 1.6f);
-            // the glass wall's glow falling on the deck and the snow in front
-            Lamp(t, new Vector3(0f, Eave + 2.6f, 6.6f), 12f, 2.4f);
-            // the camp's name hung on the front rail
-            P(PrimitiveType.Cube, t, new Vector3(-2.6f, Eave + 0.55f, 7.82f), new Vector3(3.3f, 0.86f, 0.08f), Vector3.zero, darkWood);
-            Face(t, new Vector3(-2.6f, Eave + 0.55f, 7.87f), 3.2f, 0.8f, Sign("Camp/SignCamp"));
-
-            // stairs down from the deck to the snow
-            var footW = t.TransformPoint(new Vector3(2f, 0f, 11f));
-            float foot = Slope.DrawnHeight(footW.x, footW.z) - baseY;   // the snow at the foot, in the lodge's frame
-            const int steps = 7; const float run = 3.2f;
+            // a stone terrace in front under the balcony, and steps down to the snow where it's lower
+            float ty = 0f;
+            P(PrimitiveType.Cube, t, new Vector3(0f, -0.7f, 7.3f), new Vector3(2f * ChaletHalfX + 0.2f, 1.4f, 2.6f), Vector3.zero, stone);
+            Block(t, new Vector3(0f, 0f, 7.3f), new Vector2(ChaletHalfX + 0.1f, 1.3f), null, true, ty);
+            var footW = t.TransformPoint(new Vector3(0f, 0f, 10.6f));
+            float foot = Mathf.Min(0f, Slope.DrawnHeight(footW.x, footW.z) - t.position.y);
+            const int steps = 5; const float run = 2f;
             for (int k = 0; k < steps; k++)
             {
-                float top = Mathf.Lerp(Eave, foot, (k + 1f) / (steps + 1f)), z = 7.8f + (k + 0.5f) * run / steps;
-                P(PrimitiveType.Cube, t, new Vector3(2f, (top + foot - 0.4f) * 0.5f, z), new Vector3(2f, top - foot + 0.4f, run / steps + 0.02f), Vector3.zero, wood);
+                float top = Mathf.Lerp(ty, foot, (k + 1f) / (steps + 1f)), z = 8.6f + (k + 0.5f) * run / steps;
+                P(PrimitiveType.Cube, t, new Vector3(0f, (top + foot - 0.6f) * 0.5f, z), new Vector3(4f, top - foot + 0.6f, run / steps + 0.02f), Vector3.zero, stone);
             }
+            Block(t, new Vector3(0f, 0f, 8.6f + run * 0.5f), new Vector2(2f, run * 0.5f), null, true, ty, ty - foot);
+            // the terrace's edges either side of the steps: a low wall
             for (int s = -1; s <= 1; s += 2)
             {
-                float x = 2f + s * 1.05f;
-                Log(t, new Vector3(x, Eave + 0.95f, 7.75f), new Vector3(x, foot + 0.95f, 7.8f + run), 0.08f, darkWood);
-                Log(t, new Vector3(x, foot - 0.3f, 7.8f + run), new Vector3(x, foot + 1f, 7.8f + run), 0.12f, logs);
-                Block(t, new Vector3(x, 0f, 7.8f + run * 0.5f), new Vector2(0.08f, run * 0.5f));
+                P(PrimitiveType.Cube, t, new Vector3(s * 5.1f, 0.25f, 8.55f), new Vector3(6f, 0.5f, 0.3f), Vector3.zero, stone);
+                Block(t, new Vector3(s * 5.1f, 0f, 8.55f), new Vector2(3f, 0.15f), null, false, 0f, 0f, -2f, 0.5f);
             }
+            lodgeApex = t.TransformPoint(new Vector3(0f, 9.3f, 6.2f));
+            deckL = t.TransformPoint(new Vector3(-7.7f, 4.5f, 7.65f));
+            deckR = t.TransformPoint(new Vector3(7.7f, 4.5f, 7.65f));
+            stairsFoot = t.TransformPoint(new Vector3(0f, foot, 11.2f));
+        }
 
-            // snow drifted against the house
-            for (int k = 0; k < 6; k++)
+        static Transform Find(Transform t, string prefix)
+        {
+            foreach (var c in t.GetComponentsInChildren<Transform>(true)) if (c.name.StartsWith(prefix)) return c;
+            return null;
+        }
+
+        /// <summary>What one of the model's helper boxes means (see Tools/MakeChalet.py).</summary>
+        void Helper(Transform t, string name, Vector3 lo, Vector3 hi)
+        {
+            Vector3 c = (lo + hi) * 0.5f, size = hi - lo;
+            var half = new Vector2(size.x * 0.5f, size.z * 0.5f);
+            Vector3 at = new Vector3(c.x, 0f, c.z);
+            float y0 = t.position.y;
+            if (name.StartsWith("COL_") || name.StartsWith("CAM_") || name.StartsWith("TAP_"))
             {
-                float u = k / 5f;
-                P(PrimitiveType.Sphere, t, new Vector3(-5.6f, 0.1f, -4.5f + u * 9f), new Vector3(1.6f, 1.1f, 2.0f), Vector3.zero, snowCap);
-                P(PrimitiveType.Sphere, t, new Vector3(-5f + u * 10f, 0.1f, -5.6f), new Vector3(2.0f, 1.2f, 1.5f), Vector3.zero, snowCap);
+                // (the camera stops at anything named COL_; CAM_ ones don't block walking: you climb up past a slab's edge)
+                var g = new GameObject(name.StartsWith("CAM_") ? "COL_" + name : name).transform;
+                g.SetParent(t, false); g.localPosition = c;
+                g.gameObject.AddComponent<BoxCollider>().size = size;
+                if (name.StartsWith("TAP_"))
+                {
+                    var st = name == "TAP_Missions" ? Station.Missions : name == "TAP_Upgrades" ? Station.Upgrades : Station.Style;
+                    tapRoots[st] = g;
+                    return;
+                }
+                if (name.StartsWith("COL_")) Block(t, at, half, null, false, 0f, 0f, lo.y, hi.y);
             }
-
-            // where you can and can't walk: round the house, up the stairs, along the deck inside its rail
-            Block(t, Vector3.zero, new Vector2(5.3f, 5.3f));
-            Block(t, new Vector3(0.7f, 0f, 6.45f), new Vector2(7f, 1.45f), null, true, Eave);
-            Block(t, new Vector3(6.4f, 0f, 1.8f), new Vector2(1.3f, 6f), null, true, Eave);
-            Block(t, new Vector3(2f, 0f, 7.8f + run * 0.5f), new Vector2(0.97f, run * 0.5f), null, true, Eave, Eave - foot);
-            Block(t, new Vector3(-6.25f, 0f, 6.45f), new Vector2(0.1f, 1.4f));
-            Block(t, new Vector3(-2.65f, 0f, 7.75f), new Vector2(3.6f, 0.1f));
-            Block(t, new Vector3(5.35f, 0f, 7.75f), new Vector2(2.3f, 0.1f));
-            Block(t, new Vector3(7.65f, 0f, 1.8f), new Vector2(0.1f, 6f));
-            Block(t, new Vector3(6.4f, 0f, -4.15f), new Vector2(1.3f, 0.1f));
-            // a collider round the house, so the camera stays out of it
-            var lc = t.gameObject.AddComponent<BoxCollider>();
-            lc.center = new Vector3(0f, (Eave + rise) * 0.5f, 0f); lc.size = new Vector3(10.6f, Eave + rise + 0.4f, 10.6f);
-
-            lodgeApex = t.TransformPoint(new Vector3(0f, Eave + rise - 0.6f, 5.3f));
-            deckL = t.TransformPoint(new Vector3(-6.25f, Eave + 1.1f, 7.75f));
-            deckR = t.TransformPoint(new Vector3(7.65f, Eave + 1.1f, 7.75f));
-            stairsFoot = t.TransformPoint(new Vector3(2f, foot, 7.8f + run + 0.6f));
-        }
-
-        void Window(Transform t, Vector3 at, float yaw, float w = 1.3f, float h = 1.0f)
-        {
-            var win = new GameObject("Window").transform;
-            win.SetParent(t, false); win.localPosition = at; win.localRotation = Quaternion.Euler(0f, yaw, 0f);
-            P(PrimitiveType.Cube, win, Vector3.zero, new Vector3(w + 0.3f, h + 0.3f, 0.14f), Vector3.zero, wood);
-            P(PrimitiveType.Cube, win, new Vector3(0f, 0f, 0.03f), new Vector3(w, h, 0.12f), Vector3.zero, glass, false);
-            P(PrimitiveType.Cube, win, new Vector3(0f, 0f, 0.1f), new Vector3(0.07f, h, 0.04f), Vector3.zero, darkWood);
-            P(PrimitiveType.Cube, win, new Vector3(0f, 0f, 0.1f), new Vector3(w, 0.07f, 0.04f), Vector3.zero, darkWood);
-            P(PrimitiveType.Cube, win, new Vector3(0f, -h * 0.5f - 0.2f, 0.12f), new Vector3(w + 0.5f, 0.1f, 0.3f), Vector3.zero, snowCap);
-        }
-
-        /// <summary>A flat slab (a roof plane) from a to b, depth across, with snow lying on its top face.</summary>
-        void Slab(Transform t, Vector3 a, Vector3 b, float depth, float thick, Material m, float snow)
-        {
-            Vector3 along = b - a, mid = (a + b) * 0.5f;
-            // the slab's local X runs from a to b, Y is its outward (upper) face
-            var rot = Quaternion.LookRotation(Vector3.forward, Vector3.Cross(Vector3.forward, along.normalized));
-            if ((rot * Vector3.up).y < 0f) rot = Quaternion.LookRotation(Vector3.forward, -(rot * Vector3.up));
-            var slab = P(PrimitiveType.Cube, t, mid, new Vector3(along.magnitude, thick, depth), Vector3.zero, m);
-            slab.localRotation = rot;
-            if (snow <= 0f) return;
-            var cap = P(PrimitiveType.Cube, t, mid + rot * Vector3.up * (thick + snow) * 0.5f, new Vector3(along.magnitude * 0.98f, snow, depth + 0.1f), Vector3.zero, snowCap);
-            cap.localRotation = rot;
-            // lumps along the eave where it has piled up
-            Vector3 low = a.y < b.y ? a : b;
-            for (int i = 0; i < 4; i++)
-                P(PrimitiveType.Sphere, t, low + rot * Vector3.up * (thick + snow) + new Vector3(0f, 0f, -depth * 0.4f + i * depth * 0.27f), new Vector3(0.9f, 0.45f, depth * 0.3f), Vector3.zero, snowCap);
-        }
-
-        Transform Wedge(Transform t, Vector3 at, float w, float h, float depth, Material m)
-        {
-            var g = new GameObject("Gable", typeof(MeshFilter), typeof(MeshRenderer)).transform;
-            g.SetParent(t, false);
-            g.localPosition = at + new Vector3(0f, 0f, depth * 0.5f);
-            g.localScale = new Vector3(w, h, depth);
-            g.GetComponent<MeshFilter>().sharedMesh = Gable();
-            g.GetComponent<MeshRenderer>().sharedMaterial = m;
-            return g;
-        }
-
-        /// <summary>A deck rail from a to b (on the deck at a.y): posts, a top rail with snow on it, a mid rail.</summary>
-        void Rail(Transform t, Vector3 a, Vector3 b)
-        {
-            float len = Vector3.Distance(a, b);
-            int n = Mathf.Max(1, Mathf.RoundToInt(len / 1.6f));
-            for (int i = 0; i <= n; i++)
+            else if (name.StartsWith("BLK_")) Block(t, at, half, null, false, 0f, 0f, lo.y, hi.y);
+            else if (name.StartsWith("FLR_")) Block(t, at, half, null, true, hi.y);
+            else if (name.StartsWith("RMP_")) Block(t, at, half, null, true, hi.y, hi.y - lo.y);
+            else if (name.StartsWith("SPOT_"))
             {
-                var p = Vector3.Lerp(a, b, i / (float)n);
-                P(PrimitiveType.Cube, t, p + Vector3.up * 0.5f, new Vector3(0.12f, 1f, 0.12f), Vector3.zero, wood);
+                var st = name == "SPOT_Missions" ? Station.Missions : name == "SPOT_Upgrades" ? Station.Upgrades : Station.Style;
+                spots.Add(new Spot { st = st, at = t.TransformPoint(c), radius = 1.7f, root = tapRoots.TryGetValue(st, out var tr) ? tr : t });
             }
-            var dir = (b - a).normalized;
-            var rot = Quaternion.LookRotation(dir, Vector3.up).eulerAngles;
-            P(PrimitiveType.Cube, t, (a + b) * 0.5f + Vector3.up * 1.0f, new Vector3(0.12f, 0.1f, len), rot, wood);
-            P(PrimitiveType.Cube, t, (a + b) * 0.5f + Vector3.up * 1.08f, new Vector3(0.16f, 0.07f, len), rot, snowCap);
-            P(PrimitiveType.Cube, t, (a + b) * 0.5f + Vector3.up * 0.5f, new Vector3(0.07f, 0.07f, len), rot, wood);
-            // balusters
-            int m = Mathf.FloorToInt(len / 0.32f);
-            for (int i = 1; i < m; i++)
-                P(PrimitiveType.Cube, t, Vector3.Lerp(a, b, i / (float)m) + Vector3.up * 0.5f, new Vector3(0.05f, 0.95f, 0.05f), rot, darkWood, false);
+            else if (name == "FX_fire") Flames(t, c);
+            else if (name.StartsWith("LIGHT_"))
+            {
+                bool outside = name == "LIGHT_porch";
+                var l = Lamp(t, c, name == "LIGHT_lounge" ? 10f : name == "LIGHT_porch" ? 7f : 7.5f, name == "LIGHT_lounge" ? 2.2f : 1.5f, outside ? 0f : 0.5f);
+                if (name == "LIGHT_fire") l.color = new Color(1f, 0.72f, 0.45f);
+            }
         }
+        readonly Dictionary<Station, Transform> tapRoots = new Dictionary<Station, Transform>();
+
+        /// <summary>The game's material for one of the model's (by its name in the file).</summary>
+        Material ChaletMat(string name, Dictionary<string, Material> made)
+        {
+            if (made.TryGetValue(name, out var have)) return have;
+            var woodTex = Resources.Load<Texture2D>("Camp/Wood");
+            var oakTex = Resources.Load<Texture2D>("Camp/Oak");
+            Material m;
+            switch (name)
+            {
+                case "Timber": m = M(new Color(1f, 0.84f, 0.64f), 0.15f, oakTex); break;          // honey, weathered
+                case "TimberDark": m = M(new Color(0.8f, 0.64f, 0.48f), 0.15f, woodTex); break;
+                case "Stone": m = stone; break;
+                case "Roof": m = M(new Color(0.42f, 0.33f, 0.27f), 0.12f, woodTex, new Vector2(1f, 3f)); break;
+                case "Glass": m = Glass(); break;
+                case "Plaster": m = M(new Color(0.93f, 0.92f, 0.89f), 0.08f); break;
+                case "Oak": m = M(Color.white, 0.35f, oakTex); break;
+                case "Concrete": m = M(new Color(0.62f, 0.62f, 0.62f), 0.55f); break;
+                case "Steel": m = M(new Color(0.05f, 0.05f, 0.06f), 0.65f); m.SetFloat("_Metallic", 0.6f); break;
+                case "LED": m = M(new Color(0.3f, 0.26f, 0.2f), 0.5f, null, default, new Color(1f, 0.78f, 0.5f) * 1.6f); break;
+                case "Ember": m = ember; break;
+                case "Fabric": m = M(new Color(0.66f, 0.63f, 0.58f), 0.05f); break;
+                case "Rug": m = M(new Color(0.84f, 0.8f, 0.72f), 0.02f); break;
+                case "Plant": m = M(new Color(0.16f, 0.38f, 0.2f), 0.2f); break;
+                case "ArtA": m = M(new Color(0.88f, 0.48f, 0.22f), 0.3f); break;
+                case "ArtB": m = M(new Color(0.12f, 0.27f, 0.52f), 0.3f); break;
+                case "BoardPaint": m = boardPaint = M(Progress.Boards[Progress.Board], 0.6f); break;
+                case "SignCamp": case "SignMissions": case "SignUpgrades": m = Sign("Camp/" + name); break;
+                default:
+                    if (name.StartsWith("Note") && int.TryParse(name.Substring(4), out int ni) && ni < noteMats.Length) { m = noteMats[ni]; break; }
+                    if (name.StartsWith("Swatch") && int.TryParse(name.Substring(6), out int si)) { m = swatches[si - 1] = M(Progress.Boards[si % Progress.Boards.Length], 0.6f); break; }
+                    m = M(new Color(0.7f, 0.7f, 0.7f), 0.2f); break;
+            }
+            made[name] = m;
+            return m;
+        }
+
+        /// <summary>Clear glass (Resources/Camp/GlassBase is a transparent Lit material, so the build keeps that shader variant).</summary>
+        Material Glass()
+        {
+            var b = Resources.Load<Material>("Camp/GlassBase");
+            var m = b != null ? new Material(b) : M(Color.white, 0.95f);
+            m.SetColor("_BaseColor", new Color(0.62f, 0.74f, 0.82f, 0.22f));
+            m.SetFloat("_Smoothness", 0.95f);
+            return m;
+        }
+
+        /// <summary>A point in the chalet (its own frame) in the world: for the test tools.</summary>
+        public Vector3 ChaletPoint(float x, float y, float z) => chalet != null ? chalet.TransformPoint(new Vector3(x, y, z)) : Vector3.zero;
+        public float ChaletYaw => chalet != null ? chalet.eulerAngles.y : 0f;
+        /// <summary>True inside the chalet's walls.</summary>
+        bool Indoors => chalet != null && InHouse(chalet.InverseTransformPoint(pos));
+        static bool InHouse(Vector3 l) => Mathf.Abs(l.x) < ChaletHalfX - 0.2f && Mathf.Abs(l.z) < ChaletHalfZ - 0.2f;
 
         // ---------------------------------------------------------------- birches, lumpy snow, the trodden path
 
         /// <summary>Tall bare birches round the lodge: white trunks, a few dark forks of branches.</summary>
         void Birches()
         {
-            var where = new[] { new Vector2(-22f, -109f), new Vector2(-21f, -114.5f), new Vector2(-5.5f, -123f), new Vector2(-17.5f, -93f), new Vector2(-25.5f, -100f), new Vector2(-1f, -126f) };
+            var where = new[] { new Vector2(-22.5f, -108f), new Vector2(-22f, -116f), new Vector2(3f, -124f), new Vector2(-17.5f, -93f), new Vector2(-25.5f, -100f), new Vector2(6f, -121f) };
             for (int i = 0; i < where.Length; i++)
             {
                 var t = Frame(where[i].x, where[i].y, i * 53f);
@@ -510,10 +482,11 @@ namespace Summit
             return m;
         }
 
-        // ---------------------------------------------------------------- blue hour in camp
+        // ---------------------------------------------------------------- day and night in camp
 
-        // The camp is lit like evening: a cold blue sky and snow, warm light from the lodge, the deck and the
-        // fire. Dropping in blends back to the run's daytime over a second, and the camp's lamps go out.
+        // The camp doesn't choose its own time of day: the game's day/night cycle calls SetNight (0 day,
+        // 1 night) and this follows it: a cold blue sky and snow, and warm light from the chalet, its porch and
+        // the fire. The chalet's indoor lamps stay on (dimmer) by day; the outdoor ones only light at dusk.
         readonly List<Light> lamps = new List<Light>();
         readonly List<float> lampPower = new List<float>();
         public float Night { get; private set; }
@@ -521,13 +494,16 @@ namespace Summit
         Material sky;
         bool dayKnown;
 
-        Light Lamp(Transform t, Vector3 at, float range, float power)
+        readonly List<float> lampDay = new List<float>();
+
+        /// <summary>A warm point light; dayShare: how much of it stays on in daylight (indoor lamps do).</summary>
+        Light Lamp(Transform t, Vector3 at, float range, float power, float dayShare = 0f)
         {
             var l = new GameObject("Lamp").AddComponent<Light>();
             l.transform.SetParent(t, false); l.transform.localPosition = at;
             // light colours are linearised per channel too: a pale warm white comes out amber, a saturated one red
             l.type = LightType.Point; l.color = new Color(1f, 0.8f, 0.6f); l.range = range; l.intensity = power; l.shadows = LightShadows.None;
-            lamps.Add(l); lampPower.Add(power);
+            lamps.Add(l); lampPower.Add(power); lampDay.Add(dayShare);
             return l;
         }
 
@@ -563,96 +539,13 @@ namespace Summit
             // the post profile: a cool filter with lower exposure tipped every warm light to pure red.)
             Shader.SetGlobalFloat("_SummitNight", k);
             for (int i = 0; i < lamps.Count; i++)
-                if (lamps[i] != null) { lamps[i].intensity = lampPower[i] * k; lamps[i].enabled = k > 0.01f; }
+                if (lamps[i] != null) { float w = Mathf.Lerp(lampDay[i], 1f, k); lamps[i].intensity = lampPower[i] * w; lamps[i].enabled = w > 0.01f; }
         }
 
         // (no fade of its own any more: DayNight calls SetNight every frame with the time of day's darkness)
 
         // never leave the project's sky or grade in the evening (in the editor they are assets)
         void OnDisable() { if (dayKnown) SetNight(0f); }
-
-        void Board(Transform t)
-        {
-            t.name = "MissionBoard";
-            for (int s = -1; s <= 1; s += 2) Log(t, new Vector3(s * 1.35f, -0.4f, 0f), new Vector3(s * 1.35f, 2.95f, 0f), 0.18f, logs);
-            P(PrimitiveType.Cube, t, new Vector3(0f, 1.55f, 0f), new Vector3(2.5f, 1.55f, 0.1f), Vector3.zero, wood);
-            P(PrimitiveType.Cube, t, new Vector3(0f, 0.75f, 0.1f), new Vector3(2.6f, 0.08f, 0.16f), Vector3.zero, darkWood);
-            for (int s = -1; s <= 1; s += 2)
-            {
-                var sl = P(PrimitiveType.Cube, t, new Vector3(s * 0.75f, 3.12f, 0f), new Vector3(1.75f, 0.1f, 0.8f), new Vector3(0f, 0f, -s * 22f), roof);
-                P(PrimitiveType.Cube, sl, new Vector3(0f, 1.2f, 0f), new Vector3(0.95f, 0.9f, 1f), Vector3.zero, snowCap);
-            }
-            Face(t, new Vector3(0f, 2.65f, 0.06f), 2.5f, 0.62f, Sign("Camp/SignMissions"));
-            notes = new Renderer[3];
-            for (int i = 0; i < 3; i++)
-                notes[i] = Face(t, new Vector3(-0.78f + i * 0.78f, 1.55f, 0.06f), 0.6f, 0.75f, noteMats[i]).GetComponent<Renderer>();
-            notes[0].transform.localRotation *= Quaternion.Euler(0f, 0f, 4f);
-            notes[2].transform.localRotation *= Quaternion.Euler(0f, 0f, -3f);
-            Block(t, Vector3.zero, new Vector2(1.5f, 0.3f));
-            Stand(t, Station.Missions, new Vector3(0f, 0f, 2.2f), 2.6f);
-        }
-        Renderer[] notes;
-
-        void Bench(Transform t)
-        {
-            t.name = "TuneUpBench";
-            // a lean-to: plank back wall, four posts, a roof sloping to the front
-            P(PrimitiveType.Cube, t, new Vector3(0f, 1.35f, -1.35f), new Vector3(4.2f, 2.9f, 0.14f), Vector3.zero, wood);
-            P(PrimitiveType.Cube, t, new Vector3(0f, 1.75f, -1.26f), new Vector3(2.8f, 1.1f, 0.04f), Vector3.zero, M(new Color(0.18f, 0.16f, 0.15f), 0.1f));
-            for (int sx = -1; sx <= 1; sx += 2)
-            {
-                Log(t, new Vector3(sx * 2.05f, -0.3f, -1.35f), new Vector3(sx * 2.05f, 3.05f, -1.35f), 0.2f, logs);
-                Log(t, new Vector3(sx * 2.05f, -0.3f, 1.3f), new Vector3(sx * 2.05f, 2.5f, 1.3f), 0.2f, logs);
-            }
-            var rf = P(PrimitiveType.Cube, t, new Vector3(0f, 2.85f, 0f), new Vector3(4.8f, 0.16f, 3.3f), new Vector3(11f, 0f, 0f), roof);
-            P(PrimitiveType.Cube, rf, new Vector3(0f, 1.7f, 0f), new Vector3(0.98f, 1.6f, 0.98f), Vector3.zero, snowCap);
-            Face(t, new Vector3(0f, 2.3f, 1.42f), 3.2f, 0.8f, Sign("Camp/SignUpgrades"));
-            // the workbench, with a board clamped on it for a wax
-            P(PrimitiveType.Cube, t, new Vector3(0f, 0.95f, -0.55f), new Vector3(3.2f, 0.12f, 1.0f), Vector3.zero, wood);
-            for (int sx = -1; sx <= 1; sx += 2)
-                for (int sz = -1; sz <= 1; sz += 2)
-                    P(PrimitiveType.Cube, t, new Vector3(sx * 1.45f, 0.45f, -0.55f + sz * 0.4f), new Vector3(0.1f, 1f, 0.1f), Vector3.zero, darkWood);
-            var bd = new GameObject("Board").transform;
-            bd.SetParent(t, false); bd.localPosition = new Vector3(-0.2f, 1.05f, -0.5f);
-            benchBoard = P(PrimitiveType.Cube, bd, Vector3.zero, new Vector3(1.4f, 0.03f, 0.29f), Vector3.zero, M(Color.white, 0.6f)).GetComponent<Renderer>();
-            P(PrimitiveType.Cylinder, bd, new Vector3(0.7f, 0f, 0f), new Vector3(0.29f, 0.015f, 0.29f), Vector3.zero, benchBoard.sharedMaterial);
-            P(PrimitiveType.Cylinder, bd, new Vector3(-0.7f, 0f, 0f), new Vector3(0.29f, 0.015f, 0.29f), Vector3.zero, benchBoard.sharedMaterial);
-            for (int s = -1; s <= 1; s += 2) P(PrimitiveType.Cube, bd, new Vector3(s * 0.62f, 0.02f, 0f), new Vector3(0.12f, 0.1f, 0.36f), Vector3.zero, metal);
-            // wax iron, wax bars and a scraper; tools hung on the wall
-            P(PrimitiveType.Cube, t, new Vector3(1.05f, 1.06f, -0.75f), new Vector3(0.28f, 0.1f, 0.16f), Vector3.zero, metal);
-            P(PrimitiveType.Cube, t, new Vector3(1.05f, 1.17f, -0.75f), new Vector3(0.22f, 0.04f, 0.04f), Vector3.zero, coal);
-            Color[] wax = { new Color(0.2f, 0.5f, 1f), new Color(0.95f, 0.3f, 0.5f), new Color(0.98f, 0.85f, 0.2f) };
-            for (int i = 0; i < 3; i++) P(PrimitiveType.Cube, t, new Vector3(1.0f + i * 0.14f, 1.04f, -0.32f), new Vector3(0.1f, 0.07f, 0.2f), Vector3.zero, M(wax[i], 0.5f));
-            for (int i = 0; i < 5; i++)
-            {
-                float x = -1.1f + i * 0.55f;
-                P(PrimitiveType.Cube, t, new Vector3(x, 1.85f, -1.2f), new Vector3(0.06f, 0.5f, 0.03f), Vector3.zero, metal);
-                P(PrimitiveType.Cube, t, new Vector3(x, 2.1f - (i % 2) * 0.5f, -1.2f), new Vector3(0.16f, 0.1f, 0.03f), Vector3.zero, i % 2 == 0 ? metal : scarf);
-            }
-            P(PrimitiveType.Sphere, t, new Vector3(0f, 2.45f, -0.3f), Vector3.one * 0.16f, Vector3.zero, bulb, false);
-            Log(t, new Vector3(0f, 2.53f, -0.3f), new Vector3(0f, 2.85f, -0.3f), 0.02f, wire);
-            Block(t, new Vector3(0f, 0f, -0.1f), new Vector2(2.2f, 1.5f));
-            Stand(t, Station.Upgrades, new Vector3(0f, 0f, 2.4f), 2.6f);
-        }
-
-        void Rack(Transform t)
-        {
-            t.name = "BoardRack";
-            for (int s = -1; s <= 1; s += 2) Log(t, new Vector3(s * 1.1f, -0.3f, -0.2f), new Vector3(s * 1.1f, 1.55f, -0.2f), 0.14f, logs);
-            Log(t, new Vector3(-1.2f, 1.35f, -0.2f), new Vector3(1.2f, 1.35f, -0.2f), 0.1f, logs);
-            Log(t, new Vector3(-1.2f, 0.25f, 0.15f), new Vector3(1.2f, 0.25f, 0.15f), 0.1f, logs);
-            rackBoards = new Renderer[5];
-            for (int i = 0; i < 5; i++)
-            {
-                var b = P(PrimitiveType.Cube, t, new Vector3(-0.84f + i * 0.42f, 0.78f, 0f), new Vector3(0.28f, 1.45f, 0.03f), new Vector3(-14f, 0f, 0f), M(Progress.Boards[(i + 1) % Progress.Boards.Length], 0.6f));
-                rackBoards[i] = b.GetComponent<Renderer>();
-                P(PrimitiveType.Cube, b, new Vector3(0f, 0.13f, 0.9f), new Vector3(0.75f, 0.08f, 2.5f), Vector3.zero, wire);
-                P(PrimitiveType.Cube, b, new Vector3(0f, -0.15f, 0.9f), new Vector3(0.75f, 0.08f, 2.5f), Vector3.zero, wire);
-            }
-            Block(t, Vector3.zero, new Vector2(1.3f, 0.45f));
-            Stand(t, Station.Style, new Vector3(0f, 0f, 1.9f), 1.9f);
-        }
-        Renderer[] rackBoards;
 
         void Gate()
         {
@@ -843,17 +736,12 @@ namespace Summit
             Log(poles, pb + Vector3.down * 0.3f, pb + Vector3.up * 6.2f, 0.16f, logs);
             Block(poles, poles.InverseTransformPoint(pa), new Vector2(0.2f, 0.2f));
             Block(poles, poles.InverseTransformPoint(pb), new Vector2(0.2f, 0.2f));
-            Vector3 apex = lodgeApex;
             // high over the camp, clear of the camera
-            Flags(apex, pa + Vector3.up * 6.5f);
             Flags(pa + Vector3.up * 6.5f, pb + Vector3.up * 6.1f);
             Vector3 porchR = deckR, porchL = deckL;
-            Vector3 benchFL = Ground(12f, -104f) + Quaternion.Euler(0f, -90f, 0f) * new Vector3(2.2f, 2.55f, 1.4f);
-            Vector3 boardTop = Ground(-11f, -99f) + new Vector3(0f, 3.15f, 0f);
             Lights(porchR, pa + Vector3.up * 5.2f);
-            Lights(pa + Vector3.up * 5.2f, benchFL);
-            Lights(porchL + Vector3.up * 0.15f, porchR + Vector3.up * 0.15f, 0.012f);   // along the deck rail, pulled tight
-            Lights(boardTop, pb + Vector3.up * 5.0f);
+            Lights(pa + Vector3.up * 5.2f, pb + Vector3.up * 5.0f);
+            Lights(porchL, porchR, 0.012f);   // along the balcony rail, pulled tight
         }
 
         static Vector3 Sag(Vector3 a, Vector3 b, float u, float sag) => Vector3.Lerp(a, b, u) + Vector3.down * sag * (1f - (2f * u - 1f) * (2f * u - 1f));
@@ -899,7 +787,8 @@ namespace Summit
             if (!real && kinds.Length == 0) return;
             var where = new[] { new Vector2(-27f, -126f), new Vector2(-19f, -134f), new Vector2(-6f, -137f), new Vector2(7f, -135f), new Vector2(19f, -131f),
                                 new Vector2(28f, -121f), new Vector2(-30f, -112f), new Vector2(-29f, -97f), new Vector2(30f, -106f), new Vector2(29f, -93f),
-                                new Vector2(-24f, -138f), new Vector2(13f, -140f), new Vector2(-31f, -84f) };
+                                new Vector2(-24f, -138f), new Vector2(13f, -140f), new Vector2(-31f, -84f),
+                                new Vector2(-20.5f, -111f), new Vector2(2.6f, -114.5f) };   // the last two: spruces beside the chalet
             for (int i = 0; i < where.Length; i++)
             {
                 if (real)
@@ -930,18 +819,16 @@ namespace Summit
             if (flags != null) flags.SetActive(Progress.Has(Progress.Up.Flags));
             if (lights != null) lights.SetActive(Progress.Has(Progress.Up.Lights));
             if (snowman != null) snowman.SetActive(Progress.Has(Progress.Up.Snowman));
-            if (benchBoard != null) benchBoard.sharedMaterial.SetColor("_BaseColor", Progress.Boards[Progress.Board]);
+            if (boardPaint != null) boardPaint.SetColor("_BaseColor", Progress.Boards[Progress.Board]);
             Missions.Refresh();
-            if (notes != null)
-                for (int i = 0; i < notes.Length && i < Missions.Today.Count; i++)
-                    notes[i].sharedMaterial.SetColor("_BaseColor", Missions.Today[i].done ? new Color(0.62f, 0.95f, 0.62f) : Color.white);
+            for (int i = 0; i < noteMats.Length && i < Missions.Today.Count; i++)
+                noteMats[i].SetColor("_BaseColor", Missions.Today[i].done ? new Color(0.62f, 0.95f, 0.62f) : Color.white);
         }
 
         // ---------------------------------------------------------------- walking
 
         Rider rider; RiderBody body; Camera cam;
-        bool entered;
-        Vector3 pos; float yaw, speed, camYaw, lookBlend, showBlend;
+        Vector3 pos; float yaw, speed, camYaw, lookBlend, showBlend, inBlend;
         bool snap;
         public Vector3 WalkerPosition => pos;
 
@@ -954,7 +841,6 @@ namespace Summit
             pos = Ground(-1.5f, -94f);
             var toLodge = lodgeApex - pos;
             yaw = Mathf.Atan2(toLodge.x, toLodge.z); camYaw = yaw; speed = 0f;
-            if (!entered) { entered = true; SetNight(1f); }   // the game opens straight into the evening camp
             snap = true;
             Near = Station.None;
             body.SetWalking(true);
@@ -967,6 +853,7 @@ namespace Summit
             if (!Active) return;
             Active = false;
             Showcase = false;
+            if (steps != null) { steps.Stop(); stepVol = 0f; }
             if (body != null) body.SetWalking(false);
         }
 
@@ -978,10 +865,12 @@ namespace Summit
             if (mag > 0.08f)
             {
                 // the stick is relative to the camera: up the screen is the way it looks
-                float want = camYaw + Mathf.Atan2(stick.x, stick.y);
-                yaw = Mathf.LerpAngle(yaw * Mathf.Rad2Deg, want * Mathf.Rad2Deg, 1f - Mathf.Exp(-dt * 10f)) * Mathf.Deg2Rad;
+                float head = camYaw + Mathf.Atan2(stick.x, stick.y);
+                yaw = Mathf.LerpAngle(yaw * Mathf.Rad2Deg, head * Mathf.Rad2Deg, 1f - Mathf.Exp(-dt * 10f)) * Mathf.Deg2Rad;
             }
-            speed = Mathf.MoveTowards(speed, mag * MaxSpeed, dt * 12f);
+            // pushed right out, the walk breaks into a run (and eases back down)
+            float want = mag > 0.92f ? RunSpeed : mag * MaxSpeed;
+            speed = Mathf.MoveTowards(speed, want, dt * (want > speed ? 9f : 14f));
             var f = new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw));
             Vector3 next = pos + f * speed * dt;
             // through the gate's opening, and you're off to the start
@@ -991,13 +880,15 @@ namespace Summit
             next.x = Cx + Mathf.Clamp(gx, -HalfWidth, HalfWidth);
             next.z = Mathf.Clamp(next.z, BackZ, inGate ? GateZ + 1f : GateZ - 0.6f);
             var p2 = new Vector2(next.x, next.z);
+            float feet = pos.y;
             for (int it = 0; it < 2; it++)
                 foreach (var b in boxes)
                 {
                     if (b.floor || (b.owner != null && !b.owner.activeInHierarchy)) continue;
+                    if (b.lo > feet + 1.7f || b.hi < feet + 0.1f) continue;   // above your head or under your feet
                     p2 = PushOut(b, p2, 0.38f);
                 }
-            pos = new Vector3(p2.x, 0f, p2.y);
+            pos = new Vector3(p2.x, feet, p2.y);
             Place();
             // the nearest station you're standing at
             Near = Station.None; OnLookout = false;
@@ -1005,9 +896,10 @@ namespace Summit
             foreach (var s in spots)
             {
                 var d = new Vector2(s.at.x - pos.x, s.at.z - pos.z).magnitude;
-                if (d < s.radius && d < best) { best = d; Near = s.st; }
+                if (d < s.radius && d < best && Mathf.Abs(s.at.y - pos.y) < 1.5f) { best = d; Near = s.st; }   // on its floor
             }
             if (Near == Station.Lookout) { OnLookout = true; Near = Station.None; }
+            Footsteps(dt);
             return false;
         }
 
@@ -1029,7 +921,11 @@ namespace Summit
             return b.c + new Vector2(q.x * b.cos + q.y * b.sin, -q.x * b.sin + q.y * b.cos);
         }
 
-        float FloorAt(Vector3 p)
+        /// <summary>
+        /// What you stand on at p, coming from height feet: the highest floor no more than a step above you
+        /// (so the mezzanine overhead doesn't lift you up, but stairs and the terrace do, a step at a time).
+        /// </summary>
+        float FloorAt(Vector3 p, float feet)
         {
             float y = Slope.DrawnHeight(p.x, p.z);
             foreach (var b in boxes)
@@ -1037,21 +933,24 @@ namespace Summit
                 if (!b.floor) continue;
                 var d = new Vector2(p.x, p.z) - b.c;
                 var q = new Vector2(d.x * b.cos - d.y * b.sin, d.x * b.sin + d.y * b.cos);
-                // a ramp (the deck stairs) falls by drop from its -z end to its +z end
-                if (Mathf.Abs(q.x) <= b.h.x && Mathf.Abs(q.y) <= b.h.y) y = Mathf.Max(y, b.top - b.drop * (q.y + b.h.y) / (2f * b.h.y));
+                if (Mathf.Abs(q.x) > b.h.x || Mathf.Abs(q.y) > b.h.y) continue;
+                // a ramp (stairs) falls by drop from its -z end to its +z end
+                float top = b.top - b.drop * (q.y + b.h.y) / (2f * b.h.y);
+                if (top <= feet + 0.55f && top > y) y = top;
             }
             return y;
         }
 
         void Place()
         {
-            pos.y = FloorAt(pos);
+            pos.y = FloorAt(pos, pos.y);
             var p = pos + Vector3.up * Rider.R;
             rider.Body.position = p;
             rider.transform.position = p;
             // the model faces the board's toe edge (+X): turn it a quarter so it faces where it walks
             rider.Heading = yaw - Mathf.PI * 0.5f;
-            body.WalkPace = speed / MaxSpeed;
+            body.WalkPace = Mathf.Clamp01(speed / MaxSpeed);
+            body.RunBlend = Mathf.Clamp01((speed - MaxSpeed) / (RunSpeed - MaxSpeed));
         }
 
         /// <summary>The station under a tap on the screen, if any.</summary>
@@ -1064,6 +963,52 @@ namespace Summit
                     if (h.collider.transform == s.root) return s.st;
             return Station.None;
         }
+
+        // ---------------------------------------------------------------- footsteps
+
+        // The player's own recording of boots crunching through snow (Resources/Audio/user_snow_steps), looped
+        // while you move: quicker as you speed up, a short fade in and out, and indoors on the chalet's floor
+        // a softer, duller tread (quieter, the crunch filtered off).
+        AudioSource steps;
+        AudioLowPassFilter stepTone;
+        float stepVol, stepIn;
+
+        void Footsteps(float dt)
+        {
+            if (steps == null)
+            {
+                var clip = Resources.Load<AudioClip>("Audio/user_snow_steps");
+                if (clip == null) return;
+                clip.LoadAudioData();   // it isn't preloaded: load it now, so the first step isn't late
+                var g = new GameObject("Footsteps");
+                g.transform.SetParent(transform, false);
+                steps = g.AddComponent<AudioSource>();
+                steps.clip = clip; steps.loop = true; steps.playOnAwake = false;
+                steps.spatialBlend = 0f;   // your own feet: in both ears
+                steps.volume = 0f;
+                stepTone = g.AddComponent<AudioLowPassFilter>();
+                stepTone.cutoffFrequency = 22000f;
+            }
+            bool moving = speed > 0.3f;
+            float run = Mathf.Clamp01((speed - MaxSpeed) / (RunSpeed - MaxSpeed));
+            stepIn = Mathf.MoveTowards(stepIn, Indoors ? 1f : 0f, dt * 4f);
+            float loud = Mathf.Lerp(0.75f, 0.9f, run) * Mathf.Lerp(1f, 0.45f, stepIn);
+            // a tenth of a second to fade in or out, so starting and stopping never clicks
+            stepVol = Mathf.MoveTowards(stepVol, moving ? loud : 0f, dt / 0.1f);
+            if (stepVol > 0.001f && !steps.isPlaying)
+            {
+                steps.time = Random.Range(0f, steps.clip.length * 0.9f);   // not the same first step every time
+                steps.Play();
+            }
+            else if (stepVol <= 0.001f && steps.isPlaying) steps.Stop();
+            steps.volume = stepVol;
+            // the recording is a walking pace: a slow walk slows it a touch, running quickens it
+            steps.pitch = moving ? Mathf.Lerp(Mathf.Lerp(0.85f, 1f, Mathf.Clamp01(speed / MaxSpeed)), 1.45f, run) : steps.pitch;
+            stepTone.cutoffFrequency = Mathf.Lerp(22000f, 1400f, stepIn);
+        }
+
+        /// <summary>Test tools: how the footsteps are playing right now.</summary>
+        public string FootstepsState => steps == null ? "no clip" : $"playing={steps.isPlaying} vol={steps.volume:0.00} pitch={steps.pitch:0.00} cutoff={stepTone.cutoffFrequency:0}";
 
         // ---------------------------------------------------------------- the controls
 
@@ -1150,6 +1095,7 @@ namespace Summit
             if (k.dKey.isPressed || k.rightArrowKey.isPressed) v.x += 1f;
             if (k.wKey.isPressed || k.upArrowKey.isPressed) v.y += 1f;
             if (k.sKey.isPressed || k.downArrowKey.isPressed) v.y -= 1f;
+            v = Vector2.ClampMagnitude(v, 1f) * (k.shiftKey.isPressed ? 1f : 0.85f);   // shift to run
 #else
             v = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
 #endif
@@ -1171,32 +1117,54 @@ namespace Summit
             lookBlend = Mathf.Lerp(lookBlend, OnLookout && speed < 0.5f ? 1f : 0f, k(2f));
             showBlend = Mathf.Lerp(showBlend, Showcase ? 1f : 0f, k(4f));
             var f = new Vector3(Mathf.Sin(camYaw), 0f, Mathf.Cos(camYaw));
-            Vector3 target = pos + Vector3.up * 1.25f;
-            Vector3 want = target - f * 6.4f + Vector3.up * 2.7f;
-            Vector3 look = target + f * 4f + Vector3.up * 0.15f;
-            // pull in if the lodge or a station is in the way
-            Vector3 dir = want - target;
-            foreach (var h in Physics.RaycastAll(target, dir.normalized, dir.magnitude, ~0, QueryTriggerInteraction.Collide))
-                if (h.collider.transform.IsChildOf(root) && h.distance < dir.magnitude)
-                    want = target + dir.normalized * Mathf.Max(1.2f, h.distance - 0.3f);
-            want.y = Mathf.Max(want.y, Slope.DrawnHeight(want.x, want.z) + 0.8f);
+            // indoors the camera comes in close and low, under the ceilings
+            inBlend = Mathf.Lerp(inBlend, Indoors ? 1f : 0f, k(3f));
+            Vector3 target = pos + Vector3.up * Mathf.Lerp(1.25f, 1.35f, inBlend);
+            Vector3 want = target - f * Mathf.Lerp(6.4f, 4.6f, inBlend) + Vector3.up * Mathf.Lerp(2.7f, 1.3f, inBlend);
+            Vector3 look = target + f * Mathf.Lerp(4f, 3f, inBlend) + Vector3.up * Mathf.Lerp(0.15f, 0.1f, inBlend);
             // at the lookout, stand back and take in the whole mountain below
             Vector3 lookPos = pos + new Vector3(-0.8f, 4.2f, -5.6f), lookAt = pos + new Vector3(0f, -55f, 190f);
             want = Vector3.Lerp(want, lookPos, lookBlend); look = Vector3.Lerp(look, lookAt, lookBlend);
             // picking an outfit: face the rider, close, with room for the menu below
             var front = new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw));
-            Vector3 showPos = pos + front * 6f + Vector3.up * 1.6f, showAt = pos - Vector3.up * 0.1f;
+            Vector3 showPos = pos + front * Mathf.Lerp(6f, 5f, inBlend) + Vector3.up * 1.4f, showAt = pos - Vector3.up * Mathf.Lerp(0.1f, 0.3f, inBlend);
             want = Vector3.Lerp(want, showPos, showBlend); look = Vector3.Lerp(look, showAt, showBlend);
+            // never through a wall, a floor or the roof: come in in front of it
+            Vector3 dir = want - target;
+            float reach = dir.magnitude;
+            foreach (var h in Physics.RaycastAll(target, dir / Mathf.Max(reach, 1e-4f), reach, ~0, QueryTriggerInteraction.Collide))
+                if (h.collider.name.StartsWith("COL_") && h.distance - 0.3f < reach)
+                    reach = Mathf.Max(0.6f, h.distance - 0.3f);
+            // pulled in close: rise a little and look down, so you don't fill the screen
+            float pulled = Mathf.Clamp01((dir.magnitude - reach) / Mathf.Max(1f, dir.magnitude));
+            want = target + dir.normalized * reach + Vector3.up * (0.9f * pulled * (1f - showBlend));
+            if (!Indoors) want.y = Mathf.Max(want.y, Slope.DrawnHeight(want.x, want.z) + 0.8f);
             Vector3 cp = snap ? want : Vector3.Lerp(cam.transform.position, want, k(6f));
             cam.transform.SetPositionAndRotation(cp, Quaternion.LookRotation(look - cp, Vector3.up));
-            cam.fieldOfView = Mathf.Lerp(Mathf.Lerp(62f, 54f, lookBlend), 42f, showBlend);
+            cam.fieldOfView = Mathf.Lerp(Mathf.Lerp(Mathf.Lerp(62f, 70f, inBlend), 54f, lookBlend), Mathf.Lerp(42f, 50f, inBlend), showBlend);
             snap = false;
         }
 
         /// <summary>Test tools: stand here, facing this way.</summary>
-        public void Teleport(float dx, float z, float yawDeg, bool snapCam = true)
+        public void Teleport(float dx, float z, float yawDeg, bool snapCam = true) => TeleportTo(Ground(dx, z), yawDeg, snapCam);
+
+        /// <summary>Test tools: what's pushing on the walker here (blocks within reach, and their heights).</summary>
+        public string DebugHere()
         {
-            pos = Ground(dx, z); yaw = yawDeg * Mathf.Deg2Rad; camYaw = yaw; speed = 0f;
+            var sb = new System.Text.StringBuilder();
+            var p2 = new Vector2(pos.x, pos.z);
+            foreach (var b in boxes)
+            {
+                if (b.floor) continue;
+                if ((PushOut(b, p2, 0.4f) - p2).sqrMagnitude > 1e-6f) sb.Append($"[block c={b.c} h={b.h} y={b.lo:0.0}..{b.hi:0.0}] ");
+            }
+            return $"feet={pos.y:0.00} " + sb;
+        }
+
+        /// <summary>Test tools: stand at a world point (on whatever floor is there), facing this way.</summary>
+        public void TeleportTo(Vector3 at, float yawDeg, bool snapCam = true)
+        {
+            pos = at; yaw = yawDeg * Mathf.Deg2Rad; camYaw = yaw; speed = 0f;
             snap = snapCam;
             Place();
             Walk(Vector2.zero, 0f);

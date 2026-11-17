@@ -16,6 +16,7 @@ namespace Summit
     {
         public float speed, carve, skid, rough, avalanche, muffle, pan;
         public bool onSnow, air, boost, riding;
+        public bool camp, ended;   // walking round the summit camp; on an end screen (for the music)
         public int grind;   // 0 none, 1 rail, 2 box
     }
 
@@ -52,6 +53,7 @@ namespace Summit
         // own source so it can be faded out once the jump is over
         AudioClip nooo, ledge;
         AudioSource cue;
+        Music music;   // the soundtrack (Music.cs), on its own object so it has its own muffling
 
         // the bear, followed through the world
         Transform bearSound;
@@ -96,6 +98,9 @@ namespace Summit
             voice = gameObject.AddComponent<AudioSource>(); voice.playOnAwake = false; voice.spatialBlend = 0f;
             nooo = C("user_crevasse_nooo"); ledge = C("user_ledge_suspense");
             cue = gameObject.AddComponent<AudioSource>(); cue.playOnAwake = false; cue.spatialBlend = 0f;
+            music = new GameObject("Music").AddComponent<Music>();
+            music.transform.SetParent(transform, false);
+            music.Build();
         }
 
         Layer Loop(string name)
@@ -172,6 +177,7 @@ namespace Summit
 
             muffle = Mathf.Lerp(muffle, r.muffle, 1f - Mathf.Exp(-dt * 5f));
             muffler.cutoffFrequency = Mathf.Lerp(22000f, 700f, Mathf.Sqrt(muffle));
+            music.Set(r, dt);
 
             UpdateWorld(dt);
         }
@@ -222,6 +228,7 @@ namespace Summit
 
         public void Play(Sfx kind, float amount = 1f)
         {
+            if (music != null) music.OnSfx(kind, amount);
             AudioClip c = null; float vol = 0.7f, pitch = Random.Range(0.96f, 1.04f);
             switch (kind)
             {

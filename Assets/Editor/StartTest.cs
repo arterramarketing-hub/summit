@@ -18,7 +18,7 @@ public static class StartTest
         Physics.simulationMode = SimulationMode.Script;
         for (int run = 0; run < 3; run++)
         {
-            if (run > 0) typeof(SummitGame).GetMethod("ToReady", NP).Invoke(game, null);
+            if (run > 0) typeof(SummitGame).GetMethod("ToReady", NP, null, System.Type.EmptyTypes, null).Invoke(game, null);
             var p0 = rider.transform.position;
             Debug.Log($"START run{run} ready at {p0} ground={Slope.DrawnHeight(p0.x, p0.z):0.00} kinematic={rider.Body.isKinematic} gravity={rider.Body.useGravity} seed={Slope.Seed}");
             typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);

@@ -8,12 +8,12 @@ namespace Summit
     ///  - glints: fresh snow catching the sun, tiny star points twinkling on the surface ahead of you
     ///  - tree shake: when you hit a tree, the snow on its branches comes down in clumps and powder
     ///  - puffs: snow kicked up where the thrown body hits and slides
-    ///  - crack: a burst of white stars and snow where a bone gives way
+    ///  - thud: a few soft puffs where the thrown body lands hard (the hole itself is in SnowLayer)
     /// </summary>
     public class SnowFX : MonoBehaviour
     {
         public Camera cam;
-        ParticleSystem glints, clumps, mist, puffs, stars, chunks;
+        ParticleSystem glints, clumps, mist, puffs, chunks;
         Transform groundPlane;
         float glintCarry;
         /// <summary>Glints per second relative to full sun, and their colour (DayNight: fewer and bluer by moonlight).</summary>
@@ -81,13 +81,6 @@ namespace Summit
             km.gravityModifier = 1.3f;
             var ksz = chunks.sizeOverLifetime; ksz.enabled = true; ksz.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 1f, 1f, 0.4f));
             Fade(chunks, 1f);
-
-            stars = System("CrackStars", add, 200);
-            var sm = stars.main;
-            sm.startLifetime = new ParticleSystem.MinMaxCurve(0.25f, 0.5f);
-            sm.startSize = new ParticleSystem.MinMaxCurve(0.12f, 0.3f);
-            sm.startColor = new ParticleSystem.MinMaxGradient(new Color(1f, 1f, 1f, 1f), new Color(1f, 0.92f, 0.6f, 1f));
-            var ssz = stars.sizeOverLifetime; ssz.enabled = true; ssz.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 1f, 1f, 0f));
         }
 
         ParticleSystem System(string name, Material m, int max)
@@ -295,23 +288,32 @@ namespace Summit
             }
         }
 
-        /// <summary>A bone giving way: a flash of white stars and a burst of snow.</summary>
-        public void Crack(Vector3 at)
+        /// <summary>A bone giving way: a little burst of snow (the hit itself is shown by the hole it leaves: SnowLayer).</summary>
+        public void Crack(Vector3 at) { Thud(at, 9f, Vector3.zero); }
+
+        /// <summary>
+        /// A body landing hard in the snow: a few soft puffs of powder, low and quick, drifting on with the body.
+        /// No lumps flying about: the snow it moved is in the hole and its rims (SnowLayer). force is the impact speed.
+        /// </summary>
+        public void Thud(Vector3 at, float force, Vector3 carry)
         {
+            float k = Mathf.Clamp01((force - 4f) / 10f);
             var ep = new ParticleSystem.EmitParams();
-            for (int i = 0; i < 26; i++)
+            Vector3 n = Slope.Normal(at.x, at.z);
+            int count = Mathf.RoundToInt(Mathf.Lerp(2f, 5f, k));
+            for (int i = 0; i < count; i++)
             {
-                ep.position = at;
-                ep.velocity = Random.onUnitSphere * Random.Range(2f, 5f) + Vector3.up;
-                stars.Emit(ep, 1);
+                ep.position = at + Random.insideUnitSphere * 0.2f + n * 0.08f;
+                ep.velocity = (Random.insideUnitSphere * 0.7f + n) * Random.Range(0.6f, 1.6f) * (0.7f + 0.6f * k) + carry * 0.2f;
+                ep.startSize = Random.Range(0.25f, 0.5f) * (0.8f + 0.4f * k);
+                puffs.Emit(ep, 1);
             }
-            Puff(at, 10f);
         }
 
         public void Clear()
         {
             if (clumps == null) return;
-            clumps.Clear(); mist.Clear(); puffs.Clear(); stars.Clear(); chunks.Clear();
+            clumps.Clear(); mist.Clear(); puffs.Clear(); chunks.Clear();
         }
     }
 }

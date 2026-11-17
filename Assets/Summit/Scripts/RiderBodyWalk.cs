@@ -12,6 +12,9 @@ namespace Summit
         public bool Walking { get; private set; }
         /// <summary>0 standing still .. 1 full walking pace (the camp sets it every frame).</summary>
         public float WalkPace;
+        /// <summary>0 walking .. 1 running flat out (the camp sets it every frame).</summary>
+        public float RunBlend;
+        float runAmp;
         float walkPhase, walkAmp;
         Vector3 boardHomePos; Quaternion boardHomeRot; bool boardHomeSet, tubeBeforeWalk;
 
@@ -34,7 +37,7 @@ namespace Summit
             {
                 boardRoot.localPosition = boardHomePos;
                 boardRoot.localRotation = boardHomeRot;
-                walkPhase = 0f; walkAmp = 0f; WalkPace = 0f;
+                walkPhase = 0f; walkAmp = 0f; WalkPace = 0f; RunBlend = 0f; runAmp = 0f;
                 if (tubeBeforeWalk) SetTube(true);
             }
         }
@@ -43,29 +46,32 @@ namespace Summit
         void WalkFrame(float dt)
         {
             walkAmp = Mathf.MoveTowards(walkAmp, WalkPace, dt * 4f);
-            walkPhase += dt * Mathf.PI * 2f * Mathf.Lerp(0.55f, 1.0f, walkAmp) * (walkAmp > 0.02f ? 1f : 0f);
+            runAmp = Mathf.MoveTowards(runAmp, RunBlend, dt * 3f);   // eases into and out of the run
+            // strides come quicker as you speed up: about one a second walking, nearly three running
+            walkPhase += dt * Mathf.PI * 2f * Mathf.Lerp(Mathf.Lerp(0.55f, 1.0f, walkAmp), 1.45f, runAmp) * (walkAmp > 0.02f ? 1f : 0f);
             roll.localRotation = Quaternion.identity;
             upper.localRotation = Quaternion.identity;
             // the humanoid's feet are planted at a board's height: stand them on the snow instead
             // (the rig plants its own feet, see RiderRig.PoseWalk)
-            if (poser != null) pivot.position += pivot.up * (Mathf.Abs(Mathf.Sin(walkPhase)) * 0.05f * walkAmp - BoardTop - 0.02f);
+            if (poser != null) pivot.position += pivot.up * (Mathf.Abs(Mathf.Sin(walkPhase)) * Mathf.Lerp(0.05f, 0.09f, runAmp) * walkAmp - BoardTop - 0.02f);
         }
 
         /// <summary>Muscle targets for a walk cycle (over the snowboard pose RiderBody built this frame).</summary>
         void WalkMuscles(float t)
         {
-            float a = walkAmp, s = Mathf.Sin(walkPhase), c = Mathf.Cos(walkPhase);
-            // legs swing opposite each other; the leg coming forward bends at the knee
-            W(mHipL, 0.08f + 0.7f * s * a); W(mHipR, 0.08f - 0.7f * s * a);
-            W(mKneeL, 0.95f - a * (0.15f + 1.2f * Mathf.Max(0f, c)));
-            W(mKneeR, 0.95f - a * (0.15f + 1.2f * Mathf.Max(0f, -c)));
+            float a = walkAmp, r = runAmp, s = Mathf.Sin(walkPhase), c = Mathf.Cos(walkPhase);
+            // legs swing opposite each other; the leg coming forward bends at the knee (much more running)
+            float sw = Mathf.Lerp(0.7f, 1f, r);
+            W(mHipL, 0.08f + 0.2f * r + sw * s * a); W(mHipR, 0.08f + 0.2f * r - sw * s * a);
+            W(mKneeL, 0.95f - a * (0.15f + Mathf.Lerp(1.2f, 1.8f, r) * Mathf.Max(0f, c)));
+            W(mKneeR, 0.95f - a * (0.15f + Mathf.Lerp(1.2f, 1.8f, r) * Mathf.Max(0f, -c)));
             W(mSpreadL, 0.02f); W(mSpreadR, 0.02f);
-            W(mSpine, 0.06f + 0.08f * a); W(mChest, 0.02f);
+            W(mSpine, 0.06f + 0.08f * a + 0.25f * r); W(mChest, 0.02f + 0.1f * r);
             W(mTwist, -0.15f * s * a);
             // arms down at the sides, swinging against the legs
             W(mArmL, -0.8f); W(mArmR, -0.8f);
-            W(mArmFL, -0.55f * s * a + 0.05f); W(mArmFR, 0.55f * s * a + 0.05f);
-            W(mElbowL, 0.7f); W(mElbowR, 0.7f);
+            W(mArmFL, -Mathf.Lerp(0.55f, 0.9f, r) * s * a + 0.05f); W(mArmFR, 0.55f * s * a * (1f - r) + 0.05f);
+            W(mElbowL, Mathf.Lerp(0.7f, -0.3f, r)); W(mElbowR, 0.7f);   // running: the free arm bent and pumping
             // standing about: look round the camp
             W(mNeck, 0f);
             W(mHead, (1f - a) * 0.25f * Mathf.Sin(t * 0.45f));

@@ -238,7 +238,9 @@ namespace Summit
         public bool OnPlay(Vector2 p) => Inside(playBtn, p);
         public bool OnRestart(Vector2 p) => Inside(restartBtn, p);
 
-        // ---- the pause menu: resume, camera distance, steering mode, restart
+        // ---- the pause menu: RESUME always, then four tabs. VIEW: camera distance, angle, lens, lens type.
+        //      LOOK: filter, filter strength, halation, time of day. GAME: steering, blood, trees, restart run.
+        //      SOUND: music volume. A hidden tab's buttons are inactive, so they can't be hit.
 
         GameObject pausePanel;
         RectTransform resumeBtn, camMinus, camPlus, angMinus, angPlus, lensMinus, lensPlus, steerBtn, againBtn, treesBtn;
@@ -246,6 +248,10 @@ namespace Summit
         RectTransform lensTypeMinus, lensTypePlus, filterMinus, filterPlus, strengthMinus, strengthPlus;
         Text lensTypeLabel, filterLabel, strengthLabel;
         RectTransform timeMinus, timePlus; Text timeLabel;
+        RectTransform halationMinus, halationPlus, musicMinus, musicPlus; Text halationLabel, musicLabel;
+        public static readonly string[] TabName = { "VIEW", "LOOK", "GAME", "SOUND" };
+        RectTransform[] tabBtn; GameObject[] tabPage; int tab;
+        static readonly Color TabOn = new Color(0.10f, 0.45f, 0.90f, 0.95f), TabOff = new Color(1f, 1f, 1f, 0.16f);
 
         RectTransform Button(Transform parent, string label, Vector2 pos, Vector2 size, Color c, out Text text, int fontSize = 52)
         {
@@ -264,36 +270,60 @@ namespace Summit
             var panel = new GameObject("PauseSafe", typeof(RectTransform)).GetComponent<RectTransform>();
             panel.SetParent(pausePanel.transform, false);
             panel.anchorMin = Vector2.zero; panel.anchorMax = Vector2.one; panel.offsetMin = panel.offsetMax = Vector2.zero;
-            var title = NewText("PausedTitle", panel, new Vector2(0.5f, 0.5f), new Vector2(0f, 750f), 110, TextAnchor.MiddleCenter);
+            var title = NewText("PausedTitle", panel, new Vector2(0.5f, 0.5f), new Vector2(0f, 700f), 90, TextAnchor.MiddleCenter);
             title.text = "PAUSED";
-            Text Row(string label, float y, out RectTransform minus, out RectTransform plus)
-            {
-                var t = NewText(label + "Title", panel, new Vector2(0.5f, 0.5f), new Vector2(0f, y + 64f), 36, TextAnchor.MiddleCenter);
-                t.text = label; t.color = new Color(1f, 1f, 1f, 0.75f);
-                var g = new Color(1f, 1f, 1f, 0.16f);
-                minus = Button(panel, "-", new Vector2(-250f, y), new Vector2(130f, 96f), g, out _, 76);
-                plus = Button(panel, "+", new Vector2(250f, y), new Vector2(130f, 96f), g, out _, 76);
-                return NewText(label + "Value", panel, new Vector2(0.5f, 0.5f), new Vector2(0f, y), 52, TextAnchor.MiddleCenter);
-            }
             Color blue = new Color(0.10f, 0.45f, 0.90f, 0.95f), grey = new Color(1f, 1f, 1f, 0.16f);
-            // every setting on one page for now, rows 150 apart, toggles stacked thin: about +775..-800 of the 1920-high
-            // layout, inside a portrait iPhone's safe area (about +-940). Due to be split into tabs.
-            resumeBtn = Button(panel, "RESUME", new Vector2(0f, 720f), new Vector2(560f, 110f), blue, out _, 60);
-            camLabel = Row("CAMERA DISTANCE", 560f, out camMinus, out camPlus);
-            angLabel = Row("CAMERA ANGLE", 410f, out angMinus, out angPlus);
-            lensLabel = Row("LENS", 260f, out lensMinus, out lensPlus);
-            lensTypeLabel = Row("LENS TYPE", 110f, out lensTypeMinus, out lensTypePlus);
-            filterLabel = Row("FILTER", -40f, out filterMinus, out filterPlus);
-            strengthLabel = Row("FILTER STRENGTH", -190f, out strengthMinus, out strengthPlus);
-            timeLabel = Row("TIME", -340f, out timeMinus, out timePlus);   // the time of day: CYCLE, or one phase held
-            steerBtn = Button(panel, "STEERING", new Vector2(0f, -455f), new Vector2(620f, 76f), grey, out steerLabel, 34);
-            bloodBtn = Button(panel, "BLOOD", new Vector2(0f, -545f), new Vector2(620f, 76f), grey, out bloodLabel, 34);
-            treesBtn = Button(panel, "TREES", new Vector2(0f, -635f), new Vector2(620f, 76f), grey, out treesLabel, 34);
-            againBtn = Button(panel, "RESTART RUN", new Vector2(0f, -750f), new Vector2(560f, 100f), new Color(0.8f, 0.2f, 0.15f, 0.9f), out _, 46);
+            // the layout is 1920 high; a portrait iPhone's safe area is about +-940 of it: everything sits in +750..-500
+            resumeBtn = Button(panel, "RESUME", new Vector2(0f, 560f), new Vector2(560f, 120f), blue, out _, 60);
+            tabBtn = new RectTransform[TabName.Length]; tabPage = new GameObject[TabName.Length];
+            for (int k = 0; k < TabName.Length; k++)
+            {
+                tabBtn[k] = Button(panel, TabName[k], new Vector2(-342f + 228f * k, 380f), new Vector2(214f, 110f), grey, out _, 42);
+                var page = new GameObject(TabName[k] + "Tab", typeof(RectTransform)).GetComponent<RectTransform>();
+                page.SetParent(panel, false);
+                page.anchorMin = Vector2.zero; page.anchorMax = Vector2.one; page.offsetMin = page.offsetMax = Vector2.zero;
+                tabPage[k] = page.gameObject;
+            }
+            // a setting with - and + either side of its value; rows 200 apart, big buttons
+            Text Row(int page, string label, float y, out RectTransform minus, out RectTransform plus)
+            {
+                var parent = tabPage[page].transform;
+                var t = NewText(label + "Title", parent, new Vector2(0.5f, 0.5f), new Vector2(0f, y + 80f), 38, TextAnchor.MiddleCenter);
+                t.text = label; t.color = new Color(1f, 1f, 1f, 0.75f);
+                minus = Button(parent, "-", new Vector2(-270f, y), new Vector2(150f, 120f), grey, out _, 80);
+                plus = Button(parent, "+", new Vector2(270f, y), new Vector2(150f, 120f), grey, out _, 80);
+                return NewText(label + "Value", parent, new Vector2(0.5f, 0.5f), new Vector2(0f, y), 54, TextAnchor.MiddleCenter);
+            }
+            // VIEW
+            camLabel = Row(0, "CAMERA DISTANCE", 180f, out camMinus, out camPlus);
+            angLabel = Row(0, "CAMERA ANGLE", -20f, out angMinus, out angPlus);
+            lensLabel = Row(0, "LENS", -220f, out lensMinus, out lensPlus);
+            lensTypeLabel = Row(0, "LENS TYPE", -420f, out lensTypeMinus, out lensTypePlus);
+            // LOOK
+            filterLabel = Row(1, "FILTER", 180f, out filterMinus, out filterPlus);
+            strengthLabel = Row(1, "FILTER STRENGTH", -20f, out strengthMinus, out strengthPlus);
+            halationLabel = Row(1, "HALATION", -220f, out halationMinus, out halationPlus);
+            timeLabel = Row(1, "TIME OF DAY", -420f, out timeMinus, out timePlus);   // CYCLE, or one phase held
+            // GAME
+            var game = tabPage[2].transform;
+            steerBtn = Button(game, "STEERING", new Vector2(0f, 200f), new Vector2(700f, 120f), grey, out steerLabel, 38);
+            bloodBtn = Button(game, "BLOOD", new Vector2(0f, 50f), new Vector2(700f, 120f), grey, out bloodLabel, 38);
+            treesBtn = Button(game, "TREES", new Vector2(0f, -100f), new Vector2(700f, 120f), grey, out treesLabel, 38);
+            againBtn = Button(game, "RESTART RUN", new Vector2(0f, -400f), new Vector2(560f, 120f), new Color(0.8f, 0.2f, 0.15f, 0.9f), out _, 48);
+            // SOUND
+            musicLabel = Row(3, "MUSIC", 180f, out musicMinus, out musicPlus);
+            ShowTab(0);
             pausePanel.SetActive(false);
         }
 
-        public void ShowPause(bool on) { pausePanel.SetActive(on); }
+        public void ShowPause(bool on)
+        {
+            pausePanel.SetActive(on);
+            if (!on) return;
+            pausePanel.transform.SetAsLastSibling();
+            // a passing message ("Close call +175") would sit in the middle of the menu: let it go
+            if (flashT > 0f) { flashT = 0f; big.text = ""; small.text = ""; }
+        }
         public bool Paused => pausePanel.activeSelf;
         public void SetCamera(string name) { camLabel.text = name; }
         public void SetPauseSteer(bool tilt) { steerLabel.text = tilt ? "STEERING: TILT  (tap to change)" : "STEERING: DRAG  (tap to change)"; }
@@ -323,6 +353,29 @@ namespace Summit
         public bool OnPauseTrees(Vector2 p) => Inside(treesBtn, p);
         public void SetPauseTrees(bool realistic) { treesLabel.text = realistic ? "TREES: REALISTIC  (tap to change)" : "TREES: ORIGINAL  (tap to change)"; }
         public void SetTime(string value) { timeLabel.text = value; }
+        public void SetHalation(string value) { halationLabel.text = value; }
+        public bool OnHalationMinus(Vector2 p) => Inside(halationMinus, p);
+        public bool OnHalationPlus(Vector2 p) => Inside(halationPlus, p);
+        public void SetMusic(string value) { musicLabel.text = value; }
+        public bool OnMusicMinus(Vector2 p) => Inside(musicMinus, p);
+        public bool OnMusicPlus(Vector2 p) => Inside(musicPlus, p);
+        public int PauseTab => tab;
+        /// <summary>A tap on a tab: shows that tab and returns true.</summary>
+        public bool OnPauseTab(Vector2 p)
+        {
+            for (int k = 0; k < tabBtn.Length; k++)
+                if (Inside(tabBtn[k], p)) { ShowTab(k); return true; }
+            return false;
+        }
+        public void ShowTab(int k)
+        {
+            tab = Mathf.Clamp(k, 0, TabName.Length - 1);
+            for (int i = 0; i < tabPage.Length; i++)
+            {
+                tabPage[i].SetActive(i == tab);
+                tabBtn[i].GetComponent<Image>().color = i == tab ? TabOn : TabOff;
+            }
+        }
         public bool OnTimeMinus(Vector2 p) => Inside(timeMinus, p);
         public bool OnTimePlus(Vector2 p) => Inside(timePlus, p);
 

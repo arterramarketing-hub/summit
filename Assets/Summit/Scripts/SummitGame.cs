@@ -68,6 +68,7 @@ namespace Summit
         UnityEngine.Rendering.Universal.LensDistortion lens;
         // colour filter (LookGrade) and its strength in tenths, and the lens type (LensFX), from the pause menu
         int filterLevel, filterStrength = 10, lensMode;
+        int halation;   // the film glow round highlights (LensFX): OFF, SUBTLE, STRONG
         LensFX lensFx;
         DayNight dayNight;   // the time of day's light (TimeOfDay, DayNight.cs), and the pause menu's TIME row
         UnityEngine.Rendering.VolumeProfile post;
@@ -85,7 +86,16 @@ namespace Summit
         {
             atmo.BaseVignette = LookGrade.Apply(post, filterLevel, filterStrength / 10f);
             hud.SetFilter(LookGrade.Names[filterLevel]); hud.SetFilterStrength(filterStrength * 10 + "%");
-            PlayerPrefs.SetInt("summit_filter", filterLevel); PlayerPrefs.SetInt("summit_filterstrength", filterStrength); PlayerPrefs.Save();
+            lensFx.SetHalation(halation); hud.SetHalation(LensFX.HalationName[halation]);
+            PlayerPrefs.SetInt("summit_filter", filterLevel); PlayerPrefs.SetInt("summit_filterstrength", filterStrength); PlayerPrefs.SetInt("summit_halation", halation); PlayerPrefs.Save();
+        }
+
+        // the SOUND tab's music volume, in steps of 10%
+        void StepMusic(int dir)
+        {
+            int v = Mathf.Clamp(Mathf.RoundToInt(AudioPrefs.MusicVolume * 10f) + dir, 0, 10);
+            AudioPrefs.MusicVolume = v / 10f;
+            hud.SetMusic(v * 10 + "%");
         }
 
         void SetPaused(bool on)
@@ -100,6 +110,7 @@ namespace Summit
             hud.SetPauseTrees(props.IsRealistic);
             if (blood != null) hud.SetBlood(blood.On);
             hud.SetTime(TimeOfDay.LockLabel);
+            hud.SetMusic(Mathf.RoundToInt(AudioPrefs.MusicVolume * 10f) * 10 + "%");
             input.SwallowCurrentPress();
         }
 
@@ -193,6 +204,7 @@ namespace Summit
             terrain = tg.AddComponent<SlopeStreamer>();
             terrain.snowMaterial = snow;
             terrain.target = rg.transform;
+            SnowLayer.Create(snow);   // the snow the thrown body ploughs into (see RiderBody.PhysicsStep)
 
             var pg = new GameObject("Trees");
             props = pg.AddComponent<Forest>();
@@ -244,6 +256,7 @@ namespace Summit
             lensMode = Mathf.Clamp(PlayerPrefs.GetInt("summit_lenstype", 0), 0, LensFX.ModeName.Length - 1);
             filterLevel = Mathf.Clamp(PlayerPrefs.GetInt("summit_filter", 0), 0, LookGrade.Names.Length - 1);
             filterStrength = Mathf.Clamp(PlayerPrefs.GetInt("summit_filterstrength", 10), 0, 10);
+            halation = Mathf.Clamp(PlayerPrefs.GetInt("summit_halation", 0), 0, LensFX.HalationName.Length - 1);
 
             fx = new GameObject("SnowFX").AddComponent<SnowFX>();
             fx.Build(cam, spray);
@@ -561,6 +574,9 @@ namespace Summit
                         {
                             var pp = RiderInput.PointerPosition();
                             if (hud.OnResume(pp)) { audioFx.Play(Sfx.Click); SetPaused(false); }
+                            else if (hud.OnPauseTab(pp)) audioFx.Play(Sfx.Click);
+                            else if (hud.OnHalationMinus(pp) || hud.OnHalationPlus(pp)) { audioFx.Play(Sfx.Click); halation = Mathf.Clamp(halation + (hud.OnHalationPlus(pp) ? 1 : -1), 0, LensFX.HalationName.Length - 1); ApplyLook(); }
+                            else if (hud.OnMusicMinus(pp) || hud.OnMusicPlus(pp)) { audioFx.Play(Sfx.Click); StepMusic(hud.OnMusicPlus(pp) ? 1 : -1); }
                             else if (hud.OnCamMinus(pp)) { audioFx.Play(Sfx.Click); SetCamLevel(camLevel - 1); }
                             else if (hud.OnCamPlus(pp)) { audioFx.Play(Sfx.Click); SetCamLevel(camLevel + 1); }
                             else if (hud.OnAngMinus(pp)) { audioFx.Play(Sfx.Click); angleLevel = Mathf.Max(0, angleLevel - 1); ApplyCamera(); }
@@ -682,6 +698,7 @@ namespace Summit
                 avalanche = riding ? slide.Closeness(rider) : 0f, pan = rider.Steer,
                 muffle = state == State.Buried ? (endBuried ? 1f : 0.45f) : rider.Crashed ? 0.3f : 0f,
                 onSnow = onSnow && !rider.Grinding, air = riding && rider.Airborne, riding = riding,
+                camp = state == State.Hub, ended = state == State.Buried,
                 boost = riding && rider.BoostTime > 0f,
                 grind = riding && rider.Grinding ? (rider.GrindFeature.kind == Course.Kind.Rail ? 1 : 2) : 0,
             });

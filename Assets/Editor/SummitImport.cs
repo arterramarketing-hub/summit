@@ -385,6 +385,18 @@ public class SummitImport : AssetPostprocessor
         var a = (AudioImporter)assetImporter;
         var s = a.defaultSampleSettings;
         string file = System.IO.Path.GetFileNameWithoutExtension(assetPath);
+        if (file.StartsWith("music_"))
+        {
+            // the soundtrack (Tools/MakeMusic.swift): kept in stereo, and streamed from disk as it plays
+            // rather than decoded into memory (two minutes of stereo would take ~20 MB of RAM each)
+            s.loadType = AudioClipLoadType.Streaming;
+            s.compressionFormat = AudioCompressionFormat.Vorbis;
+            s.quality = 0.5f;
+            a.defaultSampleSettings = s;
+            a.forceToMono = false;
+            a.loadInBackground = true;
+            return;
+        }
         bool loop = System.Array.IndexOf(LoopClips, file) >= 0;
         s.loadType = AudioClipLoadType.DecompressOnLoad;
         s.compressionFormat = loop ? AudioCompressionFormat.Vorbis : AudioCompressionFormat.ADPCM;

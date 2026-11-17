@@ -21,7 +21,7 @@ public static class HubShot
 
     public static void Run()
     {
-        SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
+        SummitImport.EnsureSky(); SummitImport.EnsureBackdrop(); CampAssets.Ensure();
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
         // a camp with something in it: points to spend, the decorations bought, some missions under way
         Progress.ResetAll();
@@ -56,69 +56,107 @@ public static class HubShot
 
         // the first frames show placeholder materials, and the colour-grading LUT isn't built yet (warm lights come out red)
         for (int i = 0; i < 3; i++) Shoot("HubShot_warmup.png");
-        // 0: where you arrive, by the lodge
+        // 0: where you arrive, looking up at the chalet (daylight: the day/night cycle owns the time of day)
         Frames(40);
         // the first real frame still comes out with the warm lights red (batchmode only; the next is right)
         Shoot("HubShot0_arrive.png"); Frames(2);
         Shoot("HubShot0_arrive.png");
-        // 0b: up the lodge's stairs onto the deck
-        camp.Teleport(-9.7f, -108.6f, 195f);
-        Walk(new Vector2(0f, 1f), 1.1f);
-        Shoot("HubShot0b_stairs.png");
-        Walk(new Vector2(0f, 1f), 0.5f); Walk(new Vector2(-1f, 0f), 0.8f); Frames(20);
-        Shoot("HubShot0c_deck.png");
-        // 1: walking across camp (mid stride)
-        camp.Teleport(-4f, -110f, 70f);
-        Walk(new Vector2(0f, 1f), 0.9f);
-        Shoot("HubShot1_walk.png");
-        Walk(new Vector2(0f, 1f), 0.27f);
-        Shoot("HubShot1b_walk.png");
-        // 2: looking back up at the camp from the gate
-        camp.Teleport(1.5f, -82f, 185f);
+        float cy = camp.ChaletYaw;
+        Vector3 C(float x, float y, float z) => camp.ChaletPoint(x, y, z);
+        float Toward(Vector3 from, Vector3 to) { var d = to - from; return Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg; }
+        // 0b: the chalet from across the camp
+        var from = camp.ChaletPoint(9f, 0f, 22f);
+        camp.TeleportTo(from, Toward(from, C(0f, 0f, 0f)));
         Frames(40);
-        Shoot("HubShot2_camp.png");
-        // 3, 4: the mission board and its panel
-        camp.Teleport(-7.5f, -99.5f, -95f);
-        Walk(new Vector2(0f, 0.6f), 0.35f); Frames(30);
+        Shoot("HubShot0b_chalet.png");
+        // 1, 2: up the terrace steps and in through the French doors
+        camp.TeleportTo(C(0f, 0f, 13f), cy + 180f);
+        Walk(new Vector2(0f, 0.8f), 1.9f);
+        Shoot("HubShot1_walkin.png");
+        Debug.Log("HUBSHOT steps walking outside: " + camp.FootstepsState);
+        Walk(new Vector2(0f, 0.8f), 1.7f); Frames(20);
+        Shoot("HubShot2_inside.png");
+        Debug.Log("HUBSHOT steps inside, stopped: " + camp.FootstepsState);
+        // 3: the great room: sunken lounge, the hanging fireplace, the pendants
+        camp.TeleportTo(C(-3f, 0f, 4.8f), cy + 118f);
+        Frames(60);
+        Shoot("HubShot3_greatroom.png");
+        // 4: from the lounge back to the kitchen island under the mezzanine
+        camp.TeleportTo(C(3.6f, -0.4f, 3.4f), cy + 200f);
+        Frames(60);
+        Shoot("HubShot4_kitchen.png");
+        // 5, 6: the mission board and its panel
+        camp.TeleportTo(C(5.4f, 0f, -3f), cy + 90f);
+        Frames(40);
         meta.SetContext(camp.Near);
-        Shoot("HubShot3_board.png");
+        Shoot("HubShot5_board.png");
         meta.ShowMissions(); meta.SetContext(camp.Near);
-        Shoot("HubShot4_missions.png");
+        Shoot("HubShot6_missions.png");
         meta.ClosePanel(false);
-        // 5, 6: the tune-up bench and the upgrades shop
-        camp.Teleport(8.8f, -104.5f, 95f);
-        Walk(new Vector2(0f, 0.6f), 0.35f); Frames(30);
+        // 7: up the floating stairs
+        camp.TeleportTo(C(-7.1f, 0f, 4.4f), cy + 180f);
+        Walk(new Vector2(0f, 0.8f), 2.0f);
+        Shoot("HubShot7_stairs.png");
+        Debug.Log("HUBSHOT steps on the stairs: " + camp.FootstepsState);
+        for (int i = 0; i < 6; i++)
+        {
+            Walk(new Vector2(0f, 0.8f), 0.2f);
+            var lp = Quaternion.Inverse(Quaternion.Euler(0f, cy, 0f)) * (rider.transform.position - C(0f, 0f, 0f));
+            Debug.Log($"HUBSHOT stairs {i}: local={lp} {camp.DebugHere()}");
+        }
+        Debug.Log($"HUBSHOT after stairs: walker y={rider.transform.position.y - camp.ChaletPoint(0, 0, 0).y:0.00} (mezzanine 3.6)");
+        // 8, 9: the tune-up bench on the mezzanine and the upgrades shop
+        camp.TeleportTo(C(4.6f, 3.6f, -3.0f), cy + 180f);
+        Frames(40);
         meta.SetContext(camp.Near);
-        Shoot("HubShot5_bench.png");
+        Shoot("HubShot8_bench.png");
         meta.ShowShop(0); meta.SetContext(camp.Near);
-        Shoot("HubShot6_upgrades.png");
         meta.Act("buy" + (int)Progress.Up.Fizz);
-        Shoot("HubShot6b_bought.png");
+        Shoot("HubShot9_upgrades.png");
         meta.ClosePanel(false);
-        // 7: the board rack, outfits, the camera round in front
-        camp.Teleport(-6.6f, -111.8f, 180f);
+        // 10: outfits by the board wall, the camera round in front
+        camp.TeleportTo(C(-3.3f, 3.6f, -3.4f), cy);
         Frames(10);
         meta.SetContext(camp.Near);
         meta.ShowShop(1); camp.Showcase = true; meta.SetContext(camp.Near);
         Frames(60);
-        Shoot("HubShot7_outfits.png");
+        Shoot("HubShot10_outfits.png");
         camp.Showcase = false; meta.ClosePanel(false);
+        // 11: from the mezzanine over the great room and out through the glass
+        camp.TeleportTo(C(1.5f, 3.6f, -1.3f), cy);
+        Frames(60);
+        Shoot("HubShot11_mezzview.png");
+        // 12: running across the camp (stick pushed right out)
+        camp.Teleport(-2f, -84f, 180f);
+        Walk(new Vector2(0f, 1f), 1.6f);
+        Shoot("HubShot12_run.png");
+        Debug.Log("HUBSHOT steps running: " + camp.FootstepsState);
+        Walk(new Vector2(0f, 1f), 0.17f);
+        Shoot("HubShot12b_run.png");
+        // 13: the chalet at night (as the day/night cycle would set it)
+        camp.SetNight(1f);
+        camp.TeleportTo(from, Toward(from, C(0f, 0f, 0f)));
+        Frames(40);
+        Shoot("HubShot13_night.png");
+        camp.TeleportTo(C(-3f, 0f, 4.8f), cy + 118f);
+        Frames(60);
+        Shoot("HubShot13b_night_inside.png");
+        camp.SetNight(0f);
         // 8: the lookout
         camp.Teleport(16f, -84.5f, 0f);
         Frames(120);
-        Shoot("HubShot8_lookout.png");
+        Shoot("HubShot14_lookout.png");
         // 9: the Drop In gate
         camp.Teleport(0.5f, -79.5f, 0f);
         Frames(40);
         meta.SetContext(camp.Near);
-        Shoot("HubShot9_gate.png");
+        Shoot("HubShot15_gate.png");
 
         // 10: through the gate, at the start pad (the camp button top left)
         typeof(SummitGame).GetMethod("ToReady", NP, null, new[] { typeof(bool) }, null).Invoke(game, new object[] { false });
-        camp.SetNight(0f);   // in the game it blends back to day over a second
         var chase = cam.GetComponent<ChaseCamera>(); var late = typeof(ChaseCamera).GetMethod("LateUpdate", NP);
         for (int i = 0; i < 20; i++) { body.Apply(dt); late.Invoke(chase, null); }
-        Shoot("HubShot10_ready.png");
+        Shoot("HubShot16_ready.png");
         // 11: riding, a mission completes
         Physics.simulationMode = SimulationMode.Script;
         typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
@@ -131,12 +169,12 @@ public static class HubShot
         }
         Missions.ForceComplete(1);
         meta.ToastNow(Missions.Today[1]);
-        Shoot("HubShot11_toast.png");
+        Shoot("HubShot17_toast.png");
         // 12: the end of the run, with the points it earned
         typeof(SummitGame).GetField("trickPoints", NP).SetValue(game, 9200);
         typeof(SummitGame).GetMethod("ToEnd", NP).Invoke(game, new object[] { "YOU SURVIVED", false });
         hud.SetWhiteout(0f);
-        Shoot("HubShot12_end.png");
+        Shoot("HubShot18_end.png");
         Debug.Log($"HUBSHOT done: points={Progress.Points} jacket={Progress.Jacket} fizz={Progress.Level(Progress.Up.Fizz)} grip={Rider.GripLimit:0.0}");
 
         ChaseCamera.TestDt = 0f;
