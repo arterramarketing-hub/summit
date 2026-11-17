@@ -27,7 +27,7 @@ public static class StartShot
         Physics.simulationMode = SimulationMode.Script;
         typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
         rider.input = null;
-        float[] shots = { 1f, 5f, 7.6f, 8.4f, 9.5f, 12f };
+        float[] shots = { 5.0f, 6.3f, 6.8f, 6.95f, 7.2f, 8.2f };
         ChaseCamera.TestDt = 1f / 60f;
         int next = 0;
         const float dt = 1f / 60f;
@@ -47,6 +47,17 @@ public static class StartShot
                 var baked = new System.Collections.Generic.List<GameObject>();
                 foreach (var sk in skins) { var m = new Mesh(); sk.BakeMesh(m); var g = new GameObject("b", typeof(MeshFilter), typeof(MeshRenderer)); g.GetComponent<MeshFilter>().sharedMesh = m; g.GetComponent<MeshRenderer>().sharedMaterials = sk.sharedMaterials; g.transform.SetPositionAndRotation(sk.transform.position, sk.transform.rotation); sk.enabled = false; baked.Add(g); }
                 Shoot(cam, $"StartShot{next}.png");
+                if (next == 0)
+                {
+                    // an overview of the start from up the hill and to one side, wide
+                    var keep = (cam.transform.position, cam.transform.rotation, cam.fieldOfView);
+                    float gz = Slope.PadLip - 11f, gx = Slope.Centre(Slope.PadLip);
+                    cam.transform.position = new Vector3(gx - 10f, Slope.DrawnHeight(gx, gz - 38f) + 14f, gz - 38f);
+                    cam.transform.LookAt(new Vector3(gx, Slope.DrawnHeight(gx, gz), gz));
+                    cam.fieldOfView = 75f;
+                    Shoot(cam, "StartShotWide.png");
+                    cam.transform.SetPositionAndRotation(keep.Item1, keep.Item2); cam.fieldOfView = keep.Item3;
+                }
                 foreach (var g in baked) Object.DestroyImmediate(g);
                 foreach (var sk in skins) sk.enabled = true;
                 var hips = rider.transform.Find("Pivot");

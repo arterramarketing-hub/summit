@@ -637,15 +637,13 @@ namespace Summit
                 fb.GetComponent<MeshRenderer>().sharedMaterial = CourseDressing.Sign(snow.shader, "Signs/BannerFinish");
             }
             // the last chance: safety signs either side of the in-run before the lip, and caution tape strung
-            // across it between the last pair (ride through it and it tears)
+            // chest-high between the last pair and on across the mountain, tree to tree (ride through it and it tears)
             var post = M(new Color(0.55f, 0.57f, 0.6f));
             WarningSign(root, cx, Slope.PadLip - 22f, -1f, "Signs/SignTurnAround", post);
             WarningSign(root, cx, Slope.PadLip - 22f, 1f, "Signs/SignRemote", post);
             var wl = WarningSign(root, cx, Slope.PadLip - 11f, -1f, "Signs/SignWarning", post);
             var wr = WarningSign(root, cx, Slope.PadLip - 11f, 1f, "Signs/SignDangerStart", post);
-            var tape = CautionTape.Make(root, wl.TransformPoint(new Vector3(SignPostX, 1.05f, 0f)), wr.TransformPoint(new Vector3(-SignPostX, 1.05f, 0f)),
-                                        rider, CourseDressing.Sign(snow.shader, "Signs/Tape"));
-            tape.Torn += at => audioFx.Play(Sfx.Clack);
+            StartTape.Build(root, wl, wr, SignPostX, rider, CourseDressing.Sign(snow.shader, "Signs/Tape"), () => audioFx.Play(Sfx.Clack));
             float ly = Slope.DrawnHeight(cx, Slope.PadLip - 0.3f);
             Block(PrimitiveType.Cube, root, new Vector3(cx, ly - 0.15f, Slope.PadLip - 0.2f), new Vector3(2f * Slope.PadHalf - 4f, 0.35f, 0.3f), wood);
         }

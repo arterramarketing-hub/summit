@@ -14,3 +14,7 @@
 *.pidb
 *.userprefs
 RenderShot.png
+
+# made by Unity's performance-testing package during a build, and removed again after
+/Assets/Resources/PerformanceTestRun*
+/Assets/Resources.meta
