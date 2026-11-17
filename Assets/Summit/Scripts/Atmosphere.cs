@@ -15,7 +15,7 @@ namespace Summit
     {
         Camera cam;
         Rider rider;
-        ParticleSystem snow, streaks;
+        ParticleSystem snow, streaks, mist;
         ParticleSystem.EmissionModule snowEm, streakEm;
         Transform backdrop;
         Vignette vignette;
@@ -26,6 +26,7 @@ namespace Summit
             cam = camera;
             rider = r;
             snow = MakeSnow(flake);
+            mist = MakeMist(flake);
             streaks = MakeStreaks(flake);
             backdrop = MakeBackdrop();
 
@@ -50,7 +51,7 @@ namespace Summit
             main.startSize = new ParticleSystem.MinMaxCurve(0.06f, 0.17f);
             main.startColor = new Color(1f, 1f, 1f, 0.9f);
             main.simulationSpace = ParticleSystemSimulationSpace.World;   // flakes stay put in the world, so speed shows as rush
-            main.maxParticles = 9000;
+            main.maxParticles = 14000;
             main.playOnAwake = false;
             var shape = ps.shape;
             shape.shapeType = ParticleSystemShapeType.Box;
@@ -73,12 +74,60 @@ namespace Summit
                       new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(0.9f, 0.12f), new GradientAlphaKey(0.9f, 0.85f), new GradientAlphaKey(0f, 1f) });
             col.color = g;
             snowEm = ps.emission;
-            snowEm.rateOverTime = 1300f;
+            snowEm.rateOverTime = 2300f;
             var pr = go.GetComponent<ParticleSystemRenderer>();
             pr.material = mat;
             pr.shadowCastingMode = ShadowCastingMode.Off;
             pr.receiveShadows = false;
             pr.renderMode = ParticleSystemRenderMode.Billboard;
+            ps.Play();
+            return ps;
+        }
+
+        // ---------------------------------------------------------------- mist
+
+        ParticleSystem MakeMist(Material mat)
+        {
+            var go = new GameObject("Mist");
+            go.transform.SetParent(transform, false);
+            var ps = go.AddComponent<ParticleSystem>();
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            var main = ps.main;
+            main.loop = true;
+            main.duration = 10f;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(9f, 14f);
+            main.startSpeed = 0f;
+            main.startSize = new ParticleSystem.MinMaxCurve(18f, 34f);
+            main.startRotation = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
+            main.startColor = new Color(0.94f, 0.96f, 1f, 1f);
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            main.maxParticles = 70;
+            main.playOnAwake = false;
+            var shape = ps.shape;
+            shape.shapeType = ParticleSystemShapeType.Box;
+            shape.scale = new Vector3(140f, 12f, 120f);
+            var vel = ps.velocityOverLifetime;
+            vel.enabled = true;
+            vel.space = ParticleSystemSimulationSpace.World;
+            vel.x = new ParticleSystem.MinMaxCurve(1.2f, 2.6f);
+            vel.y = new ParticleSystem.MinMaxCurve(-0.1f, 0.2f);
+            vel.z = new ParticleSystem.MinMaxCurve(-0.5f, 0.5f);
+            var col = ps.colorOverLifetime;
+            col.enabled = true;
+            var g = new Gradient();
+            g.SetKeys(new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
+                      new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(0.13f, 0.3f), new GradientAlphaKey(0.13f, 0.7f), new GradientAlphaKey(0f, 1f) });
+            col.color = g;
+            var em = ps.emission;
+            em.rateOverTime = 6f;
+            var pr = go.GetComponent<ParticleSystemRenderer>();
+            pr.material = mat;
+            pr.shadowCastingMode = ShadowCastingMode.Off;
+            pr.receiveShadows = false;
+            pr.renderMode = ParticleSystemRenderMode.Billboard;
+            pr.maxParticleSize = 3f;
+            ps.Play();
+            ps.Simulate(10f, true, false);
             ps.Play();
             return ps;
         }
@@ -139,9 +188,9 @@ namespace Summit
             // three ranges, each a clear step darker and crisper as it comes closer: that
             // stepping is what makes the distance read
             Ring(root, "FarPeaks", new Material(sh) { renderQueue = 2508 }, 885f, 110f, 330f, 3.1f,
-                 new Color(0.68f, 0.72f, 0.86f), new Color(1.00f, 0.90f, 0.80f));
+                 new Color(0.70f, 0.76f, 0.88f), new Color(0.97f, 0.98f, 1.00f));
             Ring(root, "MidPeaks", new Material(sh) { renderQueue = 2509 }, 760f, 50f, 210f, 7.7f,
-                 new Color(0.40f, 0.47f, 0.64f), new Color(0.96f, 0.90f, 0.86f));
+                 new Color(0.44f, 0.52f, 0.68f), new Color(0.94f, 0.96f, 1.00f));
             Ring(root, "NearRidge", new Material(sh) { renderQueue = 2510 }, 640f, 10f, 120f, 12.3f,
                  new Color(0.20f, 0.25f, 0.37f), new Color(0.86f, 0.86f, 0.92f));
             return root;
@@ -221,12 +270,14 @@ namespace Summit
             if (fwd.sqrMagnitude < 1e-4f) fwd = Vector3.forward;
             fwd.Normalize();
             snow.transform.position = cp + fwd * 22f + Vector3.up * 6f;
+            // banks of mist sit low on the slope ahead and drift across it
+            mist.transform.position = cp + fwd * 70f + Vector3.down * 18f;
 
             float s = rider.Running ? Mathf.Clamp01((rider.Speed * 3.6f - 55f) / 60f) : 0f;   // 55 to 115 km/h
             if (rider.Running && rider.BoostTime > 0f) s = Mathf.Max(s, 0.9f);
             speed01 = Mathf.Lerp(speed01, s, 1f - Mathf.Exp(-Time.deltaTime * 4f));
             streakEm.rateOverTime = speed01 * speed01 * 110f;
-            snowEm.rateOverTime = 1300f + 700f * speed01;
+            snowEm.rateOverTime = 2300f + 900f * speed01;
             if (vignette != null) vignette.intensity.value = baseVignette + 0.17f * speed01;
         }
     }

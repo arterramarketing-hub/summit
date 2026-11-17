@@ -66,6 +66,21 @@ public static class SimTest
             maxSlip = Mathf.Max(maxSlip, Mathf.Abs(Mathf.DeltaAngle(r.Heading * Mathf.Rad2Deg, r.TravelHeading * Mathf.Rad2Deg)));
         }
         Debug.Log($"SIM steer: at {sp0:0} km/h full stick turns travel 20 deg in {tt:0.00} s; board-vs-travel slip peaked at {maxSlip:0.0} deg");
+
+        // straight line vs constant carving, 25 s each from the start
+        foreach (float amp in new[] { 0f, 0.8f })
+        {
+            r.ResetAt(Slope.Centre(Slope.PadLip), Slope.StartZ); r.Begin();
+            float sum = 0f, mx = 0f; int cnt = 0;
+            for (int i = 0; i < 120 * 25; i++)
+            {
+                float tt2 = i * Dt;
+                r.Steer = Mathf.Clamp(amp * Mathf.Sin(tt2 * 1.6f) + (Slope.Centre(r.Z + 12f) - r.Body.position.x) * 0.05f - r.Heading * 0.6f, -1f, 1f);
+                r.Tick(Dt); Physics.Simulate(Dt);
+                if (i > 120 * 8) { sum += r.Speed * 3.6f; cnt++; mx = Mathf.Max(mx, r.Speed * 3.6f); }
+            }
+            Debug.Log($"SIM style={(amp == 0f ? "straight" : "carving")} avg={sum / cnt:0} km/h max={mx:0} km/h");
+        }
         Physics.simulationMode = SimulationMode.FixedUpdate;   // do not leave the project on manual physics
         EditorApplication.Exit(0);
     }

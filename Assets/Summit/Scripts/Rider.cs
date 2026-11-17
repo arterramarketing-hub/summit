@@ -19,6 +19,7 @@ namespace Summit
         public static float Grip = 22f, GripTuck = 16f;              // 1/s: how fast sideways slip dies (higher = tighter)
         public static float TurnSlow = 2.9f, TurnFast = 1.7f;        // rad/s of board yaw at full stick, slow and fast
         public static float TurnBuild = 8f;                          // 1/s: how quickly a turn builds to the stick
+        public static float TurnDrag = 0.12f;                        // speed lost per radian of turning
         public static float TakeoffClearance = 0.22f;
 
         public const float R = 0.3f;              // the collision sphere around the feet
@@ -198,7 +199,7 @@ namespace Summit
                 float beta2 = beta * Mathf.Exp(-Mathf.Lerp(Grip, GripTuck, Tuck) * dt);
                 float scrub = Mathf.Abs(beta - beta2);
                 lost = scrub * sp;
-                sp *= 1f - 0.08f * scrub;
+                sp *= 1f - 0.18f * scrub;
                 vt = (f * Mathf.Cos(beta2) + r * Mathf.Sin(beta2)) * sp;
             }
             if (BoostTime > 0f) { vt += f * (BoostAccel * dt); sp = vt.magnitude; }
@@ -212,6 +213,9 @@ namespace Summit
             float turn = Mathf.Lerp(TurnSlow, TurnFast, Mathf.Clamp01(sp / 40f)) * Mathf.Lerp(1f, 0.75f, Tuck);
             yawRate = Mathf.Lerp(yawRate, Steer * turn, 1f - Mathf.Exp(-dt * TurnBuild));
             Heading += yawRate * dt;
+            // turning costs speed: the harder the carve, the more the edge brakes; run straight to build speed
+            float turnBrake = TurnDrag * Mathf.Abs(yawRate) * sp * dt;
+            if (turnBrake > 0f && sp > 3f) { float k = Mathf.Max(0f, sp - turnBrake) / sp; vt *= k; sp *= k; }
             if (sp < 3f) Heading = Mathf.MoveTowards(Heading, 0f, dt * 1.4f * (1f - sp / 3f));   // stalled: swing back downhill
             Heading = Mathf.Clamp(Heading, -MaxHeading, MaxHeading);
             Speed = sp;

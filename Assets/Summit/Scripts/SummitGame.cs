@@ -123,36 +123,36 @@ namespace Summit
                 sun = new GameObject("Sun").AddComponent<Light>();
                 sun.type = LightType.Directional;
             }
-            // late-afternoon sun low on the left: warm light, long blue shadows across the slope
-            sun.color = new Color(1f, 0.80f, 0.58f);
-            sun.intensity = 2.1f;
+            // clear daytime: a high, near-white sun from the side, crisp shadows, bright blue sky light
+            sun.color = new Color(1f, 0.97f, 0.92f);
+            sun.intensity = 1.45f;
             sun.shadows = LightShadows.Soft;
-            sun.shadowStrength = 0.92f;
-            sun.transform.rotation = Quaternion.Euler(17f, 112f, 0f);
+            sun.shadowStrength = 0.8f;
+            sun.transform.rotation = Quaternion.Euler(48f, 120f, 0f);
             RenderSettings.sun = sun;
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
-            RenderSettings.ambientSkyColor = new Color(0.36f, 0.46f, 0.72f);
-            RenderSettings.ambientEquatorColor = new Color(0.46f, 0.50f, 0.64f);
-            RenderSettings.ambientGroundColor = new Color(0.30f, 0.32f, 0.42f);
+            RenderSettings.ambientSkyColor = new Color(0.60f, 0.70f, 0.90f);
+            RenderSettings.ambientEquatorColor = new Color(0.66f, 0.72f, 0.82f);
+            RenderSettings.ambientGroundColor = new Color(0.50f, 0.54f, 0.62f);
             var sky = RenderSettings.skybox;
             if (sky != null && sky.HasProperty("_SkyTint"))
             {
-                sky.SetColor("_SkyTint", new Color(0.36f, 0.48f, 0.80f));
-                sky.SetFloat("_AtmosphereThickness", 1.35f);
-                sky.SetFloat("_SunSize", 0.06f);
-                sky.SetFloat("_Exposure", 1.05f);
+                sky.SetColor("_SkyTint", new Color(0.42f, 0.56f, 0.82f));
+                sky.SetFloat("_AtmosphereThickness", 0.8f);
+                sky.SetFloat("_SunSize", 0.04f);
+                sky.SetFloat("_Exposure", 1.25f);
             }
             var vol = Object.FindFirstObjectByType<UnityEngine.Rendering.Volume>();
             if (vol != null && vol.profile != null)
             {
-                if (vol.profile.TryGet(out UnityEngine.Rendering.Universal.ColorAdjustments ca)) { ca.contrast.Override(24f); ca.saturation.Override(14f); ca.postExposure.Override(0.05f); }
-                if (vol.profile.TryGet(out UnityEngine.Rendering.Universal.Bloom bl)) { bl.intensity.Override(0.7f); bl.threshold.Override(0.95f); }
-                if (vol.profile.TryGet(out UnityEngine.Rendering.Universal.Vignette vg)) vg.intensity.Override(0.28f);
+                if (vol.profile.TryGet(out UnityEngine.Rendering.Universal.ColorAdjustments ca)) { ca.contrast.Override(14f); ca.saturation.Override(10f); ca.postExposure.Override(0.1f); }
+                if (vol.profile.TryGet(out UnityEngine.Rendering.Universal.Bloom bl)) { bl.intensity.Override(0.4f); bl.threshold.Override(1.0f); }
+                if (vol.profile.TryGet(out UnityEngine.Rendering.Universal.Vignette vg)) vg.intensity.Override(0.2f);
             }
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogDensity = 0.0046f;
-            RenderSettings.fogColor = new Color(0.70f, 0.75f, 0.88f);
+            RenderSettings.fogDensity = 0.0048f;
+            RenderSettings.fogColor = new Color(0.80f, 0.86f, 0.94f);
         }
 
         void MakeMissingMaterials()
@@ -290,8 +290,8 @@ namespace Summit
                     break;
             }
 
-            bool stick = state == State.Riding && !input.useTilt && input.StickActive;
-            hud.SetStick(stick, input.StickOrigin, input.StickPos, Mathf.Max(60f, Screen.width * input.stickRadiusFrac));
+            // no stick graphic: the thumb steers the rider directly and the rider's lean shows the steering
+            hud.SetStick(false, input.StickOrigin, input.StickPos, 1f);
 
             float gap = state == State.Ready ? 120f : slide.Gap(rider);
             float close = Mathf.Clamp01(1f - gap / 45f);

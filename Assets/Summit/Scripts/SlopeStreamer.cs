@@ -165,6 +165,7 @@ namespace Summit
             mesh.uv = uvs;
             mesh.colors = cols;
             mesh.triangles = tris;
+            mesh.RecalculateTangents();   // the snow's normal map needs them
             mesh.RecalculateBounds();
         }
     }

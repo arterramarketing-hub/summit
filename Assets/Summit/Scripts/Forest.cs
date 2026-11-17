@@ -15,7 +15,8 @@ namespace Summit
         public const float Cell = 6.5f;
         public Transform target;
         public Material foliage, bark;
-        public int sideCells = 12, aheadCells = 34, behindCells = 3;
+        public int sideCells = 12, aheadCells = 18, behindCells = 3;   // full trees with colliders and shadows
+        public int farSide = 26, farAhead = 68;                         // simple stand-ins out to where the fog swallows them
 
         readonly List<GameObject> treeKinds = new List<GameObject>(), rockKinds = new List<GameObject>();
         readonly List<float> treeH = new List<float>(), rockH = new List<float>();
@@ -81,7 +82,11 @@ namespace Summit
             return top > bottom ? top - bottom : 1f;
         }
 
-        void Update() { Refresh(false); }
+        void Update()
+        {
+            Refresh(false);
+            DrawFar();
+        }
         public void Prewarm() { Refresh(true); }
 
         void Refresh(bool force)
@@ -91,6 +96,7 @@ namespace Summit
             var c = new Vector2Int(Mathf.FloorToInt(target.position.x / Cell), Mathf.FloorToInt(target.position.z / Cell));
             if (!force && c == lastCell) return;
             lastCell = c;
+            RebuildFar(c);
 
             drop.Clear();
             foreach (var kv in live)
@@ -180,6 +186,87 @@ namespace Summit
                 sc.center = new Vector3(0f, h * 0.35f, 0f);
             }
             return go;
+        }
+
+        // ---- distant trees: a light stand-in mesh drawn in instanced batches, no GameObjects, no shadows
+
+        readonly Dictionary<Vector2Int, Matrix4x4> farCache = new Dictionary<Vector2Int, Matrix4x4>();
+        readonly HashSet<Vector2Int> farNone = new HashSet<Vector2Int>();
+        readonly List<Matrix4x4> farList = new List<Matrix4x4>();
+        readonly List<Vector2Int> farDrop = new List<Vector2Int>();
+        Mesh farMesh;
+        Material farLeaf, farSnow;
+        RenderParams rpLeaf, rpSnow;
+
+        void RebuildFar(Vector2Int c)
+        {
+            if (farMesh == null) BuildFarMesh();
+            farList.Clear();
+            for (int z = c.y - behindCells; z <= c.y + farAhead; z++)
+                for (int x = c.x - farSide; x <= c.x + farSide; x++)
+                {
+                    // the near ring has the real trees
+                    if (x >= c.x - sideCells && x <= c.x + sideCells && z <= c.y + aheadCells) continue;
+                    var k = new Vector2Int(x, z);
+                    if (farNone.Contains(k)) continue;
+                    if (!farCache.TryGetValue(k, out var m))
+                    {
+                        if (At(x, z, out Vector3 p, out float s, out _) != Kind.Tree) { farNone.Add(k); continue; }
+                        float h = 8.5f * s / 6.3f;
+                        m = Matrix4x4.TRS(p - Vector3.up * 0.25f, Quaternion.Euler(0f, Slope.Hash01(x, z, 5) * 360f, 0f),
+                                          new Vector3(h, h * (0.92f + 0.2f * Slope.Hash01(x, z, 6)), h));
+                        farCache[k] = m;
+                    }
+                    farList.Add(m);
+                }
+            // forget cells far behind
+            if (farCache.Count + farNone.Count > 20000)
+            {
+                farDrop.Clear();
+                foreach (var k in farCache.Keys) if (k.y < c.y - behindCells - 2) farDrop.Add(k);
+                foreach (var k in farDrop) farCache.Remove(k);
+                farNone.RemoveWhere(k => k.y < c.y - behindCells - 2);
+            }
+        }
+
+        void DrawFar()
+        {
+            if (farMesh == null || farList.Count == 0) return;
+            for (int i = 0; i < farList.Count; i += 1000)
+            {
+                int n = Mathf.Min(1000, farList.Count - i);
+                Graphics.RenderMeshInstanced(rpLeaf, farMesh, 0, farList, n, i);
+                Graphics.RenderMeshInstanced(rpSnow, farMesh, 1, farList, n, i);
+            }
+        }
+
+        void BuildFarMesh()
+        {
+            var sh = foliage != null ? foliage.shader : Shader.Find("Universal Render Pipeline/Lit");
+            farLeaf = new Material(sh) { enableInstancing = true };
+            farLeaf.SetColor("_BaseColor", new Color(0.16f, 0.34f, 0.27f));
+            farLeaf.SetFloat("_Smoothness", 0.05f);
+            farSnow = new Material(sh) { enableInstancing = true };
+            farSnow.SetColor("_BaseColor", new Color(0.93f, 0.95f, 1f));
+            farSnow.SetFloat("_Smoothness", 0.2f);
+            var v = new List<Vector3>(); var leaf = new List<int>(); var snowT = new List<int>();
+            // three tiers of branches, each wearing a snow cap: about 80 triangles in all
+            Cone(v, leaf, 0.9f, 2.6f, 1.9f, 7);
+            Cone(v, snowT, 2.0f, 1.5f, 1.15f, 7);
+            Cone(v, leaf, 2.4f, 2.4f, 1.45f, 7);
+            Cone(v, snowT, 3.4f, 1.4f, 0.9f, 7);
+            Cone(v, leaf, 3.8f, 2.5f, 1.0f, 6);
+            Cone(v, snowT, 5.0f, 1.3f, 0.55f, 6);
+            Cone(v, leaf, 0f, 1.2f, 0.25f, 5);
+            farMesh = new Mesh { name = "FarFir" };
+            farMesh.SetVertices(v);
+            farMesh.subMeshCount = 2;
+            farMesh.SetTriangles(leaf, 0);
+            farMesh.SetTriangles(snowT, 1);
+            farMesh.RecalculateNormals();
+            farMesh.bounds = new Bounds(new Vector3(0f, 3f, 0f), new Vector3(4f, 7f, 4f));
+            rpLeaf = new RenderParams(farLeaf) { shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off, receiveShadows = true };
+            rpSnow = new RenderParams(farSnow) { shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off, receiveShadows = true };
         }
 
         static void Kill(Object o) { if (Application.isPlaying) Destroy(o); else DestroyImmediate(o); }

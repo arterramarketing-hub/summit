@@ -17,7 +17,8 @@ namespace Summit
         Transform pivot, roll, upper, trailAnchor;
         TrailRenderer trail;
         ParticleSystem spray;
-        ParticleSystem.EmissionModule sprayEm;
+        ParticleSystem.EmissionModule sprayEm, wakeEm;
+        ParticleSystem wake;
         Vector3 normal = Vector3.up;
         float lean, lastTravel, yawRate, crashSpin;
         Vector3 crashAxis;
@@ -115,6 +116,35 @@ namespace Summit
             pr.material = sprayMat;
             pr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             spray.Play();
+
+            // a wake of kicked-up powder that hangs in the air behind you
+            var wg = new GameObject("Wake");
+            wg.transform.SetParent(pivot, false);
+            wg.transform.localPosition = new Vector3(0f, 0.15f, -0.7f);
+            wake = wg.AddComponent<ParticleSystem>();
+            wake.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            var wm = wake.main;
+            wm.startLifetime = new ParticleSystem.MinMaxCurve(1.0f, 2.0f);
+            wm.startSpeed = new ParticleSystem.MinMaxCurve(0.2f, 1.2f);
+            wm.startSize = new ParticleSystem.MinMaxCurve(0.4f, 0.9f);
+            wm.startColor = new Color(1f, 1f, 1f, 0.55f);
+            wm.gravityModifier = -0.02f;
+            wm.simulationSpace = ParticleSystemSimulationSpace.World;
+            wm.maxParticles = 600;
+            wm.playOnAwake = false;
+            var wsh = wake.shape; wsh.shapeType = ParticleSystemShapeType.Sphere; wsh.radius = 0.25f;
+            var wc = wake.colorOverLifetime; wc.enabled = true;
+            var wgd = new Gradient();
+            wgd.SetKeys(new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
+                        new[] { new GradientAlphaKey(0.55f, 0f), new GradientAlphaKey(0.25f, 0.5f), new GradientAlphaKey(0f, 1f) });
+            wc.color = wgd;
+            var wsz = wake.sizeOverLifetime; wsz.enabled = true;
+            wsz.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 0.7f, 1f, 2.4f));
+            wakeEm = wake.emission; wakeEm.rateOverTime = 0f;
+            var wr = wg.GetComponent<ParticleSystemRenderer>();
+            wr.material = sprayMat;
+            wr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            wake.Play();
 
             marks = new SnowMarks(transform.parent, Imprint(trailMat, CraterTexture()));
             BuildShield(trailMat);
@@ -226,7 +256,6 @@ namespace Summit
                 return m;
             }
             var jacketM = M(new Color(0.93f, 0.31f, 0.14f), 0.35f);
-            var helmetM = M(new Color(0.96f, 0.97f, 1f), 0.75f);
             var gloveM = M(new Color(0.09f, 0.10f, 0.12f), 0.3f);
             var lensM = M(new Color(1f, 0.55f, 0.1f), 0.95f, new Color(0.35f, 0.15f, 0f));
             var strapM = M(new Color(0.1f, 0.1f, 0.12f), 0.2f);
@@ -239,14 +268,22 @@ namespace Summit
             Blob(B(HumanBodyBones.LeftHand), Vector3.zero, new Vector3(0.10f, 0.10f, 0.10f), gloveM, PrimitiveType.Sphere);
             Blob(B(HumanBodyBones.RightHand), Vector3.zero, new Vector3(0.10f, 0.10f, 0.10f), gloveM, PrimitiveType.Sphere);
 
+            var beanieM = M(new Color(0.08f, 0.55f, 0.62f), 0.1f);
+            var pomM = M(new Color(0.97f, 0.97f, 0.97f), 0.05f);
+            var frameM = M(new Color(0.06f, 0.06f, 0.07f), 0.4f);
             var head = B(HumanBodyBones.Head);
             if (head != null)
             {
                 Vector3 fwd = upper.TransformDirection(Vector3.right);   // the rider faces the toe edge
                 Vector3 up = upper.up;
-                Blob(head, up * 0.13f - fwd * 0.01f, new Vector3(0.27f, 0.24f, 0.29f), helmetM, PrimitiveType.Sphere);
-                Blob(head, up * 0.09f + fwd * 0.115f, new Vector3(0.07f, 0.075f, 0.21f), lensM, PrimitiveType.Cube, fwd);
-                Blob(head, up * 0.09f, new Vector3(0.245f, 0.03f, 0.25f), strapM, PrimitiveType.Cylinder);
+                // knit beanie with a rolled cuff and a pompom
+                Blob(head, up * 0.15f - fwd * 0.01f, new Vector3(0.245f, 0.22f, 0.25f), beanieM, PrimitiveType.Sphere);
+                Blob(head, up * 0.115f - fwd * 0.005f, new Vector3(0.255f, 0.035f, 0.26f), beanieM, PrimitiveType.Cylinder);
+                Blob(head, up * 0.27f - fwd * 0.01f, new Vector3(0.09f, 0.09f, 0.09f), pomM, PrimitiveType.Sphere);
+                // big ski goggles over the eyes: a mirrored lens in a black frame, strap round the back
+                Blob(head, up * 0.075f + fwd * 0.118f, new Vector3(0.06f, 0.095f, 0.235f), frameM, PrimitiveType.Cube, fwd);
+                Blob(head, up * 0.075f + fwd * 0.135f, new Vector3(0.035f, 0.075f, 0.215f), lensM, PrimitiveType.Cube, fwd);
+                Blob(head, up * 0.075f, new Vector3(0.235f, 0.025f, 0.24f), strapM, PrimitiveType.Cylinder);
             }
         }
 
@@ -278,51 +315,66 @@ namespace Summit
 
         // ---- animation: a live pose built every frame from what the rider is doing
 
+        float[] want, rest;
+        float chatter;
+
         void Pose(float dt)
         {
             if (poser == null) return;
             float[] m = pose.muscles;
+            if (want == null) { want = new float[m.Length]; rest = (float[])m.Clone(); }
+            System.Array.Copy(rest, want, m.Length);
             float t = Time.time;
             // landings squash the legs, which spring back
             compV += (-comp * 140f - compV * 16f) * dt;
             comp = Mathf.Clamp(comp + compV * dt, -0.15f, 0.6f);
 
-            float tuck = rider.Tuck, carve = rider.Carve, steer = rider.Steer;
-            bool idle = !rider.Running, crashed = rider.Crashed;
-            bool grab = rider.Airborne && rider.AirTime > 0.3f;
-            float crouch = idle ? 0.22f + 0.03f * Mathf.Sin(t * 2.1f)
-                         : Mathf.Lerp(0.48f, 0.9f, tuck) + comp + carve * 0.12f;
-            if (grab) crouch = Mathf.Max(crouch, 0.95f);
-            // toe-side turns (right) drive the knees and chest forward; heel-side sits back
-            float toe = Mathf.Clamp(steer, -1f, 1f);
-            Set(m, mKneeL, Mathf.Lerp(1f, -0.95f, crouch));
-            Set(m, mKneeR, Mathf.Lerp(1f, -0.95f, crouch));
-            Set(m, mHipL, Mathf.Lerp(0f, 0.85f, crouch) - toe * 0.1f);
-            Set(m, mHipR, Mathf.Lerp(0f, 0.85f, crouch) - toe * 0.1f);
-            Set(m, mSpreadL, 0.15f);
-            Set(m, mSpreadR, 0.15f);
-            Set(m, mSpine, Mathf.Lerp(0.1f, 0.55f, tuck) + toe * 0.25f + comp * 0.4f);
-            Set(m, mChest, Mathf.Lerp(0.05f, 0.35f, tuck) + toe * 0.15f);
-            // arms: out for balance, swinging against the turn; tucked when racing; one reaches for the board in the air
-            float sway = Mathf.Sin(t * 1.3f) * 0.05f;
-            Set(m, mArmL, Mathf.Lerp(-0.05f, -0.6f, tuck) + carve * 0.25f + sway);
-            Set(m, mArmR, Mathf.Lerp(-0.05f, -0.6f, tuck) + carve * 0.25f - sway);
-            Set(m, mArmFL, Mathf.Lerp(0.2f, 0.55f, tuck) - toe * 0.35f);
-            Set(m, mArmFR, Mathf.Lerp(0.2f, 0.55f, tuck) + toe * 0.35f);
-            Set(m, mElbowL, 0.35f);
-            Set(m, mElbowR, 0.35f);
-            if (grab) { Set(m, mArmR, -0.95f); Set(m, mArmFR, 0.75f); Set(m, mElbowR, 0.9f); Set(m, mArmL, 0.35f); }
-            // look down the hill over the front shoulder; glance around while waiting
-            Set(m, mTwist, 0.35f);
-            Set(m, mNeck, 0.6f);
-            Set(m, mHead, idle ? 0.4f + 0.35f * Mathf.Sin(t * 0.5f) : 0.7f);
+            float tuck = rider.Tuck, carve = rider.Carve, steer = rider.Steer, speed01 = Mathf.Clamp01(rider.Speed / 30f);
+            bool idle = !rider.Running, crashed = rider.Crashed, air = rider.Airborne;
+            bool grab = air && rider.AirTime > 0.3f;
+            // the board chatters a little at speed: tiny fast flex in the knees
+            chatter = idle || air ? 0f : (Mathf.PerlinNoise(t * 9f, 1.3f) - 0.5f) * 0.08f * speed01;
+            float toe = Mathf.Clamp(steer, -1f, 1f);   // + = toe-side (right) turn, - = heel-side
+            float crouch = idle ? 0.25f + 0.03f * Mathf.Sin(t * 2.1f)
+                         : Mathf.Lerp(0.5f, 0.9f, tuck) + comp + Mathf.Abs(toe) * 0.18f + chatter;
+            if (grab) crouch = 1f;
+
+            // legs: bent and loaded; toe-side drives the knees forward, heel-side sits the hips back
+            W(mKneeL, Mathf.Lerp(1f, -0.95f, crouch)); W(mKneeR, Mathf.Lerp(1f, -0.95f, crouch));
+            W(mHipL, Mathf.Lerp(0.05f, 0.9f, crouch) - toe * 0.15f); W(mHipR, Mathf.Lerp(0.05f, 0.9f, crouch) - toe * 0.15f);
+            W(mSpreadL, 0.12f); W(mSpreadR, 0.12f);
+            // body: upright and open to the hill when cruising, folded when tucked, leaning into toe turns
+            W(mSpine, Mathf.Lerp(0.05f, 0.5f, tuck) + Mathf.Max(0f, toe) * 0.35f - Mathf.Max(0f, -toe) * 0.1f + comp * 0.4f);
+            W(mChest, Mathf.Lerp(0.0f, 0.3f, tuck) + toe * 0.12f);
+            // shoulders turn into the next turn before the board does
+            W(mTwist, 0.3f + toe * 0.25f);
+            // arms: lead arm out over the nose, rear arm low and relaxed; both drop in a tuck
+            float sway = Mathf.Sin(t * 1.4f) * 0.04f;
+            W(mArmL, Mathf.Lerp(0.15f, -0.55f, tuck) + carve * 0.2f + sway);
+            W(mArmFL, Mathf.Lerp(0.55f, 0.5f, tuck) - toe * 0.25f);
+            W(mElbowL, 0.6f);
+            W(mArmR, Mathf.Lerp(-0.35f, -0.6f, tuck) + Mathf.Max(0f, toe) * 0.5f - sway);
+            W(mArmFR, Mathf.Lerp(-0.1f, 0.45f, tuck) + toe * 0.3f);
+            W(mElbowR, 0.4f);
+            // head: eyes down the hill over the front shoulder; looking around while waiting
+            W(mNeck, 0.55f);
+            W(mHead, idle ? 0.35f + 0.35f * Mathf.Sin(t * 0.5f) : 0.65f + toe * 0.1f);
+            if (air)
+            {
+                // arms out wide for balance; a grab on longer air
+                W(mArmL, 0.45f); W(mArmR, 0.3f); W(mArmFL, 0.2f); W(mArmFR, -0.2f);
+                if (Mathf.Abs(rider.Spin) > 0.3f) { W(mArmL, 0.2f); W(mArmR, 0.2f); W(mTwist, 0.3f + Mathf.Sign(rider.Spin) * 0.6f); }
+                if (grab) { W(mArmR, -0.95f); W(mArmFR, 0.75f); W(mElbowR, 0.9f); }
+            }
             if (crashed)
             {
-                // flailing tumble
-                Set(m, mArmL, Mathf.Sin(t * 9f) * 0.9f); Set(m, mArmR, Mathf.Sin(t * 8f + 1f) * 0.9f);
-                Set(m, mArmFL, Mathf.Sin(t * 7f) * 0.8f); Set(m, mArmFR, Mathf.Sin(t * 6f + 2f) * 0.8f);
-                Set(m, mKneeL, Mathf.Sin(t * 5f) * 0.6f); Set(m, mKneeR, Mathf.Sin(t * 6f + 1f) * 0.6f);
+                W(mArmL, Mathf.Sin(t * 9f) * 0.9f); W(mArmR, Mathf.Sin(t * 8f + 1f) * 0.9f);
+                W(mArmFL, Mathf.Sin(t * 7f) * 0.8f); W(mArmFR, Mathf.Sin(t * 6f + 2f) * 0.8f);
+                W(mKneeL, Mathf.Sin(t * 5f) * 0.6f); W(mKneeR, Mathf.Sin(t * 6f + 1f) * 0.6f);
             }
+            // ease every muscle toward its target, so nothing snaps
+            float k = dt <= 0f ? 1f : 1f - Mathf.Exp(-dt * (crashed ? 20f : 11f));
+            for (int i = 0; i < m.Length; i++) m[i] = Mathf.Lerp(m[i], want[i], k);
             poser.SetHumanPose(ref pose);
             PlantFeet();
             if (!crashed)
@@ -338,6 +390,8 @@ namespace Summit
                 LegIK(thighR, shinR, footR, tr);
             }
         }
+
+        void W(int i, float v) { if (i >= 0 && i < want.Length) want[i] = Mathf.Clamp(v, -1f, 1f); }
 
         /// <summary>How far the target is beyond the leg's full stretch (negative when reachable).</summary>
         static float Reach(Transform hip, Transform knee, Transform foot, Vector3 target)
@@ -404,7 +458,7 @@ namespace Summit
             for (int y = 0; y < n; y++)
             {
                 float v = (y + 0.5f) / n, e = Mathf.Abs(v - 0.5f) * 2f;   // 0 centre, 1 edge
-                Color groove = new Color(0.62f, 0.70f, 0.88f), lip = new Color(1.06f, 1.06f, 1.08f);
+                Color groove = new Color(0.50f, 0.60f, 0.86f), lip = new Color(1.08f, 1.08f, 1.1f);
                 Color c = e < 0.62f ? Color.Lerp(groove * 0.92f, groove, e / 0.62f) : Color.Lerp(groove, lip, Mathf.Clamp01((e - 0.62f) / 0.2f));
                 c.a = e < 0.82f ? 0.85f : Mathf.Lerp(0.85f, 0f, (e - 0.82f) / 0.18f);
                 for (int x = 0; x < 4; x++) t.SetPixel(x, y, c);
@@ -519,7 +573,8 @@ namespace Summit
                 yawRate = Mathf.Lerp(yawRate, rate, 1f - Mathf.Exp(-dt * 10f));
                 float want = rider.Airborne ? 0f : Mathf.Clamp(Mathf.Atan2(rider.Speed * yawRate, 9.81f) * Mathf.Rad2Deg, -45f, 45f);
                 lean = Mathf.Lerp(lean, want, 1f - Mathf.Exp(-dt * 14f));
-                roll.localRotation = Quaternion.Euler(0f, 0f, -lean * 0.5f);
+                // the rider's lean is the steering readout: it follows the turn and the thumb
+                roll.localRotation = Quaternion.Euler(0f, 0f, -lean * 0.5f - rider.Steer * 6f);
                 upper.localRotation = Quaternion.Euler(0f, 0f, -lean * 0.4f);
                 if (poser != null) Pose(dt);
                 else upper.localScale = new Vector3(1f, 1f - 0.24f * rider.Tuck, 1f);
@@ -534,6 +589,8 @@ namespace Summit
             sprayEm.rateOverTime = rider.Running && !rider.Crashed && !rider.Airborne
                 ? rider.Carve * rider.Speed * 7f + Mathf.Max(0f, rider.Speed - 22f) * 1.5f + (rider.BoostTime > 0f ? 60f : 0f)
                 : 0f;
+
+            wakeEm.rateOverTime = rider.Running && !rider.Crashed && !rider.Airborne ? Mathf.Clamp(rider.Speed * 2.2f, 0f, 80f) : 0f;
 
             // shield bubble: fuller with each shield held, flashes when it saves you
             shieldFlash = Mathf.MoveTowards(shieldFlash, 0f, dt * 2f);
