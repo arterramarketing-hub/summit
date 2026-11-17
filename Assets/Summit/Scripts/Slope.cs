@@ -12,7 +12,7 @@ namespace Summit
     /// </summary>
     public static class Slope
     {
-        public const float Fall = 0.50f;      // mean gradient of the fall line (about 27 degrees)
+        public const float Fall = 0.62f;      // mean gradient of the fall line (about 32 degrees)
         public const float Quad = 1.5f;       // terrain mesh spacing; the rider sits on exactly this mesh
         public const float PisteHalf = 20f;   // half the groomed width
         public static int Seed { get; private set; }
@@ -25,7 +25,11 @@ namespace Summit
             // small offsets only: large ones would lose float precision and step the terrain
             ox = Mathf.Repeat(seed * 37.31f, 211f);
             oz = Mathf.Repeat(seed * 19.77f, 199f);
+            Course.ResetCaches();
         }
+
+        /// <summary>A new mountain for every run.</summary>
+        public static int RandomSeed() => Random.Range(1, 999983);
 
         public static int TodaysSeed()
         {
@@ -39,7 +43,7 @@ namespace Summit
         {
             unchecked
             {
-                int h = (x + salt * 7919) * 374761393 + (y - salt * 104729) * 668265263;
+                int h = (x + salt * 7919 + Seed * 1013) * 374761393 + (y - salt * 104729 + Seed * 7) * 668265263;
                 h = (h ^ (int)((uint)h >> 13)) * 1274126177;
                 h ^= (int)((uint)h >> 16);
                 return (uint)h / 4294967296f;
@@ -75,15 +79,51 @@ namespace Summit
             return Mathf.Clamp01((a - PisteHalf) / 10f);
         }
 
-        public static float Height(float x, float z)
+        /// <summary>
+        /// The line straight down the mountain: the mean pitch, seeded rollers, and every so often a
+        /// bench that eases off before a roll-over into a much steeper drop (natural air off the top).
+        /// </summary>
+        public static float FallLine(float z)
         {
             float y = -z * Fall;
-            // long rollers down the fall line: steeper pitches and flatter run-outs
-            y += 2.6f * Mathf.Sin(z * 0.031f + ph);
-            y += 1.3f * Mathf.Sin(z * 0.073f + 2.0f + ph * 1.3f);
-            // the cross-section: a shallow trough along the piste, walls climbing far off it
+            y += 6f * (Noise(z * 0.014f, 13.7f) - 0.5f) + 2.6f * (Noise(z * 0.037f, 29.1f) - 0.5f) + 0.8f * (Noise(z * 0.09f, 41.3f) - 0.5f);
+            return y + Drops(z);
+        }
+
+        public const float DropSeg = 95f;
+
+        /// <summary>Benches and roll-overs: zero at both ends of each segment, so they never add up.</summary>
+        public static float Drops(float z)
+        {
+            if (z < 90f) return 0f;
+            int s = Mathf.FloorToInt(z / DropSeg);
+            if (Hash01(s, 11, 41) < 0.25f) return 0f;               // some stretches just keep their pitch
+            float zs = s * DropSeg;
+            if (Course.At(zs) == Course.Section.Pipe || Course.At(zs + DropSeg) == Course.Section.Pipe) return 0f;
+            float u = z / DropSeg - s;
+            float H = 3f + 10f * Hash01(s, 12, 41);
+            float u0 = 0.35f + 0.4f * Hash01(s, 13, 41), w = 0.06f + 0.09f * Hash01(s, 14, 41);
+            float t = Mathf.Clamp01((u - (u0 - w)) / (2f * w));
+            return H * (u - t * t * (3f - 2f * t));
+        }
+
+        /// <summary>The snow surface, without any crevasse cut into it.</summary>
+        public static float Surface(float x, float z) => HeightCore(x, z, false);
+
+        /// <summary>
+        /// The snow you ride on. Crevasses are not part of it: they are holes cut in the drawn mesh with
+        /// their own walls, and riding into one drops you in (see Rider and Course.CrevasseCut).
+        /// </summary>
+        public static float Height(float x, float z) => HeightCore(x, z, false);
+
+        static float HeightCore(float x, float z, bool cut)
+        {
+            float y = FallLine(z);
+            // the cross-section: a shallow trough along the piste, walls climbing far off it,
+            // and a camber that leans one way and then the other
             float a = x - Centre(z), aa = Mathf.Abs(a);
             y += 0.0035f * a * a;
+            y += a * 0.07f * (Noise(z * 0.009f, 51.7f) - 0.5f) * 2f;
             if (aa > 34f) y += (aa - 34f) * (aa - 34f) * 0.010f;
             // broad lumps in the rough; a little side-to-side tilt on the piste
             float rough = Mathf.Clamp01((aa - PisteHalf) / 10f);
@@ -95,14 +135,13 @@ namespace Summit
             if (pw > 0f)
             {
                 float c = Centre(z);
-                float floor = -z * Fall + 2.6f * Mathf.Sin(z * 0.031f + ph) + 1.3f * Mathf.Sin(z * 0.073f + 2.0f + ph * 1.3f)
-                            + (Noise(c * 0.011f + 50f, z * 0.009f) - 0.5f) * 7f;
+                float floor = FallLine(z) + (Noise(c * 0.011f + 50f, z * 0.009f) - 0.5f) * 7f;
                 float deckEnd = Course.PipeHalfWidth + Course.PipeDeck;
                 float yp = floor + Course.PipeProfile(a);
                 if (aa > deckEnd) yp = Mathf.Lerp(yp, y, Mathf.Clamp01((aa - deckEnd) / 10f));
                 y = Mathf.Lerp(y, yp, pw);
             }
-            y -= Course.CrevasseCut(x, z);
+            if (cut) y -= Course.CrevasseCut(x, z);
             return Start(x, z, y);
         }
 
@@ -130,7 +169,7 @@ namespace Summit
         /// <summary>The slope without the start pad (where the pad's height is measured from).</summary>
         static float BaseAt(float x, float z)
         {
-            float y = -z * Fall + 2.6f * Mathf.Sin(z * 0.031f + ph) + 1.3f * Mathf.Sin(z * 0.073f + 2.0f + ph * 1.3f);
+            float y = FallLine(z);
             float a = x - Centre(z);
             return y + 0.0035f * a * a + (Noise(x * 0.011f + 50f, z * 0.009f) - 0.5f) * 7f;
         }

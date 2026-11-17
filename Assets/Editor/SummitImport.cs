@@ -34,6 +34,7 @@ public class SummitImport : AssetPostprocessor
             m.animationType = ModelImporterAnimationType.Human;
             m.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
             m.importAnimation = false;
+            m.isReadable = true;   // the game loosens the clothes and adds wind shapes to the meshes at start
         }
         else
         {

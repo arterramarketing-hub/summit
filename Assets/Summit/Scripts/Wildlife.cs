@@ -41,7 +41,11 @@ namespace Summit
         GameObject bear;
         Rigidbody bearRb;
         Animation bearAnim;
-        float bearSpeed, bearTimer, bearYaw;
+        float bearSpeed, bearTimer, bearYaw, bearRise;
+        Transform bearRear;
+        enum BearMode { Standing, Rousing, Chasing }
+        BearMode bearMode;
+        const float BearNotice = 20f;   // how close you can get before it comes for you
         int bearCycle = -1;
         bool bearActive;
         float bearFwdYaw;   // the model's own facing, so it runs head first
@@ -192,8 +196,11 @@ namespace Summit
             bear = new GameObject("Bear");
             // the file's clip keys the model root's own position, rotation and scale (x100), so all
             // sizing and placing goes on a wrapper above it, measured with the clip applied
+            // a pivot at the hind feet lets it stand up on its hind legs
+            bearRear = new GameObject("BearRear").transform;
+            bearRear.SetParent(bear.transform, false);
             var wrap = new GameObject("BearWrap").transform;
-            wrap.SetParent(bear.transform, false);
+            wrap.SetParent(bearRear, false);
             var model = Instantiate(prefab, wrap, false);
             bearAnim = model.GetComponentInChildren<Animation>();
             if (bearAnim != null)
@@ -223,8 +230,11 @@ namespace Summit
             {
                 float k = 1.5f / b.size.y;
                 wrap.localScale = Vector3.one * k;
-                wrap.localPosition = new Vector3(-b.center.x * k, -b.min.y * k, -b.center.z * k);
                 bearFwdYaw = (b.size.x > b.size.z ? 90f : 0f) + BearYawFix;
+                // the head is at -Z of the bear's own frame (it is turned by bearFwdYaw), the hind feet at +Z
+                float rearZ = 0.4f * b.size.z * k;
+                bearRear.localPosition = new Vector3(0f, 0f, rearZ);
+                wrap.localPosition = new Vector3(-b.center.x * k, -b.min.y * k, -b.center.z * k - rearZ);
             }
             bearRb = bear.AddComponent<Rigidbody>();
             bearRb.isKinematic = true;
@@ -244,7 +254,7 @@ namespace Summit
         {
             if (bear == null || !rider.Running) return;
             Vector3 rp = rider.transform.position;
-            // once per danger zone, maybe: a bear breaks out of the trees ahead and to the side
+            // once per danger zone, maybe: a bear up on its hind legs near the edge of the piste ahead
             int cyc = Course.CycleOf(rp.z);
             if (!bearActive && cyc != bearCycle && Course.At(rp.z + 60f) == Course.Section.Danger && Course.At(rp.z) != Course.Section.Danger)
             {
@@ -252,21 +262,48 @@ namespace Summit
                 if (Slope.Hash01(cyc, 5, 77) < 0.7f || cyc == 0)
                 {
                     float side = Slope.Hash01(cyc, 6, 77) < 0.5f ? -1f : 1f;
-                    float z = rp.z + 75f;
-                    float x = Slope.Centre(z) + side * 30f;
+                    float z = rp.z + 85f + Slope.Hash01(cyc, 7, 77) * 25f;
+                    float x = Slope.Centre(z) + side * (16f + 7f * Slope.Hash01(cyc, 8, 77));
                     var p = new Vector3(x, Slope.DrawnHeight(x, z), z);
                     bear.SetActive(true);
                     bear.transform.position = p;
                     bearRb.position = p;
                     bearYaw = side > 0f ? -90f : 90f;
-                    bearSpeed = 4f; bearTimer = 0f; bearActive = true;
-                    if (bearAnim != null) bearAnim.Play();
-                    BearSpotted?.Invoke();
+                    bearSpeed = 0f; bearTimer = 0f; bearActive = true;
+                    bearMode = BearMode.Standing; bearRise = 1f;
+                    if (bearAnim != null) { bearAnim.Play(); foreach (AnimationState st in bearAnim) { st.time = 0.1f; st.speed = 0f; } }
                 }
             }
             if (!bearActive) return;
-            bearTimer += dt;
             Vector3 bp = bearRb.position;
+            Vector3 toRider = rp - bp; toRider.y = 0f;
+            if (bearMode != BearMode.Chasing)
+            {
+                // up on its hind legs, swaying, turning to watch you come
+                if (toRider.sqrMagnitude > 1f) bearYaw = Mathf.MoveTowardsAngle(bearYaw, Mathf.Atan2(toRider.x, toRider.z) * Mathf.Rad2Deg, 60f * dt);
+                if (bearMode == BearMode.Standing && toRider.magnitude < BearNotice && rp.z < bp.z + 4f)
+                {
+                    bearMode = BearMode.Rousing;   // you came too close: it drops and charges
+                    BearSpotted?.Invoke();
+                }
+                if (bearMode == BearMode.Rousing)
+                {
+                    bearRise = Mathf.MoveTowards(bearRise, 0f, dt / 0.45f);
+                    if (bearRise <= 0f)
+                    {
+                        bearMode = BearMode.Chasing; bearSpeed = 5f; bearTimer = 0f;
+                        if (bearAnim != null) foreach (AnimationState st in bearAnim) st.speed = 1f;
+                    }
+                }
+                float sway = bearMode == BearMode.Standing ? 3f * Mathf.Sin(Time.time * 1.4f) : 0f;
+                bearRear.localRotation = Quaternion.Euler(70f * Mathf.SmoothStep(0f, 1f, bearRise) + sway, 0f, 0f);
+                bearRb.MoveRotation(Quaternion.Euler(0f, bearYaw + bearFwdYaw, 0f));
+                // you went past at a distance: it stays put and is gone once you are well clear
+                if (bearMode == BearMode.Standing && rp.z - bp.z > 70f) { bear.SetActive(false); bearActive = false; }
+                return;
+            }
+            bearRear.localRotation = Quaternion.identity;
+            bearTimer += dt;
             // charge at where the rider is about to be; a bear tops out near 50 km/h, so speed is your escape
             Vector3 aim = rp + rider.Velocity * 0.7f;
             Vector3 to = aim - bp; to.y = 0f;

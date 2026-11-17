@@ -186,6 +186,13 @@ namespace Summit
             BoostTime = Mathf.Max(0f, BoostTime - dt);
             invulnerable -= dt;
             Vector3 p = rb.position, v = rb.linearVelocity;
+            // over a crevasse with nothing under you (riding in, or coming down from the air): you fall in
+            if (!Crashed && !Grinding && Course.CrevasseCut(p.x, p.z) > 1.2f && (!Airborne || p.y - Slope.DrawnHeight(p.x, p.z) < 0.8f))
+            {
+                Airborne = false;
+                DoCrash("Crevasse!");
+                v = new Vector3(v.x * 0.4f, Mathf.Min(v.y, -2f), v.z * 0.4f);
+            }
             if (Crashed) v = CrashStep(dt, p, v);
             else if (Grinding) v = GrindStep(dt, p, v);
             else
@@ -274,7 +281,6 @@ namespace Summit
             AboveGround = 0f;
 
             // fell into a crevasse
-            if (Course.CrevasseCut(p.x, p.z) > 1.2f) { DoCrash("Crevasse!"); return new Vector3(vt.x * 0.2f, vy, vt.z * 0.2f); }
 
             if (popPending)
             {

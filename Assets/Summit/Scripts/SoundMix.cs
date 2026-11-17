@@ -36,7 +36,7 @@ namespace Summit
         AudioLowPassFilter muffler;
         float muffle;
 
-        AudioClip pop, whoosh, spin, landHard, crash, hitTree, hitRock, crevasse, clack, clank, chime, trickBig,
+        AudioClip powerShort, pop, whoosh, spin, landHard, crash, hitTree, hitRock, crevasse, clack, clank, chime, trickBig,
                   closeCall, soda, shieldGet, shieldHit, click, play, buried, bearRoar, flap;
         AudioClip[] lands, thumps, crows, chirps, bones;
 
@@ -65,7 +65,7 @@ namespace Summit
 
             pop = C("pop"); whoosh = C("whoosh"); spin = C("spin"); landHard = C("land_hard"); crash = C("crash");
             hitTree = C("hit_tree"); hitRock = C("hit_rock"); crevasse = C("crevasse"); clack = C("clack"); clank = C("clank");
-            chime = C("chime"); trickBig = C("trick_big"); closeCall = C("close_call"); soda = C("soda");
+            chime = C("trick"); powerShort = C("power_short"); trickBig = C("trick_big"); closeCall = C("close_call"); soda = C("soda");
             shieldGet = C("shield_get"); shieldHit = C("shield_hit"); click = C("click"); play = C("play"); buried = C("buried");
             bearRoar = C("bear_roar"); flap = C("flap");
             lands = new[] { C("land_1"), C("land_2"), C("land_3") };
@@ -159,7 +159,7 @@ namespace Summit
             bool bear = wild.BearActive;
             bearSound.position = wild.BearPosition + Vector3.up * 0.8f;
             float run = Mathf.Clamp01(wild.BearSpeed / 12f);
-            bearGrowl.volume = Mathf.MoveTowards(bearGrowl.volume, bear ? 0.9f : 0f, dt * 2f);
+            bearGrowl.volume = Mathf.MoveTowards(bearGrowl.volume, bear ? 0.35f + 0.55f * run : 0f, dt * 2f);
             bearSteps.volume = Mathf.MoveTowards(bearSteps.volume, bear ? 0.85f * run : 0f, dt * 3f);
             bearSteps.pitch = 0.75f + 0.45f * run;
             // birds singing as they pass
@@ -206,12 +206,12 @@ namespace Summit
                 case Sfx.Clack: c = clack; vol = Mathf.Clamp01(amount) * 0.6f; pitch = Random.Range(0.85f, 1.2f); break;
                 case Sfx.GrindRail: c = clank; vol = 0.6f; break;
                 case Sfx.GrindBox: c = clack; vol = 0.6f; pitch = 0.6f; break;
-                case Sfx.Trick: c = chime; vol = 0.4f; pitch = Mathf.Pow(2f, Scale[Mathf.Clamp((int)amount, 0, Scale.Length - 1)] / 12f); break;
-                case Sfx.TrickBig: c = trickBig; vol = 0.5f; pitch = Mathf.Pow(2f, Scale[Mathf.Clamp((int)amount, 0, Scale.Length - 1)] / 12f); break;
+                case Sfx.Trick: c = chime; vol = 0.55f; pitch = Mathf.Pow(2f, Scale[Mathf.Clamp((int)amount, 0, Scale.Length - 1)] / 36f); break;   // a chain lifts it a little
+                case Sfx.TrickBig: c = trickBig; vol = 0.65f; pitch = Mathf.Pow(2f, Scale[Mathf.Clamp((int)amount, 0, Scale.Length - 1)] / 36f); break;
                 case Sfx.CloseCall: c = closeCall; vol = 0.5f; break;
                 case Sfx.Soda: c = soda; vol = 0.75f; pitch = 1f; break;
                 case Sfx.ShieldGet: c = shieldGet; vol = 0.5f; pitch = Mathf.Pow(2f, (amount - 1f) * 2f / 12f); break;
-                case Sfx.ShieldFull: c = chime; vol = 0.4f; pitch = 1.5f; break;
+                case Sfx.ShieldFull: c = powerShort; vol = 0.5f; pitch = 1.15f; break;
                 case Sfx.ShieldHit: c = shieldHit; vol = 0.8f; break;
                 case Sfx.Click: c = click; vol = 0.5f; pitch = 1f; break;
                 case Sfx.Play: c = play; vol = 0.5f; pitch = 1f; break;

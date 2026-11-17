@@ -147,6 +147,20 @@ namespace Summit
 
         public void Prewarm() { Refresh(true); }
 
+        /// <summary>A new mountain: forget every placement and collider, and place again.</summary>
+        public void Rebuild()
+        {
+            cache.Clear();
+            foreach (var kv in live)
+            {
+                var g = kv.Value; g.SetActive(false);
+                (g.GetComponent<CapsuleCollider>() != null ? spareTree : spareRock).Enqueue(g);
+            }
+            live.Clear();
+            lastCell = new Vector2Int(int.MinValue, int.MinValue);
+            Refresh(true);
+        }
+
         void Refresh(bool force)
         {
             if (target == null) return;

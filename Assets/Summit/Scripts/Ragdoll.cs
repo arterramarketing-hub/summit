@@ -213,7 +213,7 @@ namespace Summit
         static void PlaceSlab(Rigidbody slab, Vector3 at, bool snap)
         {
             Vector3 n = Slope.Normal(at.x, at.z);
-            var pos = new Vector3(at.x, Slope.DrawnHeight(at.x, at.z), at.z);
+            var pos = new Vector3(at.x, Slope.DrawnHeight(at.x, at.z) - Course.CrevasseCut(at.x, at.z), at.z);   // the bottom, in a crevasse
             var rot = Quaternion.FromToRotation(Vector3.up, n);
             if (snap) { slab.position = pos; slab.rotation = rot; slab.transform.SetPositionAndRotation(pos, rot); }
             else { slab.MovePosition(pos); slab.MoveRotation(rot); }

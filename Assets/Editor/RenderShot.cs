@@ -120,6 +120,21 @@ public static class RenderShot
         Shoot(cam, "RenderShotSide.png");
         cam.transform.SetPositionAndRotation(c + new Vector3(0f, 0.8f, -4.5f), Quaternion.LookRotation(Vector3.forward + Vector3.down * 0.15f));
         Shoot(cam, "RenderShotBack.png");
+        // a crevasse, from beside its rim
+        {
+            var cv = Course.CrevassesOf(0)[1];
+            float zm = (cv.z0 + cv.z1) * 0.5f;
+            float open = Course.Opening(cv, zm, out float ccx);
+            rider.ResetAt(ccx + 12f, zm - 6f); terrain.Prewarm(); props.Prewarm(); dress.Prewarm();
+            typeof(Forest).GetMethod("Draw", NP).Invoke(props, null);
+            var eye = new Vector3(ccx + open + 3.5f, Slope.Surface(ccx + open + 3.5f, zm - 7f) + 3.2f, zm - 7f);
+            cam.fieldOfView = 60f;
+            cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(new Vector3(ccx, Slope.Surface(ccx, zm) - 5f, zm + 2f) - eye));
+            Shoot(cam, "RenderShotCrevasse.png");
+            eye = new Vector3(ccx + 1f, Slope.Surface(ccx, cv.z0 - 6f) + 6f, cv.z0 - 6f);
+            cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(new Vector3(ccx, Slope.Surface(ccx, zm) - 8f, zm) - eye));
+            Shoot(cam, "RenderShotCrevasse2.png");
+        }
         // the track left by the carve run, close up from behind and above
         cam.fieldOfView = 50f;
         var cpos = trackAt - trackDir * 2.5f; cpos.y = Slope.DrawnHeight(cpos.x, cpos.z) + 1.5f;
@@ -192,6 +207,12 @@ public static class RenderShot
         }
         cam.transform.SetPositionAndRotation(new Vector3(0f, 501f, 7f), Quaternion.LookRotation(-Vector3.forward));
         Shoot(cam, "BearFront.png");
+        // up on its hind legs
+        var rear = (Transform)typeof(Wildlife).GetField("bearRear", NP).GetValue(wild);
+        rear.localRotation = Quaternion.Euler(70f, 0f, 0f);
+        bear.transform.rotation = Quaternion.Euler(0f, (float)typeof(Wildlife).GetField("bearFwdYaw", NP).GetValue(wild) + 90f, 0f);
+        cam.transform.SetPositionAndRotation(new Vector3(0f, 501.2f, -7f), Quaternion.LookRotation(Vector3.forward));
+        Shoot(cam, "BearStand.png");
         EditorApplication.Exit(0);
     }
 

@@ -74,8 +74,10 @@ namespace Summit
 
         // ---------------------------------------------------------------- crevasses
 
+        public static void ResetCaches() { crevCache.Clear(); featCache.Clear(); }
+
         public struct Crevasse { public float x, z0, z1, half; }
-        public const float CrevasseDepth = 10f;
+        public const float CrevasseDepth = 28f;
         static readonly Dictionary<int, Crevasse[]> crevCache = new Dictionary<int, Crevasse[]>();
 
         public static Crevasse[] CrevassesOf(int cycle)
@@ -91,11 +93,20 @@ namespace Summit
                 // alternate sides so there is always a line between them
                 float side = (k % 2 == 0 ? -1f : 1f) * (3f + h3 * 9f);
                 float cx = Slope.Centre(z0 + len * 0.5f) + side;
-                list[k] = new Crevasse { x = cx, z0 = z0, z1 = z0 + len, half = 2.1f + h3 * 0.8f };
+                list[k] = new Crevasse { x = cx, z0 = z0, z1 = z0 + len, half = 2.3f + h3 * 1.2f };
             }
             if (crevCache.Count > 64) crevCache.Clear();
             crevCache[cycle] = list;
             return list;
+        }
+
+        /// <summary>Half the crevasse's width at z (it pinches shut at both ends), and its centre line there.</summary>
+        public static float Opening(Crevasse c, float z, out float cx)
+        {
+            // the crevasse wanders a little with the piste
+            cx = c.x + (Slope.Centre(z) - Slope.Centre((c.z0 + c.z1) * 0.5f));
+            if (z <= c.z0 || z >= c.z1) return 0f;
+            return c.half * Mathf.Sqrt(Mathf.Clamp01(Mathf.Min(z - c.z0, c.z1 - z) / 5f));
         }
 
         /// <summary>How deep a crevasse cuts at (x, z): 0 almost everywhere.</summary>
@@ -105,14 +116,13 @@ namespace Summit
             foreach (var c in CrevassesOf(CycleOf(z)))
             {
                 if (z < c.z0 || z > c.z1) continue;
-                // the crevasse wanders a little with the piste
-                float cx = c.x + (Slope.Centre(z) - Slope.Centre((c.z0 + c.z1) * 0.5f));
-                float dx = Mathf.Abs(x - cx) / c.half;
+                float open = Opening(c, z, out float cx);
+                if (open <= 0.01f) continue;
+                float dx = Mathf.Abs(x - cx) / open;
                 if (dx >= 1f) continue;
-                float along = Mathf.Min(z - c.z0, c.z1 - z) / 3f;
-                float end = Mathf.Clamp01(along);
-                float across = 1f - dx * dx * dx * dx;
-                return CrevasseDepth * across * end * end * (3f - 2f * end);
+                // sheer walls: full depth right up to the lip
+                float d2 = dx * dx, d4 = d2 * d2;
+                return CrevasseDepth * (1f - d4 * d4) * Mathf.Sqrt(open / c.half);
             }
             return 0f;
         }

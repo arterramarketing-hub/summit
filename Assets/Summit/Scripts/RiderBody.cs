@@ -319,12 +319,88 @@ namespace Summit
             if (h > 0.01f) model.localScale *= 1.75f / h;
             r.CaptureBind();
             Gear(r.Head, r.HandL, r.HandR, r.UpperL, r.LowerL, r.UpperR, r.LowerR, false);
+            Loosen(go);
             rig = r;
             return true;
         }
 
+        // ---- baggy clothes: the jacket and pants are loosened, and given shapes the wind can blow into
+
+        readonly System.Collections.Generic.List<SkinnedMeshRenderer> cloth = new System.Collections.Generic.List<SkinnedMeshRenderer>();
+        float billow, flapPhase;
+
+        void Loosen(GameObject go)
+        {
+            // the wind comes from the nose of the board and streams out past the tail
+            Vector3 windWorld = roll.TransformDirection(Vector3.back);
+            foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>())
+            {
+                bool jacket = smr.name.Contains("Body"), pants = smr.name.Contains("Legs");
+                if (!jacket && !pants) continue;
+                var src = smr.sharedMesh;
+                if (src == null || !src.isReadable) continue;
+                var mesh = Instantiate(src);
+                mesh.name = src.name + " (loose)";
+                float m = 1f / Mathf.Max(1e-5f, smr.transform.lossyScale.x);   // metres to mesh units
+                Vector3 wind = smr.transform.InverseTransformDirection(windWorld).normalized;
+                var v = mesh.vertices; var n = mesh.normals;
+                if (n == null || n.Length != v.Length) { mesh.RecalculateNormals(); n = mesh.normals; }
+                // vertices split at seams share a position: give them one averaged normal, or pushing them
+                // out would open cracks along every seam
+                var sum = new System.Collections.Generic.Dictionary<Vector3Int, Vector3>();
+                Vector3Int Key(Vector3 p) => new Vector3Int(Mathf.RoundToInt(p.x * 1e5f), Mathf.RoundToInt(p.y * 1e5f), Mathf.RoundToInt(p.z * 1e5f));
+                for (int i = 0; i < v.Length; i++) { var k = Key(v[i]); sum[k] = (sum.TryGetValue(k, out var acc) ? acc : Vector3.zero) + n[i]; }
+                var sn = new Vector3[v.Length];
+                for (int i = 0; i < v.Length; i++) sn[i] = sum[Key(v[i])].normalized;
+                n = sn;
+                var billowD = new Vector3[v.Length]; var flapA = new Vector3[v.Length]; var flapB = new Vector3[v.Length];
+                float baggy = jacket ? 0.022f : 0.018f;
+                for (int i = 0; i < v.Length; i++)
+                {
+                    Vector3 pm = v[i] / m;   // position in metres, for noise
+                    float loose = 0.55f + 0.45f * Mathf.PerlinNoise(pm.x * 4f + pm.y * 3f + 11f, pm.z * 4f - pm.y * 2f + 5f);
+                    // looser all over: puffed out along the surface
+                    v[i] += n[i] * (baggy * loose * m);
+                    // the side away from the wind balloons out and streams back; the windward side stays pressed flat
+                    float lee = Mathf.Max(0f, Vector3.Dot(n[i], wind));
+                    billowD[i] = (n[i] * 0.035f * lee + wind * 0.05f * (0.3f + 0.7f * lee)) * loose * m;
+                    float ra = Mathf.PerlinNoise(pm.x * 7f + pm.z * 3f, pm.y * 7f + 2f) - 0.5f;
+                    float rb = Mathf.PerlinNoise(pm.y * 6f + 31f, pm.z * 6f + pm.x * 2f + 17f) - 0.5f;
+                    float flutter = (0.3f + 0.7f * lee) * 0.03f * loose * m;
+                    flapA[i] = n[i] * ra * 2f * flutter + wind * ra * flutter * 0.5f;
+                    flapB[i] = n[i] * rb * 2f * flutter - wind * rb * flutter * 0.5f;
+                }
+                mesh.vertices = v;
+                mesh.AddBlendShapeFrame("Billow", 100f, billowD, null, null);
+                mesh.AddBlendShapeFrame("FlapA", 100f, flapA, null, null);
+                mesh.AddBlendShapeFrame("FlapB", 100f, flapB, null, null);
+                mesh.RecalculateBounds();
+                smr.sharedMesh = mesh;
+                cloth.Add(smr);
+            }
+        }
+
+        /// <summary>Clothes in the wind: they balloon with speed and flap faster the faster you go.</summary>
+        void Flutter(float dt)
+        {
+            if (cloth.Count == 0) return;
+            float s = Mathf.Clamp01(rider.Speed / 30f) * (rider.Crashed ? 0.3f : 1f) + (rider.Airborne ? 0.15f : 0f);
+            billow = Mathf.Lerp(billow, Mathf.Clamp01(s), 1f - Mathf.Exp(-dt * 3f));
+            flapPhase += dt * Mathf.PI * 2f * (3f + 9f * billow);
+            float amp = 100f * billow;
+            float a = amp * (0.5f + 0.5f * Mathf.Sin(flapPhase)), b = amp * (0.5f + 0.5f * Mathf.Sin(flapPhase * 1.37f + 1.3f));
+            foreach (var smr in cloth)
+            {
+                if (smr == null) continue;
+                smr.SetBlendShapeWeight(0, 100f * billow);
+                smr.SetBlendShapeWeight(1, a);
+                smr.SetBlendShapeWeight(2, b);
+            }
+        }
+
         void PoseRig(float dt)
         {
+            Flutter(dt);
             float t = Time.time;
             compV += (-comp * 140f - compV * 16f) * dt;
             comp = Mathf.Clamp(comp + compV * dt, -0.15f, 0.6f);
@@ -380,18 +456,12 @@ namespace Summit
             Blob(handL, Vector3.zero, new Vector3(0.10f, 0.10f, 0.10f), gloveM, PrimitiveType.Sphere);
             Blob(handR, Vector3.zero, new Vector3(0.10f, 0.10f, 0.10f), gloveM, PrimitiveType.Sphere);
 
-            var beanieM = M(new Color(0.08f, 0.55f, 0.62f), 0.1f);
-            var pomM = M(new Color(0.97f, 0.97f, 0.97f), 0.05f);
             var frameM = M(new Color(0.06f, 0.06f, 0.07f), 0.4f);
             var head = headBone;
             if (head != null)
             {
                 Vector3 fwd = upper.TransformDirection(Vector3.right);   // the rider faces the toe edge
                 Vector3 up = upper.up;
-                // knit beanie with a rolled cuff and a pompom
-                Blob(head, up * 0.15f - fwd * 0.01f, new Vector3(0.245f, 0.22f, 0.25f), beanieM, PrimitiveType.Sphere);
-                Blob(head, up * 0.115f - fwd * 0.005f, new Vector3(0.255f, 0.035f, 0.26f), beanieM, PrimitiveType.Cylinder);
-                Blob(head, up * 0.27f - fwd * 0.01f, new Vector3(0.09f, 0.09f, 0.09f), pomM, PrimitiveType.Sphere);
                 // big ski goggles over the eyes: a mirrored lens in a black frame, strap round the back
                 Blob(head, up * 0.075f + fwd * 0.118f, new Vector3(0.06f, 0.095f, 0.235f), frameM, PrimitiveType.Cube, fwd);
                 Blob(head, up * 0.075f + fwd * 0.135f, new Vector3(0.035f, 0.075f, 0.215f), lensM, PrimitiveType.Cube, fwd);

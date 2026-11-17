@@ -110,6 +110,17 @@ namespace Summit
         Color[] cols;
         int[] tris;
         float[] grid;   // heights with a one-cell border, reused between chunks
+        bool[] holeMask;
+        readonly List<int> holed = new List<int>();
+
+        /// <summary>A new mountain: throw away every chunk and build again around the target.</summary>
+        public void Rebuild()
+        {
+            foreach (var kv in live) { kv.Value.SetActive(false); spare.Enqueue(kv.Value); }
+            live.Clear();
+            lastCx = lastCz = int.MinValue;
+            Refresh(true);
+        }
 
         void Fill(Mesh mesh, Vector2Int key)
         {
@@ -159,12 +170,37 @@ namespace Summit
                         tris[t++] = b; tris[t++] = c; tris[t++] = d;
                     }
             }
+            // where a crevasse opens, leave a hole: its walls and lips are their own meshes (CourseDressing)
+            int[] use = tris;
+            if (Course.At(z0) == Course.Section.Danger || Course.At(z0 + chunkSize) == Course.Section.Danger)
+            {
+                if (holeMask == null || holeMask.Length != n * n) holeMask = new bool[n * n];
+                bool any = false;
+                for (int j = 0; j < n; j++)
+                    for (int i = 0; i < n; i++)
+                    {
+                        bool h = Course.CrevasseCut(x0 + i * q, z0 + j * q) > 0.25f;
+                        holeMask[j * n + i] = h; any |= h;
+                    }
+                if (any)
+                {
+                    holed.Clear();
+                    for (int j = 0; j < quads; j++)
+                        for (int i = 0; i < quads; i++)
+                        {
+                            int a = j * n + i, b = a + 1, c = a + n, d = c + 1;
+                            if (holeMask[a] || holeMask[b] || holeMask[c] || holeMask[d]) continue;
+                            holed.Add(a); holed.Add(c); holed.Add(b); holed.Add(b); holed.Add(c); holed.Add(d);
+                        }
+                    use = holed.ToArray();
+                }
+            }
             mesh.Clear();
             mesh.vertices = verts;
             mesh.normals = norms;
             mesh.uv = uvs;
             mesh.colors = cols;
-            mesh.triangles = tris;
+            mesh.triangles = use;
             mesh.RecalculateTangents();   // the snow's normal map needs them
             mesh.RecalculateBounds();
         }

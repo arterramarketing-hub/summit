@@ -648,6 +648,87 @@ func boneCrack(_ seed: UInt64) -> [Double] {
     return normalize(fade(reverb(x, wet: 0.08, tail: 0.3), out: 0.1), 0.95)
 }
 
+// ---- reward sounds: punchy hits and sweeps instead of bells
+
+/// A trick landed: a deep kick, a snappy crack, and an airy rush rising out of it.
+func trickHit() -> [Double] {
+    var r = RNG(90); let n = samples(0.8)
+    var x = thump(0.8, f0: 150, f1: 48, decay: 0.12)
+    add(&x, mul(filt(white(n, &r), .bp, 1800, 0.7)) { env($0, attack: 0.001, decay: 0.05) }, 0.7)
+    add(&x, filt(white(samples(0.003), &r), .hp, 3000), 0.5)
+    add(&x, whoosh(0.5, lo: 600, hi: 4200, end: 3800, q: 1.4, peak: 0.85, seed: 91), 0.45, at: 0.02)
+    return normalize(fade(reverb(x, wet: 0.12, tail: 0.4), out: 0.15), 0.9)
+}
+
+/// A big trick: a double hit, a sub boom and a long rising rush that sparkles at the top.
+func trickBig() -> [Double] {
+    var r = RNG(92); let n = samples(1.3)
+    var x = thump(1.3, f0: 140, f1: 42, decay: 0.3)
+    add(&x, thump(0.5, f0: 170, f1: 60, decay: 0.08), 0.8, at: 0.11)
+    for at in [0.0, 0.11] { add(&x, mul(filt(white(samples(0.2), &r), .bp, 2000, 0.7)) { env($0, attack: 0.001, decay: 0.05) }, 0.6, at: at) }
+    add(&x, whoosh(0.8, lo: 400, hi: 5500, end: 5000, q: 1.2, peak: 0.9, seed: 93), 0.5, at: 0.05)
+    add(&x, mul(filt(grains(n, rate: { _ in 2500 }, len: 0.0003...0.001, &r), .hp, 6000)) { i in let s = t(i) - 0.5; return s < 0 ? 0 : exp(-s / 0.3) }, 0.8)
+    return normalize(fade(reverb(x, wet: 0.15, tail: 0.5), out: 0.25), 0.9)
+}
+
+/// A rising saw sweep through an opening filter: a power-up surging in.
+func surge(_ sec: Double, f0: Double, f1: Double, seed: UInt64) -> [Double] {
+    var r = RNG(seed); let n = samples(sec)
+    var x = [Double](repeating: 0, count: n)
+    for (k, det) in [1.0, 1.006, 0.994].enumerated() {
+        var ph = Double(k) * 0.3
+        for i in 0..<n {
+            let s = t(i) / sec, f = f0 * pow(f1 / f0, min(1, s / 0.6)) * det
+            ph += f / SR; if ph >= 1 { ph -= 1 }
+            x[i] += (2 * ph - 1) / 3
+        }
+    }
+    x = sweep(x, .lp, 2) { i in let s = t(i) / sec; return 300 + 5000 * min(1, s / 0.6) }
+    add(&x, mul(filt(white(n, &r), .hp, 4000)) { i in let s = t(i) / sec; return s * 0.5 }, 0.4)
+    x = mul(x) { i in let s = t(i) / sec; return min(1, s / 0.05) * (s > 0.6 ? exp(-(s - 0.6) / 0.15) : 1) * (0.8 + 0.2 * sin(TAU * 16 * t(i))) }
+    return x
+}
+
+func sodaHit() -> [Double] {
+    var r = RNG(26); let n = samples(1.3)
+    var k = [Double](repeating: 0, count: n); k[0] = 1; k[1] = -0.8
+    var x = modes(k, [2800, 4300], [0.05, 0.04], [1, 0.5]).map { $0 * 12 }                       // the tab
+    add(&x, filt(white(samples(0.004), &r), .hp, 2000), 0.6)
+    add(&x, mul(filt(white(n, &r), .hp, 2500)) { env($0, attack: 0.005, decay: 0.3) }, 0.6, at: 0.01)   // pssht
+    add(&x, mul(filt(grains(n, rate: { _ in 2000 }, len: 0.0002...0.0008, &r), .hp, 4000)) { i in exp(-t(i) / 0.6) }, 1.0, at: 0.05)
+    add(&x, surge(0.8, f0: 90, f1: 520, seed: 94), 0.55, at: 0.18)                             // and the rush
+    add(&x, thump(0.4, f0: 90, f1: 50, decay: 0.15), 0.5, at: 0.2)
+    return normalize(fade(x, out: 0.2), 0.85)
+}
+
+func forceField(_ sec: Double, seed: UInt64) -> [Double] {
+    var r = RNG(seed); let n = samples(sec)
+    var x = surge(sec, f0: 110, f1: 330, seed: seed)
+    add(&x, mul(filt(white(n, &r), .bp, 6000, 2)) { i in let s = t(i) / sec; return (0.5 + 0.5 * sin(TAU * 22 * t(i))) * min(1, s * 3) * (1 - s) }, 0.35)
+    add(&x, thump(min(sec, 0.5), f0: 70, f1: 45, decay: 0.2), 0.4)
+    return normalize(fade(reverb(x, wet: 0.2, tail: 0.4), out: 0.2), 0.75)
+}
+
+func zap() -> [Double] {
+    var r = RNG(95); let n = samples(0.6)
+    var x = thump(0.6, f0: 110, f1: 55, decay: 0.1)
+    var ph = 0.0
+    var sq = [Double](repeating: 0, count: n)
+    for i in 0..<n { let f = 90 + 330 * exp(-t(i) / 0.06); ph += f / SR; if ph >= 1 { ph -= 1 }; sq[i] = (ph < 0.5 ? 1 : -1) * env(i, attack: 0.001, decay: 0.12) }
+    add(&x, softclip(filt(sq, .lp, 3000), 1.5), 0.5)
+    add(&x, mul(filt(grains(n, rate: { _ in 3000 }, len: 0.0003...0.001, &r), .hp, 3000)) { env($0, attack: 0.001, decay: 0.2) }, 0.8)
+    return normalize(fade(x, out: 0.1), 0.85)
+}
+
+func goSound() -> [Double] {
+    var x = whoosh(0.4, lo: 300, hi: 2600, end: 2400, q: 1.2, peak: 0.9, seed: 96)
+    x += [Double](repeating: 0, count: samples(0.4))
+    add(&x, thump(0.4, f0: 130, f1: 55, decay: 0.1), 0.9, at: 0.36)
+    var r = RNG(97)
+    add(&x, mul(filt(white(samples(0.2), &r), .bp, 2200, 0.8)) { env($0, attack: 0.001, decay: 0.04) }, 0.5, at: 0.36)
+    return normalize(fade(x, out: 0.1), 0.8)
+}
+
 // ------------------------------------------------------------------ write them all
 
 if CommandLine.arguments.count > 1 { outDir = CommandLine.arguments[1] }
@@ -682,14 +763,15 @@ write("thump_2", bodyThump(51))
 write("thump_3", bodyThump(52))
 write("clack", clack())
 write("clank", clank())
-write("chime", chime())
-write("trick_big", notes([1046.5, 1318.5, 1760], gap: 0.08, sec: 1.6, wet: 0.3))
+write("trick", trickHit())
+write("trick_big", trickBig())
 write("close_call", closeCall())
-write("soda", soda())
-write("shield_get", notes([1046.5, 1318.5, 1568, 2093], gap: 0.07, sec: 1.3, wet: 0.35, chorus: true))
-write("shield_hit", shieldHit())
+write("soda", sodaHit())
+write("shield_get", forceField(1.0, seed: 98))
+write("power_short", forceField(0.45, seed: 99))
+write("shield_hit", zap())
 write("click", click())
-write("play", notes([784, 1175], gap: 0.09, sec: 0.8, wet: 0.25))
+write("play", goSound())
 write("buried", buried())
 write("crevasse", crevasse())
 write("crow_1", crow(60, f0: 620, f1: 520))

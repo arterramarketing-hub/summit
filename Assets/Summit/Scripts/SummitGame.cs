@@ -31,7 +31,7 @@ namespace Summit
         public const int MaxFalls = 3;
         int falls;
         float wipeoutTimer, hurtShake;
-        string fallsNote = "";
+        string fallsNote = "", endTitle = "WIPED OUT";
         bool endBuried;
         readonly Avalanche slide = new Avalanche();
 
@@ -118,7 +118,7 @@ namespace Summit
             BuildStartGate();
             dressing = new GameObject("Course").AddComponent<CourseDressing>();
             dressing.target = rg.transform;
-            dressing.Build(snow.shader);
+            dressing.Build(snow.shader, snow);
             wild = new GameObject("Wildlife").AddComponent<Wildlife>();
             wild.rider = rider;
             wild.Build(snow.shader);
@@ -241,6 +241,12 @@ namespace Summit
         void ToReady()
         {
             state = State.Ready;
+            // a new mountain every run: new pitches, drops, kickers, crevasses and trees
+            Slope.Init(Slope.RandomSeed());
+            terrain.Rebuild();
+            props.Rebuild();
+            dressing.Rebuild();
+            RebuildGate();
             float x = Slope.Centre(Slope.PadLip);
             rider.ResetAt(x, Slope.StartZ);
             body.ResetVisual();
@@ -325,7 +331,7 @@ namespace Summit
                     if (input.AnyPress() && hud.OnRestart(RiderInput.PointerPosition())) { audioFx.Play(Sfx.Click); ToReady(); input.SwallowCurrentPress(); break; }
                     runTime += dt;
                     slide.Step(dt, rider);
-                    if (wipeoutTimer > 0f) { wipeoutTimer -= dt; if (wipeoutTimer <= 0f) { ToEnd("WIPED OUT", false); break; } }
+                    if (wipeoutTimer > 0f) { wipeoutTimer -= dt; if (wipeoutTimer <= 0f) { ToEnd(endTitle, false); break; } }
                     if (chainCount > 0)
                     {
                         chainTimer -= dt;
@@ -431,12 +437,20 @@ namespace Summit
         }
 
         // the start: a gate over the in-run and flags along the lip you jump from
+        Transform gateRoot;
+        void RebuildGate()
+        {
+            if (gateRoot != null) Destroy(gateRoot.gameObject);
+            BuildStartGate();
+        }
+
         void BuildStartGate()
         {
             var sh = snow.shader;
             Material M(Color c) { var m = new Material(sh); m.SetColor("_BaseColor", c); m.SetFloat("_Smoothness", 0.3f); return m; }
             var red = M(new Color(0.85f, 0.12f, 0.10f)); var white = M(new Color(0.95f, 0.95f, 0.97f)); var wood = M(new Color(0.45f, 0.30f, 0.18f));
             var root = new GameObject("StartGate").transform;
+            gateRoot = root;
             float cx = Slope.Centre(Slope.PadLip), gz = Slope.PadLip - 36f;   // well ahead of where you wait, so the whole banner is in view
             float gy = Slope.DrawnHeight(cx, gz);
             for (int sgn = -1; sgn <= 1; sgn += 2)
@@ -500,7 +514,8 @@ namespace Summit
             int left = MaxFalls - falls;
             fallsNote = left <= 0 ? "that's three" : left == 1 ? "1 fall left" : left + " falls left";
             hud.Flash(why, fallsNote, 1.3f);
-            if (left <= 0) wipeoutTimer = 2.3f;   // let the tumble play out, then it's over
+            if (why.StartsWith("Crevasse")) { wipeoutTimer = 2.4f; endTitle = "LOST IN A CREVASSE"; hud.Flash("CREVASSE!", "you fell in", 2f); }
+            else if (left <= 0) { wipeoutTimer = 2.3f; endTitle = "WIPED OUT"; }   // let the tumble play out, then it's over
             if (why.StartsWith("Tree")) { audioFx.Play(Sfx.HitTree); audioFx.Play(Sfx.Crash, 0.6f); }
             else if (why.StartsWith("Rock")) { audioFx.Play(Sfx.HitRock); audioFx.Play(Sfx.Crash, 0.6f); }
             else if (why.StartsWith("Crevasse")) audioFx.Play(Sfx.Crevasse);
