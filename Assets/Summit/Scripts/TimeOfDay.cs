@@ -34,6 +34,10 @@ namespace Summit
             loaded = true;
             clock = Mathf.Repeat(PlayerPrefs.GetFloat(ClockKey, clock), 4f);
             lockLevel = Mathf.Clamp(PlayerPrefs.GetInt(LockKey, 0), 0, LockName.Length - 1);
+            // device testing: SUMMIT_TIME=0..3 (morning, day, evening, night) shows that phase, saving nothing
+            var env = System.Environment.GetEnvironmentVariable("SUMMIT_TIME");
+            if (!string.IsNullOrEmpty(env) && float.TryParse(env, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float t))
+                TestClock = Mathf.Repeat(t, 4f) + HeldAt;
         }
 
         /// <summary>The clock now, 0..4 (a held phase sits a little way into its phase).</summary>
@@ -68,7 +72,7 @@ namespace Summit
             if (lockLevel > 0 || TestClock >= 0f || seconds <= 0f) return;
             clock = Mathf.Repeat(clock + seconds / PhaseSeconds, 4f);
             saveT += seconds;
-            if (saveT > 10f) Save();   // not every frame: PlayerPrefs writes go to disk
+            if (saveT > 60f) Save();   // rarely: a PlayerPrefs write is a disk write (and pausing the app saves too)
         }
 
         public static void Save()

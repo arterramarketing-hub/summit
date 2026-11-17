@@ -191,12 +191,15 @@ namespace Summit
         void Update()
         {
             // a jump is a released tuck; input is read per frame, physics runs on its own clock
-            if (Running && input != null && input.Released && input.LastHold > 0.08f)
+            if (Running && Time.timeScale > 0f && input != null && input.Released && input.LastHold > 0.08f)   // (pause-menu taps are not jumps)
             {
                 popPending = true;
                 popHold = input.LastHold;
             }
         }
+
+        /// <summary>Forget a jump queued from the last release (e.g. a tap that closed the pause menu).</summary>
+        public void CancelPop() { popPending = false; }
 
         void FixedUpdate() { if (Running) Tick(Time.fixedDeltaTime); }
 

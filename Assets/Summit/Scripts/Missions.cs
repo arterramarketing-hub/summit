@@ -56,6 +56,7 @@ namespace Summit
         {
             int d = LocalDay(now);
             if (d == Day && Today.Count > 0) return;
+            if (active && Today.Count > 0) return;   // never re-roll mid-run (a run across midnight keeps its missions)
             Day = d;
             Today.Clear();
             Today.AddRange(Roll(d));
@@ -130,11 +131,16 @@ namespace Summit
                 if (name == "Close call") { Bump(Kind.CloseCalls, 1f); return; }
                 RunTricks++;
                 Bump(Kind.Tricks, 1f);
-                foreach (var m in Today) if (m.kind == Kind.Trick && !m.done && name.Contains(m.match)) Add(m, 1f);
+                for (int i = 0; i < Today.Count; i++) { var m = Today[i]; if (m.kind == Kind.Trick && !m.done && name.Contains(m.match)) Add(m, 1f); }
             };
             r.Crash += why => { if (active) { cleanFrom = -1f; Restart(Kind.CleanDistance); } };
             r.GrindStart += f => { if (active) Bump(f.kind == Course.Kind.Rail ? Kind.Rails : Kind.Boxes, 1f); };
-            if (power != null) power.Collected += k => { if (active) Bump(k == PowerUps.Kind.Soda ? Kind.Cans : Kind.Shields, 1f); };
+            if (power != null) power.Collected += k =>
+            {
+                if (!active) return;
+                if (k == PowerUps.Kind.Soda) Bump(Kind.Cans, 1f);           // Mountain Zoom cans
+                else if (k == PowerUps.Kind.Shield) Bump(Kind.Shields, 1f); // not Super Jump or Invincibility
+            };
         }
 
         public static void RunStart()
@@ -170,9 +176,13 @@ namespace Summit
             Save();
         }
 
-        static void Bump(Kind k, float by) { foreach (var m in Today) if (m.kind == k && !m.done) Add(m, by); }
-        static void Max(Kind k, float v) { foreach (var m in Today) if (m.kind == k && !m.done && v > m.progress) { m.progress = v; Check(m); } }
-        static void Restart(Kind k) { foreach (var m in Today) if (m.kind == k && !m.done) m.progress = 0f; }
+        // index loops, not foreach: completing a mission pays out, and the camp's listener on that payout may touch the list
+        static void Bump(Kind k, float by) { for (int i = 0; i < Today.Count; i++) { var m = Today[i]; if (m.kind == k && !m.done) Add(m, by); } }
+        static void Max(Kind k, float v) { for (int i = 0; i < Today.Count; i++) { var m = Today[i]; if (m.kind == k && !m.done && v > m.progress) { m.progress = v; Check(m); } } }
+        static void Restart(Kind k) { for (int i = 0; i < Today.Count; i++) { var m = Today[i]; if (m.kind == k && !m.done) m.progress = 0f; } }
+
+        /// <summary>Save progress now (the app going to the background).</summary>
+        public static void Flush() { if (Today.Count > 0) Save(); }
         static void Add(Mission m, float by) { m.progress += by; Check(m); }
 
         static void Check(Mission m)

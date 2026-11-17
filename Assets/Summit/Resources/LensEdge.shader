@@ -61,6 +61,9 @@ Shader "Hidden/Summit/LensEdge"
                 }
                 float2 uv = p * 0.5 + 0.5;
                 float2 o = dir * r2;
+                // pinned to nothing at the very border: the offset reads would otherwise run off the picture and smear
+                // the clamped edge pixel into a coloured strip along the screen's edge
+                o *= saturate(min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)) * 40.0);
 
                 half3 col;
                 UNITY_BRANCH

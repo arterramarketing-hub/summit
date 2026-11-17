@@ -83,7 +83,7 @@ namespace Summit
                     Chase(dt, r);
                     float gap = Gap(r);
                     Shake = Mathf.Pow(Mathf.Clamp01(1f - gap / 55f), 2f) * 0.9f;
-                    if (gap <= 0f)
+                    if (gap <= 0f && (!r.Airborne || r.Crashed))   // a rider in the air is caught when they come down into it
                     {
                         CaughtSpeed = Mathf.Max(Speed, 12f);
                         if (r.Crashed) StartCarry(r, body);   // already down: straight into the debris
@@ -128,7 +128,9 @@ namespace Summit
                         Vector3 n = Slope.Normal(c.x, c.z);
                         Vector3 down = Vector3.ProjectOnPlane(Vector3.forward, n).normalized;
                         // carried along in the debris, kept up near its surface and rolled over and over
-                        body.Carry(down * Speed * 0.9f + n * Mathf.Clamp01(Speed / 8f) * 1.2f, 2.6f, dt);
+                        // (the lift only near the surface: a body caught high in the air falls into the flow first)
+                        float lift = c.y - Slope.DrawnHeight(c.x, c.z) < 0.8f ? Mathf.Clamp01(Speed / 8f) * 1.2f : 0f;
+                        body.Carry(down * Speed * 0.9f + n * lift, 2.6f, dt);
                     }
                     // the pile follows the body until it stops, then stays put
                     if (!buryLocked)

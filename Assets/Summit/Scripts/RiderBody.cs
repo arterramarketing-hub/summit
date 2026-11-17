@@ -993,7 +993,7 @@ namespace Summit
                     var b = pick[Random.Range(0, pick.Length)];
                     Break(b, b.position);
                 }
-                ragdoll.Steer = rider.Crashed ? rider.Steer : 0f;   // steer the fall with the same thumb
+                ragdoll.Steer = rider.Crashed && !rider.StayDown ? rider.Steer : 0f;   // steer the fall with the same thumb (not once it's over, or the slide has you)
                 ragdoll.PhysicsStep();
                 SnowLayer.Instance?.PressBody(ragdoll);   // every part presses its own shape into the snow
                 rider.CrashFollow = ragdoll.Centre;
@@ -1002,8 +1002,10 @@ namespace Summit
                 if (ragdoll.Speed > 0.8f) stillFor = 0f; else stillFor += Time.fixedDeltaTime;
                 // you can tap to get up once the body has (nearly) come to rest, and never while it is
                 // falling into a crevasse
-                rider.HoldCrash = rider.Crashed && (ragdoll.Speed > 2.5f || RagdollBelowSnow > 0.5f);
-                RagdollMoving = rider.HoldCrash;
+                // (below the snow only holds you while still falling: lying still in a shallow crevasse tip you can
+                // tap to climb out, and a deep one ends the run, whose TAP TO CONTINUE needs the body at rest)
+                rider.HoldCrash = rider.Crashed && (ragdoll.Speed > 2.5f || (RagdollBelowSnow > 0.5f && stillFor < 1.2f));
+                RagdollMoving = rider.Crashed && ragdoll.Speed > 2.5f;
             }
         }
 

@@ -229,6 +229,16 @@ namespace Summit
             data.renderShadows = false; data.renderPostProcessing = false;
             bool fog = RenderSettings.fog;
             RenderSettings.fog = false;
+            // bake under a fixed, neutral daylight: the time of day at launch must not be frozen into the pictures
+            var sun = RenderSettings.sun;
+            if (sun == null) foreach (var l in Object.FindObjectsByType<Light>(FindObjectsSortMode.None)) if (l.type == LightType.Directional) { sun = l; break; }
+            Color sunCol = sun != null ? sun.color : Color.white; float sunI = sun != null ? sun.intensity : 1f;
+            Quaternion sunRot = sun != null ? sun.transform.rotation : Quaternion.identity;
+            var ambMode = RenderSettings.ambientMode; Color ambCol = RenderSettings.ambientLight;
+            var ambProbe = RenderSettings.ambientProbe;
+            if (sun != null) { sun.color = new Color(1f, 0.96f, 0.9f); sun.intensity = 1.15f; sun.transform.rotation = Quaternion.Euler(48f, -30f, 0f); }
+            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+            RenderSettings.ambientLight = new Color(0.55f, 0.6f, 0.68f);
             var at = new Vector3(0f, 4000f, 0f);   // well away from everything
             for (int i = 0; i < Variants; i++)
             {
@@ -250,6 +260,8 @@ namespace Summit
                 Impostors[i] = Cross(bnd.center.y, half);
             }
             RenderSettings.fog = fog;
+            if (sun != null) { sun.color = sunCol; sun.intensity = sunI; sun.transform.rotation = sunRot; }
+            RenderSettings.ambientMode = ambMode; RenderSettings.ambientLight = ambCol; RenderSettings.ambientProbe = ambProbe;
             cam.targetTexture = null;
             if (Application.isPlaying) Object.Destroy(go); else Object.DestroyImmediate(go);
         }

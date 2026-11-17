@@ -41,6 +41,7 @@ namespace Summit
         GameObject bear;
         Rigidbody bearRb;
         Animation bearAnim;
+        readonly System.Collections.Generic.List<AnimationState> bearStates = new System.Collections.Generic.List<AnimationState>();
         float bearSpeed, bearTimer, bearYaw, bearRise, bearCalm;
         Transform bearRear;
         enum BearMode { Standing, Rousing, Chasing }
@@ -203,6 +204,7 @@ namespace Summit
             wrap.SetParent(bearRear, false);
             var model = Instantiate(prefab, wrap, false);
             bearAnim = model.GetComponentInChildren<Animation>();
+            bearStates.Clear(); if (bearAnim != null) foreach (AnimationState st in bearAnim) bearStates.Add(st);   // (enumerating an Animation allocates: once, here)
             if (bearAnim != null)
             {
                 bearAnim.wrapMode = WrapMode.Loop;
@@ -353,7 +355,7 @@ namespace Summit
             np.y = Slope.DrawnHeight(np.x, np.z);
             bearRb.MovePosition(np);
             bearRb.MoveRotation(Quaternion.Euler(0f, bearYaw + bearFwdYaw, 0f));
-            if (bearAnim != null) foreach (AnimationState s in bearAnim) s.speed = Mathf.Clamp(bearSpeed / 12f, 0f, 1.3f);
+            for (int i = 0; i < bearStates.Count; i++) bearStates[i].speed = Mathf.Clamp(bearSpeed / 12f, 0f, 1.3f);
             // gone once it has given up and is well behind
             if (!chasing && (bearSpeed < 0.1f && rp.z - bp.z > 60f || bearTimer > 30f)) { bear.SetActive(false); bearActive = false; }
         }

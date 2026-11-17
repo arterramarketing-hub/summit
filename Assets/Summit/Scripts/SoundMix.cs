@@ -53,6 +53,8 @@ namespace Summit
         // own source so it can be faded out once the jump is over
         AudioClip nooo, ledge;
         AudioSource cue;
+        float voiceLock;          // until then the voice is a long cry that nothing short may cut off
+        AudioClip[] groans;
         Music music;   // the soundtrack (Music.cs), on its own object so it has its own muffling
 
         // the bear, followed through the world
@@ -267,7 +269,7 @@ namespace Summit
             if (kind == Sfx.Nooo)
             {
                 if (nooo == null) { kind = Sfx.Scream; }
-                else { voice.clip = nooo; voice.pitch = 1f; voice.volume = 1f; voice.Play(); return; }
+                else { voice.clip = nooo; voice.pitch = 1f; voice.volume = 1f; voice.Play(); voiceLock = Time.unscaledTime + nooo.length; return; }
             }
             if (kind == Sfx.Ledge)
             {
@@ -276,13 +278,17 @@ namespace Summit
             }
             if (kind == Sfx.Scream || kind == Sfx.Grunt || kind == Sfx.Yelp || kind == Sfx.Groan)
             {
-                // the rider's voice: one at a time, and a scream is not cut short by a grunt
-                if (voice.isPlaying && voice.clip != null && voice.clip.name.StartsWith("scream") && kind == Sfx.Grunt) return;
-                var set = kind == Sfx.Scream ? screams : kind == Sfx.Grunt ? grunts : kind == Sfx.Yelp ? yelps : new[] { groan };
+                // the rider's voice: one at a time, and a scream or the long "nooo" is not cut short by the grunts and
+                // yelps of the tumble that follows (a new scream may replace a scream)
+                if (voice.isPlaying && Time.unscaledTime < voiceLock && kind != Sfx.Scream) return;
+                if (voice.isPlaying && voice.clip == nooo && Time.unscaledTime < voiceLock) return;
+                if (groans == null) groans = new[] { groan };
+                var set = kind == Sfx.Scream ? screams : kind == Sfx.Grunt ? grunts : kind == Sfx.Yelp ? yelps : groans;
                 voice.clip = set[Random.Range(0, set.Length)];
                 voice.pitch = Random.Range(0.94f, 1.06f) * (kind == Sfx.Grunt ? 1f : 1f);
                 voice.volume = kind == Sfx.Scream ? 0.85f : kind == Sfx.Yelp ? 0.8f : kind == Sfx.Groan ? 0.5f : 0.4f + 0.4f * Mathf.Clamp01(amount);
                 voice.Play();
+                voiceLock = kind == Sfx.Scream ? Time.unscaledTime + Mathf.Min(1.2f, voice.clip.length) : 0f;
                 return;
             }
             if (c == null || vol <= 0.001f) return;

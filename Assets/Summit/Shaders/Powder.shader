@@ -77,7 +77,10 @@ Shader "Summit/Powder"
                 // sun fall into a cool shade
                 half diffuse = pow(saturate(ndl * 0.5 + 0.5), 1.6);
                 half open = tex.b;
-                half3 sky = lerp(_GroundLight.rgb, _SkyLight.rgb, n.y * 0.5 + 0.5) * (0.4 + 0.6 * open);
+                // the sky's own light (the scene's ambient, which the time of day sets), so it doesn't glow at night;
+                // the two colours only shape it: bluer from above, snow-bounce below
+                half3 amb = max(SampleSH(n), 0) * 1.25;
+                half3 sky = amb * lerp(_GroundLight.rgb, _SkyLight.rgb, n.y * 0.5 + 0.5) / 0.76 * (0.4 + 0.6 * open);
                 // looking toward the sun, the thin, torn edges glow
                 half3 v = normalize(_WorldSpaceCameraPos - i.posWS);
                 half glow = pow(saturate(dot(-v, sun.direction)), 8) * (1 - tex.a) * 0.5;

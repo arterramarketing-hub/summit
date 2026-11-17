@@ -28,6 +28,7 @@ namespace Summit
         {
             if (pendingFrame != Time.frameCount || pendingOb == null) return;
             var ob = pendingOb; float into = pendingInto; pendingOb = null;
+            if (why == null || !why.StartsWith(ob.label)) return;   // this fall wasn't that hit (a crevasse or ridge in the same frame)
             if (blood == null) return;
             var col = ob.GetComponentInChildren<Collider>();
             if (col == null) return;

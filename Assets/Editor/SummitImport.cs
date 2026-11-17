@@ -278,7 +278,7 @@ public class SummitImport : AssetPostprocessor
         var ti = (TextureImporter)AssetImporter.GetAtPath(tex);
         if (ti == null) return;
         var ios = ti.GetPlatformTextureSettings("iPhone");
-        if (ti.textureShape == TextureImporterShape.TextureCube && ti.mipmapEnabled && ios.overridden && ios.format == TextureImporterFormat.ASTC_5x5) return;
+        if (ti.textureShape == TextureImporterShape.TextureCube && ti.mipmapEnabled && ios.overridden && ios.format == TextureImporterFormat.ASTC_4x4) return;
         ti.textureShape = TextureImporterShape.TextureCube;
         var st = new TextureImporterSettings(); ti.ReadTextureSettings(st);
         st.generateCubemap = TextureImporterGenerateCubemap.Cylindrical;
@@ -288,7 +288,8 @@ public class SummitImport : AssetPostprocessor
         ti.mipmapEnabled = true; ti.sRGBTexture = true;
         ti.wrapMode = TextureWrapMode.Clamp; ti.filterMode = FilterMode.Trilinear;
         ti.maxTextureSize = 1024;
-        ios.overridden = true; ios.maxTextureSize = 1024; ios.format = TextureImporterFormat.ASTC_5x5;
+        // 4x4 blocks: the skies are stored squeezed (y/(1+y)) and unsqueezing magnifies block error near the sun
+        ios.overridden = true; ios.maxTextureSize = 1024; ios.format = TextureImporterFormat.ASTC_4x4;
         ti.SetPlatformTextureSettings(ios);
         ti.SaveAndReimport();
     }

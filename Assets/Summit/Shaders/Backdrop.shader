@@ -55,7 +55,8 @@ Shader "Summit/Backdrop"
                 // fog's colour there instead, by the same fade
                 half f = saturate((_HazeBottom - i.uv.y) / max(_HazeBottom, 1e-3));
                 half haze = 0.95 * smoothstep(0.02, 0.9, f) * step(1e-3, _HazeBottom);
-                graded += haze * (unity_FogColor.rgb - half3(0.80, 0.86, 0.94) * _BackdropHi);
+                // (the haze written into the PNG as (0.80, 0.86, 0.94) is sampled linear, sRGB-decoded)
+                graded += haze * (unity_FogColor.rgb - half3(0.604, 0.708, 0.871) * _BackdropHi);
                 c.rgb = graded;
                 c.a *= 1 - SAMPLE_TEXTURE2D(_SkyMask, sampler_SkyMask, i.uv).r * _BackdropKey;
                 return c;

@@ -58,10 +58,14 @@ namespace Summit
             Draw();
         }
 
+        void OnDestroy() { if (mesh != null) Destroy(mesh); }   // the gate is rebuilt each mountain: no leaking meshes
+
         void LateUpdate()
         {
             float dt = Mathf.Min(ChaseCamera.TestDt > 0f ? ChaseCamera.TestDt : Time.deltaTime, 1f / 30f);
             if (dt <= 0f) return;
+            // well past it (or far from it), it's out of sight: stop simulating it
+            if (rider != null && Mathf.Abs(rider.transform.position.z - p[N / 2].z) > 150f) return;
             if (broken < 0 && rider != null && rider.Running) { if (pull < 0) CheckHit(); else CheckSnap(); }
             if (broken >= 0) recoil = Mathf.MoveTowards(recoil, 1f, dt * 2.5f);
             Step(dt);
@@ -197,7 +201,7 @@ namespace Summit
                 tris[n++] = b + 2; tris[n++] = b + 3; tris[n++] = a + 3;
             }
             mesh.vertices = verts; mesh.uv = uvs;
-            if (mesh.triangles.Length != tris.Length) mesh.triangles = tris; else mesh.SetTriangles(tris, 0);
+            if (mesh.GetIndexCount(0) != (uint)tris.Length) mesh.triangles = tris; else mesh.SetTriangles(tris, 0);   // (reading mesh.triangles allocates)
             mesh.RecalculateNormals();
             mesh.RecalculateBounds();
         }

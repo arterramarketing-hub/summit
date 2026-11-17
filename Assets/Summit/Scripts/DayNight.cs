@@ -214,7 +214,14 @@ namespace Summit
         /// more than plain snow would). Done by raising their colour, not with emission, whose shader variant
         /// isn't in the build.
         /// </summary>
-        public static void Reflective(Material m) { if (m != null && !reflective.Contains(m)) reflective.Add(m); }
+        public static void Reflective(Material m)
+        {
+            if (m == null || reflective.Contains(m)) return;
+            reflective.RemoveAll(x => x == null);   // signs destroyed with an old camp or mountain
+            reflective.Add(m);
+            m.SetColor("_BaseColor", new Color(signGain, signGain, signGain, 1f));   // at tonight's brightness straight away
+        }
+        static float signGain = 1f;
 
         /// <summary>How dark it is, 0 midday to 1 night (the camp's lamps follow it).</summary>
         public float Darkness { get; private set; }
@@ -334,7 +341,7 @@ namespace Summit
             float sg = Mathf.Lerp(a.signGain, b.signGain, t);
             if (Mathf.Abs(sg - lastSignGain) > 0.002f)
             {
-                lastSignGain = sg;
+                lastSignGain = sg; signGain = sg;
                 foreach (var m in reflective) if (m != null) m.SetColor("_BaseColor", new Color(sg, sg, sg, 1f));
             }
             Headlamp(Mathf.Lerp(a.headlamp, b.headlamp, t));

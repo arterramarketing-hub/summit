@@ -98,10 +98,21 @@ namespace Summit
             hud.SetMusic(v * 10 + "%");
         }
 
+        void OnApplicationPause(bool away)
+        {
+            if (!away) return;
+            if (state == State.Riding && !paused) SetPaused(true);   // a call or the home swipe mid-run: come back paused
+            Missions.Flush();
+            PlayerPrefs.Save();
+        }
+
+        void OnDestroy() { Progress.Changed -= ApplyOutfit; Missions.Completed = null; }
+
         void SetPaused(bool on)
         {
             paused = on;
             Time.timeScale = on ? 0f : 1f;
+            if (!on) { rider.CancelPop(); input.SwallowCurrentPress(); }   // a menu tap is never a jump
             AudioListener.pause = on;
             hud.ShowPause(on);
             hud.SetCamera(CamName[camLevel]);
@@ -139,7 +150,7 @@ namespace Summit
         float Mult => 1f + 0.5f * chainCount;
 
         float traceT, traceNext, readyT;
-        bool ledgeCued;   // the first-ledge sting has played this run
+        bool ledgeCued, ledgeFading;   // the first-ledge sting has played this run / is on its way out
         static readonly bool autoplay = System.Environment.GetEnvironmentVariable("SUMMIT_AUTOPLAY") == "1";
 
         void Awake()
@@ -343,6 +354,7 @@ namespace Summit
             chase.enabled = false;
             terrain.behindChunks = 4; props.behindCells = 16;   // you can turn round and look up the hill here
             camp.Enter(rider, body, chase.GetComponent<Camera>());
+            if (slideView != null) slideView.gameObject.SetActive(false);   // its toe waits just uphill of the camp: not drawn here
             terrain.Prewarm(); props.Prewarm();
             meta.SetMode(MetaUi.Mode.Hub);
         }
@@ -436,7 +448,7 @@ namespace Summit
         void ToReady(bool newMountain)
         {
             state = State.Ready;
-            ledgeCued = false; if (audioFx != null) audioFx.StopCue();
+            ledgeCued = false; ledgeFading = false; if (audioFx != null) audioFx.StopCue();
             camp.Leave(); chase.enabled = true; terrain.behindChunks = 1; props.behindCells = 3;
             if (newMountain)
             {
@@ -453,7 +465,8 @@ namespace Summit
             rider.ResetAt(x, Slope.StartZ);
             body.ResetVisual();
             slide.Reset(Slope.StartZ);
-            if (slideView != null) slideView.Clear();
+            if (slideView != null) { slideView.gameObject.SetActive(true); slideView.Clear(); }
+            Missions.RunEnd();   // a run abandoned from the pause menu still saves its mission progress
             chase.hold = 0f;
             trickPoints = 0; chainCount = 0; chainTimer = 0f; runTime = 0f;
             power.ResetRun();
@@ -515,7 +528,9 @@ namespace Summit
                      "   ·   " + Mathf.RoundToInt(rider.Distance) + " m   ·   " + Hud.FormatTime(runTime) +
                      (medical > 0f ? "\nMEDICAL BILL  $" + Mathf.RoundToInt(medical).ToString("N0") : "\nNo medical bills. Clean run!"));
             hud.SetButtons(true, false, "TO CAMP");
-            // points for the run (mission rewards were paid as they happened)
+            // points for the run (mission rewards were paid as they happened); the score mission sees the final
+            // score, finish bonus and all
+            Missions.Step(0f, 999f, s);
             Missions.RunEnd();
             var reward = Progress.EndRun(s, rider.Distance, Missions.RunTricks, title == "YOU SURVIVED", Missions.RunPoints);
             meta.ShowEnd(reward, Mathf.RoundToInt(rider.Distance), title == "YOU SURVIVED");
@@ -528,7 +543,7 @@ namespace Summit
         {
             float r = Time.unscaledDeltaTime;
             diagFrames++; diagSum += r; if (r > diagMax) diagMax = r; diagT += r;
-            if (r > 0.034f)
+            if (r > 0.034f && (showDiag || autoplay))   // logging every hitch on the phone makes the hitch worse
                 Debug.Log("SUMMIT HITCH " + (r * 1000f).ToString("0") + " ms  state=" + state + "  air=" + rider.Airborne +
                           "  speed=" + rider.Speed.ToString("0.0") + "  gc=" + System.GC.CollectionCount(0));
             if (diagT >= 0.5f)
@@ -605,7 +620,7 @@ namespace Summit
                     slide.Step(dt, rider, body);
                     // the first ledge: the suspense sting as you roll up to the lip, eased out once you've landed below it
                     if (!ledgeCued && !rider.Crashed && rider.Z > Slope.PadLip - 14f && rider.Z < Slope.PadLip + 1f) { ledgeCued = true; audioFx.Play(Sfx.Ledge); }
-                    if (ledgeCued && (rider.Crashed || (rider.Z > Slope.PadLip + 8f && !rider.Airborne))) audioFx.FadeCue(dt);
+                    if (ledgeCued && (ledgeFading || rider.Crashed || (rider.Z > Slope.PadLip + 8f && !rider.Airborne))) { ledgeFading = true; audioFx.FadeCue(dt); }
                     Missions.Step(dt, slide.Gap(rider), Score);
                     if (crevasseWatch)
                     {
@@ -779,6 +794,15 @@ namespace Summit
 
         // the start: a gate over the in-run and flags along the lip you jump from
         Transform gateRoot;
+        // the start gate is rebuilt for every new mountain; its materials are made once and reused, so they neither
+        // leak nor pile up in DayNight's list of reflective signs
+        readonly System.Collections.Generic.Dictionary<string, Material> gateMats = new System.Collections.Generic.Dictionary<string, Material>();
+        Material GateSign(string path)
+        {
+            if (!gateMats.TryGetValue(path, out var m)) { m = CourseDressing.Sign(snow.shader, path); gateMats[path] = m; }
+            return m;
+        }
+
         void RebuildGate()
         {
             if (gateRoot != null) { if (Application.isPlaying) Destroy(gateRoot.gameObject); else DestroyImmediate(gateRoot.gameObject); }
@@ -788,7 +812,12 @@ namespace Summit
         void BuildStartGate()
         {
             var sh = snow.shader;
-            Material M(Color c) { var m = new Material(sh); m.SetColor("_BaseColor", c); m.SetFloat("_Smoothness", 0.3f); return m; }
+            Material M(Color c)
+            {
+                string k = "c" + c;
+                if (!gateMats.TryGetValue(k, out var m)) { m = new Material(sh); m.SetColor("_BaseColor", c); m.SetFloat("_Smoothness", 0.3f); gateMats[k] = m; }
+                return m;
+            }
             var red = M(new Color(0.85f, 0.12f, 0.10f)); var white = M(new Color(0.95f, 0.95f, 0.97f)); var wood = M(new Color(0.45f, 0.30f, 0.18f));
             var root = new GameObject("StartGate").transform;
             gateRoot = root;
@@ -803,7 +832,7 @@ namespace Summit
             banner.transform.SetParent(root, false);
             banner.transform.SetPositionAndRotation(new Vector3(cx, gy + 4.3f, gz - 0.01f), Quaternion.identity);   // a quad shows its face to -Z: up the hill, at the rider
             banner.transform.localScale = new Vector3(8.4f, 1.05f, 1f);
-            banner.GetComponent<MeshRenderer>().sharedMaterial = CourseDressing.Sign(snow.shader, "Signs/BannerSummit");
+            banner.GetComponent<MeshRenderer>().sharedMaterial = GateSign("Signs/BannerSummit");
             // flags lining the lip and a wooden kicker edge
             for (int i = 0; i < 6; i++)
                 for (int sgn = -1; sgn <= 1; sgn += 2)
@@ -825,7 +854,7 @@ namespace Summit
                 fb.transform.SetParent(root, false);
                 fb.transform.SetPositionAndRotation(new Vector3(fx, fy + 5.0f, fz - 0.01f), Quaternion.identity);
                 fb.transform.localScale = new Vector3(18.2f, 1.4f, 1f);
-                fb.GetComponent<MeshRenderer>().sharedMaterial = CourseDressing.Sign(snow.shader, "Signs/BannerFinish");
+                fb.GetComponent<MeshRenderer>().sharedMaterial = GateSign("Signs/BannerFinish");
             }
             // the last chance: safety signs either side of the in-run before the lip, and caution tape strung
             // chest-high between the last pair and on across the mountain, tree to tree (ride through it and it tears)
@@ -834,7 +863,7 @@ namespace Summit
             WarningSign(root, cx, Slope.PadLip - 22f, 1f, "Signs/SignRemote", post);
             var wl = WarningSign(root, cx, Slope.PadLip - 11f, -1f, "Signs/SignWarning", post);
             var wr = WarningSign(root, cx, Slope.PadLip - 11f, 1f, "Signs/SignDangerStart", post);
-            StartTape.Build(root, wl, wr, SignPostX, rider, CourseDressing.Sign(snow.shader, "Signs/Tape"), () => audioFx.Play(Sfx.Clack));
+            StartTape.Build(root, wl, wr, SignPostX, rider, GateSign("Signs/Tape"), () => audioFx.Play(Sfx.Clack));
             float ly = Slope.DrawnHeight(cx, Slope.PadLip - 0.3f);
             Block(PrimitiveType.Cube, root, new Vector3(cx, ly - 0.15f, Slope.PadLip - 0.2f), new Vector3(2f * Slope.PadHalf - 4f, 0.35f, 0.3f), wood);
         }
@@ -863,7 +892,7 @@ namespace Summit
             for (int s = -1; s <= 1; s += 2)
                 Local(PrimitiveType.Cylinder, new Vector3(s * SignPostX, top * 0.5f - 0.3f, 0.08f), new Vector3(0.1f, (top + 0.6f) * 0.5f, 0.1f), post);
             Local(PrimitiveType.Cube, new Vector3(0f, lift + H * 0.5f, 0.03f), new Vector3(W + 0.1f, H + 0.1f, 0.04f), post);
-            Local(PrimitiveType.Quad, new Vector3(0f, lift + H * 0.5f, -0.001f), new Vector3(W, H, 1f), CourseDressing.Sign(snow.shader, face));
+            Local(PrimitiveType.Quad, new Vector3(0f, lift + H * 0.5f, -0.001f), new Vector3(W, H, 1f), GateSign(face));
             return t;
         }
 
@@ -915,7 +944,7 @@ namespace Summit
             chainCount = 0;
             falls++;
             int left = Progress.Falls(MaxFalls) - falls;   // a spare helmet from the camp adds one
-            fallsNote = left <= 0 ? "that's three" : left == 1 ? "1 fall left" : left + " falls left";
+            fallsNote = left <= 0 ? "that's " + (Progress.Falls(MaxFalls) == 4 ? "four" : "three") : left == 1 ? "1 fall left" : left + " falls left";
             hud.Flash(why, fallsNote, 1.3f);
             medical += rider.Tube ? 400f : 850f;   // the trip to the clinic
             audioFx.Play(why.StartsWith("Crevasse") ? Sfx.Nooo : Sfx.Scream);   // down a crevasse: the long "nooo"
