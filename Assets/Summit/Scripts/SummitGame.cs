@@ -60,9 +60,20 @@ namespace Summit
             rider.Trick += OnTrick;
             rider.Crash += OnCrash;
             rider.RoughLanding += OnRough;
-            rider.Jumped += () => { if (state == State.Riding) audioFx.Play(Sfx.Jump); };
-            rider.Landed += impact => { if (state == State.Riding && impact > 3f) audioFx.Play(Sfx.Land, Mathf.Clamp01(impact / 16f)); };
+            rider.Jumped += () => { if (state == State.Riding) { audioFx.Play(Sfx.Pop); popped = true; } };
+            rider.Landed += impact =>
+            {
+                if (state != State.Riding || impact <= 3f) return;
+                if (impact > 11f) audioFx.Play(Sfx.LandHard);
+                audioFx.Play(Sfx.Land, Mathf.Clamp01(impact / 14f));
+            };
             rider.Scraped += hit => { if (state == State.Riding) audioFx.Play(Sfx.Scrape, hit); };
+            body.RagdollHit += (v, isBoard) =>
+            {
+                if (v < 1.5f || Time.time < nextImpactSound) return;
+                nextImpactSound = Time.time + 0.07f;
+                audioFx.Play(isBoard ? Sfx.Clack : Sfx.Thump, Mathf.Clamp01(v / 10f));
+            };
 
             var tg = new GameObject("Terrain");
             terrain = tg.AddComponent<SlopeStreamer>();
@@ -83,7 +94,7 @@ namespace Summit
             {
                 if (state != State.Riding) return;
                 hud.Flash("SHIELD SAVED YOU", rider.Shields + " left", 1.1f);
-                audioFx.Play(Sfx.Scrape, 1f);
+                audioFx.Play(Sfx.ShieldHit);
             };
             BuildStartGate();
             dressing = new GameObject("Course").AddComponent<CourseDressing>();
@@ -92,8 +103,8 @@ namespace Summit
             wild = new GameObject("Wildlife").AddComponent<Wildlife>();
             wild.rider = rider;
             wild.Build(snow.shader);
-            wild.BearSpotted += () => { if (state == State.Riding) { hud.Flash("BEAR!", "outrun it - keep going straight", 1.6f); audioFx.Play(Sfx.Buried, 0.5f); } };
-            rider.GrindStart += f => { if (state == State.Riding) audioFx.Play(Sfx.Scrape, 0.6f); };
+            wild.BearSpotted += () => { if (state == State.Riding) hud.Flash("BEAR!", "outrun it - keep going straight", 1.6f); };
+            rider.GrindStart += f => { if (state == State.Riding) audioFx.Play(f.kind == Course.Kind.Rail ? Sfx.GrindRail : Sfx.GrindBox); };
 
             var cam = Camera.main;
             if (cam == null)
@@ -119,6 +130,7 @@ namespace Summit
             var ag = new GameObject("Audio");
             audioFx = ag.AddComponent<SoundMix>();
             audioFx.Build();
+            audioFx.Track(wild);
 
             ToReady();
         }
@@ -239,7 +251,7 @@ namespace Summit
         void ToBuried()
         {
             state = State.Buried;
-            audioFx.Play(Sfx.Buried);
+            audioFx.Play(Sfx.Buried);   // the world goes muffled under the snow (see the mix below)
             stateTimer = 0f;
             rider.Stop();
             int s = Score;
@@ -277,7 +289,7 @@ namespace Summit
             {
                 case State.Ready:
                     if (input.AnyPress() && ModeTapped()) { }
-                    else if (input.AnyPress() && (Tapped(true) || SpacePressed())) { audioFx.Play(Sfx.Click); ToRiding(); }
+                    else if (input.AnyPress() && (Tapped(true) || SpacePressed())) { audioFx.Play(Sfx.Play); ToRiding(); }
                     break;
 
                 case State.Riding:
@@ -312,7 +324,18 @@ namespace Summit
             hud.SetWhiteout(state == State.Buried ? Mathf.Min(0.85f, stateTimer * 2f) : close * close * 0.5f);
             chase.shake = state == State.Riding ? close * close + (rider.Crashed ? 0.2f : 0f) : 0f;
             bool onSnow = state == State.Riding && !rider.Airborne && !rider.Crashed;
-            audioFx.Set(rider.Speed / 36f, rider.Carve, state == State.Buried ? 0.3f : 1f, onSnow ? 1f : 0f, rider.Steer);
+            bool riding = state == State.Riding;
+            Vector3 rpos = rider.transform.position;
+            audioFx.Set(new RideSound
+            {
+                speed = rider.Speed / 36f, carve = rider.Carve, skid = rider.Skid, rough = Slope.Rough(rpos.x, rpos.z),
+                avalanche = riding ? close : 0f, pan = rider.Steer,
+                muffle = state == State.Buried ? 1f : rider.Crashed ? 0.3f : 0f,
+                onSnow = onSnow && !rider.Grinding, air = riding && rider.Airborne, riding = riding,
+                boost = riding && rider.BoostTime > 0f,
+                grind = riding && rider.Grinding ? (rider.GrindFeature.kind == Course.Kind.Rail ? 1 : 2) : 0,
+            });
+            AirSounds(riding);
         }
 
         bool ModeTapped()
@@ -349,7 +372,7 @@ namespace Summit
             chainTimer = 4f;
             hud.Flash(name, "+" + got);
             if (name == "Close call") audioFx.Play(Sfx.CloseCall);
-            else audioFx.Play(Sfx.Trick, chainCount - 1);
+            else audioFx.Play(pts >= 700 ? Sfx.TrickBig : Sfx.Trick, chainCount - 1);
         }
 
         void OnPickup(PowerUps.Kind kind)
@@ -359,20 +382,19 @@ namespace Summit
             {
                 rider.AddBoost(3f);
                 hud.Flash("SUMMIT DEW", "speed boost", 0.9f);
-                audioFx.Play(Sfx.Jump);
-                audioFx.Play(Sfx.Trick, 4);
+                audioFx.Play(Sfx.Soda);
             }
             else if (rider.Shields >= Rider.MaxShields)
             {
                 trickPoints += 250;
                 hud.Flash("SHIELDS FULL", "+250", 0.9f);
-                audioFx.Play(Sfx.Trick, 2);
+                audioFx.Play(Sfx.ShieldFull);
             }
             else
             {
                 rider.AddShield();
                 hud.Flash("SHIELD", rider.Shields + " / " + Rider.MaxShields, 0.9f);
-                audioFx.Play(Sfx.Trick, rider.Shields * 2);
+                audioFx.Play(Sfx.ShieldGet, rider.Shields);
             }
         }
 
@@ -418,12 +440,36 @@ namespace Summit
             go.GetComponent<MeshRenderer>().sharedMaterial = m;
         }
 
+        // airborne sounds: a whoosh as you leave the snow without popping, and one for each half turn of a spin
+        bool popped, wasAir;
+        float spinSounded, nextImpactSound;
+        void AirSounds(bool riding)
+        {
+            bool air = riding && rider.Airborne;
+            if (air && !wasAir)
+            {
+                if (!popped) audioFx.Play(Sfx.Takeoff, Mathf.Clamp01(rider.Speed / 30f));
+                spinSounded = 0f;
+            }
+            if (!air) popped = false;
+            wasAir = air;
+            if (air && rider.TrickName != null)
+            {
+                float turned = (Mathf.Abs(rider.TrickSpin) + Mathf.Abs(rider.TrickFlip)) * rider.TrickProgress;
+                if (turned > spinSounded + 0.35f) { audioFx.Play(Sfx.Spin); spinSounded += Mathf.PI; }
+            }
+        }
+
         void OnCrash(string why)
         {
             if (state != State.Riding) return;
             chainCount = 0;
             hud.Flash(why, "the slide is gaining", 1.3f);
-            audioFx.Play(Sfx.Crash);
+            if (why.StartsWith("Tree")) { audioFx.Play(Sfx.HitTree); audioFx.Play(Sfx.Crash, 0.6f); }
+            else if (why.StartsWith("Rock")) { audioFx.Play(Sfx.HitRock); audioFx.Play(Sfx.Crash, 0.6f); }
+            else if (why.StartsWith("Crevasse")) audioFx.Play(Sfx.Crevasse);
+            else if (why.StartsWith("Bear")) { audioFx.Play(Sfx.Crash); audioFx.Play(Sfx.BearRoar); }
+            else audioFx.Play(Sfx.Crash);
 #if UNITY_IOS || UNITY_ANDROID
             Handheld.Vibrate();
 #endif

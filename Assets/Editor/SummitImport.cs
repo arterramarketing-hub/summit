@@ -204,12 +204,17 @@ public class SummitImport : AssetPostprocessor
         return 0.5f + 0.5f * Mathf.Sin((v * 14f + w * 1.2f) * Mathf.PI * 2f);
     }
 
+    // the long, continuously playing layers: compressed; everything short stays sharp (ADPCM)
+    static readonly string[] LoopClips = { "wind_low", "wind_high", "glide", "carve", "skid", "powder", "grind_rail", "grind_box",
+                                           "avalanche", "boost", "ambience", "bear_growl", "bear_steps" };
+
     void OnPreprocessAudio()
     {
         if (!assetPath.Contains("Summit/Resources/Audio")) return;
         var a = (AudioImporter)assetImporter;
         var s = a.defaultSampleSettings;
-        bool loop = assetPath.EndsWith("wind.ogg") || assetPath.EndsWith("carve.wav");
+        string file = System.IO.Path.GetFileNameWithoutExtension(assetPath);
+        bool loop = System.Array.IndexOf(LoopClips, file) >= 0;
         s.loadType = AudioClipLoadType.DecompressOnLoad;
         s.compressionFormat = loop ? AudioCompressionFormat.Vorbis : AudioCompressionFormat.ADPCM;
         s.quality = 0.7f;

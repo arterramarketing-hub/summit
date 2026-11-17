@@ -25,6 +25,15 @@ namespace Summit
         Vector3 modelPos, boardPos; Quaternion modelRot, boardRot; Vector3 modelScale;
         Quaternion footRelL, footRelR;
         public bool Active { get; private set; }
+        /// <summary>Something hit something: speed of the impact (m/s), and whether it was the board.</summary>
+        public System.Action<float, bool> Hit;
+
+        /// <summary>Reports a ragdoll part's or the board's impacts.</summary>
+        class Impact : MonoBehaviour
+        {
+            public Ragdoll owner; public bool board;
+            void OnCollisionEnter(Collision c) { owner?.Hit?.Invoke(c.relativeVelocity.magnitude, board); }
+        }
         public Vector3 Centre => Active && parts.Count > 0 ? parts[0].rb.position : Vector3.zero;
 
         public Ragdoll(RiderRig rig, Transform board, Collider riderCollider)
@@ -104,6 +113,7 @@ namespace Summit
             boardCol.center = new Vector3(0f, 0.04f, 0f);
             boardCol.size = new Vector3(0.29f, 0.07f, 1.55f);
             boardCol.sharedMaterial = snowFeel;
+            var bimp = board.gameObject.AddComponent<Impact>(); bimp.owner = this; bimp.board = true;
             if (riderCollider != null) Physics.IgnoreCollision(boardCol, riderCollider);
             foreach (var p in parts) Physics.IgnoreCollision(boardCol, p.col);
             boardRb.linearVelocity = velocity * 0.75f + Vector3.up * 3.5f + Random.insideUnitSphere * 2f;
@@ -150,6 +160,7 @@ namespace Summit
                 col = sc;
             }
             col.sharedMaterial = snowFeel;
+            var imp = bone.gameObject.AddComponent<Impact>(); imp.owner = this;
 
             Joint joint = null;
             Rigidbody parentRb = null;
@@ -209,7 +220,8 @@ namespace Summit
             Active = false;
             foreach (var p in parts) { p.rb.isKinematic = true; p.col.enabled = false; }
             foreach (var p in parts) { if (p.joint != null) Kill(p.joint); }
-            foreach (var p in parts) { Kill(p.col); Kill(p.rb); }
+            foreach (var p in parts) { Kill(p.col); Kill(p.rb); var im = p.bone.GetComponent<Impact>(); if (im != null) Kill(im); }
+            var bi = board.GetComponent<Impact>(); if (bi != null) Kill(bi);
             parts.Clear();
             if (boardRb != null) { boardRb.isKinematic = true; boardCol.enabled = false; Kill(boardCol); Kill(boardRb); boardRb = null; }
             groundBody.gameObject.SetActive(false);

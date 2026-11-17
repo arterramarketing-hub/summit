@@ -11,6 +11,20 @@ namespace Summit
     {
         public Rider rider;
         public System.Action BearSpotted;
+        public System.Action<Vector3> CrowsTookOff;
+
+        /// <summary>The nearest flock in the air within `range`, for birdsong.</summary>
+        public bool NearestFlock(Vector3 from, float range, out Vector3 at)
+        {
+            at = Vector3.zero; float best = range * range; bool any = false;
+            foreach (var f in flocks)
+            {
+                if (f.perched && f.lift <= 0f) continue;
+                float d = (f.pos - from).sqrMagnitude;
+                if (d < best) { best = d; at = f.pos; any = true; }
+            }
+            return any;
+        }
 
         // ---------------------------------------------------------------- birds
 
@@ -122,7 +136,7 @@ namespace Summit
                 {
                     float d = Vector3.Distance(rp, f.pos);
                     if (f.lift <= 0f && d < 24f && rider.Running)
-                        { f.lift = 0.001f; f.vel = new Vector3(Mathf.Sign(f.pos.x - rp.x) * 6f, 5f, 4f); }
+                        { f.lift = 0.001f; f.vel = new Vector3(Mathf.Sign(f.pos.x - rp.x) * 6f, 5f, 4f); CrowsTookOff?.Invoke(f.pos); }
                     if (f.lift > 0f) { f.lift += dt; f.vel.y += dt * 1.5f; f.pos += f.vel * dt; }
                     if (f.pos.z < rp.z - 40f || f.lift > 12f) Respawn(f, false);
                 }
@@ -223,6 +237,7 @@ namespace Summit
         }
 
         public bool BearActive => bearActive;
+        public float BearSpeed => bearActive ? bearSpeed : 0f;
         public Vector3 BearPosition => bear != null ? bear.transform.position : Vector3.zero;
 
         void UpdateBear(float dt)

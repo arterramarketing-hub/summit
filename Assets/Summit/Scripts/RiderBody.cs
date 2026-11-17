@@ -27,6 +27,8 @@ namespace Summit
         Ragdoll ragdoll;
         bool ragdollPending;
         Vector3 lastVel;
+        /// <summary>The thrown body or board hit something: impact speed, and whether it was the board.</summary>
+        public System.Action<float, bool> RagdollHit;
         Vector3 crashAxis;
 
         // humanoid
@@ -657,7 +659,11 @@ namespace Summit
             if (ragdollPending && rider.Crashed)
             {
                 ragdollPending = false;
-                if (ragdoll == null) ragdoll = new Ragdoll(rig, boardRoot, rider.GetComponent<Collider>());
+                if (ragdoll == null)
+                {
+                    ragdoll = new Ragdoll(rig, boardRoot, rider.GetComponent<Collider>());
+                    ragdoll.Hit += (v, b) => RagdollHit?.Invoke(v, b);
+                }
                 ragdoll.Begin(lastVel);
             }
             if (ragdoll != null && ragdoll.Active)
