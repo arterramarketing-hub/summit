@@ -14,7 +14,7 @@ namespace Summit
         public float shake;           // 0..1, set by the game (the slide closing in)
 
         Camera cam;
-        float yaw, height, fov = 62f, focusVy;
+        float yaw, height, fov = 62f, focusVy, camDist = 6f;
         Vector3 focus;
         bool first = true;
 
@@ -42,10 +42,16 @@ namespace Summit
             var f = new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw));
 
             float dist = Mathf.Lerp(5.8f, 8.2f, s01);
+            // never behind a tree trunk: slide in front of it
+            if (Physics.SphereCast(focus, 0.35f, -f, out RaycastHit hit, dist, ~0, QueryTriggerInteraction.Ignore) &&
+                hit.collider.GetComponentInParent<Obstacle>() != null)
+                dist = Mathf.Max(2.5f, hit.distance);
+            camDist = first ? dist : Mathf.Lerp(camDist, dist, 1f - Mathf.Exp(-dt * (dist < camDist ? 20f : 3f)));
+            dist = camDist;
             Vector3 pos = focus - f * dist;
             float wantH = focus.y + Mathf.Lerp(2.2f, 2.9f, s01);
             // never inside the hill behind you
-            wantH = Mathf.Max(wantH, MountainField.Height(pos.x, pos.z) + 1.3f);
+            wantH = Mathf.Max(wantH, Slope.Height(pos.x, pos.z) + 1.3f);
             height = first ? wantH : Mathf.Lerp(height, wantH, 1f - Mathf.Exp(-dt * 7f));
             pos.y = height;
 

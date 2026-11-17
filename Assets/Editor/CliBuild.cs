@@ -38,6 +38,7 @@ public static class CliBuild
     public static void BuildIOS()
     {
         PlayerSettings.productName = "Summit";
+        PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.iOS, "com.paulartuso.summit");
         var icon = MakeIcon();
         Directory.CreateDirectory("Assets/Summit/Icon");
         File.WriteAllBytes("Assets/Summit/Icon/AppIcon.png", icon.EncodeToPNG());

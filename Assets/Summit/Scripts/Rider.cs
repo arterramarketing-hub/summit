@@ -3,454 +3,365 @@ using UnityEngine;
 namespace Summit
 {
     /// <summary>
-    /// The rider: physics on the height field plus a simple built-from-shapes body.
-    /// Heading 0 is straight down the fall line (+Z); positive heading turns right (+X).
-    /// The board always travels where it points, so the model can never be drawn
-    /// sideways to its motion.
+    /// The rider's physics. A Unity Rigidbody carries the motion (so it is interpolated
+    /// smoothly between physics steps and collides with trees and rocks), and this
+    /// script supplies the forces of riding a board: gravity along the snow, air drag,
+    /// snow friction, and an edge that grips hard so the board goes where it points.
+    /// Heading 0 is straight down the fall line (+Z); positive turns right (+X).
+    /// The rider stands on exactly the drawn terrain mesh, so it never sinks or floats.
     /// </summary>
     public class Rider : MonoBehaviour
     {
-        // tuning: tweak these to change the feel (they are fields so a test harness can sweep them)
-        public static float Gravity = 26f;     // pull down the slope, scaled up from real for feel
-        public static float DragOpen = 0.014f, DragTuck = 0.0088f;   // air drag per (m/s)^2, standing vs tucked
-        public static float GripStart = 16f, GripTuck = 11f;   // 1/s: how fast the edge kills sideways slide (higher = tighter)
-        public static float AirGravity = 30f;
-        const float MaxHeading = 1.45f;        // about 83 degrees off the fall line
+        // tuning (static so the test harness can sweep them)
+        public static float G = 22f;                                 // gravity, a little stronger than real for punch
+        public static float DragOpen = 0.0105f, DragTuck = 0.0068f; // air drag per (m/s)^2
+        public static float Friction = 0.035f;                       // snow friction coefficient
+        public static float Grip = 22f, GripTuck = 16f;              // 1/s: how fast sideways slip dies (higher = tighter)
+        public static float TurnSlow = 3.3f, TurnFast = 2.0f;        // rad/s of board yaw at full stick, slow and fast
+        public static float TakeoffClearance = 0.22f;
+
+        public const float R = 0.3f;              // the collision sphere around the feet
+        const float MaxHeading = 1.45f;           // about 83 degrees off the fall line
         const float Tau = Mathf.PI * 2f;
 
         public RiderInput input;
 
-        // state
-        public float X, Z, Y, Heading, Speed, Vy;
+        // state the rest of the game reads
+        public float Heading, Speed, Steer, AirTime, Spin, StartZ;
         public bool Airborne, Crashed, Running;
-        public float Steer, AirTime, Spin, StartZ;
-        public float Distance => Mathf.Max(0f, Z - StartZ);
-        public float AboveGround { get; private set; }
-        public Vector3 SurfaceNormal { get; private set; } = Vector3.up;
-
-        public System.Action<string, int> Trick;   // name, points
-        public System.Action<string> Crash;        // reason
-        public System.Action<float> Landed;
-        public System.Action<string> RoughLanding;
-        public System.Action Jumped;
-
-        public float Vz => vz;
-        /// <summary>The direction the rider is actually travelling (the board can point a little off it).</summary>
-        public float TravelHeading => vx * vx + vz * vz > 0.25f ? Mathf.Atan2(vx, vz) : Heading;
-        /// <summary>0..1: how hard the edge is biting, for the snow sound and spray.</summary>
+        public float Tuck { get; private set; }
         public float Carve { get; private set; }
-        float lastTravel, yawRateS;
-
-        float vx, vz;   // horizontal velocity (m/s): the real state, Speed is just its length
-        float vyGround, crashTimer, lean, tuck, peak, spinVis;
-        int lastMissId;
-        Vector3 crashAxis;
-        Transform pivot, roll, upper, trailAnchor;
-        TrailRenderer trail;
-        ParticleSystem spray;
-        ParticleSystem.EmissionModule sprayEm;
-
-        // ---------------------------------------------------------------- build
-
-        public void Build(Material jacket, Material pants, Material board, Material skin, Material dark,
-                          Material trailMat, Material sprayMat)
+        public float AboveGround { get; private set; }
+        public float Peak { get; private set; }
+        public float SpinVisual { get; set; }
+        public Vector3 Velocity => rb != null ? rb.linearVelocity : Vector3.zero;
+        public float X => transform.position.x;
+        public float Z => rb != null ? rb.position.z : transform.position.z;
+        public float Vz => rb != null ? rb.linearVelocity.z : 0f;
+        public float Distance => Mathf.Max(0f, Z - StartZ);
+        public float TravelHeading
         {
-            pivot = new GameObject("Pivot").transform;
-            pivot.SetParent(transform, false);
-            roll = new GameObject("Roll").transform;
-            roll.SetParent(pivot, false);
-
-            Part(PrimitiveType.Cube, roll, new Vector3(0f, 0.03f, 0f), new Vector3(0.30f, 0.04f, 1.55f), Vector3.zero, board);
-            Part(PrimitiveType.Cube, roll, new Vector3(0f, 0.03f, 0.80f), new Vector3(0.28f, 0.04f, 0.12f), new Vector3(-18f, 0f, 0f), board);
-            Part(PrimitiveType.Cube, roll, new Vector3(0f, 0.03f, -0.80f), new Vector3(0.28f, 0.04f, 0.12f), new Vector3(18f, 0f, 0f), board);
-
-            // the rider stands across the board and faces +X (toe side)
-            upper = new GameObject("Body").transform;
-            upper.SetParent(roll, false);
-            Part(PrimitiveType.Capsule, upper, new Vector3(0f, 0.42f, 0.24f), new Vector3(0.17f, 0.38f, 0.17f), new Vector3(0f, 0f, 0f), pants);
-            Part(PrimitiveType.Capsule, upper, new Vector3(0f, 0.42f, -0.24f), new Vector3(0.17f, 0.38f, 0.17f), new Vector3(0f, 0f, 0f), pants);
-            Part(PrimitiveType.Capsule, upper, new Vector3(0f, 1.02f, 0f), new Vector3(0.28f, 0.36f, 0.40f), Vector3.zero, jacket);
-            Part(PrimitiveType.Capsule, upper, new Vector3(0.04f, 1.12f, 0.40f), new Vector3(0.12f, 0.24f, 0.12f), new Vector3(70f, 0f, 0f), jacket);
-            Part(PrimitiveType.Capsule, upper, new Vector3(0.04f, 1.12f, -0.40f), new Vector3(0.12f, 0.24f, 0.12f), new Vector3(-70f, 0f, 0f), jacket);
-            Part(PrimitiveType.Sphere, upper, new Vector3(0f, 1.54f, 0f), new Vector3(0.27f, 0.29f, 0.27f), Vector3.zero, skin);
-            Part(PrimitiveType.Sphere, upper, new Vector3(-0.01f, 1.60f, 0f), new Vector3(0.29f, 0.24f, 0.29f), Vector3.zero, jacket);
-            Part(PrimitiveType.Cube, upper, new Vector3(0.12f, 1.55f, 0f), new Vector3(0.07f, 0.08f, 0.22f), Vector3.zero, dark);
-
-            // a flat ribbon that lies on the snow behind the board
-            trailAnchor = new GameObject("Trail").transform;
-            trailAnchor.SetParent(transform, false);
-            trail = trailAnchor.gameObject.AddComponent<TrailRenderer>();
-            trail.alignment = LineAlignment.TransformZ;
-            trail.time = 14f;
-            trail.minVertexDistance = 0.35f;
-            trail.widthMultiplier = 0.42f;
-            trail.material = trailMat;
-            // a shaded groove in the snow: darker and bluer than the surface so it reads behind you
-            trail.startColor = new Color(0.58f, 0.67f, 0.84f, 0.75f);
-            trail.endColor = new Color(0.70f, 0.78f, 0.92f, 0f);
-            trail.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            trail.receiveShadows = false;
-            trail.numCapVertices = 0;
-
-            // powder thrown off the edge
-            var sg = new GameObject("Spray");
-            sg.transform.SetParent(pivot, false);
-            sg.transform.localPosition = new Vector3(0f, 0.08f, -0.5f);
-            sg.transform.localRotation = Quaternion.Euler(-30f, 180f, 0f);
-            spray = sg.AddComponent<ParticleSystem>();
-            var main = spray.main;
-            main.startLifetime = new ParticleSystem.MinMaxCurve(0.5f, 0.9f);
-            main.startSpeed = new ParticleSystem.MinMaxCurve(2f, 5f);
-            main.startSize = new ParticleSystem.MinMaxCurve(0.12f, 0.45f);
-            main.startColor = new Color(1f, 1f, 1f, 0.8f);
-            main.gravityModifier = 0.35f;
-            main.simulationSpace = ParticleSystemSimulationSpace.World;
-            main.maxParticles = 500;
-            var shape = spray.shape;
-            shape.shapeType = ParticleSystemShapeType.Cone;
-            shape.angle = 28f;
-            shape.radius = 0.15f;
-            var col = spray.colorOverLifetime;
-            col.enabled = true;
-            var grad = new Gradient();
-            grad.SetKeys(new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
-                         new[] { new GradientAlphaKey(0.8f, 0f), new GradientAlphaKey(0f, 1f) });
-            col.color = grad;
-            var size = spray.sizeOverLifetime;
-            size.enabled = true;
-            size.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 0.6f, 1f, 1.8f));
-            sprayEm = spray.emission;
-            sprayEm.rateOverTime = 0f;
-            var pr = sg.GetComponent<ParticleSystemRenderer>();
-            pr.material = sprayMat;
-            pr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            get { var v = Velocity; return v.x * v.x + v.z * v.z > 0.25f ? Mathf.Atan2(v.x, v.z) : Heading; }
         }
 
-        static void Part(PrimitiveType type, Transform parent, Vector3 pos, Vector3 scale, Vector3 euler, Material m)
+        public System.Action<string, int> Trick;     // name, points
+        public System.Action<string> Crash;          // reason
+        public System.Action<float> Landed;          // impact speed into the snow (m/s)
+        public System.Action<string> RoughLanding;
+        public System.Action Jumped;
+        public System.Action<float> Scraped;         // glanced off something: how hard
+
+        Rigidbody rb;
+        float groundVy, airLock, crashTimer, popHold, missClock;
+        bool popPending;
+        int lastMiss;
+        readonly Collider[] near = new Collider[16];
+
+        public Rigidbody Body
         {
-            var go = GameObject.CreatePrimitive(type);
-            Destroy(go.GetComponent<Collider>());
-            go.transform.SetParent(parent, false);
-            go.transform.localPosition = pos;
-            go.transform.localScale = scale;
-            go.transform.localRotation = Quaternion.Euler(euler);
-            go.GetComponent<MeshRenderer>().sharedMaterial = m;
+            get
+            {
+                if (rb == null) Setup();
+                return rb;
+            }
+        }
+
+        void Awake() { if (rb == null) Setup(); }
+
+        void Setup()
+        {
+            rb = gameObject.GetComponent<Rigidbody>();
+            if (rb == null) rb = gameObject.AddComponent<Rigidbody>();
+            rb.mass = 75f;
+            rb.useGravity = false;               // gravity is applied along the snow below
+            rb.linearDamping = 0f;
+            rb.angularDamping = 0f;
+            rb.interpolation = RigidbodyInterpolation.Interpolate;
+            rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+            rb.constraints = RigidbodyConstraints.FreezeRotation;
+            var col = gameObject.GetComponent<SphereCollider>();
+            if (col == null) col = gameObject.AddComponent<SphereCollider>();
+            col.radius = R;
+            col.sharedMaterial = new PhysicsMaterial("Board")
+            {
+                dynamicFriction = 0f, staticFriction = 0f, bounciness = 0f,
+                frictionCombine = PhysicsMaterialCombine.Minimum, bounceCombine = PhysicsMaterialCombine.Minimum
+            };
         }
 
         // ---------------------------------------------------------------- lifecycle
 
         public void ResetAt(float x, float z)
         {
-            X = x; Z = z; StartZ = z;
-            Y = MountainField.Height(x, z);
-            prevX = X; prevY = Y; prevZ = Z; acc = 0f;
-            Heading = 0f; Speed = 0f; vx = vz = 0f; Vy = 0f; vyGround = 0f;
+            var p = new Vector3(x, Slope.DrawnHeight(x, z) + R, z);
+            Body.isKinematic = true;
+            rb.position = p;
+            transform.position = p;
+            StartZ = z;
+            Heading = 0f; Speed = 0f; Steer = 0f; groundVy = 0f;
             Airborne = false; Crashed = false; Running = false;
-            AirTime = 0f; Spin = 0f; spinVis = 0f; lean = 0f; tuck = 0f; Carve = 0f; lastTravel = 0f; yawRateS = 0f;
-            pivot.localRotation = Quaternion.identity;
-            roll.localRotation = Quaternion.identity;
-            SurfaceNormal = MountainField.Normal(x, z);
-            UpdateVisual(0f);
-            trail.Clear();
-            spray.Clear();
+            AirTime = 0f; Spin = 0f; SpinVisual = 0f; Tuck = 0f; Carve = 0f; Peak = 0f; AboveGround = 0f;
+            popPending = false; airLock = 0f;
         }
 
         public void Begin()
         {
             Running = true;
-            Speed = 5f;
-            vx = Mathf.Sin(Heading) * Speed; vz = Mathf.Cos(Heading) * Speed;
-            Vector2 g = MountainField.Gradient(X, Z);
-            vyGround = g.x * vx + g.y * vz;
+            Body.isKinematic = false;
+            rb.linearVelocity = new Vector3(Mathf.Sin(Heading), 0f, Mathf.Cos(Heading)) * 5f;
         }
 
-        const float StepH = 1f / 120f;
-        float acc, prevX, prevY, prevZ;
-        bool popPending; float popHold;
+        public void Stop()
+        {
+            Running = false;
+            if (rb != null && !rb.isKinematic) rb.linearVelocity = Vector3.zero;
+        }
 
         void Update()
         {
-            float dt = Mathf.Min(Time.deltaTime, 0.05f);
-            if (Running)
+            // a jump is a released tuck; input is read per frame, physics runs on its own clock
+            if (Running && input != null && input.Released && input.LastHold > 0.08f)
             {
-                // fixed 120 Hz physics no matter how uneven the frames are; the picture is blended between steps
-                if (input.Released && input.LastHold > 0.08f) { popPending = true; popHold = input.LastHold; }
-                acc += dt;
-                int guard = 0;
-                while (acc >= StepH && guard++ < 12)
-                {
-                    prevX = X; prevY = Y; prevZ = Z;
-                    Step(StepH, false);
-                    acc -= StepH;
-                }
-                popPending = false;
-            }
-            else { acc = 0f; prevX = X; prevY = Y; prevZ = Z; }
-            UpdateVisual(dt);
-        }
-
-        // ---------------------------------------------------------------- physics
-
-        void Step(float dt, bool firstSub)
-        {
-            if (Crashed)
-            {
-                crashTimer -= dt;
-                SetSpeed(Mathf.MoveTowards(Speed, 0f, 22f * dt));
-                X += vx * dt;
-                Z += vz * dt;
-                Y = MountainField.Height(X, Z);
-                if (crashTimer <= 0f) Recover();
-                return;
-            }
-
-            Steer = input.Steer;
-            bool holding = input.Hold;
-
-            if (!Airborne)
-            {
-                Ground(dt, holding);
-                if (popPending) { popPending = false; Pop(popHold); }
-            }
-            else Air(dt);
-
-            // trees: low enough to hit them, close enough to scrape them
-            if (AboveGround < 3.5f)
-            {
-                float d = PropField.Nearest(X, Z, out int id, out float s);
-                if (d < 0.75f * s) { DoCrash("Tree"); return; }
-                if (d < 2.4f * s && Speed > 14f && id != lastMissId && !Airborne)
-                {
-                    lastMissId = id;
-                    Trick?.Invoke("Close call", 50);
-                }
+                popPending = true;
+                popHold = input.LastHold;
             }
         }
 
-        void SetSpeed(float v)
+        void FixedUpdate()
         {
-            float cur = Mathf.Sqrt(vx * vx + vz * vz);
-            if (cur > 1e-4f) { float k = v / cur; vx *= k; vz *= k; }
-            else { vx = Mathf.Sin(Heading) * v; vz = Mathf.Cos(Heading) * v; }
-            Speed = v;
+            if (Running) Tick(Time.fixedDeltaTime);
         }
 
-        void Ground(float dt, bool holding)
+        /// <summary>One physics step of riding (public so the test harness can drive it).</summary>
+        public void Tick(float dt)
         {
-            tuck = Mathf.MoveTowards(tuck, holding ? 1f : 0f, dt * 5f);
-            var f = new Vector2(Mathf.Sin(Heading), Mathf.Cos(Heading));
-            var r = new Vector2(f.y, -f.x);                 // the board's right-hand side
-            Vector2 g = MountainField.Gradient(X, Z);
-            var v = new Vector2(vx, vz);
+            if (input != null)
+            {
+                Steer = input.Steer;
+                Tuck = Mathf.MoveTowards(Tuck, input.Hold && !Airborne ? 1f : 0f, dt * 5f);
+            }
+            Vector3 p = rb.position, v = rb.linearVelocity;
+            if (Crashed) v = CrashStep(dt, p, v);
+            else if (Airborne) v = AirStep(dt, p, v);
+            else v = GroundStep(dt, p, v);
+            rb.linearVelocity = v;
+            if (!Crashed) CloseCalls(dt, p);
+        }
 
-            // 1. gravity: the slope pulls the rider down the fall line, wherever the board points
-            Vector2 acc = -Gravity * g / (1f + g.sqrMagnitude);
-            // 2. drag: air resistance grows with speed squared (less when tucked), plus snow friction
-            float sp = v.magnitude;
+        // ---------------------------------------------------------------- on the snow
+
+        Vector3 GroundStep(float dt, Vector3 p, Vector3 v)
+        {
+            Vector3 n = Slope.Normal(p.x, p.z);
+            var dir = new Vector3(Mathf.Sin(Heading), 0f, Mathf.Cos(Heading));
+            Vector3 f = Vector3.ProjectOnPlane(dir, n).normalized;
+            Vector3 r = Vector3.Cross(n, f);
+
+            // work in the plane of the snow
+            Vector3 vt = Vector3.ProjectOnPlane(v, n);
+            // 1. gravity along the slope
+            vt += Vector3.ProjectOnPlane(Vector3.down * G, n) * dt;
+            // 2. air drag (less when tucked) and snow friction
+            float sp = vt.magnitude;
             if (sp > 1e-3f)
             {
-                float drag = Mathf.Lerp(DragOpen, DragTuck, tuck);
-                acc -= (v / sp) * (drag * sp * sp + 0.35f);
+                float drag = Mathf.Lerp(DragOpen, DragTuck, Tuck) * sp * sp + Friction * G * n.y;
+                vt -= vt / sp * Mathf.Min(sp, drag * dt);
             }
-            v += acc * dt;
-
-            // 3. edge grip: sideways velocity is bled off, and most of it is turned into forward
-            //    speed (a carve keeps its momentum); the rest is scraped off as spray
-            float vf = Vector2.Dot(v, f), vl = Vector2.Dot(v, r);
-            float keep = Mathf.Exp(-Mathf.Lerp(GripStart, GripTuck, tuck) * dt);
-            float vl2 = vl * keep;
-            float lost = Mathf.Abs(vl) - Mathf.Abs(vl2);
-            vf += (vf >= 0f ? 1f : -1f) * lost * 0.8f;   // a clean carve keeps most of its speed
-            v = f * vf + r * vl2;
-            Carve = Mathf.Lerp(Carve, Mathf.Clamp01((lost / dt) / 18f + Mathf.Abs(Steer) * 0.2f), 1f - Mathf.Exp(-dt * 10f));
-
-            // never stuck: below a jog you skate along the board
-            float vlen = v.magnitude;
-            if (vlen < 3f) v += f * (6f * dt);
-
-            // 4. steering turns the board; the velocity follows through the grip above
-            float turn = Mathf.Lerp(3.0f, 1.75f, Mathf.Clamp01(vlen / 38f)) * Mathf.Lerp(1f, 0.7f, tuck);
-            Heading += Steer * turn * dt;
-            // stalled across the hill: the board swings back down on its own
-            if (vlen < 3f) Heading = Mathf.MoveTowards(Heading, 0f, dt * 1.4f * (1f - vlen / 3f));
-            Heading = Mathf.Clamp(Heading, -MaxHeading, MaxHeading);
-
-            vx = v.x; vz = v.y;
-            Speed = v.magnitude;
-
-            X += vx * dt;
-            Z += vz * dt;
-            float ny = MountainField.Height(X, Z);
-            float vy = (ny - Y) / dt;
-            // the ground falls away faster than gravity can follow: take off
-            if (Speed > 8f && vy < vyGround - AirGravity * dt && GroundFallsAway())
+            // 3. the edge: the velocity swings round to where the board points. The slip angle
+            //    dies fast and the speed is kept (a clean carve), less a little scrubbed off;
+            //    it can never gain speed, however you wiggle
+            float lost = 0f;
+            sp = vt.magnitude;
+            if (sp > 0.05f)
             {
-                Airborne = true;
-                Vy = vyGround;
-                AirTime = 0f; Spin = 0f; peak = 0f;
-                Y += Vy * dt;
-                return;
+                float beta = Mathf.Atan2(Vector3.Dot(vt, r), Vector3.Dot(vt, f));   // slip angle
+                beta = Mathf.Clamp(beta, -1.5f, 1.5f);
+                float beta2 = beta * Mathf.Exp(-Mathf.Lerp(Grip, GripTuck, Tuck) * dt);
+                float scrub = Mathf.Abs(beta - beta2);
+                lost = scrub * sp;
+                sp *= 1f - 0.08f * scrub;
+                vt = (f * Mathf.Cos(beta2) + r * Mathf.Sin(beta2)) * sp;
             }
-            Y = ny;
-            vyGround = vy;
+            if (sp < 3f) { vt += f * (6f * dt); sp = vt.magnitude; }   // never stuck: skate along the board when slow
+            Carve = Mathf.Lerp(Carve, Mathf.Clamp01(lost / dt / 16f + Mathf.Abs(Steer) * 0.25f) * Mathf.Clamp01(sp / 8f),
+                               1f - Mathf.Exp(-dt * 12f));
+
+            // 4. steer: the board turns, the velocity follows through the grip next step
+            float turn = Mathf.Lerp(TurnSlow, TurnFast, Mathf.Clamp01(sp / 34f)) * Mathf.Lerp(1f, 0.75f, Tuck);
+            Heading += Steer * turn * dt;
+            if (sp < 3f) Heading = Mathf.MoveTowards(Heading, 0f, dt * 1.4f * (1f - sp / 3f));   // stalled: swing back downhill
+            Heading = Mathf.Clamp(Heading, -MaxHeading, MaxHeading);
+            Speed = sp;
+
+            // follow the snow: choose the vertical speed that puts the board on the mesh next step
+            float nx = p.x + vt.x * dt, nz = p.z + vt.z * dt;
+            float wantY = Slope.DrawnHeight(nx, nz) + R;
+            float vy = (wantY - p.y) / dt;
             AboveGround = 0f;
+
+            // jump: a released tuck pops you off the snow
+            if (popPending)
+            {
+                popPending = false;
+                Jumped?.Invoke();
+                return TakeOff(vt + n * Mathf.Lerp(5.5f, 8f, Mathf.Clamp01(popHold / 0.8f)), 0.15f);
+            }
+            // the snow falls away faster than gravity can follow (a kicker's lip, a crest): fly
+            if (sp > 7f && vy < groundVy - G * dt * 1.2f && FallsAway(p, new Vector3(vt.x, groundVy, vt.z)))
+                return TakeOff(new Vector3(vt.x, groundVy, vt.z), 0.08f);
+
+            groundVy = vy;
+            return new Vector3(vt.x, vy, vt.z);
         }
 
-        // a crest only throws you if the snow really drops away under a ballistic arc;
-        // otherwise the board stays pressed into the snow (it compresses) instead of chattering
-        public static float TakeoffClearance = 0.25f;
-        bool GroundFallsAway()
+        bool FallsAway(Vector3 p, Vector3 v)
         {
             const float T = 0.12f;
-            float by = Y + vyGround * T - 0.5f * AirGravity * T * T;
-            float gy = MountainField.Height(X + vx * T, Z + vz * T);
+            float by = p.y + v.y * T - 0.5f * G * T * T;
+            float gy = Slope.DrawnHeight(p.x + v.x * T, p.z + v.z * T) + R;
             return by - gy > TakeoffClearance;
         }
 
-        void Pop(float held)
+        Vector3 TakeOff(Vector3 v, float lockTime)
         {
-            Jumped?.Invoke();
             Airborne = true;
-            Vy = vyGround + Mathf.Lerp(5f, 7.5f, Mathf.Clamp01(held / 0.8f));
-            AirTime = 0f; Spin = 0f; peak = 0f;
+            airLock = lockTime;
+            AirTime = 0f; Spin = 0f; Peak = 0f;
+            Carve = 0f;
+            return v;
         }
 
-        void Air(float dt)
+        // ---------------------------------------------------------------- in the air
+
+        Vector3 AirStep(float dt, Vector3 p, Vector3 v)
         {
-            tuck = Mathf.MoveTowards(tuck, 0.3f, dt * 3f);
-            Carve = Mathf.MoveTowards(Carve, 0f, dt * 8f);
             AirTime += dt;
-            Vy -= AirGravity * dt;
-            Y += Vy * dt;
-            SetSpeed(Mathf.Max(0f, Speed - 0.002f * Speed * Speed * dt));
-            X += vx * dt;
-            Z += vz * dt;
-            // steering in the air spins; a short grace stops small hops from rotating you
-            // in the air a gentle steer lines the board up for the landing; holding hard over spins
+            airLock -= dt;
+            v.y -= G * dt;
+            float sp = v.magnitude;
+            v -= v * Mathf.Min(1f, 0.0025f * sp * dt);
+            // a gentle steer lines the board up for the landing; holding hard over spins
             if (AirTime > 0.18f && Mathf.Abs(Steer) > 0.6f) Spin += Steer * 9f * dt;
-            else Heading = Mathf.Clamp(Heading + Steer * 1.4f * dt, -MaxHeading, MaxHeading);
-            float gy = MountainField.Height(X, Z);
-            AboveGround = Y - gy;
-            peak = Mathf.Max(peak, AboveGround);
-            if (Y <= gy) Land(gy);
+            else Heading = Mathf.Clamp(Heading + Steer * 1.5f * dt, -MaxHeading, MaxHeading);
+            Speed = new Vector2(v.x, v.z).magnitude;
+
+            float nx = p.x + v.x * dt, nz = p.z + v.z * dt;
+            float gy = Slope.DrawnHeight(nx, nz) + R;
+            AboveGround = Mathf.Max(0f, p.y - (Slope.DrawnHeight(p.x, p.z) + R));
+            Peak = Mathf.Max(Peak, AboveGround);
+            if (airLock <= 0f && p.y + v.y * dt <= gy) return Land(dt, p, v, gy);
+            return v;
         }
 
-        void Land(float gy)
+        Vector3 Land(float dt, Vector3 p, Vector3 v, float gyNext)
         {
-            Vector2 g = MountainField.Gradient(X, Z);
-            float groundVy = g.x * vx + g.y * vz;
-            float impact = groundVy - Vy;   // how much faster you are falling than the slope
+            Vector3 n = Slope.Normal(p.x, p.z);
+            float impact = Mathf.Max(0f, -Vector3.Dot(v, n));   // speed into the snow
             Airborne = false;
-            Y = gy;
-            vyGround = groundVy;
             AboveGround = 0f;
+            Vector3 vt = Vector3.ProjectOnPlane(v, n);
 
             float err = Spin - Tau * Mathf.Round(Spin / Tau);
             int turns = Mathf.RoundToInt(Mathf.Abs(Spin) / Tau);
-            bool real = peak > 0.8f;
-            // bad landings no longer wipe you out: you keep riding, lose speed and skip the trick points
+            bool real = Peak > 0.8f;
             bool sloppy = real && Mathf.Abs(err) > 0.75f;
-            bool hard = impact > 26f;
-            if (sloppy) SetSpeed(Speed * 0.88f);
-            if (hard) SetSpeed(Speed * 0.9f);
-            if (sloppy || hard)
+            bool hard = impact > 17f;
+            SpinVisual = sloppy ? 0f : (real ? err : Spin);   // fold the leftover into the picture
+            Spin = 0f;
+            // a landing absorbs some speed: more if it is hard or crooked
+            float keep = 1f - Mathf.Clamp01((impact - 8f) * 0.012f);
+            if (sloppy) keep *= 0.85f;
+            if (hard) keep *= 0.9f;
+            vt *= keep;
+            Landed?.Invoke(impact);
+            float vy = (gyNext - p.y) / dt;
+            groundVy = vy;
+            if (sloppy || hard) RoughLanding?.Invoke(sloppy ? "Sloppy landing" : "Hard landing");
+            else if (real)
             {
-                // keep riding the way you were pointed; just lose a little speed and settle the body
-                spinVis = 0f; Spin = 0f;
-                Landed?.Invoke(impact);
-                spray.Emit(40);
-                RoughLanding?.Invoke(sloppy ? "Sloppy landing" : "Hard landing");
+                if (turns > 0) Trick?.Invoke((turns * 360) + (turns > 2 ? "!" : ""), 400 * turns * turns);
+                if (Peak > 5f) Trick?.Invoke("Big air", 300);
+                else if (AirTime > 0.5f) Trick?.Invoke("Air " + AirTime.ToString("0.0") + "s", Mathf.RoundToInt(AirTime * 120f));
+            }
+            return new Vector3(vt.x, vy, vt.z);
+        }
+
+        // ---------------------------------------------------------------- trees and rocks
+
+        void OnCollisionEnter(Collision c)
+        {
+            if (!Running || Crashed || c.collider.GetComponentInParent<Obstacle>() == null) return;
+            Vector3 normal = c.contactCount > 0 ? c.GetContact(0).normal : -rb.linearVelocity.normalized;
+            float into = Mathf.Abs(Vector3.Dot(c.relativeVelocity, normal));
+            if (into > 6f) DoCrash(c.collider.GetComponent<SphereCollider>() != null ? "Rock" : "Tree");
+            else
+            {
+                // a glancing blow: bounce off and lose a little speed, but keep riding
+                Scraped?.Invoke(into);
+                rb.linearVelocity *= 0.85f;
+            }
+        }
+
+        void CloseCalls(float dt, Vector3 p)
+        {
+            missClock -= dt;
+            if (missClock > 0f || Airborne || Speed < 14f) return;
+            missClock = 0.1f;
+            int k = Physics.OverlapSphereNonAlloc(p, 1.9f, near, ~0, QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < k; i++)
+            {
+                if (near[i].attachedRigidbody == rb) continue;
+                var o = near[i].GetComponentInParent<Obstacle>();
+                if (o == null) continue;
+                int id = o.GetInstanceID();
+                if (id == lastMiss) continue;
+                lastMiss = id;
+                Trick?.Invoke("Close call", 50);
                 return;
             }
-
-            spinVis = real ? err : Spin;   // fold the small leftover into the picture, not the run
-            Spin = 0f;
-            SetSpeed(Mathf.Max(0f, Speed - Mathf.Max(0f, impact - 10f) * 0.3f));
-            Landed?.Invoke(impact);
-            if (impact > 6f) spray.Emit(Mathf.Clamp((int)(impact * 2f), 6, 40));
-
-            if (!real) return;
-            if (turns > 0) Trick?.Invoke((turns * 360) + (turns > 2 ? "!" : ""), 400 * turns * turns);
-            if (peak > 6f) Trick?.Invoke("Big air", 300);
-            else if (AirTime > 0.5f) Trick?.Invoke("Air " + AirTime.ToString("0.0") + "s", Mathf.RoundToInt(AirTime * 120f));
         }
 
         void DoCrash(string why)
         {
             Crashed = true;
             Airborne = false;
-            crashTimer = 1.5f;
-            crashAxis = new Vector3(Random.Range(-1f, 1f), 0.2f, Random.Range(0.4f, 1f)).normalized;
-            Y = MountainField.Height(X, Z);
-            trail.emitting = false;
-            spray.Emit(60);
+            crashTimer = 1.4f;
+            Carve = 0f;
             Crash?.Invoke(why);
         }
 
-        void Recover()
+        Vector3 CrashStep(float dt, Vector3 p, Vector3 v)
+        {
+            crashTimer -= dt;
+            var h = new Vector3(v.x, 0f, v.z) * Mathf.Exp(-dt * 3f);
+            float wantY = Slope.DrawnHeight(p.x + h.x * dt, p.z + h.z * dt) + R;
+            Speed = h.magnitude;
+            if (crashTimer <= 0f) return Recover(p);
+            return new Vector3(h.x, (wantY - p.y) / dt, h.z);
+        }
+
+        Vector3 Recover(Vector3 p)
         {
             Crashed = false;
             Heading = 0f;
-            vx = 0f; vz = 3f; Speed = 3f;
-            Spin = 0f; spinVis = 0f;
-            // step clear of whatever stopped you
-            float d = PropField.Nearest(X, Z, out _, out float s);
-            if (d < 2.5f * s) X += Mathf.Sign(MountainField.DriftX(Z) - X + 0.01f) * 3f;
-            Y = MountainField.Height(X, Z);
-            vyGround = 0f;
-            pivot.localRotation = Quaternion.identity;
+            Spin = 0f; SpinVisual = 0f;
+            // step clear of whatever stopped you, toward the piste
+            float toward = Mathf.Sign(Slope.Centre(p.z) - p.x + 0.01f);
+            for (int i = 0; i < 6 && Physics.CheckSphere(p, 1.4f, ~0, QueryTriggerInteraction.Ignore) && Blocked(p); i++)
+                p.x += toward * 1.5f;
+            p.y = Slope.DrawnHeight(p.x, p.z) + R;
+            rb.position = p;
+            groundVy = 0f;
+            return new Vector3(0f, 0f, 3f);
         }
 
-        // ---------------------------------------------------------------- visuals
-
-        void UpdateVisual(float dt)
+        bool Blocked(Vector3 p)
         {
-            float k = 1f - Mathf.Exp(-dt * 12f);
-            float alpha = Running ? Mathf.Clamp01(acc / StepH) : 1f;
-            float rx = Mathf.Lerp(prevX, X, alpha), rz = Mathf.Lerp(prevZ, Z, alpha);
-            float drawn = MountainField.DrawnHeight(rx, rz);
-            // tiny hops over bumps must not pop the picture: never draw below the visible snow
-            float vis = Airborne ? Mathf.Max(Mathf.Lerp(prevY, Y, alpha), drawn) : drawn;
-            transform.position = new Vector3(rx, vis, rz);
-
-            // blend toward "level" only as the rider really leaves the snow, so micro-hops do not flip the body
-            Vector3 n = Vector3.Slerp(MountainField.Normal(X, Z), Vector3.up, Mathf.Clamp01(AboveGround / 1.5f));
-            SurfaceNormal = dt <= 0f ? n : Vector3.Slerp(SurfaceNormal, n, k);
-
-            if (Crashed)
-            {
-                pivot.Rotate(crashAxis, 520f * dt * Mathf.Clamp01(crashTimer), Space.World);
-            }
-            else
-            {
-                spinVis = Mathf.Lerp(spinVis, 0f, 1f - Mathf.Exp(-dt * 10f));
-                float yaw = Heading + Spin + spinVis;
-                var f = new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw));
-                Vector3 fp = Vector3.ProjectOnPlane(f, SurfaceNormal);
-                if (fp.sqrMagnitude > 1e-4f) pivot.rotation = Quaternion.LookRotation(fp.normalized, SurfaceNormal);
-
-                // lean into the turn; positive steer turns right, so roll right
-                // lean like a real rider: the angle that balances the turn's sideways pull against gravity
-                float th = TravelHeading;
-                float yawRate = dt > 0f ? Mathf.DeltaAngle(lastTravel * Mathf.Rad2Deg, th * Mathf.Rad2Deg) * Mathf.Deg2Rad / dt : 0f;
-                lastTravel = th;
-                yawRateS = Mathf.Lerp(yawRateS, yawRate, 1f - Mathf.Exp(-dt * 10f));
-                float want = Airborne ? 0f : Mathf.Clamp(Mathf.Atan2(Speed * yawRateS, 9.81f) * Mathf.Rad2Deg, -50f, 50f);
-                lean = Mathf.Lerp(lean, want, 1f - Mathf.Exp(-dt * 14f));
-                roll.localRotation = Quaternion.Euler(0f, 0f, -lean * 0.45f);
-                upper.localRotation = Quaternion.Euler(0f, 0f, -lean * 0.55f);
-                upper.localScale = new Vector3(1f, 1f - 0.24f * tuck, 1f);
-            }
-
-            // trail lies flat on the snow a hair above it
-            var tf = new Vector3(Mathf.Sin(Heading), 0f, Mathf.Cos(Heading));
-            trailAnchor.position = transform.position + SurfaceNormal * 0.04f;
-            trailAnchor.rotation = Quaternion.LookRotation(SurfaceNormal, Vector3.ProjectOnPlane(tf, SurfaceNormal) + Vector3.forward * 1e-4f);
-            trail.emitting = Running && !Crashed && AboveGround < 0.15f;
-
-            sprayEm.rateOverTime = Running && !Crashed && !Airborne
-                ? Carve * Speed * 7f + Mathf.Max(0f, Speed - 22f) * 1.5f
-                : 0f;
+            int k = Physics.OverlapSphereNonAlloc(p, 1.4f, near, ~0, QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < k; i++)
+                if (near[i].attachedRigidbody != rb && near[i].GetComponentInParent<Obstacle>() != null) return true;
+            return false;
         }
     }
 }

@@ -20,11 +20,12 @@ namespace Summit
 
         Rider rider;
         RiderInput input;
-        TerrainStreamer terrain;
-        PropField props;
+        SlopeStreamer terrain;
+        Forest props;
+        RiderBody body;
         ChaseCamera chase;
         Hud hud;
-        WindAudio audioFx;
+        SoundMix audioFx;
         readonly Avalanche slide = new Avalanche();
 
         int trickPoints, chainCount;
@@ -37,9 +38,11 @@ namespace Summit
         {
             QualitySettings.vSyncCount = 0;
             Application.targetFrameRate = 60;
+            Time.fixedDeltaTime = 1f / 120f;   // physics in small steps; the rider is interpolated between them
+            Physics.simulationMode = SimulationMode.FixedUpdate;   // never left on manual by a test tool
             Screen.sleepTimeout = SleepTimeout.NeverSleep;
             Screen.orientation = ScreenOrientation.Portrait;
-            MountainField.Init(MountainField.TodaysSeed());
+            Slope.Init(Slope.TodaysSeed());
             best = PlayerPrefs.GetInt("summit_best", 0);
             MakeMissingMaterials();
             SetUpWorld();
@@ -49,20 +52,22 @@ namespace Summit
             var rg = new GameObject("Rider");
             rider = rg.AddComponent<Rider>();
             rider.input = input;
-            rider.Build(jacket, pants, board, skin, dark, trail, spray);
+            body = rg.AddComponent<RiderBody>();
+            body.Build(rider, jacket, pants, board, skin, dark, trail, spray);
             rider.Trick += OnTrick;
             rider.Crash += OnCrash;
             rider.RoughLanding += OnRough;
             rider.Jumped += () => { if (state == State.Riding) audioFx.Play(Sfx.Jump); };
-            rider.Landed += impact => { if (state == State.Riding && impact > 4f) audioFx.Play(Sfx.Land, Mathf.Clamp01(impact / 24f)); };
+            rider.Landed += impact => { if (state == State.Riding && impact > 3f) audioFx.Play(Sfx.Land, Mathf.Clamp01(impact / 16f)); };
+            rider.Scraped += hit => { if (state == State.Riding) audioFx.Play(Sfx.Scrape, hit); };
 
             var tg = new GameObject("Terrain");
-            terrain = tg.AddComponent<TerrainStreamer>();
+            terrain = tg.AddComponent<SlopeStreamer>();
             terrain.snowMaterial = snow;
             terrain.target = rg.transform;
 
             var pg = new GameObject("Trees");
-            props = pg.AddComponent<PropField>();
+            props = pg.AddComponent<Forest>();
             props.foliage = foliage;
             props.bark = bark;
             props.target = rg.transform;
@@ -89,8 +94,8 @@ namespace Summit
             hud.Build();
 
             var ag = new GameObject("Audio");
-            ag.AddComponent<AudioSource>();
-            audioFx = ag.AddComponent<WindAudio>();
+            audioFx = ag.AddComponent<SoundMix>();
+            audioFx.Build();
 
             ToReady();
         }
@@ -163,8 +168,9 @@ namespace Summit
         void ToReady()
         {
             state = State.Ready;
-            float x = MountainField.DriftX(0f);
+            float x = Slope.Centre(0f);
             rider.ResetAt(x, 0f);
+            body.ResetVisual();
             slide.Reset(0f);
             trickPoints = 0; chainCount = 0; chainTimer = 0f;
             terrain.Prewarm();
@@ -194,7 +200,7 @@ namespace Summit
             state = State.Buried;
             audioFx.Play(Sfx.Buried);
             stateTimer = 0f;
-            rider.Running = false;
+            rider.Stop();
             int s = Score;
             bool record = s > best;
             if (record) { best = s; PlayerPrefs.SetInt("summit_best", s); PlayerPrefs.Save(); }
@@ -263,8 +269,7 @@ namespace Summit
             hud.SetWhiteout(state == State.Buried ? Mathf.Min(0.85f, stateTimer * 2f) : close * close * 0.5f);
             chase.shake = state == State.Riding ? close * close + (rider.Crashed ? 0.2f : 0f) : 0f;
             bool onSnow = state == State.Riding && !rider.Airborne && !rider.Crashed;
-            audioFx.Set(rider.Speed / 40f, rider.Carve, state == State.Riding ? close : 0f,
-                        state == State.Buried ? 0.3f : 1f, onSnow ? 1f : 0f, rider.Steer);
+            audioFx.Set(rider.Speed / 36f, rider.Carve, state == State.Buried ? 0.3f : 1f, onSnow ? 1f : 0f, rider.Steer);
         }
 
         bool ModeTapped()

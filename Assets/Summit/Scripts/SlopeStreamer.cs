@@ -8,7 +8,7 @@ namespace Summit
     /// frame so building one never costs a dropped frame. Chunks sit on a
     /// fixed world grid, so nothing re-triangulates as the rider moves.
     /// </summary>
-    public class TerrainStreamer : MonoBehaviour
+    public class SlopeStreamer : MonoBehaviour
     {
         public Transform target;
         public Material snowMaterial;
@@ -32,7 +32,7 @@ namespace Summit
 
         void Init()
         {
-            quads = Mathf.RoundToInt(chunkSize / MountainField.Quad);
+            quads = Mathf.RoundToInt(chunkSize / Slope.Quad);
             byDistance = (a, b) =>
                 (Mathf.Abs(a.x - sortCx) + Mathf.Abs(a.y - sortCz)).CompareTo(Mathf.Abs(b.x - sortCx) + Mathf.Abs(b.y - sortCz));
         }
@@ -114,14 +114,14 @@ namespace Summit
         void Fill(Mesh mesh, Vector2Int key)
         {
             int n = quads + 1, g = n + 2;
-            float q = MountainField.Quad;
+            float q = Slope.Quad;
             float x0 = key.x * chunkSize, z0 = key.y * chunkSize;
             // sample once, with a border, and take normals and shading from the samples:
             // about a ninth of the height calls of sampling each one separately
             if (grid == null || grid.Length != g * g) grid = new float[g * g];
             for (int j = 0; j < g; j++)
                 for (int i = 0; i < g; i++)
-                    grid[j * g + i] = MountainField.Height(x0 + (i - 1) * q, z0 + (j - 1) * q);
+                    grid[j * g + i] = Slope.Height(x0 + (i - 1) * q, z0 + (j - 1) * q);
 
             if (verts == null || verts.Length != n * n)
             {
@@ -142,8 +142,10 @@ namespace Summit
                     // hollows go blue, crests catch the light
                     float lap = (hl + hr + hd + hu) * 0.25f - y;
                     float k = Mathf.Clamp(lap * 2.4f, -0.8f, 0.8f);
-                    cols[v] = k > 0f ? Color.Lerp(Color.white, new Color(0.72f, 0.80f, 0.95f), k * 0.55f)
-                                     : Color.Lerp(Color.white, new Color(1f, 0.98f, 0.94f), -k * 0.4f);
+                    Color c0 = k > 0f ? Color.Lerp(Color.white, new Color(0.72f, 0.80f, 0.95f), k * 0.55f)
+                                      : Color.Lerp(Color.white, new Color(1f, 0.98f, 0.94f), -k * 0.4f);
+                    // the powder either side is a touch bluer than the groomed piste, so the line reads at speed
+                    cols[v] = Color.Lerp(c0, c0 * new Color(0.90f, 0.94f, 1.0f), Slope.Rough(x, z));
                 }
             if (tris == null)
             {

@@ -1,58 +1,72 @@
-using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 using Summit;
 
 /// <summary>
-/// Headless physics check: rides a minute down the mountain and logs speed and airtime.
-/// Run: Unity -batchmode -projectPath . -executeMethod SimTest.Run -logFile sim.log
+/// Rides the mountain headless for a minute with a simple bot and prints how it went,
+/// then measures how fast the board answers the stick.
+/// Run: Unity -batchmode -nographics -projectPath . -executeMethod SimTest.Run -logFile sim.log
 /// </summary>
 public static class SimTest
 {
+    const float Dt = 1f / 120f;
+
     public static void Run()
     {
-        MountainField.Init(1234);
-        var ig = new GameObject("in"); var input = ig.AddComponent<RiderInput>();
-        var rg = new GameObject("rider"); var r = rg.AddComponent<Rider>();
-        r.input = input;
-        r.Build(null, null, null, null, null, null, null);
-        var step = typeof(Rider).GetMethod("Step", BindingFlags.NonPublic | BindingFlags.Instance);
-        var steerProp = typeof(RiderInput).GetProperty("Steer");
-        // a row of tuning values to try: gravity, airGravity, dragOpen, dragTuck, lipScale, lipMaskLow
-        var configs = new[] { new[] { Rider.Gravity, Rider.AirGravity, Rider.DragOpen, Rider.DragTuck, MountainField.LipScale, MountainField.LipMaskLow } };
-        Rider.TakeoffClearance = 0.25f;
-        foreach (var c in configs)
-        foreach (float steerAmp in new[] { 0f, 0.25f })
+        UnityEditor.SceneManagement.EditorSceneManager.NewScene(UnityEditor.SceneManagement.NewSceneSetup.EmptyScene);
+        Physics.simulationMode = SimulationMode.Script;
+        Slope.Init(1234);
+        var rg = new GameObject("Rider");
+        var r = rg.AddComponent<Rider>();
+        var forest = new GameObject("Forest").AddComponent<Forest>();
+        forest.target = rg.transform;
+
+        int jumps = 0, crashes = 0, scrapes = 0, rough = 0, calls = 0;
+        float maxAir = 0f;
+        r.Jumped += () => jumps++;
+        r.Crash += _ => crashes++;
+        r.Scraped += _ => scrapes++;
+        r.RoughLanding += _ => rough++;
+        r.Trick += (n, p) => { if (n == "Close call") calls++; };
+        int takeoffs = 0; bool wasAir = false;
+
+        r.ResetAt(Slope.Centre(0f), 0f);
+        forest.Prewarm();
+        r.Begin();
+        float t = 0f, airT = 0f, sumV = 0f, maxV = 0f; int n = 0;
+        float maxStep = 0f; float lastY = r.Body.position.y;
+        for (int i = 0; i < 120 * 60; i++, t += Dt)
         {
-            Rider.Gravity = c[0]; Rider.AirGravity = c[1]; Rider.DragOpen = c[2]; Rider.DragTuck = c[3]; MountainField.LipScale = c[4]; MountainField.LipMaskLow = c[5];
-            r.ResetAt(MountainField.DriftX(0f), 0f); r.Begin();
-            int takeoffs = 0, bigAirs = 0, tiny = 0, airFrames = 0; bool wasAir = false; float maxSpeed = 0f, sumSpeed = 0f, airStart = 0f;
-            int n = 120 * 60;
-            for (int i = 0; i < n; i++)
-            {
-                float t = i / 120f;
-                // weave gently around the good line
-                float s = steerAmp * Mathf.Sin(t * 0.9f) + Mathf.Clamp((MountainField.DriftX(r.Z) - r.X) * 0.02f - r.Heading, -1f, 1f) * 0.5f;
-                steerProp.SetValue(input, Mathf.Clamp(s, -1f, 1f));
-                step.Invoke(r, new object[] { 1f / 120f, false });
-                if (r.Airborne && !wasAir) { takeoffs++; airStart = t; }
-                if (!r.Airborne && wasAir) { if (t - airStart > 0.4f) bigAirs++; else if (t - airStart < 0.15f) tiny++; }
-                if (r.Airborne) airFrames++;
-                wasAir = r.Airborne;
-                maxSpeed = Mathf.Max(maxSpeed, r.Speed); sumSpeed += r.Speed;
-            }
-            Debug.Log($"SIM g={c[0]} ag={c[1]} d={c[2]} lip={c[4]} mask={c[5]} steer={steerAmp} tiny<0.15s={tiny} takeoffs/min={takeoffs} airs>0.4s={bigAirs} avg={sumSpeed / n * 3.6f:0} km/h max={maxSpeed * 3.6f:0} km/h dist={r.Distance:0} m crashed={r.Crashed} air%={100f * airFrames / n:0}");
+            // bot: carve S-turns around the piste centre
+            float aimX = Slope.Centre(r.Z + 12f);
+            if (Slope.NextKicker(r.Z, out Vector3 kk) && kk.z - r.Z < 70f) aimX = kk.x;
+            float off = aimX - r.Body.position.x;
+            r.Steer = Mathf.Clamp(0.4f * Mathf.Sin(t * 1.1f) + off * 0.06f - (r.Heading) * 0.8f, -1f, 1f);
+            r.Tick(Dt);
+            Physics.Simulate(Dt);
+            if (i % 12 == 0) forest.Prewarm();
+            if (r.Airborne) { airT += Dt; if (!wasAir) takeoffs++; maxAir = Mathf.Max(maxAir, r.AboveGround); }
+            wasAir = r.Airborne;
+            float y = r.Body.position.y;
+            if (!r.Airborne) maxStep = Mathf.Max(maxStep, Mathf.Abs((y - lastY) / Dt - r.Body.linearVelocity.y));
+            lastY = y;
+            if (i % 600 == 0) { var g = Slope.Gradient(r.Body.position.x, r.Body.position.z); Debug.Log($"SIM t={t:0} v={r.Speed*3.6f:0} vel={r.Body.linearVelocity} grad={g} air={r.Airborne} head={r.Heading:0.00}"); }
+            float v = r.Speed * 3.6f; sumV += v; n++; maxV = Mathf.Max(maxV, v);
         }
-        // responsiveness: from riding straight at speed, full steer; time until travel turns 20 degrees
-        r.ResetAt(MountainField.DriftX(0f), 0f); r.Begin();
-        for (int i = 0; i < 120 * 6; i++) { steerProp.SetValue(input, 0f); step.Invoke(r, new object[] { 1f / 120f, false }); }
-        float h0 = r.TravelHeading, t20 = -1f;
-        for (int i = 0; i < 240; i++)
+        Debug.Log($"SIM ride: dist={r.Distance:0} m  avg={sumV / n:0} km/h  max={maxV:0} km/h  airborne={100f * airT / 60f:0.0}%  takeoffs={takeoffs}  maxHeight={maxAir:0.0} m  crashes={crashes}  scrapes={scrapes}  rough={rough}  closeCalls={calls}");
+
+        // response: get up to speed straight, then full stick right
+        r.ResetAt(Slope.Centre(0f), 0f);
+        r.Begin();
+        for (int i = 0; i < 120 * 8; i++) { r.Steer = Mathf.Clamp((Slope.Centre(r.Z + 12f) - r.Body.position.x) * 0.06f - r.Heading, -1f, 1f); r.Tick(Dt); Physics.Simulate(Dt); }
+        float th0 = r.TravelHeading, sp0 = r.Speed * 3.6f, tt = 0f, maxSlip = 0f;
+        while (tt < 2f && Mathf.Abs(Mathf.DeltaAngle(th0 * Mathf.Rad2Deg, r.TravelHeading * Mathf.Rad2Deg)) < 20f)
         {
-            steerProp.SetValue(input, 1f); step.Invoke(r, new object[] { 1f / 120f, false });
-            if (t20 < 0f && Mathf.Abs(r.TravelHeading - h0) > 20f * Mathf.Deg2Rad) t20 = i / 120f;
+            r.Steer = 1f; r.Tick(Dt); Physics.Simulate(Dt); tt += Dt;
+            maxSlip = Mathf.Max(maxSlip, Mathf.Abs(Mathf.DeltaAngle(r.Heading * Mathf.Rad2Deg, r.TravelHeading * Mathf.Rad2Deg)));
         }
-        Debug.Log($"SIM response: 20deg turn of travel in {t20:0.00}s at {r.Speed * 3.6f:0} km/h, slip {(r.Heading - r.TravelHeading) * Mathf.Rad2Deg:0} deg");
+        Debug.Log($"SIM steer: at {sp0:0} km/h full stick turns travel 20 deg in {tt:0.00} s; board-vs-travel slip peaked at {maxSlip:0.0} deg");
+        Physics.simulationMode = SimulationMode.FixedUpdate;   // do not leave the project on manual physics
         EditorApplication.Exit(0);
     }
 }

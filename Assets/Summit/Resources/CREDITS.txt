@@ -1,0 +1,11 @@
+All third-party assets are CC0 (public domain); credit is not required but given with thanks.
+
+Trees (PineTree_Snow_1-5) and rocks (Rock_Snow_1-7): Ultimate Nature Pack by Quaternius
+  https://opengameart.org/content/low-poly-nature-pack-1
+Rider: Animated Human by Quaternius
+  https://opengameart.org/content/animated-human-low-poly
+wind.ogg: "wind woosh loop", OpenGameArt (CC0)
+carve.wav: built from "scrapes" (scrape-1..6), OpenGameArt (CC0), filtered and looped
+land.wav: "jumpland.wav", OpenGameArt (CC0)
+crash.ogg, jump.ogg: "25 sounds from Avalanche minigame" (hit0, woosh0), OpenGameArt (CC0)
+click.ogg, trick.ogg: Interface Sounds by Kenney (select_001, confirmation_001), CC0
