@@ -25,7 +25,9 @@ namespace Summit
             Vector3 Post(Transform sign, float localX) => sign.TransformPoint(new Vector3(localX, 0f, 0f)) + Vector3.up * Chest;
             // across the run: the inner posts (the left sign's +x post, the right sign's -x post)
             Span(root, Post(left, postX), Post(right, -postX), rider, tape, torn);
-            var prefabs = Resources.LoadAll<GameObject>("Trees");
+            // the forest's own look: realistic firs, or the original models
+            bool real = Forest.Realistic && RealFir.Load();
+            var prefabs = real ? new GameObject[0] : Resources.LoadAll<GameObject>("Trees");
             for (int side = -1; side <= 1; side += 2)
             {
                 var sign = side < 0 ? left : right;
@@ -36,7 +38,9 @@ namespace Summit
                     float tz = z + (Slope.Hash01(k, side, 82) - 0.5f) * 5f;
                     Vector3 trunk = new Vector3(x, Slope.DrawnHeight(x, tz), tz);
                     float size = 0.85f + 0.3f * Slope.Hash01(k, side, 83);
-                    if (prefabs.Length > 0) PlantTree(root, prefabs[(k * 2 + (side > 0 ? 1 : 0)) % prefabs.Length], trunk, size, Slope.Hash01(k, side, 84) * 360f);
+                    float yaw = Slope.Hash01(k, side, 84) * 360f;
+                    if (real) { RealFir.Plant(root, trunk + Vector3.down * 0.25f, 8.5f * size, yaw, k * 2 + (side > 0 ? 1 : 0), "TapeTree"); Trunk(root, trunk, size); }
+                    else if (prefabs.Length > 0) PlantTree(root, prefabs[(k * 2 + (side > 0 ? 1 : 0)) % prefabs.Length], trunk, size, yaw);
                     // tied round the trunk on the side facing the last tie
                     Vector3 tie = trunk + Vector3.up * Chest;
                     Vector3 toward = from - tie; toward.y = 0f;
@@ -72,7 +76,12 @@ namespace Summit
                 g.transform.position = new Vector3(at.x - b.center.x, at.y - 0.25f - b.min.y, at.z - b.center.z);
             }
             foreach (var c in g.GetComponentsInChildren<Collider>()) { if (Application.isPlaying) Object.Destroy(c); else Object.DestroyImmediate(c); }
-            // the same trunk the forest gives its trees, so riding into one is a crash like any other tree
+            Trunk(root, at, size);
+        }
+
+        /// <summary>The same trunk the forest gives its trees, so riding into one is a crash like any other tree.</summary>
+        static void Trunk(Transform root, Vector3 at, float size)
+        {
             var hit = new GameObject("TreeHit");
             hit.transform.SetParent(root, false);
             hit.transform.position = at;

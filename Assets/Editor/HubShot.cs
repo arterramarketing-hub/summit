@@ -29,6 +29,8 @@ public static class HubShot
         Progress.Grant(1840, Progress.Up.FirePit, Progress.Up.Flags, Progress.Up.Lights, Progress.Up.Snowman, Progress.Up.Grip);
         Progress.PickJacket(1);
         game = Object.FindFirstObjectByType<SummitGame>();
+        var trees = System.Environment.GetEnvironmentVariable("SUMMIT_TREES");   // classic|real, as TestBoot
+        if (!string.IsNullOrEmpty(trees)) PlayerPrefs.SetInt(Forest.TreesPref, trees == "classic" ? 0 : 1);
         typeof(SummitGame).GetMethod("Awake", NP).Invoke(game, null);
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
         camp = Get<Camp>("camp"); meta = Get<MetaUi>("meta"); body = Get<RiderBody>("body"); rider = Get<Rider>("rider");

@@ -241,8 +241,8 @@ namespace Summit
         // ---- the pause menu: resume, camera distance, steering mode, restart
 
         GameObject pausePanel;
-        RectTransform resumeBtn, camMinus, camPlus, angMinus, angPlus, lensMinus, lensPlus, steerBtn, againBtn;
-        Text camLabel, angLabel, lensLabel, steerLabel;
+        RectTransform resumeBtn, camMinus, camPlus, angMinus, angPlus, lensMinus, lensPlus, steerBtn, againBtn, treesBtn;
+        Text camLabel, angLabel, lensLabel, steerLabel, treesLabel;
         RectTransform lensTypeMinus, lensTypePlus, filterMinus, filterPlus, strengthMinus, strengthPlus;
         Text lensTypeLabel, filterLabel, strengthLabel;
 
@@ -285,6 +285,7 @@ namespace Summit
             strengthLabel = Row("FILTER STRENGTH", -440f, out strengthMinus, out strengthPlus);
             steerBtn = Button(panel, "STEERING", new Vector2(0f, -580f), new Vector2(620f, 96f), grey, out steerLabel, 38);
             againBtn = Button(panel, "RESTART RUN", new Vector2(0f, -710f), new Vector2(560f, 106f), new Color(0.8f, 0.2f, 0.15f, 0.9f), out _, 48);
+            treesBtn = Button(panel, "TREES", new Vector2(0f, -830f), new Vector2(620f, 96f), grey, out treesLabel, 38);
             pausePanel.SetActive(false);
         }
 
@@ -312,6 +313,8 @@ namespace Summit
         public bool OnFilterPlus(Vector2 p) => Inside(filterPlus, p);
         public bool OnStrengthMinus(Vector2 p) => Inside(strengthMinus, p);
         public bool OnStrengthPlus(Vector2 p) => Inside(strengthPlus, p);
+        public bool OnPauseTrees(Vector2 p) => Inside(treesBtn, p);
+        public void SetPauseTrees(bool realistic) { treesLabel.text = realistic ? "TREES: REALISTIC  (tap to change)" : "TREES: ORIGINAL  (tap to change)"; }
 
         static Font LoadFont()
         {

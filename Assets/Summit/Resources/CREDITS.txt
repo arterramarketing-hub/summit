@@ -2,6 +2,9 @@ Third-party assets are CC0 (public domain) unless marked otherwise below; credit
 
 Trees (PineTree_Snow_1-5) and rocks (Rock_Snow_1-7): Ultimate Nature Pack by Quaternius
   https://opengameart.org/content/low-poly-nature-pack-1
+Realistic trees (RealTrees/FirCards.png): fir twig and bark textures from "Fir Tree 01" by Rob Tuytel (photography)
+  and Rico Cilliers (modeling), CC0, Poly Haven - https://polyhaven.com/a/fir_tree_01
+  (twigs cut out, stamped into branch fronds, snowed on and packed into an atlas by Tools/MakeFirCards.swift)
 Former rider (replaced): Animated Human by Quaternius
   https://opengameart.org/content/animated-human-low-poly
 Rider: "Adventurer" from Ultimate Modular Men by Quaternius (CC0)

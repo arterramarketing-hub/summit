@@ -898,13 +898,19 @@ namespace Summit
         /// <summary>Snowy pines round the back and sides of the camp, so it sits in a clearing.</summary>
         void Trees()
         {
-            var kinds = Resources.LoadAll<GameObject>("Trees");
-            if (kinds.Length == 0) return;
+            bool real = Forest.Realistic && RealFir.Load();   // the forest's own look
+            var kinds = real ? new GameObject[0] : Resources.LoadAll<GameObject>("Trees");
+            if (!real && kinds.Length == 0) return;
             var where = new[] { new Vector2(-27f, -126f), new Vector2(-19f, -134f), new Vector2(-6f, -137f), new Vector2(7f, -135f), new Vector2(19f, -131f),
                                 new Vector2(28f, -121f), new Vector2(-30f, -112f), new Vector2(-29f, -97f), new Vector2(30f, -106f), new Vector2(29f, -93f),
                                 new Vector2(-24f, -138f), new Vector2(13f, -140f), new Vector2(-31f, -84f) };
             for (int i = 0; i < where.Length; i++)
             {
+                if (real)
+                {
+                    RealFir.Plant(root, Ground(where[i].x, where[i].y) + Vector3.down * 0.3f, 7.5f + 3.5f * Slope.Hash01(i, 3, 77), i * 67f, i, "CampFir");
+                    continue;
+                }
                 var g = Instantiate(kinds[i % kinds.Length], root, false);
                 foreach (var c in g.GetComponentsInChildren<Collider>()) DestroyImmediate(c);
                 var rs = g.GetComponentsInChildren<Renderer>();

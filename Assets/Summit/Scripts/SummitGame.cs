@@ -95,6 +95,7 @@ namespace Summit
             hud.SetCamera(CamName[camLevel]);
             hud.SetAngle(AngleName[angleLevel]); hud.SetLens(LensName[lensLevel]);
             hud.SetPauseSteer(input.useTilt);
+            hud.SetPauseTrees(props.IsRealistic);
             input.SwallowCurrentPress();
         }
 
@@ -284,6 +285,8 @@ namespace Summit
             rider.Bounced += into => { if (state != State.Riding) return; body.TubeKick(into); audioFx.Play(Sfx.Thump, Mathf.Clamp01(into / 12f)); hud.Flash("BOING", "", 0.6f); };
             BuildMeta();
             ToHub();
+            // device testing: launched with SUMMIT_TREEBENCH=1 (and SUMMIT_AUTOPLAY=1) it times both tree looks
+            if (System.Environment.GetEnvironmentVariable("SUMMIT_TREEBENCH") == "1") gameObject.AddComponent<TreeBench>().forest = props;
         }
 
         // ---------------------------------------------------------------- the meta game: camp, points, missions
@@ -554,6 +557,7 @@ namespace Summit
                             else if (hud.OnStrengthMinus(pp)) { audioFx.Play(Sfx.Click); filterStrength = Mathf.Max(0, filterStrength - 1); ApplyLook(); }
                             else if (hud.OnStrengthPlus(pp)) { audioFx.Play(Sfx.Click); filterStrength = Mathf.Min(10, filterStrength + 1); ApplyLook(); }
                             else if (hud.OnPauseSteer(pp)) { audioFx.Play(Sfx.Click); input.SetTilt(!input.useTilt); hud.SetPauseSteer(input.useTilt); hud.SetMode(input.useTilt); }
+                            else if (hud.OnPauseTrees(pp)) { audioFx.Play(Sfx.Click); props.SetRealistic(!props.IsRealistic); hud.SetPauseTrees(props.IsRealistic); }
                             else if (hud.OnPauseRestart(pp)) { audioFx.Play(Sfx.Click); SetPaused(false); ToReady(); input.SwallowCurrentPress(); }
                         }
                         break;

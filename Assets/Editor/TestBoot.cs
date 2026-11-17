@@ -17,6 +17,9 @@ public static class TestBoot
         // would otherwise give every later test better grip, a fourth fall and a longer avalanche head start)
         foreach (Progress.Up u in System.Enum.GetValues(typeof(Progress.Up))) PlayerPrefs.DeleteKey("summit_up_" + u);
         PlayerPrefs.DeleteKey("summit_points"); PlayerPrefs.DeleteKey("summit_jacket"); PlayerPrefs.DeleteKey("summit_boardcol");
+        // SUMMIT_TREES=classic|real picks the tree look for before/after shots (otherwise whatever is saved)
+        var trees = System.Environment.GetEnvironmentVariable("SUMMIT_TREES");
+        if (!string.IsNullOrEmpty(trees)) PlayerPrefs.SetInt(Forest.TreesPref, trees == "classic" ? 0 : 1);
         typeof(SummitGame).GetMethod("Awake", NP).Invoke(game, null);
         if (!toStart) return;
         typeof(SummitGame).GetMethod("ToReady", NP, null, new[] { typeof(bool) }, null).Invoke(game, new object[] { true });

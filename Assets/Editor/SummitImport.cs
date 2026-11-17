@@ -61,6 +61,18 @@ public class SummitImport : AssetPostprocessor
             a.SetPlatformTextureSettings(ios);
             return;
         }
+        if (assetPath.Contains("Summit/Resources/RealTrees"))
+        {
+            // alpha-tested branch cards: keep the needles from thinning out to nothing in the smaller mips
+            var r = (TextureImporter)assetImporter;
+            r.alphaIsTransparency = true; r.alphaSource = TextureImporterAlphaSource.FromInput;
+            r.mipmapEnabled = true; r.mipMapsPreserveCoverage = true; r.alphaTestReferenceValue = 0.5f;
+            r.wrapMode = TextureWrapMode.Clamp; r.maxTextureSize = 1024;
+            var ios = r.GetPlatformTextureSettings("iPhone");
+            ios.overridden = true; ios.maxTextureSize = 1024; ios.format = TextureImporterFormat.ASTC_5x5;
+            r.SetPlatformTextureSettings(ios);
+            return;
+        }
         if (!assetPath.Contains("Summit/Resources/Rider")) return;
         var t = (TextureImporter)assetImporter;
         t.filterMode = FilterMode.Point;    // a flat-colour palette: keep the colours crisp
@@ -78,6 +90,45 @@ public class SummitImport : AssetPostprocessor
         m.SetFloat("_Surface", 0f);
         m.SetColor("_BaseColor", Color.white);
         AssetDatabase.CreateAsset(m, path);
+        AssetDatabase.SaveAssets();
+    }
+
+    /// <summary>
+    /// The realistic fir materials (see RealFir): the branch-card atlas on Simple Lit, alpha-tested and two-sided,
+    /// and an unlit alpha-tested one for the far-away impostor pictures. Kept in Resources so they ship.
+    /// </summary>
+    public static void EnsureRealTrees()
+    {
+        const string dir = "Assets/Summit/Resources/RealTrees";
+        var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(dir + "/FirCards.png");
+        if (tex == null) return;
+        Material Make(string name, string shader, bool lit)
+        {
+            string path = dir + "/" + name + ".mat";
+            var m = AssetDatabase.LoadAssetAtPath<Material>(path);
+            var sh = Shader.Find(shader);
+            if (sh == null) return m;
+            if (m == null) { m = new Material(sh); AssetDatabase.CreateAsset(m, path); }
+            m.shader = sh;
+            m.SetFloat("_Surface", 0f);
+            m.SetFloat("_AlphaClip", 1f); m.SetFloat("_Cutoff", 0.5f); m.EnableKeyword("_ALPHATEST_ON");
+            m.SetFloat("_Cull", 0f);   // both sides
+            m.SetOverrideTag("RenderType", "TransparentCutout");
+            m.renderQueue = (int)UnityEngine.Rendering.RenderQueue.AlphaTest;
+            m.enableInstancing = true;
+            if (lit)
+            {
+                m.SetTexture("_BaseMap", tex); m.mainTexture = tex;
+                m.SetColor("_BaseColor", Color.white);
+                m.SetFloat("_SpecularHighlights", 0f); m.DisableKeyword("_SPECULAR_COLOR");
+                m.SetFloat("_ReceiveShadows", 1f);
+            }
+            else m.SetColor("_BaseColor", new Color(0.92f, 0.95f, 0.98f));
+            EditorUtility.SetDirty(m);
+            return m;
+        }
+        Make("FirCards", "Universal Render Pipeline/Simple Lit", true);
+        Make("FirImpostor", "Universal Render Pipeline/Unlit", false);
         AssetDatabase.SaveAssets();
     }
 

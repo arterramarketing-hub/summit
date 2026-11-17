@@ -85,7 +85,15 @@ public static class AvalancheShot
                 var rp = rider.transform.position;
                 rider.Steer = Mathf.Clamp(0.4f * Mathf.Sin(t * 1.1f) + (Slope.Centre(rider.Z + 12f) - rp.x) * 0.06f - rider.Heading * 0.8f, -1f, 1f);
             }
-            for (int k = 0; k < 2; k++) { rider.Tick(dt / 2f); body.PhysicsStep(); Physics.Simulate(dt / 2f); }
+            for (int k = 0; k < 2; k++)
+            {
+                // once the slide is set behind, the rider makes a mistake and scrubs off speed (skidding, a bad
+                // line) until it arrives. A clean, steady rider pulls away from it by design (it cruises a little
+                // under your pace), so without this the catch depends on the course slowing the rider down
+                if (forced && !slide.Caught && !rider.Crashed && !rider.Airborne && rider.Body.linearVelocity.magnitude > 11f)
+                    rider.Body.linearVelocity = rider.Body.linearVelocity.normalized * 11f;
+                rider.Tick(dt / 2f); body.PhysicsStep(); Physics.Simulate(dt / 2f);
+            }
             if (!forced && rider.Z > 75f && !rider.Crashed)
             {
                 // the slide, put not far behind and closing at its creep

@@ -42,7 +42,9 @@ public static class CliBuild
         SummitImport.EnsureSnowTextures();
         SummitImport.EnsureSky();
         SummitImport.EnsureBackdrop();
+        SummitImport.EnsureRealTrees();
         PlayerSettings.productName = "Summit";
+        PlayerSettings.enableFrameTimingStats = true;   // GPU frame times for on-device benchmarks (TreeBench)
         PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.iOS, "com.paulartuso.summit");
         var icon = MakeIcon();
         Directory.CreateDirectory("Assets/Summit/Icon");

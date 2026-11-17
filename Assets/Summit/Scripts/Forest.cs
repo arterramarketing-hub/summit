@@ -11,6 +11,10 @@ namespace Summit
     /// to where the fog swallows it - so nothing ever swaps model, height or type as you
     /// approach. Only the near ones cast shadows. Invisible colliders are placed near the
     /// rider for hits.
+    ///
+    /// Two looks, switched from the pause menu (PlayerPrefs "summit_trees"): the original low-poly firs, or
+    /// realistic snowy firs built from photo-scanned branch cards (see RealFir), which turn into flat
+    /// impostor pictures beyond CardRange.
     /// </summary>
     public class Forest : MonoBehaviour
     {
@@ -22,6 +26,23 @@ namespace Summit
         const float LodRange = 300f;   // beyond this, trees are drawn as simple low-poly firs
         readonly List<Matrix4x4> distL = new List<Matrix4x4>();
         Mesh lodMesh; Material lodFoliage, lodBark;
+
+        // ---- which trees: the original low-poly ones, or realistic card trees
+        public const string TreesPref = "summit_trees";
+        public static bool Realistic => PlayerPrefs.GetInt(TreesPref, 1) == 1;
+        bool real;                         // the look this forest was built with
+        public float CardRange = 130f;     // realistic trees: full card trees out to here, impostors beyond
+        List<Matrix4x4>[] impL;
+
+        /// <summary>Switch between the two looks; the trees are rebuilt where they stand.</summary>
+        public void SetRealistic(bool on)
+        {
+            PlayerPrefs.SetInt(TreesPref, on ? 1 : 0); PlayerPrefs.Save();
+            loaded = false;
+            treeParts.Clear(); treeH.Clear();   // rocks stay as they are
+            nearL.Clear(); farL.Clear();
+            Rebuild();
+        }
 
         public enum Kind { None, Tree, Rock }
 
@@ -62,8 +83,19 @@ namespace Summit
         {
             if (loaded) return;
             loaded = true;
-            foreach (var g in Resources.LoadAll<GameObject>("Trees")) Add(g, treeParts, treeH);
-            foreach (var g in Resources.LoadAll<GameObject>("Rocks")) Add(g, rockParts, rockH);
+            real = Realistic && RealFir.Load();
+            if (real)
+            {
+                for (int i = 0; i < RealFir.Variants; i++)
+                {
+                    treeParts.Add(new List<Part> { new Part { mesh = RealFir.Meshes[i], sub = 0, mat = RealFir.Cards, local = Matrix4x4.identity } });
+                    treeH.Add(RealFir.Heights[i]);
+                }
+                impL = new List<Matrix4x4>[RealFir.Variants];
+                for (int i = 0; i < impL.Length; i++) impL[i] = new List<Matrix4x4>();
+            }
+            else foreach (var g in Resources.LoadAll<GameObject>("Trees")) Add(g, treeParts, treeH);
+            if (rockParts.Count == 0) foreach (var g in Resources.LoadAll<GameObject>("Rocks")) Add(g, rockParts, rockH);
             if (treeParts.Count == 0) { treeParts.Add(Fallback(FirMesh(), new[] { foliage, bark })); treeH.Add(6.3f); }
             if (lodMesh == null && foliage != null && bark != null)
             {
@@ -157,6 +189,36 @@ namespace Summit
 
         public void Prewarm() { Refresh(true); }
 
+        /// <summary>What the forest asks the GPU for this frame: instanced draw calls, triangles, and the share of
+        /// each that is drawn again into the shadow map (the near set).</summary>
+        public void Stats(out int draws, out long tris, out int shadowDraws, out long shadowTris, out int instances)
+        {
+            draws = 0; tris = 0; shadowDraws = 0; shadowTris = 0; instances = 0;
+            foreach (var set in new[] { nearL, farL })
+                foreach (var kv in set)
+                {
+                    int n = kv.Value.Count; if (n == 0) continue;
+                    var part = PartsOf(kv.Key)[kv.Key & 15];
+                    long t = (long)part.mesh.GetIndexCount(part.sub) / 3 * n;
+                    int d = (n + 999) / 1000;
+                    draws += d; tris += t; instances += n;
+                    if (set == nearL) { shadowDraws += d; shadowTris += t; }
+                }
+            if (real && impL != null)
+                for (int v = 0; v < impL.Length; v++)
+                {
+                    int n = impL[v].Count; if (n == 0) continue;
+                    draws += (n + 999) / 1000; tris += 4L * n; instances += n;
+                }
+            if (!real && lodMesh != null && distL.Count > 0)
+            {
+                int d = (distL.Count + 999) / 1000;
+                draws += 2 * d; instances += distL.Count;
+                tris += (long)(lodMesh.GetIndexCount(0) + lodMesh.GetIndexCount(1)) / 3 * distL.Count;
+            }
+        }
+        public bool IsRealistic => real;
+
         /// <summary>A new mountain: forget every placement and collider, and place again.</summary>
         public void Rebuild()
         {
@@ -184,6 +246,7 @@ namespace Summit
             foreach (var l in nearL.Values) l.Clear();
             foreach (var l in farL.Values) l.Clear();
             distL.Clear();
+            if (impL != null) foreach (var l in impL) l.Clear();
             for (int z = c.y - behindCells; z <= c.y + farAhead; z++)
                 for (int x = c.x - farSide; x <= c.x + farSide; x++)
                 {
@@ -193,6 +256,11 @@ namespace Summit
                     // (the render asset fades shadows out over the last part of that range)
                     float dxm = (x - c.x) * Cell, dzm = (z - c.y) * Cell;
                     float d2 = dxm * dxm + dzm * dzm;
+                    if (real && pl.kind == Kind.Tree && d2 > CardRange * CardRange)
+                    {
+                        impL[pl.idx].Add(pl.m);   // far realistic tree: its picture on two crossed quads
+                        continue;
+                    }
                     if (d2 > LodRange * LodRange)
                     {
                         // far away: one cheap fir the same height instead of the full model (rocks are left out)
@@ -223,6 +291,18 @@ namespace Summit
         {
             DrawSet(nearL, UnityEngine.Rendering.ShadowCastingMode.On);
             DrawSet(farL, UnityEngine.Rendering.ShadowCastingMode.Off);
+            if (real && impL != null)
+            {
+                RealFir.Dusk();
+                for (int v = 0; v < impL.Length; v++)
+                {
+                    var list = impL[v];
+                    if (list.Count == 0) continue;
+                    var rp = new RenderParams(RealFir.ImpostorMats[v]) { shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off, receiveShadows = false };
+                    for (int i = 0; i < list.Count; i += 1000)
+                        Graphics.RenderMeshInstanced(rp, RealFir.Impostors[v], 0, list, Mathf.Min(1000, list.Count - i), i);
+                }
+            }
             if (distL.Count > 0 && lodMesh != null)
             {
                 var rf = new RenderParams(lodFoliage) { shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off, receiveShadows = false };

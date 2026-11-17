@@ -20,6 +20,7 @@ public static class RenderShot
         SummitImport.EnsureSnowTextures();
         SummitImport.EnsureSky();
         SummitImport.EnsureBackdrop();
+        SummitImport.EnsureRealTrees();
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
         var game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
