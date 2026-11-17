@@ -20,10 +20,10 @@ namespace Summit
         public static float G = 22f;                                 // gravity, stronger than real for punch
         public static float DragOpen = 0.0105f, DragTuck = 0.0068f; // air drag per (m/s)^2
         public static float Friction = 0.035f;                       // snow friction coefficient
-        public static float MaxLean = 0.95f;                         // full-thumb edge angle (rad, ~54 degrees)
-        public static float LeanSpring = 16f;                        // how fast the body gets onto its edge (rad/s)
-        public static float CarveK = 36f;                            // turn rate = CarveK * tan(lean) / speed
-        public static float MinCarveSpeed = 7f, MaxYawRate = 3.2f;
+        public static float MaxLean = 0.72f;                         // full-thumb edge angle (rad, ~41 degrees)
+        public static float LeanSpring = 10f;                        // how fast the body gets onto its edge (rad/s)
+        public static float CarveK = 22f;                            // turn rate = CarveK * tan(lean) / speed
+        public static float MinCarveSpeed = 7f, MaxYawRate = 1.9f;
         public static float GripLimit = 34f;                         // sideways acceleration the edge can hold (m/s^2)
         public static float Grip = 22f;                              // 1/s: how fast slip dies when the edge holds
         public static float TurnDrag = 0.12f;                        // speed lost per radian of turning
@@ -202,7 +202,7 @@ namespace Summit
         float CarveTurn(float dt, float sp)
         {
             float target = Steer * MaxLean * Mathf.Lerp(1f, 0.65f, Tuck);
-            // critically damped spring: starts at once, settles in about a quarter second, never overshoots
+            // critically damped spring: starts at once, settles in about 0.4 s, never overshoots
             float acc = LeanSpring * LeanSpring * (target - Lean) - 2f * LeanSpring * leanVel;
             leanVel += acc * dt;
             Lean += leanVel * dt;
@@ -272,7 +272,7 @@ namespace Summit
             AboveGround = 0f;
 
             // fell into a crevasse
-            if (Course.CrevasseCut(p.x, p.z) > 2.5f) { DoCrash("Crevasse!"); return new Vector3(vt.x * 0.2f, vy, vt.z * 0.2f); }
+            if (Course.CrevasseCut(p.x, p.z) > 1.2f) { DoCrash("Crevasse!"); return new Vector3(vt.x * 0.2f, vy, vt.z * 0.2f); }
 
             if (popPending)
             {
@@ -281,19 +281,39 @@ namespace Summit
                 return TakeOff(p, vt + n * Mathf.Lerp(5.5f, 8f, Mathf.Clamp01(popHold / 0.8f)), 0.15f);
             }
             // a face too steep to ride: you are falling, not riding (pipe walls are ridden almost to vertical)
-            float steep = Course.InPipe(p.x, p.z) ? 0.22f : 0.62f;
-            if (n.y < steep) return TakeOff(p, vt, 0.05f);
+            bool inPipe = Course.InPipe(p.x, p.z);
+            float steep = inPipe ? 0.22f : 0.62f;
+            if (n.y < steep)
+            {
+                // off the edge of a drop. Running into a wall that rises in front must not turn the
+                // speed into a launch straight up, so the climb is capped at the ground's own rate
+                if (!inPipe) vt.y = Mathf.Min(vt.y, Mathf.Max(groundVy, 0f) + 1.5f);
+                return TakeOff(p, inPipe ? PipeAir(p, vt) : vt, 0.05f);
+            }
             // the snow falls away faster than gravity can follow (a kicker's lip, a crest, a pipe's coping): fly
             // (leave with the slope's own vertical speed, never the mesh-following one, which can spike on coarse facets)
             float vUp = Mathf.Clamp(groundVy, vt.y - 2f, vt.y + 2f);
             if (sp > 7f && vy < groundVy - G * dt * 1.2f && FallsAway(p, new Vector3(vt.x, vUp, vt.z)))
                 return TakeOff(p, new Vector3(vt.x, vUp, vt.z), 0.08f);
             // riding up a pipe wall: leave it with the wall's own vertical speed
-            if (Course.InPipe(p.x, p.z) && vt.y > 1f && vy < vt.y - G * dt * 2f)
-                return TakeOff(p, vt, 0.08f);
+            if (inPipe && vt.y > 1f && vy < vt.y - G * dt * 2f)
+                return TakeOff(p, PipeAir(p, vt), 0.08f);
 
             groundVy = vy;
             return new Vector3(vt.x, vy, vt.z);
+        }
+
+        /// <summary>
+        /// Leaving a pipe wall: the air goes straight up off the coping and drops back in, never out over
+        /// the deck, and tops out around 5 m however hard you hit the wall.
+        /// </summary>
+        static Vector3 PipeAir(Vector3 p, Vector3 v)
+        {
+            float side = Mathf.Sign(p.x - Slope.Centre(p.z));
+            float vMax = Mathf.Sqrt(2f * G * 5f);
+            v.y = Mathf.Min(v.y, vMax);
+            v.x = -side * 1.2f;   // a little drift back toward the middle
+            return v;
         }
 
         bool FallsAway(Vector3 p, Vector3 v)

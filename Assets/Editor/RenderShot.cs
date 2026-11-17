@@ -39,7 +39,7 @@ public static class RenderShot
             ("Pipe", Course.First + Course.PipeAt + 50f, 1.5f) };
         foreach (var sp in spots)
         {
-            rider.ResetAt(Slope.Centre(sp.z) + (sp.name == "Park" ? -6f : 0f), sp.z);
+            rider.ResetAt((sp.name == "Start" || sp.name == "Run" ? Slope.Centre(Slope.PadLip) : Slope.Centre(sp.z)) + (sp.name == "Park" ? -6f : 0f), sp.z);
             rider.Begin();
             if (sp.name != "Start" && sp.name != "Run") rider.Body.linearVelocity = Vector3.forward * 18f;
             float t = 0f;
@@ -61,8 +61,9 @@ public static class RenderShot
                 if (ps.name == "Snowfall") ps.Simulate(4f, true, true);
             // the forest draws itself in Update; do it by hand for the shot
             typeof(Forest).GetMethod("Draw", NP).Invoke(props, null);
+            if (sp.name == "Start") Shoot(cam, "RenderShotWarmup.png");   // the first render comes out unlit
             Shoot(cam, "RenderShot" + sp.name + ".png");
-            Debug.Log($"SHOT {sp.name} speed={rider.Speed * 3.6f:0} km/h air={rider.Airborne} grind={rider.Grinding}");
+            Debug.Log($"SHOT {sp.name} speed={rider.Speed * 3.6f:0} km/h air={rider.Airborne} grind={rider.Grinding} heading={rider.Heading:0.00} pos={rider.transform.position} cam={cam.transform.position} camfwd={cam.transform.forward}");
         }
 
         // close-ups of the rider standing still, from the side and from behind
@@ -77,6 +78,72 @@ public static class RenderShot
         cam.transform.SetPositionAndRotation(c + new Vector3(0f, 0.8f, -4.5f), Quaternion.LookRotation(Vector3.forward + Vector3.down * 0.15f));
         Shoot(cam, "RenderShotBack.png");
         Physics.simulationMode = SimulationMode.FixedUpdate;   // do not leave the project on manual physics
+        EditorApplication.Exit(0);
+    }
+
+    /// <summary>Probe the bear: log its clip bindings and render a few frames of its run from the side.</summary>
+    public static void Bear()
+    {
+        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
+        var game = Object.FindFirstObjectByType<SummitGame>();
+        typeof(SummitGame).GetMethod("Awake", NP).Invoke(game, null);
+        var wild = Object.FindFirstObjectByType<Wildlife>();
+        var bear = (GameObject)typeof(Wildlife).GetField("bear", NP).GetValue(wild);
+        var anim = (Animation)typeof(Wildlife).GetField("bearAnim", NP).GetValue(wild);
+        Debug.Log($"BEAR go={bear != null} anim={anim != null} fwdYaw={typeof(Wildlife).GetField("bearFwdYaw", NP).GetValue(wild)}");
+        foreach (var smr in bear.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            Debug.Log($"BEAR smr {smr.name} shapes={smr.sharedMesh.blendShapeCount} bones={smr.bones.Length} verts={smr.sharedMesh.vertexCount} bounds={smr.bounds}");
+        foreach (var t in bear.GetComponentsInChildren<Transform>(true)) Debug.Log($"BEAR node {t.name} lpos={t.localPosition} lrot={t.localEulerAngles} lscale={t.localScale}");
+        if (anim != null)
+            foreach (AnimationState s in anim)
+            {
+                Debug.Log($"BEAR clip {s.name} len={s.length} legacy={s.clip.legacy}");
+                foreach (var b in AnimationUtility.GetCurveBindings(s.clip))
+                {
+                    var c = AnimationUtility.GetEditorCurve(s.clip, b);
+                    Debug.Log($"BEAR  curve {b.path}/{b.propertyName} keys={c.length} first={(c.length > 0 ? c[0].value : 0)} last={(c.length > 0 ? c[c.length - 1].value : 0)}");
+                }
+            }
+        {
+            var sm0 = bear.GetComponentInChildren<SkinnedMeshRenderer>(true);
+            var mesh = sm0.sharedMesh;
+            var dv = new Vector3[mesh.vertexCount];
+            for (int j = 0; j < mesh.blendShapeCount; j++)
+            {
+                mesh.GetBlendShapeFrameVertices(j, mesh.GetBlendShapeFrameCount(j) - 1, dv, null, null);
+                float mx = 0f; foreach (var d in dv) mx = Mathf.Max(mx, d.magnitude);
+                Debug.Log($"BEAR shape {j} {mesh.GetBlendShapeName(j)} frames={mesh.GetBlendShapeFrameCount(j)} w={mesh.GetBlendShapeFrameWeight(j, 0)} maxDelta={mx}");
+            }
+        }
+        bear.SetActive(true);
+        bear.transform.SetPositionAndRotation(new Vector3(0f, 500f, 0f), Quaternion.identity);
+        var cam = Camera.main;
+        cam.GetComponent<ChaseCamera>().enabled = false;
+        cam.fieldOfView = 40f;
+        for (int i = 0; i < 4; i++)
+        {
+            if (anim != null)
+                foreach (AnimationState s in anim) { anim.Play(s.name); s.time = s.length * i / 4f; anim.Sample(); }
+            var sm = bear.GetComponentInChildren<SkinnedMeshRenderer>();
+            string w = ""; for (int j = 0; j < sm.sharedMesh.blendShapeCount; j++) w += sm.GetBlendShapeWeight(j).ToString("0") + " ";
+            Debug.Log($"BEAR weights t{i}: {w}");
+            // batchmode renders skip the skinning update, so bake this frame into a plain mesh to look at it
+            var baked = new Mesh(); sm.BakeMesh(baked);
+            var show = new GameObject("baked", typeof(MeshFilter), typeof(MeshRenderer));
+            show.GetComponent<MeshFilter>().sharedMesh = baked;
+            show.GetComponent<MeshRenderer>().sharedMaterial = sm.sharedMaterial;
+            show.transform.SetPositionAndRotation(sm.transform.position, sm.transform.rotation);
+            show.transform.localScale = sm.transform.lossyScale;
+            sm.enabled = false;
+            cam.transform.SetPositionAndRotation(new Vector3(6f, 500.9f, 0f), Quaternion.LookRotation(-Vector3.right));
+            Shoot(cam, $"BearSide{i}.png");
+            Object.DestroyImmediate(show); sm.enabled = true;
+            continue;
+            cam.transform.SetPositionAndRotation(new Vector3(6f, 500.9f, 0f), Quaternion.LookRotation(-Vector3.right));
+            Shoot(cam, $"BearSide{i}.png");
+        }
+        cam.transform.SetPositionAndRotation(new Vector3(0f, 501f, 7f), Quaternion.LookRotation(-Vector3.forward));
+        Shoot(cam, "BearFront.png");
         EditorApplication.Exit(0);
     }
 

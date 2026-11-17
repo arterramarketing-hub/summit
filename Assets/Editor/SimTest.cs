@@ -48,13 +48,14 @@ public static class SimTest
             r.Tick(Dt);
             Physics.Simulate(Dt);
             if (i % 12 == 0) forest.Prewarm();
-            if (r.Airborne) { airT += Dt; if (!wasAir) takeoffs++; maxAir = Mathf.Max(maxAir, r.AboveGround); }
+            if (r.Airborne) { airT += Dt; if (!wasAir) { takeoffs++; var bp = r.Body.position; Debug.Log($"SIMTAKEOFF z={bp.z:0} x-c={bp.x - Slope.Centre(bp.z):0.0} vel={r.Body.linearVelocity} ny={Slope.Normal(bp.x, bp.z).y:0.00} pipe={Course.InPipe(bp.x, bp.z)} head={r.Heading:0.00}"); } maxAir = Mathf.Max(maxAir, r.AboveGround); }
+            if (r.Airborne && r.AboveGround > 20f && i % 12 == 0) { var bp = r.Body.position; Debug.Log($"SIMHIGH z={bp.z:0} x-c={bp.x - Slope.Centre(bp.z):0.0} y={bp.y:0.0} ground={Slope.Height(bp.x, bp.z):0.0} vel={r.Body.linearVelocity}"); }
             wasAir = r.Airborne;
             float y = r.Body.position.y;
             if (!r.Airborne) maxStep = Mathf.Max(maxStep, Mathf.Abs((y - lastY) / Dt - r.Body.linearVelocity.y));
             lastY = y;
             if (i % 600 == 0) { var g = Slope.Gradient(r.Body.position.x, r.Body.position.z); Debug.Log($"SIM t={t:0} v={r.Speed*3.6f:0} vel={r.Body.linearVelocity} grad={g} air={r.Airborne} head={r.Heading:0.00}"); }
-            float v = r.Speed * 3.6f; sumV += v; n++; maxV = Mathf.Max(maxV, v);
+            float v = r.Speed * 3.6f; sumV += v; n++; if (v > maxV + 10f && v > 140f) Debug.Log($"SIMFAST v={v:0} z={r.Z:0} air={r.Airborne} crashed={r.Crashed} grind={r.Grinding} vel={r.Body.linearVelocity}"); maxV = Mathf.Max(maxV, v);
         }
         Debug.Log($"SIM ride: dist={r.Distance:0} m  avg={sumV / n:0} km/h  max={maxV:0} km/h  airborne={100f * airT / 60f:0.0}%  takeoffs={takeoffs}  maxHeight={maxAir:0.0} m  crashes={crashes}  scrapes={scrapes}  rough={rough}  closeCalls={calls}");
 
@@ -69,6 +70,15 @@ public static class SimTest
             maxSlip = Mathf.Max(maxSlip, Mathf.Abs(Mathf.DeltaAngle(r.Heading * Mathf.Rad2Deg, r.TravelHeading * Mathf.Rad2Deg)));
         }
         Debug.Log($"SIM steer: at {sp0:0} km/h full stick turns travel 20 deg in {tt:0.00} s; board-vs-travel slip peaked at {maxSlip:0.0} deg");
+        // turn rate and radius after 0.6 s of holding a given steer, from ~same speed
+        foreach (float st in new[] { 0.07f, 0.2f, 0.5f, 1f })
+        {
+            r.ResetAt(Slope.Centre(Slope.PadLip), Slope.StartZ); r.Begin();
+            for (int i = 0; i < 120 * 8; i++) { r.Steer = Mathf.Clamp((Slope.Centre(r.Z + 12f) - r.Body.position.x) * 0.06f - r.Heading, -1f, 1f); r.Tick(Dt); Physics.Simulate(Dt); }
+            float h0 = r.Heading, v0 = r.Speed;
+            for (int i = 0; i < 72; i++) { r.Steer = st; r.Tick(Dt); Physics.Simulate(Dt); }
+            Debug.Log($"SIM steer {st:0.00} (thumb {(st >= 1f ? 1f : Mathf.Pow(st / 0.8f, 1f / 3f)):0.00} approx) at {v0 * 3.6f:0} km/h: yaw {Mathf.Abs(r.YawRate) * Mathf.Rad2Deg:0} deg/s, radius {r.Speed / Mathf.Max(1e-3f, Mathf.Abs(r.YawRate)):0} m, heading moved {Mathf.Abs(r.Heading - h0) * Mathf.Rad2Deg:0} deg in 0.6 s");
+        }
 
         // straight line vs constant carving, 25 s each from the start
         foreach (float amp in new[] { 0f, 0.8f })

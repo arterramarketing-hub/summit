@@ -383,7 +383,7 @@ namespace Summit
             Material M(Color c) { var m = new Material(sh); m.SetColor("_BaseColor", c); m.SetFloat("_Smoothness", 0.3f); return m; }
             var red = M(new Color(0.85f, 0.12f, 0.10f)); var white = M(new Color(0.95f, 0.95f, 0.97f)); var wood = M(new Color(0.45f, 0.30f, 0.18f));
             var root = new GameObject("StartGate").transform;
-            float cx = Slope.Centre(Slope.PadLip), gz = Slope.StartZ + 5f;
+            float cx = Slope.Centre(Slope.PadLip), gz = Slope.PadLip - 36f;   // well ahead of where you wait, so the whole banner is in view
             float gy = Slope.DrawnHeight(cx, gz);
             for (int sgn = -1; sgn <= 1; sgn += 2)
                 Block(PrimitiveType.Cube, root, new Vector3(cx + sgn * 4.2f, gy + 2.2f, gz), new Vector3(0.35f, 4.4f, 0.35f), red);
@@ -392,7 +392,7 @@ namespace Summit
             var banner = GameObject.CreatePrimitive(PrimitiveType.Quad);
             Object.DestroyImmediate(banner.GetComponent<Collider>());
             banner.transform.SetParent(root, false);
-            banner.transform.SetPositionAndRotation(new Vector3(cx, gy + 4.3f, gz), Quaternion.Euler(0f, 180f, 0f));   // faces the rider coming down
+            banner.transform.SetPositionAndRotation(new Vector3(cx, gy + 4.3f, gz - 0.01f), Quaternion.identity);   // a quad shows its face to -Z: up the hill, at the rider
             banner.transform.localScale = new Vector3(8.4f, 1.05f, 1f);
             banner.GetComponent<MeshRenderer>().sharedMaterial = CourseDressing.Sign(snow.shader, "Signs/BannerSummit");
             // flags lining the lip and a wooden kicker edge

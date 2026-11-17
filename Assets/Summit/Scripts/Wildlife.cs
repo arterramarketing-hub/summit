@@ -31,6 +31,7 @@ namespace Summit
         int bearCycle = -1;
         bool bearActive;
         float bearFwdYaw;   // the model's own facing, so it runs head first
+        public static float BearYawFix = 180f;   // the file's head points down -Z
 
         public void Build(Shader lit)
         {
@@ -175,7 +176,18 @@ namespace Summit
             var prefab = Resources.Load<GameObject>("Animals/Bear");
             if (prefab == null) return;
             bear = new GameObject("Bear");
-            var model = Instantiate(prefab, bear.transform, false);
+            // the file's clip keys the model root's own position, rotation and scale (x100), so all
+            // sizing and placing goes on a wrapper above it, measured with the clip applied
+            var wrap = new GameObject("BearWrap").transform;
+            wrap.SetParent(bear.transform, false);
+            var model = Instantiate(prefab, wrap, false);
+            bearAnim = model.GetComponentInChildren<Animation>();
+            if (bearAnim != null)
+            {
+                bearAnim.wrapMode = WrapMode.Loop;
+                foreach (AnimationState s in bearAnim) { s.wrapMode = WrapMode.Loop; bearAnim.Play(s.name); s.time = 0f; }
+                bearAnim.Sample();
+            }
             var vmat = Resources.Load<Material>("VertexColor");
             foreach (var r in model.GetComponentsInChildren<Renderer>())
             {
@@ -196,13 +208,10 @@ namespace Summit
             if (any && b.size.y > 0.001f)
             {
                 float k = 1.5f / b.size.y;
-                model.transform.localScale *= k;
-                b = new Bounds(b.center * k, b.size * k);
-                model.transform.localPosition = new Vector3(-b.center.x, -(b.center.y - b.extents.y), -b.center.z);
-                bearFwdYaw = b.size.x > b.size.z ? 90f : 0f;
+                wrap.localScale = Vector3.one * k;
+                wrap.localPosition = new Vector3(-b.center.x * k, -b.min.y * k, -b.center.z * k);
+                bearFwdYaw = (b.size.x > b.size.z ? 90f : 0f) + BearYawFix;
             }
-            bearAnim = model.GetComponentInChildren<Animation>();
-            if (bearAnim != null) { bearAnim.wrapMode = WrapMode.Loop; foreach (AnimationState s in bearAnim) s.wrapMode = WrapMode.Loop; }
             bearRb = bear.AddComponent<Rigidbody>();
             bearRb.isKinematic = true;
             bearRb.interpolation = RigidbodyInterpolation.Interpolate;

@@ -109,7 +109,7 @@ namespace Summit
         // ---------------------------------------------------------------- the start
         // A groomed pad cut into the top of the run: you stand at the back, push off,
         // ride down a gentle in-run and launch off a lip into the steep face below.
-        public const float PadBack = -46f, PadLip = 0f, PadHalf = 13f, PadDrop = 4.5f, LipRise = 0.8f, LipLen = 7f;
+        public const float PadBack = -70f, PadLip = 0f, PadHalf = 13f, PadDrop = 4.5f, LipRise = 0.8f, LipLen = 7f;
         public static float StartZ => PadBack + 8f;
 
         static float Start(float x, float z, float y)
@@ -117,11 +117,13 @@ namespace Summit
             if (z > PadLip + 0.01f) return y;
             // the summit: a sunlit plateau above the face, with the in-run down its middle
             float cx = Centre(PadLip);
-            float pad = BaseAt(cx, PadLip) + PadDrop + (PadLip - z) * 0.22f;
+            float back = PadLip - z;   // the in-run: 0.22 for the last 38 m, nearly flat behind where you wait
+            float pad = BaseAt(cx, PadLip) + PadDrop + (back < 38f ? back * 0.22f : 38f * 0.22f + (back - 38f) * 0.07f);
             float u = (z - (PadLip - LipLen)) / LipLen;
             float d = Mathf.Abs(x - cx) - PadHalf;
             if (u > 0f) pad += LipRise * u * u * Mathf.Clamp01(1f - d / 3f);
-            if (d > 0f) pad += d * d * 0.02f + (Noise(x * 0.05f, z * 0.05f) - 0.5f) * 2f * Mathf.Clamp01(d / 10f);
+            // gentle banks either side; steep ones grew into cliffs (with trees on top) that shaded the whole pad
+            if (d > 0f) pad += d * d * 0.006f + (Noise(x * 0.05f, z * 0.05f) - 0.5f) * 2f * Mathf.Clamp01(d / 10f);
             return pad;
         }
 

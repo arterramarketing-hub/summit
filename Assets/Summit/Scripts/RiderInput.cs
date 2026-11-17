@@ -31,7 +31,7 @@ namespace Summit
         /// <summary>One-finger drag stick: where the finger first touched and where it is now (screen pixels).</summary>
         public bool StickActive;
         public Vector2 StickOrigin, StickPos;
-        public float stickRadiusFrac = 0.16f;   // full lock at this fraction of the screen width
+        public float stickRadiusFrac = 0.22f;   // full lock at this fraction of the screen width
         bool stickPrev;
         bool wasDown, swallow;
 
@@ -88,8 +88,9 @@ namespace Summit
                 float d = on ? Mathf.Clamp((fingerPos.x - StickOrigin.x) / radius, -1f, 1f) : 0f;
                 float a = Mathf.Abs(d);
                 a = a < 0.025f ? 0f : (a - 0.025f) / 0.975f;
-                // curved response: the first half of the throw is fine carving, the rest opens to a full edge
-                target = Mathf.Sign(d) * a * (0.35f + 0.65f * a);
+                // expo response: the first half of the throw is gentle fine carving (a fifth of the edge at
+                // half throw); only the outer part opens to a full edge
+                target = Mathf.Sign(d) * a * (0.2f + 0.8f * a * a);
                 // a second finger held down tucks; a quick overlap does not count
                 twoTime = fingers >= 2 ? twoTime + Time.unscaledDeltaTime : 0f;
             }
