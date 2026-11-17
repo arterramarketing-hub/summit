@@ -246,7 +246,13 @@ namespace Summit
 
             Joint joint = null;
             Rigidbody parentRb = null;
-            for (var t = bone.parent; t != null && parentRb == null; t = t.parent) parentRb = t.GetComponent<Rigidbody>();
+            // only ever another part of this ragdoll: the bones sit under the rider's own body, and a joint to
+            // that (the pelvis would find it) pins the rider to a frozen pelvis and drags it through the snow
+            for (var t = bone.parent; t != null && parentRb == null; t = t.parent)
+            {
+                var prb = t.GetComponent<Rigidbody>();
+                if (prb != null && parts.Exists(q => q.rb == prb)) parentRb = prb;
+            }
             if (parentRb != null)
             {
                 var j = bone.gameObject.AddComponent<CharacterJoint>();

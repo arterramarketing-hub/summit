@@ -26,12 +26,14 @@ namespace Summit
         void Awake() { cam = GetComponent<Camera>(); }
 
         public void Snap() { first = true; }
+        /// <summary>Frame time for the batchmode test tools, where Time.deltaTime is always zero.</summary>
+        public static float TestDt;
 
         void LateUpdate()
         {
             if (rider == null) return;
             if (cam == null) cam = GetComponent<Camera>();
-            float dt = Time.deltaTime;
+            float dt = TestDt > 0f ? TestDt : Time.deltaTime;
             float s01 = Mathf.Clamp01(rider.Speed / 40f);
             Vector3 raw = rider.transform.position + Vector3.up * 1.1f;
             // follow sideways and forwards exactly, but spring the height: the snow is made of flat

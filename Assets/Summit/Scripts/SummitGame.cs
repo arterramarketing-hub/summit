@@ -104,6 +104,9 @@ namespace Summit
         int Score => Mathf.RoundToInt(rider.Distance) + trickPoints;
         float Mult => 1f + 0.5f * chainCount;
 
+        float traceT, traceNext, readyT;
+        static readonly bool autoplay = System.Environment.GetEnvironmentVariable("SUMMIT_AUTOPLAY") == "1";
+
         void Awake()
         {
             QualitySettings.vSyncCount = 0;
@@ -122,6 +125,7 @@ namespace Summit
             var rg = new GameObject("Rider");
             rider = rg.AddComponent<Rider>();
             rider.input = input;
+            _ = rider.Body;   // its physics body exists before the ragdoll is built (as on device; edit-mode tools skip Awake)
             body = rg.AddComponent<RiderBody>();
             body.Build(rider, jacket, pants, board, skin, dark, trail, spray);
             rider.Trick += OnTrick;
@@ -408,7 +412,9 @@ namespace Summit
             switch (state)
             {
                 case State.Ready:
-                    if (input.AnyPress() && ModeTapped()) { }
+                    traceT = 0f;
+                    if (autoplay && (readyT += dt) > 3f) { readyT = 0f; ToRiding(); }
+                    else if (input.AnyPress() && ModeTapped()) { }
                     else if (input.AnyPress() && RiderTapped()) { }
                     else if (input.AnyPress() && (Tapped(true) || SpacePressed())) { audioFx.Play(Sfx.Play); ToRiding(); }
                     break;
@@ -469,6 +475,19 @@ namespace Summit
                         input.SwallowCurrentPress();
                     }
                     break;
+            }
+
+            if (autoplay && state == State.Riding && traceT < 16f)
+            {
+                // device testing: launched with SUMMIT_AUTOPLAY=1 the game starts runs by itself and logs the first seconds
+                traceT += dt; traceNext -= dt;
+                if (traceNext <= 0f)
+                {
+                    traceNext = 0.25f;
+                    var rp = rider.Body.position; var tp = rider.transform.position;
+                    Debug.Log($"SUMMIT TRACE t={traceT:0.00} body={rp} tf={tp} ground={Slope.DrawnHeight(rp.x, rp.z):0.00} v={rider.Body.linearVelocity} " +
+                              $"air={rider.Airborne} crash={rider.Crashed} kin={rider.Body.isKinematic} run={rider.Running} cam={chase.transform.position}");
+                }
             }
 
             // no stick graphic: the thumb steers the rider directly and the rider's lean shows the steering
