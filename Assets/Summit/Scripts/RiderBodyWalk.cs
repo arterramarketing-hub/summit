@@ -17,6 +17,9 @@ namespace Summit
         /// <summary>Walk cycles a second (two steps each), from how fast you're going; 0: work it out from the pace.</summary>
         public float Cadence;
         float runAmp, cadence;
+        /// <summary>Thrown from on foot (the camp's edge giving way): the velocity the coming crash throws the body with.</summary>
+        public void Tumble(Vector3 velocity) { lastVel = velocity; }
+
         /// <summary>The walk cycle (radians): the left heel strikes at pi/2, the right at 3pi/2 (see RiderRig.PoseWalk).</summary>
         public float WalkPhase => walkPhase;
         /// <summary>How far into a run the legs are (0 walking .. 1 running), eased.</summary>

@@ -11,6 +11,7 @@ Shader "Summit/SnowyCloth"
         [MainColor] _BaseColor ("Colour", Color) = (1, 1, 1, 1)
         _Smoothness ("Smoothness", Range(0, 1)) = 0.35
         _Snow ("Snow amount", Range(0, 1)) = 0
+        _SnowScale ("How readily this garment holds snow", Range(0, 2)) = 1
         _Wet ("Damp", Range(0, 1)) = 0
         _SnowUp ("Up (rest frame)", Vector) = (0, 1, 0, 0)
         _SnowDir ("Impact side (rest frame), w = strength", Vector) = (0, 0, 1, 0)
@@ -25,6 +26,7 @@ Shader "Summit/SnowyCloth"
             half4 _BaseColor;
             half _Smoothness;
             half _Snow;
+            half _SnowScale;
             half _Wet;
             float4 _SnowUp;
             float4 _SnowDir;
@@ -51,7 +53,7 @@ Shader "Summit/SnowyCloth"
         }
         // coverage before clamping: below 0 bare cloth, above 1 solid snow. The square root lets a light fall
         // show plainly, while even a full caking leaves cloth showing on the sheltered, downward faces
-        float Cover(float clumps, float bias) { return (sqrt(_Snow) * bias * 1.6 + clumps - 1.05) * 5.0; }
+        float Cover(float clumps, float bias) { return (sqrt(saturate(_Snow * _SnowScale)) * bias * 1.6 + clumps - 1.05) * 5.0; }
 
         // the snow sits proud of the cloth, more where it is thick: up to a centimetre, pushed out in world
         // space (a skinned mesh's own units say nothing about metres)

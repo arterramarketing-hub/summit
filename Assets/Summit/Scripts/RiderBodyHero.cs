@@ -60,13 +60,13 @@ namespace Summit
             Shader sh = jacketShader != null ? jacketShader : Shader.Find("Universal Render Pipeline/Lit");
             snowy = new SnowyClothes();
             if (!snowy.Ok) snowy = null;
-            Material Cloth(Color c, float smooth)
+            Material Cloth(Color c, float smooth, float holds)
             {
-                if (snowy != null) return snowy.Make(c, smooth);
+                if (snowy != null) return snowy.Make(c, smooth, holds);
                 var m = new Material(sh); m.SetColor("_BaseColor", c); m.SetFloat("_Smoothness", smooth); return m;
             }
-            var jacketM = Cloth(new Color(0.93f, 0.31f, 0.14f), 0.35f);
-            var pantsM = Cloth(new Color(0.17f, 0.19f, 0.24f), 0.2f);
+            var jacketM = Cloth(new Color(0.93f, 0.31f, 0.14f), 0.35f, 1.5f);   // the jacket takes about as much as the trousers show
+            var pantsM = Cloth(new Color(0.17f, 0.19f, 0.24f), 0.2f, 0.5f);    // (white on the dark trousers shows far more)
             var gearM = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? sh);
             var pal = Resources.Load<Texture2D>("Rider/HeroPalette");
             if (pal != null) { gearM.SetTexture("_BaseMap", pal); gearM.mainTexture = pal; }

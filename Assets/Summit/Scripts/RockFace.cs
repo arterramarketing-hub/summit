@@ -37,7 +37,7 @@ namespace Summit
             if (len < 1e-6f) return false;
             float ny = faceNormal.y / len;
             // the groomed piste is always snow, even down the steep face of a roll-over; on a ridge, only the crest is
-            if (Cliffs.OnJumpLanding(x, z)) return false;   // a jump cliff's landing is snow, to be landed on
+            if (Cliffs.OnJumpLanding(x, z) || Ridge.SnowAt(x, z)) return false;   // a jump cliff's landing, a ridge's snow side, a wall's apron
             if (Cliffs.OnJumpFace(x, z) || Cliffs.OnWallFace(x, z)) { }   // a cliff's rock band shows, piste or not
             // beside a ridge (and the spine below it), only its top: the canyon walls are rock right up to the edge
             else if (Ridge.Depth(z) > 0.05f) { if (Mathf.Abs(x - Slope.Centre(z)) < Ridge.HalfWidth(z) + Ridge.Shoulder * 0.5f) return false; }

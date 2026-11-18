@@ -11,7 +11,7 @@ namespace Summit
     public class CourseDressing : MonoBehaviour
     {
         public Transform target;
-        Material metal, boxSide, railMat, post, ice, lipBand, poleOrange, poleBlack, signPark, signDanger, signPipe, signBack, snow, signRidge;
+        Material metal, boxSide, railMat, post, ice, lipBand, poleOrange, poleBlack, signPark, signDanger, signPipe, signBack, snow, signRidge, signGorge, signLedge;
         readonly Dictionary<int, GameObject> built = new Dictionary<int, GameObject>();
         readonly List<int> drop = new List<int>();
 
@@ -38,6 +38,8 @@ namespace Summit
             signDanger = Sign(lit, "Signs/SignDanger");
             signPipe = Sign(lit, "Signs/SignPipe");
             signRidge = Sign(lit, "Signs/SignRidge");
+            signGorge = Sign(lit, "Signs/SignGorge");
+            signLedge = Sign(lit, "Signs/SignLedge");
         }
 
         public static Material Sign(Shader lit, string path)
@@ -117,7 +119,12 @@ namespace Summit
             if (zb + Course.ParkAt + 180f < Course.ClearFrom) SignAt(root.transform, zb + Course.ParkAt - 30f, signPark, 1f);
             if (Course.CrevassesOf(k).Length > 0) SignAt(root.transform, zb + Course.DangerAt - 30f, signDanger, -1f);
             if (Course.PipeWeight(zb + (Course.PipeAt + Course.PipeEnd) * 0.5f) > 0f) SignAt(root.transform, zb + Course.PipeAt - 30f, signPipe, 1f);
-            if (Ridge.Built(k)) { SignAt(root.transform, zb + Ridge.At - 30f, signRidge, -1f); RidgeDressing.Build(root.transform, k, poleOrange, poleBlack); }
+            if (Ridge.Built(k))
+            {
+                var form = Ridge.FormOf(k);   // a ridge, a valley's gorge, or a ledge between a cliff and a wall
+                SignAt(root.transform, zb + Ridge.At - 30f, form == Ridge.Form.Ledge ? signLedge : form == Ridge.Form.Valley || form == Ridge.Form.ValleyOneSided ? signGorge : signRidge, -1f);
+                RidgeDressing.Build(root.transform, k, poleOrange, poleBlack);
+            }
             CliffDressing.Build(root.transform, k, post.shader, poleOrange, poleBlack, post, signBack, target != null ? target.GetComponent<Rider>() : null);
             CliffSpires.Build(root.transform, k, post.shader);   // jagged rock along the cliffs' edges and faces
             return root;

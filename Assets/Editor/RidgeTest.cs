@@ -36,7 +36,7 @@ public static class RidgeTest
             for (int cyc = 0; cyc < 5; cyc++)
             {
                 if (!Ridge.Built(cyc)) { Debug.Log($"RIDGE seed{seed} cycle {cyc}: none"); continue; }
-                float z0 = Course.First + cyc * Course.Cycle + Ridge.At, z1 = Course.First + cyc * Course.Cycle + Ridge.End;
+                float z0 = Course.First + cyc * Course.Cycle + Ridge.At, z1 = Course.First + cyc * Course.Cycle + Ridge.EndOf(cyc);
                 float zm = z0 + Ridge.RampIn + 30f;
                 // a cross-section through the full crest
                 var sb = new System.Text.StringBuilder();
@@ -45,7 +45,7 @@ public static class RidgeTest
                     float x = Slope.Centre(zm) + a;
                     sb.Append($"{a:0}:{Slope.Height(x, zm) - Ridge.Top(zm):0.0}/{Slope.Normal(x, zm).y:0.00} ");
                 }
-                Debug.Log($"RIDGE seed{seed} cycle {cyc} sides={Ridge.Sides(cyc)} z={z0:0}-{z1:0} section at z={zm:0} (offset:height/normal.y): {sb}");
+                Debug.Log($"RIDGE seed{seed} cycle {cyc} form={Ridge.FormOf(cyc)} z={z0:0}-{z1:0} section at z={zm:0} (offset:height/normal.y): {sb}");
                 // along the crest: the flattest it gets underfoot, and the tightest roll-over (the speed it would launch you at)
                 float minNy = 1f, worstCurv = 0f, worstAt = 0f, maxWander = 0f;
                 for (float z = z0; z < z1; z += 1f)
@@ -53,7 +53,8 @@ public static class RidgeTest
                     float w = Ridge.Weight(z);
                     if (w < 0.3f) continue;
                     float half = Ridge.HalfWidth(z);
-                    for (float a = -half; a <= half + 0.01f; a += half / 4f) minNy = Mathf.Min(minNy, Slope.Normal(Slope.Centre(z) + a, z).y);
+                    // (inside the edge: past it is a ridge's shoulder or a valley wall's foot, both meant to tilt)
+                    for (float a = -0.85f * half; a <= 0.85f * half + 0.01f; a += 0.85f * half / 4f) minNy = Mathf.Min(minNy, Slope.Normal(Slope.Centre(z) + a, z).y);
                     // along the line you ride (the centre line), over 3 m: the surface curving away below a ballistic arc throws you
                     const float h = 3f;
                     float y0 = Slope.Height(Slope.Centre(z - h), z - h), y1 = Slope.Height(Slope.Centre(z), z), y2 = Slope.Height(Slope.Centre(z + h), z + h);
@@ -126,18 +127,23 @@ public static class RidgeTest
         ChaseCamera.TestDt = 1f / 60f;
         rider.Crash += why => lastWhy = why;
 
-        // a mountain whose first ridge has cliffs on both sides, and one with a single cliff
-        int both = -1, one = -1;
-        for (int s = 1; s < 400 && (both < 0 || one < 0); s++)
-        {
-            Slope.Init(s);
-            if (Ridge.Sides(0) == 0) { if (both < 0) both = s; }
-            else if (one < 0) one = s;
-        }
-        foreach (int seed in new[] { both, one })
+        // a mountain whose first stretch is each form ($RIDGE_FORMS picks some, by name; all of them otherwise)
+        var forms = new System.Collections.Generic.List<Ridge.Form>();
+        string want = System.Environment.GetEnvironmentVariable("RIDGE_FORMS");
+        foreach (Ridge.Form f in System.Enum.GetValues(typeof(Ridge.Form)))
+            if (f != Ridge.Form.Plain && (string.IsNullOrEmpty(want) || want.Contains(f.ToString()))) forms.Add(f);
+        var seeds = new System.Collections.Generic.List<int>();
+        foreach (var f in forms)
+            for (int s = 1; s < 2000; s++) { Slope.Init(s); if (Ridge.Built(0) && Ridge.FormOf(0) == f) { seeds.Add(s); break; } }
+        int both = seeds.Count > 0 && forms[0] == Ridge.Form.Ridge ? seeds[0] : -1;
+        foreach (int seed in seeds)
         {
             Slope.Init(seed);
-            string tag = Ridge.Sides(0) == 0 ? "" : "OneSide";
+            var form = Ridge.FormOf(0);
+            string tag = form == Ridge.Form.Ridge ? "" : form == Ridge.Form.RidgeOneSided ? "OneSide" : form.ToString();
+            // the side the falls and views go to: a cliff if there is one, else a wall
+            int mainSide = Ridge.SideOf(0, 1f) == Ridge.Side.Cliff ? 1 : Ridge.SideOf(0, -1f) == Ridge.Side.Cliff ? -1 : Ridge.SideOf(0, 1f) == Ridge.Side.Wall ? 1 : -1;
+            bool wall = Ridge.SideOf(0, mainSide) == Ridge.Side.Wall;
             terrain.Rebuild(); props.Rebuild(); dress.Rebuild();
             float zr = Course.First + Ridge.At;
             float zFull = zr + Ridge.RampIn + 10f;
@@ -199,7 +205,7 @@ public static class RidgeTest
                 return Mathf.Clamp((want - rider.Heading) * 4f - rider.YawRate * 0.25f, -1f, 1f);
             }
 
-            Debug.Log($"RIDGESHOT seed {seed} sides={Ridge.Sides(0)} ridge z={zr:0}-{Course.First + Ridge.End:0}");
+            Debug.Log($"RIDGESHOT seed {seed} form={form} left={Ridge.SideOf(0, -1f)} right={Ridge.SideOf(0, 1f)} z={zr:0}-{Course.First + Ridge.EndOf(0):0} depth={Ridge.DepthHere(zFull + 40f, mainSide):0}");
             // the warm-up render comes out unlit; throw it away
             Ride(zr - 60f, 20f, 0.5f, t => 0f);
             Settle(); chase.Snap(); late.Invoke(chase, null);
@@ -232,7 +238,7 @@ public static class RidgeTest
             // 3. looking down the drop from the crest's edge, the rider beside you
             {
                 float z = zFull + 40f;
-                int side = Ridge.Sides(0) == 0 ? 1 : Ridge.Sides(0);
+                int side = mainSide;
                 Ride(z - 20f, 12f, 1.2f, t => Follow(0f));
                 Settle();
                 float half = Ridge.HalfWidth(z);
@@ -240,7 +246,7 @@ public static class RidgeTest
                 edge.y = Slope.Height(edge.x, edge.z);
                 // leaning out over the edge, the way the rider sees it going over
                 var eye = new Vector3(edge.x + side * 2.5f, Ridge.Top(z) + 2.2f, z - 3f);
-                var look = new Vector3(edge.x + side * 11f, edge.y - 30f, z + 9f);
+                var look = new Vector3(edge.x + side * 11f, edge.y + (wall ? 45f : -30f), z + 9f);   // down the drop, or up the wall
                 cam.fieldOfView = 70f;
                 cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(look - eye));
                 Bake(() => Shoot(cam, Path.Combine(outDir, $"RidgeShotDrop{tag}.png")));
@@ -248,10 +254,12 @@ public static class RidgeTest
             // 4. the ridge from the gully below: the crest along the skyline, the cliffs and rock under it
             {
                 float z = zFull + 30f;
-                int side = Ridge.Sides(0) == 0 ? -1 : Ridge.Sides(0);
-                float x = Slope.Centre(z) + side * (Ridge.Reach(z, side) + 25f);
-                var eye = new Vector3(x, Slope.Height(x, z) + 3f, z - 25f);
-                var at = new Vector3(Slope.Centre(z + 25f), Ridge.Top(z + 25f) - 10f, z + 25f);
+                int side = mainSide;
+                // from the canyon floor up at the crest; in a valley, from its floor up at the wall's top
+                float x = wall ? Slope.Centre(z) - side * (Ridge.HalfWidth(z) - 2f) : Slope.Centre(z) + side * (Ridge.Reach(z, side) + 25f);
+                var eye = new Vector3(x, Slope.Height(x, z) + (wall ? 1.8f : 3f), z - 25f);
+                var at = wall ? new Vector3(Slope.Centre(z + 25f) + side * Ridge.Reach(z + 25f, side), Ridge.Top(z + 25f) + Ridge.DepthHere(z + 25f, side) * 0.85f, z + 25f)
+                              : new Vector3(Slope.Centre(z + 25f), Ridge.Top(z + 25f) - 10f, z + 25f);
                 rider.ResetAt(x, z); Settle();
                 cam.fieldOfView = 65f;
                 cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(at - eye));
@@ -265,7 +273,7 @@ public static class RidgeTest
             }
             // 5. riding off the edge: the moment over, and the tumble down the rock
             {
-                int side = Ridge.Sides(0) == 0 ? 1 : Ridge.Sides(0);
+                int side = mainSide;
                 Ride(zFull, 22f, 1.2f, t => Follow(0f));
                 float tOff = 0f;
                 for (int i = 0; i < 600 && !rider.Crashed; i++, tOff += Dt)
@@ -309,11 +317,12 @@ public static class RidgeTest
             // 6. the whole thing from out over a canyon: the crest, the walls, the floor far below
             {
                 float z = zFull + 50f;
-                int side = Ridge.Sides(0) == 0 ? 1 : -Ridge.Sides(0);
+                // out over a canyon, or from up on a valley wall's rim, looking along the run
+                int side = Ridge.SideOf(0, -mainSide) == Ridge.Side.Plain ? mainSide : -mainSide;
                 float x = Slope.Centre(z) + side * 120f;
                 rider.ResetAt(Slope.Centre(z), z); Settle();
-                var eye = new Vector3(x, Ridge.Top(z) + 35f, z - 70f);
-                var at = new Vector3(Slope.Centre(z + 60f), Ridge.Top(z + 60f) - 70f, z + 60f);
+                var eye = new Vector3(x, Mathf.Max(Ridge.Top(z) + 35f, Slope.Height(x, z - 70f) + 25f), z - 70f);
+                var at = new Vector3(Slope.Centre(z + 60f), Ridge.Top(z + 60f) - (Ridge.SideOf(0, side) == Ridge.Side.Wall ? 5f : 70f), z + 60f);
                 cam.fieldOfView = 68f;
                 cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(at - eye));
                 Shoot(cam, Path.Combine(outDir, $"RidgeShotCanyon{tag}.png"));
@@ -396,6 +405,23 @@ public static class RidgeTest
         int seed = int.Parse(System.Environment.GetEnvironmentVariable("LINE_SEED") ?? "1154");
         float z0 = float.Parse(System.Environment.GetEnvironmentVariable("LINE_Z0") ?? "1000"), z1 = float.Parse(System.Environment.GetEnvironmentVariable("LINE_Z1") ?? "1100");
         Slope.Init(seed);
+        if (System.Environment.GetEnvironmentVariable("LINE_ACROSS") == "1")
+        {
+            // across the run instead: every few metres down, height and slope out to 30 m either side
+            for (float z = z0; z <= z1; z += 10f)
+            {
+                var sb = new System.Text.StringBuilder();
+                for (float a = -2f; a <= 30f; a += 2f)
+                {
+                    float x = Slope.Centre(z) + a;
+                    var n = Slope.Normal(x, z);
+                    sb.Append($"{a:0}:{Slope.Height(x, z) - Ridge.Top(z):0.0}/{n.y:0.00}{(RockFace.IsRock(n, x, z) ? "R" : "")} ");
+                }
+                Debug.Log($"LINE z={z:0} form={Ridge.FormOf(Course.CycleOf(z))} w={Ridge.Weight(z):0.00} half={Ridge.HalfWidth(z):0.0} right={Ridge.SideAt(z, 1f)} wall={Cliffs.WallCut(Slope.Centre(z) + 12f, z):0.0} {sb}");
+            }
+            EditorApplication.Exit(0);
+            return;
+        }
         for (float z = z0; z <= z1; z += 1f)
         {
             float x = Slope.Centre(z);
@@ -426,13 +452,15 @@ public static class RidgeTest
         {
             Slope.Init(s);
             if (!Ridge.Built(0)) continue;
-            if (Ridge.Sides(0) == 0 ? both++ < 2 : one++ < 2) seeds.Add(s);
+            // two with a ridge's cliffs, two with a valley's walls
+            bool cliffs = Ridge.SideOf(0, -1f) == Ridge.Side.Cliff || Ridge.SideOf(0, 1f) == Ridge.Side.Cliff;
+            if (cliffs ? both++ < 2 : one++ < 2) seeds.Add(s);
         }
         foreach (int seed in seeds)
         {
             Slope.Init(seed);
             terrain.Rebuild(); props.Rebuild(); dress.Rebuild();
-            float zr = Course.First + Ridge.At, ze = Course.First + Ridge.End;
+            float zr = Course.First + Ridge.At, ze = Course.First + Ridge.EndOf(0);
             rider.ResetAt(Slope.Centre(zr - 20f), zr - 20f);
             for (int k = 0; k < 6; k++) { terrain.Prewarm(); props.Prewarm(); dress.Prewarm(); }
             foreach (var mf in terrain.GetComponentsInChildren<MeshFilter>())
@@ -489,7 +517,7 @@ public static class RidgeTest
                         was = Mathf.Max(was, Slope.Height(x, z) - Coarse(x, z));
                     }
             }
-            Debug.Log($"RIDGEFIT seed{seed} sides={Ridge.Sides(0)} edge: rider over drawn snow at most {hover * 100f:0.0} cm (z={hoverAt:0} off={off:0.0}), into it at most {-sink * 100f:0.0} cm, " +
+            Debug.Log($"RIDGEFIT seed{seed} form={Ridge.FormOf(0)} edge: rider over drawn snow at most {hover * 100f:0.0} cm (z={hoverAt:0} off={off:0.0}), into it at most {-sink * 100f:0.0} cm, " +
                       $"{cracks} cracks in {samples} rays (whole 1.5 m facets would have left a {was * 100f:0} cm gap)");
             if (hover > 0.005f) Bad($"seed{seed} rider hovers {hover * 100f:0.0} cm over the crest edge at z={hoverAt:0} off={off:0.0}");
             if (sink < -0.005f) Bad($"seed{seed} rider sinks {-sink * 100f:0.0} cm into the crest edge");

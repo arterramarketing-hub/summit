@@ -14,7 +14,7 @@ public static class SummitShot
 {
     const BindingFlags NP = BindingFlags.NonPublic | BindingFlags.Instance;
     static Camera cam;
-    static Camp camp; static RiderBody body; static SlopeStreamer terrain; static Forest props;
+    static Camp camp; static RiderBody body; static MetaUi meta; static SlopeStreamer terrain; static Forest props;
     static MethodInfo tUpd, fUpd;
     const float dt = 1f / 60f;
 
@@ -27,7 +27,7 @@ public static class SummitShot
         var game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game, false);   // the game opens in the camp
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        body = Get<RiderBody>("body"); camp = Get<Camp>("camp"); terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
+        body = Get<RiderBody>("body"); camp = Get<Camp>("camp"); meta = Get<MetaUi>("meta"); terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
         var dayNight = Get<DayNight>("dayNight");
         var slideView = Get<AvalancheView>("slideView");
         cam = Camera.main;
@@ -77,6 +77,36 @@ public static class SummitShot
         Aim(back, G(0f, -100f), 60f);
         Shoot("Summit9_camp_from_the_run.png");
 
+        // the edge giving way: past the railing's far end, walking out to the cliff
+        meta.UseCamera(cam);
+        var vol = Object.FindFirstObjectByType<UnityEngine.Rendering.Volume>();
+        if (vol != null && vol.profile.TryGet(out UnityEngine.Rendering.Universal.LensDistortion ld)) ld.intensity.Override(0f);
+        Physics.simulationMode = SimulationMode.Script;
+        camp.Teleport(21.8f, -147f, 90f); Settle(30);
+        Shoot("Summit10_edge_before.png");
+        float walked = 0f;
+        while (!camp.Falling && walked < 4f) { Step(new Vector2(0f, 0.45f)); walked += dt; }
+        Debug.Log($"SUMMIT edge gave way: {camp.Falling} after {walked:0.00}s at {body.transform.position}");
+        float t = FallShots(new[] { 0.35f, 1.6f, 3.4f, 6.5f, 9.3f },
+                            new[] { "Summit11_collapse.png", "Summit12_falling.png", "Summit13_tumbling.png", "Summit13b_far_below.png", "Summit13c_end_of_fall.png" });
+        Debug.Log($"SUMMIT rescued: falling={camp.Falling} after {t:0.0}s, walker at {camp.WalkerPosition}");
+        FadeIn();
+        Shoot("Summit15_rescued.png");
+        // a shorter one: over the start pad's lip, coming to rest on the face below
+        camp.Teleport(0f, -3f, 0f); Settle(10);
+        Shoot("Summit17_lip_before.png");
+        walked = 0f;
+        while (!camp.Falling && walked < 4f) { Step(new Vector2(0f, 0.5f)); walked += dt; }
+        Debug.Log($"SUMMIT lip gave way: {camp.Falling} after {walked:0.00}s");
+        FallShots(new[] { 0.6f }, new[] { "Summit18_lip_falling.png" }, "Summit19_at_rest.png");
+        FadeIn();
+        Physics.simulationMode = SimulationMode.FixedUpdate;
+        // DROP IN, at the MT. VERTIGO banner above the start pad
+        camp.Teleport(0f, -46f, 0f);
+        Walk(new Vector2(0f, 0.6f), 2.6f); Settle(20);
+        meta.SetContext(camp.Near);
+        Debug.Log($"SUMMIT at the banner: near={camp.Near}");
+        Shoot("Summit16_dropin_banner.png");
         ChaseCamera.TestDt = 0f;
         TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt; dayNight.ApplyNow();
         TimeOfDay.TestClock = -1f;
@@ -84,11 +114,36 @@ public static class SummitShot
         EditorApplication.Exit(0);
     }
 
+    /// <summary>Run a fall to its rescue, shooting at the given times (and once at rest, if rest is named).</summary>
+    static float FallShots(float[] times, string[] names, string rest = null)
+    {
+        float t = 0f; int shot = 0; bool rested = false;
+        while (camp.Falling && t < 14f)
+        {
+            camp.Step(dt, meta); Fall();
+            t += dt;
+            if (shot < times.Length && t >= times[shot]) { Shoot(names[shot]); Debug.Log($"SUMMIT fall {t:0.0}s body={body.RagdollCentre} moving={body.RagdollMoving}"); shot++; }
+            if (rest != null && !rested && t > 1.2f && !body.RagdollMoving) { rested = true; Shoot(rest); Debug.Log($"SUMMIT at rest {t:0.0}s at {body.RagdollCentre}"); }
+        }
+        Debug.Log($"SUMMIT rescued after {t:0.0}s: walker at {camp.WalkerPosition}");
+        return t;
+    }
+
+    /// <summary>A frame of a fall: the physics in two steps, as the game's FixedUpdate runs it.</summary>
+    static void Fall()
+    {
+        for (int k = 0; k < 2; k++) { body.PhysicsStep(); Physics.Simulate(dt / 2f); }
+        body.Apply(dt); camp.CameraStep(dt);
+        tUpd.Invoke(terrain, null); fUpd.Invoke(props, null);
+    }
+
     static void Settle(int n) { for (int i = 0; i < n; i++) Step(Vector2.zero); }
+    /// <summary>The camp's own frame (as the game runs it), so the fade after a rescue lifts.</summary>
+    static void FadeIn() { for (int i = 0; i < 45; i++) { camp.Step(dt, meta); Step(Vector2.zero); } }
     static void Walk(Vector2 s, float secs) { for (float t = 0f; t < secs; t += dt) Step(s); }
     static void Step(Vector2 s)
     {
-        camp.Walk(s, dt); body.PhysicsStep(); body.Apply(dt); camp.CameraStep(dt);
+        camp.Walk(s, dt); body.PhysicsStep(); if (Physics.simulationMode == SimulationMode.Script) Physics.Simulate(dt); body.Apply(dt); camp.CameraStep(dt);
         tUpd.Invoke(terrain, null); fUpd.Invoke(props, null);
         typeof(Camp).GetMethod("LateUpdate", NP).Invoke(camp, null);
     }

@@ -21,7 +21,7 @@ namespace Summit
 
         // where the camp sits: on the plateau behind the start pad (downhill is +Z), so the run is right
         // in front of you and the view down the mountain is past the Drop In gate
-        public const float GateZ = -76f, BackZ = -126f, HalfWidth = 23f;
+        public const float BackZ = -126f, HalfWidth = 23f;   // (the camp's extent, for keeping trees off it: you can walk anywhere)
         static float Cx => Slope.Centre(Slope.PadLip);
         /// <summary>True inside the camp and its framing trees (the forest leaves this ground alone).</summary>
         public static bool InCamp(float x, float z) => z < -68f && z > BackZ - 16f && Mathf.Abs(x - Cx) < HalfWidth + 10f
@@ -118,7 +118,7 @@ namespace Summit
 
             tapRoots.Clear();
             Chalet(Frame(-9f, -118.5f, 12f));
-            Gate();
+            StartBanner();
             Lookout(Frame(16f, -84f, 0f));
             Benches();
             firePit = FirePit(Frame(0f, -101f, 0f)).gameObject;
@@ -557,27 +557,30 @@ namespace Summit
         // never leave the project's sky or grade in the evening (in the editor they are assets)
         void OnDisable() { if (dayKnown) SetNight(0f); CampShadows(false); }
 
-        void Gate()
+        /// <summary>
+        /// DROP IN is at the run's own MT. VERTIGO banner (SummitGame.BuildStartGate, 36 m above the lip): walk down
+        /// to it from the camp and the button comes up. Its posts and the warning signs below it are solid.
+        /// </summary>
+        void StartBanner()
         {
-            // built square to the world: the sign faces up the hill, at the camp
-            var t = Frame(0f, GateZ, 0f);
-            t.name = "DropInGate";
+            float gz = Slope.PadLip - 36f;
+            var t = Frame(0f, gz, 0f);
+            t.name = "DropInBanner";
+            var tap = new GameObject("TAP_DropIn").transform;
+            tap.SetParent(t, false); tap.localPosition = new Vector3(0f, 2.6f, 0f);
+            // a trigger: the tap ray sees triggers, and the run goes straight through under the banner (a solid box
+            // here stops the rider dead at the start)
+            var tapBox = tap.gameObject.AddComponent<BoxCollider>();
+            tapBox.size = new Vector3(9f, 5.4f, 1f); tapBox.isTrigger = true;
+            spots.Add(new Spot { st = Station.DropIn, at = Ground(0f, gz - 2.6f), radius = 4.2f, root = tap });
             for (int s = -1; s <= 1; s += 2)
             {
-                Log(t, new Vector3(s * 2.9f, -0.5f, 0f), new Vector3(s * 2.9f, 4.4f, 0f), 0.4f, logs);
-                P(PrimitiveType.Sphere, t, new Vector3(s * 2.9f, 4.45f, 0f), new Vector3(0.5f, 0.3f, 0.5f), Vector3.zero, snowCap);
-                P(PrimitiveType.Cube, t, new Vector3(s * 2.9f, 3.2f, -0.3f), new Vector3(0.24f, 0.34f, 0.24f), Vector3.zero, bulb, false);
-                Block(t, new Vector3(s * 2.9f, 0f, 0f), new Vector2(0.3f, 0.3f));
+                Block(t, new Vector3(s * 4.2f, 0f, 0f), new Vector2(0.3f, 0.3f));
+                // the safety signs on their posts either side of the in-run
+                foreach (var z in new[] { Slope.PadLip - 22f, Slope.PadLip - 11f }) Block(Frame(s * 6.5f, z, 0f), Vector3.zero, new Vector2(1.6f, 0.3f));
             }
-            Log(t, new Vector3(-3.5f, 4.05f, 0f), new Vector3(3.5f, 4.05f, 0f), 0.36f, logs);
-            P(PrimitiveType.Cube, t, new Vector3(0f, 4.27f, 0f), new Vector3(6.8f, 0.14f, 0.4f), Vector3.zero, snowCap);
-            P(PrimitiveType.Cube, t, new Vector3(0f, 3.25f, 0.02f), new Vector3(4.5f, 1.15f, 0.1f), Vector3.zero, darkWood);
-            P(PrimitiveType.Quad, t, new Vector3(0f, 3.25f, -0.04f), new Vector3(4.3f, 1.07f, 1f), Vector3.zero, Sign("Camp/SignDropIn"));
-            for (int s = -1; s <= 1; s += 2) Log(t, new Vector3(s * 1.2f, 4.0f, 0f), new Vector3(s * 1.2f, 3.82f, 0f), 0.03f, rope);
-            gateFrame = t;
-            Stand(t, Station.DropIn, new Vector3(0f, 0f, -2.6f), 3.2f);
         }
-        Transform gateFrame;
+
 
         void Lookout(Transform t)
         {
@@ -1025,6 +1028,163 @@ namespace Summit
             ps.Play();
         }
 
+        // ---------------------------------------------------------------- the edges give way
+
+        // There is no fence round the camp. Walk too near any real drop (the cliff past the ends of its railing, the
+        // start pad's lip, the summit's slopes where they steepen into rock) and the snow's edge breaks off under you:
+        // a cornice splits away with a crack and a burst of powder, and you go down with it, thrown as a crash
+        // throws you on the run (RiderBody's ragdoll), tumbling all the way. The camera watches from the top, then
+        // follows; when the body has come to rest, or after a few seconds, the screen fades and you're back at the
+        // chalet. The game adds the screams, the "nooo" and the thump (Collapsed, Rescued, RiderBody.Killed).
+        /// <summary>The edge broke under the walker: where, and which way it fell.</summary>
+        public System.Action<Vector3, Vector3> Collapsed;
+        /// <summary>Back at the chalet after a fall.</summary>
+        public System.Action Rescued;
+        public bool Falling => falling;
+        const float EdgeDrop = 1.3f;   // more than this lower within a stride of you is an edge (about 55 degrees)
+        bool falling;
+        float fallT, restFor, fade;
+        Vector3 fallDir, fallCamFrom, fallLook;
+        GameObject cornice;
+        Material fracture;
+        Vector3 fallEdge;
+        MetaUi fadeUi;
+        readonly Collider[] near = new Collider[12];
+
+        /// <summary>Stand clear of the trees and rocks round you (the forest's own colliders): real things block you.</summary>
+        Vector3 OffTrees(Vector3 p)
+        {
+            int n = Physics.OverlapSphereNonAlloc(p + Vector3.up * 0.9f, 0.45f, near, ~0, QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < n; i++)
+            {
+                var c = near[i];
+                if (c == null || c.GetComponentInParent<Obstacle>() == null) continue;
+                Vector3 at = p + Vector3.up * 0.9f, cp = c.ClosestPoint(at);
+                var d = at - cp; d.y = 0f;
+                float m = d.magnitude;
+                if (m < 1e-4f) { d = p - c.bounds.center; d.y = 0f; m = d.magnitude; if (m < 1e-4f) continue; }
+                if (m < 0.45f) p += d / m * (0.45f - m);
+            }
+            return p;
+        }
+
+        /// <summary>Is there a drop beside you, in the way you're walking or right round your feet? Then it goes.</summary>
+        void EdgeCheck(Vector3 f)
+        {
+            if (falling) return;
+            float here = Slope.DrawnHeight(pos.x, pos.z), worst = 0f;
+            Vector3 dir = f;
+            if (speed > 0.2f)
+            {
+                float ahead = here - Slope.DrawnHeight(pos.x + f.x * 1.3f, pos.z + f.z * 1.3f);
+                if (ahead > worst) { worst = ahead; dir = f; }
+            }
+            for (int i = 0; i < 8; i++)
+            {
+                float a = i * Mathf.PI * 0.25f;
+                var d = new Vector3(Mathf.Sin(a), 0f, Mathf.Cos(a));
+                float drop = here - Slope.DrawnHeight(pos.x + d.x * 0.85f, pos.z + d.z * 0.85f);
+                if (drop > worst) { worst = drop; dir = d; }
+            }
+            if (worst > EdgeDrop) Collapse(dir);
+        }
+
+        /// <summary>The cornice breaks: a chunk of the lip falls away, and you with it.</summary>
+        public void Collapse(Vector3 dir)
+        {
+            if (falling || rider == null) return;
+            falling = true; fallT = 0f; restFor = 0f;
+            dir.y = 0f; fallDir = dir.normalized;
+            speed = 0f;
+            fallCamFrom = cam != null ? cam.transform.position : pos + Vector3.up * 3f;
+            fallLook = pos + Vector3.up;
+            fallEdge = pos;
+            // the chunk: lumpy snow, half a metre deep, falling out and away (it only has to look right as it goes)
+            if (cornice != null) { if (Application.isPlaying) Destroy(cornice); else DestroyImmediate(cornice); }
+            cornice = new GameObject("Cornice");
+            cornice.transform.SetParent(root, false);
+            cornice.transform.SetPositionAndRotation(pos + fallDir * 0.7f + Vector3.down * 0.35f, Quaternion.LookRotation(fallDir));
+            P(PrimitiveType.Sphere, cornice.transform, Vector3.zero, new Vector3(2.4f, 0.8f, 1.8f), Vector3.zero, snowCap);
+            P(PrimitiveType.Sphere, cornice.transform, new Vector3(0.7f, -0.2f, 0.3f), new Vector3(1.3f, 0.7f, 1.2f), new Vector3(0f, 30f, 0f), snowCap);
+            P(PrimitiveType.Sphere, cornice.transform, new Vector3(-0.8f, 0.05f, -0.1f), new Vector3(1.1f, 0.6f, 1.1f), new Vector3(0f, 70f, 0f), snowCap);
+            // the fresh break on its back face: packed, icy, blue-grey, so it reads against the snow it came from
+            if (fracture == null) fracture = M(new Color(0.55f, 0.66f, 0.82f), 0.55f);
+            P(PrimitiveType.Cube, cornice.transform, new Vector3(0f, -0.05f, -0.55f), new Vector3(2.2f, 0.7f, 0.5f), new Vector3(-12f, 0f, 0f), fracture);
+            P(PrimitiveType.Cube, cornice.transform, new Vector3(0.6f, -0.1f, -0.45f), new Vector3(0.9f, 0.55f, 0.4f), new Vector3(-8f, 25f, 4f), fracture);
+            var rb = cornice.AddComponent<Rigidbody>();
+            rb.mass = 300f; rb.linearDamping = 0.1f;
+            rb.linearVelocity = fallDir * 1.4f + Vector3.down * 0.6f;
+            rb.angularVelocity = Vector3.Cross(Vector3.up, fallDir) * 1.6f;
+            // and you: thrown out after it, as a crash throws you on the run
+            body.Tumble(fallDir * 2.2f + Vector3.up * 0.8f);
+            rider.DoCrash("Cornice");
+            Collapsed?.Invoke(pos, fallDir);
+        }
+
+        void FallStep(float dt)
+        {
+            fallT += dt;
+            Footsteps(dt);   // (fades the steps out)
+            // lying still a while (or long enough falling): fade, and back to the chalet
+            restFor = body.RagdollMoving || fallT < 2.5f ? 0f : restFor + dt;
+            bool done = restFor > 1.4f || fallT > 10f;
+            fade = Mathf.MoveTowards(fade, done ? 1f : 0f, dt / 0.6f);
+            if (fadeUi != null) fadeUi.SetFade(fade);
+            if (cornice != null && fallT > 9f) { if (Application.isPlaying) Destroy(cornice); else DestroyImmediate(cornice); }
+            if (done && fade >= 1f) Rescue();
+        }
+
+        /// <summary>Back on your feet at the chalet, patched up (the fade lifts as the camp comes back).</summary>
+        void Rescue()
+        {
+            falling = false;
+            if (cornice != null) { if (Application.isPlaying) Destroy(cornice); else DestroyImmediate(cornice); }
+            var at = stairsFoot + Quaternion.Euler(0f, ChaletYaw, 0f) * Vector3.forward * 2f;
+            rider.ResetAt(at.x, at.z);
+            body.ResetVisual();
+            body.SetWalking(true);
+            pos = Ground(at.x - Cx, at.z);
+            yaw = ChaletYaw * Mathf.Deg2Rad; camYaw = yaw; speed = 0f;   // looking out from the chalet
+            snap = true;
+            Place();
+            lastStep = body.WalkPhase;
+            fadeIn = true;
+            Rescued?.Invoke();
+        }
+        bool fadeIn;
+
+        /// <summary>The camera during a fall: holding at the top a moment, looking over after the body, then going down with it.</summary>
+        void FallCamera(float dt)
+        {
+            Vector3 c = body.RagdollCentre;
+            // a moment out over the edge, looking down after it (any longer and the cliff's mist fills the view); then
+            // down with it, out in the open air off the face and a little above, looking back at it against the rock
+            // (from behind, the lip it went over hides it)
+            float s = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.5f, 1.9f, fallT));
+            Vector3 side = Vector3.Cross(Vector3.up, fallDir);
+            Vector3 over = fallEdge - fallDir * 1.2f + Vector3.up * 3.2f + side * 1.5f;
+            Vector3 follow = c + fallDir * 6f + Vector3.up * 3.5f + side * 4f;
+            Vector3 want = Vector3.Lerp(over, follow, s);
+            want.y = Mathf.Max(want.y, Slope.DrawnHeight(want.x, want.z) + 1.5f);
+            // keep the body in sight: where the slope between it and the camera would hide it (a lip it went over, a
+            // buttress), lift the camera until the line clears (seven height samples, only while falling)
+            Vector3 from = c + Vector3.up * 0.4f;
+            float lift = 0f;
+            for (int i = 1; i <= 7; i++)
+            {
+                float t = i / 8f;
+                var q = Vector3.Lerp(from, want, t);
+                float under = Slope.DrawnHeight(q.x, q.z) + 0.5f - q.y;
+                if (under > 0f) lift = Mathf.Max(lift, under / t);
+            }
+            want.y += Mathf.Min(lift, 25f);
+            float k = 1f - Mathf.Exp(-dt * 5f);
+            var cp = Vector3.Lerp(cam.transform.position, want, k);
+            fallLook = Vector3.Lerp(fallLook, c, 1f - Mathf.Exp(-dt * 8f));
+            cam.transform.SetPositionAndRotation(cp, Quaternion.LookRotation(fallLook - cp, Vector3.up));
+            cam.fieldOfView = Mathf.Lerp(cam.fieldOfView, 60f, k);
+        }
+
         // ---------------------------------------------------------------- tree shadows
 
         // The camp's firs are branch cards, alpha-tested: in the phone's shadow map (two cascades out to 140 m, a
@@ -1139,6 +1299,7 @@ namespace Summit
             Near = Station.None;
             body.SetWalking(true);
             ClearFootprints();   // a fresh visit: fresh snow
+            falling = false; fadeIn = false; fade = 0f; fadeUi?.SetFade(0f);
             CampShadows(true);
             // a finger already down (the tap on TO CAMP or < CAMP that brought you here) is not a walk or a tap here:
             // ignore it until it lifts
@@ -1174,12 +1335,9 @@ namespace Summit
             speed = Mathf.MoveTowards(speed, want, dt * (want > speed ? 9f : 14f));
             var f = new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw));
             Vector3 next = pos + f * speed * dt;
-            // through the gate's opening, and you're off to the start
-            float gx = next.x - Cx;
-            bool inGate = Mathf.Abs(gx) < 2.5f;
-            if (next.z > GateZ + 0.6f && inGate) { pos = next; Place(); return true; }
-            next.x = Cx + Mathf.Clamp(gx, -HalfWidth, HalfWidth);
-            next.z = Mathf.Clamp(next.z, BackZ, inGate ? GateZ + 1f : GateZ - 0.6f);
+            // (no edge to the camp: you can walk anywhere; only real things stop you, and the mountain's edges
+            // give way under you, see Collapse)
+            next = OffTrees(next);
             var p2 = new Vector2(next.x, next.z);
             float feet = pos.y;
             for (int it = 0; it < 2; it++)
@@ -1202,6 +1360,7 @@ namespace Summit
             if (Near == Station.Lookout) { OnLookout = true; Near = Station.None; }
             Footsteps(dt);
             Footprints(dt);
+            if (onSnow) EdgeCheck(f);
             return false;
         }
 
@@ -1453,6 +1612,9 @@ namespace Summit
         /// </summary>
         public bool Step(float dt, MetaUi ui)
         {
+            fadeUi = ui;
+            if (fadeIn) { fade = Mathf.MoveTowards(fade, 0f, dt / 0.6f); ui.SetFade(fade); fadeIn = fade > 0f; }
+            if (falling) { FallStep(dt); ui.SetStick(false, Vector2.zero, Vector2.zero); ui.SetContext(Station.None); return false; }
             bool down = Pointer(out Vector2 p);
             Vector2 stick = Vector2.zero;
             if (down && !wasDown)
@@ -1557,6 +1719,7 @@ namespace Summit
         {
             if (cam == null) return;
             if (ChaseCamera.TestDt > 0f) dt = ChaseCamera.TestDt;
+            if (falling) { FallCamera(dt); return; }
             float k(float rate) => snap ? 1f : 1f - Mathf.Exp(-dt * rate);
             // follow behind as you walk; standing still, it holds where it is
             if (speed > 0.4f) camYaw = Mathf.LerpAngle(camYaw * Mathf.Rad2Deg, yaw * Mathf.Rad2Deg, k(1.4f) * Mathf.Clamp01(speed / MaxSpeed)) * Mathf.Deg2Rad;

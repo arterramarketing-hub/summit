@@ -210,7 +210,7 @@ namespace Summit
             headlamp.transform.SetParent(transform, false);
             headlamp.type = LightType.Spot;
             headlamp.color = new Color(1f, 0.95f, 0.86f);
-            headlamp.range = 48f; headlamp.spotAngle = 64f; headlamp.innerSpotAngle = 10f;   // a wide soft falloff
+            headlamp.range = 64f; headlamp.spotAngle = 68f; headlamp.innerSpotAngle = 12f;   // strong, but a wide soft falloff
             headlamp.shadows = LightShadows.None;   // a real-time shadow map for it would cost too much on the phone
             headlamp.enabled = false;
             BuildBeam();
@@ -413,7 +413,7 @@ namespace Summit
             // the signs shine this lamp's light back (Resources/SignLit.shader): where it is, where it points, how strong
             Shader.SetGlobalVector("_LampPos", new Vector4(0f, 0f, 0f, on ? 1f : 0f));
             if (!on) return;
-            headlamp.intensity = 7f * k;
+            headlamp.intensity = 13f * k;
             var cam = Camera.main;
             // a flashlight carried at the chest, pointed down the line the rider is riding: the pool of light swings
             // with the carves out ahead on the snow
@@ -429,7 +429,7 @@ namespace Summit
                 // beam only as it swings across the view
                 float along = cam != null ? Vector3.Dot(cam.transform.forward, headlamp.transform.forward) : 1f;
                 float side = 1f - Mathf.SmoothStep(0.78f, 0.96f, along);
-                beamMat.SetColor("_BaseColor", new Color(headlamp.color.r, headlamp.color.g, headlamp.color.b, 0.16f * k * side));
+                beamMat.SetColor("_BaseColor", new Color(headlamp.color.r, headlamp.color.g, headlamp.color.b, 0.22f * k * side));
             }
             Shader.SetGlobalVector("_LampPos", new Vector4(lp.x, lp.y, lp.z, 1f));
             Shader.SetGlobalVector("_LampDir", headlamp.transform.forward);

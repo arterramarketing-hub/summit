@@ -120,7 +120,8 @@ namespace Summit
         readonly List<Vector2> allUV = new List<Vector2>();
         readonly List<Color> allC = new List<Color>();
         readonly List<int> snowTris = new List<int>(), rockTris = new List<int>();
-        int[] rockOf;
+        const float Facet = 0.85f;   // how far a rock corner's normal leans from the smooth one to its own triangle's
+        const float FacetTilt = 0.7f;   // how far each rock facet is tilted its own way
 
         // a ridge crest's rounded edge, cut finer (see Ridge.Fine): which quads, from one row below the chunk to one
         // above it (so the rows on its edges know both their quads), and the extra vertices along each quad's lower
@@ -135,8 +136,9 @@ namespace Summit
         /// <summary>
         /// Sorts the triangles into snow and rock. A rock triangle gets its own copies of its corners, with the
         /// texture mapped straight onto the face (across and down it), so a cliff's rock is never smeared out the
-        /// way the snow's top-down mapping would smear it. The copies keep the snow's smooth normals, so the
-        /// light runs on unbroken across the snow line.
+        /// way the snow's top-down mapping would smear it. Their normals lean most of the way to the triangle's own,
+        /// so each facet takes the light its own way: fractured rock, like the rock models', rather than a smooth
+        /// grey sheet (a 165 m wall shaded smooth reads as a painted plane).
         /// </summary>
         void SplitRock(int[] use)
         {
@@ -144,9 +146,6 @@ namespace Summit
             allV.AddRange(verts); allN.AddRange(norms); allUV.AddRange(uvs); allC.AddRange(cols);
             allV.AddRange(fineV); allN.AddRange(fineN); allUV.AddRange(fineUV); allC.AddRange(fineC);
             snowTris.Clear(); rockTris.Clear();
-            int count = allV.Count;
-            if (rockOf == null || rockOf.Length < count) rockOf = new int[count];
-            for (int i = 0; i < count; i++) rockOf[i] = -1;
             for (int t = 0; t < use.Length; t += 3)
             {
                 int a = use[t], b = use[t + 1], c = use[t + 2];
@@ -157,18 +156,21 @@ namespace Summit
                     snowTris.Add(a); snowTris.Add(b); snowTris.Add(c);
                     continue;
                 }
+                Vector3 face = fn.normalized;
+                // and each facet tilted a little its own way (fixed by where it is, so a rebuilt chunk matches),
+                // so neighbours on a smooth face still break the light up like fractured granite
+                Vector3 mid = (va + vb + vc) / 3f;
+                int hx = Mathf.FloorToInt(mid.x * 2f), hz = Mathf.FloorToInt(mid.z * 2f);
+                face = (face + FacetTilt * new Vector3(Slope.Hash01(hx, hz, 71) - 0.5f, Slope.Hash01(hx, hz, 72) - 0.5f, Slope.Hash01(hx, hz, 73) - 0.5f)).normalized;
+                // project onto the plane the face mostly looks across: cliffs run down the hill, so mostly x
+                bool acrossX = Mathf.Abs(face.x) >= Mathf.Abs(face.z);
                 for (int k = 0; k < 3; k++)
                 {
                     int i = use[t + k];
-                    if (rockOf[i] < 0)
-                    {
-                        rockOf[i] = allV.Count;
-                        Vector3 p = allV[i], nn = allN[i];
-                        allV.Add(p); allN.Add(nn); allC.Add(Color.white);
-                        // project onto the plane the face mostly looks across: cliffs run down the hill, so mostly x
-                        allUV.Add(Mathf.Abs(nn.x) >= Mathf.Abs(nn.z) ? new Vector2(p.z, p.y) / RockFace.Tile : new Vector2(p.x, p.y) / RockFace.Tile);
-                    }
-                    rockTris.Add(rockOf[i]);
+                    Vector3 p = allV[i];
+                    rockTris.Add(allV.Count);
+                    allV.Add(p); allN.Add(Vector3.Lerp(allN[i], face, Facet).normalized); allC.Add(Color.white);
+                    allUV.Add(acrossX ? new Vector2(p.z, p.y) / RockFace.Tile : new Vector2(p.x, p.y) / RockFace.Tile);
                 }
             }
         }

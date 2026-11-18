@@ -22,7 +22,16 @@ namespace Summit
         Font font;
         Sprite round, coin, disc, ring;
         RectTransform safe, hubRoot, panelRoot, card, endRoot, toastRoot, stickRing, stickKnob, campBtn, rideBtn, contextBtn;
-        Image contextImg;
+        Image contextImg, fadeImg;
+
+        /// <summary>Black over the whole screen, 0..1.</summary>
+        public void SetFade(float a)
+        {
+            if (fadeImg == null) return;
+            bool on = a > 0.001f;
+            if (fadeImg.gameObject.activeSelf != on) fadeImg.gameObject.SetActive(on);
+            if (on) fadeImg.color = new Color(0f, 0f, 0f, Mathf.Clamp01(a));
+        }
         Text pointsText, missionsText, contextText, hintText, toastHead, toastTitle, toastReward, endTotal, endLines, endBalance, cardMsg;
         CanvasGroup toastGroup;
         readonly List<KeyValuePair<RectTransform, string>> buttons = new List<KeyValuePair<RectTransform, string>>();
@@ -109,6 +118,9 @@ namespace Summit
             panelRoot = New("Panel", transform); Stretch(panelRoot);
             var dim = Img("Dim", panelRoot, new Color(0.02f, 0.04f, 0.09f, 0.55f), null); Stretch(dim.rectTransform);
             panelRoot.gameObject.SetActive(false);
+            // a black fade over everything (the camp's rescue after a fall)
+            fadeImg = Img("Fade", transform, new Color(0f, 0f, 0f, 0f), null); Stretch(fadeImg.rectTransform);
+            fadeImg.gameObject.SetActive(false);
             SetMode(Mode.Off);
         }
 

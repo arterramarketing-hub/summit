@@ -180,11 +180,12 @@ public static class HubShot
         camp.Teleport(16f, -84.5f, 0f);
         Frames(120);
         Shoot("HubShot14_lookout.png");
-        // 9: the Drop In gate
-        camp.Teleport(0.5f, -79.5f, 0f);
-        Frames(40);
+        // 9: DROP IN, under the MT. VERTIGO banner above the start pad
+        camp.Teleport(0f, -46f, 0f);
+        Walk(new Vector2(0f, 0.6f), 2.6f); Frames(20);
         meta.SetContext(camp.Near);
-        Shoot("HubShot15_gate.png");
+        Debug.Log($"HUB at the banner: near={camp.Near}");
+        Shoot("HubShot15_dropin.png");
 
         // 10: through the gate, at the start pad (the camp button top left)
         typeof(SummitGame).GetMethod("ToReady", NP, null, new[] { typeof(bool) }, null).Invoke(game, new object[] { false });

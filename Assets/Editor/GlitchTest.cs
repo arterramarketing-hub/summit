@@ -243,7 +243,8 @@ public static class GlitchTest
                 if (midAir > 1.2f) Report($"{name}: fell off the board in mid-air ({midAir:0.0} m up)");
                 // (a glacier gap runs up to the cliff's edge: dropping into it on the way is the gap's business)
                 if (!body.Dead && why != "Crevasse!") Report($"{name}: survived going over a {w.height:0} m cliff ('{why}')");
-                else if (buried < 0.6f) Report($"{name}: dead but not buried ({buried:0.00} m)");
+                // (dead on the rocks at the wall's foot is a death too: only on snow does the body go under)
+                else if (buried < 0.6f && !RockFace.IsRock(Slope.Normal(body.RagdollCentre.x, body.RagdollCentre.z), body.RagdollCentre.x, body.RagdollCentre.z)) Report($"{name}: dead but not buried ({buried:0.00} m)");
                 if (sank > 0.6f) Report($"{name}: ragdoll sank {sank:0.00} m into the rock");
             }
         }
@@ -377,11 +378,15 @@ public static class GlitchTest
 
     static void RidgeRides(int seed, Rider r, RiderBody body, SlopeStreamer terrain, Forest props)
     {
-        int cyc = 0;
-        while (!Ridge.Built(cyc) && cyc < 3) cyc++;
+        // the first two stretches built (each a ridge, a valley or a ledge, as the mountain drew them)
+        for (int cyc = 0, done = 0; cyc < 4 && done < 2; cyc++)
+            if (Ridge.Built(cyc)) { RidgeRides(seed, cyc, r, body, terrain, props); done++; }
+    }
+
+    static void RidgeRides(int seed, int cyc, Rider r, RiderBody body, SlopeStreamer terrain, Forest props)
+    {
         float zr = Course.First + cyc * Course.Cycle + Ridge.At;
-        int sides = Ridge.Sides(cyc);
-        Debug.Log($"GLITCH-INFO seed{seed} ridge cycle {cyc} from z={zr:0} sides={sides}");
+        Debug.Log($"GLITCH-INFO seed{seed} ridge cycle {cyc} from z={zr:0} form={Ridge.FormOf(cyc)} left={Ridge.SideOf(cyc, -1f)} right={Ridge.SideOf(cyc, 1f)}");
         // on the crest, a fall or a launch is a glitch (a jump off a roll-over is not: there are none on a ridge)
         float maxOff = 0f, lastT = 0f; bool fell = false;
         System.Action<float, Rider> onCrest(string name) => (t, rr) =>
@@ -395,13 +400,16 @@ public static class GlitchTest
             if (rr.Airborne && crest && rr.AboveGround > 0.3f) Report($"{name}: launched off the crest at t={t:0.00} z={p.z:0} off={off:0.0} above={rr.AboveGround:0.00}");
         };
         void Done(string name) { Debug.Log($"GLITCH-INFO {name}: {(fell ? "fell off" : "held the crest")} for {lastT:0.0}s, furthest {maxOff:0.0} m off the middle at {r.Speed * 3.6f:0} km/h"); maxOff = 0f; fell = false; }
+        // (along the stretch and a little past its end, at about the speed riders reach on it: the open mountain
+        // beyond is ridden in every other test)
+        float secs = Mathf.Min(12f, (Ridge.EndOf(cyc) - Ridge.At + 20f) / 33f);
         foreach (float v0 in new[] { 16f, 24f, 32f })
         {
-            Ride($"seed{seed} ridge v{v0}", r, body, terrain, props, zr + 20f, 0f, v0, 12f, (t, rr) => FollowCrest(rr, 0f), onCrest($"seed{seed} ridge v{v0}"), true);
+            Ride($"seed{seed} ridge v{v0}", r, body, terrain, props, zr + 20f, 0f, v0, secs, (t, rr) => FollowCrest(rr, 0f), onCrest($"seed{seed} ridge v{v0}"), true);
             Done($"seed{seed} ridge v{v0}");
         }
         // weave across the crest, a metre and a half either side of the middle
-        Ride($"seed{seed} ridge weave", r, body, terrain, props, zr + 20f, 0f, 20f, 12f,
+        Ride($"seed{seed} ridge weave", r, body, terrain, props, zr + 20f, 0f, 20f, secs,
              (t, rr) => FollowCrest(rr, 1.5f * Mathf.Sin(t * 1.4f)), onCrest($"seed{seed} ridge weave"), true);
         Done($"seed{seed} ridge weave");
         // and off the edge on each side (a cliff, or the long snow slope of a one-sided ridge)
@@ -416,12 +424,13 @@ public static class GlitchTest
     /// </summary>
     static void OffTheEdge(string name, Rider r, RiderBody body, SlopeStreamer terrain, Forest props, float z, float side)
     {
-        bool cliff = Ridge.CliffSide(z, side);
+        var kind = Ridge.SideAt(z, side);
+        bool cliff = kind == Ridge.Side.Cliff || kind == Ridge.Side.Wall;   // (into a valley's wall, as over a cliff)
         r.ResetAt(Slope.Centre(z), z); body.ResetVisual(); r.Begin();
         r.Body.linearVelocity = Vector3.ProjectOnPlane(Vector3.forward, Slope.Normal(Slope.Centre(z), z)).normalized * 24f;
         terrain.Prewarm(); props.Prewarm();
         int n = 0; float midAir = -1f, airT = 0f, t = 0f;
-        for (; t < (cliff ? 10f : 9f) && !r.Crashed; t += Dt, n++)
+        for (; t < (cliff ? 14f : 9f) && !r.Crashed; t += Dt, n++)
         {
             // over the edge, or diagonally down the snow side toward the canyon floor
             r.Steer = t < 1.5f ? FollowCrest(r, 0f) : cliff ? side * 0.8f : Mathf.Clamp((side * 0.75f - r.Heading) * 2f, -1f, 1f);
@@ -433,18 +442,40 @@ public static class GlitchTest
         float below = Ridge.Top(at.z) - at.y, off = at.x - Slope.Centre(at.z);
         if (!cliff)
         {
-            Debug.Log($"GLITCH-INFO {name} (snow side): after {t:0.0}s at off={off:0.0}, {below:0} m below the crest, {airT:0.0}s in the air, crashed={r.Crashed} {(r.Crashed ? lastCrash : "")}");
-            if (r.Crashed) Report($"{name}: crashed ({lastCrash}) riding down the snow side");
+            Debug.Log($"GLITCH-INFO {name} ({kind} side): after {t:0.0}s at off={off:0.0}, {below:0} m below the crest, {airT:0.0}s in the air, crashed={r.Crashed} {(r.Crashed ? lastCrash : "")}");
+            // (beside a plain side the rough is the open mountain, rock and all: a crash there is the mountain's)
+            if (r.Crashed && !(kind == Ridge.Side.Plain && Fell(lastCrash))) Report($"{name}: crashed ({lastCrash}) riding down the snow side");
             else if (Mathf.Abs(off) < Ridge.HalfWidth(at.z) + 15f) Report($"{name}: never got off the crest down the snow side (off={off:0.0})");
             return;
         }
-        if (!r.Crashed) { Report($"{name}: rode off the edge without a fall (10 s) at z={r.Z:0} off={off:0.0} {below:0} m below the crest air={r.Airborne} above={r.AboveGround:0.0} n.y={Slope.Normal(at.x, at.z).y:0.00} rock={RockFace.IsRock(Slope.Normal(at.x, at.z), at.x, at.z)}"); return; }
+        if (kind == Ridge.Side.Wall)
+        {
+            // into the wall: rock, a tumble back down to the floor, and up again there
+            if (!r.Crashed) { Report($"{name}: rode into the valley wall without a fall (10 s) at off={off:0.0}"); return; }
+            string hit = lastCrash;
+            float tc = 0f;
+            for (; tc < 20f && r.Crashed; tc += Dt, n++)
+            {
+                if (!r.HoldCrash && tc > 1f) r.RequestUp = true;
+                Step(r, body, terrain, props, n);
+            }
+            Vector3 up = r.transform.position;
+            float upOff = up.x - Slope.Centre(up.z);
+            Debug.Log($"GLITCH-INFO {name} (wall side): '{hit}' {midAir:0.00} m off the ground, dead={body.Dead}, up after {tc:0.0}s at off={upOff:0.0} (floor half {Ridge.HalfWidth(up.z):0.0})");
+            if (hit != "Hit the rocks!") Report($"{name}: fell for '{hit}', not onto the wall's rock");
+            if (midAir > 1.2f) Report($"{name}: fell off the board in mid-air ({midAir:0.0} m up)");
+            if (body.Dead) Report($"{name}: killed riding into the valley wall");
+            else if (r.Crashed) Report($"{name}: never got up (20 s)");
+            else if (Mathf.Abs(upOff) > Ridge.HalfWidth(up.z) + 1f) Report($"{name}: got up on the wall at off={upOff:0.0}, not on the floor");
+            return;
+        }
+        if (!r.Crashed) { Report($"{name}: rode off the edge without a fall (14 s) at z={r.Z:0} off={off:0.0} {below:0} m below the crest air={r.Airborne} above={r.AboveGround:0.0} n.y={Slope.Normal(at.x, at.z).y:0.00} rock={RockFace.IsRock(Slope.Normal(at.x, at.z), at.x, at.z)}"); return; }
         string why = lastCrash;
         float buried = PlayOut(name, r, body, terrain, props, ref n, 30f, out float tDead, out float sank);
         Vector3 c = body.RagdollCentre;
         Debug.Log($"GLITCH-INFO {name}: '{why}' after {t:0.0}s, {midAir:0.00} m off the ground after {airT:0.00}s in the air, dead={body.Dead} after {tDead:0.0}s, " +
                   $"lies {Ridge.Top(c.z) - c.y:0} m below the crest and {buried:0.00} m under the snow");
-        if (why != "Hit the rocks!") Report($"{name}: fell for '{why}', not onto the rock");
+        if (!Fell(why)) Report($"{name}: fell for '{why}', not onto the rock (or the canyon floor)");
         if (midAir > 1.2f) Report($"{name}: fell off the board in mid-air ({midAir:0.0} m up)");
         if (!body.Dead) Report($"{name}: survived {Ridge.Top(c.z) - c.y:0} m down the cliff");
         else if (buried < 0.6f) Report($"{name}: dead but not buried ({buried:0.00} m)");

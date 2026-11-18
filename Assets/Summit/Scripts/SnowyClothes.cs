@@ -32,10 +32,11 @@ namespace Summit
         public bool Ok => template != null;
 
         /// <summary>A snowy copy of a clothing material, in the same colour and sheen.</summary>
-        public Material Make(Color colour, float smoothness)
+        public Material Make(Color colour, float smoothness, float holds = 1f)
         {
             if (template == null) return null;
             var m = new Material(template);
+            m.SetFloat("_SnowScale", holds);   // how readily this garment holds it (the slick trousers less, the jacket more)
             m.SetColor("_BaseColor", colour);
             m.SetFloat("_Smoothness", smoothness);
             m.SetVector("_SnowUp", upRest);

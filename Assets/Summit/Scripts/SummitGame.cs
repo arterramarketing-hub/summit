@@ -275,6 +275,7 @@ namespace Summit
             body.Killed += fell =>
             {
                 // off a cliff and into the snow far below: it's over (see RiderBodyFall)
+                if (state == State.Hub) { HitStop(1f); audioFx.Play(Sfx.Crash); return; }   // off the camp's edge: just the thump
                 if (state != State.Riding) return;
                 bool huge = fell > 80f;
                 int bill = huge ? 95000 : 68000;
@@ -398,6 +399,9 @@ namespace Summit
             camp.soft = spray;
             camp.Build(snow.shader);
             Missions.Track(rider, power);
+            // the camp's edges give way: a crack and powder, the screams, then back at the chalet (Camp.Collapse)
+            camp.Collapsed += (at, dir) => { audioFx.Play(Sfx.Crevasse); fx?.Thud(at, 10f, dir * 3f); audioFx.StartScreaming(); audioFx.NoooFor(1.5f); };
+            camp.Rescued += () => { audioFx.StopScreaming(); hud.Flash("RESCUED", "mountain rescue: on the house", 2.2f); };
             Missions.Completed += m => { meta.Toast(m); audioFx.Play(Sfx.ShieldFull); };
             Progress.Changed += ApplyOutfit;
             ApplyOutfit();
