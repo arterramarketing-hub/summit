@@ -159,6 +159,81 @@ public static class SpireShot
     }
 
     /// <summary>
+    /// The cliff rock (CliffSpires) by day and by night from four places: along a ridge's cliff edge from its crest,
+    /// a ridge's cliff from the canyon floor, a gorge's wall and rim from its floor, and a ridge from far off.
+    ///   Unity -batchmode -projectPath . -executeMethod SpireShot.Crags -logFile crags.log
+    ///   Writes Crag*{Day,Night}.png to $SPIRE_SHOTS, or the project folder.
+    /// </summary>
+    public static void Crags()
+    {
+        SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
+        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
+        var game = Object.FindFirstObjectByType<SummitGame>();
+        TestBoot.Boot(game);
+        Physics.simulationMode = SimulationMode.Script;
+        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
+        var rider = Get<Rider>("rider"); var body = Get<RiderBody>("body");
+        var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props"); var dayNight = Get<DayNight>("dayNight");
+        var dress = Object.FindFirstObjectByType<CourseDressing>();
+        var atmo = Object.FindFirstObjectByType<Atmosphere>();
+        var draw = typeof(Forest).GetMethod("Draw", NP);
+        rider.input = null;
+        var cam = Camera.main;
+        cam.GetComponent<ChaseCamera>().enabled = false;
+        string outDir = System.Environment.GetEnvironmentVariable("SPIRE_SHOTS");
+        if (string.IsNullOrEmpty(outDir)) outDir = ".";
+        Directory.CreateDirectory(outDir);
+        int SeedOf(Ridge.Form f) { for (int s = 1; s < 2000; s++) { Slope.Init(s); if (Ridge.Built(0) && Ridge.FormOf(0) == f) return s; } return 1; }
+        bool warm = false;
+        void View(string file, Vector3 eye, Vector3 at, float fov, bool night)
+        {
+            TimeOfDay.TestClock = night ? 3.4f : 1.4f; dayNight.ApplyNow();
+            Vector3 flat = at - eye; flat.y = 0f;
+            float rz = eye.z - flat.normalized.z * 2.5f, rx = eye.x - flat.normalized.x * 2.5f;
+            rider.ResetAt(rx, rz); body.ResetVisual();
+            rider.Heading = Mathf.Clamp(Mathf.Atan2(flat.x, flat.z), -1.4f, 1.4f);
+            for (int k = 0; k < 5; k++) { terrain.Prewarm(); props.Prewarm(); dress.Prewarm(); }
+            body.Apply(1f / 120f);
+            typeof(Atmosphere).GetMethod("LateUpdate", NP).Invoke(atmo, null);
+            draw.Invoke(props, null);
+            dayNight.ApplyNow();
+            cam.fieldOfView = fov;
+            cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(at - eye));
+            if (!warm) { Shoot(cam, Path.Combine(outDir, "CragWarmup.png")); warm = true; }   // the first render comes out unlit
+            Bake(() => Shoot(cam, Path.Combine(outDir, file)));
+        }
+        int ridgeSeed = SeedOf(Ridge.Form.Ridge), gorgeSeed = SeedOf(Ridge.Form.Valley);
+        foreach (bool night in new[] { false, true })
+        {
+            string when = night ? "Night" : "Day";
+            Slope.Init(ridgeSeed);
+            terrain.Rebuild(); props.Rebuild(); dress.Rebuild();
+            float zr = Course.First + Ridge.At + 150f;
+            float half = Ridge.HalfWidth(zr);
+            // 1. along the cliff's edge, from the crest just in from it
+            View($"CragEdge{when}.png", new Vector3(Slope.Centre(zr) + half - 1.5f, Ridge.Top(zr) + 2.4f, zr - 14f),
+                 new Vector3(Slope.Centre(zr + 30f) + half + 9f, Ridge.Top(zr + 30f) - 14f, zr + 30f), 66f, night);
+            // 2. the ridge's cliff from the canyon floor, looking up it
+            float x0 = Slope.Centre(zr) + Ridge.Reach(zr, 1f) + 40f;
+            View($"CragWall{when}.png", new Vector3(x0, Slope.Height(x0, zr) + 45f, zr - 50f),
+                 new Vector3(Slope.Centre(zr + 20f) + half + 12f, Ridge.Top(zr + 20f) - 60f, zr + 20f), 66f, night);
+            // 4. the ridge from far off across the canyon
+            View($"CragFar{when}.png", new Vector3(Slope.Centre(zr) + 230f, Ridge.Top(zr) + 20f, zr - 120f),
+                 new Vector3(Slope.Centre(zr + 60f), Ridge.Top(zr + 60f) - 70f, zr + 60f), 55f, night);
+            // 3. a gorge: its wall and rim from the floor
+            Slope.Init(gorgeSeed);
+            terrain.Rebuild(); props.Rebuild(); dress.Rebuild();
+            float zg = Course.First + Ridge.At + 220f;
+            float hg = Ridge.HalfWidth(zg);
+            View($"CragGorge{when}.png", new Vector3(Slope.Centre(zg) - hg * 0.3f, Slope.Height(Slope.Centre(zg), zg) + 1.8f, zg),
+                 new Vector3(Slope.Centre(zg + 35f) + hg + 10f, Slope.Height(Slope.Centre(zg + 35f), zg + 35f) + 22f, zg + 35f), 64f, night);
+        }
+        Stats();
+        TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt;
+        EditorApplication.Exit(0);
+    }
+
+    /// <summary>
     /// Do thrown bodies hit the spires? Rides off a ridge's cliff edge at a dozen places along it, and watches each
     /// tumble: which of the body's parts come into contact with a spire's collider (batchmode fires no collision
     /// callbacks, so contact is measured: ComputePenetration against the spires near each part), how deep any

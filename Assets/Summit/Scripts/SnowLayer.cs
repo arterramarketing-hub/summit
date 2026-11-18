@@ -32,6 +32,8 @@ namespace Summit
         const float Behind = 0.62f;         // how much of the patch is up the hill of the rider (marks are left behind you)
         const float Lift = 0.006f;          // disturbed snow sits this far over the terrain, so the two never fight
         const float MaxPile = 0.13f;        // no rim grows higher than this (m)
+        const float MaxCarve = 2.5f;        // nor is any hole dug deeper than this: deeper than a fatal fall's burial, and
+                                            // a part far below the snow (down a crevasse) must not drag it down after it
         const float Talus = Cell * 0.5f;    // the steepest loose, freshly pushed snow will stand: 27 degrees
         const float Soft = 1.3f;            // a dent's rounded edge reaches this far out, in radii
         const float Settle = 0.1f;          // per physics step where snow is moving: how much a heap spreads to each lower neighbour
@@ -265,7 +267,7 @@ namespace Summit
                     if (grock[a] < 0) grock[a] = Rock(qi, qj, a, gw);
                     bool rock = (grock[a] & (upper ? 2 : 1)) != 0;
                     int s = row + Mod(cx);
-                    ground[s] = new Vector4(y, nx * inv, nz * inv, hole || rock ? 0f : 1f);
+                    ground[s] = new Vector4(y, nx * inv, nz * inv, hole ? -1f : rock ? 0f : 1f);   // (-1: the shader cuts the layer away over a hole)
                     snow[s] = Vector4.zero;
                 }
             }
@@ -371,6 +373,7 @@ namespace Summit
                         float under = Mathf.Lerp(a.y, b.y, t) - (rDown + sink) * e2;
                         var c = snow[s];
                         float top = ground[s].x + Lift + c.x;
+                        under = Mathf.Max(under, ground[s].x + Lift - MaxCarve);
                         if (top > under)
                         {
                             float dv = top - under;
@@ -537,6 +540,10 @@ namespace Summit
                 float wasDown = lastDown[i];
                 lastDown[i] = down;
                 if (low > top + 0.01f) continue;   // in the air
+                // at or down a crevasse (or anywhere far under the snow): nothing to press. Pressing there dug the
+                // lip's snow down after the body and heaped what it moved round the rim; the lip is left clean
+                if (Course.CrevasseNear(mid.x, mid.z, r + 0.5f)) continue;
+                if (low < top - MaxCarve) continue;
                 // heavier parts sink further; the speed it came in at (last step, before the snow stopped it) digs the hole
                 float heavy = Mathf.Clamp01(mass / 12f);
                 float flat = new Vector2(v.x, v.z).magnitude;

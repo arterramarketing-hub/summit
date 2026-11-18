@@ -38,7 +38,7 @@ Shader "Summit/SnowLayer"
         #define _DETAIL_MULX2 1
         #include "Packages/com.unity.render-pipelines.universal/Shaders/LitInput.hlsl"
 
-        StructuredBuffer<float4> _SnowBase;   // x: terrain height, y/z: terrain normal x/z, w: 1 snow, 0 rock or a hole
+        StructuredBuffer<float4> _SnowBase;   // x: terrain height, y/z: terrain normal x/z, w: 1 snow, 0 rock, -1 a hole (a crevasse)
         StructuredBuffer<float4> _SnowDyn;    // x: height change (m), y: packed 0..1, z: stain 0..1
         float4 _SnowGrid;     // x/y: the patch's first cell (x, z), z: cells per side in the buffers, w: cells shown per side
         float4 _SnowParams;   // x: cell size (m), y: lift of disturbed snow over the terrain, z: fade-out band (cells)
@@ -62,7 +62,7 @@ Shader "Summit/SnowLayer"
         float HeightAt(int i, int j)
         {
             uint s = SlotOf(i, j);
-            return _SnowDyn[s].x * Fade(i, j) * _SnowBase[s].w;
+            return _SnowDyn[s].x * Fade(i, j) * saturate(_SnowBase[s].w);
         }
 
         struct Snow
@@ -71,6 +71,7 @@ Shader "Summit/SnowLayer"
             float3 depthWS;      // where it counts as being for depth (never below the terrain) and shadows
             float3 normalWS;
             float4 mark;         // x: height change, y: packed, z: stain
+            float hole;          // 1 over a hole in the terrain (a crevasse): nothing is drawn there
         };
 
         Snow Displace(float2 cell, float3 positionOS)
@@ -79,7 +80,10 @@ Shader "Summit/SnowLayer"
             int i = (int)round(cell.x), j = (int)round(cell.y);
             uint s = SlotOf(i, j);
             float4 b = _SnowBase[s], d = _SnowDyn[s];
-            float f = Fade(i, j) * b.w;
+            float f = Fade(i, j) * saturate(b.w);
+            // over a crevasse there is no terrain to tuck the layer under: it is cut away (clipped per pixel), or it
+            // drew a lid of snow over the hole whenever the layer was on
+            o.hole = b.w < -0.5 ? 1.0 : 0.0;
             float h = d.x * f, k = d.y * f, st = d.z * f;
             // untouched snow is the terrain's job: tuck this layer out of sight under it
             bool untouched = abs(h) < 0.0015 && k < 0.01 && st < 0.01;
@@ -140,6 +144,7 @@ Shader "Summit/SnowLayer"
                 float2 uv : TEXCOORD3;
                 float4 mark : TEXCOORD4;
                 half fog : TEXCOORD5;
+                half hole : TEXCOORD6;
             };
 
             Varyings vert(Attributes v)
@@ -155,11 +160,13 @@ Shader "Summit/SnowLayer"
                 o.uv = TRANSFORM_TEX(metres9, _BaseMap);
                 o.mark = s.mark;
                 o.fog = ComputeFogFactor(o.positionCS.z);
+                o.hole = s.hole;
                 return o;
             }
 
             half4 frag(Varyings i) : SV_Target
             {
+                clip(0.5 - i.hole);
                 SurfaceData s;
                 InitializeStandardLitSurfaceData(i.uv, s);
                 float h = i.mark.x;
@@ -217,8 +224,13 @@ Shader "Summit/SnowLayer"
             #pragma vertex vert
             #pragma fragment frag
             struct Attributes { float4 positionOS : POSITION; float2 cell : TEXCOORD0; };
-            float4 vert(Attributes v) : SV_POSITION { return ClipOf(Displace(v.cell, v.positionOS.xyz)); }
-            half frag() : SV_Target { return 0; }
+            struct Varyings { float4 positionCS : SV_POSITION; half hole : TEXCOORD0; };
+            Varyings vert(Attributes v)
+            {
+                Snow s = Displace(v.cell, v.positionOS.xyz);
+                Varyings o; o.positionCS = ClipOf(s); o.hole = s.hole; return o;
+            }
+            half frag(Varyings i) : SV_Target { clip(0.5 - i.hole); return 0; }
             ENDHLSL
         }
 
@@ -233,14 +245,15 @@ Shader "Summit/SnowLayer"
             #pragma fragment frag
             #pragma multi_compile_fragment _ _GBUFFER_NORMALS_OCT
             struct Attributes { float4 positionOS : POSITION; float2 cell : TEXCOORD0; };
-            struct Varyings { float4 positionCS : SV_POSITION; float3 normalWS : TEXCOORD0; };
+            struct Varyings { float4 positionCS : SV_POSITION; float3 normalWS : TEXCOORD0; half hole : TEXCOORD1; };
             Varyings vert(Attributes v)
             {
                 Snow s = Displace(v.cell, v.positionOS.xyz);
-                Varyings o; o.positionCS = ClipOf(s); o.normalWS = s.normalWS; return o;
+                Varyings o; o.positionCS = ClipOf(s); o.normalWS = s.normalWS; o.hole = s.hole; return o;
             }
             half4 frag(Varyings i) : SV_Target
             {
+                clip(0.5 - i.hole);
                 float3 n = normalize(i.normalWS);
             #if defined(_GBUFFER_NORMALS_OCT)
                 float2 oct = saturate(PackNormalOctQuadEncode(n) * 0.5 + 0.5);

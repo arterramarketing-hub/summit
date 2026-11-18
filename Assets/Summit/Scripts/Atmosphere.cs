@@ -451,9 +451,11 @@ namespace Summit
             // banks of mist sit low on the slope ahead and drift across it
             mist.transform.position = cp + fwd * 70f + Vector3.down * 18f;
 
-            float s = rider.Running ? Mathf.Clamp01((rider.Speed * 3.6f - 40f) / 70f) : 0f;   // 40 to 110 km/h
-            if (rider.Running && rider.BoostTime > 0f) s = Mathf.Max(s, 0.9f);
-            speed01 = Mathf.Lerp(speed01, s, 1f - Mathf.Exp(-Time.deltaTime * 4f));
+            // (none once you have crashed: streaks still pouring at the lens when the camera turned to look down after a
+            // body in a crevasse came up out of the hole like snow thrown up from it)
+            float s = rider.Running && !rider.Crashed ? Mathf.Clamp01((rider.Speed * 3.6f - 40f) / 70f) : 0f;   // 40 to 110 km/h
+            if (rider.Running && !rider.Crashed && rider.BoostTime > 0f) s = Mathf.Max(s, 0.9f);
+            speed01 = Mathf.Lerp(speed01, s, 1f - Mathf.Exp(-Time.deltaTime * (rider.Crashed ? 14f : 4f)));
             streakEm.rateOverTime = speed01 * speed01 * 220f;
             // the wind box sits just ahead of the lens and a little low, where the rider is heading
             wind.transform.SetPositionAndRotation(cp + cam.transform.forward * 9f + Vector3.down * 0.5f, Quaternion.LookRotation(fwd));

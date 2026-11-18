@@ -22,7 +22,16 @@ public static class GlacierShot
     static string lastCrash = "";
     static int bad;
 
-    public static void Run()
+    public static void Run() => Boot(Sequence);
+
+    /// <summary>
+    /// Head-first falls into both kinds of crevasse, watching the snow layer round the lip (it must not heap up or
+    /// be carved down into the hole), and a fall on open snow as the control (that must still leave its hole and
+    /// rims). Run: -executeMethod GlacierShot.Snow. Writes CrevSnow*.png.
+    /// </summary>
+    public static void Snow() => Boot(SnowSequence);
+
+    static void Boot(System.Action seq)
     {
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
@@ -41,12 +50,111 @@ public static class GlacierShot
         Physics.simulationMode = SimulationMode.Script;
         ChaseCamera.TestDt = Dt;
         rider.Crash += why => lastCrash = why;
-        try { Sequence(); }
+        try { seq(); }
         catch (System.Exception e) { Debug.LogError("GLACIERSHOT exception " + e); }
         Log($"done, {bad} problems");
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
         EditorApplication.Exit(0);
+    }
+
+    static void SnowSequence()
+    {
+        typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
+        rider.input = null;
+        Course.Crevasse slot = default, gap = default;
+        foreach (var cv in Course.CrevassesOf(0)) { if (cv.across) gap = cv; else slot = cv; }
+        Course.Opening(gap, gap.x, out float gz);
+        float zm = (slot.z0 + slot.z1) * 0.5f;
+        Course.Opening(slot, zm, out float sx);
+        Place(gap.x, gz - 40f);
+        Shoot("CrevSnowWarmup.png", false);
+        int deepHits = 0; float deepHitMax = 0f;
+        body.RagdollHit += (v, board) => { if (body.RagdollBelowSnow > 1f) { deepHits++; deepHitMax = Mathf.Max(deepHitMax, v); } };
+        foreach (var run in new[] { ("Gap", gap, OffBridge(gap, gap.x + 2f), gz - 12f, 16f), ("GapFast", gap, OffBridge(gap, gap.x - 6f), gz - 14f, 26f),
+                                    ("SlotEnd", slot, sx, slot.z0 - 5f, 14f) })
+        {
+            deepHits = 0; deepHitMax = 0f;
+            HeadFirst(run.Item1, run.Item2, run.Item3, run.Item4, run.Item5);
+            Log($"{run.Item1}: {deepHits} hits on the ice down the crevasse (hardest {deepHitMax:0.0} m/s)");
+            if (run.Item1 == "Gap")
+            {
+                // a mark in the snow layer's patch switches the layer on: the crevasse must still show as a hole
+                var c = body.RagdollCentre; Course.Opening(gap, c.x, out float czc);
+                var m = new Vector3(c.x + 1.5f, 0f, czc - gap.half - 4f); m.y = Slope.DrawnHeight(m.x, m.z);
+                SnowLayer.Instance?.Press(m - Vector3.right * 0.5f, m + Vector3.right * 0.5f, 0.3f, 0.3f, Vector3.forward, 0.3f, 1f);
+                SnowLayer.Instance?.Flush();
+                LipShots("GapMarked", "", gap, new Vector3(c.x, 0f, czc - gap.half));
+            }
+        }
+        // the control: thrown on open snow, the body still leaves its furrow and rims
+        float z0 = Course.First + 30f;
+        rider.ResetAt(Slope.Centre(z0), z0); body.ResetVisual(); rider.Begin();
+        rider.Body.linearVelocity = Vector3.ProjectOnPlane(Vector3.forward, Slope.Normal(Slope.Centre(z0), z0)).normalized * 18f;
+        terrain.Prewarm(); props.Prewarm(); dress.Prewarm();
+        for (int i = 0; i < 40; i++) { rider.Steer = 0f; Step(); }
+        var before = rider.transform.position;
+        rider.DoCrash("test");
+        for (float t = 0f; t < 4f; t += Dt) { rider.Steer = 0f; Step(); }
+        SnowStats(body.RagdollCentre, 10f, null, out float hi, out float lo);
+        Log($"Open snow: heaps up to {hi:0.00} m, dug down to {-lo:0.00} m round where the body went");
+        if (hi < 0.02f || lo > -0.05f) { Log("Open snow: PROBLEM no furrow or rims on open snow"); bad++; }
+        var rc = body.RagdollCentre;
+        Look(rc + new Vector3(2.5f, 2f, -3.5f), rc, 50f);
+        Shoot("CrevSnowOpen.png", true);
+    }
+
+    /// <summary>Ridden into a crevasse at speed v from (x, z0), straight down the hill: it goes in head first.</summary>
+    static void HeadFirst(string name, Course.Crevasse cv, float x, float z0, float v)
+    {
+        rider.ResetAt(x, z0); body.ResetVisual(); rider.Begin();
+        rider.Body.linearVelocity = Vector3.ProjectOnPlane(Vector3.forward, Slope.Normal(x, z0)).normalized * v;
+        terrain.Prewarm(); props.Prewarm(); dress.Prewarm();
+        lastCrash = "";
+        Vector3 at = Vector3.zero; float tCrash = -1f, worstHi = 0f, worstLo = 0f;
+        int shot = 0; float[] when = { 0.25f, 0.7f, 1.5f };
+        for (float t = 0f; t < 9f; t += Dt)
+        {
+            rider.Steer = 0f; Step();
+            if (rider.Crashed && tCrash < 0f) { tCrash = t; at = rider.transform.position; }
+            if (tCrash < 0f) continue;
+            if (Mathf.Repeat(t, 0.1f) < Dt) { SnowStats(at, 7f, cv, out float hi, out float lo); worstHi = Mathf.Max(worstHi, hi); worstLo = Mathf.Min(worstLo, lo); }
+            if (shot < when.Length && t - tCrash >= when[shot]) { LipShots(name, $"T{shot}", cv, at); shot++; }
+            if (t - tCrash > 3f && !body.RagdollMoving) break;
+        }
+        SnowStats(at, 7f, cv, out float h1, out float l1);
+        Log($"{name}: '{lastCrash}' at {at}; snow round the lip during the fall: up {worstHi:0.00} m, down {-worstLo:0.00} m; after: up {h1:0.00} m, down {-l1:0.00} m; body {body.RagdollBelowSnow:0.0} m down");
+        if (worstHi > 0.03f || worstLo < -0.05f) { Log($"{name}: PROBLEM the snow by the crevasse moved"); bad++; }
+        LipShots(name, "After", cv, at);
+    }
+
+    static void LipShots(string name, string when, Course.Crevasse cv, Vector3 at)
+    {
+        // from beside and up the hill of where it went in, looking at the lip; and the game's own look down after it
+        Vector3 side = cv.across ? Vector3.right : Vector3.right;
+        Vector3 eye = at + side * 3.5f + new Vector3(0f, 0f, -5f);
+        eye.y = Slope.Surface(eye.x, eye.z) + 2.6f;
+        Look(eye, new Vector3(at.x, Slope.Surface(at.x, at.z) - 1.5f, at.z + 1f), 55f);
+        Shoot($"CrevSnow{name}{when}.png", true);
+        chase.enabled = true; chase.peek = 1f; chase.peekAt = body.RagdollCentre; late.Invoke(chase, null);
+        Shoot($"CrevSnow{name}{when}Peek.png", true);
+        chase.peek = 0f;
+    }
+
+    /// <summary>How far the snow layer has been raised (hi) and dug (lo) round p, off the crevasse's hole if one is given.</summary>
+    static void SnowStats(Vector3 p, float radius, Course.Crevasse? cv, out float hi, out float lo)
+    {
+        hi = 0f; lo = 0f;
+        var sl = SnowLayer.Instance;
+        if (sl == null) return;
+        for (float dz = -radius; dz <= radius; dz += 0.125f)
+            for (float dx = -radius; dx <= radius; dx += 0.125f)
+            {
+                float x = p.x + dx, z = p.z + dz;
+                if (Course.CrevasseCut(x, z) > 0.25f) continue;   // over the hole: the layer is not drawn there
+                float d = sl.SurfaceAt(x, z) - Slope.DrawnHeight(x, z) - 0.006f;
+                hi = Mathf.Max(hi, d); lo = Mathf.Min(lo, d);
+            }
     }
 
     static void Sequence()
@@ -231,7 +339,9 @@ public static class GlacierShot
     static float OffBridge(Course.Crevasse cv, float x)
     {
         if (cv.bridgeHalf <= 0f || Mathf.Abs(x - cv.bridge) > cv.bridgeHalf + 4f) return x;
-        return cv.bridge + Mathf.Sign(x - cv.bridge + 0.01f) * (cv.bridgeHalf + 5f);
+        // whichever side of it is nearer the middle of the piste (the other may be off among the rocks)
+        float a = cv.bridge - (cv.bridgeHalf + 5f), b = cv.bridge + (cv.bridgeHalf + 5f);
+        return Mathf.Abs(a - cv.x) < Mathf.Abs(b - cv.x) ? a : b;
     }
 
     static void Place(float x, float z)
