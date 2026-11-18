@@ -75,7 +75,7 @@ public static class AvalancheShot
         side.CopyFrom(cam); side.fieldOfView = 60f; side.enabled = false; side.farClipPlane = 2300f;
         var viewCam = typeof(AvalancheView).GetField("cam", NP);
         int next = 0;
-        bool forced = false, warmed = false;
+        bool forced = false, warmed = false, early = false, released = false;
         var sw = new System.Diagnostics.Stopwatch(); double viewMs = 0; int viewFrames = 0;
         for (float t = 0f; next < shots.Length && t < 70f; t += dt)
         {
@@ -94,6 +94,15 @@ public static class AvalancheShot
                     rider.Body.linearVelocity = rider.Body.linearVelocity.normalized * 11f;
                 rider.Tick(dt / 2f); body.PhysicsStep(); Physics.Simulate(dt / 2f);
             }
+            if (!released && slide.Released) { released = true; Debug.Log($"AVSHOT released at t={t:0.00} riderZ={rider.Z:0.0} slideZ={slide.Z:0.0}"); }
+            if (!early && t > 1.5f)
+            {
+                // dropping in: the slope above has not let go yet, so nothing of it may be drawn
+                early = true;
+                Render(cam, Path.Combine(dir, "Avalanche0_dropin.png"));
+                int drawn = 0; foreach (var rr in view.GetComponentsInChildren<Renderer>()) if (rr.enabled && (!(rr is ParticleSystemRenderer) || rr.GetComponent<ParticleSystem>().particleCount > 0)) drawn++;
+                Debug.Log($"AVSHOT dropin t={t:0.00} released={slide.Released} riderZ={rider.Z:0.0} drawn={drawn}");
+            }
             if (!forced && rider.Z > 75f && !rider.Crashed)
             {
                 // the slide, put not far behind and closing at its creep
@@ -102,6 +111,8 @@ public static class AvalancheShot
                 Debug.Log($"AVSHOT forced at t={t:0.00} riderSpeed={rider.Speed:0.0}");
             }
             slide.Step(dt, rider, body);
+            if (slide.Phase == Avalanche.Stage.Undercut && Mathf.Repeat(slide.PhaseTime, 0.25f) < dt)
+                Debug.Log($"AVSHOT undercut pt={slide.PhaseTime:0.00} rider={rider.transform.position} v={rider.Body.linearVelocity} lift={rider.Lift:0.00} depth={slide.Depth(rider.transform.position.x, rider.transform.position.z):0.00} air={rider.Airborne}");
             tUpd.Invoke(terrain, null);
             fUpd.Invoke(props, null);
             if (dUpd != null) dUpd.Invoke(dress, null);

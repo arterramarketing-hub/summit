@@ -10,7 +10,9 @@ using Summit;
 ///   Probe: cross-sections, how steep the crest gets, at what speed its roll-overs would throw you, and that
 ///          nothing (kickers, crevasses, park features, trees, pickups) is built on a crest or its cliffs.
 ///          Unity -batchmode -nographics -projectPath . -executeMethod RidgeTest.Probe -logFile probe.log
-///   Shots: renders riding a ridge, looking down a drop, the cliffs from below, a fall, and the sign.
+///   Shots: renders riding a ridge, looking down a drop, the cliffs from below and out over a canyon, a fall from
+///          the moment it meets the rock to the body buried at the bottom, and the sign; then a jump cliff (flying
+///          off it, and from the side) and a deadly cliff (its sign, the wall from below, going over, the burial).
 ///          Unity -batchmode -projectPath . -executeMethod RidgeTest.Shots -logFile shots.log
 ///          (no -nographics: it needs the GPU). Writes RidgeShot*.png to $RIDGE_SHOTS, or the project folder.
 ///   Fit:   that what is drawn fits what is ridden: rays down onto the built terrain chunks across the crest's
@@ -22,6 +24,7 @@ public static class RidgeTest
 {
     const BindingFlags NP = BindingFlags.NonPublic | BindingFlags.Instance;
     const float Dt = 1f / 120f;
+    static string lastWhy = "";
 
     public static void Probe()
     {
@@ -121,6 +124,7 @@ public static class RidgeTest
         string outDir = System.Environment.GetEnvironmentVariable("RIDGE_SHOTS");
         if (string.IsNullOrEmpty(outDir)) outDir = ".";
         ChaseCamera.TestDt = 1f / 60f;
+        rider.Crash += why => lastWhy = why;
 
         // a mountain whose first ridge has cliffs on both sides, and one with a single cliff
         int both = -1, one = -1;
@@ -160,6 +164,32 @@ public static class RidgeTest
                     if (i % 4 == 0) body.Apply(4 * Dt);
                     if (i % 2 == 0) late.Invoke(chase, null);
                 }
+            }
+            // a crash played out to the end: the body still, or dead and settled in its hole
+            void PlayOut()
+            {
+                float rest = 0f;
+                for (int i = 0; i < 120 * 30 && rest < 2f; i++)
+                {
+                    rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt);
+                    if (i % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
+                    if (i % 2 == 0) late.Invoke(chase, null);
+                    if (rider.Crashed && !body.RagdollMoving) rest += Dt; else rest = 0f;
+                }
+                Debug.Log($"RIDGESHOT played out: dead={body.Dead}, {body.RagdollBelowSnow:0.00} m under the snow");
+            }
+            // close on what is left: a body-shaped hole, the snow thrown up round it
+            void Buried(string file)
+            {
+                Settle();
+                Vector3 c = body.RagdollCentre;
+                // from the open side, away from the wall it came down
+                float away = Mathf.Sign(c.x - Slope.Centre(c.z) + 0.01f);
+                var eye = c + new Vector3(away * 5f, 4.5f, -5f);
+                eye.y = Mathf.Max(eye.y, Slope.Height(eye.x, eye.z) + 2.5f);
+                cam.fieldOfView = 55f;
+                cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(c - eye));
+                Bake(() => Shoot(cam, Path.Combine(outDir, file)));
             }
             float Follow(float dx)
             {
@@ -245,7 +275,17 @@ public static class RidgeTest
                     if (i % 4 == 0) body.Apply(4 * Dt);
                     if (i % 2 == 0) late.Invoke(chase, null);
                 }
-                Debug.Log($"RIDGESHOT went over after {tOff:0.00}s at off={rider.transform.position.x - Slope.Centre(rider.Z):0.0}, crashed={rider.Crashed}");
+                Debug.Log($"RIDGESHOT went over after {tOff:0.00}s at off={rider.transform.position.x - Slope.Centre(rider.Z):0.0}, crashed={rider.Crashed} ({lastWhy})");
+                // the moment it meets the rock: still on the board until then
+                {
+                    for (int i = 0; i < 3; i++) { rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt); }
+                    Settle();
+                    Vector3 rp = body.RagdollCentre;
+                    var eye = rp + new Vector3(-side * 7f, 5f, -9f);
+                    cam.fieldOfView = 60f;
+                    cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(rp + Vector3.down * 3f - eye));
+                    Bake(() => Shoot(cam, Path.Combine(outDir, $"RidgeShotRockHit{tag}.png")));
+                }
                 for (int i = 0; i < 100; i++)
                 {
                     rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt);
@@ -262,10 +302,105 @@ public static class RidgeTest
                 Settle(); late.Invoke(chase, null);
                 Bake(() => Shoot(cam, Path.Combine(outDir, $"RidgeShotFall2{tag}.png")));
                 Debug.Log($"RIDGESHOT fall2: body at off={body.RagdollCentre.x - Slope.Centre(body.RagdollCentre.z):0.0}, {Ridge.Top(body.RagdollCentre.z) - body.RagdollCentre.y:0.0} m below the crest");
+                // all the way down, and what is left at the bottom
+                PlayOut(); 
+                Buried($"RidgeShotBuried{tag}.png");
+            }
+            // 6. the whole thing from out over a canyon: the crest, the walls, the floor far below
+            {
+                float z = zFull + 50f;
+                int side = Ridge.Sides(0) == 0 ? 1 : -Ridge.Sides(0);
+                float x = Slope.Centre(z) + side * 120f;
+                rider.ResetAt(Slope.Centre(z), z); Settle();
+                var eye = new Vector3(x, Ridge.Top(z) + 35f, z - 70f);
+                var at = new Vector3(Slope.Centre(z + 60f), Ridge.Top(z + 60f) - 70f, z + 60f);
+                cam.fieldOfView = 68f;
+                cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(at - eye));
+                Shoot(cam, Path.Combine(outDir, $"RidgeShotCanyon{tag}.png"));
+            }
+            if (seed != both) continue;
+            // 7. a jump cliff: the lip and its rock band, and flying off it
+            if (Cliffs.JumpOf(0, 1, out var jc) || Cliffs.JumpOf(1, 0, out jc))
+            {
+                rider.ResetAt(Slope.Centre(jc.Start - 30f), jc.Start - 30f); body.ResetVisual(); rider.Begin();
+                rider.Body.linearVelocity = Vector3.ProjectOnPlane(Vector3.forward, Slope.Normal(rider.X, rider.Z)).normalized * 22f;
+                terrain.Prewarm(); props.Prewarm(); dress.Prewarm();
+                for (int i = 0; i < 1200 && !(rider.Airborne && rider.AirTime > 0.45f && rider.Z > jc.z); i++)
+                {
+                    rider.Steer = Follow(0f);
+                    rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+                    if (i % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
+                    if (i % 4 == 0) body.Apply(4 * Dt);
+                    if (i % 2 == 0) late.Invoke(chase, null);
+                }
+                Debug.Log($"RIDGESHOT jump cliff drop {jc.drop:0.0} m at z={jc.z:0}: rider at z={rider.Z:0} air={rider.Airborne} {rider.AirTime:0.00}s {rider.AboveGround:0.0} m up, {rider.Speed * 3.6f:0} km/h");
+                Settle(); late.Invoke(chase, null);
+                Bake(() => Shoot(cam, Path.Combine(outDir, "CliffShotJump.png")));
+                Vector3 rp = rider.transform.position;
+                // from off to the side and a little behind the lip, above the bench: the lip, its rock band, the flight
+                float ex = Slope.Centre(jc.z) + 34f, ez = jc.z - 8f;
+                var eye = new Vector3(ex, Mathf.Max(Slope.Height(ex, ez), Slope.Height(Slope.Centre(jc.z), jc.z - 1f)) + 7f, ez);
+                cam.fieldOfView = 62f;
+                cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(rp + Vector3.down * 4f - eye));
+                Bake(() => Shoot(cam, Path.Combine(outDir, "CliffShotJumpSide.png")));
+            }
+            // 8. a deadly cliff: its sign, the wall from its foot, going over it, and what is left
+            if (Cliffs.WallOf(0, out var wl) || Cliffs.WallOf(1, out wl))
+            {
+                float zs = wl.z0 - 28f;
+                rider.ResetAt(Slope.Centre(zs - 40f), zs - 40f); body.ResetVisual(); Settle();
+                var eye = new Vector3(Slope.Centre(zs - 16f) - wl.side * 4f, Slope.Height(Slope.Centre(zs - 16f), zs - 16f) + 2f, zs - 16f);
+                var at = new Vector3(Slope.Centre(zs) + wl.side * 16f, Slope.Height(Slope.Centre(zs), zs) + 2.5f, zs + 6f);
+                cam.fieldOfView = 62f;
+                cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(at - eye));
+                Shoot(cam, Path.Combine(outDir, "CliffShotWallSign.png"));
+                float zb = wl.z1 + 30f, xb = Slope.Centre(zb) + wl.side * (wl.edge + wl.height * 0.55f + 28f);
+                rider.ResetAt(xb, zb); Settle();
+                eye = new Vector3(xb, Slope.Height(xb, zb) + 2f, zb + 10f);
+                at = new Vector3(Slope.Centre(zb - 20f) + wl.side * wl.edge, Slope.Height(Slope.Centre(zb - 20f) + wl.side * (wl.edge - 2f), zb - 20f), zb - 20f);
+                cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(at - eye));
+                Shoot(cam, Path.Combine(outDir, "CliffShotWallBelow.png"));
+                // over the edge
+                float zo = wl.z1 + 10f;
+                rider.ResetAt(Slope.Centre(zo), zo); body.ResetVisual(); rider.Begin();
+                rider.Body.linearVelocity = Vector3.ProjectOnPlane(Vector3.forward, Slope.Normal(rider.X, rider.Z)).normalized * 20f;
+                terrain.Prewarm(); props.Prewarm(); dress.Prewarm();
+                bool shot = false;
+                for (int i = 0; i < 1200 && !rider.Crashed; i++)
+                {
+                    rider.Steer = Mathf.Clamp(wl.side * 0.9f - rider.Heading * 0.3f, -1f, 1f);
+                    rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+                    if (i % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
+                    if (i % 4 == 0) body.Apply(4 * Dt);
+                    if (i % 2 == 0) late.Invoke(chase, null);
+                    if (!shot && rider.Airborne && rider.AboveGround > 8f)
+                    {
+                        shot = true;
+                        Settle(); late.Invoke(chase, null);
+                        Bake(() => Shoot(cam, Path.Combine(outDir, "CliffShotWallOver.png")));
+                    }
+                }
+                Debug.Log($"RIDGESHOT wall {wl.height:0} m: over and down ({lastWhy}) at z={rider.Z:0}");
+                PlayOut();
+                Buried("CliffShotWallBuried.png");
             }
         }
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
+        EditorApplication.Exit(0);
+    }
+
+    /// <summary>The ground along the piste's centre line from $LINE_Z0 to $LINE_Z1 on mountain $LINE_SEED, term by term.</summary>
+    public static void Line()
+    {
+        int seed = int.Parse(System.Environment.GetEnvironmentVariable("LINE_SEED") ?? "1154");
+        float z0 = float.Parse(System.Environment.GetEnvironmentVariable("LINE_Z0") ?? "1000"), z1 = float.Parse(System.Environment.GetEnvironmentVariable("LINE_Z1") ?? "1100");
+        Slope.Init(seed);
+        for (float z = z0; z <= z1; z += 1f)
+        {
+            float x = Slope.Centre(z);
+            Debug.Log($"LINE z={z:0} h-line={Slope.Height(x, z) - Slope.FallLine(z):0.00} jump={Cliffs.JumpHeight(x, z):0.00} kick={Slope.Kicker(x, z):0.00} drops={Slope.Drops(z):0.00} canyon={Ridge.Depth(z):0.00} wall={Cliffs.WallCut(x, z):0.00} sec={Course.At(z)} n.y={Slope.Normal(x, z).y:0.00}");
+        }
         EditorApplication.Exit(0);
     }
 

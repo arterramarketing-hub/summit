@@ -19,6 +19,7 @@ namespace Summit
         public float peek;            // ...this much (0..1)
         public Vector3 holdAt;        // the avalanche has buried the rider here: hold on a shot of the grave...
         public float hold;            // ...this much (0..1)
+        public System.Func<float, float, float> floor;   // anything standing over the snow to keep above (the avalanche's debris)
 
         Camera cam;
         float speedCam = 5f, yaw, height, fov = 62f, focusVy, camDist = 6f, lookDrop;
@@ -66,6 +67,8 @@ namespace Summit
             float wantH = focus.y + Mathf.Lerp(1.15f, 2.3f, Mathf.SmoothStep(0f, 1f, s01)) * heightScale * Mathf.Lerp(1f, distScale, 0.7f);
             // never inside the hill behind you
             wantH = Mathf.Max(wantH, Slope.Height(pos.x, pos.z) + 1.3f);
+            // ...or inside the avalanche's debris: ride up over it
+            if (floor != null) wantH = Mathf.Max(wantH, Slope.Height(pos.x, pos.z) + floor(pos.x, pos.z) + 2.4f);
             height = first ? wantH : Mathf.Lerp(height, wantH, 1f - Mathf.Exp(-dt * 7f));
             pos.y = height;
 
@@ -94,7 +97,7 @@ namespace Summit
                 // settling cloud rolling on beyond
                 float k = Mathf.SmoothStep(0f, 1f, hold);
                 Vector3 stand = holdAt + new Vector3(4.5f, 0f, -8.5f);
-                stand.y = Mathf.Max(holdAt.y, Slope.Height(stand.x, stand.z)) + 5.5f;
+                stand.y = Mathf.Max(holdAt.y, Slope.Height(stand.x, stand.z) + (floor != null ? floor(stand.x, stand.z) : 0f)) + 5.5f;
                 pos = Vector3.Lerp(pos, stand, k);
                 look = Vector3.Lerp(look, holdAt + new Vector3(0f, 0.4f, 3f), k);
             }

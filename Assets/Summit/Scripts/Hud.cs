@@ -224,6 +224,14 @@ namespace Summit
         public void SetMode(bool tilt) { modeLabel.text = tilt ? "STEERING: TILT  (tap to change)" : "STEERING: DRAG STICK  (tap to change)"; }
         public bool OnMode(Vector2 p) => Inside(modeBtn, p);
 
+        CanvasGroup safeGroup;
+        /// <summary>Fade the whole HUD (the end screen fades in over the last of the run).</summary>
+        public void SetAlpha(float a)
+        {
+            if (safeGroup == null) safeGroup = safe.gameObject.AddComponent<CanvasGroup>();
+            safeGroup.alpha = a;
+        }
+
         public void SetButtons(bool play, bool restart, string playText)
         {
             playBtn.gameObject.SetActive(play);
@@ -469,7 +477,7 @@ namespace Summit
             int m0 = showRun && mult > 1.01f ? Mathf.RoundToInt(mult * 10f) : 0;
             if (m0 != lastMult) { lastMult = m0; chain.text = m0 > 0 ? "x" + mult.ToString("0.#") + " chain" : ""; }
             int s0 = showRun ? Mathf.Max(0, Mathf.RoundToInt(gap)) : -1;
-            if (s0 != lastGap) { lastGap = s0; slide.text = showRun ? "SLIDE " + s0 + " m" : ""; }
+            if (s0 != lastGap) { lastGap = s0; slide.text = showRun && s0 < 9999 ? "SLIDE " + s0 + " m" : ""; }   // 9999: not released yet
             slide.color = gap < 40f ? new Color(1f, 0.45f, 0.35f) : Color.white;
             float k = Mathf.Clamp01(gap / gapMax);
             slideFill.rectTransform.anchorMax = new Vector2(showRun ? k : 0f, 1f);

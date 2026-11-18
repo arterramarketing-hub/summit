@@ -118,6 +118,7 @@ namespace Summit
             float zs = s * DropSeg;
             if (Course.At(zs) == Course.Section.Pipe || Course.At(zs + DropSeg) == Course.Section.Pipe) return 0f;
             if (Ridge.Has(zs) || Ridge.Has(zs + DropSeg)) return 0f;   // a roll-over on a crest would throw you off it
+            if (Cliffs.JumpNear(zs + DropSeg * 0.5f, DropSeg * 0.5f + 20f, out _)) return 0f;   // nor run into a jump cliff's bench
             float u = z / DropSeg - s;
             float H = 2f + 7f * Hash01(s, 12, 41);
             float u0 = 0.35f + 0.4f * Hash01(s, 13, 41), w = 0.09f + 0.08f * Hash01(s, 14, 41);   // never a sudden kink
@@ -154,6 +155,7 @@ namespace Summit
             y += (Noise(x * 0.045f, z * 0.045f) - 0.5f) * 2.6f * rough;
             y += (Noise(x * 0.011f + 50f, z * 0.009f) - 0.5f) * 7f;
             y += Kicker(x, z);
+            y += Cliffs.JumpHeight(x, z) + Cliffs.WallCut(x, z);   // cliffs to jump off, and cliffs to stay away from
             // the halfpipe: a U cut along the piste, with decks either side, easing in and out
             float pw = Course.PipeWeight(z);
             if (pw > 0f)
@@ -187,8 +189,56 @@ namespace Summit
             float d = Mathf.Abs(x - cx) - PadHalf;
             if (u > 0f) pad += LipRise * u * u * Mathf.Clamp01(1f - d / 3f);
             // gentle banks either side; steep ones grew into cliffs (with trees on top) that shaded the whole pad
-            if (d > 0f) pad += d * d * 0.006f + (Noise(x * 0.05f, z * 0.05f) - 0.5f) * 2f * Mathf.Clamp01(d / 10f);
-            return pad;
+            if (d > 0f) pad += Mathf.Min(d, 28f) * Mathf.Min(d, 28f) * 0.006f + (Noise(x * 0.05f, z * 0.05f) - 0.5f) * 2f * Mathf.Clamp01(d / 10f);
+            // Past 28 m out the banks give way: by the lip, to the open mountain's own shape (so the seam with the
+            // run's terrain is smooth), and further back to ground falling away, the start sitting on the
+            // mountain's top shoulder, open to the sky
+            if (d > 28f)
+            {
+                float far = Mathf.SmoothStep(0f, 1f, (d - 28f) / 14f);
+                float fall = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-15f, -55f, z));
+                float away = pad - (d - 28f) * 0.9f;
+                float open = y - Mathf.Max(0f, FallLine(z) - FallLine(PadLip));   // the open mountain, not climbing on up behind the lip
+                pad = Mathf.Lerp(pad, Mathf.Lerp(open, away, fall), far);
+            }
+            return Summit(x, z, pad);
+        }
+
+        // ---------------------------------------------------------------- the summit
+        // Behind the start, the camp's plateau is the mountain's top: a few metres above the start pad (the gate
+        // leads down to it), nearly level, and falling away on every side but the front: steeply on the left and
+        // behind, and on the right a sheer cliff and rock buttresses some 430 m down to a valley (the cable-railed
+        // edge of the camp; its far end closes in a steep wall before the start pad, so the run is untouched).
+        public const float SummitLeft = -30f, SummitRight = 24.8f, SummitBack = -140f;
+
+        static float Summit(float x, float z, float pad)
+        {
+            float w = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-58f, -72f, z));   // none at the pad, all of it from the camp's front
+            if (w <= 0f) return pad;
+            float cx = Centre(PadLip), a = x - cx;
+            float back = PadLip - z;
+            float top = BaseAt(cx, PadLip) + PadDrop + 38f * 0.22f + Mathf.Max(0f, back - 38f) * 0.07f
+                      + 6f * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-66f, -92f, z))   // up from the gate to the camp
+                      + (Noise(x * 0.07f, z * 0.07f) - 0.5f) * 0.8f;
+            float y = top;
+            // a snowy shoulder rolling over, steepening into rock further down
+            if (a < SummitLeft) { float e = SummitLeft - a; y -= e * 0.5f + e * e * 0.0065f; }
+            if (z < SummitBack) { float e = SummitBack - z; y -= e * 0.45f + e * e * 0.006f; }   // the far side of the peak
+            // (the edge wanders out a little, never in past the railing)
+            float edge = SummitRight + 0.5f * Noise(z * 0.09f + 4.1f, 2.7f);
+            if (a > edge)
+            {
+                // the cliff: a sheer face (170 to 260 m, varying along it) in the first three metres, then rock buttresses
+                // to the valley floor, spurs and gullies running down them
+                float e = a - edge;
+                float sheer = 170f + 90f * Noise(z * 0.035f + 1.7f, 6.1f);
+                float spurs = 0.75f + 0.7f * Ridged(z * 0.03f + 0.4f, a * 0.012f);
+                float drop = sheer * Mathf.SmoothStep(0f, 1f, e / 3f) + Mathf.Min(430f - sheer, Mathf.Max(0f, e - 3f) * 1.8f * spurs);
+                drop += Mathf.Clamp01((e - 110f) / 60f) * (Ridged(x * 0.004f + 2.3f, z * 0.004f) - 0.4f) * 40f;   // the valley's own lumps
+                // toward the start the cliff gives way, over 50 m, to a spur falling away into the valley
+                y -= Mathf.Lerp(e * 0.9f, drop, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-64f, -114f, z)));
+            }
+            return Mathf.Lerp(pad, y, w);
         }
 
         /// <summary>The slope without the start pad (where the pad's height is measured from).</summary>
@@ -229,6 +279,7 @@ namespace Summit
             float z0 = 60f + cell * KickPeriod + 30f;
             if (z0 > FinishZ - 260f) return 0f;
             if (Course.At(z0) != Course.Section.Cruise || Course.At(z0 + KickRamp + KickDrop) != Course.Section.Cruise) return 0f;
+            if (Cliffs.JumpNear(z0, 30f, out _)) return 0f;   // the jump cliff is the jump here
             return KickShape(x, z, z0, Centre(z0) + side, 1f);
         }
 

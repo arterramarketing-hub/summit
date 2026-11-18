@@ -24,6 +24,12 @@ public static class DayNightShot
     {
         SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
+        var signSh = Resources.Load<Shader>("SignLit");
+        if (signSh != null)
+        {
+            Debug.Log($"DAYNIGHTSHOT SignLit supported {signSh.isSupported} errors {ShaderUtil.ShaderHasError(signSh)} passes {signSh.passCount}");
+            foreach (var m in ShaderUtil.GetShaderMessages(signSh)) Debug.Log($"DAYNIGHTSHOT SignLit: {m.severity} {m.message} line {m.line} {m.messageDetails}");
+        }
         var game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
@@ -71,9 +77,26 @@ public static class DayNightShot
                 Shoot("DayNight_pause.png");
                 hud.ShowPause(false); hc.renderMode = RenderMode.ScreenSpaceOverlay;
             }
+            if (next == 0)
+            {
+                // the start gate's signs at night, in the headlamp and with it off
+                TimeOfDay.TestClock = 3.4f; dayNight.ApplyNow(); Shoot("DayNight_signs_lamp_on.png");
+                DayNight.HeadlampOff = true; dayNight.ApplyNow(); Shoot("DayNight_signs_lamp_off.png");
+                DayNight.HeadlampOff = false;
+            }
             Debug.Log($"DAYNIGHTSHOT {where[next]} t={t:0.0} rider={rider.transform.position} cam={cam.transform.position}");
             next++;
         }
+        // a fall: the glow follows the ragdoll's middle
+        rider.DoCrash("test");
+        for (float t = 0f; t < 1.4f; t += dt)
+        {
+            for (int k = 0; k < 2; k++) { rider.Tick(dt / 2f); body.PhysicsStep(); Physics.Simulate(dt / 2f); }
+            tUpd.Invoke(terrain, null); fUpd.Invoke(props, null);
+            body.Apply(dt); late.Invoke(chase, null); aLate.Invoke(atmo, null);
+        }
+        foreach (var (name, clock) in Times) { TimeOfDay.TestClock = clock; dayNight.ApplyNow(); Shoot($"DayNight_ragdoll_{name}.png"); }
+        Debug.Log($"DAYNIGHTSHOT ragdoll centre {body.RagdollCentre} rider {rider.transform.position}");
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
 
@@ -121,12 +144,12 @@ public static class DayNightShot
                 float sum = 0f; foreach (var p in tex.GetPixels()) sum += p.grayscale;
                 if (sum > best) { best = sum; bestAz = h; }
             }
-            Debug.Log($"DAYNIGHTSHOT skyscan {name}: light az {Mathf.Repeat(az, 360f):0} el {el:0.0}, brightest sky at az {bestAz:0}; ambient sky {RenderSettings.ambientSkyColor} eq {RenderSettings.ambientEquatorColor} fog {RenderSettings.fogColor} sun {RenderSettings.sun.color} x{RenderSettings.sun.intensity:0.00} trees {RealFir.PhaseTint}");
+            Debug.Log($"DAYNIGHTSHOT skyscan {name}: light az {Mathf.Repeat(az, 360f):0} el {el:0.0}, brightest sky at az {bestAz:0}; ambient sky {RenderSettings.ambientSkyColor} eq {RenderSettings.ambientEquatorColor} fog {RenderSettings.fogColor} sun {RenderSettings.sun.color} x{RenderSettings.sun.intensity:0.00}");
         }
         RenderTexture.active = null; c.targetTexture = null; rt.Release(); Object.DestroyImmediate(go);
         var probe = Object.FindFirstObjectByType<ReflectionProbe>();
         var cube = probe != null ? probe.customBakedTexture as Cubemap : null;
-        Debug.Log($"DAYNIGHTSHOT reflections captured from the sky: {dayNight.ReflectionCaptured}, impostor tint now {RealFir.PhaseTint}");
+        Debug.Log($"DAYNIGHTSHOT reflections captured from the sky: {dayNight.ReflectionCaptured}");
         Debug.Log($"DAYNIGHTSHOT reflection cube {(cube != null ? cube.name + " " + cube.width + " mips " + cube.mipmapCount : "none")}, ambient {RenderSettings.ambientMode} sky {RenderSettings.ambientSkyColor} eq {RenderSettings.ambientEquatorColor} ground {RenderSettings.ambientGroundColor}");
     }
 

@@ -80,6 +80,8 @@ make("SignPark", w: 1024, h: 256, bg: NSColor(calibratedRed: 0.95, green: 0.45, 
 make("SignDanger", w: 1024, h: 256, bg: NSColor(calibratedRed: 0.98, green: 0.80, blue: 0.10, alpha: 1), fg: NSColor(calibratedWhite: 0.08, alpha: 1), text: "DANGER", sub: "CREVASSES  ·  WILDLIFE", hazard: true, stripe: .black)
 make("SignPipe", w: 1024, h: 256, bg: NSColor(calibratedRed: 0.10, green: 0.38, blue: 0.80, alpha: 1), fg: .white, text: "HALFPIPE", sub: "STAY IN THE CENTRE", hazard: false, stripe: .white)
 make("SignRidge", w: 1024, h: 256, bg: NSColor(calibratedWhite: 0.07, alpha: 1), fg: .white, text: "◆◆  RIDGE", sub: "EXPERTS ONLY  ·  CLIFFS  ·  STAY ON THE CREST", hazard: false, stripe: NSColor(calibratedRed: 1.0, green: 0.52, blue: 0.0, alpha: 1))
+make("SignJump", w: 1024, h: 256, bg: NSColor(calibratedRed: 0.95, green: 0.45, blue: 0.08, alpha: 1), fg: .white, text: "CLIFF JUMP", sub: "SPEED UP  ·  SEND IT  ·  LAND ON THE SLOPE", hazard: false, stripe: .white)
+make("SignCliffs", w: 1024, h: 256, bg: red, fg: .white, text: "DANGER  ·  CLIFFS", sub: "SHEER DROP  ·  STAY ON THE PISTE", hazard: true, stripe: .black)
 make("BannerFinish", w: 1024, h: 128, bg: NSColor(calibratedRed: 0.08, green: 0.30, blue: 0.70, alpha: 1), fg: .white, text: "FINISH", sub: nil, hazard: false, stripe: .white)
 
 // ---- the in-run warning signs: big safety-style panels (3:2) on posts before the lip
@@ -151,7 +153,7 @@ panel("SignDangerStart", w: 768, h: 512) { W, H in
     let oval = NSBezierPath(ovalIn: NSRect(x: W * 0.12, y: H * 0.645, width: W * 0.76, height: H * 0.31))
     red.setFill(); oval.fill(); oval.lineWidth = H * 0.018; white.setStroke(); oval.stroke()
     text("DANGER", H * 0.24, white, in: NSRect(x: 0, y: H * 0.645, width: W, height: H * 0.31), kern: 0.08)
-    text("CLIFFS · BEARS ·", H * 0.17, black, in: NSRect(x: 0, y: H * 0.33, width: W, height: H * 0.24))
+    text("CLIFFS · BEARS · DEATH ·", H * 0.135, black, in: NSRect(x: 0, y: H * 0.33, width: W, height: H * 0.24))
     text("BAD DECISIONS", H * 0.17, red, in: NSRect(x: 0, y: H * 0.09, width: W, height: H * 0.24))
     let b = NSBezierPath(rect: NSRect(x: 0, y: 0, width: W, height: H)); b.lineWidth = H * 0.03; black.setStroke(); b.stroke()
 }

@@ -231,3 +231,41 @@ save(canvas(128, 256) { W, H in
     for k in 0..<3 { NSRect(x: W * 0.28, y: H * 0.1 + CGFloat(k) * H * 0.07, width: W * 0.44, height: H * 0.022).fill() }
 }, "Boot")
 print("boot print written")
+
+// the flags on the cliff edge: red, white, red, a red maple leaf in the middle (width 2:1)
+save(canvas(512, 256) { W, H in
+    let red = NSColor(calibratedRed: 0.84, green: 0.11, blue: 0.13, alpha: 1)
+    NSColor.white.setFill(); NSRect(x: 0, y: 0, width: W, height: H).fill()
+    red.setFill(); NSRect(x: 0, y: 0, width: W * 0.25, height: H).fill(); NSRect(x: W * 0.75, y: 0, width: W * 0.25, height: H).fill()
+    // the leaf, drawn in a square about the centre (x right, y up, half-size 1)
+    let half: [(CGFloat, CGFloat)] = [(0, 0.9), (0.09, 0.72), (0.2, 0.78), (0.15, 0.48), (0.37, 0.66), (0.42, 0.55), (0.62, 0.6),
+                                      (0.53, 0.37), (0.63, 0.31), (0.32, 0.07), (0.38, -0.05), (0.05, 0.0), (0.06, -0.42)]
+    var pts = half
+    for p in half.reversed() where p.0 > 0 { pts.append((-p.0, p.1)) }
+    let leaf = NSBezierPath()
+    let cx = W / 2, cy = H / 2 + H * 0.02, s = H * 0.42
+    for (i, p) in pts.enumerated() {
+        let q = NSPoint(x: cx + p.0 * s, y: cy + p.1 * s)
+        if i == 0 { leaf.move(to: q) } else { leaf.line(to: q) }
+    }
+    leaf.close(); red.setFill(); leaf.fill()
+    // the weave, faintly
+    for y in stride(from: CGFloat(0), to: H, by: 3) { NSColor(calibratedWhite: 0, alpha: 0.03).setFill(); NSRect(x: 0, y: y, width: W, height: 1).fill() }
+}, "Flag")
+
+// a soft cloud puff for the mist below the cliff (white, the alpha its shape)
+save(canvas(256, 256) { W, H in
+    srand48(91)
+    NSColor.clear.setFill(); NSRect(x: 0, y: 0, width: W, height: H).fill()
+    for _ in 0..<70 {
+        let r = W * (0.06 + 0.12 * CGFloat(drand48()))
+        let a = CGFloat(drand48()) * 2 * .pi, d = W * 0.26 * sqrt(CGFloat(drand48()))
+        let c = NSPoint(x: W / 2 + cos(a) * d, y: H * 0.46 + sin(a) * d * 0.6)
+        for k in 0..<6 {
+            let rr = r * (1 - CGFloat(k) * 0.14)
+            NSColor(calibratedWhite: 1, alpha: 0.05).setFill()
+            NSBezierPath(ovalIn: NSRect(x: c.x - rr, y: c.y - rr, width: rr * 2, height: rr * 2)).fill()
+        }
+    }
+}, "Cloud")
+print("flag and cloud written")

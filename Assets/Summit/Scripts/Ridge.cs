@@ -4,16 +4,18 @@ namespace Summit
 {
     /// <summary>
     /// Ridges: once a cycle the piste narrows onto a crest a few metres wide and the mountain falls away
-    /// beside it into cliffs and steep gullies. Some ridges have cliffs on both sides; others have a cliff on
-    /// one side and a steep but rideable snow slope on the other, so there is a way off for the careful.
+    /// beside it, 165 m of rock wall down into a canyon. Some ridges have cliffs on both sides; others have a
+    /// cliff on one side and a long, steep but rideable snow slope on the other, so there is a way off for the careful.
     /// It takes the halfpipe's old stretch of the cycle (the pipe is switched off) and a little of the cruise after it.
     ///
     /// The ridge is laid over the open mountain as a pure function of position, like the rest of it:
     ///   - the crest sits at the piste's own height on its centre line, so riding onto it changes nothing underfoot
     ///   - past the crest's edge a short rounded shoulder (so the edge never kinks under the board) rolls into the cliff
-    ///   - the cliff runs down until it meets the gully floor, which is the open mountain lowered by a few tens of metres
-    ///   - far off to the side the gullies climb back out to the open mountain
-    /// Everything eases in and out along the run, so the piste visibly funnels down onto the crest.
+    ///   - the cliff runs down until it meets the canyon floor, which is the open mountain lowered by 165 m
+    ///   - a couple of hundred metres out the canyon's far wall climbs back to the open mountain, inside what the
+    ///     terrain draws round the rider, so its edge never shows
+    /// The canyons outlast the crest: past its end the piste widens again along a spine between them, and they
+    /// fill back in slowly, so a rider down on a canyon floor always has a way on downhill to rejoin the run.
     /// </summary>
     public static class Ridge
     {
@@ -25,20 +27,36 @@ namespace Summit
         public const float CrestHalf = 4f;      // half the crest's width: still rideable, but you have to hold your line
         public const float Shoulder = 2f;       // the rounded edge between the crest and the cliff
         public const float Crown = 0.3f;        // the crest is a touch higher in the middle than at its edges
-        public const float CliffDepth = 34f, SafeDepth = 18f;   // how far the gullies sit below the crest
+        public const float CliffDepth = 165f, SafeDepth = 85f;   // how far the canyons sit below the crest
         public const float SafeSteep = 0.62f;   // the rideable side of a one-sided ridge (about 32 degrees)
+        // the canyons fill back in from here to here (metres into the cycle, past its end): steadily, so the canyon
+        // floor keeps falling the whole way (165 m over 380 m against the mountain's 0.72 is still 12 degrees downhill)
+        public const float FadeFrom = 700f, FadeEnd = 1080f;
+        // the canyon's far wall, measured out from the crest's centre line
+        public const float FarIn = 168f, FarOut = 236f;
 
-        static float Local(float z) => Mathf.Repeat(z - Course.First, Course.Cycle);
+        // which cycle's ridge a point belongs to (its canyons reach on into the next cycle), and how far into that
+        // cycle the point is
+        static int Owner(float z) => Mathf.Repeat(z - Course.First, Course.Cycle) >= At ? Course.CycleOf(z) : Course.CycleOf(z) - 1;
+        static float Local(float z) => z - (Course.First + Owner(z) * Course.Cycle);
 
-        /// <summary>A ridge is built in a cycle unless it would run into the clear stretch before the finish.</summary>
-        public static bool Built(int cycle) => On && cycle >= 0 && Course.First + cycle * Course.Cycle + End < Course.ClearFrom;
+        /// <summary>A ridge is built in a cycle unless it (or its canyons) would run into the clear stretch before the finish.</summary>
+        public static bool Built(int cycle) => On && cycle >= 0 && Course.First + cycle * Course.Cycle + FadeEnd < Course.ClearFrom;
 
-        /// <summary>True anywhere along a ridge's stretch, ramps included (no kickers, drops or park features there).</summary>
+        /// <summary>True anywhere along a ridge's crest, ramps included (no kickers, drops or park features there).</summary>
         public static bool Has(float z)
         {
             if (!On || z < Course.First) return false;
             float u = Local(z);
-            return u >= At && u < End && Built(Course.CycleOf(z));
+            return u >= At && u < End && Built(Owner(z));
+        }
+
+        /// <summary>True anywhere the canyons beside a ridge reach, from its start to where they have filled in.</summary>
+        public static bool InCanyons(float z)
+        {
+            if (!On || z < Course.First) return false;
+            float u = Local(z);
+            return u >= At && u < FadeEnd && Built(Owner(z));
         }
 
         /// <summary>0 off the ridge, 1 along its full crest, easing in and out at the ends.</summary>
@@ -48,6 +66,25 @@ namespace Summit
             float u = Local(z);
             float w = Mathf.Clamp01(Mathf.Min((u - At) / RampIn, (End - u) / RampOut));
             return w * w * (3f - 2f * w);
+        }
+
+        /// <summary>How deep the canyons are here, 0..1 of their full depth: plunging in with the crest, filling back in slowly.</summary>
+        public static float Depth(float z)
+        {
+            if (!InCanyons(z)) return 0f;
+            float u = Local(z);
+            float a = Mathf.Clamp01((u - At) / RampIn);
+            return Mathf.Min(a * a * (3f - 2f * a), Ease(Mathf.Clamp01((FadeEnd - u) / (FadeEnd - FadeFrom))));
+        }
+
+        // 0..1 at a nearly steady rate, rounded off at both ends: a smoothstep would climb half as steeply again
+        // in the middle, and the canyon floor would rise faster than the mountain falls
+        static float Ease(float s)
+        {
+            const float b = 0.15f, c = 1f / (1f - b);
+            if (s < b) return c * s * s / (2f * b);
+            if (s > 1f - b) return 1f - c * (1f - s) * (1f - s) / (2f * b);
+            return c * (b * 0.5f + s - b);
         }
 
         /// <summary>Which side the cliffs are on: 0 both, -1 left only, +1 right only.</summary>
@@ -60,15 +97,18 @@ namespace Summit
         /// <summary>True when the drop on this side of the crest (side = -1 left, +1 right) is a cliff.</summary>
         public static bool CliffSide(float z, float side)
         {
-            int s = Sides(Course.CycleOf(z));
+            int s = Sides(Owner(z));
             return s == 0 || s == (side < 0f ? -1 : 1);
         }
 
         /// <summary>Half the rideable top at z: the full piste narrowing down to the crest.</summary>
         public static float HalfWidth(float z) => Mathf.Lerp(Slope.PisteHalf, CrestHalf, Weight(z));
 
-        /// <summary>How steep the cliff is here (rise over run): buttresses and slabs from about 54 to 66 degrees.</summary>
-        static float Steep(float z, float side) => 1.4f + 0.8f * Slope.Noise(z * 0.03f + side * 17.3f, 5.5f);
+        /// <summary>How steep the cliff is here (rise over run): buttresses and slabs from about 65 to 74 degrees.</summary>
+        static float Steep(float z, float side) => 2.2f + 1.2f * Slope.Noise(z * 0.03f + side * 17.3f, 5.5f);
+
+        /// <summary>How far below the crest the canyon floor is on this side, in metres, here.</summary>
+        public static float DepthHere(float z, float side) => (CliffSide(z, side) ? CliffDepth : SafeDepth) * Depth(z);
 
         /// <summary>
         /// Height of the crest's centre line: the piste's own height there, less the shortest of the fall line's
@@ -99,24 +139,29 @@ namespace Summit
         /// <summary>The mountain with the ridge laid over it, given the open mountain's height y at (x, z).</summary>
         public static float Shape(float x, float z, float y)
         {
+            float wd = Depth(z);
+            if (wd <= 0f) return y;
             float w = Weight(z);
-            if (w <= 0f) return y;
             float a = x - Slope.Centre(z), d = Mathf.Abs(a), side = a < 0f ? -1f : 1f;
             bool cliff = CliffSide(z, side);
             float half = Mathf.Lerp(Slope.PisteHalf, CrestHalf, w);
             float steep = cliff ? Steep(z, side) : SafeSteep;
             float t = Mathf.Min(d, half) / half;
             float e = d - half;
-            float ridge = Top(z) - Crown * t * t - Drop(e, steep);
-            // the rock is broken into buttresses and ledges (none on the crest or its shoulder)
-            // and ribs and gullies running down it (they vary along the ridge, not down the face)
+            // the top: the crest along the ridge, and past its end the piste itself, along the spine between the canyons
+            float top = Mathf.Lerp(y, Top(z) - Crown * t * t, w);
+            float ridge = top - Drop(e, steep);
+            // the rock is broken into buttresses and ledges (none on the crest or its shoulder), ribs and gullies
+            // running down it (they vary along the ridge, not down the face), and on a wall this tall, great slabs
+            // and bays a stone's throw across
             if (cliff && e > Shoulder)
                 ridge += Mathf.Clamp01((e - Shoulder) / 4f) * ((Slope.Noise(x * 0.16f + 31f, z * 0.11f) - 0.5f) * 4f
-                                                            + (Slope.Noise(z * 0.15f + side * 9.7f, e * 0.04f + 3.1f) - 0.5f) * 5f);
-            // the gully floor: the open mountain, lowered, climbing back out to it far to the side
-            float depth = (cliff ? CliffDepth : SafeDepth) * (1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((d - 70f) / 100f)));
-            float r = SmoothMax(ridge, y - depth, 3f);
-            return Mathf.Lerp(y, r, w);
+                                                            + (Slope.Noise(z * 0.15f + side * 9.7f, e * 0.04f + 3.1f) - 0.5f) * 5f)
+                       + Mathf.Clamp01((e - Shoulder) / 14f) * (Slope.Noise(z * 0.035f + side * 4.3f, e * 0.025f + 8.8f) - 0.5f) * 22f;
+            // the canyon floor: the open mountain, lowered, with its far wall climbing back up to it
+            float depth = (cliff ? CliffDepth : SafeDepth) * wd * (1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((d - FarIn) / (FarOut - FarIn))));
+            // (a shallow canyon gets a tighter foot: SmoothMax of two equal heights would raise them a quarter of k)
+            return SmoothMax(ridge, y - depth, Mathf.Min(3f, 0.3f * depth + 0.01f));
         }
 
         /// <summary>Into how many strips across the slope a quad on the crest's rounded edge is cut (see Fine).</summary>
@@ -187,51 +232,34 @@ namespace Summit
         // Both of a quad's edges are tested, so the two quads either side of an edge that crosses it are both cut.
         static bool Across(float x, float z)
         {
-            float w = Weight(z);
-            if (w <= 0.01f) return false;
-            float half = Mathf.Lerp(Slope.PisteHalf, CrestHalf, w);
+            // (along the spine past the crest's end too: the piste's edge rolls over into the canyons just as sharply)
+            if (Depth(z) <= 0.01f) return false;
+            float half = Mathf.Lerp(Slope.PisteHalf, CrestHalf, Weight(z));
             float lo = half - 0.5f, hi = half + Shoulder + 0.75f;
             float a0 = x - Slope.Centre(z), a1 = a0 + Slope.Quad;
             return (a1 > lo && a0 < hi) || (a1 > -hi && a0 < -lo);
         }
 
-        /// <summary>How far out from the crest's centre line the cliff (or side slope) reaches before the gully floor.</summary>
+        /// <summary>How far out from the crest's centre line the cliff (or side slope) reaches before the canyon floor.</summary>
         public static float Reach(float z, float side)
         {
             bool cliff = CliffSide(z, side);
-            return HalfWidth(z) + Shoulder + (cliff ? CliffDepth / Steep(z, side) : SafeDepth / SafeSteep) + 3f;
+            return HalfWidth(z) + Shoulder + DepthHere(z, side) / (cliff ? Steep(z, side) : SafeSteep) + 3f;
         }
 
-        /// <summary>
-        /// Gone over the edge: past the crest's rideable shoulder on the cliff side, on rock too steep to ride (or in
-        /// the air over it and already dropping below the crest). From here it is a tumble down the cliff, not a
-        /// ride: a fall, not the end of the run.
-        /// </summary>
-        public static bool OverEdge(Vector3 p, bool airborne)
-        {
-            float w = Weight(p.z);
-            if (w < 0.4f) return false;
-            float a = p.x - Slope.Centre(p.z), d = Mathf.Abs(a), side = a < 0f ? -1f : 1f;
-            if (!CliffSide(p.z, side)) return false;
-            float half = HalfWidth(p.z), r = Reach(p.z, side);
-            if (d < half + Shoulder * 0.5f || d > r - 3f) return false;
-            // riding the gully into the foot of the cliff is a bump against a wall, not a fall from the top: only
-            // the upper half of the cliff counts (you go over at the top, so that is where a fall starts)
-            if (p.y < Top(p.z) - 0.5f * CliffDepth * w) return false;
-            if (p.y < Slope.Height(Slope.Centre(p.z) + side * r, p.z) + 4f) return false;
-            if (Slope.Normal(p.x, p.z).y >= 0.62f) return false;
-            // a hop that drifts out over the edge and comes back is not a fall; dropping past the crest is
-            return !airborne || p.y < Top(p.z) - 1.5f * w;
-        }
-
-        /// <summary>True on the crest or its cliffs and side slopes (no trees, rocks or pickups there).</summary>
+        /// <summary>True on the crest or its cliffs and side slopes, and the canyons' far walls (no trees, rocks or pickups there).</summary>
         public static bool Keep(float x, float z, float margin)
         {
-            float a = x - Slope.Centre(z);
+            float a = x - Slope.Centre(z), d = Mathf.Abs(a);
             // (a little extra: trees are tested at their cell's centre and then nudged up to a few metres off it)
-            if (Has(z)) return Mathf.Abs(a) < Reach(z, a < 0f ? -1f : 1f) + margin + 3f;
+            if (InCanyons(z))
+            {
+                float side = a < 0f ? -1f : 1f;
+                if (d < Reach(z, side) + margin + 3f) return true;
+                if (DepthHere(z, side) > 8f && d > FarIn - 10f - margin && d < FarOut + 4f + margin) return true;
+            }
             // and a clear piste onto the crest and off its end: you come off it locked onto the middle
-            if (Has(z + 15f) || Has(z - 50f)) return Mathf.Abs(a) < Slope.PisteHalf + margin + 3f;
+            if (Has(z + 15f) || Has(z - 50f)) return d < Slope.PisteHalf + margin + 3f;
             return false;
         }
 
@@ -244,7 +272,7 @@ namespace Summit
         /// </summary>
         public static float SafeX(float x, float z)
         {
-            if (Weight(z) <= 0f) return x;
+            if (Depth(z) <= 0f) return x;
             float a = x - Slope.Centre(z), d = Mathf.Abs(a);
             float half = HalfWidth(z);
             if (d < half) return x;   // on the crest itself

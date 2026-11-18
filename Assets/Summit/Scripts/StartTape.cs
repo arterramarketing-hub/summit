@@ -39,7 +39,12 @@ namespace Summit
                     Vector3 trunk = new Vector3(x, Slope.DrawnHeight(x, tz), tz);
                     float size = 0.85f + 0.3f * Slope.Hash01(k, side, 83);
                     float yaw = Slope.Hash01(k, side, 84) * 360f;
-                    if (real) { RealFir.Plant(root, trunk + Vector3.down * 0.25f, 8.5f * size, yaw, k * 2 + (side > 0 ? 1 : 0), "TapeTree"); Trunk(root, trunk, size); }
+                    if (real)
+                    {
+                        // grown and buried like the forest's trees here: the tape is tied into what shows
+                        Forest.PlantLike(root, trunk, Slope.Hash01(k, side, 83), yaw, "TapeTree", out float vis, out float rad);
+                        Trunk(root, trunk, vis, rad);
+                    }
                     else if (prefabs.Length > 0) PlantTree(root, prefabs[(k * 2 + (side > 0 ? 1 : 0)) % prefabs.Length], trunk, size, yaw);
                     // tied round the trunk on the side facing the last tie
                     Vector3 tie = trunk + Vector3.up * Chest;
@@ -76,18 +81,17 @@ namespace Summit
                 g.transform.position = new Vector3(at.x - b.center.x, at.y - 0.25f - b.min.y, at.z - b.center.z);
             }
             foreach (var c in g.GetComponentsInChildren<Collider>()) { if (Application.isPlaying) Object.Destroy(c); else Object.DestroyImmediate(c); }
-            Trunk(root, at, size);
+            Trunk(root, at, 8.5f * size, 0.38f * size);
         }
 
         /// <summary>The same trunk the forest gives its trees, so riding into one is a crash like any other tree.</summary>
-        static void Trunk(Transform root, Vector3 at, float size)
+        static void Trunk(Transform root, Vector3 at, float h, float radius)
         {
             var hit = new GameObject("TreeHit");
             hit.transform.SetParent(root, false);
             hit.transform.position = at;
             var cap = hit.AddComponent<CapsuleCollider>();
-            float h = 8.5f * size;
-            cap.direction = 1; cap.height = h * 0.9f; cap.center = new Vector3(0f, h * 0.45f, 0f); cap.radius = 0.38f * size;
+            cap.direction = 1; cap.radius = radius; cap.height = Mathf.Max(h * 0.9f, radius * 2f); cap.center = new Vector3(0f, cap.height * 0.5f, 0f);
             hit.AddComponent<Obstacle>().label = "Tree";
         }
     }

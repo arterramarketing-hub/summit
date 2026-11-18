@@ -206,7 +206,7 @@ public static class HubShot
         Shoot("HubShot17_toast.png");
         // 12: the end of the run, with the points it earned
         typeof(SummitGame).GetField("trickPoints", NP).SetValue(game, 9200);
-        typeof(SummitGame).GetMethod("ToEnd", NP).Invoke(game, new object[] { "YOU SURVIVED", false });
+        typeof(SummitGame).GetMethod("ToEnd", NP).Invoke(game, new object[] { "YOU SURVIVED", false, false });
         hud.SetWhiteout(0f);
         Shoot("HubShot18_end.png");
         Debug.Log($"HUBSHOT done: points={Progress.Points} jacket={Progress.Jacket} fizz={Progress.Level(Progress.Up.Fizz)} grip={Rider.GripLimit:0.0}");

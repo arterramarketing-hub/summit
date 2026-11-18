@@ -13,8 +13,8 @@ namespace Summit
     /// rider for hits.
     ///
     /// Two looks, switched from the pause menu (PlayerPrefs "summit_trees"): the original low-poly firs, or
-    /// realistic snowy firs built from photo-scanned branch cards (see RealFir), which turn into flat
-    /// impostor pictures beyond CardRange.
+    /// realistic snowy firs built from photo-scanned branch cards (see RealFir), which dissolve into flat
+    /// impostor pictures between FadeStart and FadeEnd.
     /// </summary>
     public class Forest : MonoBehaviour
     {
@@ -31,7 +31,12 @@ namespace Summit
         public const string TreesPref = "summit_trees";
         public static bool Realistic => PlayerPrefs.GetInt(TreesPref, 1) == 1;
         bool real;                         // the look this forest was built with
-        public float CardRange = 130f;     // realistic trees: full card trees out to here, impostors beyond
+        // realistic trees: card trees out to FadeStart, their pictures beyond FadeEnd, and in between both, each
+        // pixel one or the other (Shaders/Fir.hlsl), the pictures' share growing with distance. The band ends where
+        // the shadows have faded out (the render asset's 140 m), so the cards hand over shadowless, like the pictures.
+        public float FadeStart = 100f, FadeEnd = 140f;
+        const float FadeSlack = 9f;   // lists are made from cell centres when the rider changes cell; the shader
+                                      // fades by the exact distance, so each list reaches a little past the band
         List<Matrix4x4>[] impL;
 
         /// <summary>Switch between the two looks; the trees are rebuilt where they stand.</summary>
@@ -149,7 +154,43 @@ namespace Summit
 
         // ---- placement, cached per cell
 
-        struct Placed { public Kind kind; public int idx; public Matrix4x4 m; public float size; }
+        // foot: where it meets the snow; vis: how much of it shows above the snow (m); rad: its hit capsule;
+        // cut: the snow line in the model's own height (what a felled tree leaves behind in the snow)
+        struct Placed { public Kind kind; public int idx; public Matrix4x4 m; public float size; public Vector3 foot; public float vis, rad, cut; }
+
+        // ---- realistic trees: how tall they grow, and how deep the snow buries them
+
+        /// <summary>0 at the summit .. 1 at the foot of the mountain.</summary>
+        public static float Low(float z) => Mathf.Clamp01(1f - Slope.AltitudeFeet(z) / Slope.VerticalFeet);
+
+        /// <summary>
+        /// A realistic tree at (x, z): how tall it has grown (`full`, metres) and how much of that is under the snow
+        /// (`sink`). Full-grown trees are 20-35 m at the foot of the mountain and smaller near the summit, in stands
+        /// that run taller and shorter along the run; and the higher up, the deeper the snow: near the summit only the
+        /// top 40% of a tree shows, and going down more and more of it does, until at the bottom the whole tree
+        /// stands on its trunk. `pick` (0..1) is the tree's own share of the variety.
+        /// </summary>
+        public static void Growth(float x, float z, float pick, out float full, out float sink)
+        {
+            float low = Low(z);
+            float stand = Mathf.Lerp(0.8f, 1.22f, Slope.Noise(x * 0.011f + 31f, z * 0.0065f + 7f));
+            full = Mathf.Lerp(15f, 27f, low) * stand * Mathf.Lerp(0.85f, 1.1f, pick);
+            float shown = Mathf.Lerp(0.38f, 1f, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(low * 1.15f)));
+            sink = full * (1f - shown);
+        }
+
+        /// <summary>
+        /// Plant a realistic tree on its own (the camp, the start tape) the way the forest grows one at `ground`:
+        /// its kind, height and burial for that spot. Returns how much of it shows and its hit radius.
+        /// </summary>
+        public static GameObject PlantLike(Transform parent, Vector3 ground, float pick, float yaw, string name, out float vis, out float rad)
+        {
+            Growth(ground.x, ground.z, pick, out float full, out float sink);
+            int v = RealFir.Pick(Low(ground.z), Mathf.Repeat(pick * 7.31f, 1f));
+            vis = full - sink;
+            rad = Mathf.Max(0.02f * full, 0.7f * RealFir.CrownRadius(v, sink / full) * full);
+            return RealFir.Plant(parent, ground + Vector3.down * (0.25f + sink), full, yaw, v, name);
+        }
         readonly Dictionary<Vector2Int, Placed> cache = new Dictionary<Vector2Int, Placed>();
 
         Placed Get(int x, int z)
@@ -159,7 +200,22 @@ namespace Summit
             if (cache.TryGetValue(key, out var pl)) return pl;
             var kind = At(x, z, out Vector3 p, out float s, out int variant);
             pl = new Placed { kind = kind, size = s };
-            if (kind != Kind.None)
+            if (kind == Kind.Tree && real)
+            {
+                // a realistic tree: the kind for this height on the mountain, grown and buried for it, a few leaning
+                pl.idx = RealFir.Pick(Low(p.z), Slope.Hash01(x, z, 9));
+                Growth(p.x, p.z, Slope.Hash01(x, z, 4), out float full, out float sink);
+                float k = full / RealFir.Heights[pl.idx], yk = 0.94f + 0.12f * Slope.Hash01(x, z, 6);
+                float lean = Mathf.Pow(Slope.Hash01(x, z, 10), 3f) * 7f;
+                var rot = Quaternion.AngleAxis(lean, Quaternion.Euler(0f, Slope.Hash01(x, z, 11) * 360f, 0f) * Vector3.right)
+                        * Quaternion.Euler(0f, Slope.Hash01(x, z, 5) * 360f, 0f);
+                pl.m = Matrix4x4.TRS(p - Vector3.up * (0.25f + sink), rot, new Vector3(k, k * yk, k));
+                pl.foot = p;
+                pl.vis = full * yk - sink;
+                pl.cut = (0.25f + sink) / (k * yk);
+                pl.rad = Mathf.Max(0.02f * full, 0.7f * RealFir.CrownRadius(pl.idx, sink / full) * full);
+            }
+            else if (kind != Kind.None)
             {
                 bool tree = kind == Kind.Tree;
                 pl.idx = variant % (tree ? treeParts.Count : rockParts.Count);
@@ -168,6 +224,8 @@ namespace Summit
                 float k = want / Mathf.Max(0.01f, h);
                 pl.m = Matrix4x4.TRS(p - Vector3.up * (tree ? 0.25f : 0.35f * s), Quaternion.Euler(0f, Slope.Hash01(x, z, 5) * 360f, 0f),
                                      new Vector3(k, k * (0.92f + 0.2f * Slope.Hash01(x, z, 6)), k));
+                pl.foot = pl.m.GetColumn(3);
+                pl.vis = tree ? 8.5f * s : 1.3f * s; pl.rad = 0.38f * s;
             }
             cache[key] = pl;
             return pl;
@@ -256,10 +314,11 @@ namespace Summit
                     // (the render asset fades shadows out over the last part of that range)
                     float dxm = (x - c.x) * Cell, dzm = (z - c.y) * Cell;
                     float d2 = dxm * dxm + dzm * dzm;
-                    if (real && pl.kind == Kind.Tree && d2 > CardRange * CardRange)
+                    if (real && pl.kind == Kind.Tree)
                     {
-                        impL[pl.idx].Add(pl.m);   // far realistic tree: its picture on two crossed quads
-                        continue;
+                        // far realistic tree: its picture on two crossed quads; through the band, the cards too
+                        if (d2 > (FadeStart - FadeSlack) * (FadeStart - FadeSlack)) impL[pl.idx].Add(pl.m);
+                        if (d2 > (FadeEnd + FadeSlack) * (FadeEnd + FadeSlack)) continue;
                     }
                     if (d2 > LodRange * LodRange)
                     {
@@ -287,13 +346,19 @@ namespace Summit
             }
         }
 
+        static readonly int FirFadeId = Shader.PropertyToID("_FirFade"), FirCentreId = Shader.PropertyToID("_FirCentre");
+
         void Draw()
         {
+            if (real && target != null)
+            {
+                Shader.SetGlobalVector(FirFadeId, new Vector4(FadeStart, FadeEnd, 0f, 0f));
+                Shader.SetGlobalVector(FirCentreId, target.position);
+            }
             DrawSet(nearL, UnityEngine.Rendering.ShadowCastingMode.On);
             DrawSet(farL, UnityEngine.Rendering.ShadowCastingMode.Off);
             if (real && impL != null)
             {
-                RealFir.Dusk();
                 for (int v = 0; v < impL.Length; v++)
                 {
                     var list = impL[v];
@@ -359,12 +424,13 @@ namespace Summit
                     var g = q.Count > 0 ? q.Dequeue() : NewCollider(tree);
                     g.SetActive(true);
                     g.GetComponent<Collider>().enabled = true;   // (an invincible rider switches off what it smashes)
-                    g.transform.position = pl.m.GetColumn(3);
+                    g.transform.position = pl.foot;
                     if (tree)
                     {
+                        // from the snow up, as much of the tree as shows (a buried tree's crown, a whole one's trunk)
                         var cap = g.GetComponent<CapsuleCollider>();
-                        float h = 8.5f * pl.size;
-                        cap.height = h * 0.9f; cap.center = new Vector3(0f, h * 0.45f, 0f); cap.radius = 0.38f * pl.size;
+                        float h = pl.vis;
+                        cap.radius = pl.rad; cap.height = Mathf.Max(h * 0.9f, pl.rad * 2f); cap.center = new Vector3(0f, cap.height * 0.5f, 0f);
                     }
                     else
                     {
@@ -379,7 +445,8 @@ namespace Summit
         // ---- smashed by an invincible rider
 
         /// <summary>One piece of a tree or rock as drawn: mesh, sub-mesh, material, and where in the world.</summary>
-        public struct Piece { public Mesh mesh; public int sub; public Material mat; public Matrix4x4 m; }
+        /// <summary>A piece of a felled tree or rock; `cut` (model height) hides what was under the snow (0: nothing).</summary>
+        public struct Piece { public Mesh mesh; public int sub; public Material mat; public Matrix4x4 m; public float cut; }
         readonly HashSet<Vector2Int> felled = new HashSet<Vector2Int>();
 
         /// <summary>
@@ -398,9 +465,10 @@ namespace Summit
                 hit.SetActive(false);
                 (hit.GetComponent<CapsuleCollider>() != null ? spareTree : spareRock).Enqueue(hit);
                 if (pl.kind == Kind.None) return false;
-                basePos = pl.m.GetColumn(3); size = pl.size;
+                // a tree goes over from where it meets the snow, as tall as it shows (Smasher: 8.5 m a size)
+                basePos = pl.foot; size = pl.kind == Kind.Tree ? pl.vis / 8.5f : pl.size;
                 foreach (var part in pl.kind == Kind.Tree ? treeParts[pl.idx] : rockParts[pl.idx])
-                    into.Add(new Piece { mesh = part.mesh, sub = part.sub, mat = part.mat, m = pl.m * part.local });
+                    into.Add(new Piece { mesh = part.mesh, sub = part.sub, mat = part.mat, m = pl.m * part.local, cut = pl.kind == Kind.Tree ? pl.cut : 0f });
                 // redraw without it
                 lastCell = new Vector2Int(int.MinValue, int.MinValue);
                 Refresh(false);
@@ -443,6 +511,14 @@ namespace Summit
                         if (r > cr) { cr = r; crown = wb; }
                     }
                     if (cr <= 0f) return false;
+                    // only what shows above the snow: a buried tree is met on its crown, narrower where it comes out
+                    if (crown.min.y < pl.foot.y)
+                    {
+                        float shown = Mathf.Clamp01((crown.max.y - pl.foot.y) / Mathf.Max(0.01f, crown.size.y));
+                        cr *= shown;
+                        var mn = crown.min; mn.y = pl.foot.y; crown.min = mn;
+                        if (trunk.min.y < pl.foot.y) { mn = trunk.min; mn.y = pl.foot.y; trunk.min = mn; }
+                    }
                     Vector3 d = from - crown.center; d.y = 0f;
                     d = d.sqrMagnitude > 1e-6f ? d.normalized : Vector3.back;
                     if (from.y < crown.min.y + 0.15f && tr < cr * 0.6f)

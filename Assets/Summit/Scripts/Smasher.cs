@@ -121,6 +121,9 @@ namespace Summit
             Burst(grit, centre, dir, 90, flat.magnitude);
         }
 
+        /// <summary>Splinters of broken wood (a sign ridden through).</summary>
+        public void Splinters(Vector3 at, Vector3 dir, int n, float speed) { if (splinters != null) Burst(splinters, at, dir, n, speed); }
+
         void Burst(ParticleSystem ps, Vector3 at, Vector3 dir, int n, float speed)
         {
             var ep = new ParticleSystem.EmitParams();
@@ -195,9 +198,19 @@ namespace Summit
                 Render(c.part, Matrix4x4.TRS(c.pos, Quaternion.AngleAxis(c.angle, c.spinAxis), Vector3.one * c.scale) * Matrix4x4.Translate(-c.centre) * c.part.m);
         }
 
+        static MaterialPropertyBlock cutProps;
+        static readonly int CutY = Shader.PropertyToID("_CutY");
+
         static void Render(Forest.Piece p, Matrix4x4 m)
         {
             var rp = new RenderParams(p.mat) { shadowCastingMode = ShadowCastingMode.On, receiveShadows = true };
+            if (p.cut > 0.01f)
+            {
+                // a tree half buried in the snow: only the part that showed goes over, not the trunk that was under it
+                if (cutProps == null) cutProps = new MaterialPropertyBlock();
+                cutProps.SetFloat(CutY, p.cut);
+                rp.matProps = cutProps;
+            }
             Graphics.RenderMesh(rp, p.mesh, p.sub, m);
         }
 

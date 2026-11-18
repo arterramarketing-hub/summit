@@ -10,7 +10,7 @@ namespace Summit
     /// </summary>
     public class FallFlags : MonoBehaviour
     {
-        class Flag { public int number; public Transform root; public Mesh mesh; public float phase; }
+        class Flag { public int number; public Transform root; public Mesh mesh; public float phase; public Breakable knock; }
 
         readonly List<Flag> flags = new List<Flag>();
         readonly Dictionary<int, Material> pennants = new Dictionary<int, Material>();
@@ -69,6 +69,8 @@ namespace Summit
             BuildPennant(f2);
             flags.Add(f2);
             Shape(f2, 0f);
+            // it can be knocked over like any other flag (it gets the trigger box, not the pole: see Prim)
+            f2.knock = Breakable.Flag(root, PoleH);
         }
 
         public void Clear()
@@ -88,7 +90,7 @@ namespace Summit
         public void Step(float dt)
         {
             clock += dt;
-            foreach (var f in flags) Shape(f, clock);
+            foreach (var f in flags) if (f.knock == null || !f.knock.Down) Shape(f, clock);   // knocked down, it lies still
         }
 
         Transform Prim(PrimitiveType type, Transform parent, Material m)

@@ -1,4 +1,5 @@
-// Paints the avalanche's powder puffs: four cauliflower billows in a 2 x 2 atlas.
+// Paints the avalanche's powder puffs (four cauliflower billows in a 2 x 2 atlas) and the clods its debris is
+// made of (DebrisClods.png, for Debris.shader).
 // Build and run:  swiftc -O Tools/MakeAvalanche.swift -o /tmp/makeavalanche && /tmp/makeavalanche Assets/Summit/Resources/Avalanche
 //
 // Each puff is a heap of overlapping spheres seen from the front, so every pixel knows the shape of the
@@ -163,3 +164,71 @@ try! FileManager.default.createDirectory(atPath: outDir, withIntermediateDirecto
 let path = outDir + "/PuffAtlas.png"
 try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: path))
 print("wrote", path)
+
+// ------------------------------------------------------------------ the debris: packed clods of broken snow
+// A tiling heap of rounded clods, big and small, jammed together: the height of their tops (a smooth maximum of
+// flattened domes, wrapped round the edges so it tiles), then
+//   R, G  the surface normal's x and y      B  how open it is: 1 on the clods' tops, dark down in the cracks
+let ds = 512
+var dh = [Double](repeating: 0, count: ds * ds)
+do {
+    var g = RNG(s: 77001)
+    struct Clod { var x, y, r, h, sx: Double }
+    var clods: [Clod] = []
+    for _ in 0..<70 { clods.append(Clod(x: g.r(0, 1), y: g.r(0, 1), r: g.r(0.06, 0.12), h: g.r(0.7, 1.0), sx: g.r(0.7, 1.3))) }
+    for _ in 0..<260 { clods.append(Clod(x: g.r(0, 1), y: g.r(0, 1), r: g.r(0.025, 0.06), h: g.r(0.5, 0.9), sx: g.r(0.7, 1.4))) }
+    let k = 0.012
+    var sum = [Double](repeating: 0, count: ds * ds)
+    for c in clods {
+        let rx = c.r * c.sx, ry = c.r / c.sx
+        let x0 = Int(floor((c.x - rx) * Double(ds))), x1 = Int(ceil((c.x + rx) * Double(ds)))
+        let y0 = Int(floor((c.y - ry) * Double(ds))), y1 = Int(ceil((c.y + ry) * Double(ds)))
+        for j in y0...y1 { for i in x0...x1 {
+            let px = (Double(i) + 0.5) / Double(ds), py = (Double(j) + 0.5) / Double(ds)
+            let dx = (px - c.x) / rx, dy = (py - c.y) / ry, d2 = dx * dx + dy * dy
+            if d2 >= 1 { continue }
+            let top = c.h * c.r * sqrt(1 - d2) * 0.9   // a flattened dome
+            let wi = ((i % ds) + ds) % ds, wj = ((j % ds) + ds) % ds
+            sum[wj * ds + wi] += exp(top / k)
+        } }
+    }
+    for i in 0..<(ds * ds) { dh[i] = sum[i] > 0 ? max(0, k * log(sum[i])) : 0 }
+    // crumbly surface on the clods
+    for j in 0..<ds { for i in 0..<ds {
+        let x = Double(i) / Double(ds), y = Double(j) / Double(ds)
+        // tiling noise: sampled on a torus
+        let a = x * 2 * Double.pi, b = y * 2 * Double.pi
+        let n = fbm(cos(a) * 3 + 10, sin(a) * 3 + cos(b) * 3, 900 + Int(sin(b) * 0 )) - 0.5
+        dh[j * ds + i] += 0.004 * n
+    } }
+}
+func DH(_ i: Int, _ j: Int) -> Double { dh[(((j % ds) + ds) % ds) * ds + (((i % ds) + ds) % ds)] }
+var dsoft = [Double](repeating: 0, count: ds * ds)
+do {
+    let r = 10
+    for j in 0..<ds { for i in 0..<ds {
+        var acc = 0.0
+        for d in stride(from: -r, through: r, by: 2) { acc += DH(i + d, j) + DH(i, j + d) }
+        dsoft[j * ds + i] = acc / Double(2 * (r + 1))
+    } }
+}
+var dpx = [UInt8](repeating: 255, count: ds * ds * 4)
+let dstep = 1.0 / Double(ds)
+for j in 0..<ds { for i in 0..<ds {
+    let dhx = (DH(i + 1, j) - DH(i - 1, j)) / (2 * dstep), dhy = (DH(i, j + 1) - DH(i, j - 1)) / (2 * dstep)
+    var nx = -dhx * 0.8, ny = -dhy * 0.8, nz = 1.0
+    let len = sqrt(nx * nx + ny * ny + nz * nz); nx /= len; ny /= len; nz /= len
+    let h = DH(i, j)
+    let open = min(1, max(0, 0.55 + 22 * (h - dsoft[j * ds + i]) + 4 * h))
+    let o = ((ds - 1 - j) * ds + i) * 4
+    dpx[o] = UInt8(max(0, min(255, (nx * 0.5 + 0.5) * 255)))
+    dpx[o + 1] = UInt8(max(0, min(255, (ny * 0.5 + 0.5) * 255)))
+    dpx[o + 2] = UInt8(max(0, min(255, open * 255)))
+    dpx[o + 3] = 255
+} }
+let drep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: ds, pixelsHigh: ds, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                            isPlanar: false, colorSpaceName: .deviceRGB, bitmapFormat: .alphaNonpremultiplied, bytesPerRow: ds * 4, bitsPerPixel: 32)!
+_ = dpx.withUnsafeBufferPointer { memcpy(drep.bitmapData!, $0.baseAddress!, ds * ds * 4) }
+let dpath = outDir + "/DebrisClods.png"
+try! drep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: dpath))
+print("wrote", dpath)

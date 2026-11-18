@@ -16,6 +16,7 @@ All sounds are synthesised from scratch by Tools/MakeAudio.swift (no recordings)
 Backdrop photo: "Mount Rainier panorama" by Deathgleaner, stitched by Richardprins, public domain
   https://commons.wikimedia.org/wiki/File:Mount_Rainier_panorama.jpg (edited by hand to Tools/art/rainier-edit.jpg, then sky keyed out and colour graded by Tools/MakePhotoBand.swift)
 Avalanche powder puffs (Resources/Avalanche/PuffAtlas.png) painted procedurally by Tools/MakeAvalanche.swift
+Avalanche debris clods (Resources/Avalanche/DebrisClods.png) painted procedurally by Tools/MakeAvalanche.swift
 Skies (Resources/Sky/SkyMorning, SkyDay, SkyEvening, SkyNight): CC0 HDRIs from Poly Haven - https://polyhaven.com
   morning: "Kloppenheim 06 (Pure Sky)" by Greg Zaal and Jarod Guest - https://polyhaven.com/a/kloppenheim_06_puresky
   day: "Kloofendal 48d Partly Cloudy (Pure Sky)" by Greg Zaal and Jarod Guest - https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky

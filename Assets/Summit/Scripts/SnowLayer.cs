@@ -400,7 +400,7 @@ namespace Summit
                 {
                     int s = rimCell[i];
                     var c = snow[s];
-                    c.x = Mathf.Min(MaxPile, c.x + k * rimShare[i]);
+                    c.x = Mathf.Min(pileCap, c.x + k * rimShare[i]);
                     snow[s] = c;
                 }
             }
@@ -493,6 +493,29 @@ namespace Summit
         // ---------------------------------------------------------------- the thrown body
 
         float[] lastDown = new float[16];
+        float pileCap = MaxPile;
+
+        /// <summary>
+        /// A fatal fall: the body driven `depth` metres down into the snow in its own shape, and the snow it
+        /// threw out heaped high round the hole, much higher than a slide's rims.
+        /// </summary>
+        public void Bury(Ragdoll body, float depth)
+        {
+            if (!built || body == null || ox == int.MinValue) return;
+            pileCap = MaxPile * 2.5f;
+            for (int i = 0; i < body.ShapeCount; i++)
+            {
+                if (!body.Capsule(i, out Vector3 a, out Vector3 b, out float r, out float rDown, out Vector3 v, out _)) continue;
+                Vector3 mid = (a + b) * 0.5f;
+                float top = SurfaceAt(mid.x, mid.z);
+                // down from the surface, whatever height the part has bounced to
+                Vector3 lift = Vector3.up * (top + r - Mathf.Min(a.y, b.y));
+                // (a little wider than the part: walls the 12.5 cm grid can round off, rather than stepped shafts)
+                Press(a + lift, b + lift, r * 1.6f, rDown, v, depth, 1f);
+            }
+            pileCap = MaxPile;
+            Slump();
+        }
 
         /// <summary>
         /// Every physics step of a crash: each part of the body and the board presses its own shape into the snow

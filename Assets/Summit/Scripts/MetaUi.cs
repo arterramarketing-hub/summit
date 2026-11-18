@@ -114,6 +114,15 @@ namespace Summit
 
         // ---------------------------------------------------------------- modes
 
+        CanvasGroup endGroup, rideGroup;
+        /// <summary>Fade the end screen's points card and RIDE AGAIN in.</summary>
+        public void SetEndAlpha(float a)
+        {
+            if (endGroup == null) endGroup = endRoot.gameObject.AddComponent<CanvasGroup>();
+            if (rideGroup == null) rideGroup = rideBtn.gameObject.AddComponent<CanvasGroup>();
+            endGroup.alpha = a; rideGroup.alpha = a;
+        }
+
         public void SetMode(Mode m)
         {
             Current = m;
@@ -271,7 +280,8 @@ namespace Summit
                 if (it.Max > 1)
                     for (int k = 0; k < it.Max; k++)
                         Place(Img("Pip", r.transform, k < lvl ? Gold : new Color(1f, 1f, 1f, 0.2f), round).rectTransform,
-                              new Vector2(0f, 1f), new Vector2(470f + k * 46f, -28f), new Vector2(34f, 34f), new Vector2(0f, 1f));
+                              new Vector2(0f, 1f), new Vector2(470f + k * (it.Max > 5 ? 19f : 46f), it.Max > 5 ? -36f : -28f),
+                              it.Max > 5 ? new Vector2(15f, 15f) : new Vector2(34f, 34f), new Vector2(0f, 1f));   // ten levels: small pips
                 bool afford = !maxed && Progress.Points >= cost;
                 var b = Img("Buy", r.transform, maxed ? new Color(1f, 1f, 1f, 0.08f) : afford ? Green : Grey, round);
                 Place(b.rectTransform, new Vector2(1f, 0.5f), new Vector2(-18f, 0f), new Vector2(250f, 104f), new Vector2(1f, 0.5f));

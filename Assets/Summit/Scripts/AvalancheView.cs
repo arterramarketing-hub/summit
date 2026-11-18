@@ -4,17 +4,20 @@ using UnityEngine.Rendering;
 namespace Summit
 {
     /// <summary>
-    /// What the slide looks like (the slide itself, its pace and what it does to the rider, is Avalanche):
-    ///  - the powder cloud: a towering front of big, lit, churning puffs (Powder.shader) rolling up and over,
-    ///    leaning out ahead at mid height and spilling forward down both flanks, so as it closes it looms over and
-    ///    around the rider even from a camera that looks downhill; behind the front, a darker body of billows
-    ///  - the surge: dense snow boiling along the ground at its toe, and plumes of spray thrown out ahead of it
-    ///  - debris: blocks of snow tumbling at its base, and fine snow dust in the air ahead
-    ///  - the burial: snow churning under the board, lumps over the carried body, then a pile of debris
-    ///    building over it while the cloud rolls on and thins
-    /// All the puffs are one mesh and one draw call, sorted back to front; a few large, textured, lit quads
-    /// rather than thousands of particles, to keep overdraw down on the phone. Puffs fade before they reach the
-    /// camera, so it never sits inside a wall of them.
+    /// What the slide looks like (the slide itself, its shape, its pace and what it does to the rider, is Avalanche):
+    ///  - the debris: a river of heavy snow metres deep, one mesh laid over the slope and reshaped every frame from
+    ///    Avalanche.Depth: a steep, bulging snout that bulldozes down the hill, arms that run on ahead round you,
+    ///    and a lumpy surface whose lumps and texture run on toward the front, faster than the front itself, so it
+    ///    reads as tonnes of snow rolling forward and over itself
+    ///  - blocks and slabs: carried on the surface, surfacing and sinking as it churns; more bulldozed ahead of
+    ///    the snout, tumbling and being overrun
+    ///  - spray: snow boiling low at the front edge, plumes thrown out ahead, and a light plume of powder rising
+    ///    off the head (a dusting, not a wall of fog)
+    ///  - the burial: snow churning under the board, the body dragged under, the debris settling over it, and a
+    ///    heap of lumps on top where it went in
+    /// Nothing of it is drawn until the slope has let go (Avalanche.Released). The puffs are one mesh and one draw
+    /// call, sorted back to front; the blocks are mesh particles in one call; the debris is opaque, so it costs
+    /// no overdraw.
     /// </summary>
     [DefaultExecutionOrder(150)]   // after the chase camera has moved: the puffs turn to face it
     public class AvalancheView : MonoBehaviour
@@ -24,35 +27,47 @@ namespace Summit
         RiderBody body;
         Avalanche slide;
 
+        /// <summary>0 below e0, 1 above e1, smooth between (Mathf.SmoothStep interpolates; this is the shader kind).</summary>
+        static float Ease(float e0, float e1, float x) { float t = Mathf.Clamp01((x - e0) / (e1 - e0)); return t * t * (3f - 2f * t); }
+
         // ---------------------------------------------------------------- puffs
-        enum Kind : byte { Head, Body, Surge, Plume, Churn }
+        enum Kind : byte { Head, Surge, Plume, Churn }
         struct Puff
         {
             public Kind kind;
-            public float u, phase, rate, spin, spinRate, scale, seed, hTop, reach, shade;
+            public float u, phase, rate, spin, spinRate, scale, seed, hTop, shade;
             public int cell;
             public Vector3 pos, vel; public float age, life; public bool live;   // plumes fly on their own
         }
-        const int Heads = 70, Bodies = 34, Surges = 56, Plumes = 28, Churns = 18;
-        const float Width = 36f;      // half-width of the slide across the hill
-        const float ArmLead = 32f;    // how far its flanks spill ahead of the middle
+        const int Heads = 16, Surges = 40, Plumes = 20, Churns = 14;
         Puff[] puffs;
         Mesh mesh;
         MeshRenderer puffRenderer;
         Vector3[] verts, norms; Vector4[] tans, uv1; Color[] cols; Vector2[] uv0, uv2; int[] tris;
         float[] keys; int[] order;
         Vector3[] centre; float[] size, alpha, angle, fadeH, shadeOf, groundOf;
-
-        // the powder cloud keeps rolling on (and thins away) after the debris under it has stopped
-        float cloudZ, cloudSpeed, fadeHead = 1f, fadeBody = 1f, fadeSurge = 1f, t, plumeCarry;
+        float fadeHead = 1f, fadeSurge = 1f, t, plumeCarry;
 
         /// <summary>0..1: how white the screen should go (the camera is in the powder).</summary>
         public float Whiteout { get; private set; }
 
-        // ---------------------------------------------------------------- debris, dust, the pile
-        struct Block { public Vector3 p, v, w; public Quaternion q; public float r; public bool live, onPile; public Color c; }
-        Block[] blocks = new Block[48];
-        const int PileBlocks = 12;   // the first few are kept for the lumps that land on the pile over the body
+        // ---------------------------------------------------------------- the debris flow
+        const int Cols = 52, Rows = 40;
+        Mesh flow;
+        MeshRenderer flowRenderer;
+        Vector3[] fv, fn; Vector4[] ft; Vector2[] fuv; Color[] fc; float[] fd;
+        float[] colA, rowS;
+        bool flowStill;
+
+        // ---------------------------------------------------------------- blocks, dust, the pile
+        enum BlockKind : byte { Pile, Front, Raft }
+        struct Block
+        {
+            public BlockKind kind; public bool live;
+            public Vector3 p, v, w, shape; public Quaternion q; public float r, dx, s, age, life, drift; public Color c;
+        }
+        const int PileBlocks = 12, FrontBlocks = 56, Rafts = 150;
+        Block[] blocks = new Block[PileBlocks + FrontBlocks + Rafts];
         ParticleSystem blockPs, dust, lumps, haze;
         ParticleSystem.Particle[] blockParts;
         Mesh pile;
@@ -66,7 +81,7 @@ namespace Summit
         {
             cam = c; rider = r; body = b; slide = s;
 
-            // the cloud
+            // the powder (first: the test tools find its renderer as the first in the hierarchy)
             var mat = Resources.Load<Material>("Avalanche/Powder");
             if (mat == null)
             {
@@ -86,7 +101,22 @@ namespace Summit
             puffRenderer.enabled = false;
             MakePuffs();
 
-            // debris blocks: a lumpy chunk of snow, drawn as mesh particles in one call
+            // the debris: the mountain's own snow, a shade greyer and rougher (broken, churned snow)
+            var fg = new GameObject("DebrisFlow", typeof(MeshFilter), typeof(MeshRenderer));
+            fg.transform.SetParent(transform, false);
+            flow = new Mesh { name = "DebrisFlow" };
+            flow.MarkDynamic();
+            fg.GetComponent<MeshFilter>().sharedMesh = flow;
+            flowRenderer = fg.GetComponent<MeshRenderer>();
+            var debris = Resources.Load<Material>("Avalanche/Debris");
+            if (debris == null) { debris = new Material(snow) { name = "Debris" }; debris.SetColor("_BaseColor", new Color(0.86f, 0.885f, 0.94f)); }
+            flowRenderer.sharedMaterial = debris;
+            flowRenderer.shadowCastingMode = ShadowCastingMode.On;
+            flowRenderer.receiveShadows = true;
+            flowRenderer.enabled = false;
+            MakeFlow();
+
+            // blocks and slabs of snow: a lumpy chunk, drawn as mesh particles in one call
             var vc = Resources.Load<Material>("VertexColor");
             var blockMat = vc != null ? new Material(vc) : new Material(Shader.Find("Universal Render Pipeline/Particles/Simple Lit"));
             blockMat.SetColor("_BaseColor", Color.white);
@@ -100,9 +130,10 @@ namespace Summit
             br.receiveShadows = true;
             var bm = blockPs.main; bm.startRotation3D = true; bm.startSize3D = true; bm.gravityModifier = 0f; bm.startLifetime = 1000f;
             blockParts = new ParticleSystem.Particle[blocks.Length];
+            for (int i = 0; i < blocks.Length; i++) blocks[i].kind = i < PileBlocks ? BlockKind.Pile : i < PileBlocks + FrontBlocks ? BlockKind.Front : BlockKind.Raft;
 
             // fine snow dust in the air, lumps thrown up, and local haze
-            dust = MakeSystem("SlideDust", soft, 900, false);
+            dust = MakeSystem("SlideDust", soft, 600, false);
             var dm = dust.main;
             dm.startLifetime = new ParticleSystem.MinMaxCurve(1.0f, 2.0f);
             dm.startSize = new ParticleSystem.MinMaxCurve(0.03f, 0.09f);
@@ -110,7 +141,7 @@ namespace Summit
             dm.gravityModifier = 0.04f;
             Fade(dust, 0.9f);
 
-            lumps = MakeSystem("SlideLumps", soft, 500, false);
+            lumps = MakeSystem("SlideLumps", soft, 700, false);
             var lm = lumps.main;
             lm.startLifetime = new ParticleSystem.MinMaxCurve(0.7f, 1.4f);
             lm.startSize = new ParticleSystem.MinMaxCurve(0.08f, 0.28f);
@@ -118,23 +149,23 @@ namespace Summit
             lm.gravityModifier = 1.2f;
             Fade(lumps, 1f);
 
-            haze = MakeSystem("SlideHaze", soft, 260, false);
+            haze = MakeSystem("SlideHaze", soft, 200, false);
             var hm = haze.main;
             hm.startLifetime = new ParticleSystem.MinMaxCurve(1.0f, 2.2f);
             hm.startSize = new ParticleSystem.MinMaxCurve(0.8f, 2.4f);
-            hm.startColor = new ParticleSystem.MinMaxGradient(new Color(1f, 1f, 1f, 0.55f), new Color(0.86f, 0.9f, 0.97f, 0.55f));
+            hm.startColor = new ParticleSystem.MinMaxGradient(new Color(1f, 1f, 1f, 0.5f), new Color(0.86f, 0.9f, 0.97f, 0.5f));
             hm.gravityModifier = -0.03f;
-            Fade(haze, 0.6f);
+            Fade(haze, 0.55f);
             var hsz = haze.sizeOverLifetime; hsz.enabled = true; hsz.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 0.6f, 1f, 1.9f));
 
-            // the pile of debris over the body, in the mountain's own snow
+            // the heap over the body, in the mountain's own snow
             var pileGo = new GameObject("DebrisPile", typeof(MeshFilter), typeof(MeshRenderer));
             pileGo.transform.SetParent(transform, false);
             pile = new Mesh { name = "DebrisPile" };
             pile.MarkDynamic();
             pileGo.GetComponent<MeshFilter>().sharedMesh = pile;
             pileRenderer = pileGo.GetComponent<MeshRenderer>();
-            pileRenderer.sharedMaterial = snow;
+            pileRenderer.sharedMaterial = debris;
             pileRenderer.shadowCastingMode = ShadowCastingMode.On;
             pileRenderer.enabled = false;
             MakePile();
@@ -175,12 +206,13 @@ namespace Summit
         /// <summary>Back to a calm mountain (a new run).</summary>
         public void Clear()
         {
-            fadeHead = fadeBody = fadeSurge = 1f;
+            fadeHead = fadeSurge = 1f;
             for (int i = 0; i < puffs.Length; i++) puffs[i].live = false;
             for (int i = 0; i < blocks.Length; i++) blocks[i].live = false;
             blockPs.Clear(); dust.Clear(); lumps.Clear(); haze.Clear();
             pileRenderer.enabled = false; pileCover = -1f;
             puffRenderer.enabled = false;
+            flowRenderer.enabled = false; flowStill = false;
             Whiteout = 0f;
         }
 
@@ -190,69 +222,150 @@ namespace Summit
         public void Tick(float dt)
         {
             if (cam == null || slide == null) return;
+            if (!slide.Released)
+            {
+                // the slope above is still holding: nothing to see
+                if (flowRenderer.enabled || puffRenderer.enabled || blockPs.particleCount > 0) Clear();
+                return;
+            }
             t += dt;
             float gap = slide.Gap(rider);
             bool caught = slide.Caught;
-            // the cloud: right on the slide while it chases, then rolling on, slowing and thinning once it has you
-            if (!caught)
+            if (!caught) fadeHead = fadeSurge = 1f;
+            else if (slide.Phase >= Avalanche.Stage.Carried)
             {
-                cloudZ = slide.Z; cloudSpeed = slide.Speed;
-                fadeHead = fadeBody = fadeSurge = 1f;
+                fadeHead = Mathf.MoveTowards(fadeHead, 0f, dt / 4f);                         // the powder settles out of the air
+                if (slide.Speed < 3f) fadeSurge = Mathf.MoveTowards(fadeSurge, 0f, dt / 2.5f);  // the front stops boiling
             }
-            else
-            {
-                cloudSpeed = Mathf.MoveTowards(cloudSpeed, slide.Phase == Avalanche.Stage.Undercut ? slide.Speed : 2.5f, 3f * dt);
-                cloudZ = Mathf.Max(cloudZ + cloudSpeed * dt, slide.Z);
-                bool after = slide.Phase == Avalanche.Stage.Carried || slide.Phase == Avalanche.Stage.Buried;
-                if (after)
-                {
-                    fadeBody = Mathf.MoveTowards(fadeBody, 0f, dt / 2.5f);    // the camera is in this part: clear it first
-                    fadeHead = Mathf.MoveTowards(fadeHead, 0.15f, dt / 7f);  // the head rolls on and thins away
-                    if (slide.Speed < 3f) fadeSurge = Mathf.MoveTowards(fadeSurge, 0f, dt / 2.5f);
-                }
-            }
-            bool show = caught || gap < 170f;
+            // (further back than this it is all behind the camera, which looks down the hill: nothing to draw)
+            bool show = caught || gap < 75f;
+            flowRenderer.enabled = show;
+            if (show) Flow();
             puffRenderer.enabled = show;
             if (show) DrawPuffs(dt);
 
+            // the camera in the powder rising off the head: a light white
             Vector3 cp = cam.transform.position;
-            float inCloud = Mathf.Clamp01((cloudZ - 7f - cp.z) / 14f) * Mathf.Max(fadeBody, fadeHead * 0.4f);
-            Whiteout = inCloud * 0.32f;
+            Whiteout = 0.12f * Ease(-2f, 8f, slide.FrontZ(cp.x) - cp.z) * fadeHead;
 
-            Blocks(dt, show && (caught || gap < 80f));
+            Blocks(dt, show);
             Particles(dt, gap);
             Pile();
             if (!Application.isPlaying)
                 foreach (var ps in new[] { dust, lumps, haze }) ps.Simulate(dt, true, false, false);
         }
 
-        // ---------------------------------------------------------------- the cloud
+        // ---------------------------------------------------------------- the debris flow
+
+        void MakeFlow()
+        {
+            colA = new float[Cols]; rowS = new float[Rows];
+            for (int c = 0; c < Cols; c++)
+            {
+                float a = c / (Cols - 1f) * 2f - 1f;
+                colA[c] = Mathf.Sign(a) * Mathf.Pow(Mathf.Abs(a), 1.3f);   // finer in the middle, where you are
+            }
+            for (int r = 0; r < Rows; r++) rowS[r] = Avalanche.Length * Mathf.Pow(r / (Rows - 1f), 1.7f);   // finer at the snout
+            int n = Cols * Rows;
+            fv = new Vector3[n]; fn = new Vector3[n]; ft = new Vector4[n]; fuv = new Vector2[n]; fc = new Color[n]; fd = new float[n];
+            var tri = new int[(Cols - 1) * (Rows - 1) * 6];
+            int k = 0;
+            for (int r = 0; r < Rows - 1; r++)
+                for (int c = 0; c < Cols - 1; c++)
+                {
+                    // rows run back up the hill, columns across it: wound to face up
+                    int a = r * Cols + c;
+                    tri[k++] = a; tri[k++] = a + 1; tri[k++] = a + Cols;
+                    tri[k++] = a + 1; tri[k++] = a + Cols + 1; tri[k++] = a + Cols;
+                }
+            flow.SetVertices(fv); flow.SetNormals(fn); flow.SetTangents(ft); flow.SetUVs(0, fuv); flow.SetColors(fc);
+            flow.SetTriangles(tri, 0, false);
+        }
+
+        /// <summary>Lay the debris over the slope as it is now.</summary>
+        void Flow()
+        {
+            // once it has stopped it stays as it lies
+            bool still = slide.Phase == Avalanche.Stage.Buried && slide.Speed <= 0f;
+            if (still && flowStill) return;
+            flowStill = still;
+            float fx = slide.FlowX, run = slide.SurfaceRun;
+            for (int r = 0; r < Rows; r++)
+            {
+                float s = rowS[r];
+                for (int c = 0; c < Cols; c++)
+                {
+                    float x = fx + colA[c] * Avalanche.HalfWidth;
+                    float z = slide.FrontZ(x) - s;
+                    float d = slide.Depth(x, z);
+                    // where it thins out to nothing, tuck it just under the snow so the edges never fight it
+                    // (the true surface, not the drawn facets: a few centimetres apart, and a third of the cost)
+                    float y = Slope.Height(x, z) + d - 0.25f * (1f - Mathf.Min(1f, d / 0.4f));
+                    int i = r * Cols + c;
+                    fv[i] = new Vector3(x, y, z); fd[i] = d;
+                }
+            }
+            // the clods measured along the surface itself, not across the map, so they don't stretch up the steep
+            // faces of the snout and the arms; and running on toward the front with the surface snow
+            for (int r = 0; r < Rows; r++)
+            {
+                int m = r * Cols + Cols / 2;
+                fuv[m].x = fx / 7f;
+                for (int c = Cols / 2 + 1; c < Cols; c++) fuv[r * Cols + c].x = fuv[r * Cols + c - 1].x + Vector3.Distance(fv[r * Cols + c], fv[r * Cols + c - 1]) / 7f;
+                for (int c = Cols / 2 - 1; c >= 0; c--) fuv[r * Cols + c].x = fuv[r * Cols + c + 1].x - Vector3.Distance(fv[r * Cols + c], fv[r * Cols + c + 1]) / 7f;
+            }
+            for (int c = 0; c < Cols; c++)
+            {
+                fuv[c].y = run / 7f;
+                for (int r = 1; r < Rows; r++) fuv[r * Cols + c].y = fuv[(r - 1) * Cols + c].y + Vector3.Distance(fv[r * Cols + c], fv[(r - 1) * Cols + c]) / 7f;
+            }
+            for (int r = 0; r < Rows; r++)
+            {
+                int r0 = Mathf.Max(0, r - 1), r1 = Mathf.Min(Rows - 1, r + 1);
+                for (int c = 0; c < Cols; c++)
+                {
+                    int c0 = Mathf.Max(0, c - 1), c1 = Mathf.Min(Cols - 1, c + 1);
+                    Vector3 across = fv[r * Cols + c1] - fv[r * Cols + c0];
+                    Vector3 back = fv[r1 * Cols + c] - fv[r0 * Cols + c];
+                    int i = r * Cols + c;
+                    fn[i] = Vector3.Cross(across, back).normalized;
+                    Vector3 tn = across.normalized;
+                    ft[i] = new Vector4(tn.x, tn.y, tn.z, 1f);
+                    // how open to the sky: dark down between the big heaps (below its neighbours' average), and in
+                    // the thin snow at the edges, where the slope's own light takes over
+                    float avg = 0.25f * (fd[r * Cols + c0] + fd[r * Cols + c1] + fd[r0 * Cols + c] + fd[r1 * Cols + c]);
+                    float open = Mathf.Clamp01(0.82f + (fd[i] - avg) * 0.9f) * Mathf.Lerp(0.75f, 1f, Mathf.Clamp01(fd[i] / 3f));
+                    fc[i] = new Color(Mathf.Lerp(1f, open, Mathf.Clamp01(fd[i] / 0.6f)), 0f, 0f, 1f);
+                }
+            }
+            flow.SetVertices(fv); flow.SetNormals(fn); flow.SetTangents(ft); flow.SetUVs(0, fuv); flow.SetColors(fc);
+            flow.bounds = new Bounds(new Vector3(fx, fv[Rows / 2 * Cols + Cols / 2].y, slide.Z - Avalanche.Length * 0.4f),
+                                     new Vector3(Avalanche.HalfWidth * 2f + 10f, 400f, Avalanche.Length + Avalanche.ArmLead + 20f));
+        }
+
+        /// <summary>The top of the debris at this point (the snow's own surface outside it).</summary>
+        float Top(float x, float z) => Slope.Height(x, z) + slide.Depth(x, z);
+
+        // ---------------------------------------------------------------- the powder
 
         void MakePuffs()
         {
-            int n = Heads + Bodies + Surges + Plumes + Churns;
+            int n = Heads + Surges + Plumes + Churns;
             puffs = new Puff[n];
             var g = new System.Random(4242);
             float R() => (float)g.NextDouble();
             int k = 0;
             for (int i = 0; i < Heads; i++, k++)
             {
-                // spread across the slope, denser in the middle where the camera looks
                 float a = (i + R()) / Heads * 2f - 1f;
-                puffs[k] = new Puff { kind = Kind.Head, u = Mathf.Sign(a) * Mathf.Pow(Mathf.Abs(a), 1.25f), phase = R(), rate = 1f / Mathf.Lerp(6f, 9f, R()),
-                                      hTop = Mathf.Lerp(34f, 58f, R()), reach = Mathf.Lerp(14f, 26f, R()), scale = Mathf.Lerp(0.8f, 1.2f, R()) };
-            }
-            for (int i = 0; i < Bodies; i++, k++)
-            {
-                float a = (i + R()) / Bodies * 2f - 1f;
-                puffs[k] = new Puff { kind = Kind.Body, u = a, phase = R(), rate = 1f / Mathf.Lerp(9f, 13f, R()),
-                                      hTop = Mathf.Lerp(18f, 34f, R()), scale = Mathf.Lerp(0.85f, 1.2f, R()) };
+                puffs[k] = new Puff { kind = Kind.Head, u = a, phase = R(), rate = 1f / Mathf.Lerp(5f, 8f, R()),
+                                      hTop = Mathf.Lerp(7f, 16f, R()), scale = Mathf.Lerp(0.8f, 1.2f, R()) };
             }
             for (int i = 0; i < Surges; i++, k++)
             {
                 float a = (i + R()) / Surges * 2f - 1f;
-                puffs[k] = new Puff { kind = Kind.Surge, u = Mathf.Sign(a) * Mathf.Pow(Mathf.Abs(a), 1.3f), phase = R(), rate = 1f / Mathf.Lerp(1.8f, 2.8f, R()),
-                                      hTop = Mathf.Lerp(1.2f, 2.6f, R()), scale = Mathf.Lerp(0.8f, 1.25f, R()) };
+                puffs[k] = new Puff { kind = Kind.Surge, u = Mathf.Sign(a) * Mathf.Pow(Mathf.Abs(a), 1.2f), phase = R(), rate = 1f / Mathf.Lerp(1.6f, 2.6f, R()),
+                                      hTop = Mathf.Lerp(1.0f, 2.4f, R()), scale = Mathf.Lerp(0.8f, 1.25f, R()) };
             }
             for (int i = 0; i < Plumes; i++, k++) puffs[k] = new Puff { kind = Kind.Plume };
             for (int i = 0; i < Churns; i++, k++)
@@ -278,50 +391,40 @@ namespace Summit
             mesh.SetTriangles(tris, 0, 0, 0, false);
         }
 
-        /// <summary>0 below e0, 1 above e1, smooth between (Mathf.SmoothStep interpolates; this is the shader kind).</summary>
-        static float Ease(float e0, float e1, float x) { float t = Mathf.Clamp01((x - e0) / (e1 - e0)); return t * t * (3f - 2f * t); }
-
-        /// <summary>Where the slide's leading edge is at this point across the hill (u: -1..1), as distance behind cloudZ.</summary>
-        static float Flank(float u) => -ArmLead * Ease(0.3f, 1f, Mathf.Abs(u));
-
         void DrawPuffs(float dt)
         {
             Transform ct = cam.transform;
             Vector3 cp = ct.position, cf = ct.forward, cr = ct.right, cu = ct.up;
-            float flow = 0.6f + 0.4f * Mathf.Clamp01(cloudSpeed / 15f);   // a fast slide churns faster
-            float rx = rider.transform.position.x;
+            float flowRate = 0.6f + 0.4f * Mathf.Clamp01(slide.Speed / 15f);   // a fast slide churns faster
+            float rx = rider.transform.position.x, fx = slide.FlowX;
             int n = 0;
 
-            // plumes of spray thrown out ahead of the toe, around where the camera is looking
+            // plumes of spray thrown out ahead of the snout, around where the camera is looking
             if (!slide.Caught || slide.Phase == Avalanche.Stage.Undercut)
             {
-                plumeCarry += dt * 9f * Mathf.Clamp01(slide.Speed / 10f);
-                for (int i = Heads + Bodies + Surges; i < Heads + Bodies + Surges + Plumes && plumeCarry >= 1f; i++)
+                plumeCarry += dt * 6f * Mathf.Clamp01(slide.Speed / 10f);
+                for (int i = Heads + Surges; i < Heads + Surges + Plumes && plumeCarry >= 1f; i++)
                 {
                     if (puffs[i].live) continue;
                     plumeCarry -= 1f;
                     float x = rx + Random.Range(-22f, 22f);
-                    float u = (x - Slope.Centre(slide.Z)) / Width;
-                    float z = slide.Z - Flank(Mathf.Clamp(u, -1f, 1f)) * 0.9f + Random.Range(-2f, 1f);
-                    puffs[i].live = true; puffs[i].age = 0f; puffs[i].life = Random.Range(1.2f, 2f);
-                    puffs[i].pos = new Vector3(x, Slope.DrawnHeight(x, z) + 0.8f, z);
-                    puffs[i].vel = new Vector3(Random.Range(-2f, 2f), Random.Range(4f, 9f), slide.Speed + Random.Range(3f, 9f));
+                    float z = slide.FrontZ(x) + Random.Range(-1.5f, 0.5f);
+                    puffs[i].live = true; puffs[i].age = 0f; puffs[i].life = Random.Range(1.0f, 1.6f);
+                    puffs[i].pos = new Vector3(x, Slope.DrawnHeight(x, z) + 1.2f, z);
+                    puffs[i].vel = new Vector3(Random.Range(-2f, 2f), Random.Range(3f, 7f), slide.Speed + Random.Range(2f, 7f));
                     puffs[i].scale = Random.Range(0.8f, 1.3f);
                 }
                 plumeCarry = Mathf.Min(plumeCarry, 1f);
             }
 
-            // the snow boiling under the board while the slide flows under it, then round the body it carries
+            // the snow boiling under the board while the slide runs in under it, then round the body it carries
             Vector3 churnAt = slide.Phase == Avalanche.Stage.Carried ? body.RagdollCentre : rider.transform.position;
             float churn = slide.Phase == Avalanche.Stage.Undercut ? slide.Churn
                         : slide.Phase == Avalanche.Stage.Carried ? Mathf.Clamp01(slide.Speed / 10f) : 0f;
-            // with the camera out in front of the cloud, the head hides the body behind it: skip drawing it
-            bool bodyHidden = cp.z > cloudZ + 2f;
             for (int i = 0; i < puffs.Length; i++)
             {
                 ref Puff p = ref puffs[i];
-                if (bodyHidden && p.kind == Kind.Body) { p.spin += p.spinRate * dt; continue; }
-                float sz, a, h, s, x, z, fh, gy, shade = p.shade;
+                float sz, a, h, x, z, fh, gy, shade = p.shade;
                 Vector3 c;
                 p.spin += p.spinRate * dt;
                 if (p.kind == Kind.Churn)
@@ -332,11 +435,11 @@ namespace Summit
                     // rolling forward past the board from behind, heaving up and falling back
                     x = churnAt.x + p.u * 3.2f + Mathf.Sin(t * 1.3f + p.seed * 20f) * 0.6f;
                     z = churnAt.z - 3.5f + 8f * ph;
-                    gy = Slope.Height(x, z);
+                    gy = Top(x, z);
                     h = 0.15f + 1.2f * Mathf.Sin(Mathf.PI * ph) * p.scale;
                     c = new Vector3(x, gy + h, z);
                     sz = Mathf.Lerp(1.2f, 3.4f, ph) * p.scale;
-                    a = Mathf.SmoothStep(0f, 1f, ph / 0.15f) * (1f - Ease(0.7f, 1f, ph)) * churn * 0.75f;   // the rider stays in view through it
+                    a = Mathf.SmoothStep(0f, 1f, ph / 0.15f) * (1f - Ease(0.7f, 1f, ph)) * churn * 0.35f;   // the rider stays in view through it
                     fh = 0.35f;
                 }
                 else if (p.kind == Kind.Plume)
@@ -344,57 +447,47 @@ namespace Summit
                     if (!p.live) continue;
                     p.age += dt;
                     if (p.age >= p.life) { p.live = false; continue; }
-                    p.vel.y -= 5f * dt;
-                    p.vel *= Mathf.Exp(-0.7f * dt);
+                    p.vel.y -= 6f * dt;
+                    p.vel *= Mathf.Exp(-0.8f * dt);
                     p.pos += p.vel * dt;
                     gy = Slope.Height(p.pos.x, p.pos.z);
                     if (p.pos.y < gy + 0.4f) { p.pos.y = gy + 0.4f; p.vel.y = Mathf.Max(p.vel.y, 0f); }
                     float k = p.age / p.life;
-                    c = p.pos; sz = Mathf.Lerp(1.4f, 5.5f, Mathf.Sqrt(k)) * p.scale;
-                    a = Mathf.SmoothStep(0f, 1f, k / 0.15f) * (1f - Ease(0.45f, 1f, k)) * 0.85f;
+                    c = p.pos; sz = Mathf.Lerp(1.2f, 4.5f, Mathf.Sqrt(k)) * p.scale;
+                    a = Mathf.SmoothStep(0f, 1f, k / 0.15f) * (1f - Ease(0.45f, 1f, k)) * 0.7f;
                     fh = 0.5f;
                 }
                 else
                 {
-                    float ph = p.phase + t * p.rate * flow;
+                    float ph = p.phase + t * p.rate * flowRate;
                     ph -= Mathf.Floor(ph);
-                    float side = Mathf.Sin(t * 0.21f + p.seed * 40f) * 2.5f;
-                    float arm = Ease(0.3f, 1f, Mathf.Abs(p.u));
-                    switch (p.kind)
+                    float side = Mathf.Sin(t * 0.21f + p.seed * 40f) * 2f;
+                    float s;
+                    if (p.kind == Kind.Head)
                     {
-                        case Kind.Head:
-                            // rising up the front and rolling over: low and back at birth, leaning out ahead at mid
-                            // height, curling back at the top; lower and further ahead out on the flanks
-                            h = 1.2f + Mathf.Pow(ph, 1.1f) * p.hTop * (1f - 0.45f * arm);
-                            s = 6f - p.reach * Ease(0.05f, 0.55f, ph) * (1f - 0.6f * Ease(0.6f, 1f, ph)) + Flank(p.u);
-                            sz = Mathf.Lerp(7f, 24f, Mathf.Pow(ph, 0.7f)) * p.scale * (1f - 0.25f * arm);
-                            a = Mathf.SmoothStep(0f, 1f, ph / 0.1f) * (1f - Ease(0.8f, 1f, ph)) * fadeHead;
-                            shade *= Mathf.Lerp(0.72f, 1f, Mathf.Clamp01(h / 22f));   // the lower billows sit in the shade of those above
-                            fh = 2f + sz * 0.15f;
-                            break;
-                        case Kind.Body:
-                            // the mass behind the front, drifting back as the front runs on, sinking as it goes
-                            s = 9f + 62f * ph + Flank(p.u) * 0.6f;
-                            h = 3f + p.hTop * (1f - 0.55f * ph);
-                            sz = Mathf.Lerp(14f, 26f, ph) * p.scale;
-                            a = Mathf.SmoothStep(0f, 1f, ph / 0.15f) * (1f - Ease(0.75f, 1f, ph)) * fadeBody;
-                            shade *= Mathf.Lerp(0.72f, 0.86f, p.seed);
-                            fh = 3f;
-                            break;
-                        default:
-                            // the surge: boiling forward along the ground, through the toe and dying out just ahead
-                            s = 12f - 17f * ph + Flank(p.u) * 0.95f;
-                            h = 0.4f + p.hTop * Mathf.Sin(Mathf.PI * Mathf.Min(1f, ph * 1.15f));
-                            sz = Mathf.Lerp(2.5f, 7f, ph) * p.scale;
-                            a = Mathf.SmoothStep(0f, 1f, ph / 0.12f) * (1f - Ease(0.72f, 1f, ph)) * fadeSurge;
-                            shade *= Mathf.Lerp(0.93f, 1f, ph);
-                            fh = 0.7f;
-                            break;
+                        // powder lifting off the head of the flow and drifting back over it as the front runs on:
+                        // a light plume over the debris, thin enough to see the debris through
+                        x = fx + p.u * 30f + side;
+                        s = 5f + 26f * ph;
+                        h = 1.5f + Mathf.Pow(ph, 0.9f) * p.hTop;
+                        sz = Mathf.Lerp(5f, 14f, Mathf.Pow(ph, 0.7f)) * p.scale;
+                        a = Mathf.SmoothStep(0f, 1f, ph / 0.12f) * (1f - Ease(0.6f, 1f, ph)) * 0.25f * fadeHead;
+                        shade *= Mathf.Lerp(0.85f, 1f, ph);
+                        fh = 1.2f;
                     }
-                    float baseZ = p.kind == Kind.Surge ? slide.Z : cloudZ;
-                    z = baseZ - s;
-                    x = Slope.Centre(z) + p.u * Width + side;
-                    gy = Slope.Height(x, z);
+                    else
+                    {
+                        // spray boiling low along the front edge, thrown on just ahead of it as it bulldozes on
+                        x = fx + p.u * 40f + side;
+                        s = 3f - 7f * ph;
+                        h = 0.3f + p.hTop * Mathf.Sin(Mathf.PI * Mathf.Min(1f, ph * 1.15f));
+                        sz = Mathf.Lerp(2f, 6f, ph) * p.scale;
+                        a = Mathf.SmoothStep(0f, 1f, ph / 0.12f) * (1f - Ease(0.72f, 1f, ph)) * 0.85f * fadeSurge;
+                        shade *= Mathf.Lerp(0.93f, 1f, ph);
+                        fh = 0.6f;
+                    }
+                    z = slide.FrontZ(x) - s;
+                    gy = Top(x, z);
                     c = new Vector3(x, gy + h, z);
                 }
                 // near the camera: fade out before it gets there (no puff ever slices through the lens)
@@ -434,7 +527,7 @@ namespace Summit
             mesh.bounds = new Bounds(cp, Vector3.one * 2000f);
         }
 
-        // ---------------------------------------------------------------- blocks of snow at its base
+        // ---------------------------------------------------------------- blocks and slabs
 
         void Blocks(float dt, bool active)
         {
@@ -444,82 +537,124 @@ namespace Summit
                 for (int i = 0; i < blocks.Length; i++) blocks[i].live = false;
                 return;
             }
-            float rx = rider.transform.position.x;
-            bool moving = slide.Speed > 2f;
+            float rx = rider.transform.position.x, fx = slide.FlowX, speed = slide.Speed;
+            bool moving = speed > 0.3f;
             bool settling = slide.Phase == Avalanche.Stage.Carried && slide.Cover > 0.05f && slide.Cover < 0.85f;
             settleCarry += settling ? dt * 4f : 0f;
+            Vector3 cp = cam.transform.position;
             int count = 0;
             for (int i = 0; i < blocks.Length; i++)
             {
                 ref Block b = ref blocks[i];
-                if (!b.live)
+                if (!b.live && !Spawn(ref b, rx, fx, speed, moving, dt)) continue;
+                if (b.kind == BlockKind.Raft)
                 {
-                    if (moving && i >= PileBlocks && Random.value < dt * 12f)
+                    // carried on the surface: running on toward the front with the snow, rolling over, coming up
+                    // out of the churn and going back under it
+                    if (moving)
                     {
-                        // a new block breaks off the front, near where the camera is looking
-                        float x = rx + Random.Range(-20f, 20f);
-                        float u = Mathf.Clamp((x - Slope.Centre(slide.Z)) / Width, -1f, 1f);
-                        float z = slide.Z - Flank(u) * 0.95f - Random.Range(0f, 5f);
-                        b.r = Random.Range(0.14f, 0.42f) * (Random.value < 0.12f ? 1.8f : 1f);
-                        b.p = new Vector3(x, Slope.DrawnHeight(x, z) + b.r, z);
-                        b.v = new Vector3(Random.Range(-1f, 1f), Random.Range(0.5f, 2f), slide.Speed * Random.Range(0.95f, 1.2f));
-                        b.w = Random.onUnitSphere * Random.Range(2f, 7f);
-                        b.q = Random.rotation; b.live = true; b.onPile = false;
-                        float g = Random.Range(0.82f, 1f);
-                        b.c = new Color(g * 0.96f, g * 0.975f, g, 1f);
+                        b.age += dt;
+                        b.s -= speed * b.drift * dt;
+                        float spin = (speed * b.drift + 0.6f) / b.r;
+                        b.q = Quaternion.AngleAxis(spin * dt * Mathf.Rad2Deg, Vector3.right) * Quaternion.AngleAxis(b.w.magnitude * dt * Mathf.Rad2Deg, b.w.normalized) * b.q;
                     }
-                    else if (i < PileBlocks && settleCarry >= 1f)
+                    if (b.s < 0.6f || b.age > b.life) { b.live = false; continue; }
+                    float x = fx + b.dx, z = slide.FrontZ(x) - b.s;
+                    float d = slide.Depth(x, z);
+                    if (d < 0.4f) { b.live = false; continue; }
+                    float up = Ease(0f, 0.5f, b.age) * (1f - Ease(b.life - 0.7f, b.life, b.age));
+                    b.p = new Vector3(x, Slope.Height(x, z) + d + b.r * Mathf.Lerp(-1.6f, 0.45f, up), z);
+                }
+                else
+                {
+                    float ground = b.kind == BlockKind.Pile ? Top(b.p.x, b.p.z) + PileHeight(b.p.x, b.p.z) : Slope.DrawnHeight(b.p.x, b.p.z);
+                    float front = slide.FrontZ(b.p.x);
+                    bool pushed = moving && b.kind == BlockKind.Front && b.p.z < front + 1.5f;
+                    if (pushed) b.v.z += (speed * 1.1f - b.v.z) * Mathf.Min(1f, 2.5f * dt);
+                    b.v.y -= 22f * dt;
+                    b.p += b.v * dt;
+                    // tumbling along the snow, never sailing off a bump into the sky
+                    if (b.kind == BlockKind.Front && b.p.y > ground + b.r + 1.6f) b.v.y = Mathf.Min(b.v.y, -2f);
+                    float floor = ground + b.r * 0.5f;
+                    bool onSnow = b.p.y <= floor + 0.02f;
+                    if (b.p.y < floor)
                     {
-                        // lumps of the debris coming down on the pile over the body
-                        settleCarry -= 1f;
-                        Vector2 d = Random.insideUnitCircle * 2.2f;
-                        b.r = Random.Range(0.15f, 0.4f);
-                        b.p = slide.BuryAt + new Vector3(d.x, Random.Range(2.5f, 4.5f), d.y * 1.3f);
-                        b.v = new Vector3(0f, -1f, slide.Speed * 0.5f);
-                        b.w = Random.onUnitSphere * Random.Range(3f, 8f);
-                        b.q = Random.rotation; b.live = true; b.onPile = true;
-                        b.c = new Color(0.95f, 0.965f, 0.99f, 1f);
+                        b.p.y = floor;
+                        if (b.v.y < 0f) b.v.y = pushed ? Random.Range(0.8f, 3f) * Mathf.Clamp01(speed / 18f) : -b.v.y * 0.15f;
                     }
-                    if (!b.live) continue;
+                    if (onSnow && !pushed)
+                    {
+                        // dragging and rolling to a stop in the snow
+                        float k = Mathf.Exp(-2.2f * dt);
+                        b.v.x *= k; b.v.z *= k; b.w *= k;
+                    }
+                    var flat = new Vector3(b.v.x, 0f, b.v.z);
+                    if (onSnow && flat.sqrMagnitude > 0.01f)
+                        b.q = Quaternion.AngleAxis(flat.magnitude / b.r * dt * Mathf.Rad2Deg, Vector3.Cross(Vector3.up, flat.normalized)) * b.q;
+                    else if (b.w.sqrMagnitude > 0.01f)
+                        b.q = Quaternion.AngleAxis(b.w.magnitude * dt * Mathf.Rad2Deg, b.w.normalized) * b.q;
+                    // overrun by the snout (it is under the debris now), or off to the side
+                    if (b.kind == BlockKind.Front && (b.p.z < front - 2.5f || Mathf.Abs(b.p.x - rx) > 28f)) { b.live = false; continue; }
                 }
-                float ground = Slope.DrawnHeight(b.p.x, b.p.z) + PileHeight(b.p.x, b.p.z);
-                bool pushed = moving && !b.onPile && b.p.z < slide.Z + 1.5f;
-                if (pushed) b.v.z += (slide.Speed * 1.08f - b.v.z) * Mathf.Min(1f, 2.5f * dt);
-                b.v.y -= 22f * dt;
-                b.p += b.v * dt;
-                // tumbling along the snow, never sailing off a bump into the sky
-                if (!b.onPile && b.p.y > ground + b.r + 1.2f) b.v.y = Mathf.Min(b.v.y, -2f);
-                float floor = ground + b.r * 0.5f;
-                bool onSnow = b.p.y <= floor + 0.02f;
-                if (b.p.y < floor)
-                {
-                    b.p.y = floor;
-                    if (b.v.y < 0f) b.v.y = pushed ? Random.Range(0.6f, 2.4f) * Mathf.Clamp01(slide.Speed / 18f) : -b.v.y * 0.15f;
-                }
-                if (onSnow && !pushed)
-                {
-                    // dragging and rolling to a stop in the snow
-                    float k = Mathf.Exp(-2.2f * dt);
-                    b.v.x *= k; b.v.z *= k; b.w *= k;
-                }
-                var flat = new Vector3(b.v.x, 0f, b.v.z);
-                if (onSnow && flat.sqrMagnitude > 0.01f)
-                    b.q = Quaternion.AngleAxis(flat.magnitude / b.r * dt * Mathf.Rad2Deg, Vector3.Cross(Vector3.up, flat.normalized)) * b.q;
-                else if (b.w.sqrMagnitude > 0.01f)
-                    b.q = Quaternion.AngleAxis(b.w.magnitude * dt * Mathf.Rad2Deg, b.w.normalized) * b.q;
-                // left behind by the front, or off to the side: break up (only while it is still running)
-                if (moving && !b.onPile && (b.p.z < slide.Z - Mathf.Max(0f, -Flank(Mathf.Clamp((b.p.x - Slope.Centre(b.p.z)) / Width, -1f, 1f))) - 16f || Mathf.Abs(b.p.x - rx) > 26f))
-                { b.live = false; continue; }
                 // never right in the lens: a block passing the camera would fill the screen
-                if ((b.p - cam.transform.position).sqrMagnitude < (2.5f + b.r * 4f) * (2.5f + b.r * 4f)) continue;
-                var pt = new ParticleSystem.Particle
+                float near = 2.5f + b.r * 4f;
+                if ((b.p - cp).sqrMagnitude < near * near) continue;
+                blockParts[count++] = new ParticleSystem.Particle
                 {
-                    position = b.p, rotation3D = b.q.eulerAngles, startSize3D = new Vector3(b.r * 2.1f, b.r * 1.5f, b.r * 1.8f),
+                    position = b.p, rotation3D = b.q.eulerAngles, startSize3D = b.shape * b.r,
                     startColor = b.c, startLifetime = 1000f, remainingLifetime = 1000f
                 };
-                blockParts[count++] = pt;
             }
             blockPs.SetParticles(blockParts, count);
+        }
+
+        bool Spawn(ref Block b, float rx, float fx, float speed, bool moving, float dt)
+        {
+            float g = Random.Range(0.8f, 1f);
+            b.c = new Color(g * 0.95f, g * 0.97f, g, 1f);
+            b.q = Random.rotation;
+            b.w = Random.onUnitSphere * Random.Range(1f, 4f);
+            switch (b.kind)
+            {
+                case BlockKind.Raft:
+                    if (!moving || Random.value > dt * 3f) return false;
+                    b.dx = Mathf.Clamp(rx - fx + Random.Range(-30f, 30f), -Avalanche.HalfWidth + 10f, Avalanche.HalfWidth - 10f);
+                    b.s = 1.5f + 48f * Mathf.Pow(Random.value, 1.5f);
+                    b.r = Random.Range(0.35f, 0.9f) * (Random.value < 0.2f ? 1.8f : 1f);
+                    b.age = 0f; b.life = Random.Range(2.5f, 6f);
+                    b.drift = Random.Range(0.07f, 0.17f);   // the surface runs on past the front at about an eighth of its speed
+                    b.shape = new Vector3(Random.Range(1.8f, 2.6f), Random.Range(1.0f, 1.5f), Random.Range(1.5f, 2.2f));   // slabs as well as lumps
+                    break;
+                case BlockKind.Front:
+                {
+                    if (!moving || Random.value > dt * 6f) return false;
+                    // broken off the snout and bulldozed on ahead of it, near where the camera is looking
+                    float x = rx + Random.Range(-24f, 24f);
+                    float z = slide.FrontZ(x) + Random.Range(-0.5f, 1.5f);
+                    b.r = Random.Range(0.16f, 0.45f) * (Random.value < 0.12f ? 1.7f : 1f);
+                    b.p = new Vector3(x, Slope.DrawnHeight(x, z) + b.r, z);
+                    b.v = new Vector3(Random.Range(-1.2f, 1.2f), Random.Range(1f, 3.5f), speed * Random.Range(1.0f, 1.25f));
+                    b.w *= 2f;
+                    b.shape = new Vector3(2.1f, 1.5f, 1.8f);
+                    break;
+                }
+                default:
+                {
+                    if (settleCarry < 1f) return false;
+                    // lumps of the debris coming down on the heap over the body
+                    settleCarry -= 1f;
+                    Vector2 d = Random.insideUnitCircle * 2.2f;
+                    b.r = Random.Range(0.15f, 0.4f);
+                    b.p = slide.BuryAt + new Vector3(d.x, Random.Range(2.5f, 4.5f), d.y * 1.3f);
+                    b.v = new Vector3(0f, -1f, speed * 0.5f);
+                    b.w *= 2f;
+                    b.shape = new Vector3(2.1f, 1.5f, 1.8f);
+                    b.c = new Color(0.95f, 0.965f, 0.99f, 1f);
+                    break;
+                }
+            }
+            b.live = true;
+            return true;
         }
 
         /// <summary>A rough chunk of packed snow, about a unit across: a rounded box knocked about by noise.</summary>
@@ -573,29 +708,42 @@ namespace Summit
             var ep = new ParticleSystem.EmitParams();
             Vector3 rp = rider.transform.position, cp = cam.transform.position;
             var phase = slide.Phase;
-            // fine dust in the air ahead of the front, thickening as it closes
+            // fine dust in the air just ahead of the snout, thickening as it closes
             float near = phase == Avalanche.Stage.Chasing ? Mathf.Clamp01(1f - gap / 45f) : phase == Avalanche.Stage.Undercut ? 1f : 0f;
-            dustCarry += dt * 520f * near * near;
+            dustCarry += dt * 200f * near * near;
             int nd = (int)dustCarry; dustCarry -= nd;
             for (int i = 0; i < nd; i++)
             {
-                float z = slide.Z + Random.Range(-3f, 24f), x = cp.x + Random.Range(-11f, 11f);
-                ep.position = new Vector3(x, Slope.DrawnHeight(x, z) + Random.Range(0.2f, 7f), z);
+                float x = cp.x + Random.Range(-11f, 11f), z = slide.FrontZ(x) + Random.Range(-3f, 14f);
+                ep.position = new Vector3(x, Top(x, z) + Random.Range(0.2f, 4f), z);
                 ep.velocity = new Vector3(Random.Range(-1f, 1f), Random.Range(-0.4f, 1.6f), slide.Speed * Random.Range(0.6f, 1f));
                 dust.Emit(ep, 1);
             }
-            // after it has you: the cloud's snow sifting down all around
+            // after it has you: the last of the powder sifting down
             if (phase == Avalanche.Stage.Carried || phase == Avalanche.Stage.Buried)
             {
-                float settle = Mathf.Max(fadeBody, fadeHead * 0.6f);
-                dustCarry += dt * 300f * settle;
+                dustCarry += dt * 110f * fadeHead;
                 nd = (int)dustCarry; dustCarry -= nd;
                 for (int i = 0; i < nd; i++)
                 {
                     float z = cp.z + Random.Range(-4f, 26f), x = cp.x + Random.Range(-10f, 10f);
-                    ep.position = new Vector3(x, Slope.DrawnHeight(x, z) + Random.Range(0.5f, 8f), z);
-                    ep.velocity = new Vector3(Random.Range(-0.4f, 0.4f), Random.Range(-1.2f, -0.3f), cloudSpeed * 0.3f);
+                    ep.position = new Vector3(x, Top(x, z) + Random.Range(0.5f, 6f), z);
+                    ep.velocity = new Vector3(Random.Range(-0.4f, 0.4f), Random.Range(-1.2f, -0.3f), slide.Speed * 0.3f);
                     dust.Emit(ep, 1);
+                }
+            }
+            // lumps thrown up off the snout as it bulldozes on, round where you are looking
+            if (phase <= Avalanche.Stage.Undercut && slide.Speed > 2f && gap < 60f)
+            {
+                lumpCarry += dt * 90f * Mathf.Clamp01(1f - gap / 60f);
+                int n = (int)lumpCarry; lumpCarry -= n;
+                for (int i = 0; i < n; i++)
+                {
+                    float x = rp.x + Random.Range(-16f, 16f), z = slide.FrontZ(x) - Random.Range(0f, 4f);
+                    ep.position = new Vector3(x, Top(x, z) + 0.2f, z);
+                    ep.velocity = new Vector3(Random.Range(-1.5f, 1.5f), Random.Range(2f, 6f), slide.Speed * Random.Range(1f, 1.3f));
+                    ep.startSize = Random.Range(0.1f, 0.4f);
+                    lumps.Emit(ep, 1);
                 }
             }
 
@@ -604,24 +752,25 @@ namespace Summit
             {
                 Vector3 feet = rp + Vector3.down * Rider.R;
                 lumpCarry += dt * 170f * slide.Churn;
-                hazeCarry += dt * 40f * slide.Churn;
+                hazeCarry += dt * 12f * slide.Churn;
                 Vector3 carry = new Vector3(0f, 0f, slide.Speed * 0.85f);
                 EmitLumps(ref ep, feet, 1.4f, carry, 2f, 5.5f);
                 EmitHaze(ref ep, feet, 1.8f, carry * 0.9f);
             }
-            // the body tumbling in the debris, and the pile building over it
+            // the body tumbling in the debris, and the heap building over it
             else if (phase == Avalanche.Stage.Carried)
             {
                 Vector3 c = body.RagdollCentre;
+                c.y = Mathf.Max(c.y, Top(c.x, c.z));   // where it went under
                 float k = Mathf.Clamp01(slide.Speed / 8f);
                 lumpCarry += dt * (55f * k + 30f * (slide.Cover < 1f ? 1f : 0f));
-                hazeCarry += dt * (12f * k + 8f * (slide.Cover < 1f ? 1f : 0f));
+                hazeCarry += dt * (10f * k + 6f * (slide.Cover < 1f ? 1f : 0f));
                 Vector3 at = Vector3.Lerp(slide.BuryAt + Vector3.up * 0.5f, c, k);
                 Vector3 carry = Vector3.ProjectOnPlane(Vector3.forward, Slope.Normal(c.x, c.z)) * slide.Speed * 0.8f;
                 EmitLumps(ref ep, at, 1.8f, carry, k > 0.3f ? 1.5f : -0.5f, k > 0.3f ? 4f : 1f);
                 EmitHaze(ref ep, at, 2.2f, carry * 0.6f);
             }
-            else { lumpCarry = 0f; hazeCarry = 0f; }
+            else if (phase != Avalanche.Stage.Chasing) { lumpCarry = 0f; hazeCarry = 0f; }
         }
 
         void EmitLumps(ref ParticleSystem.EmitParams ep, Vector3 at, float spread, Vector3 carry, float up0, float up1)
@@ -650,9 +799,9 @@ namespace Summit
             }
         }
 
-        // ---------------------------------------------------------------- the pile over the body
+        // ---------------------------------------------------------------- the heap over the body
 
-        /// <summary>How high the debris has piled over the body at this point (0 away from the pile).</summary>
+        /// <summary>How high the debris has heaped over the body at this point, on top of the debris itself (0 away from it).</summary>
         public float PileHeight(float x, float z)
         {
             float cover = slide.Cover;
@@ -696,6 +845,8 @@ namespace Summit
                 }
             }
             pile.vertices = pileVerts; pile.uv = pileUv;
+            var pc = new Color[n]; for (int i = 0; i < n; i++) pc[i] = new Color(0.9f, 0f, 0f, 1f);   // fresh and open to the sky
+            pile.colors = pc;
             pile.SetTriangles(tri, 0);
         }
 
@@ -715,11 +866,11 @@ namespace Summit
                 {
                     float th = s / (float)PileSegs * Mathf.PI * 2f;
                     float x = at.x + Mathf.Cos(th) * rr, z = at.z + Mathf.Sin(th) * rr * 1.35f;
-                    // the outer ring tucks just under the snow, so the pile grows out of the slope with no seam
-                    float lift = r == PileRings - 1 ? -0.04f : PileHeight(x, z) + 0.015f;
+                    // the outer ring tucks just under the debris, so the heap grows out of it with no seam
+                    float lift = r == PileRings - 1 ? -0.7f : r == PileRings - 2 ? -0.25f : PileHeight(x, z) + 0.015f;
                     int v = r < 0 ? 0 : 1 + r * PileSegs + s;
-                    pileVerts[v] = new Vector3(x, Slope.DrawnHeight(x, z) + lift, z);
-                    pileUv[v] = new Vector2(x / 9f, z / 9f);   // the same mapping as the slope, so the snow matches
+                    pileVerts[v] = new Vector3(x, Top(x, z) + lift, z);
+                    pileUv[v] = new Vector2(x / 7f, z / 7f);
                 }
             }
             pile.vertices = pileVerts; pile.uv = pileUv;

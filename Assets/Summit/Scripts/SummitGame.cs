@@ -138,6 +138,7 @@ namespace Summit
 
         PowerUps power;
         Smasher smasher;
+        Breakables breaks;
         PowerAura aura;
         const float ZoomSeconds = 3f, SuperJumpSeconds = 10f, InvincibleSeconds = 8f;   // how long each pickup lasts
         CourseDressing dressing;
@@ -150,6 +151,7 @@ namespace Summit
         float Mult => 1f + 0.5f * chainCount;
 
         float traceT, traceNext, readyT;
+        bool fastCrash; float nextBigScream;   // this fall began at over 120 km/h: the big screams
         bool ledgeCued, ledgeFading;   // the first-ledge sting has played this run / is on its way out
         static readonly bool autoplay = System.Environment.GetEnvironmentVariable("SUMMIT_AUTOPLAY") == "1";
 
@@ -206,7 +208,10 @@ namespace Summit
                 if (!isBoard && v > 6f) hurtShake = Mathf.Max(hurtShake, Mathf.Clamp01((v - 6f) / 10f) * 0.8f);
                 if (v < 1.5f || Time.time < nextImpactSound) return;
                 if (!isBoard && v > 5f && state == State.Riding) medical += (v - 5f) * 45f;   // bruises, by how hard you hit
-                if (!isBoard && v > 4.5f && Time.time > nextGrunt) { nextGrunt = Time.time + 0.45f; audioFx.Play(Sfx.Grunt, Mathf.Clamp01((v - 4f) / 8f)); }
+                // a crash at over 120 km/h: a fresh scream on each big hit, above all against trees, rocks and signs
+                if (fastCrash && rider.Crashed && !isBoard && (v > 14f || (v > 7f && body.RagdollHitObject)) && Time.time > nextBigScream)
+                { nextBigScream = Time.time + 0.6f; audioFx.Play(Sfx.BigScream); }
+                else if (!isBoard && v > 4.5f && Time.time > nextGrunt) { nextGrunt = Time.time + 0.45f; audioFx.Play(Sfx.Grunt, Mathf.Clamp01((v - 4f) / 8f)); }
                 nextImpactSound = Time.time + 0.07f;
                 audioFx.Play(isBoard ? Sfx.Clack : Sfx.Thump, Mathf.Clamp01(v / 10f));
             };
@@ -246,6 +251,16 @@ namespace Summit
             flags = new GameObject("FallFlags").AddComponent<FallFlags>();
             flags.Build(jacket != null ? jacket.shader : null);
             body.FallRested += at => { if (state == State.Riding) flags.Plant(at, falls); };
+            body.Killed += fell =>
+            {
+                // off a cliff and into the snow far below: it's over (see RiderBodyFall)
+                if (state != State.Riding) return;
+                bool huge = fell > 80f;
+                int bill = huge ? 95000 : 68000;
+                rider.StayDown = true; wipeoutTimer = 1.6f; endTitle = huge ? "SENT IT" : "CLIFFED"; medical += bill;
+                hud.Flash(endTitle, "helicopter recovery  +$" + bill.ToString("N0"), 2.4f);
+                audioFx.Play(Sfx.Bone); audioFx.Play(Sfx.Crash);
+            };
 
             var cam = Camera.main;
             if (cam == null)
@@ -260,6 +275,7 @@ namespace Summit
             chase = cam.gameObject.GetComponent<ChaseCamera>();
             if (chase == null) chase = cam.gameObject.AddComponent<ChaseCamera>();
             chase.rider = rider;
+            chase.floor = slide.Depth;   // the camera rides up over the avalanche's debris
             camLevel = Mathf.Clamp(PlayerPrefs.GetInt("summit_camdist", 2), 0, CamDist.Length - 1);
             chase.distScale = CamDist[camLevel];
             angleLevel = Mathf.Clamp(PlayerPrefs.GetInt("summit_angle", 1), 0, AngleHeight.Length - 1);
@@ -292,6 +308,19 @@ namespace Summit
                 if (ob.always) audioFx.Play(Sfx.BearRoar);
                 hurtShake = Mathf.Max(hurtShake, 0.35f);
                 OnTrick(ob.always ? "BEAR BOWLED" : ob.label == "Rock" ? "ROCK SMASH" : "TIMBER!", ob.always ? 500 : 100);
+            };
+            // signs and flags: ridden into (or tumbled into), signs break and flags go down (Breakables)
+            breaks = new GameObject("Breakables").AddComponent<Breakables>();
+            breaks.Build(rider, fx, smasher);
+            breaks.Broke += (b, crashed, invincible, thrown) =>
+            {
+                if (state != State.Riding) return;
+                bool sign = b.kind == Breakable.Kind.Sign;
+                if (sign) audioFx.Play(Sfx.SmashWood, crashed || invincible ? 1f : 0.8f);
+                else audioFx.Play(Sfx.Clack, 0.7f);
+                if (!sign || thrown) return;
+                hurtShake = Mathf.Max(hurtShake, crashed ? 0.8f : 0.45f);
+                if (invincible) OnTrick("SIGN SMASH", 100);
             };
 
             atmo = new GameObject("Atmosphere").AddComponent<Atmosphere>();
@@ -450,7 +479,8 @@ namespace Summit
         void ToReady(bool newMountain)
         {
             state = State.Ready;
-            ledgeCued = false; ledgeFading = false; if (audioFx != null) audioFx.StopCue();
+            ledgeCued = false; ledgeFading = false; fastCrash = false; if (audioFx != null) audioFx.StopCue();
+            rider.input = input; endFade = 1f; if (hud != null) hud.SetAlpha(1f); if (meta != null) meta.SetEndAlpha(1f);   // hands back on, screen solid
             camp.Leave(); chase.enabled = true; terrain.behindChunks = 1; props.behindCells = 3;
             if (newMountain)
             {
@@ -474,6 +504,7 @@ namespace Summit
             power.ResetRun();
             wild.ResetRun();
             smasher.Clear(); aura.Clear();
+            Breakable.RestoreAll();   // every sign and flag standing again
             terrain.Prewarm();
             props.Prewarm();
             dressing.Prewarm();
@@ -506,12 +537,13 @@ namespace Summit
             rider.Begin();
             hud.Clear();
             hud.SetButtons(false, true, "");
-            hud.Flash("GO", "the mountain is moving", 1.2f);
+            hud.Flash("GO", "drop in", 1.2f);
         }
 
         void ToBuried() => ToEnd("BURIED", true);
 
-        void ToEnd(string title, bool buried)
+        float endFade = 1f;
+        void ToEnd(string title, bool buried, bool rollOn = false)
         {
             if (rider.Crashed) flags.Plant(body.RagdollCentre, falls);   // the fall that ended it gets its flag too
             audioFx.StopCue();
@@ -521,7 +553,9 @@ namespace Summit
             endBuried = buried;
             if (buried) audioFx.Play(Sfx.Buried);   // the world goes muffled under the snow (see the mix below)
             stateTimer = 0f;
-            rider.Stop();
+            if (rollOn) { rider.input = null; rider.Steer = 0f; }   // hands off: the board runs on out through the finish and slows on the flat
+            else rider.Stop();
+            endFade = 0f; hud.SetAlpha(0f); meta.SetEndAlpha(0f);   // the end screen fades in
             int s = Score;
             bool record = s > best;
             if (record) { best = s; PlayerPrefs.SetInt("summit_best", s); PlayerPrefs.Save(); }
@@ -622,6 +656,7 @@ namespace Summit
                     hud.SetPrompt(rider.CanGetUp ? "TAP TO GET UP" : rider.StayDown && rider.Crashed && !body.RagdollMoving && !slide.Caught ? "TAP TO CONTINUE" : "");
                     runTime += dt;
                     slide.Step(dt, rider, body);
+                    if (slide.JustReleased) { audioFx.Play(Sfx.SlideCrack); hud.Flash("AVALANCHE!", "the slope has let go behind you", 2f); }
                     // the first ledge: the suspense sting as you roll up to the lip, eased out once you've landed below it
                     if (!ledgeCued && !rider.Crashed && rider.Z > Slope.PadLip - 14f && rider.Z < Slope.PadLip + 1f) { ledgeCued = true; audioFx.Play(Sfx.Ledge); }
                     if (ledgeCued && (ledgeFading || rider.Crashed || (rider.Z > Slope.PadLip + 8f && !rider.Airborne))) { ledgeFading = true; audioFx.FadeCue(dt); }
@@ -637,7 +672,7 @@ namespace Summit
                         trickPoints += 5000;
                         Missions.Finished();
                         audioFx.Play(Sfx.TrickBig, 4);
-                        ToEnd("YOU SURVIVED", false);
+                        ToEnd("YOU SURVIVED", false, true);   // carry on through the arch while the screen fades in
                         break;
                     }
                     if (wipeoutTimer > 0f && !slide.Caught) { if (!body.RagdollMoving) wipeoutTimer -= dt; if (wipeoutTimer <= 0f) { ToEnd(endTitle, false); break; } }
@@ -650,6 +685,7 @@ namespace Summit
                     break;
 
                 case State.Buried:
+                    if (endFade < 1f) { endFade = Mathf.MoveTowards(endFade, 1f, Time.unscaledDeltaTime / 1.4f); hud.SetAlpha(endFade); meta.SetEndAlpha(endFade); }
                     if (stateTimer > 1.2f && input.AnyPress() && ModeTapped()) { }
 
                     else if (stateTimer > 1.2f && input.AnyPress() && meta.Hit(RiderInput.PointerPosition()) == "ride")
@@ -689,7 +725,7 @@ namespace Summit
             // no stick graphic: the thumb steers the rider directly and the rider's lean shows the steering
             hud.SetStick(false, input.StickOrigin, input.StickPos, 1f);
 
-            float gap = state == State.Ready || state == State.Hub ? 120f : Mathf.Max(0f, slide.Gap(rider));
+            float gap = state == State.Ready || state == State.Hub ? 120f : !slide.Released ? 9999f : Mathf.Max(0f, slide.Gap(rider));   // 9999: still holding, no slide to show
             float close = Mathf.Clamp01(1f - gap / 45f);
             hud.SetRun(rider.Speed * 3.6f, Score, Mult, gap, 160f, state == State.Riding);
             hud.SetPower(runTime, rider.Shields, state == State.Riding);
@@ -827,38 +863,49 @@ namespace Summit
             gateRoot = root;
             float cx = Slope.Centre(Slope.PadLip), gz = Slope.PadLip - 36f;   // well ahead of where you wait, so the whole banner is in view
             float gy = Slope.DrawnHeight(cx, gz);
+            // the gate breaks as one: hit a post and it snaps, and the banner comes down with it
+            var gate = Holder("Gate", root, new Vector3(cx, gy, gz));
+            var gateBrk = Breakable.Sign(gate);
             for (int sgn = -1; sgn <= 1; sgn += 2)
-                Block(PrimitiveType.Cube, root, new Vector3(cx + sgn * 4.2f, gy + 2.2f, gz), new Vector3(0.35f, 4.4f, 0.35f), red);
+                gateBrk.Post(Block(PrimitiveType.Cube, gate, new Vector3(cx + sgn * 4.2f, gy + 2.2f, gz), new Vector3(0.35f, 4.4f, 0.35f), red));
             // the banner: a printed vinyl strip in a frame, hung between the posts
-            Block(PrimitiveType.Cube, root, new Vector3(cx, gy + 4.3f, gz + 0.06f), new Vector3(8.6f, 1.2f, 0.08f), red);
+            var frame = Block(PrimitiveType.Cube, gate, new Vector3(cx, gy + 4.3f, gz + 0.06f), new Vector3(8.6f, 1.2f, 0.08f), red);
             var banner = GameObject.CreatePrimitive(PrimitiveType.Quad);
             Object.DestroyImmediate(banner.GetComponent<Collider>());
-            banner.transform.SetParent(root, false);
+            banner.transform.SetParent(gate, false);
             banner.transform.SetPositionAndRotation(new Vector3(cx, gy + 4.3f, gz - 0.01f), Quaternion.identity);   // a quad shows its face to -Z: up the hill, at the rider
             banner.transform.localScale = new Vector3(8.4f, 1.05f, 1f);
             banner.GetComponent<MeshRenderer>().sharedMaterial = GateSign("Signs/BannerSummit");
+            gateBrk.Board(frame, banner.transform);
+            gateBrk.Arm();
             // flags lining the lip and a wooden kicker edge
             for (int i = 0; i < 6; i++)
                 for (int sgn = -1; sgn <= 1; sgn += 2)
                 {
                     float z = Slope.PadLip - 2f - i * 6f, x = cx + sgn * (Slope.PadHalf - 1f);
                     float y = Slope.DrawnHeight(x, z);
-                    Block(PrimitiveType.Cylinder, root, new Vector3(x, y + 0.9f, z), new Vector3(0.06f, 0.9f, 0.06f), white);
-                    Block(PrimitiveType.Cube, root, new Vector3(x - sgn * 0.3f, y + 1.55f, z), new Vector3(0.6f, 0.4f, 0.03f), (i % 2 == 0) ? red : white);
+                    var flag = Holder("LipFlag", root, new Vector3(x, y, z));
+                    Block(PrimitiveType.Cylinder, flag, new Vector3(x, y + 0.9f, z), new Vector3(0.06f, 0.9f, 0.06f), white);
+                    Block(PrimitiveType.Cube, flag, new Vector3(x - sgn * 0.3f, y + 1.55f, z), new Vector3(0.6f, 0.4f, 0.03f), (i % 2 == 0) ? red : white);
+                    Breakable.Flag(flag, 1.8f);
                 }
             // the finish line at the base of the mountain: a blue arch across the run
             {
                 float fz = Slope.FinishZ + 30f, fx = Slope.Centre(fz), fy = Slope.DrawnHeight(fx, fz);
                 var blue = M(new Color(0.08f, 0.30f, 0.70f));
+                var arch = Holder("FinishArch", root, new Vector3(fx, fy, fz));
+                var archBrk = Breakable.Sign(arch);
                 for (int sgn = -1; sgn <= 1; sgn += 2)
-                    Block(PrimitiveType.Cube, root, new Vector3(fx + sgn * 9f, fy + 2.6f, fz), new Vector3(0.45f, 5.2f, 0.45f), blue);
-                Block(PrimitiveType.Cube, root, new Vector3(fx, fy + 5.0f, fz + 0.06f), new Vector3(18.6f, 1.6f, 0.08f), blue);
+                    archBrk.Post(Block(PrimitiveType.Cube, arch, new Vector3(fx + sgn * 9f, fy + 2.6f, fz), new Vector3(0.45f, 5.2f, 0.45f), blue));
+                var archFrame = Block(PrimitiveType.Cube, arch, new Vector3(fx, fy + 5.0f, fz + 0.06f), new Vector3(18.6f, 1.6f, 0.08f), blue);
                 var fb = GameObject.CreatePrimitive(PrimitiveType.Quad);
                 Object.DestroyImmediate(fb.GetComponent<Collider>());
-                fb.transform.SetParent(root, false);
+                fb.transform.SetParent(arch, false);
                 fb.transform.SetPositionAndRotation(new Vector3(fx, fy + 5.0f, fz - 0.01f), Quaternion.identity);
                 fb.transform.localScale = new Vector3(18.2f, 1.4f, 1f);
                 fb.GetComponent<MeshRenderer>().sharedMaterial = GateSign("Signs/BannerFinish");
+                archBrk.Board(archFrame, fb.transform);
+                archBrk.Arm();
             }
             // the last chance: safety signs either side of the in-run before the lip, and caution tape strung
             // chest-high between the last pair and on across the mountain, tree to tree (ride through it and it tears)
@@ -882,7 +929,7 @@ namespace Summit
             var t = new GameObject("WarningSign").transform;
             t.SetParent(root, false);
             t.SetPositionAndRotation(new Vector3(x, Slope.DrawnHeight(x, z), z), Quaternion.Euler(0f, side * 28f, 0f));
-            void Local(PrimitiveType type, Vector3 at, Vector3 scale, Material m)
+            Transform Local(PrimitiveType type, Vector3 at, Vector3 scale, Material m)
             {
                 var go = GameObject.CreatePrimitive(type);
                 Object.DestroyImmediate(go.GetComponent<Collider>());
@@ -890,17 +937,20 @@ namespace Summit
                 go.transform.localPosition = at; go.transform.localScale = scale;
                 go.GetComponent<MeshRenderer>().sharedMaterial = m;
                 if (type == PrimitiveType.Quad) go.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                return go.transform;
             }
+            var brk = Breakable.Sign(t);
             // posts run a little into the snow, so they stand on the bank whatever its tilt
             float top = lift + H;
             for (int s = -1; s <= 1; s += 2)
-                Local(PrimitiveType.Cylinder, new Vector3(s * SignPostX, top * 0.5f - 0.3f, 0.08f), new Vector3(0.1f, (top + 0.6f) * 0.5f, 0.1f), post);
-            Local(PrimitiveType.Cube, new Vector3(0f, lift + H * 0.5f, 0.03f), new Vector3(W + 0.1f, H + 0.1f, 0.04f), post);
-            Local(PrimitiveType.Quad, new Vector3(0f, lift + H * 0.5f, -0.001f), new Vector3(W, H, 1f), GateSign(face));
+                brk.Post(Local(PrimitiveType.Cylinder, new Vector3(s * SignPostX, top * 0.5f - 0.3f, 0.08f), new Vector3(0.1f, (top + 0.6f) * 0.5f, 0.1f), post));
+            var back = Local(PrimitiveType.Cube, new Vector3(0f, lift + H * 0.5f, 0.03f), new Vector3(W + 0.1f, H + 0.1f, 0.04f), post);
+            brk.Board(back, Local(PrimitiveType.Quad, new Vector3(0f, lift + H * 0.5f, -0.001f), new Vector3(W, H, 1f), GateSign(face)));
+            brk.Arm();
             return t;
         }
 
-        static void Block(PrimitiveType t, Transform parent, Vector3 pos, Vector3 scale, Material m)
+        static Transform Block(PrimitiveType t, Transform parent, Vector3 pos, Vector3 scale, Material m)
         {
             var go = GameObject.CreatePrimitive(t);
             Object.DestroyImmediate(go.GetComponent<Collider>());
@@ -908,6 +958,16 @@ namespace Summit
             go.transform.position = pos;
             go.transform.localScale = scale;
             go.GetComponent<MeshRenderer>().sharedMaterial = m;
+            return go.transform;
+        }
+
+        /// <summary>An empty holder at a spot on the snow, for something that can be broken or knocked down (Breakable).</summary>
+        static Transform Holder(string name, Transform parent, Vector3 at)
+        {
+            var t = new GameObject(name).transform;
+            t.SetParent(parent, false);
+            t.position = at;
+            return t;
         }
 
         // airborne sounds: a whoosh as you leave the snow without popping, and one for each half turn of a spin
@@ -939,6 +999,7 @@ namespace Summit
                 chainCount = 0;
                 hud.Flash("CAUGHT", "the mountain has you", 1.8f);
                 audioFx.Play(Sfx.SlideHit);
+                fastCrash = false;
                 audioFx.Play(Sfx.Scream);
 #if UNITY_IOS || UNITY_ANDROID
                 Handheld.Vibrate();
@@ -951,11 +1012,12 @@ namespace Summit
             fallsNote = left <= 0 ? "that's " + (Progress.Falls(MaxFalls) == 4 ? "four" : "three") : left == 1 ? "1 fall left" : left + " falls left";
             hud.Flash(why, fallsNote, 1.3f);
             medical += rider.Tube ? 400f : 850f;   // the trip to the clinic
-            audioFx.Play(why.StartsWith("Crevasse") ? Sfx.Nooo : Sfx.Scream);   // down a crevasse: the long "nooo"
+            fastCrash = rider.Speed * 3.6f > 120f;   // (Speed is still the speed you were going)
+            audioFx.Play(why.StartsWith("Crevasse") ? Sfx.Nooo : fastCrash ? Sfx.BigScream : Sfx.Scream);   // down a crevasse: the long "nooo"
             if (why.StartsWith("Crevasse")) { crevasseWatch = true; hud.Flash("CREVASSE!", fallsNote, 1.6f); if (left <= 0) { wipeoutTimer = 0.9f; endTitle = "WIPED OUT"; rider.StayDown = true; } }
             else if (left <= 0) { wipeoutTimer = 0.9f; endTitle = "WIPED OUT"; rider.StayDown = true; }   // the last fall: no getting up   // let the tumble play out, then it's over
             if (why.StartsWith("Tree")) { audioFx.Play(Sfx.HitTree); audioFx.Play(Sfx.Crash, 0.6f); }
-            else if (why.StartsWith("Rock")) { audioFx.Play(Sfx.HitRock); audioFx.Play(Sfx.Crash, 0.6f); }
+            else if (why.StartsWith("Rock") || why.StartsWith("Hit the rocks")) { audioFx.Play(Sfx.HitRock); audioFx.Play(Sfx.Crash, 0.6f); }
             else if (why.StartsWith("Crevasse")) audioFx.Play(Sfx.Crevasse);
             else if (why.StartsWith("Bear")) { audioFx.Play(Sfx.Crash); audioFx.Play(Sfx.BearRoar); }
             else audioFx.Play(Sfx.Crash);

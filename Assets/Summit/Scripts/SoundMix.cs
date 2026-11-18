@@ -8,7 +8,9 @@ namespace Summit
         Trick, TrickBig, CloseCall, Soda, ShieldGet, ShieldHit, ShieldFull, Click, Play, Buried,
         Scrape, GrindRail, GrindBox, BearRoar, Bone, Scream, Grunt, Yelp, Groan,
         SmashWood, SmashRock, PowerJump, PowerStar, SlideHit,
-        Nooo, Ledge   // the player's own clips (Resources/Audio/user_*.mp3)
+        Nooo, Ledge,  // the player's own clips (Resources/Audio/user_*.mp3)
+        BigScream,    // one of the player's screams (Resources/Audio/UserScreams), shuffled
+        SlideCrack    // the slope letting go behind you: a crack, and the rumble building
     }
 
     /// <summary>What the ride sounds like this frame (all 0..1 unless noted).</summary>
@@ -47,11 +49,12 @@ namespace Summit
         AudioClip smashWood, smashRock, powerJump, powerStar;
         // the avalanche up close: the hiss and crackle of the churning front, and the blow that takes you off
         Layer slideNear;
-        AudioClip slideHit;
+        AudioClip slideHit, slideCrack;
         AudioSource voice;   // one voice: a new cry cuts the last one off, like a real throat
         // the player's own clips: a long "nooo" down a crevasse, and the suspense sting at the first ledge, on its
         // own source so it can be faded out once the jump is over
         AudioClip nooo, ledge;
+        AudioClip[] bigScreams; int[] screamBag; int screamNext; float bigStart = -9f;
         AudioSource cue;
         float voiceLock;          // until then the voice is a long cry that nothing short may cut off
         AudioClip[] groans;
@@ -70,7 +73,7 @@ namespace Summit
             ambience = Loop("ambience"); windLow = Loop("wind_low"); windHigh = Loop("wind_high");
             glide = Loop("glide"); carve = Loop("carve"); skid = Loop("skid"); powder = Loop("powder");
             grindRail = Loop("grind_rail"); grindBox = Loop("grind_box"); avalanche = Loop("avalanche"); boost = Loop("boost");
-            slideNear = Loop("avalanche_near"); slideHit = C("slide_hit");
+            slideNear = Loop("avalanche_near"); slideHit = C("slide_hit"); slideCrack = C("slide_crack");
 
             shots = new AudioSource[10];
             for (int i = 0; i < shots.Length; i++) { shots[i] = gameObject.AddComponent<AudioSource>(); shots[i].playOnAwake = false; shots[i].spatialBlend = 0f; }
@@ -99,6 +102,8 @@ namespace Summit
             groan = C("groan");
             voice = gameObject.AddComponent<AudioSource>(); voice.playOnAwake = false; voice.spatialBlend = 0f;
             nooo = C("user_crevasse_nooo"); ledge = C("user_ledge_suspense");
+            bigScreams = Resources.LoadAll<AudioClip>("Audio/UserScreams");
+            screamBag = new int[bigScreams.Length]; screamNext = screamBag.Length;   // shuffled on first use
             cue = gameObject.AddComponent<AudioSource>(); cue.playOnAwake = false; cue.spatialBlend = 0f;
             music = new GameObject("Music").AddComponent<Music>();
             music.transform.SetParent(transform, false);
@@ -265,11 +270,35 @@ namespace Summit
                 case Sfx.PowerJump: c = powerJump; vol = 0.7f; pitch = 1f; break;
                 case Sfx.PowerStar: c = powerStar; vol = 0.65f; pitch = 1f; break;
                 case Sfx.SlideHit: c = slideHit; vol = 1f; pitch = 1f; break;
+                case Sfx.SlideCrack: c = slideCrack; vol = 1f; pitch = 1f; break;
             }
             if (kind == Sfx.Nooo)
             {
                 if (nooo == null) { kind = Sfx.Scream; }
                 else { voice.clip = nooo; voice.pitch = 1f; voice.volume = 1f; voice.Play(); voiceLock = Time.unscaledTime + nooo.length; return; }
+            }
+            if (kind == Sfx.BigScream)
+            {
+                if (bigScreams == null || bigScreams.Length == 0) { kind = Sfx.Scream; }
+                else
+                {
+                    if (voice.isPlaying && voice.clip == nooo && Time.unscaledTime < voiceLock) return;   // the crevasse cry wins
+                    if (voice.isPlaying && Time.unscaledTime - bigStart < 0.5f) return;                   // let each one get going
+                    // a shuffle bag: every scream once, in a new order each time round, never the same one twice in a row
+                    if (screamNext >= screamBag.Length)
+                    {
+                        int last = screamBag.Length > 0 && screamNext > 0 ? screamBag[screamBag.Length - 1] : -1;
+                        for (int i = 0; i < screamBag.Length; i++) screamBag[i] = i;
+                        for (int i = screamBag.Length - 1; i > 0; i--) { int j = Random.Range(0, i + 1); (screamBag[i], screamBag[j]) = (screamBag[j], screamBag[i]); }
+                        if (screamBag.Length > 1 && screamBag[0] == last) (screamBag[0], screamBag[1]) = (screamBag[1], screamBag[0]);
+                        screamNext = 0;
+                    }
+                    voice.clip = bigScreams[screamBag[screamNext++]];
+                    voice.pitch = Random.Range(0.97f, 1.03f); voice.volume = 1f; voice.Play();
+                    bigStart = Time.unscaledTime;
+                    voiceLock = Time.unscaledTime + voice.clip.length;   // grunts and yelps don't cut it off
+                    return;
+                }
             }
             if (kind == Sfx.Ledge)
             {

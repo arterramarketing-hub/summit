@@ -382,6 +382,27 @@ func slideHit() -> [Double] {
     return normalize(fade(reverb(softclip(x, 1.2), wet: 0.25), out: 0.4), 0.95)
 }
 
+/// The slope letting go somewhere up the hill behind you: a sharp crack of the slab breaking, a deep whumpf as it
+/// settles, its echo off the mountain, and then the rumble of it starting to move, swelling and fading away.
+func slideCrack() -> [Double] {
+    var r = RNG(35); let n = samples(6.5)
+    var x = [Double](repeating: 0, count: n)
+    // the crack: a split-second burst, bright then woody, and two echoes coming back off the far side
+    let crack = mul(filt(filt(white(n, &r), .hp, 700), .lp, 6500)) { env($0, attack: 0.0005, decay: 0.045) }
+    let body = mul(filt(white(n, &r), .bp, 420, 1.2)) { env($0, attack: 0.001, decay: 0.12) }
+    for (at, g) in [(0.0, 1.0), (0.42, 0.32), (0.95, 0.14)] {
+        add(&x, crack, 1.3 * g, at: at); add(&x, body, 0.9 * g, at: at)
+    }
+    add(&x, thump(1.4, f0: 62, f1: 24, decay: 0.45), 1.1, at: 0.05)
+    // the rumble: low and far off, building over a few seconds as it gets going, then dying back
+    let rumble = filt(brown(n, &r), .lp, 120), roar = filt(pink(n, &r), .lp, 500)
+    for i in 0..<n {
+        let tt = t(i), k = min(1, max(0, (tt - 0.4) / 2.6)), out = min(1, max(0, (6.4 - tt) / 2.4))
+        x[i] += (1.6 * rumble[i] + 0.35 * roar[i]) * k * k * out
+    }
+    return normalize(fade(reverb(softclip(x, 1.1), wet: 0.45, room: 0.9, tail: 1.2), out: 0.5), 0.95)
+}
+
 func boost() -> [Double] {
     var r = RNG(10); let n = samples(2.5)
     let fizz = filt(grains(n, rate: { _ in 3000 }, len: 0.0002...0.0008, &r), .hp, 4000)
@@ -922,6 +943,7 @@ write("grind_box", grindBox())
 write("avalanche", avalanche())
 write("avalanche_near", avalancheNear())
 write("slide_hit", slideHit())
+write("slide_crack", slideCrack())
 write("boost", boost())
 write("ambience", ambience())
 write("bear_growl", bearGrowl())

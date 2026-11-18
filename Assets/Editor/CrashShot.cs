@@ -123,7 +123,7 @@ public static class CrashShot
         RideFor(3f, Centre);
         rider.DoCrash("test");
         WaitForRest(0f);
-        typeof(SummitGame).GetMethod("ToEnd", NP).Invoke(game, new object[] { "WIPED OUT", false });
+        typeof(SummitGame).GetMethod("ToEnd", NP).Invoke(game, new object[] { "WIPED OUT", false, false });
         Log($"flags after the run: {flags.Count}");
 
         // ---- the flags, close up, front and back, at two moments of the flutter

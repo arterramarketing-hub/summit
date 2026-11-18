@@ -24,7 +24,8 @@ namespace Summit
         public const float GateZ = -76f, BackZ = -126f, HalfWidth = 23f;
         static float Cx => Slope.Centre(Slope.PadLip);
         /// <summary>True inside the camp and its framing trees (the forest leaves this ground alone).</summary>
-        public static bool InCamp(float x, float z) => z < -68f && z > BackZ - 16f && Mathf.Abs(x - Cx) < HalfWidth + 10f;
+        public static bool InCamp(float x, float z) => z < -68f && z > BackZ - 16f && Mathf.Abs(x - Cx) < HalfWidth + 10f
+            || z < -64f && z > -360f && x - Cx > Slope.SummitRight - 1f && x - Cx < 175f;   // (and no trees down the cliff's rock)
 
         public bool Active { get; private set; }
         public Station Near { get; private set; }
@@ -70,6 +71,7 @@ namespace Summit
             carrot = M(new Color(0.98f, 0.45f, 0.08f), 0.3f);
             coal = M(new Color(0.05f, 0.05f, 0.06f), 0.5f);
             scarf = M(new Color(0.85f, 0.12f, 0.12f), 0.15f);
+            shadowMat = M(Color.white, 0f); shadowMat.SetFloat("_Cull", 0f);   // both sides: whichever way the light comes
             Color[] fc = { new Color(0.15f, 0.35f, 0.85f), new Color(0.95f, 0.95f, 0.95f), new Color(0.85f, 0.15f, 0.12f), new Color(0.15f, 0.6f, 0.25f), new Color(0.98f, 0.8f, 0.12f) };
             for (int i = 0; i < fc.Length; i++) { flagCols[i] = M(fc[i], 0.1f); flagCols[i].SetFloat("_Cull", 0f); }
             noteMats = new Material[3];
@@ -99,11 +101,7 @@ namespace Summit
         {
             var m = CourseDressing.Sign(lit, path);
             m.SetFloat("_Smoothness", 0.15f);
-            // a little self-light, so the carved signs still read in the evening
-            m.EnableKeyword("_EMISSION");
-            m.SetTexture("_EmissionMap", m.GetTexture("_BaseMap"));
-            m.SetColor("_EmissionColor", new Color(0.3f, 0.3f, 0.3f));
-            m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.None;
+            // (no self-light: lit by the camp's lamps and the sky like real carved boards; SignLit.shader)
             return m;
         }
 
@@ -132,6 +130,8 @@ namespace Summit
             Birches();
             Mounds();
             Footpath();
+            CliffEdge();
+            Mist();
             Physics.SyncTransforms();
             Redress();
             SetNight(Night);   // the new lamps start at the evening's brightness
@@ -404,6 +404,10 @@ namespace Summit
                 float h = 9f + 4f * Slope.Hash01(i, 5, 31), lean = (Slope.Hash01(i, 6, 31) - 0.5f) * 6f;
                 t.localRotation *= Quaternion.Euler(lean, 0f, lean * 0.5f);
                 var trunk = Log(t, new Vector3(0f, -0.4f, 0f), new Vector3(0f, h, 0f), 0.26f, birch);
+                // its shadow: a thicker post, shadow only (the real trunk and twigs are too thin for the phone's shadow map)
+                var post = P(PrimitiveType.Cylinder, t, new Vector3(0f, h * 0.45f, 0f), new Vector3(0.42f, h * 0.45f, 0.42f), Vector3.zero, shadowMat).GetComponent<MeshRenderer>();
+                post.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.ShadowsOnly;
+                trunk.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 for (int k = 0; k < 7; k++)
                 {
                     float y = h * (0.45f + 0.08f * k), a = k * 137f * Mathf.Deg2Rad, len = (1.2f + 1.6f * Slope.Hash01(i, k, 32)) * (1f - k * 0.08f);
@@ -422,8 +426,8 @@ namespace Summit
             var t = new GameObject("Mounds").transform; t.SetParent(root, false);
             for (int i = 0; i < 26; i++)
             {
-                float side = i % 2 == 0 ? -1f : 1f;
-                float dx = side * (22f + 6f * Slope.Hash01(i, 1, 41)), z = Mathf.Lerp(-124f, -80f, Slope.Hash01(i, 2, 41));
+                // along the left edge (the right is the cliff), and a few across the back
+                float dx = -(22f + 6f * Slope.Hash01(i, 1, 41)), z = Mathf.Lerp(-124f, -80f, Slope.Hash01(i, 2, 41));
                 if (i >= 20) { dx = Mathf.Lerp(-14f, 14f, Slope.Hash01(i, 3, 41)); z = -127f - 3f * Slope.Hash01(i, 4, 41); }
                 var p = Ground(dx, z);
                 float s = 1.4f + 2.2f * Slope.Hash01(i, 5, 41);
@@ -543,6 +547,7 @@ namespace Summit
             // the photo backdrop is unlit: its shader takes the evening tint from this. (Not a colour grade on
             // the post profile: a cool filter with lower exposure tipped every warm light to pure red.)
             Shader.SetGlobalFloat("_SummitNight", k);
+            if (mistMat != null) mistMat.SetColor("_BaseColor", Color.Lerp(new Color(1f, 1f, 1f, 0.75f), new Color(0.26f, 0.31f, 0.44f, 0.6f), k));
             for (int i = 0; i < lamps.Count; i++)
                 if (lamps[i] != null) { float w = Mathf.Lerp(lampDay[i], 1f, k); lamps[i].intensity = lampPower[i] * w; lamps[i].enabled = w > 0.01f; }
         }
@@ -550,7 +555,7 @@ namespace Summit
         // (no fade of its own any more: DayNight calls SetNight every frame with the time of day's darkness)
 
         // never leave the project's sky or grade in the evening (in the editor they are assets)
-        void OnDisable() { if (dayKnown) SetNight(0f); }
+        void OnDisable() { if (dayKnown) SetNight(0f); CampShadows(false); }
 
         void Gate()
         {
@@ -791,14 +796,16 @@ namespace Summit
             var kinds = real ? new GameObject[0] : Resources.LoadAll<GameObject>("Trees");
             if (!real && kinds.Length == 0) return;
             var where = new[] { new Vector2(-27f, -126f), new Vector2(-19f, -134f), new Vector2(-6f, -137f), new Vector2(7f, -135f), new Vector2(19f, -131f),
-                                new Vector2(28f, -121f), new Vector2(-30f, -112f), new Vector2(-29f, -97f), new Vector2(30f, -106f), new Vector2(29f, -93f),
+                                new Vector2(21f, -134f), new Vector2(-30f, -112f), new Vector2(-29f, -97f), new Vector2(-26.5f, -122f), new Vector2(-27f, -104f),   // (none on the cliff side)
                                 new Vector2(-24f, -138f), new Vector2(13f, -140f), new Vector2(-31f, -84f),
                                 new Vector2(-20.5f, -111f), new Vector2(2.6f, -114.5f) };   // the last two: spruces beside the chalet
             for (int i = 0; i < where.Length; i++)
             {
                 if (real)
                 {
-                    RealFir.Plant(root, Ground(where[i].x, where[i].y) + Vector3.down * 0.3f, 7.5f + 3.5f * Slope.Hash01(i, 3, 77), i * 67f, i, "CampFir");
+                    // grown and buried in the snow like the forest's trees up here, and casting shadows in the camp
+                    var fir = Forest.PlantLike(root, Ground(where[i].x, where[i].y) + Vector3.down * 0.05f, Slope.Hash01(i, 3, 77), i * 67f, "CampFir", out _, out _);
+                    if (fir != null) FirShadow(fir);
                     continue;
                 }
                 var g = Instantiate(kinds[i % kinds.Length], root, false);
@@ -812,6 +819,286 @@ namespace Summit
                 g.transform.position = at + Vector3.down * 0.3f;
                 g.transform.rotation = Quaternion.Euler(0f, i * 67f, 0f) * g.transform.rotation;
             }
+        }
+
+        // ---------------------------------------------------------------- the cliff edge
+
+        // The camp's right-hand side is the top of a sheer cliff (Slope.Summit): a cable railing along the edge, as
+        // at a summit lookout (square grey posts every 2.5 m on a concrete kerb, six taut steel cables), and three
+        // tall flagpoles inside it with red-and-white flags streaming in the wind off the drop. The railing is one
+        // mesh per material; the flags are small cloth grids moved on the CPU each frame (a few hundred vertices).
+        const float EdgeX = 24.1f, EdgeZ0 = -138f, EdgeZ1 = -71f;
+        Material railMetal, kerbMat, flagMat, mistMat;
+        readonly List<Mesh> flagMeshes = new List<Mesh>();
+        readonly List<Vector3> flagRoots = new List<Vector3>();
+        readonly List<Renderer> flagRends = new List<Renderer>();
+        Vector3[] flagWork;
+        float flagClock;
+        const int FlagNx = 14, FlagNy = 7;
+        const float FlagL = 2.6f, FlagH = 1.3f;
+        static readonly Vector3 Wind = new Vector3(0.15f, 0f, 1f).normalized;   // off the mountain, down past the camp
+
+        void CliffEdge()
+        {
+            if (railMetal == null)
+            {
+                railMetal = M(new Color(0.52f, 0.54f, 0.56f), 0.55f); railMetal.SetFloat("_Metallic", 0.7f);
+                kerbMat = M(new Color(0.66f, 0.65f, 0.62f), 0.15f);
+                flagMat = M(Color.white, 0.1f, Resources.Load<Texture2D>("Camp/Flag")); flagMat.SetFloat("_Cull", 0f);
+            }
+            var t = new GameObject("CliffRail").transform; t.SetParent(root, false);
+            int n = Mathf.RoundToInt((EdgeZ1 - EdgeZ0) / 2.5f);
+            var posts = new Vector3[n + 1];
+            for (int i = 0; i <= n; i++) posts[i] = Ground(EdgeX, Mathf.Lerp(EdgeZ0, EdgeZ1, i / (float)n));
+            for (int i = 0; i <= n; i++)
+            {
+                P(PrimitiveType.Cube, t, posts[i] + Vector3.up * 0.6f, new Vector3(0.08f, 1.22f, 0.08f), Vector3.zero, railMetal);
+                P(PrimitiveType.Cube, t, posts[i] + Vector3.up * 1.22f, new Vector3(0.11f, 0.03f, 0.11f), Vector3.zero, railMetal);   // the cap
+            }
+            for (int i = 0; i < n; i++)
+            {
+                Vector3 a = posts[i], b = posts[i + 1];
+                // the kerb, and six cables pulled tight between the posts
+                var k = Log(t, a + Vector3.up * 0.1f, b + Vector3.up * 0.1f, 0.3f, kerbMat);
+                k.localScale = new Vector3(0.36f, k.localScale.y, 0.24f);
+                for (int c = 0; c < 6; c++)
+                {
+                    float h = 0.24f + c * 0.18f;
+                    Log(t, a + Vector3.up * h, b + Vector3.up * h, 0.012f, railMetal);
+                }
+            }
+            Combine(t);
+            // you walk up to it, not through it (the camp's edge stops you first anyway)
+            Block(Frame(EdgeX + 0.4f, (EdgeZ0 + EdgeZ1) * 0.5f, 0f), Vector3.zero, new Vector2(0.45f, (EdgeZ1 - EdgeZ0) * 0.5f + 1f));
+
+            // three flagpoles just inside the rail
+            flagMeshes.Clear(); flagRoots.Clear(); flagRends.Clear();
+            var poleM = M(new Color(0.88f, 0.89f, 0.9f), 0.6f); poleM.SetFloat("_Metallic", 0.5f);
+            var gold = M(new Color(0.9f, 0.72f, 0.3f), 0.8f); gold.SetFloat("_Metallic", 0.9f);
+            foreach (var z in new[] { -104f, -97.5f, -91f })
+            {
+                var g = Ground(EdgeX - 1.6f, z);
+                Log(t.parent, g + Vector3.down * 0.3f, g + Vector3.up * 6f, 0.11f, poleM);
+                P(PrimitiveType.Sphere, t.parent, g + Vector3.up * 6.08f, Vector3.one * 0.16f, Vector3.zero, gold);
+                P(PrimitiveType.Cylinder, t.parent, g + Vector3.up * 0.15f, new Vector3(0.5f, 0.15f, 0.5f), Vector3.zero, kerbMat);
+                Block(Frame(EdgeX - 1.6f, z, 0f), Vector3.zero, new Vector2(0.25f, 0.25f));
+                var top = g + Vector3.up * 5.85f;
+                flagRoots.Add(top);
+                var fo = new GameObject("Flag", typeof(MeshFilter), typeof(MeshRenderer));
+                fo.transform.SetParent(root, false);
+                var mesh = FlagMesh();
+                fo.GetComponent<MeshFilter>().sharedMesh = mesh;
+                var mr = fo.GetComponent<MeshRenderer>(); mr.sharedMaterial = flagMat;
+                flagMeshes.Add(mesh); flagRends.Add(mr);
+                // the middle one has a lamp at its foot, lighting all three from below at night
+                if (z > -100f && z < -95f) Lamp(t.parent, g + Vector3.up * 1.2f + Vector3.left * 0.8f, 11f, 1.8f);
+            }
+            WaveFlags(0f);
+        }
+
+        /// <summary>A flag's cloth: a grid, both sides (each with its own normals), u along the fly, v up.</summary>
+        Mesh FlagMesh()
+        {
+            int nv = (FlagNx + 1) * (FlagNy + 1);
+            var uv = new Vector2[nv * 2];
+            var tri = new List<int>();
+            for (int j = 0; j <= FlagNy; j++)
+                for (int i = 0; i <= FlagNx; i++)
+                {
+                    var c = new Vector2(i / (float)FlagNx, j / (float)FlagNy);
+                    uv[j * (FlagNx + 1) + i] = c; uv[nv + j * (FlagNx + 1) + i] = c;
+                }
+            for (int j = 0; j < FlagNy; j++)
+                for (int i = 0; i < FlagNx; i++)
+                {
+                    int a = j * (FlagNx + 1) + i, b = a + 1, c = a + FlagNx + 1, d = c + 1;
+                    tri.AddRange(new[] { a, c, b, b, c, d });
+                    tri.AddRange(new[] { nv + a, nv + b, nv + c, nv + b, nv + d, nv + c });   // the other side
+                }
+            var m = new Mesh { name = "Flag" };
+            m.MarkDynamic();
+            m.vertices = new Vector3[nv * 2]; m.uv = uv; m.SetTriangles(tri, 0);
+            return m;
+        }
+
+        /// <summary>
+        /// The flags stream out hard downwind: waves run from the pole to the fly end, growing as they go, with a
+        /// quicker flutter on top, the cloth sagging a little and the fly end whipping.
+        /// </summary>
+        void WaveFlags(float dt)
+        {
+            if (flagMeshes.Count == 0) return;
+            bool seen = false;
+            foreach (var r in flagRends) if (r != null && (r.isVisible || dt <= 0f || ChaseCamera.TestDt > 0f)) seen = true;
+            if (!seen) return;
+            flagClock += dt;
+            int nv = (FlagNx + 1) * (FlagNy + 1);
+            if (flagWork == null || flagWork.Length != nv * 2) flagWork = new Vector3[nv * 2];
+            var side = Vector3.Cross(Vector3.up, Wind);
+            for (int f = 0; f < flagMeshes.Count; f++)
+            {
+                float ph = f * 1.7f, t = flagClock;
+                for (int j = 0; j <= FlagNy; j++)
+                    for (int i = 0; i <= FlagNx; i++)
+                    {
+                        float u = i / (float)FlagNx, v = j / (float)FlagNy;
+                        float amp = 0.22f * Mathf.Pow(u, 1.1f);
+                        float wave = Mathf.Sin(u * 9.5f - t * 11f + ph + v * 0.9f) + 0.35f * Mathf.Sin(u * 23f - t * 27f + ph * 2f + v * 2.1f);
+                        float along = u * FlagL * (1f - 0.04f * Mathf.Abs(wave) * u);
+                        var p = Wind * along + Vector3.up * (v * FlagH - FlagH - 0.18f * u * u + 0.05f * u * Mathf.Sin(t * 7f + u * 6f + ph))
+                              + side * (amp * wave);
+                        flagWork[j * (FlagNx + 1) + i] = flagRoots[f] + p;
+                        flagWork[nv + j * (FlagNx + 1) + i] = flagRoots[f] + p;
+                    }
+                var m = flagMeshes[f];
+                m.vertices = flagWork;
+                m.RecalculateNormals();
+                m.RecalculateBounds();
+            }
+        }
+
+        /// <summary>Merge everything under t into one mesh per material (the railing's two hundred pieces: two draws).</summary>
+        static void Combine(Transform t)
+        {
+            var byMat = new Dictionary<Material, List<CombineInstance>>();
+            foreach (var mf in t.GetComponentsInChildren<MeshFilter>())
+            {
+                var mat = mf.GetComponent<MeshRenderer>().sharedMaterial;
+                if (!byMat.TryGetValue(mat, out var list)) byMat[mat] = list = new List<CombineInstance>();
+                list.Add(new CombineInstance { mesh = mf.sharedMesh, transform = t.worldToLocalMatrix * mf.transform.localToWorldMatrix });
+            }
+            for (int i = t.childCount - 1; i >= 0; i--) { var c = t.GetChild(i).gameObject; if (Application.isPlaying) Destroy(c); else DestroyImmediate(c); }
+            foreach (var kv in byMat)
+            {
+                var mesh = new Mesh { name = "Combined", indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
+                mesh.CombineMeshes(kv.Value.ToArray(), true, true);
+                var g = new GameObject("Part", typeof(MeshFilter), typeof(MeshRenderer));
+                g.transform.SetParent(t, false);
+                g.GetComponent<MeshFilter>().sharedMesh = mesh;
+                g.GetComponent<MeshRenderer>().sharedMaterial = kv.Key;
+            }
+        }
+
+        /// <summary>Cloud drifting below the summit, over the drop on the right and down the slopes on the left.</summary>
+        void Mist()
+        {
+            if (mistMat == null && soft != null)
+            {
+                mistMat = new Material(soft);
+                mistMat.SetTexture("_BaseMap", Resources.Load<Texture2D>("Camp/Cloud"));
+                mistMat.SetColor("_BaseColor", new Color(1f, 1f, 1f, 0.75f));
+            }
+            if (mistMat == null) return;
+            float top = Ground(0f, -100f).y;
+            MistBank(new Vector3(Cx + 200f, top - 150f, -150f), new Vector3(300f, 220f, 420f), 26, 70f, 160f);   // over the drop
+            MistBank(new Vector3(Cx - 190f, top - 150f, -120f), new Vector3(200f, 120f, 320f), 12, 50f, 110f);   // below the left slopes
+        }
+
+        void MistBank(Vector3 centre, Vector3 size, int count, float small, float big)
+        {
+            var go = new GameObject("Mist");
+            go.transform.SetParent(root, false);
+            go.transform.position = centre;
+            var ps = go.AddComponent<ParticleSystem>();
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            var main = ps.main;
+            main.loop = true; main.prewarm = true;
+            main.startLifetime = 240f;
+            main.startSpeed = 0f;
+            main.startSize = new ParticleSystem.MinMaxCurve(small, big);
+            main.startRotation = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            main.maxParticles = count;
+            var sh = ps.shape; sh.shapeType = ParticleSystemShapeType.Box; sh.scale = size;
+            var em = ps.emission; em.rateOverTime = count / 240f;
+            var vel = ps.velocityOverLifetime; vel.enabled = true; vel.space = ParticleSystemSimulationSpace.World;
+            vel.x = new ParticleSystem.MinMaxCurve(0.4f, 0.4f); vel.y = new ParticleSystem.MinMaxCurve(0f, 0f); vel.z = new ParticleSystem.MinMaxCurve(1.5f, 1.5f);
+            var col = ps.colorOverLifetime; col.enabled = true;
+            var g = new Gradient();
+            g.SetKeys(new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
+                      new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(1f, 0.15f), new GradientAlphaKey(1f, 0.85f), new GradientAlphaKey(0f, 1f) });
+            col.color = g;
+            var r = go.GetComponent<ParticleSystemRenderer>();
+            r.sharedMaterial = mistMat;
+            r.sortMode = ParticleSystemSortMode.Distance;
+            r.maxParticleSize = 3f;
+            ps.Play();
+        }
+
+        // ---------------------------------------------------------------- tree shadows
+
+        // The camp's firs are branch cards, alpha-tested: in the phone's shadow map (two cascades out to 140 m, a
+        // quarter-metre a texel by the camp's edge) the needles cover too little of each texel and the trees cast
+        // nothing. Each gets a solid stand-in instead, drawn only into the shadow map: three cone tiers and a trunk,
+        // the fir's own size; the cards themselves stop casting (cheaper, too). Only these camp trees have them.
+        Material shadowMat;
+        static Mesh firShadowMesh;
+
+        void FirShadow(GameObject fir)
+        {
+            var r = fir.GetComponent<MeshRenderer>();
+            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            var b = r.bounds;
+            float crown = 0.82f * (b.extents.x + b.extents.z) * 0.5f, height = b.size.y;
+            var g = new GameObject("FirShadow", typeof(MeshFilter), typeof(MeshRenderer));
+            g.transform.SetParent(fir.transform.parent, false);
+            g.transform.SetPositionAndRotation(new Vector3(b.center.x, b.min.y, b.center.z), fir.transform.rotation);
+            g.transform.localScale = new Vector3(crown, height, crown);
+            g.GetComponent<MeshFilter>().sharedMesh = FirShadowMesh();
+            var mr = g.GetComponent<MeshRenderer>();
+            mr.sharedMaterial = shadowMat;
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.ShadowsOnly;
+            mr.receiveShadows = false;
+        }
+
+        /// <summary>A fir's silhouette, 1 high and 1 wide at the bottom: three stacked cones and a trunk.</summary>
+        static Mesh FirShadowMesh()
+        {
+            if (firShadowMesh != null) return firShadowMesh;
+            var v = new List<Vector3>(); var tri = new List<int>();
+            void Cone(float y0, float r0, float y1, float r1)
+            {
+                const int n = 10;
+                int b0 = v.Count;
+                for (int i = 0; i < n; i++)
+                {
+                    float a = i * Mathf.PI * 2f / n;
+                    v.Add(new Vector3(Mathf.Cos(a) * r0, y0, Mathf.Sin(a) * r0));
+                    v.Add(new Vector3(Mathf.Cos(a) * r1, y1, Mathf.Sin(a) * r1));
+                }
+                int c = v.Count; v.Add(new Vector3(0f, y0, 0f));
+                for (int i = 0; i < n; i++)
+                {
+                    int j = (i + 1) % n;
+                    int lo0 = b0 + i * 2, hi0 = lo0 + 1, lo1 = b0 + j * 2, hi1 = lo1 + 1;
+                    tri.AddRange(new[] { lo0, hi0, hi1, lo0, hi1, lo1, c, lo0, lo1 });   // side, and the underside
+                }
+            }
+            Cone(0.14f, 1.0f, 0.55f, 0.28f);
+            Cone(0.38f, 0.78f, 0.8f, 0.14f);
+            Cone(0.62f, 0.52f, 1.0f, 0f);
+            Cone(0f, 0.07f, 0.2f, 0.07f);   // the trunk
+            firShadowMesh = new Mesh { name = "FirShadow" };
+            firShadowMesh.SetVertices(v); firShadowMesh.SetTriangles(tri, 0);
+            firShadowMesh.RecalculateNormals(); firShadowMesh.RecalculateBounds();
+            return firShadowMesh;
+        }
+
+        // The phone draws shadows out to 140 m for the run's long views; the camp's are all close, so while you're in
+        // it the same two cascades cover 80 m instead: the trees' and the chalet's shadows come out sharper. Put back
+        // as you leave (and if the camp goes away), since the pipeline asset is shared.
+        float runShadowDistance = -1f;
+
+        void CampShadows(bool on)
+        {
+            var urp = UnityEngine.Rendering.Universal.UniversalRenderPipeline.asset;
+            if (urp == null) return;
+            if (on)
+            {
+                if (runShadowDistance < 0f) runShadowDistance = urp.shadowDistance;
+                urp.shadowDistance = Mathf.Min(runShadowDistance, 80f);
+            }
+            else if (runShadowDistance >= 0f) { urp.shadowDistance = runShadowDistance; runShadowDistance = -1f; }
         }
 
         // ---------------------------------------------------------------- what you own shows up
@@ -852,6 +1139,7 @@ namespace Summit
             Near = Station.None;
             body.SetWalking(true);
             ClearFootprints();   // a fresh visit: fresh snow
+            CampShadows(true);
             // a finger already down (the tap on TO CAMP or < CAMP that brought you here) is not a walk or a tap here:
             // ignore it until it lifts
             wasDown = Pointer(out _); pressOnUi = true; dragging = false; pressedContext = false; pressAt = Vector2.zero;
@@ -865,6 +1153,7 @@ namespace Summit
             if (!Active) return;
             Active = false;
             Showcase = false;
+            CampShadows(false);
             if (steps != null) { steps.Stop(); stepVol = 0f; }
             if (body != null) body.SetWalking(false);
         }
@@ -1257,7 +1546,11 @@ namespace Summit
 
         // ---------------------------------------------------------------- camera
 
-        void LateUpdate() { if (Active) CameraStep(Time.deltaTime); }
+        void LateUpdate()
+        {
+            if (Active) CameraStep(Time.deltaTime);
+            WaveFlags(ChaseCamera.TestDt > 0f ? ChaseCamera.TestDt : Time.deltaTime);
+        }
 
         /// <summary>Move the camera (public for the test tools, which have no frame time).</summary>
         public void CameraStep(float dt)

@@ -30,7 +30,7 @@ namespace Summit
             public float bdSat;             // its colour kept (moonlight shows little)
             public Vector2 bdGlow;          // the band of height (photo v) up which its snow is in the sun: at dusk
                                             // only the high snowfields catch it (-1..0: all of it)
-            public float camp, headlamp, glintRate, signGain;
+            public float camp, headlamp, glintRate, glow;   // glow: RiderGlow's strength
             public Color glint, particles;
         }
 
@@ -43,7 +43,7 @@ namespace Summit
             sunI = 1.9f, shadow = 0.7f, sunTint = C(1f, 1.15f, 1.35f),   // the photo's sun is deep orange: a softer gold
             ambient = 1.25f, fogGain = 1.05f, fogDensity = 0.0024f, reflect = 0.8f,
             bdLo = C(0.70f, 0.68f, 0.80f), bdHi = C(1.10f, 0.94f, 0.84f), bdSat = 0.95f, bdGlow = new Vector2(-1f, 0f),   // soft warm light
-            camp = 0.25f, headlamp = 0f, glintRate = 0.8f, signGain = 1f,
+            camp = 0.25f, headlamp = 0f, glintRate = 0.8f, glow = 0.25f,
             glint = C(1f, 0.88f, 0.78f), particles = C(1f, 0.93f, 0.9f),
         };
         static readonly Key Day = new Key
@@ -53,7 +53,7 @@ namespace Summit
             sunI = 1.15f, shadow = 0.8f, sunTint = Color.white,
             ambient = 0.45f, fogGain = 1.15f, fogDensity = 0.0021f, reflect = 1f,
             bdLo = Color.white, bdHi = Color.white, bdSat = 1f, bdGlow = new Vector2(-1f, 0f),
-            camp = 0f, headlamp = 0f, glintRate = 1f, signGain = 1f,
+            camp = 0f, headlamp = 0f, glintRate = 1f, glow = 0.08f,
             glint = Color.white, particles = Color.white,
         };
         static readonly Key Golden = new Key
@@ -64,7 +64,7 @@ namespace Summit
             ambient = 0.85f, fogGain = 1.2f, fogDensity = 0.0021f, reflect = 0.8f,
             // alpenglow: the upper snowfields gold-orange, the lower slopes and forest already in blue shade
             bdLo = C(0.34f, 0.31f, 0.42f), bdHi = C(1.30f, 0.86f, 0.55f), bdSat = 0.9f, bdGlow = new Vector2(0.60f, 0.74f),
-            camp = 0.3f, headlamp = 0f, glintRate = 0.9f, signGain = 1.05f,
+            camp = 0.3f, headlamp = 0f, glintRate = 0.9f, glow = 0.45f,
             glint = C(1f, 0.84f, 0.6f), particles = C(1f, 0.88f, 0.78f),
         };
         static readonly Key Pink = new Key
@@ -75,7 +75,7 @@ namespace Summit
             ambient = 1.3f, fogGain = 1.2f, fogDensity = 0.0022f, reflect = 0.6f,
             // the last pink light on the summit snow only
             bdLo = C(0.22f, 0.22f, 0.36f), bdHi = C(1.20f, 0.55f, 0.72f), bdSat = 0.9f, bdGlow = new Vector2(0.78f, 0.90f),
-            camp = 0.65f, headlamp = 0.45f, glintRate = 0.55f, signGain = 1.4f,
+            camp = 0.65f, headlamp = 0.45f, glintRate = 0.55f, glow = 0.75f,
             glint = C(1f, 0.74f, 0.86f), particles = C(0.82f, 0.7f, 0.8f),
         };
         static readonly Key Night = new Key
@@ -86,9 +86,9 @@ namespace Summit
             sunI = 0.45f, shadow = 0.6f, sunTint = C(0.75f, 0.85f, 1f),
             ambient = 1.6f, fogGain = 1.2f, fogDensity = 0.0024f, reflect = 0.5f,
             // moonlit: about five times darker than day, nearly colourless and blue, the snow just catching the
-            // moon and the forest near black
-            bdLo = C(0.028f, 0.036f, 0.06f), bdHi = C(0.11f, 0.135f, 0.22f), bdSat = 0.3f, bdGlow = new Vector2(-1f, 0f),
-            camp = 1f, headlamp = 1f, glintRate = 0.35f, signGain = 2.2f,
+            // moon and the forest dark, its shapes faint
+            bdLo = C(0.17f, 0.21f, 0.33f), bdHi = C(0.11f, 0.135f, 0.22f),   // (the forest lifted just enough for its shapes to read) bdSat = 0.3f, bdGlow = new Vector2(-1f, 0f),
+            camp = 1f, headlamp = 1f, glintRate = 0.35f, glow = 1f,
             glint = C(0.62f, 0.72f, 1f), particles = C(0.34f, 0.40f, 0.56f),
         };
 
@@ -171,10 +171,9 @@ namespace Summit
         Light headlamp;
         float shown = -1f;
         Color lastParticles = new Color(-1f, 0f, 0f), lastGlint = new Color(-1f, 0f, 0f);
-        float lastSignGain = -1f;
+        RiderGlow glowFx;
         Cubemap lastReflection;
         ReflectionProbe probe;
-        static readonly List<Material> reflective = new List<Material>();
 
         /// <summary>
         /// Called once the sun is set up (SummitGame.SetUpWorld): takes over the sky with the time-of-day one
@@ -213,22 +212,11 @@ namespace Summit
             headlamp.range = 48f; headlamp.spotAngle = 70f; headlamp.innerSpotAngle = 28f;
             headlamp.shadows = LightShadows.None;   // a real-time shadow map for it would cost too much on the phone
             headlamp.enabled = false;
+            var body = r != null ? r.GetComponent<RiderBody>() : null;
+            if (body != null) glowFx = RiderGlow.Build(body, transform);
             ApplyNow();
         }
 
-        /// <summary>
-        /// Signs and tape: give them the retro-reflective look at night (they shine back in the lamp and moonlight
-        /// more than plain snow would). Done by raising their colour, not with emission, whose shader variant
-        /// isn't in the build.
-        /// </summary>
-        public static void Reflective(Material m)
-        {
-            if (m == null || reflective.Contains(m)) return;
-            reflective.RemoveAll(x => x == null);   // signs destroyed with an old camp or mountain
-            reflective.Add(m);
-            m.SetColor("_BaseColor", new Color(signGain, signGain, signGain, 1f));   // at tonight's brightness straight away
-        }
-        static float signGain = 1f;
 
         /// <summary>How dark it is, 0 midday to 1 night (the camp's lamps follow it).</summary>
         public float Darkness { get; private set; }
@@ -264,8 +252,6 @@ namespace Summit
         {
             foreach (var m in new[] { spray, trail })
                 if (m != null) { m.SetColor("_BaseColor", Color.white); m.SetColor("_Color", Color.white); }   // (the editor mirrors one into the other)
-            foreach (var m in reflective) if (m != null) m.SetColor("_BaseColor", Color.white);
-            reflective.Clear();
         }
 
         // ---------------------------------------------------------------- the look for a clock
@@ -273,11 +259,10 @@ namespace Summit
         static Key StartOf(int p) => p == 0 ? Morning : p == 1 ? Day : p == 2 ? Golden : Night;
         static Key EndOf(int p) => p == 2 ? Pink : StartOf(p);
 
-        static Color Mul(Color a, Color b) => new Color(a.r * b.r, a.g * b.g, a.b * b.b, 1f);
+        static readonly int FirLiftId = Shader.PropertyToID("_FirLift");
+        static readonly Color FirMoonLift = new Color(0.15f, 0.19f, 0.29f, 0f);
 
-        // the same measure for the light the impostors were baked in (RealFir.BakeImpostors: flat ambient
-        // (0.55, 0.6, 0.68), a (1, 0.96, 0.9) sun at 1.15, 48 degrees up)
-        static readonly Color BakeLight = new Color(0.55f, 0.6f, 0.68f).linear + new Color(1f, 0.96f, 0.9f).linear * 1.15f * 0.743f * 0.6f;
+        static Color Mul(Color a, Color b) => new Color(a.r * b.r, a.g * b.g, a.b * b.b, 1f);
 
         /// <summary>
         /// Draw the sky now showing into the reflection cubemap, at most a few times a second and only when the
@@ -324,6 +309,10 @@ namespace Summit
             // the camp first: its SetNight may still set the sun, sky light and fog for its own blue hour, which
             // everything after it puts back to the time of day (only its lamps are kept)
             if (camp != null) camp.SetNight(Darkness);
+            // the far forest by moonlight: a faint cold light on the realistic trees (Shaders/Fir.hlsl), more the
+            // further off they are, so their shapes still read against the dark instead of going black
+            float lift = Mathf.Clamp01((Darkness - 0.3f) / 0.7f);
+            Shader.SetGlobalColor(FirLiftId, FirMoonLift * lift);
 
             // what each end shows: its sky, times its exposure and tint (linear)
             Color gradeA = a.tint * a.exposure, gradeB = b.tint * b.exposure;
@@ -368,11 +357,6 @@ namespace Summit
                     sun.color = Color.Lerp(ca, cb, t).gamma;
                     sun.intensity = Mathf.Lerp(a.sunI, b.sunI, t);
                     sun.shadowStrength = Mathf.Lerp(a.shadow, b.shadow, t);
-
-                    // the far trees are pictures baked in a fixed daylight (RealFir.BakeImpostors): give them the
-                    // light a tree gets now relative to that (sky light from the side, plus the sun as high as it is)
-                    Color now = Color.Lerp(Mul(sa.ambEq, ka), Mul(sb.ambEq, kb), t) + sun.color.linear * sun.intensity * Mathf.Max(0.15f, SunDirection.y) * 0.6f;
-                    RealFir.PhaseTint = new Color(now.r / BakeLight.r, now.g / BakeLight.g, now.b / BakeLight.b, 1f);
                 }
             }
             RenderSettings.fogDensity = Mathf.Lerp(a.fogDensity, b.fogDensity, t);
@@ -399,13 +383,8 @@ namespace Summit
                 fx.glintRate = Mathf.Lerp(a.glintRate, b.glintRate, t);
                 if (!Same(gc, lastGlint)) { lastGlint = gc; fx.TintGlints(gc); }
             }
-            float sg = Mathf.Lerp(a.signGain, b.signGain, t);
-            if (Mathf.Abs(sg - lastSignGain) > 0.002f)
-            {
-                lastSignGain = sg; signGain = sg;
-                foreach (var m in reflective) if (m != null) m.SetColor("_BaseColor", new Color(sg, sg, sg, 1f));
-            }
             Headlamp(Mathf.Lerp(a.headlamp, b.headlamp, t));
+            if (glowFx != null) glowFx.Step(Mathf.Lerp(a.glow, b.glow, t));
         }
 
         /// <summary>
@@ -426,8 +405,10 @@ namespace Summit
         void Headlamp(float k)
         {
             if (headlamp == null || rider == null) return;
-            bool on = k > 0.01f && (camp == null || !camp.Active);
+            bool on = k > 0.01f && (camp == null || !camp.Active) && !HeadlampOff;
             headlamp.enabled = on;
+            // the signs shine this lamp's light back (Resources/SignLit.shader): where it is, where it points, how strong
+            Shader.SetGlobalVector("_LampPos", new Vector4(0f, 0f, 0f, on ? 1f : 0f));
             if (!on) return;
             headlamp.intensity = 7f * k;
             var cam = Camera.main;
@@ -437,6 +418,21 @@ namespace Summit
             fwd.Normalize();
             headlamp.transform.SetPositionAndRotation(rider.transform.position + Vector3.up * 1.7f + fwd * 0.2f,
                                                       Quaternion.LookRotation(fwd - Vector3.up * 0.32f));
+            Vector3 lp = headlamp.transform.position;
+            Shader.SetGlobalVector("_LampPos", new Vector4(lp.x, lp.y, lp.z, 1f));
+            Shader.SetGlobalVector("_LampDir", headlamp.transform.forward);
+            Shader.SetGlobalColor("_LampColor", headlamp.color.linear * (headlamp.intensity * SignReturn));
+            Shader.SetGlobalVector("_LampCone", new Vector4(Mathf.Cos(headlamp.spotAngle * 0.5f * Mathf.Deg2Rad),
+                                                            Mathf.Cos(headlamp.innerSpotAngle * 0.5f * Mathf.Deg2Rad), SignReach, 0f));
         }
+
+        /// <summary>How much more of the headlamp a reflective sign sends back than a matte board would.</summary>
+        const float SignReturn = 0.6f;
+        /// <summary>How far a sign still shines the lamp back (a reflector sends it home efficiently: further than the
+        /// lamp lights the snow).</summary>
+        const float SignReach = 110f;
+
+        /// <summary>The test tools switch the headlamp off to compare signs with and without it.</summary>
+        public static bool HeadlampOff;
     }
 }

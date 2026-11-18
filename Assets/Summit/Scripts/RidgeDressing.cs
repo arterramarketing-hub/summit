@@ -7,7 +7,8 @@ namespace Summit
     /// What you see of a ridge besides the terrain itself: rock outcrops breaking out of the cliffs and piled at
     /// their feet, and orange marker poles along the crest's edge where it drops to a cliff, so the line reads
     /// at speed. Built by CourseDressing with the rest of a cycle, and thrown away with it.
-    /// Nothing here has a collider: by the time you reach the rock you are already falling.
+    /// The rocks have no collider: by the time you reach the rock you are already falling. The marker poles can be
+    /// knocked over (Breakable).
     /// </summary>
     public static class RidgeDressing
     {
@@ -40,11 +41,14 @@ namespace Summit
                     // that is where you get up (Ridge.SafeX), so no one stands up inside a rock
                     float clear = reach - Ridge.Clear;
                     float h1 = Slope.Hash01(cycle * 7 + s, i, 72), h2 = Slope.Hash01(cycle * 7 + s, i, 73), h3 = Slope.Hash01(cycle * 7 + s, i, 74);
-                    // an outcrop on the face, kept below the crest so it never blocks the line
+                    // the taller the wall, the bigger its rocks: a 165 m wall wears crags, not pebbles
+                    float big = 1f + Ridge.DepthHere(z, s) / 70f;
+                    // outcrops on the face, kept below the crest so they never block the line: one high, one lower down
                     float e = Ridge.Shoulder + 2.5f + h1 * Mathf.Max(1f, reach - half - Ridge.Shoulder - 8f);
-                    Outcrop(root, models, rock, s, half + e, clear, z + (h2 - 0.5f) * 4f, 2.2f + 4f * h2, (int)(h3 * 977f));
+                    Outcrop(root, models, rock, s, half + e, clear, z + (h2 - 0.5f) * 4f, (2.2f + 4f * h2) * big, (int)(h3 * 977f));
+                    if (big > 1.6f) Outcrop(root, models, rock, s, half + Ridge.Shoulder + (0.35f + 0.5f * h3) * (reach - half - Ridge.Shoulder), clear, z + 5f, (2f + 3f * h1) * big, (int)(h1 * 491f));
                     // and a boulder fallen to the foot of the cliff, every so often
-                    if (h3 < 0.45f) Outcrop(root, models, rock, s, clear, clear, z + 3f, 2.5f + 3f * h1, (int)(h2 * 613f));
+                    if (h3 < 0.45f) Outcrop(root, models, rock, s, clear, clear, z + 3f, (2.5f + 3f * h1) * Mathf.Sqrt(big), (int)(h2 * 613f));
                 }
             }
             // marker poles along the edge above a cliff, every 12 m
@@ -56,8 +60,13 @@ namespace Summit
                     if (!Ridge.CliffSide(z, s)) continue;
                     float x = Slope.Centre(z) + s * (Ridge.HalfWidth(z) + 0.4f);
                     float y = Slope.DrawnHeight(x, z) - 0.05f;   // planted a little into the snow
-                    Pole(root, new Vector3(x, y + 0.75f, z), new Vector3(0.05f, 0.75f, 0.05f), poleOrange);
-                    Pole(root, new Vector3(x, y + 1.38f, z), new Vector3(0.055f, 0.1f, 0.055f), poleBlack);
+                    // on a holder at its foot, so it can be knocked over (Breakable)
+                    var holder = new GameObject("RidgeMarker").transform;
+                    holder.SetParent(root, false);
+                    holder.position = new Vector3(x, y, z);
+                    Pole(holder, new Vector3(x, y + 0.75f, z), new Vector3(0.05f, 0.75f, 0.05f), poleOrange);
+                    Pole(holder, new Vector3(x, y + 1.38f, z), new Vector3(0.055f, 0.1f, 0.055f), poleBlack);
+                    Breakable.Flag(holder, 1.48f);
                 }
             }
         }
@@ -81,8 +90,9 @@ namespace Summit
             g.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
             var b = Bounds(g);
             float tall = Mathf.Max(0.05f, b.size.y);
-            // how far it reaches out from its pivot, per metre of size: any way round, and leaned over a little
-            float reach = (new Vector2(b.center.x, b.center.z).magnitude + new Vector2(b.extents.x, b.extents.z).magnitude) / tall + 0.3f;
+            // how far it reaches out from its pivot, per metre of size: any way round, and leaned out with a face
+            // that may be 70 degrees
+            float reach = (new Vector2(b.center.x, b.center.z).magnitude + new Vector2(b.extents.x, b.extents.z).magnitude) / tall + 0.65f;
             d = Mathf.Min(d, limit - reach * size);
             float x = Slope.Centre(z) + s * d, y = Slope.Height(x, z);
             // keep its top well below the crest beside it

@@ -18,17 +18,19 @@ namespace Summit
     {
         // ---- tuning (static so the test harness can sweep them)
         public static float G = 22f;                                 // gravity, stronger than real for punch
-        public static float DragOpen = 0.0105f, DragTuck = 0.0068f; // air drag per (m/s)^2
+        public static float DragOpen = 0.0078f, DragTuck = 0.0050f; // air drag per (m/s)^2 (lower: speed builds and holds)
         public static float Friction = 0.035f;                       // snow friction coefficient
         public static float MaxLean = 0.72f;                         // full-thumb edge angle (rad, ~41 degrees)
         public static float LeanSpring = 13f;                        // how fast the body gets onto its edge (rad/s)
-        public static float CarveK = 22f;                            // turn rate = CarveK * tan(lean) / speed
-        public static float MinCarveSpeed = 7f, MaxYawRate = 1.9f;
-        public static float GripLimit = 34f;                         // sideways acceleration the edge can hold (m/s^2)
+        public static float CarveK = 24f;                            // turn rate = CarveK * tan(lean) / speed
+        public static float MinCarveSpeed = 7f, MaxYawRate = 2.05f;
+        public static float GripLimit = 37f;                         // sideways acceleration the edge can hold (m/s^2)
         public static float Grip = 42f;                              // 1/s: how fast slip dies when the edge holds (high: the edge bites, no drifting)
         public static float TurnDrag = 0.12f;                        // speed lost per radian of turning
         public static float TakeoffClearance = 0.22f;
         public static float FallLinePull = 2.2f;                     // 1/s: how fast a flat board swings back down the hill
+        public static float DeadlyDrop = 18f;                        // m fallen beyond the mountain's own line: off a cliff, fatal
+        public static float SlamImpact = 28f;                        // m/s into the snow: a landing nobody rides away from
 
         /// <summary>
         /// Riding a snow tube instead of a board: no edges, so no carving. You lean to nudge it round, it slides
@@ -47,6 +49,8 @@ namespace Summit
         public bool Airborne, Crashed, Running;
         /// <summary>0..1, set by the avalanche while it flows under the board: the snow heaves, the edge cannot bite.</summary>
         public float Undercut;
+        public float Lift;   // how high the debris under the board stands over the snow (the slide sets it)
+        float lastLift, liftVy;   // and how fast it was lifting the board last step (not riding speed: kept out of the carve)
         float churnT;
         public float Lean { get; private set; }          // edge angle, rad: + = leaning right
         public float YawRate { get; private set; }
@@ -117,13 +121,48 @@ namespace Summit
         public void AddSuperJump(float seconds) { SuperJumpTime = Mathf.Max(SuperJumpTime, 0f) + seconds; }
         public void AddInvincible(float seconds) { InvincibleTime = Mathf.Max(InvincibleTime, 0f) + seconds; }
         public void AddShield() { Shields = Mathf.Min(MaxShields, Shields + 1); }
+        /// <summary>
+        /// Momentum, 0..1: riding fast without falling lets you carry more speed (less drag), so a good run keeps
+        /// getting faster and harder. A fall throws it all away; slowing right down lets it drain.
+        /// </summary>
+        public float Flow { get; private set; }
+        const float FlowDrag = 0.55f;   // the drag left at full flow
+
+
+        // ---- signs and flags ridden through (see Breakables)
+        float wobble, slowFor, slowRate;
+        /// <summary>Just back on your feet (or saved by a shield): nothing can knock you down for a moment.</summary>
+        public bool Invulnerable => invulnerable > 0f;
+        /// <summary>
+        /// Rode through a sign or a flag: keep this share of your speed (lost over a fraction of a second, as the
+        /// board ploughs through) and wobble for this long. Hit square on harder than crashAbove (m/s), it knocks
+        /// you down instead, unless a shield takes it; invincible, you go through clean. Returns true on a crash.
+        /// </summary>
+        public bool Breakthrough(float keep, float wobbleFor, float into, float crashAbove, string why)
+        {
+            if (!Running || Crashed) return false;
+            if (InvincibleTime > 0f) { keep = Mathf.Max(keep, SmashKeep); wobbleFor = 0f; }
+            else if (into > crashAbove && invulnerable <= 0f)
+            {
+                if (Shields <= 0) { DoCrash(why); return true; }
+                Shields--;
+                invulnerable = 0.9f;
+                ShieldHit?.Invoke();
+            }
+            const float over = 0.2f;
+            slowFor = over; slowRate = -Mathf.Log(Mathf.Clamp(keep, 0.05f, 1f)) / over;
+            wobble = Mathf.Max(wobble, wobbleFor);
+            return false;
+        }
         public void AddBoost(float seconds)
         {
             BoostTime = Mathf.Max(BoostTime, 0f) + seconds;
+            Flow = Mathf.Min(1f, Flow + 0.25f);   // a Mountain Zoom is speed you keep
             if (Running && !Crashed && rb != null) rb.linearVelocity += Velocity.normalized * 4f;
         }
 
         Rigidbody rb;
+        Collider ownCol;
         float groundVy, airLock, crashTimer, popHold, missClock, leanVel;
         bool popPending;
         int lastMiss, lastGrind = -1;
@@ -147,6 +186,7 @@ namespace Summit
             rb.constraints = RigidbodyConstraints.FreezeRotation;
             var col = gameObject.GetComponent<SphereCollider>();
             if (col == null) col = gameObject.AddComponent<SphereCollider>();
+            ownCol = col;
             col.radius = R;
             col.sharedMaterial = new PhysicsMaterial("Board")
             {
@@ -164,6 +204,7 @@ namespace Summit
             rb.position = p;
             transform.position = p;
             StartZ = z;
+            DropFrom = p;
             Heading = 0f; Speed = 0f; Steer = 0f; groundVy = 0f;
             Airborne = false; Crashed = false; Running = false; Grinding = false; pipeAir = false;
             HasCrashFollow = false; rb.detectCollisions = true; StayDown = false; HoldCrash = false;
@@ -171,8 +212,9 @@ namespace Summit
             Lean = 0f; leanVel = 0f; YawRate = 0f;
             ClearTrick();
             popPending = false; airLock = 0f; lastGrind = -1;
-            Shields = 0; BoostTime = 0f; invulnerable = 0f; SuperJumpTime = 0f; InvincibleTime = 0f; superAir = false;
-            Undercut = 0f;
+            Flow = 0f; Shields = 0; BoostTime = 0f; invulnerable = 0f; SuperJumpTime = 0f; InvincibleTime = 0f; superAir = false;
+            Undercut = 0f; Lift = 0f; lastLift = 0f; liftVy = 0f;
+            wobble = 0f; slowFor = 0f;
         }
 
         public void Begin()
@@ -226,9 +268,23 @@ namespace Summit
                 churnT += dt;
                 Steer = Steer * (1f - 0.75f * Undercut) + Undercut * 0.9f * (Mathf.PerlinNoise(churnT * 2.3f, 3.7f) * 2f - 1f);
                 Heading += Undercut * 1.4f * (Mathf.PerlinNoise(churnT * 1.7f, 9.1f) * 2f - 1f) * dt;
+                Heading = Mathf.Lerp(Heading, Mathf.Clamp(Heading, -0.5f, 0.5f), Undercut);   // swung about, but carried on down the hill
             }
             Vector3 p = rb.position, v = rb.linearVelocity;
+            if (slowFor > 0f && !Crashed) { slowFor -= dt; v *= Mathf.Exp(-slowRate * dt); }
+            if (wobble > 0f && !Crashed)
+            {
+                // knocked off balance by a sign: the board swings about under you for a moment, and steering
+                // only half registers, fading as you find your feet
+                wobble = Mathf.Max(0f, wobble - dt);
+                churnT += dt;
+                float k = Mathf.Min(1f, wobble / 0.35f);
+                Steer = Steer * (1f - 0.5f * k) + k * 0.7f * Mathf.Sin(churnT * 13f);
+                Heading += k * 0.8f * Mathf.Sin(churnT * 8.5f + 1f) * dt;
+            }
             if (InvincibleTime > 0f && !Crashed) v = SmashAhead(dt, p, v);
+            // a sign or a flag where you are about to be, board to shoulders (see Breakables)
+            if (!Crashed) Breakable.Probe(p, p + v * dt + Vector3.up * 1.2f, 0.45f, ownCol);
             // over a crevasse with nothing under you (riding in, or coming down from the air): you fall in
             if (!Crashed && !Grinding && Course.CrevasseCut(p.x, p.z) > 1.2f && (!Airborne || p.y - Slope.DrawnHeight(p.x, p.z) < 0.8f))
             {
@@ -236,9 +292,6 @@ namespace Summit
                 DoCrash("Crevasse!");
                 v = new Vector3(v.x * 0.4f, Mathf.Min(v.y, -2f), v.z * 0.4f);
             }
-            // gone over the edge of a ridge, onto rock too steep to ride: a tumble down the cliff, keeping all
-            // your speed (a fall, not the end of the run)
-            if (!Crashed && !Grinding && invulnerable <= 0f && Ridge.OverEdge(p, Airborne)) DoCrash("Off the ridge!");
             if (Crashed) v = CrashStep(dt, p, v);
             else if (Grinding) v = GrindStep(dt, p, v);
             else
@@ -270,7 +323,7 @@ namespace Summit
         Vector3 GroundStep(float dt, Vector3 p, Vector3 v)
         {
             Vector3 n = Slope.Normal(p.x, p.z);
-            Vector3 vt = Vector3.ProjectOnPlane(v, n);
+            Vector3 vt = Vector3.ProjectOnPlane(v - Vector3.up * liftVy, n);
             float sp = vt.magnitude;
 
             // riding backwards (coming back down a pipe wall, or after a crash): switch to face the way you go
@@ -310,7 +363,12 @@ namespace Summit
             sp = vt.magnitude;
             if (sp > 1e-3f)
             {
-                float drag = (Tube ? DragOpen * 1.15f : Mathf.Lerp(DragOpen, DragTuck, Tuck)) * (BoostTime > 0f ? 0.6f : 1f) * sp * sp + (Tube ? Friction * 1.3f : Friction) * G * n.y;
+                // momentum builds while you hold speed, and drains when you scrub it away
+                if (sp > 20f) Flow = Mathf.Min(1f, Flow + dt / 14f);
+                else if (sp < 12f) Flow = Mathf.Max(0f, Flow - dt / 3f);
+                // (momentum carries you up to about 170 km/h; past that the air takes over again, so it never runs away)
+                float flowK = Mathf.Lerp(1f, FlowDrag, Flow * Mathf.Clamp01((52f - sp) / 8f));
+                float drag = (Tube ? DragOpen * 1.15f : Mathf.Lerp(DragOpen, DragTuck, Tuck)) * (BoostTime > 0f ? 0.6f : 1f) * flowK * sp * sp + (Tube ? Friction * 1.3f : Friction) * G * n.y;
                 vt -= vt / sp * Mathf.Min(sp, drag * dt);
             }
             // 4. the edge swings the velocity round to where the board points. It holds as long as the
@@ -339,12 +397,16 @@ namespace Summit
 
             // follow the snow: the vertical speed that puts the board on the mesh next step
             float nx = p.x + vt.x * dt, nz = p.z + vt.z * dt;
-            float wantY = Slope.DrawnHeight(nx, nz) + R + Undercut * (0.3f + 0.08f * Mathf.Sin(churnT * 9f));   // lifted on the churning snow
+            liftVy = (Lift - lastLift) / dt; lastLift = Lift;
+            float wantY = Slope.DrawnHeight(nx, nz) + R + Lift + Undercut * (0.3f + 0.08f * Mathf.Sin(churnT * 9f));   // lifted on the churning snow
             float vy = (wantY - p.y) / dt;
             AboveGround = 0f;
 
             // fell into a crevasse
 
+            // carried on the avalanche's debris: it holds the board down in it, no jumping off and no flying off
+            // its lumps (or off the slope's features under it)
+            if (Undercut > 0f) { popPending = false; groundVy = vy; return new Vector3(vt.x, vy, vt.z); }
             if (popPending)
             {
                 popPending = false;
@@ -381,8 +443,12 @@ namespace Summit
                 return TakeOff(p, PipeAir(p, vt), 0.08f);
 
             groundVy = vy;
+            DropFrom = p;
             return new Vector3(vt.x, vy, vt.z);
         }
+
+        /// <summary>Where the rider last left the snow (or where they are, while on it): how far a fall has come.</summary>
+        public Vector3 DropFrom;
 
         /// <summary>
         /// Leaving a pipe wall: the air goes straight up off the coping and drops back in, never out over
@@ -409,6 +475,7 @@ namespace Summit
         Vector3 TakeOff(Vector3 p, Vector3 v, float lockTime)
         {
             Airborne = true;
+            DropFrom = p;
             // leaving a pipe wall or its deck by any route: the air arcs back over the pipe
             float off = Mathf.Abs(p.x - Slope.Centre(p.z));
             if (Course.PipeWeight(p.z) > 0.5f && off > Course.PipeFlat + 1f && off < Course.PipeHalfWidth + Course.PipeDeck) pipeAir = true;
@@ -500,7 +567,8 @@ namespace Summit
             Speed = new Vector2(v.x, v.z).magnitude;
 
             float nx = p.x + v.x * dt, nz = p.z + v.z * dt;
-            float gy = Slope.DrawnHeight(nx, nz) + R;
+            float gy = Slope.DrawnHeight(nx, nz) + R + Lift;   // (come down on the avalanche's debris, if it is under you)
+            lastLift = Lift; liftVy = 0f;
             AboveGround = Mathf.Max(0f, p.y - (Slope.DrawnHeight(p.x, p.z) + R));
             Peak = Mathf.Max(Peak, AboveGround);
             if (airLock <= 0f && p.y + v.y * dt <= gy) return Land(dt, p, v, gy);
@@ -511,6 +579,12 @@ namespace Summit
         {
             Vector3 n = Slope.Normal(p.x, p.z);
             float impact = Mathf.Max(0f, -Vector3.Dot(v, n));
+            // you never fall off a cliff in mid-air, only when you hit something: rock can't be ridden (a fair,
+            // violent tumble), and snow far below where you left it is the end (the thrown body judges that: see
+            // RiderBody.FallStep). Up to then you are still on your board, and a landing is a landing.
+            float fell = DropFrom.y - p.y - Slope.Fall * Mathf.Max(0f, p.z - DropFrom.z);
+            if (RockFace.IsRock(n, p.x, p.z)) { DoCrash("Hit the rocks!"); return v; }
+            if (fell > DeadlyDrop) { DoCrash("Cliffed!"); return v; }
             Airborne = false;
             AboveGround = 0f;
             pipeAir = false;
@@ -524,6 +598,7 @@ namespace Summit
             // lands like an ordinary big air rather than a slam (the dust and sound still show a big one)
             if (superAir) impact = Mathf.Min(impact, 11f + 0.25f * Mathf.Max(0f, impact - 11f));
             superAir = false;
+            if (impact > SlamImpact) { DoCrash("Slammed!"); return v; }
             bool hard = impact > 18f;
             float keep = 1f - Mathf.Clamp01((impact - 8f) * 0.012f);
             if (hard) keep *= 0.9f;
@@ -706,6 +781,7 @@ namespace Summit
         {
             if (Crashed) return;
             Crashed = true;
+            Flow = 0f;
             pipeAir = false;
             Airborne = false; Grinding = false;
             crashTimer = 0.8f;   // at least this long; then until the player taps to get up (RequestUp)
@@ -765,6 +841,7 @@ namespace Summit
             for (int i = 0; i < 6 && Blocked(p); i++) p.x += toward * 1.5f;
             p.y = Slope.DrawnHeight(p.x, p.z) + R;
             rb.position = p;
+            DropFrom = p;
             groundVy = 0f;
             return new Vector3(0f, 0f, 3f);
         }

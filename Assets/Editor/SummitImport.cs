@@ -52,9 +52,10 @@ public class SummitImport : AssetPostprocessor
             var a = (TextureImporter)assetImporter;
             a.sRGBTexture = false;
             a.alphaSource = TextureImporterAlphaSource.FromInput;
-            a.alphaIsTransparency = true;
+            bool tiles = assetPath.EndsWith("DebrisClods.png");   // the debris's clods tile over its surface
+            a.alphaIsTransparency = !tiles;
             a.mipmapEnabled = true;
-            a.wrapMode = TextureWrapMode.Clamp;
+            a.wrapMode = tiles ? TextureWrapMode.Repeat : TextureWrapMode.Clamp;
             a.maxTextureSize = 1024;
             var ios = a.GetPlatformTextureSettings("iPhone");
             ios.overridden = true; ios.maxTextureSize = 1024; ios.format = TextureImporterFormat.ASTC_5x5;
@@ -123,12 +124,12 @@ public class SummitImport : AssetPostprocessor
                 m.SetFloat("_SpecularHighlights", 0f); m.DisableKeyword("_SPECULAR_COLOR");
                 m.SetFloat("_ReceiveShadows", 1f);
             }
-            else m.SetColor("_BaseColor", new Color(0.92f, 0.95f, 0.98f));
+            else m.SetColor("_BaseColor", Color.white);
             EditorUtility.SetDirty(m);
             return m;
         }
-        Make("FirCards", "Universal Render Pipeline/Simple Lit", true);
-        Make("FirImpostor", "Universal Render Pipeline/Unlit", false);
+        Make("FirCards", "Summit/FirCards", true);
+        Make("FirImpostor", "Summit/FirImpostor", false);
         AssetDatabase.SaveAssets();
     }
 
@@ -243,6 +244,17 @@ public class SummitImport : AssetPostprocessor
         m.SetFloat("_Sun", 0.8f);
         m.renderQueue = 3000;
         EditorUtility.SetDirty(m);
+        // and its debris (Debris.mat)
+        const string dpath = "Assets/Summit/Resources/Avalanche/Debris.mat";
+        var dsh = AssetDatabase.LoadAssetAtPath<Shader>("Assets/Summit/Shaders/Debris.shader");
+        if (dsh != null)
+        {
+            var d = AssetDatabase.LoadAssetAtPath<Material>(dpath);
+            if (d == null) { d = new Material(dsh); AssetDatabase.CreateAsset(d, dpath); }
+            d.shader = dsh;
+            d.SetTexture("_MainTex", AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/Summit/Resources/Avalanche/DebrisClods.png"));
+            EditorUtility.SetDirty(d);
+        }
         AssetDatabase.SaveAssets();
     }
 

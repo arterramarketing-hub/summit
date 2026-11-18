@@ -848,6 +848,7 @@ namespace Summit
             trail.Clear();
             RagdollBelowSnow = 0f;
             RagdollMoving = false;
+            Dead = false;
             spray.Clear();
             bow.Clear();
             marks.Clear();
@@ -867,6 +868,9 @@ namespace Summit
             if (v < 1.2f) return;
             if (v > 4f && Random.value < 0.06f) fx?.Puff(at, v * 0.25f);   // the furrow itself is in the SnowLayer
         }
+
+        /// <summary>The ragdoll's latest hit was against an object (tree, rock, sign), not the snow.</summary>
+        public bool RagdollHitObject => ragdoll != null && ragdoll.LastHitObject;
 
         void OnRagdollHit(float v, bool isBoard, Vector3 at, Transform bone)
         {
@@ -978,6 +982,7 @@ namespace Summit
                     foreach (var b in brokenThisCrash) Bandage(b);
                 }
                 ragdoll.Begin(lastVel);
+                FallBegin();   // how far it falls from here, and whether that kills (RiderBodyFall)
                 stillFor = 0f;
                 fx?.Thud(transform.position, Mathf.Max(6f, lastVel.magnitude * 0.6f), lastVel * 0.6f);   // the wipeout itself
                 brokenThisCrash.Clear();
@@ -995,6 +1000,7 @@ namespace Summit
                 }
                 ragdoll.Steer = rider.Crashed && !rider.StayDown ? rider.Steer : 0f;   // steer the fall with the same thumb (not once it's over, or the slide has you)
                 ragdoll.PhysicsStep();
+                FallStep();
                 SnowLayer.Instance?.PressBody(ragdoll);   // every part presses its own shape into the snow
                 rider.CrashFollow = ragdoll.Centre;
                 rider.HasCrashFollow = rider.Crashed;

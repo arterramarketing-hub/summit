@@ -219,6 +219,7 @@ namespace Summit
             if (PipeWeight(z) > 0f && Mathf.Abs(x - Slope.Centre(z)) < PipeHalfWidth + PipeDeck + 6f + margin) return true;
             if (CrevasseNear(x, z, margin + 2f, out _, out _)) return true;
             if (Ridge.Keep(x, z, margin)) return true;
+            if (Cliffs.Keep(x, z, margin)) return true;
             if (At(z) == Section.Park || At(z + 20f) == Section.Park)
                 foreach (var f in FeaturesNear(z))
                 {

@@ -41,14 +41,16 @@ namespace Summit
 
         public static Material Sign(Shader lit, string path)
         {
-            var m = new Material(lit);
+            // a painted board lit by the scene, that also shines the rider's headlamp back (Resources/SignLit.shader)
+            if (signShader == null) signShader = Resources.Load<Shader>("SignLit");
+            var m = new Material(signShader != null ? signShader : lit);
             var t = Resources.Load<Texture2D>(path);
             if (t != null) m.SetTexture("_BaseMap", t);
             m.SetColor("_BaseColor", Color.white);
             m.SetFloat("_Smoothness", 0.25f);
-            DayNight.Reflective(m);   // brighter in the dark, like real reflective signs
             return m;
         }
+        static Shader signShader;
 
         void Update()
         {
@@ -103,8 +105,13 @@ namespace Summit
                     {
                         float cx = cv.x + (Slope.Centre(z) - Slope.Centre(zm)) + s * (cv.half + 3.0f);
                         float y = Slope.Height(cx, z);
-                        Block(PrimitiveType.Cylinder, root.transform, new Vector3(cx, y + 0.8f, z), Quaternion.identity, new Vector3(0.06f, 0.8f, 0.06f), poleOrange);
-                        Block(PrimitiveType.Cylinder, root.transform, new Vector3(cx, y + 1.45f, z), Quaternion.identity, new Vector3(0.065f, 0.12f, 0.065f), poleBlack);
+                        // each pole on a holder at its foot, so it can be knocked over (Breakable)
+                        var pole = new GameObject("CrevassePole").transform;
+                        pole.SetParent(root.transform, false);
+                        pole.position = new Vector3(cx, y, z);
+                        Block(PrimitiveType.Cylinder, pole, new Vector3(cx, y + 0.8f, z), Quaternion.identity, new Vector3(0.06f, 0.8f, 0.06f), poleOrange);
+                        Block(PrimitiveType.Cylinder, pole, new Vector3(cx, y + 1.45f, z), Quaternion.identity, new Vector3(0.065f, 0.12f, 0.065f), poleBlack);
+                        Breakable.Flag(pole, 1.57f);
                     }
             }
 
@@ -113,6 +120,7 @@ namespace Summit
             if (Course.CrevassesOf(k).Length > 0) SignAt(root.transform, zb + Course.DangerAt - 30f, signDanger, -1f);
             if (Course.PipeWeight(zb + (Course.PipeAt + Course.PipeEnd) * 0.5f) > 0f) SignAt(root.transform, zb + Course.PipeAt - 30f, signPipe, 1f);
             if (Ridge.Built(k)) { SignAt(root.transform, zb + Ridge.At - 30f, signRidge, -1f); RidgeDressing.Build(root.transform, k, poleOrange, poleBlack); }
+            CliffDressing.Build(root.transform, k, post.shader, poleOrange, poleBlack, post, signBack, target != null ? target.GetComponent<Rider>() : null);
             return root;
         }
 
@@ -241,12 +249,19 @@ namespace Summit
             float x = Slope.Centre(z) + side * (Slope.PisteHalf - 1f);
             float y = Slope.Height(x, z);
             const float W = 6f, H = 1.5f, lift = 2.2f;
+            // on a holder of its own, so it can be broken (Breakable)
+            var sign = new GameObject("SectionSign").transform;
+            sign.SetParent(root, false);
+            sign.position = new Vector3(x, y, z);
+            var brk = Breakable.Sign(sign);
             for (int s = -1; s <= 1; s += 2)
-                Block(PrimitiveType.Cylinder, root, new Vector3(x + s * W * 0.45f, y + lift * 0.5f + 0.4f, z), Quaternion.identity, new Vector3(0.12f, (lift + 0.8f) * 0.5f, 0.12f), post);
-            Block(PrimitiveType.Cube, root, new Vector3(x, y + lift + H * 0.5f, z + 0.05f), Quaternion.identity, new Vector3(W + 0.15f, H + 0.15f, 0.08f), signBack);
+                brk.Post(Block(PrimitiveType.Cylinder, sign, new Vector3(x + s * W * 0.45f, y + lift * 0.5f + 0.4f, z), Quaternion.identity, new Vector3(0.12f, (lift + 0.8f) * 0.5f, 0.12f), post).transform);
+            var back = Block(PrimitiveType.Cube, sign, new Vector3(x, y + lift + H * 0.5f, z + 0.05f), Quaternion.identity, new Vector3(W + 0.15f, H + 0.15f, 0.08f), signBack);
             // the printed face looks up the slope at the rider (a quad shows its face to -Z)
-            var q = Block(PrimitiveType.Quad, root, new Vector3(x, y + lift + H * 0.5f, z - 0.01f), Quaternion.identity, new Vector3(W, H, 1f), face);
+            var q = Block(PrimitiveType.Quad, sign, new Vector3(x, y + lift + H * 0.5f, z - 0.01f), Quaternion.identity, new Vector3(W, H, 1f), face);
             q.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            brk.Board(back.transform, q.transform);
+            brk.Arm();
         }
 
         static GameObject Block(PrimitiveType t, Transform parent, Vector3 pos, Quaternion rot, Vector3 scale, Material m)

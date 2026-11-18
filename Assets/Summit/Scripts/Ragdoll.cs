@@ -35,6 +35,14 @@ namespace Summit
         public System.Action<Collider, Vector3, Vector3, float, Transform> Struck;
         /// <summary>Is this collider the snow under the body (the slab), rather than a tree, rock or sign?</summary>
         public bool IsSnow(Collider c) => c != null && groundBody != null && c.attachedRigidbody == groundBody;
+        /// <summary>The thrown body this collider is part of (or the board of), if any.</summary>
+        public static Ragdoll Of(Collider c) { var i = c != null ? c.GetComponent<Impact>() : null; return i != null ? i.owner : null; }
+        /// <summary>Something it went through (a sign) took some of its speed: every part keeps this share.</summary>
+        public void Slow(float keep)
+        {
+            foreach (var p in parts) if (!p.rb.isKinematic) p.rb.linearVelocity *= keep;
+            if (boardRb != null && !boardRb.isKinematic) boardRb.linearVelocity *= keep;
+        }
         /// <summary>The body's parts (for the test tools).</summary>
         public IEnumerable<Rigidbody> Bodies { get { foreach (var p in parts) yield return p.rb; } }
         /// <summary>Every physics step, each part ploughing through the snow: which bone, the way down into the snow, how hard (m/s).</summary>
@@ -42,6 +50,9 @@ namespace Summit
         public static float LimbMaxRel = 14f;   // m/s: the fastest a limb can swing past the pelvis (about its spin cap times its reach)
 
         /// <summary>Reports a ragdoll part's or the board's impacts, and its slides along the snow.</summary>
+        /// <summary>Whether the latest hit (read during Hit) was against an object rather than the snow.</summary>
+        public bool LastHitObject;
+
         class Impact : MonoBehaviour
         {
             public Ragdoll owner; public bool board;
@@ -50,6 +61,7 @@ namespace Summit
             {
                 Vector3 at = c.contactCount > 0 ? c.GetContact(0).point : transform.position;
                 lastMark = at; lastTime = Time.time;
+                if (owner != null) owner.LastHitObject = c.collider.GetComponentInParent<Obstacle>() != null;   // a tree, rock, sign... not snow
                 owner?.Hit?.Invoke(c.relativeVelocity.magnitude, board, at, board ? null : transform);
                 if (owner?.Struck != null && c.contactCount > 0)
                 {
@@ -146,6 +158,7 @@ namespace Summit
         {
             if (Active || rig == null || !rig.Ok) return;
             Active = true;
+            Buried = 0f;
             var model = rig.Root;
             modelHome = model.parent;
             modelPos = model.localPosition; modelRot = model.localRotation; modelScale = model.localScale;
@@ -352,6 +365,8 @@ namespace Summit
         public void PhysicsStep()
         {
             if (!Active) return;
+            // tumbling into a sign or a flag breaks it / knocks it down (see Breakables)
+            if (parts.Count > 0) Breakable.Probe(parts[0].rb.position, parts[0].rb.position, 0.9f, parts[0].col);
             // ploughing through snow: any part down in it is dragged back in proportion to its speed
             // (snow has to be pushed aside), on top of the contact friction
             Vector3 gp = groundBody.position, gn = groundBody.rotation * Vector3.up;
@@ -374,6 +389,12 @@ namespace Summit
             }
             Guide(gp, gn);
             PlaceSlab(groundBody, BodyFloorPoint(), false);
+            if (Buried > 0f)
+            {
+                // punched down into the snow: its floor is the bottom of the hole it made
+                Vector3 lowered = groundBody.position - groundBody.rotation * Vector3.up * Buried;
+                groundBody.position = lowered; groundBody.transform.position = lowered;
+            }
             if (boardRb != null) PlaceSlab(boardGroundBody, boardRb.position, false);
         }
 
@@ -432,6 +453,22 @@ namespace Summit
             // teleport, never MovePosition: a slab moved along with the body would carry it like a
             // conveyor and its friction would have nothing to grip
             slab.position = pos; slab.rotation = rot; slab.transform.SetPositionAndRotation(pos, rot);
+        }
+
+        /// <summary>How far down into the snow a fatal fall has driven the body (its floor is this far below the surface).</summary>
+        public float Buried { get; private set; }
+
+        /// <summary>
+        /// A fatal fall: the snow gives way and the body carries on down into it, `depth` metres, keeping a little of
+        /// the way it was going (vel) and none of its bounce.
+        /// </summary>
+        public void Bury(float depth, Vector3 vel)
+        {
+            if (!Active) return;
+            Buried = depth;
+            Vector3 v = new Vector3(vel.x * 0.12f, -Mathf.Clamp(depth * 6f, 5f, 9f), vel.z * 0.12f);
+            foreach (var p in parts) { p.rb.linearVelocity = v; p.rb.angularVelocity *= 0.3f; }
+            if (boardRb != null) boardRb.linearVelocity = boardRb.linearVelocity * 0.3f + Vector3.up * 4f;   // the board flies on
         }
 
         /// <summary>Every frame while thrown: the feet are separate bones, so carry them on the shins.</summary>

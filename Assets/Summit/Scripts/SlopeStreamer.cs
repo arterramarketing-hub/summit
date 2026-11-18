@@ -185,7 +185,7 @@ namespace Summit
             fineV.Clear(); fineN.Clear(); fineUV.Clear(); fineC.Clear();
             int i0 = key.x * quads, j0 = key.y * quads;
             float q = Slope.Quad;
-            if (!Ridge.Has((j0 - 1) * q) && !Ridge.Has((j0 + quads + 1) * q)) return false;   // a ridge is far longer than a chunk
+            if (!Ridge.InCanyons((j0 - 1) * q) && !Ridge.InCanyons((j0 + quads + 1) * q)) return false;   // a ridge is far longer than a chunk
             if (fineQ == null || fineQ.Length != (quads + 2) * quads) { fineQ = new bool[(quads + 2) * quads]; fineAt = new int[n * quads]; }
             bool any = false;
             for (int r = 0; r < quads + 2; r++)

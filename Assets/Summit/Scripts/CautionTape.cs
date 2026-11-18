@@ -42,7 +42,7 @@ namespace Summit
 
         void Init(Vector3 a, Vector3 b)
         {
-            rest = (b - a).magnitude / (N - 1) * 1.006f;   // pulled nearly taut: it barely sags
+            rest = (b - a).magnitude / (N - 1) * 0.995f;   // tied under tension: a shade shorter than the gap, so it hangs taut
             for (int i = 0; i < N; i++)
             {
                 float u = i / (N - 1f);
@@ -141,7 +141,7 @@ namespace Summit
                 }
             }
             if (pull >= 0) { p[pull] = Grab(pull); p[pull + 1] = Grab(pull + 1); prev[pull] = p[pull]; prev[pull + 1] = p[pull + 1]; }
-            for (int it = 0; it < 10; it++)
+            for (int it = 0; it < (broken < 0 ? 28 : 10); it++)   // (enough passes that a tied tape really holds its tension)
                 for (int i = 0; i < N - 1; i++)
                 {
                     if (i == broken) continue;

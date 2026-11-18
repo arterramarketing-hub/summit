@@ -23,10 +23,10 @@ namespace Summit
 
         public static readonly Item[] Shop =
         {
-            new Item { id = Up.Grip, title = "SHARP EDGES", blurb = "the edge holds harder in a carve", cost = new[] { 300, 700, 1500 } },
+            new Item { id = Up.Grip, title = "SHARP EDGES", blurb = "the edge holds harder in a carve", cost = new[] { 250, 450, 700, 1000, 1400, 1900, 2500, 3200, 4000, 5000 } },
             new Item { id = Up.Helmet, title = "SPARE HELMET", blurb = "a 4th fall before the run ends", cost = new[] { 2000 } },
-            new Item { id = Up.Fizz, title = "EXTRA FIZZ", blurb = "power-ups last longer", cost = new[] { 250, 600, 1200 } },
-            new Item { id = Up.HeadStart, title = "EARLY WARNING", blurb = "the avalanche starts further back", cost = new[] { 300, 700, 1400 } },
+            new Item { id = Up.Fizz, title = "EXTRA FIZZ", blurb = "power-ups last longer", cost = new[] { 200, 350, 550, 800, 1100, 1500, 2000, 2600, 3300, 4100 } },
+            new Item { id = Up.HeadStart, title = "EARLY WARNING", blurb = "the avalanche starts further back", cost = new[] { 250, 400, 650, 950, 1300, 1750, 2300, 2900, 3600, 4400 } },
             new Item { id = Up.FirePit, title = "FIRE PIT", blurb = "a campfire in the middle of camp", cost = new[] { 400 }, decor = true },
             new Item { id = Up.Flags, title = "PRAYER FLAGS", blurb = "strings of flags over the camp", cost = new[] { 250 }, decor = true },
             new Item { id = Up.Lights, title = "STRING LIGHTS", blurb = "warm bulbs from the lodge", cost = new[] { 350 }, decor = true },
@@ -141,13 +141,13 @@ namespace Summit
         // ---------------------------------------------------------------- what the upgrades do (the hooks)
 
         /// <summary>Multiplier on the edge's grip (Rider.GripLimit and Rider.Grip).</summary>
-        public static float GripScale => 1f + 0.07f * Level(Up.Grip);
+        public static float GripScale => 1f + 0.035f * Level(Up.Grip);   // ten levels, up to +35%
         /// <summary>Falls allowed in a run, given the base rule.</summary>
         public static int Falls(int baseFalls) => baseFalls + Level(Up.Helmet);
         /// <summary>Multiplier on how long power-ups last.</summary>
-        public static float PowerUpTime => 1f + 0.25f * Level(Up.Fizz);
+        public static float PowerUpTime => 1f + 0.1f * Level(Up.Fizz);   // ten levels, up to twice as long
         /// <summary>Extra metres between you and the avalanche at the start.</summary>
-        public static float HeadStart => 15f * Level(Up.HeadStart);
+        public static float HeadStart => 6f * Level(Up.HeadStart);   // ten levels, up to 60 m
 
         static float gripLimit0 = -1f, grip0;
         /// <summary>Set the rider's tuning from the upgrades (called as a run starts).</summary>
