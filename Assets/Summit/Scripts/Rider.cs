@@ -20,10 +20,11 @@ namespace Summit
         public static float G = 22f;                                 // gravity, stronger than real for punch
         public static float DragOpen = 0.0078f, DragTuck = 0.0050f; // air drag per (m/s)^2 (lower: speed builds and holds)
         public static float Friction = 0.035f;                       // snow friction coefficient
+        public static float AirControl = 0.6f;                       // how fast steering bends the flight in the air (rad/s)
         public static float MaxLean = 0.72f;                         // full-thumb edge angle (rad, ~41 degrees)
-        public static float LeanSpring = 13f;                        // how fast the body gets onto its edge (rad/s)
-        public static float CarveK = 24f;                            // turn rate = CarveK * tan(lean) / speed
-        public static float MinCarveSpeed = 7f, MaxYawRate = 2.05f;
+        public static float LeanSpring = 17f;                        // how fast the body gets onto its edge (rad/s)
+        public static float CarveK = 27f;                            // turn rate = CarveK * tan(lean) / speed
+        public static float MinCarveSpeed = 7f, MaxYawRate = 2.4f;
         public static float GripLimit = 37f;                         // sideways acceleration the edge can hold (m/s^2)
         public static float Grip = 42f;                              // 1/s: how fast slip dies when the edge holds (high: the edge bites, no drifting)
         public static float TurnDrag = 0.12f;                        // speed lost per radian of turning
@@ -564,6 +565,16 @@ namespace Summit
                 Heading = Mathf.MoveTowardsAngle(Heading * Mathf.Rad2Deg, travel * Mathf.Rad2Deg, 220f * dt) * Mathf.Deg2Rad;
             }
             Heading = Mathf.Clamp(Heading + Steer * 0.8f * dt, -MaxHeading, MaxHeading);
+            // air control: steering bends the line of flight a little (not in the pipe, which steers itself), so
+            // you can pick your landing; never round to face uphill
+            if (!pipeAir && flat > 4f && Mathf.Abs(Steer) > 0.02f)
+            {
+                float travelNow = Mathf.Atan2(v.x, v.z);
+                float turn = Steer * AirControl * dt;
+                if (Mathf.Abs(travelNow + turn) > MaxHeading) turn = 0f;
+                float cs = Mathf.Cos(turn), sn = Mathf.Sin(turn);
+                v = new Vector3(v.x * cs + v.z * sn, v.y, -v.x * sn + v.z * cs);
+            }
             Speed = new Vector2(v.x, v.z).magnitude;
 
             float nx = p.x + v.x * dt, nz = p.z + v.z * dt;

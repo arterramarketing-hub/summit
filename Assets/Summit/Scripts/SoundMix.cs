@@ -10,7 +10,8 @@ namespace Summit
         SmashWood, SmashRock, PowerJump, PowerStar, SlideHit,
         Nooo, Ledge,  // the player's own clips (Resources/Audio/user_*.mp3)
         BigScream,    // one of the player's screams (Resources/Audio/UserScreams), shuffled
-        SlideCrack    // the slope letting go behind you: a crack, and the rumble building
+        SlideCrack,   // the slope letting go behind you: a crack, and the rumble building
+        BoneLeg, BoneBack, BoneNeck, BoneArm   // the harsh breaks: a big bone, the spine, the neck, an arm
     }
 
     /// <summary>What the ride sounds like this frame (all 0..1 unless noted).</summary>
@@ -44,7 +45,7 @@ namespace Summit
 
         AudioClip powerShort, pop, whoosh, spin, landHard, crash, hitTree, hitRock, crevasse, clack, clank, chime, trickBig,
                   closeCall, soda, shieldGet, shieldHit, click, play, buried, bearRoar, flap;
-        AudioClip[] lands, thumps, crows, chirps, bones, screams, grunts, yelps;
+        AudioClip[] lands, thumps, crows, chirps, bones, screams, grunts, yelps, bonesLeg, bonesBack, bonesNeck;
         AudioClip groan;
         AudioClip smashWood, smashRock, powerJump, powerStar;
         // the avalanche up close: the hiss and crackle of the churning front, and the blow that takes you off
@@ -96,6 +97,9 @@ namespace Summit
             crows = new[] { C("crow_1"), C("crow_2") };
             chirps = new[] { C("chirp_1"), C("chirp_2"), C("chirp_3") };
             bones = new[] { C("bone_1"), C("bone_2"), C("bone_3") };
+            bonesLeg = new[] { C("bone_leg_1"), C("bone_leg_2") };
+            bonesBack = new[] { C("bone_back_1"), C("bone_back_2") };
+            bonesNeck = new[] { C("bone_neck_1"), C("bone_neck_2") };
             screams = new[] { C("scream_1"), C("scream_2"), C("scream_3") };
             grunts = new[] { C("grunt_1"), C("grunt_2"), C("grunt_3"), C("grunt_4") };
             yelps = new[] { C("yelp_1"), C("yelp_2") };
@@ -282,9 +286,40 @@ namespace Summit
             screamFading = ours;
         }
 
+        // the "nooo": down a crevasse it fades as the body drops away into the dark (by depth, and a little
+        // with time); off a cliff it is cut to a short cry that dies away as you fall
+        float noooStart, noooFor = -1f, noooDepth;
+        void PlayNooo(float seconds)
+        {
+            voice.clip = nooo; voice.pitch = 1f; voice.volume = 1f; voice.Play();
+            screamOn = false; screamFading = false;
+            noooStart = Time.unscaledTime; noooFor = seconds; noooDepth = 0f;
+            voiceLock = Time.unscaledTime + (seconds > 0f ? seconds : nooo.length);
+        }
+        /// <summary>The short "nooo" going off a cliff, gone after this many seconds.</summary>
+        public void NoooFor(float seconds) { if (voice != null && nooo != null) PlayNooo(seconds); }
+        /// <summary>How far the falling body is below the snow (m): the crevasse cry fades with it.</summary>
+        public void NoooDepth(float d) { noooDepth = Mathf.Max(noooDepth, d); }
+
+        void TickNooo()
+        {
+            if (voice == null || nooo == null || voice.clip != nooo || !voice.isPlaying) return;
+            float since = Time.unscaledTime - noooStart, want;
+            if (noooFor > 0f)
+            {
+                if (since >= noooFor) { voice.Stop(); voice.volume = 1f; return; }
+                float k = since / noooFor;
+                want = 1f - k * k;
+            }
+            else
+                want = Mathf.Lerp(1f, 0.12f, Mathf.Clamp01(noooDepth / 22f)) * Mathf.Lerp(1f, 0.45f, Mathf.Clamp01(since / nooo.length));
+            voice.volume = Mathf.MoveTowards(voice.volume, want, Time.unscaledDeltaTime * 3f);
+        }
+
         void TickScream(float dt)
         {
             if (voice == null || AudioListener.pause) return;
+            TickNooo();
             if (screamOn && !voice.isPlaying) NextScream();   // one ends, the next begins
             if (screamFading)
             {
@@ -326,6 +361,10 @@ namespace Summit
                 case Sfx.Buried: c = buried; vol = 1f; pitch = 1f; break;
                 case Sfx.BearRoar: c = bearRoar; vol = 0.9f; break;
                 case Sfx.Bone: c = bones[Random.Range(0, bones.Length)]; vol = 1f; pitch = Random.Range(0.9f, 1.1f); break;
+                case Sfx.BoneLeg: c = bonesLeg[Random.Range(0, bonesLeg.Length)]; vol = 1f; pitch = Random.Range(0.93f, 1.03f); break;
+                case Sfx.BoneArm: c = bonesLeg[Random.Range(0, bonesLeg.Length)]; vol = 0.95f; pitch = Random.Range(1.08f, 1.18f); break;
+                case Sfx.BoneBack: c = bonesBack[Random.Range(0, bonesBack.Length)]; vol = 1f; pitch = Random.Range(0.92f, 1.02f); break;
+                case Sfx.BoneNeck: c = bonesNeck[Random.Range(0, bonesNeck.Length)]; vol = 1f; pitch = Random.Range(0.96f, 1.04f); break;
                 case Sfx.SmashWood: c = smashWood; vol = 1f; pitch = Random.Range(0.9f, 1.1f); break;
                 case Sfx.SmashRock: c = smashRock; vol = 1f; pitch = Random.Range(0.9f, 1.1f); break;
                 case Sfx.PowerJump: c = powerJump; vol = 0.7f; pitch = 1f; break;
@@ -336,7 +375,7 @@ namespace Summit
             if (kind == Sfx.Nooo)
             {
                 if (nooo == null) { kind = Sfx.Scream; }
-                else { voice.clip = nooo; voice.pitch = 1f; voice.volume = 1f; voice.Play(); voiceLock = Time.unscaledTime + nooo.length; return; }
+                else { PlayNooo(-1f); return; }
             }
             if (kind == Sfx.BigScream)
             {

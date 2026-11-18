@@ -111,6 +111,7 @@ namespace Summit
         void SetPaused(bool on)
         {
             paused = on;
+            hitStopT = -1f; Time.fixedDeltaTime = FixedStep;   // a pause ends any crash slow-mo
             Time.timeScale = on ? 0f : 1f;
             if (!on) { rider.CancelPop(); input.SwallowCurrentPress(); }   // a menu tap is never a jump
             AudioListener.pause = on;
@@ -191,11 +192,13 @@ namespace Summit
             body.BoneBroke += (limb, at) =>
             {
                 if (state != State.Riding) return;   // the bill is closed once the run is over
-                audioFx.Play(Sfx.Bone);
+                // a harsh crack for each kind of break: the neck, the spine, a big bone in the leg, an arm
+                audioFx.Play(limb == "Head" ? Sfx.BoneNeck : limb == "Ribs" ? Sfx.BoneBack : limb.EndsWith("leg") ? Sfx.BoneLeg : Sfx.BoneArm);
                 hud.Hurt(0.5f);
                 int cost = BoneCost(limb);
                 medical += cost;
-                hud.Flash("CRACK!", limb + " broken  ·  +$" + cost.ToString("N0"), 1.6f);
+                string named = limb == "Head" ? "Neck" : limb == "Ribs" ? "Back" : limb;
+                hud.Flash("CRACK!", named + " broken  ·  +$" + cost.ToString("N0"), 1.6f);
                 hurtShake = 1f;
             };
             rider.HitObstacle += (ob, at, into) =>
@@ -210,6 +213,8 @@ namespace Summit
                 // mid-tumble: a fresh scream on each big hit, above all against trees, rocks and signs
                 if (audioFx.Screaming && rider.Crashed && !isBoard && (v > 14f || (v > 7f && body.RagdollHitObject)))
                     audioFx.ScreamHit();
+                if (rider.Crashed && !isBoard && state == State.Riding && (v > 16f || (v > 10f && body.RagdollHitObject)))
+                    HitStop(0.25f + (v - 10f) / 30f);   // a brutal hit mid-tumble gets its own beat
                 nextImpactSound = Time.time + 0.07f;
                 audioFx.Play(isBoard ? Sfx.Clack : Sfx.Thump, Mathf.Clamp01(v / 10f));
             };
@@ -255,9 +260,9 @@ namespace Summit
                 if (state != State.Riding) return;
                 bool huge = fell > 80f;
                 int bill = huge ? 95000 : 68000;
-                rider.StayDown = true; wipeoutTimer = 1.6f; endTitle = huge ? "SENT IT" : "CLIFFED"; medical += bill;
+                rider.StayDown = true; wipeoutTimer = 2.6f; endTitle = huge ? "SENT IT" : "CLIFFED"; medical += bill;
                 hud.Flash(endTitle, "helicopter recovery  +$" + bill.ToString("N0"), 2.4f);
-                audioFx.Play(Sfx.Bone); audioFx.Play(Sfx.Crash);
+                audioFx.Play(Sfx.BoneBack); audioFx.Play(Sfx.Crash);
             };
 
             var cam = Camera.main;
@@ -478,6 +483,8 @@ namespace Summit
         {
             state = State.Ready;
             ledgeCued = false; ledgeFading = false; if (audioFx != null) { audioFx.StopCue(); audioFx.StopScreaming(true); }
+            if (hitStopT >= 0f) { hitStopT = -1f; if (!paused) SetTimeScale(1f); }
+            cliffNooo = false;
             rider.input = input; endFade = 1f; if (hud != null) hud.SetAlpha(1f); if (meta != null) meta.SetEndAlpha(1f);   // hands back on, screen solid
             camp.Leave(); chase.enabled = true; terrain.behindChunks = 1; props.behindCells = 3;
             if (newMountain)
@@ -594,6 +601,8 @@ namespace Summit
             float dt = Time.deltaTime;
             stateTimer += dt;
             WatchScream(dt);
+            TickHitStop();
+            WatchDrop();
             // a gentler lens in the camp (its camera is close, among straight lines), the player's own on the slope
             lensFx.Strength = Mathf.MoveTowards(lensFx.Strength, state == State.Hub ? 0.3f : 1f, Time.unscaledDeltaTime * 1.4f);
             switch (state)
@@ -662,7 +671,7 @@ namespace Summit
                     Missions.Step(dt, slide.Gap(rider), Score);
                     if (crevasseWatch)
                     {
-                        if (body.RagdollBelowSnow > 3f) { crevasseWatch = false; rider.StayDown = true; wipeoutTimer = 1.0f; endTitle = "LOST IN A CREVASSE"; medical += 42000f; hud.Flash("GONE", "helicopter rescue  +$42,000", 2f); }
+                        if (body.RagdollBelowSnow > 3f) { crevasseWatch = false; rider.StayDown = true; wipeoutTimer = 2.0f; endTitle = "LOST IN A CREVASSE"; medical += 42000f; hud.Flash("GONE", "helicopter rescue  +$42,000", 2f); }
                         else if (!rider.Crashed) crevasseWatch = false;   // caught the lip: you live
                     }
                     if (!rider.Crashed && !rider.Airborne && !slide.Caught && rider.Z > Slope.FinishZ + 30f)
@@ -741,7 +750,7 @@ namespace Summit
             bool deep = rider.Crashed && body.RagdollBelowSnow > 0.8f;
             chase.peek = Mathf.MoveTowards(chase.peek, deep ? 1f : 0f, Time.unscaledDeltaTime * (deep ? 1.2f : 3f));
             chase.peekAt = body.RagdollCentre;
-            chase.shake = (state == State.Riding ? slide.Shake + (rider.Crashed && !slide.Caught ? 0.2f : 0f) : 0f) + hurtShake * hurtShake * 0.8f;
+            chase.shake = (state == State.Riding ? slide.Shake + (rider.Crashed && !slide.Caught ? 0.2f * Mathf.Clamp01((body.RagdollSpeed - 2.8f) / 12f) : 0f) : 0f) + hurtShake * hurtShake * 0.8f;
             hud.SetFalls(Progress.Falls(MaxFalls) - falls, Progress.Falls(MaxFalls), state == State.Riding);
             bool onSnow = state == State.Riding && !rider.Airborne && !rider.Crashed;
             bool riding = state == State.Riding;
@@ -989,6 +998,54 @@ namespace Summit
             }
         }
 
+        // the hit-stop: on a crash, time all but stops for a split moment and then eases back, to sell the impact.
+        // Physics steps shrink with it, so the slow motion is smooth, not a slideshow.
+        const float FixedStep = 1f / 120f;
+        float hitStopT = -1f, hitStopHold, hitStopScale, nextHitStop;
+        const float HitStopEase = 0.4f;
+
+        void HitStop(float strength)
+        {
+            if (paused || Application.isBatchMode || Time.unscaledTime < nextHitStop) return;
+            strength = Mathf.Clamp01(strength);
+            if (hitStopT >= 0f && hitStopT < hitStopHold && strength < 0.5f) return;   // don't stack small ones on a big one
+            hitStopHold = Mathf.Lerp(0.05f, 0.14f, strength);
+            hitStopScale = Mathf.Lerp(0.3f, 0.04f, strength);
+            hitStopT = 0f;
+            nextHitStop = Time.unscaledTime + 0.7f;
+            SetTimeScale(hitStopScale);
+        }
+
+        void TickHitStop()
+        {
+            if (paused || hitStopT < 0f) return;
+            hitStopT += Time.unscaledDeltaTime;
+            if (hitStopT < hitStopHold) { SetTimeScale(hitStopScale); return; }
+            float k = (hitStopT - hitStopHold) / HitStopEase;
+            if (k >= 1f) { hitStopT = -1f; SetTimeScale(1f); return; }
+            SetTimeScale(Mathf.Lerp(hitStopScale, 1f, k * k * (3f - 2f * k)));
+        }
+
+        static void SetTimeScale(float s) { Time.timeScale = s; Time.fixedDeltaTime = FixedStep * s; }
+
+        // the "nooo": down a crevasse it fades with the depth; off a cliff, a short one the moment you are clearly
+        // falling far below where you left the snow
+        bool cliffNooo;
+        void WatchDrop()
+        {
+            if (audioFx == null) return;
+            if (state != State.Riding && state != State.Buried) return;
+            if (rider.Crashed) audioFx.NoooDepth(body.RagdollBelowSnow);
+            if (state != State.Riding) return;
+            if (!rider.Airborne && !rider.Crashed) { cliffNooo = false; return; }
+            if (cliffNooo || crevasseWatch) return;
+            Vector3 c = rider.Crashed ? body.RagdollCentre : rider.transform.position;
+            Vector3 d = rider.DropFrom;
+            float fell = d.y - c.y - Slope.Fall * Mathf.Max(0f, c.z - d.z);
+            float above = c.y - Slope.DrawnHeight(c.x, c.z);
+            if (fell > 10f && above > 3f) { cliffNooo = true; audioFx.NoooFor(1.5f); }
+        }
+
         void StartScreaming()
         {
             screamT = 0f; screamSlowT = 0f; audioFx.StartScreaming();
@@ -1031,10 +1088,11 @@ namespace Summit
             fallsNote = left <= 0 ? "that's " + (Progress.Falls(MaxFalls) == 4 ? "four" : "three") : left == 1 ? "1 fall left" : left + " falls left";
             hud.Flash(why, fallsNote, 1.3f);
             medical += rider.Tube ? 400f : 850f;   // the trip to the clinic
+            HitStop((rider.Speed * 3.6f - 30f) / 110f);                // the impact, frozen for a heartbeat
             if (why.StartsWith("Crevasse")) audioFx.Play(Sfx.Nooo);   // down a crevasse: the long "nooo"
             else StartScreaming();                                     // the player's screams, from the impact until the body slows
-            if (why.StartsWith("Crevasse")) { crevasseWatch = true; hud.Flash("CREVASSE!", fallsNote, 1.6f); if (left <= 0) { wipeoutTimer = 0.9f; endTitle = "WIPED OUT"; rider.StayDown = true; } }
-            else if (left <= 0) { wipeoutTimer = 0.9f; endTitle = "WIPED OUT"; rider.StayDown = true; }   // the last fall: no getting up   // let the tumble play out, then it's over
+            if (why.StartsWith("Crevasse")) { crevasseWatch = true; hud.Flash("CREVASSE!", fallsNote, 1.6f); if (left <= 0) { wipeoutTimer = 2.0f; endTitle = "WIPED OUT"; rider.StayDown = true; } }
+            else if (left <= 0) { wipeoutTimer = 2.0f; endTitle = "WIPED OUT"; rider.StayDown = true; }   // the last fall: no getting up   // let the tumble play out, then it's over
             if (why.StartsWith("Tree")) { audioFx.Play(Sfx.HitTree); audioFx.Play(Sfx.Crash, 0.6f); }
             else if (why.StartsWith("Rock") || why.StartsWith("Hit the rocks")) { audioFx.Play(Sfx.HitRock); audioFx.Play(Sfx.Crash, 0.6f); }
             else if (why.StartsWith("Crevasse")) audioFx.Play(Sfx.Crevasse);

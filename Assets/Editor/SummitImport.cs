@@ -10,6 +10,20 @@ public class SummitImport : AssetPostprocessor
 {
     void OnPreprocessModel()
     {
+        if (assetPath.Contains("Summit/Art/Hero/"))
+        {
+            // the hero's clips, made in Blender (Tools/MakeHero.py): plain transform curves, every frame kept
+            // exactly as keyed (HeroBake samples them into Resources/Rider/HeroAnim.bytes; this file doesn't ship)
+            var h = (ModelImporter)assetImporter;
+            h.importCameras = false; h.importLights = false;
+            h.bakeAxisConversion = true;   // the same as the hero itself, so the bones' local frames match
+            h.animationType = ModelImporterAnimationType.Generic;
+            h.importAnimation = true;
+            h.animationCompression = ModelImporterAnimationCompression.Off;
+            h.resampleCurves = false;
+            h.materialImportMode = ModelImporterMaterialImportMode.None;
+            return;
+        }
         if (!assetPath.Contains("Summit/Resources")) return;
         var m = (ModelImporter)assetImporter;
         m.importCameras = false;
@@ -78,6 +92,17 @@ public class SummitImport : AssetPostprocessor
         var t = (TextureImporter)assetImporter;
         t.filterMode = FilterMode.Point;    // a flat-colour palette: keep the colours crisp
         t.mipmapEnabled = false;
+        if (assetPath.EndsWith("HeroPalette.png"))
+        {
+            // 8 x 2 swatches with the smoothness in the alpha: block compression would smear them into each other
+            t.textureCompression = TextureImporterCompression.Uncompressed;
+            t.alphaSource = TextureImporterAlphaSource.FromInput;
+            t.alphaIsTransparency = false;
+            t.wrapMode = TextureWrapMode.Clamp;
+            var ios = t.GetPlatformTextureSettings("iPhone");
+            ios.overridden = true; ios.format = TextureImporterFormat.RGBA32;
+            t.SetPlatformTextureSettings(ios);
+        }
     }
 
     /// <summary>An opaque lit material that shows a model's vertex colours (the bear is coloured that way).</summary>

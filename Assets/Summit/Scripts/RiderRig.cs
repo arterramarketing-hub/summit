@@ -32,6 +32,14 @@ namespace Summit
             uaL = F("UpperArm.L"); laL = F("LowerArm.L"); wrL = F("Wrist.L"); uaR = F("UpperArm.R"); laR = F("LowerArm.R"); wrR = F("Wrist.R");
             ulL = F("UpperLeg.L"); llL = F("LowerLeg.L"); endL = F("LowerLeg.L_end"); ulR = F("UpperLeg.R"); llR = F("LowerLeg.R"); endR = F("LowerLeg.R_end");
             ftL = F("Foot.L"); ftR = F("Foot.R");
+            if (F("UpperLeg.L") == null && F("LeftUpperLeg") != null)
+            {
+                // the hero (Tools/MakeHero.py): Unity Humanoid names, three spine bones, and the feet as the shins'
+                // children, so a foot bone is also where its shin ends
+                hips = F("Hips"); abdomen = F("Spine"); torso = F("Chest"); chest = F("UpperChest"); neck = F("Neck"); head = F("Head");
+                uaL = F("LeftUpperArm"); laL = F("LeftLowerArm"); wrL = F("LeftHand"); uaR = F("RightUpperArm"); laR = F("RightLowerArm"); wrR = F("RightHand");
+                ulL = F("LeftUpperLeg"); llL = F("LeftLowerLeg"); ftL = endL = F("LeftFoot"); ulR = F("RightUpperLeg"); llR = F("RightLowerLeg"); ftR = endR = F("RightFoot");
+            }
             Ok = hips != null && chest != null && head != null && uaL != null && laL != null && wrL != null && uaR != null && laR != null && wrR != null
                  && ulL != null && llL != null && endL != null && ulR != null && llR != null && endR != null && ftL != null && ftR != null;
         }
@@ -154,10 +162,11 @@ namespace Summit
                 Vector3 hipMid = (ulL.position + ulR.position) * 0.5f;
                 bindL = Vector3.Lerp(bindL, hipMid, 0.25f); bindR = Vector3.Lerp(bindR, hipMid, 0.25f);
             }
-            PlaceFoot(ftL, bindL, frame, 10f);
-            PlaceFoot(ftR, bindR, frame, -10f);
+            // legs first, then the feet: a foot that is its shin's child (the hero) would be moved by the leg
             Leg(ulL, llL, endL, bindL, fwd + nose * 0.25f);
             Leg(ulR, llR, endR, bindR, fwd - nose * 0.25f);
+            PlaceFoot(ftL, bindL, frame, 10f);
+            PlaceFoot(ftR, bindR, frame, -10f);
         }
 
         /// <summary>
@@ -204,10 +213,10 @@ namespace Summit
             Aim(laL, wrL, Vector3.Slerp(lowerWalk, lowerRun, run));
             Aim(uaR, laR, (down - left * 0.18f + fwd * 0.04f).normalized);
             Aim(laR, wrR, (down - left * 0.1f + fwd * 0.12f).normalized);
-            PlaceFoot(ftL, footL, frame, 0f);
-            PlaceFoot(ftR, footR, frame, 0f);
             Leg(ulL, llL, endL, footL, fwd);
             Leg(ulR, llR, endR, footR, fwd);
+            PlaceFoot(ftL, footL, frame, 0f);
+            PlaceFoot(ftR, footR, frame, 0f);
         }
 
         /// <summary>The bind-pose height of the hips above the feet, in metres.</summary>
@@ -245,10 +254,10 @@ namespace Summit
                 Aim(uaR, laR, (handR - uaR.position).normalized * 0.6f + (-up * 0.4f));
                 Aim(laR, wrR, handR - laR.position);
             }
-            PlaceFoot(ftL, footL, frame, 0f);
-            PlaceFoot(ftR, footR, frame, 0f);
             Leg(ulL, llL, endL, footL, up + fwd * 0.4f);
             Leg(ulR, llR, endR, footR, up + fwd * 0.4f);
+            PlaceFoot(ftL, footL, frame, 0f);
+            PlaceFoot(ftR, footR, frame, 0f);
         }
 
         void PlaceFoot(Transform foot, Vector3 at, Transform frame, float duck)

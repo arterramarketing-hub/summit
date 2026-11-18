@@ -22,7 +22,7 @@ namespace Summit
         public System.Func<float, float, float> floor;   // anything standing over the snow to keep above (the avalanche's debris)
 
         Camera cam;
-        float speedCam = 5f, yaw, height, fov = 62f, focusVy, camDist = 6f, lookDrop;
+        float speedCam = 5f, yaw, height, fov = 62f, focusVy, camDist = 6f, lookDrop, roll;
         Vector3 focus;
         bool first = true;
 
@@ -101,7 +101,11 @@ namespace Summit
                 pos = Vector3.Lerp(pos, stand, k);
                 look = Vector3.Lerp(look, holdAt + new Vector3(0f, 0.4f, 3f), k);
             }
-            transform.SetPositionAndRotation(pos, Quaternion.LookRotation(look - pos, Vector3.up));
+            // bank with a hard carve: nothing on gentle turns, up to about 9 degrees on a full-edge turn at speed
+            float hard = Mathf.Clamp01((Mathf.Abs(rider.Lean) - 0.3f) / 0.42f) * Mathf.Clamp01((rider.Speed - 8f) / 17f);
+            float wantRoll = rider.Crashed || rider.Airborne || peek > 0.001f || hold > 0.001f ? 0f : -Mathf.Sign(rider.Lean) * 9f * hard * hard;
+            roll = first ? wantRoll : Mathf.Lerp(roll, wantRoll, 1f - Mathf.Exp(-dt * 3f));
+            transform.SetPositionAndRotation(pos, Quaternion.LookRotation(look - pos, Vector3.up) * Quaternion.Euler(0f, 0f, roll));
 
             float wantFov = Mathf.Lerp(80f, 94f, s01 * s01) + extraFov + (rider.BoostTime > 0f ? 8f : 0f);   // a wide-angle lens
             fov = first ? wantFov : Mathf.Lerp(fov, wantFov, 1f - Mathf.Exp(-dt * 2f));

@@ -16,7 +16,7 @@ namespace Summit
         Light rim;
         Transform halo;
         Material haloMat;
-        static readonly Color Warm = new Color(1f, 0.86f, 0.66f);
+        static readonly Color Warm = new Color(0.86f, 0.9f, 1f);   // a pale moonlit rim, not a fire: cool and faint
 
         public static RiderGlow Build(RiderBody b, Transform parent)
         {
@@ -25,7 +25,7 @@ namespace Summit
             g.body = b;
             g.rim = new GameObject("RimLight").AddComponent<Light>();
             g.rim.transform.SetParent(g.transform, false);
-            g.rim.type = LightType.Point; g.rim.color = Warm; g.rim.range = 4f; g.rim.shadows = LightShadows.None;
+            g.rim.type = LightType.Point; g.rim.color = Warm; g.rim.range = 3f; g.rim.shadows = LightShadows.None;
             g.rim.enabled = false;
 
             var q = GameObject.CreatePrimitive(PrimitiveType.Quad);
@@ -80,12 +80,12 @@ namespace Summit
             Vector3 flat = new Vector3(away.x, 0f, away.z).normalized;
             // the light a metre beyond the body and a little up, so it catches the far side and the edges we see
             rim.transform.position = c + flat * 1.0f + Vector3.up * 0.35f;
-            rim.intensity = 3.4f * k;
+            rim.intensity = 1.2f * k;
             // the halo behind the body, facing the camera, as wide as a person is tall
             halo.position = c + away * 0.55f;
             halo.rotation = Quaternion.LookRotation(away, Vector3.up);
-            halo.localScale = Vector3.one * 3.2f;
-            haloMat.SetColor("_BaseColor", new Color(Warm.r, Warm.g, Warm.b, 0.34f * k));
+            halo.localScale = Vector3.one * 2.6f;
+            haloMat.SetColor("_BaseColor", new Color(Warm.r, Warm.g, Warm.b, 0.09f * k));
         }
     }
 }

@@ -702,6 +702,28 @@ func boneCrack(_ seed: UInt64) -> [Double] {
     return normalize(fade(reverb(x, wet: 0.08, tail: 0.3), out: 0.1), 0.95)
 }
 
+/// A bone breaking badly: a hard splitting crack (several snaps on top of each other), a splintering crunch
+/// and a heavy knock through the body, driven into a little distortion so it hurts to hear. pitch: lower for
+/// big bones (femur, spine), higher for the neck; crunch: how long it grinds on; body: the weight of the knock.
+func harshCrack(_ seed: UInt64, snaps: Int, crunch: Double, body: Double, pitch: Double, len: Double) -> [Double] {
+    var r = RNG(seed); let n = samples(len)
+    var x = buf(len)
+    var at = 0.0
+    for _ in 0..<snaps {
+        var k = [Double](repeating: 0, count: samples(0.1))
+        for i in 0..<samples(0.002) { k[i] = r.bi() }
+        let snap = modes(filt(k, .hp, 1100 * pitch), [r.r(1250, 1650) * pitch, r.r(2500, 3200) * pitch, r.r(4100, 5100) * pitch], [0.03, 0.022, 0.015], [1, 0.85, 0.6])
+        add(&x, snap, r.r(22, 32), at: at)
+        add(&x, filt(k, .hp, 1800 * pitch), 1.3, at: at)
+        at += r.r(0.006, 0.026)
+    }
+    // the splinter: a dense gritty grind that tails off
+    add(&x, mul(filt(grains(n, rate: { _ in 9000 }, len: 0.0002...0.002, &r), .bp, 1700 * pitch, 0.6)) { i in env(i, attack: 0.001, decay: 0.09 * crunch) }, 1.7 * crunch)
+    add(&x, mul(filt(grains(n, rate: { _ in 2500 }, len: 0.001...0.004, &r), .bp, 700 * pitch, 0.8)) { i in env(i, attack: 0.002, decay: 0.07 * crunch) }, 1.1 * crunch, at: 0.01)
+    add(&x, thump(min(len, 0.45), f0: 150 * pitch, f1: 50, decay: 0.09), body)
+    return normalize(fade(reverb(softclip(x, 1.8), wet: 0.07, tail: 0.25), out: 0.08), 0.98)
+}
+
 // ---- reward sounds: punchy hits and sweeps instead of bells
 
 /// A trick landed: a deep kick, a snappy crack, and an airy rush rising out of it.
@@ -984,6 +1006,12 @@ write("chirp_3", chirp(72))
 write("bone_1", boneCrack(80))
 write("bone_2", boneCrack(81))
 write("bone_3", boneCrack(82))
+write("bone_leg_1", harshCrack(83, snaps: 4, crunch: 1.2, body: 1.1, pitch: 0.85, len: 0.7))
+write("bone_leg_2", harshCrack(84, snaps: 5, crunch: 1.4, body: 1.2, pitch: 0.8, len: 0.8))
+write("bone_back_1", harshCrack(85, snaps: 6, crunch: 1.8, body: 1.3, pitch: 0.7, len: 0.9))
+write("bone_back_2", harshCrack(86, snaps: 7, crunch: 2.0, body: 1.2, pitch: 0.75, len: 1.0))
+write("bone_neck_1", harshCrack(87, snaps: 3, crunch: 0.9, body: 0.8, pitch: 1.15, len: 0.6))
+write("bone_neck_2", harshCrack(88, snaps: 4, crunch: 1.1, body: 0.9, pitch: 1.1, len: 0.65))
 write("scream_1", scream(100, base: 255, sec: 1.5))
 write("scream_2", scream(101, base: 290, sec: 1.2))
 write("scream_3", scream(102, base: 230, sec: 1.7))

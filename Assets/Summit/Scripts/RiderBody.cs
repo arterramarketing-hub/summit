@@ -90,7 +90,9 @@ namespace Summit
             upper.SetParent(roll, false);
             var prefab = Resources.Load<GameObject>("Rider/Character");
             jacketShader = jacket != null ? jacket.shader : null;
-            if (prefab != null && (SetUpHumanoid(prefab) || SetUpRig(prefab))) { }
+            boardPaint = board;   // the hero's own deck wears the game's board material (RiderBodyHero)
+            if (SetUpHero()) { }   // the new hero first; the previous rider when it's switched off (RiderBodyHero)
+            else if (prefab != null && (SetUpHumanoid(prefab) || SetUpRig(prefab))) { }
             else ShapesFigure(jacket, pants, skin, dark);
             // what the outfit colours paint (see RiderBodyWalk)
             FindJacket(upper.gameObject); boardMat = board; if (jacket != null) { jacketMats.Add(jacket); jacketShade.Add(1f); }
@@ -356,7 +358,7 @@ namespace Summit
         readonly System.Collections.Generic.List<SkinnedMeshRenderer> cloth = new System.Collections.Generic.List<SkinnedMeshRenderer>();
         float billow, flapPhase;
 
-        void Loosen(GameObject go)
+        void Loosen(GameObject go, float puff = 1f)   // puff: how much looser (the hero's clothes are already baggy)
         {
             // the wind comes from the nose of the board and streams out past the tail
             Vector3 windWorld = roll.TransformDirection(Vector3.back);
@@ -381,7 +383,7 @@ namespace Summit
                 for (int i = 0; i < v.Length; i++) sn[i] = sum[Key(v[i])].normalized;
                 n = sn;
                 var billowD = new Vector3[v.Length]; var flapA = new Vector3[v.Length]; var flapB = new Vector3[v.Length];
-                float baggy = jacket ? 0.022f : 0.018f;
+                float baggy = (jacket ? 0.022f : 0.018f) * puff;
                 for (int i = 0; i < v.Length; i++)
                 {
                     Vector3 pm = v[i] / m;   // position in metres, for noise
@@ -520,6 +522,7 @@ namespace Summit
 
         void PoseRig(float dt)
         {
+            if (hero != null) { PoseHero(dt); return; }   // the hero: clips and its procedural layer (RiderBodyHero)
             if (Tube) { PoseTube(dt); return; }
             if (Walking) { rig.PoseWalk(roll, walkPhase, walkAmp, Time.time, runAmp); return; }   // on foot in the camp
             Flutter(dt);

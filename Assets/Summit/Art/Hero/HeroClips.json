@@ -1,0 +1,130 @@
+{
+ "fps": 30,
+ "clips": [
+  {
+   "name": "Ride_Idle",
+   "frames": 120,
+   "loop": true
+  },
+  {
+   "name": "Ride",
+   "frames": 60,
+   "loop": true
+  },
+  {
+   "name": "Carve_Toe",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Carve_Heel",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Tuck",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Ollie_Windup",
+   "frames": 2,
+   "loop": false
+  },
+  {
+   "name": "Ollie_Pop",
+   "frames": 16,
+   "loop": false
+  },
+  {
+   "name": "Air",
+   "frames": 40,
+   "loop": true
+  },
+  {
+   "name": "Land",
+   "frames": 20,
+   "loop": false
+  },
+  {
+   "name": "Grab_Indy",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Grab_Melon",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Grab_Mute",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Grab_Method",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Grab_Stalefish",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Grab_TailGrab",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Spin_WindL",
+   "frames": 2,
+   "loop": false
+  },
+  {
+   "name": "Spin_WindR",
+   "frames": 2,
+   "loop": false
+  },
+  {
+   "name": "Spin_AirL",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Spin_AirR",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Flip_Tuck",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Flail",
+   "frames": 20,
+   "loop": true
+  },
+  {
+   "name": "Sit",
+   "frames": 2,
+   "loop": false
+  },
+  {
+   "name": "Stand",
+   "frames": 150,
+   "loop": true
+  },
+  {
+   "name": "Walk",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Run",
+   "frames": 30,
+   "loop": true
+  }
+ ]
+}
