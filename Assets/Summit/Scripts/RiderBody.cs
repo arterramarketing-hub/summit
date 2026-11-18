@@ -872,6 +872,9 @@ namespace Summit
         /// <summary>The ragdoll's latest hit was against an object (tree, rock, sign), not the snow.</summary>
         public bool RagdollHitObject => ragdoll != null && ragdoll.LastHitObject;
 
+        /// <summary>How fast the fallen body is going (m/s): the ragdoll once it has taken over, the rider until then.</summary>
+        public float RagdollSpeed => ragdoll != null && ragdoll.Active ? ragdoll.Speed : rider != null ? rider.Speed : 0f;
+
         void OnRagdollHit(float v, bool isBoard, Vector3 at, Transform bone)
         {
             RagdollHit?.Invoke(v, isBoard);

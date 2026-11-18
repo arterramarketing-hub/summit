@@ -186,6 +186,7 @@ namespace Summit
             muffler.cutoffFrequency = Mathf.Lerp(22000f, 700f, Mathf.Sqrt(muffle));
             music.Set(r, dt);
 
+            TickScream(Time.unscaledDeltaTime);
             UpdateWorld(dt);
         }
 
@@ -232,6 +233,66 @@ namespace Summit
             if (cue.volume <= 0.001f) cue.Stop();
         }
         public void StopCue() { if (cue != null) cue.Stop(); }
+
+        // the player's screams, one after another from the impact until the tumble has slowed (SummitGame decides when)
+        bool screamOn, screamFading;
+        public bool Screaming => screamOn;
+        bool IsScream(AudioClip c) => c != null && bigScreams != null && System.Array.IndexOf(bigScreams, c) >= 0;
+
+        void NextScream()
+        {
+            // a shuffle bag: every scream once, in a new order each time round, never the same one twice in a row
+            if (screamNext >= screamBag.Length)
+            {
+                int last = screamBag.Length > 0 && screamNext > 0 ? screamBag[screamBag.Length - 1] : -1;
+                for (int i = 0; i < screamBag.Length; i++) screamBag[i] = i;
+                for (int i = screamBag.Length - 1; i > 0; i--) { int j = Random.Range(0, i + 1); (screamBag[i], screamBag[j]) = (screamBag[j], screamBag[i]); }
+                if (screamBag.Length > 1 && screamBag[0] == last) (screamBag[0], screamBag[1]) = (screamBag[1], screamBag[0]);
+                screamNext = 0;
+            }
+            voice.clip = bigScreams[screamBag[screamNext++]];
+            voice.pitch = Random.Range(0.97f, 1.03f); voice.volume = 1f; voice.Play();
+            bigStart = Time.unscaledTime;
+            voiceLock = Time.unscaledTime + voice.clip.length;
+            screamFading = false;
+        }
+
+        /// <summary>Start screaming now (the impact), and keep it going clip after clip until StopScreaming.</summary>
+        public void StartScreaming()
+        {
+            if (voice == null || bigScreams == null || bigScreams.Length == 0) return;
+            screamOn = true;
+            NextScream();
+        }
+
+        /// <summary>A fresh scream for a big hit mid-tumble (each one gets half a second first).</summary>
+        public void ScreamHit()
+        {
+            if (!screamOn || Time.unscaledTime - bigStart < 0.5f) return;
+            NextScream();
+        }
+
+        /// <summary>The tumble has slowed: let the scream die away (or cut it dead, for a reset).</summary>
+        public void StopScreaming(bool now = false)
+        {
+            if (voice == null) return;
+            screamOn = false;
+            bool ours = voice.isPlaying && IsScream(voice.clip);
+            if (now) { screamFading = false; if (ours) { voice.Stop(); voice.volume = 1f; } return; }
+            screamFading = ours;
+        }
+
+        void TickScream(float dt)
+        {
+            if (voice == null || AudioListener.pause) return;
+            if (screamOn && !voice.isPlaying) NextScream();   // one ends, the next begins
+            if (screamFading)
+            {
+                if (!IsScream(voice.clip)) { screamFading = false; return; }   // something else has the voice now
+                voice.volume = Mathf.MoveTowards(voice.volume, 0f, dt / 0.35f);
+                if (voice.volume <= 0.001f) { voice.Stop(); voice.volume = 1f; screamFading = false; }
+            }
+        }
 
         public void Play(Sfx kind, float amount = 1f)
         {
@@ -284,19 +345,7 @@ namespace Summit
                 {
                     if (voice.isPlaying && voice.clip == nooo && Time.unscaledTime < voiceLock) return;   // the crevasse cry wins
                     if (voice.isPlaying && Time.unscaledTime - bigStart < 0.5f) return;                   // let each one get going
-                    // a shuffle bag: every scream once, in a new order each time round, never the same one twice in a row
-                    if (screamNext >= screamBag.Length)
-                    {
-                        int last = screamBag.Length > 0 && screamNext > 0 ? screamBag[screamBag.Length - 1] : -1;
-                        for (int i = 0; i < screamBag.Length; i++) screamBag[i] = i;
-                        for (int i = screamBag.Length - 1; i > 0; i--) { int j = Random.Range(0, i + 1); (screamBag[i], screamBag[j]) = (screamBag[j], screamBag[i]); }
-                        if (screamBag.Length > 1 && screamBag[0] == last) (screamBag[0], screamBag[1]) = (screamBag[1], screamBag[0]);
-                        screamNext = 0;
-                    }
-                    voice.clip = bigScreams[screamBag[screamNext++]];
-                    voice.pitch = Random.Range(0.97f, 1.03f); voice.volume = 1f; voice.Play();
-                    bigStart = Time.unscaledTime;
-                    voiceLock = Time.unscaledTime + voice.clip.length;   // grunts and yelps don't cut it off
+                    NextScream();
                     return;
                 }
             }

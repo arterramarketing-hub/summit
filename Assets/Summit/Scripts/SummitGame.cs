@@ -151,7 +151,7 @@ namespace Summit
         float Mult => 1f + 0.5f * chainCount;
 
         float traceT, traceNext, readyT;
-        bool fastCrash; float nextBigScream;   // this fall began at over 120 km/h: the big screams
+        float screamT, screamSlowT;   // how long this fall's screaming has gone on, and how long the body has been slow
         bool ledgeCued, ledgeFading;   // the first-ledge sting has played this run / is on its way out
         static readonly bool autoplay = System.Environment.GetEnvironmentVariable("SUMMIT_AUTOPLAY") == "1";
 
@@ -192,7 +192,6 @@ namespace Summit
             {
                 if (state != State.Riding) return;   // the bill is closed once the run is over
                 audioFx.Play(Sfx.Bone);
-                audioFx.Play(Sfx.Yelp);
                 hud.Hurt(0.5f);
                 int cost = BoneCost(limb);
                 medical += cost;
@@ -208,10 +207,9 @@ namespace Summit
                 if (!isBoard && v > 6f) hurtShake = Mathf.Max(hurtShake, Mathf.Clamp01((v - 6f) / 10f) * 0.8f);
                 if (v < 1.5f || Time.time < nextImpactSound) return;
                 if (!isBoard && v > 5f && state == State.Riding) medical += (v - 5f) * 45f;   // bruises, by how hard you hit
-                // a crash at over 120 km/h: a fresh scream on each big hit, above all against trees, rocks and signs
-                if (fastCrash && rider.Crashed && !isBoard && (v > 14f || (v > 7f && body.RagdollHitObject)) && Time.time > nextBigScream)
-                { nextBigScream = Time.time + 0.6f; audioFx.Play(Sfx.BigScream); }
-                else if (!isBoard && v > 4.5f && Time.time > nextGrunt) { nextGrunt = Time.time + 0.45f; audioFx.Play(Sfx.Grunt, Mathf.Clamp01((v - 4f) / 8f)); }
+                // mid-tumble: a fresh scream on each big hit, above all against trees, rocks and signs
+                if (audioFx.Screaming && rider.Crashed && !isBoard && (v > 14f || (v > 7f && body.RagdollHitObject)))
+                    audioFx.ScreamHit();
                 nextImpactSound = Time.time + 0.07f;
                 audioFx.Play(isBoard ? Sfx.Clack : Sfx.Thump, Mathf.Clamp01(v / 10f));
             };
@@ -479,7 +477,7 @@ namespace Summit
         void ToReady(bool newMountain)
         {
             state = State.Ready;
-            ledgeCued = false; ledgeFading = false; fastCrash = false; if (audioFx != null) audioFx.StopCue();
+            ledgeCued = false; ledgeFading = false; if (audioFx != null) { audioFx.StopCue(); audioFx.StopScreaming(true); }
             rider.input = input; endFade = 1f; if (hud != null) hud.SetAlpha(1f); if (meta != null) meta.SetEndAlpha(1f);   // hands back on, screen solid
             camp.Leave(); chase.enabled = true; terrain.behindChunks = 1; props.behindCells = 3;
             if (newMountain)
@@ -595,6 +593,7 @@ namespace Summit
             Diagnostics();
             float dt = Time.deltaTime;
             stateTimer += dt;
+            WatchScream(dt);
             // a gentler lens in the camp (its camera is close, among straight lines), the player's own on the slope
             lensFx.Strength = Mathf.MoveTowards(lensFx.Strength, state == State.Hub ? 0.3f : 1f, Time.unscaledDeltaTime * 1.4f);
             switch (state)
@@ -972,7 +971,7 @@ namespace Summit
 
         // airborne sounds: a whoosh as you leave the snow without popping, and one for each half turn of a spin
         bool popped, wasAir;
-        float spinSounded, nextImpactSound, nextGrunt;
+        float spinSounded, nextImpactSound;
         void AirSounds(bool riding)
         {
             bool air = riding && rider.Airborne;
@@ -990,6 +989,27 @@ namespace Summit
             }
         }
 
+        void StartScreaming()
+        {
+            screamT = 0f; screamSlowT = 0f; audioFx.StartScreaming();
+            if (autoplay || showDiag) Debug.Log("SUMMIT SCREAM start v=" + (rider.Speed * 3.6f).ToString("F0") + " km/h");
+        }
+
+        // the screaming goes on, clip after clip, until the body has slowed below 10 km/h (held for a moment, so a
+        // bounce doesn't cut it) or you're back on your feet; then it dies away
+        void WatchScream(float dt)
+        {
+            if (audioFx == null || !audioFx.Screaming || dt <= 0f) return;
+            screamT += dt;
+            bool slow = body.RagdollSpeed * 3.6f < 10f;
+            screamSlowT = slow ? screamSlowT + dt : 0f;
+            if (!rider.Crashed || (screamT > 0.8f && screamSlowT > 0.3f))
+            {
+                audioFx.StopScreaming();
+                if (autoplay || showDiag) Debug.Log("SUMMIT SCREAM stop after " + screamT.ToString("F1") + " s, body at " + (body.RagdollSpeed * 3.6f).ToString("F0") + " km/h");
+            }
+        }
+
         void OnCrash(string why)
         {
             if (state != State.Riding) return;
@@ -999,8 +1019,7 @@ namespace Summit
                 chainCount = 0;
                 hud.Flash("CAUGHT", "the mountain has you", 1.8f);
                 audioFx.Play(Sfx.SlideHit);
-                fastCrash = false;
-                audioFx.Play(Sfx.Scream);
+                StartScreaming();
 #if UNITY_IOS || UNITY_ANDROID
                 Handheld.Vibrate();
 #endif
@@ -1012,8 +1031,8 @@ namespace Summit
             fallsNote = left <= 0 ? "that's " + (Progress.Falls(MaxFalls) == 4 ? "four" : "three") : left == 1 ? "1 fall left" : left + " falls left";
             hud.Flash(why, fallsNote, 1.3f);
             medical += rider.Tube ? 400f : 850f;   // the trip to the clinic
-            fastCrash = rider.Speed * 3.6f > 120f;   // (Speed is still the speed you were going)
-            audioFx.Play(why.StartsWith("Crevasse") ? Sfx.Nooo : fastCrash ? Sfx.BigScream : Sfx.Scream);   // down a crevasse: the long "nooo"
+            if (why.StartsWith("Crevasse")) audioFx.Play(Sfx.Nooo);   // down a crevasse: the long "nooo"
+            else StartScreaming();                                     // the player's screams, from the impact until the body slows
             if (why.StartsWith("Crevasse")) { crevasseWatch = true; hud.Flash("CREVASSE!", fallsNote, 1.6f); if (left <= 0) { wipeoutTimer = 0.9f; endTitle = "WIPED OUT"; rider.StayDown = true; } }
             else if (left <= 0) { wipeoutTimer = 0.9f; endTitle = "WIPED OUT"; rider.StayDown = true; }   // the last fall: no getting up   // let the tumble play out, then it's over
             if (why.StartsWith("Tree")) { audioFx.Play(Sfx.HitTree); audioFx.Play(Sfx.Crash, 0.6f); }
