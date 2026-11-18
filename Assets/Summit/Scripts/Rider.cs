@@ -30,8 +30,14 @@ namespace Summit
         public static float TurnDrag = 0.12f;                        // speed lost per radian of turning
         public static float TakeoffClearance = 0.22f;
         public static float FallLinePull = 2.2f;                     // 1/s: how fast a flat board swings back down the hill
-        public static float DeadlyDrop = 18f;                        // m fallen beyond the mountain's own line: off a cliff, fatal
-        public static float SlamImpact = 28f;                        // m/s into the snow: a landing nobody rides away from
+        public static float DeadlyDrop = 18f;                        // m fallen beyond the mountain's own line onto the foot of a deadly cliff (Deadly): fatal
+        public static float SlamImpact = 28f;                        // m/s into the snow, square on: a landing nobody rides away from
+        public static float MaxLandAngle = 65f;                      // deg between the flight and the snow: shallower than this (even onto the flat), any height is a landing
+        public static float BadFlip = 70f, BadSpin = 55f;            // deg a bailed trick may be off upright / off the line and still be ridden out
+
+        /// <summary>The last landing: how hard (m/s into the snow) and how steeply (deg between flight and snow) it came in.</summary>
+        public float LastLandImpact { get; private set; }
+        public float LastLandAngle { get; private set; }
 
         /// <summary>
         /// Riding a snow tube instead of a board: no edges, so no carving. You lean to nudge it round, it slides
@@ -134,6 +140,8 @@ namespace Summit
         float wobble, slowFor, slowRate;
         /// <summary>Just back on your feet (or saved by a shield): nothing can knock you down for a moment.</summary>
         public bool Invulnerable => invulnerable > 0f;
+        /// <summary>The share of your speed the thrown body carries on with in this crash (a snapped tree: TreeBreak).</summary>
+        public float CrashCarry = 1f;
         /// <summary>
         /// Rode through a sign or a flag: keep this share of your speed (lost over a fraction of a second, as the
         /// board ploughs through) and wobble for this long. Hit square on harder than crashAbove (m/s), it knocks
@@ -284,10 +292,14 @@ namespace Summit
                 Heading += k * 0.8f * Mathf.Sin(churnT * 8.5f + 1f) * dt;
             }
             if (InvincibleTime > 0f && !Crashed) v = SmashAhead(dt, p, v);
+            // a young tree or a dead snag hit fast enough snaps: you go down, but on through where it stood (TreeBreak)
+            else if (!Crashed && TreeBreak.Instance != null) TreeBreak.Instance.RiderAhead(this, p, v, dt);
             // a sign or a flag where you are about to be, board to shoulders (see Breakables)
             if (!Crashed) Breakable.Probe(p, p + v * dt + Vector3.up * 1.2f, 0.45f, ownCol);
-            // over a crevasse with nothing under you (riding in, or coming down from the air): you fall in
-            if (!Crashed && !Grinding && Course.CrevasseCut(p.x, p.z) > 1.2f && (!Airborne || p.y - Slope.DrawnHeight(p.x, p.z) < 0.8f))
+            // over a crevasse with nothing under you (riding in, or coming down from the air): you fall in. Still
+            // rising off the snow (an ollie at the lip), you are clearing it
+            if (!Crashed && !Grinding && Course.CrevasseCut(p.x, p.z) > 1.2f
+                && (!Airborne || (Vector3.Dot(v, Slope.Normal(p.x, p.z)) < 0f && p.y - Slope.DrawnHeight(p.x, p.z) < 0.8f)))
             {
                 Airborne = false;
                 DoCrash("Crevasse!");
@@ -591,11 +603,21 @@ namespace Summit
             Vector3 n = Slope.Normal(p.x, p.z);
             float impact = Mathf.Max(0f, -Vector3.Dot(v, n));
             // you never fall off a cliff in mid-air, only when you hit something: rock can't be ridden (a fair,
-            // violent tumble), and snow far below where you left it is the end (the thrown body judges that: see
-            // RiderBody.FallStep). Up to then you are still on your board, and a landing is a landing.
+            // violent tumble), and the foot of a deadly cliff far below where you left it is the end (the thrown body
+            // judges that: see RiderBody.FallStep). Up to then you are still on your board, and a landing is a landing.
             float fell = DropFrom.y - p.y - Slope.Fall * Mathf.Max(0f, p.z - DropFrom.z);
+            // how steeply the board came into the snow: off a big air down a slope it comes in at a glancing angle,
+            // however far it fell; dropped onto ground that does not fall away with it, it comes in square
+            float along = Vector3.ProjectOnPlane(v, n).magnitude;
+            LastLandAngle = Mathf.Atan2(impact, along) * Mathf.Rad2Deg;
+            LastLandImpact = impact;
             if (RockFace.IsRock(n, p.x, p.z)) { DoCrash("Hit the rocks!"); return v; }
-            if (fell > DeadlyDrop) { DoCrash("Cliffed!"); return v; }
+            // off one of the cliffs the mountain marks to keep away from, down to the ground below it: nobody rides
+            // away from that (anywhere else, a long way down is only a big air: see the slam below)
+            if (fell > DeadlyDrop && Deadly.Over(DropFrom, p)) { DoCrash("Cliffed!"); return v; }
+            // a trick that had not come round: the board meets the snow upside down or across the way you are going
+            string bad = BadLanding();
+            if (bad != null) { DoCrash(bad); return v; }
             Airborne = false;
             AboveGround = 0f;
             pipeAir = false;
@@ -609,10 +631,16 @@ namespace Summit
             // lands like an ordinary big air rather than a slam (the dust and sound still show a big one)
             if (superAir) impact = Mathf.Min(impact, 11f + 0.25f * Mathf.Max(0f, impact - 11f));
             superAir = false;
-            if (impact > SlamImpact) { DoCrash("Slammed!"); return v; }
+            // a slam is hard AND square on: landed down a slope at a glancing angle the legs soak it, however big the
+            // air, and the board rides away (slowed, and wobbling as you find your feet)
+            if (impact > SlamImpact && LastLandAngle > MaxLandAngle) { DoCrash("Slammed!"); return v; }
             bool hard = impact > 18f;
-            float keep = 1f - Mathf.Clamp01((impact - 8f) * 0.012f);
-            if (hard) keep *= 0.9f;
+            float keep = Mathf.Max(0.5f, 1f - Mathf.Clamp01((impact - 8f) * 0.012f));
+            if (hard)
+            {
+                keep *= 0.9f;
+                wobble = Mathf.Max(wobble, Mathf.Clamp((impact - 18f) / 14f, 0.25f, 0.9f));
+            }
             vt *= keep;
             Landed?.Invoke(impact);
             float vy = (gyNext - p.y) / dt;
@@ -628,6 +656,23 @@ namespace Summit
             if (hard) RoughLanding?.Invoke("Hard landing");
             ClearTrick();
             return new Vector3(vt.x, vy, vt.z);
+        }
+
+        /// <summary>
+        /// Landing in the middle of a trick that had not finished turning: the board as it is drawn (see RiderBody)
+        /// is upside down, or across the line of travel (backwards is fine: that is riding switch). Null if it is
+        /// near enough upright and lined up to ride out (the ordinary "Bailed" rough landing).
+        /// </summary>
+        string BadLanding()
+        {
+            if (TrickName == null || AirTime >= 0.8f * TrickTime || AirTime <= 0.3f) return null;
+            float k = TrickProgress;
+            float flip = Mathf.Abs(Mathf.DeltaAngle(0f, TrickFlip * k * Mathf.Rad2Deg));        // off upright
+            float spin = Mathf.Abs(Mathf.DeltaAngle(0f, TrickSpin * k * Mathf.Rad2Deg));
+            spin = Mathf.Min(spin, 180f - spin);                                                  // off the line, either way round
+            if (flip > BadFlip) return "Landed upside down!";
+            if (spin > BadSpin) return "Landed sideways!";
+            return null;
         }
 
         // ---------------------------------------------------------------- boxes and rails
@@ -843,8 +888,7 @@ namespace Summit
             invulnerable = Mathf.Max(invulnerable, 1.5f);   // a moment to get going before anything can knock you down again
             Heading = 0f;
             // climb out of a crevasse onto its nearer rim
-            if (Course.CrevasseNear(p.x, p.z, 0.5f, out float cx, out float half))
-                p.x = cx + Mathf.Sign(p.x - cx + 0.01f) * (half + 1.6f);
+            if (Course.CrevasseNear(p.x, p.z, 0.5f, out var cv)) p = Course.CrevasseRim(cv, p, 1.6f);
             // stopped on a ridge's cliff: get up on the snow below it, not on the rock
             p.x = Ridge.SafeX(p.x, p.z);
             // step clear of whatever stopped you, toward the piste

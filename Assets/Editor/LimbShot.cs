@@ -1,0 +1,529 @@
+using System.Collections.Generic;
+using System.IO;
+using System.Reflection;
+using UnityEditor;
+using UnityEditor.SceneManagement;
+using UnityEngine;
+using Summit;
+
+/// <summary>
+/// Limbs torn off by the worst hits (RiderBodyLimbs). Run: Unity -batchmode -projectPath . -executeMethod
+/// LimbShot.Run -logFile x.log (no -nographics: it renders). Writes LimbShot*.png into $SUMMIT_OUT (default
+/// LimbRenders/). SUMMIT_OLDHERO=1 runs it on the previous rider (LimbShotOld*).
+///
+/// First a tally: natural crashes (into trees, tumbles on the snow, big falls) at a range of speeds, with the
+/// hardest limb hits and whatever came off, to check it stays rare. Then the shots: an arm into a tree and a leg in
+/// a big fall, gore on and off, at the moment it comes off and once the body has stopped; the end screen with
+/// the bill; and the next run's rider, whole again, with the checks that nothing is left over.
+///
+/// Batchmode sends no collision messages, so (as BloodShot) this stands in for them every physics step. Where a
+/// shot needs a particular limb and the crash didn't take it, it is torn off by hand at the first hard hit
+/// (RiderBody.Sever, the same call the game makes).
+/// </summary>
+public static class LimbShot
+{
+    const BindingFlags NP = BindingFlags.NonPublic | BindingFlags.Instance;
+    const float Dt = 1f / 60f;
+
+    static SummitGame game; static Rider rider; static RiderBody body; static SlopeStreamer terrain; static Forest props; static RiderRig rig;
+    static Camera cam; static ChaseCamera chase; static MethodInfo late, tUpd, fUpd; static Atmosphere atmo; static Blood blood; static SnowFX fx;
+    static readonly Dictionary<Rigidbody, HashSet<Collider>> touching = new Dictionary<Rigidbody, HashSet<Collider>>();
+    static readonly Dictionary<Rigidbody, Vector3> lastV = new Dictionary<Rigidbody, Vector3>();
+    static Vector3 riderLastV; static bool riderHit; static float riderInto;
+    static string outDir, tag;
+    // what the last crash did
+    static float hardObj, hardSnow; static string hardWhat; static int firstObjStrike; static Vector3 strikeAt, strikeN; static Transform strikeBone;
+    static readonly List<string> lostNames = new List<string>(); static Vector3 lostAt;
+
+    public static void Run()
+    {
+        bool old = System.Environment.GetEnvironmentVariable("SUMMIT_OLDHERO") == "1";
+        RiderBody.UseHero = !old;
+        tag = old ? "LimbShotOld" : "LimbShot";
+        outDir = System.Environment.GetEnvironmentVariable("SUMMIT_OUT");
+        if (string.IsNullOrEmpty(outDir)) outDir = "LimbRenders";
+        Directory.CreateDirectory(outDir);
+        SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
+        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
+        game = Object.FindFirstObjectByType<SummitGame>();
+        TestBoot.Boot(game);
+        rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
+        body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
+        terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
+        props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        blood = (Blood)typeof(SummitGame).GetField("blood", NP).GetValue(game);
+        fx = Object.FindFirstObjectByType<SnowFX>();
+        rig = (RiderRig)typeof(RiderBody).GetField("rig", NP).GetValue(body);
+        cam = Camera.main; chase = cam.GetComponent<ChaseCamera>();
+        late = typeof(ChaseCamera).GetMethod("LateUpdate", NP);
+        atmo = Object.FindFirstObjectByType<Atmosphere>();
+        tUpd = typeof(SlopeStreamer).GetMethod("Update", NP);
+        fUpd = typeof(Forest).GetMethod("Update", NP);
+        body.LimbLost += (limb, at, whole) => { lostNames.Add(limb + (whole ? " (whole)" : "")); lostAt = at; Log($"sever {limb}: mesh split {RiderBody.LastSeverMs:0.00} ms"); };
+        Physics.simulationMode = SimulationMode.Script;
+        ChaseCamera.TestDt = Dt;
+        try { Sequence(old); }
+        catch (System.Exception e) { Debug.LogError("LIMBSHOT exception " + e); }
+        ChaseCamera.TestDt = 0f;
+        Physics.simulationMode = SimulationMode.FixedUpdate;
+        EditorApplication.Exit(0);
+    }
+
+    static void Sequence(bool old)
+    {
+        Log($"rider: {(body.Hero != null ? "hero" : "previous")}, blood on={blood.On}");
+        ToRiding();
+        float z0 = Course.First + 30f;
+        rider.ResetAt(Slope.Centre(z0), z0); body.ResetVisual(); rider.Begin();
+        terrain.Prewarm(); props.Prewarm();
+        Shoot("Warmup", true); Shoot("Warmup2", true);   // the first renders come out unlit (and the cloth shader half-compiled)
+
+        if (!old) Tally();
+
+        blood.SetOn(true);
+        // an arm into a tree, gore on (with the flash on screen, and the end screen), then off
+        Arm(true, rig.LowerR, false, "ArmGore", true);
+        Arm(false, rig.LowerR, false, "ArmClean", false);
+        // a leg in a big fall onto the snow, gore on and off
+        Leg(true, rig.ThighL, true, "LegGore");
+        Leg(false, rig.ThighL, true, "LegClean");
+        if (!old)
+        {
+            Arm(true, rig.UpperL, true, "WholeArmGore", false);
+            Leg(true, rig.ShinR, false, "ShinGore");
+        }
+        blood.SetOn(true);
+        ResetCheck();
+    }
+
+    /// <summary>
+    /// An eye `dist` from `at`, as near the direction `prefer` as it can be with nothing between (trees, the body's
+    /// own parts, the snow); `self` (and its bone) don't count.
+    /// </summary>
+    static Vector3 Clear(Vector3 at, Vector3 prefer, float dist, Transform self, bool bodyBlocks = true)
+    {
+        prefer = prefer.sqrMagnitude > 1e-4f ? prefer.normalized : Vector3.up;
+        Vector3 best = at + prefer * dist; float bestScore = -1e9f;
+        for (int e = 0; e < 4; e++)
+            for (int a = 0; a < 16; a++)
+            {
+                float el = Mathf.Lerp(15f, 75f, e / 3f) * Mathf.Deg2Rad, az = a * Mathf.PI / 8f;
+                var d = new Vector3(Mathf.Cos(el) * Mathf.Sin(az), Mathf.Sin(el), Mathf.Cos(el) * Mathf.Cos(az));
+                Vector3 eye = at + d * dist;
+                if (eye.y < Slope.DrawnHeight(eye.x, eye.z) + 0.3f) continue;
+                bool blocked = false;
+                // not inside a tree's branches (only the trunk has a collider)
+                foreach (var o in Physics.OverlapSphere(eye, 2.2f, ~0, QueryTriggerInteraction.Ignore)) if (o.GetComponentInParent<Obstacle>() != null) { blocked = true; break; }
+                foreach (var h in Physics.RaycastAll(at + d * 0.08f, d, dist, ~0, QueryTriggerInteraction.Ignore))
+                {
+                    if (self != null && (h.transform == self || h.transform == self.parent)) continue;
+                    var hb = h.collider.attachedRigidbody;
+                    if (hb != null && hb.isKinematic && body.RagdollForTest.IsSnow(h.collider)) continue;   // the slabs lie under the snow
+                    if (!bodyBlocks && hb != null && !hb.isKinematic) continue;                              // the body is the subject
+                    blocked = true; break;
+                }
+                // the snow itself in the way (the slope has no collider)
+                for (float k = 0.2f; k < 1f && !blocked; k += 0.2f) { var p = at + d * dist * k; if (p.y < Slope.DrawnHeight(p.x, p.z) - 0.05f) blocked = true; }
+                float score = Vector3.Dot(d, prefer) - (blocked ? 10f : 0f);
+                if (score > bestScore) { bestScore = score; best = eye; }
+            }
+        return best;
+    }
+
+    static void ToRiding()
+    {
+        typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
+        rider.input = null;
+    }
+
+    // ---- how often it happens on its own
+
+    static void Tally()
+    {
+        blood.SetOn(true);
+        int n = 0, cut = 0;
+        void Note(string what)
+        {
+            n++; if (lostNames.Count > 0) cut++;
+            Log($"TALLY {what}: rider into obstacle {riderInto:0.0}, hardest limb hit obstacle {hardObj:0.0} snow {hardSnow:0.0} m/s ({hardWhat}), dead={body.Dead}; lost: {(lostNames.Count > 0 ? string.Join(", ", lostNames) : "nothing")}");
+        }
+        for (int seed = 1; seed <= 3; seed++)
+            foreach (float v in new[] { 16f, 22f, 28f })
+            {
+                Random.InitState(seed * 31 + (int)v);
+                if (TreeRun(v, Course.First + 160f + seed * 140f, 4f, null, null)) Note($"tree {v} m/s seed {seed}");
+            }
+        for (int seed = 1; seed <= 3; seed++)
+            foreach (float v in new[] { 16f, 24f, 32f })
+            {
+                Random.InitState(seed * 53 + (int)v);
+                SnowRun(v, 0f, Course.First + 300f + seed * 120f, 4f);
+                Note($"tumble {v} m/s seed {seed}");
+            }
+        for (int seed = 1; seed <= 3; seed++)
+            foreach (float up in new[] { 8f, 16f })
+            {
+                Random.InitState(seed * 71 + (int)up);
+                SnowRun(24f, up, Course.First + 700f + seed * 60f, 4f);
+                Note($"fall from {up} m at 24 m/s seed {seed}");
+            }
+        Log($"TALLY {cut} of {n} crashes lost a limb");
+    }
+
+    static void Clear()
+    {
+        hardObj = hardSnow = riderInto = 0f; hardWhat = ""; firstObjStrike = -1; strikeBone = null; lostNames.Clear();
+        touching.Clear(); lastV.Clear();
+    }
+
+    /// <summary>Find a lone tree near z and ride flat out into it.</summary>
+    static bool TreeRun(float speed, float near, float seconds, Transform force, System.Action<float> each)
+    {
+        rider.ResetAt(Slope.Centre(near), near); body.ResetVisual(); rider.Begin();
+        terrain.Prewarm(); props.Prewarm(); fUpd.Invoke(props, null);
+        Obstacle best = null; float bestD = 1e9f;
+        foreach (var ob in Object.FindObjectsByType<Obstacle>(FindObjectsSortMode.None))
+        {
+            if (!ob.gameObject.activeInHierarchy || ob.label != "Tree") continue;
+            var col = ob.GetComponentInChildren<Collider>(); if (col == null || !col.enabled) continue;
+            var p = col.bounds.center;
+            if (p.z < near + 10f) continue;
+            float d = Mathf.Abs(p.z - near - 25f) + Mathf.Abs(p.x - Slope.Centre(p.z)) * 0.5f + (Mathf.Abs(p.x - Slope.Centre(p.z)) > Slope.PisteHalf ? 200f : 0f);
+            if (d >= bestD) continue;
+            Vector3 st = p + Vector3.back * (col.bounds.extents.z + 1.4f); st.y = Slope.DrawnHeight(st.x, st.z) + 0.5f;
+            bool clear = true;
+            foreach (var o in Physics.OverlapSphere(st, 1.2f, ~0, QueryTriggerInteraction.Ignore)) if (o != col && o.GetComponentInParent<Obstacle>() != null) clear = false;
+            if (!clear) continue;
+            bestD = d; best = ob;
+        }
+        if (best == null) { Log($"no tree near z={near}"); return false; }
+        var bcol = best.GetComponentInChildren<Collider>();
+        var target = bcol.bounds.center;
+        Vector3 start = target + Vector3.back * (bcol.bounds.extents.z + 1.4f);
+        rider.ResetAt(start.x, start.z); body.ResetVisual(); rider.Begin();
+        Vector3 to = target - rider.Body.position; to.y = 0f; to.Normalize();
+        rider.Heading = Mathf.Atan2(to.x, to.z);
+        rider.Body.linearVelocity = to * speed + Vector3.down * 2f;
+        terrain.Prewarm(); props.Prewarm();
+        chase.enabled = true; chase.Snap();
+        blood.Clear(); Clear(); riderHit = false;
+        float t0 = -1f;
+        for (float t = 0f; t < seconds; t += Dt)
+        {
+            rider.Steer = 0f;
+            Step();
+            if (riderHit && t0 < 0f) t0 = t;
+            if (force != null && body.LimbsLost == 0 && rider.Crashed && (firstObjStrike >= 0 || (t0 >= 0f && t - t0 > 0.25f)))
+            {
+                Vector3 n = strikeN.sqrMagnitude > 0.01f ? strikeN : -to;
+                body.Sever(force, force == rig.UpperL || force == rig.UpperR || force == rig.ThighL || force == rig.ThighR, n);
+            }
+            each?.Invoke(t);
+        }
+        if (t0 < 0f) { Log("never reached the tree"); return false; }
+        return true;
+    }
+
+    /// <summary>A crash on open snow at this speed, launched from `up` metres above it.</summary>
+    static void SnowRun(float speed, float up, float z, float seconds, Transform force = null, System.Action<float> each = null)
+    {
+        rider.ResetAt(Slope.Centre(z), z); body.ResetVisual(); rider.Begin();
+        terrain.Prewarm(); props.Prewarm();
+        var p = rider.Body.position + Vector3.up * up;
+        rider.Body.position = p; rider.transform.position = p;
+        rider.Body.linearVelocity = new Vector3(0f, up > 0f ? -5f : -1f, speed);
+        body.Apply(Dt);
+        rider.DoCrash("test");
+        blood.Clear(); Clear();
+        chase.enabled = true; chase.Snap();
+        bool bigHit = false;
+        for (float t = 0f; t < seconds; t += Dt)
+        {
+            Step();
+            if (hardSnow > 6f) bigHit = true;
+            if (force != null && body.LimbsLost == 0 && (bigHit || t > 1.2f))
+                body.Sever(force, force == rig.UpperL || force == rig.UpperR || force == rig.ThighL || force == rig.ThighR, Vector3.up);
+            each?.Invoke(t);
+        }
+    }
+
+    // ---- the shots
+
+    static void Arm(bool gore, Transform cut, bool whole, string name, bool withScreens)
+    {
+        blood.SetOn(gore);
+        Random.InitState(5);
+        float lostT = -1f; bool impactShot = false; stumpShot = false;
+        bool ok = false;
+        if (withScreens) { typeof(SummitGame).GetField("medical", NP).SetValue(game, 0f); typeof(SummitGame).GetField("reattachLine", NP).SetValue(game, ""); }
+        for (int i = 0; i < 4 && !ok; i++)
+        {
+            float near = Course.First + 160f + i * 150f;
+            lostT = -1f; impactShot = false; stumpShot = false;
+            ok = TreeRun(21f, near, 6f, cut, t =>   // (below RiderBody.SeverRider: the shot takes the limb it asks for)
+            {
+                if (body.LimbsLost > 0 && lostT < 0f) lostT = t;
+                if (lostT >= 0f && !impactShot && t - lostT >= 0.07f)
+                {
+                    impactShot = true;
+                    ImpactShot(name, withScreens);
+                }
+                if (lostT >= 0f && !stumpShot && t - lostT >= 0.5f) { stumpShot = true; StumpShot(name); }
+            });
+            if (ok && lostT < 0f) { Log($"{name}: nothing came off"); ok = false; }
+        }
+        Log($"{name}: lost {string.Join(", ", lostNames)} at t={lostT:0.00}; hardest obstacle {hardObj:0.0} snow {hardSnow:0.0}");
+        Settle(); Aftermath(name);
+        if (withScreens) EndScreen(name);
+    }
+
+    static void Leg(bool gore, Transform cut, bool whole, string name)
+    {
+        blood.SetOn(gore);
+        Random.InitState(11);
+        float lostT = -1f; bool impactShot = false; stumpShot = false;
+        SnowRun(24f, 9f, Course.First + 250f, 6f, cut, t =>
+        {
+            if (body.LimbsLost > 0 && lostT < 0f) lostT = t;
+            if (lostT >= 0f && !impactShot && t - lostT >= 0.07f) { impactShot = true; ImpactShot(name, false); }
+            if (lostT >= 0f && !stumpShot && t - lostT >= 0.5f) { stumpShot = true; StumpShot(name); }
+        });
+        Log($"{name}: lost {string.Join(", ", lostNames)} at t={lostT:0.00}; hardest snow {hardSnow:0.0}");
+        Settle(); Aftermath(name);
+    }
+
+    static bool stumpShot;
+
+    /// <summary>The stump and the piece half a second on, while they tumble apart.</summary>
+    static void StumpShot(string name)
+    {
+        var caps = new List<GameObject>(body.LimbCaps);
+        if (caps.Count == 0) return;
+        Vector3 s = caps[0].transform.position;
+        Look(Clear(s, caps[0].transform.up + Vector3.up * 0.4f, 1.6f, caps[0].transform), s, 45f);
+        Shoot(name + "Tumble", true);
+    }
+
+    static void ImpactShot(string name, bool hudToo)
+    {
+        Vector3 c = lostAt;
+        Vector3 v = body.RagdollForTest != null ? body.RagdollForTest.Velocity : Vector3.forward; v.y = 0f;
+        Vector3 along = v.sqrMagnitude > 0.1f ? v.normalized : Vector3.forward;
+        Vector3 side = Vector3.Cross(Vector3.up, along);
+        Look(Clear(c, side * 3.2f - along * 1.2f + Vector3.up * 1.2f, 3.4f, null, false), c, 45f);
+        Shoot(name + "Impact", true, hudToo);
+        Log($"{name}: impact shot, {blood.Shown} marks");
+    }
+
+    /// <summary>Run on until the body and the torn-off piece have stopped.</summary>
+    static void Settle()
+    {
+        for (float t = 0f; t < 6f; t += Dt)
+        {
+            Step();
+            if (t > 2.5f && (body.RagdollForTest == null || body.RagdollForTest.Speed < 0.3f)) break;
+        }
+    }
+
+    static void Aftermath(string name)
+    {
+        var caps = new List<GameObject>(body.LimbCaps);
+        Vector3 c = body.RagdollCentre;
+        GameObject stump = caps.Count > 0 ? caps[0] : null, end = caps.Count > 1 ? caps[1] : null;
+        Vector3 piece = end != null ? end.transform.position : c;
+        Log($"{name}: body at {c}, piece at {piece} ({(piece - c).magnitude:0.0} m apart), caps {caps.Count}, marks {blood.Shown}");
+        Vector3 mid = (c + piece) * 0.5f;
+        float spread = Mathf.Max(2.5f, (piece - c).magnitude);
+        // the whole scene: the body and the piece, from wherever nothing is in the way
+        // from beyond the body, looking over it at the piece, so the two stack up the tall frame
+        Vector3 line = piece - c; line.y = 0f; line = line.sqrMagnitude > 0.01f ? line.normalized : Vector3.forward;
+        Look(Clear(mid, -line + Vector3.up * 1.1f, spread * 0.9f + 3f, null, false), mid, 60f);
+        Shoot(name + "After", true);
+        if (stump != null)
+        {
+            Vector3 s = stump.transform.position;
+            Look(Clear(s, stump.transform.up + Vector3.up * 0.5f, 1.3f, stump.transform), s, 40f); Shoot(name + "Stump", true);
+        }
+        if (end != null)
+        {
+            Vector3 s = end.transform.position;
+            Look(Clear(s, end.transform.up + Vector3.up * 0.5f, 1.2f, end.transform), s, 40f); Shoot(name + "Piece", true);
+        }
+    }
+
+    static void EndScreen(string name)
+    {
+        string title = (string)typeof(SummitGame).GetField("endTitle", NP).GetValue(game);
+        float medical = (float)typeof(SummitGame).GetField("medical", NP).GetValue(game);
+        string line = (string)typeof(SummitGame).GetField("reattachLine", NP).GetValue(game);
+        Log($"{name}: end title {title}, medical ${medical:N0}, stay down {rider.StayDown}, can get up {rider.CanGetUp}, bill line [{line.Replace("\n", " | ")}]");
+        typeof(SummitGame).GetMethod("ToEnd", NP).Invoke(game, new object[] { title, false, false });
+        var hud = Object.FindFirstObjectByType<Hud>();
+        hud.SetAlpha(1f);
+        var meta = Object.FindFirstObjectByType<MetaUi>();
+        meta?.SetEndAlpha(1f);
+        Look(body.RagdollCentre + new Vector3(3f, 3f, -5f), body.RagdollCentre, 50f);
+        Shoot(name + "EndScreen", true, true);
+        ToRiding();
+    }
+
+    static void ResetCheck()
+    {
+        // the run before this left a limb off (ShinGore / LegClean): the next run must have the rider whole
+        int capsBefore = 0; foreach (var g in Object.FindObjectsByType<Transform>(FindObjectsSortMode.None)) if (g.name == "Stump") capsBefore++;
+        Log($"before reset: {body.LimbsLost} lost, {capsBefore} stump objects");
+        typeof(SummitGame).GetMethod("ToReady", NP, null, new[] { typeof(bool) }, null).Invoke(game, new object[] { true });
+        int caps = 0, slabs = 0; foreach (var g in Object.FindObjectsByType<Transform>(FindObjectsSortMode.None)) { if (g.name == "Stump") caps++; if (g.name == "LimbGround" && g.gameObject.activeSelf) slabs++; }
+        int joints = 0, live = 0;
+        var rd = body.RagdollForTest;
+        foreach (var rb in rd.Bodies) { if (rb.GetComponent<CharacterJoint>() != null) joints++; if (!rb.isKinematic) live++; }
+        int cutMeshes = 0;
+        foreach (var smr in body.GetComponentsInChildren<SkinnedMeshRenderer>(true)) if (smr.sharedMesh != null && smr.sharedMesh.name.EndsWith("(cut)")) cutMeshes++;
+        bool bonesHome = Vector3.Distance(rig.HandR.position, rig.LowerR.position) < 0.5f && Vector3.Distance(rig.FootL.position, rig.ThighL.position) < 1.2f;
+        Log($"RESET lost={body.LimbsLost} stumps={caps} limbSlabs={slabs} joints={joints} (want {CountParts() - 1}) live bodies={live} cut meshes={cutMeshes} bones home={bonesHome} medical={(float)typeof(SummitGame).GetField("medical", NP).GetValue(game):0}");
+        ToRiding();
+        float z = Course.First + 30f;
+        rider.ResetAt(Slope.Centre(z), z); body.ResetVisual(); rider.Begin();
+        terrain.Prewarm(); props.Prewarm();
+        for (int i = 0; i < 20; i++) Step();
+        Vector3 p = rider.transform.position;
+        Look(p + new Vector3(2.6f, 1.2f, 1.6f), p + Vector3.up * 0.5f, 40f);
+        Shoot("Reset", true);
+        // and crash again: the ragdoll still works with the joints rebuilt
+        Random.InitState(3);
+        SnowRun(18f, 0f, Course.First + 200f, 3f);
+        float spread = 0f; Vector3 c0 = body.RagdollCentre;
+        foreach (var rb in rd.Bodies) spread = Mathf.Max(spread, (rb.position - c0).magnitude);
+        Log($"RESET crash again: lost={body.LimbsLost} body spread {spread:0.00} m (want < 1.4)");
+    }
+
+    static int CountParts() { int n = 0; foreach (var _ in body.RagdollForTest.Bodies) n++; return n; }
+
+    // ---- stepping, and the stand-in for collision messages (as BloodShot)
+
+    static void Step()
+    {
+        for (int k = 0; k < 2; k++)
+        {
+            riderLastV = rider.Body.linearVelocity;
+            foreach (var rb in Parts()) lastV[rb] = rb.linearVelocity;
+            rider.Tick(Dt / 2f); body.PhysicsStep(); Physics.Simulate(Dt / 2f);
+            Contacts();
+        }
+        tUpd.Invoke(terrain, null);
+        fUpd.Invoke(props, null);
+        body.Apply(Dt);
+        late.Invoke(chase, null);
+        typeof(Atmosphere).GetMethod("LateUpdate", NP).Invoke(atmo, null);
+        foreach (var ps in blood.GetComponentsInChildren<ParticleSystem>()) ps.Simulate(Dt, true, false, false);
+        if (fx != null) foreach (var ps in fx.GetComponentsInChildren<ParticleSystem>()) ps.Simulate(Dt, true, false, false);
+    }
+
+    static List<Rigidbody> Parts()
+    {
+        var list = new List<Rigidbody>();
+        var rd = body.RagdollForTest;
+        if (rd == null || !rd.Active) return list;
+        list.AddRange(rd.Bodies);
+        return list;
+    }
+
+    static bool IsLimb(Transform b) => b == rig.UpperL || b == rig.UpperR || b == rig.LowerL || b == rig.LowerR || b == rig.ThighL || b == rig.ThighR || b == rig.ShinL || b == rig.ShinR;
+
+    static void Contacts()
+    {
+        if (!rider.Crashed)
+        {
+            Vector3 rp = rider.Body.position;
+            foreach (var c in Physics.OverlapSphere(rp, Rider.R + 0.05f, ~0, QueryTriggerInteraction.Ignore))
+            {
+                var ob = c.GetComponentInParent<Obstacle>();
+                if (ob == null) continue;
+                Vector3 cp = c.ClosestPoint(rp), n = (rp - cp).sqrMagnitude > 1e-6f ? (rp - cp).normalized : -riderLastV.normalized;
+                float into = Mathf.Abs(Vector3.Dot(riderLastV, n));
+                rider.HitObstacle?.Invoke(ob, c.bounds.center, into);
+                riderHit = true; riderInto = Mathf.Max(riderInto, into);
+                if (into > 6f) rider.DoCrash(ob.label);
+                break;
+            }
+        }
+        var rd = body.RagdollForTest;
+        foreach (var rb in Parts())
+        {
+            var mine = rb.GetComponent<Collider>();
+            if (mine == null || !mine.enabled) continue;
+            if (!touching.TryGetValue(rb, out var was)) touching[rb] = was = new HashSet<Collider>();
+            var now = new HashSet<Collider>();
+            foreach (var c in Physics.OverlapSphere(rb.worldCenterOfMass, 0.45f, ~0, QueryTriggerInteraction.Ignore))
+            {
+                if (c == mine || c == rider.GetComponent<Collider>()) continue;
+                if (c.attachedRigidbody != null && c.attachedRigidbody != rb && !c.attachedRigidbody.isKinematic) continue;
+                if (c.attachedRigidbody != null && c.attachedRigidbody.isKinematic && !rd.IsSnow(c)) continue;
+                if (Physics.GetIgnoreCollision(c, mine)) continue;   // (the body's slab, for a torn-off piece)
+                Vector3 onIt = c.ClosestPoint(rb.worldCenterOfMass), onMe = mine.ClosestPoint(onIt);
+                float gap = (onMe - onIt).magnitude;
+                if (gap > 0.04f) continue;
+                now.Add(c);
+                if (was.Contains(c)) continue;
+                Vector3 n = gap > 1e-4f ? (onMe - onIt) / gap : (rb.worldCenterOfMass - onIt).normalized;
+                bool snow = rd.IsSnow(c);
+                if (snow) n = c.transform.up;
+                Vector3 v = lastV.TryGetValue(rb, out var lv) ? lv : rb.linearVelocity;
+                float into = Mathf.Abs(Vector3.Dot(v, n));
+                if (IsLimb(rb.transform) && rd.Attached(rb.transform))
+                {
+                    if (snow && into > hardSnow) { hardSnow = into; hardWhat = rb.name + " snow"; }
+                    if (!snow && into > hardObj) { hardObj = into; hardWhat = rb.name + " " + c.name; }
+                    if (!snow && into > 6f && firstObjStrike < 0) { firstObjStrike = 1; strikeAt = onIt; strikeN = n; strikeBone = rb.transform; }
+                }
+                rd.Struck?.Invoke(c, onIt, n, into, rb.transform);
+            }
+            touching[rb] = now;
+        }
+    }
+
+    static void Look(Vector3 from, Vector3 to, float fov)
+    {
+        chase.enabled = false;
+        cam.fieldOfView = fov;
+        cam.transform.SetPositionAndRotation(from, Quaternion.LookRotation(to - from));
+    }
+
+    static void Log(string s) => Debug.Log("LIMBSHOT " + s);
+
+    static void Shoot(string name, bool bakeSkins, bool hud = false)
+    {
+        DynamicGI.UpdateEnvironment();
+        var baked = new List<GameObject>(); var hidden = new List<SkinnedMeshRenderer>();
+        if (bakeSkins)
+            foreach (var sk in Object.FindObjectsByType<SkinnedMeshRenderer>(FindObjectsSortMode.None))
+            {
+                if (!sk.enabled || !sk.gameObject.activeInHierarchy) continue;
+                var m = new Mesh(); sk.BakeMesh(m);
+                var g = new GameObject("baked", typeof(MeshFilter), typeof(MeshRenderer));
+                g.GetComponent<MeshFilter>().sharedMesh = m;
+                g.GetComponent<MeshRenderer>().sharedMaterials = sk.sharedMaterials;
+                g.transform.SetPositionAndRotation(sk.transform.position, sk.transform.rotation);
+                sk.enabled = false; hidden.Add(sk); baked.Add(g);
+            }
+        Canvas canvas = null; RenderMode was = RenderMode.ScreenSpaceOverlay;
+        if (hud)
+        {
+            canvas = Object.FindFirstObjectByType<Hud>().GetComponent<Canvas>();
+            was = canvas.renderMode;
+            canvas.renderMode = RenderMode.ScreenSpaceCamera; canvas.worldCamera = cam; canvas.planeDistance = 1f;
+        }
+        typeof(Forest).GetMethod("Draw", NP)?.Invoke(props, null);
+        int w = 590, h = 1278;
+        var rt = new RenderTexture(w, h, 24);
+        cam.targetTexture = rt; cam.aspect = w / (float)h; cam.Render();
+        RenderTexture.active = rt;
+        var tex = new Texture2D(w, h, TextureFormat.RGB24, false);
+        tex.ReadPixels(new Rect(0, 0, w, h), 0, 0); tex.Apply();
+        File.WriteAllBytes(Path.Combine(outDir, tag + name + ".png"), tex.EncodeToPNG());
+        cam.targetTexture = null;
+        if (canvas != null) canvas.renderMode = was;
+        foreach (var g in baked) Object.DestroyImmediate(g);
+        foreach (var sk in hidden) sk.enabled = true;
+    }
+}

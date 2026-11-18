@@ -66,7 +66,10 @@ public static class GlitchTest
                     });
                     rider.RoughLanding -= rough;
                     Debug.Log($"GLITCH-INFO seed{seed} superjump z{z0}: {pops} pops, {hard} hard landings, crashed={rider.Crashed} {lastCrash} at z={rider.Z:0} x-c={rider.transform.position.x - Slope.Centre(rider.Z):0.0}");
-                    if (rider.Crashed && !Fell(lastCrash)) Report($"seed{seed} superjump z{z0}: crashed ({lastCrash})");   // falling into a crevasse or off a ridge is not a jump glitch
+                    // falling into a crevasse or off a ridge is not a jump glitch, nor is coming down before the trick came
+                    // round (an upside-down or sideways landing crashes: see Rider.BadLanding), nor landing off the piste
+                    // into a tree (a tree that snaps is found by a query, TreeBreak; batchmode never fires the collision)
+                    if (rider.Crashed && !Fell(lastCrash) && lastCrash != "Landed upside down!" && lastCrash != "Landed sideways!" && lastCrash != "Tree snapped!") Report($"seed{seed} superjump z{z0}: crashed ({lastCrash})");
                 }
                 // Invincible: straight down through the forest beside the piste, which would otherwise be a crash
                 foreach (float side in new[] { -1f, 1f })
@@ -238,7 +241,8 @@ public static class GlitchTest
                 float buried = PlayOut(name, r, body, terrain, props, ref n, 16f, out float tDead, out float sank);
                 Debug.Log($"GLITCH-INFO {name}: '{why}' {midAir:0.00} m off the ground, dead={body.Dead} after {tDead:0.0}s, lies {buried:0.00} m under the snow");
                 if (midAir > 1.2f) Report($"{name}: fell off the board in mid-air ({midAir:0.0} m up)");
-                if (!body.Dead) Report($"{name}: survived going over a {w.height:0} m cliff ('{why}')");
+                // (a glacier gap runs up to the cliff's edge: dropping into it on the way is the gap's business)
+                if (!body.Dead && why != "Crevasse!") Report($"{name}: survived going over a {w.height:0} m cliff ('{why}')");
                 else if (buried < 0.6f) Report($"{name}: dead but not buried ({buried:0.00} m)");
                 if (sank > 0.6f) Report($"{name}: ragdoll sank {sank:0.00} m into the rock");
             }

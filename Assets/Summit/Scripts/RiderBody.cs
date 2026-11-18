@@ -215,7 +215,8 @@ namespace Summit
             rider.Crash += why =>
             {
                 spray.Emit(70);
-                if (why.StartsWith("Crevasse")) lastVel *= 0.4f;   // a drop, not a throw
+                if (why.StartsWith("Crevasse")) lastVel = Course.CrevasseDrop(transform.position, lastVel);   // a drop, not a throw
+                lastVel *= rider.CrashCarry;   // through a snapped tree: on, a little slower (TreeBreak)
                 crashSpin = 0f;
                 ragdollPending = rig != null;   // thrown on the next physics step, not inside the collision
                 if (rig == null) craters.Add(transform.position + Vector3.down * Rider.R, lastVel, 1.0f, 0.2f);   // a thrown body digs its own (SnowLayer)
@@ -223,6 +224,7 @@ namespace Summit
             };
             rider.Scraped += _ => spray.Emit(25);
             rider.HitObstacle += OnRiderHitObstacle; rider.Crash += OnCrashBleed;   // blood on a hard hit (RiderBodyBlood)
+            rider.HitObstacle += OnLimbObstacle; rider.Crash += OnLimbCrash;        // a limb torn off by a brutal one (RiderBodyLimbs)
         }
 
         // ---------------------------------------------------------------- the person
@@ -441,6 +443,7 @@ namespace Summit
             ragdoll.Ploughed += (bone, down, v) => snowy?.Plough(down, v, Time.fixedDeltaTime);   // snow packed onto the clothes
             ragdoll.Struck += OnRagdollStruck; ragdoll.Ploughed += BleedAlong;   // blood on a hard hit (RiderBodyBlood)
             ragdoll.Prebuild();
+            HookLimbs();   // limbs torn off by the worst hits (RiderBodyLimbs)
         }
         float tubeSpin, tubeSpinRate;
         public bool Tube { get; private set; }
@@ -845,6 +848,7 @@ namespace Summit
             lean = 0f; yawRate = 0f; lastTravel = rider.Heading;
             pivot.localRotation = Quaternion.identity;
             if (ragdoll != null) ragdoll.End();
+            RestoreLimbs();   // every limb back on (RiderBodyLimbs)
             ragdollPending = false;
             foreach (var g in bandages) if (g != null) { if (Application.isPlaying) Destroy(g); else DestroyImmediate(g); }
             bandages.Clear(); bandaged.Clear(); brokenThisCrash.Clear();
@@ -884,7 +888,7 @@ namespace Summit
             if (!isBoard) snowy?.Hit(at, bone != null ? bone.position : RagdollCentre, v);
             // the hole is pressed by the part itself (SnowLayer); only a genuinely hard hit throws up a little powder
             if (v > 5f && Time.time > nextDragCrater) { nextDragCrater = Time.time + 0.15f; fx?.Thud(at, v, ragdoll != null ? ragdoll.Velocity : Vector3.zero); }
-            if (isBoard || bone == null || rig == null || LimbOf(bone) == null || brokenThisCrash.Contains(bone)) return;
+            if (isBoard || bone == null || rig == null || LimbOf(bone) == null || brokenThisCrash.Contains(bone) || !ragdoll.Attached(bone)) return;   // (a torn-off limb breaks nothing more)
             // the first real hit breaks whatever took it; a second only on a big one
             if ((brokenThisCrash.Count == 0 && v > 3.2f) || (brokenThisCrash.Count == 1 && v > 9f)) Break(bone, at);
         }
@@ -984,7 +988,7 @@ namespace Summit
                 if (ragdoll.Active)
                 {
                     // crashed again before the last one was tidied away: patch up, then throw again
-                    ragdoll.End();
+                    ragdoll.End(); RestoreLimbs();
                     foreach (var b in brokenThisCrash) Bandage(b);
                 }
                 ragdoll.Begin(lastVel);
@@ -1045,7 +1049,7 @@ namespace Summit
                 else
                 {
                     FallRested?.Invoke(ragdoll.Centre);   // a flag where you came to rest
-                    ragdoll.End(); spray.Emit(30);   // back up on the board, patched up
+                    ragdoll.End(); RestoreLimbs(); spray.Emit(30);   // back up on the board, patched up
                     RagdollMoving = false; rider.HoldCrash = false;
                     RagdollBelowSnow = 0f;
                     foreach (var b in brokenThisCrash) Bandage(b);
@@ -1053,6 +1057,7 @@ namespace Summit
                 }
             }
             snowy?.Step(dt, rider.Crashed, rider.Speed);
+            LimbsStep(dt);   // the wounds bleed for a while (RiderBodyLimbs)
             if (rider.Crashed && ((ragdoll != null && ragdoll.Active) || ragdollPending)) { }
             else if (rider.Crashed)
             {

@@ -146,7 +146,7 @@ public static class PowerShot
                 int ccx = Mathf.FloorToInt(Slope.Centre(wz) / Forest.Cell) + cx;
                 if (Forest.At(ccx, cz, out Vector3 p, out float size, out _) != want) continue;
                 if (Mathf.Abs(p.x - Slope.Centre(p.z)) > Slope.PisteHalf - 3f || Course.At(p.z) == Course.Section.Pipe) continue;
-                if (Course.CrevasseNear(p.x, p.z - 10f, 4f, out _, out _) || Mathf.Abs(Slope.Kicker(p.x, p.z - 10f)) > 0.01f) continue;
+                if (Course.CrevasseNear(p.x, p.z - 10f, 4f) || Mathf.Abs(Slope.Kicker(p.x, p.z - 10f)) > 0.01f) continue;
                 // on its own, so the shots show it and not its neighbours
                 bool alone = true;
                 for (int dz = -2; dz <= 2; dz++) for (int dx = -2; dx <= 2; dx++)

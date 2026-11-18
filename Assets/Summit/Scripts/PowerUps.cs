@@ -37,7 +37,7 @@ namespace Summit
             float z = slot * Spacing + (Slope.Hash01(slot, 12, 21) - 0.5f) * 14f;
             float x = Slope.Centre(z) + (Slope.Hash01(slot, 13, 21) - 0.5f) * 2f * (Slope.PisteHalf - 4f);
             if (Slope.OnPad(x, z) || Mathf.Abs(Slope.Kicker(x, z)) > 0.01f) return false;
-            if (Course.CrevasseNear(x, z, 2f, out _, out _)) return false;
+            if (Course.CrevasseNear(x, z, 8f, out var cv) && (cv.across || Course.CrevasseNear(x, z, 2f))) return false;   // and well clear of a gap's lip
             if (Course.PipeWeight(z) > 0f) x = Slope.Centre(z) + (Slope.Hash01(slot, 15, 21) - 0.5f) * 8f;   // on the pipe floor
             // the mix: the boost is the common one, invincibility the rare one
             float k = Slope.Hash01(slot, 14, 21);

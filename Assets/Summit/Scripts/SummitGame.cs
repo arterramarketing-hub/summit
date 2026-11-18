@@ -40,6 +40,7 @@ namespace Summit
 
         // the medical bill: what this run's falls are costing you
         float medical;
+        string reattachLine = "";   // limbs torn off this run, for the end screen (see RiderBodyLimbs)
         static int BoneCost(string limb) =>
             limb == "Head" ? 12500 : limb == "Ribs" ? 7800 : limb.EndsWith("leg") ? 9400 : limb.EndsWith("arm") ? 4600 : 3000;
 
@@ -140,6 +141,7 @@ namespace Summit
         PowerUps power;
         Smasher smasher;
         Breakables breaks;
+        TreeBreak treeBreak;
         PowerAura aura;
         const float ZoomSeconds = 3f, SuperJumpSeconds = 10f, InvincibleSeconds = 8f;   // how long each pickup lasts
         CourseDressing dressing;
@@ -201,6 +203,21 @@ namespace Summit
                 hud.Flash("CRACK!", named + " broken  ·  +$" + cost.ToString("N0"), 1.6f);
                 hurtShake = 1f;
             };
+            body.LimbLost += (limb, at, whole) =>
+            {
+                // a limb torn off: no getting up from that, the run is over once the body stops (RiderBodyLimbs)
+                if (state != State.Riding) return;
+                int cost = whole ? 186000 : 124000;
+                medical += cost;
+                reattachLine += "\n" + limb.Substring(limb.IndexOf(' ') + 1).ToUpperInvariant() + " REATTACHMENT  +$" + cost.ToString("N0");   // ("FOREARM REATTACHMENT  +$124,000")
+                hud.Flash(whole ? "TORN OFF!" : "SEVERED!", limb + " gone  ·  reattachment +$" + cost.ToString("N0"), 2.6f);
+                hud.Hurt(1f); hurtShake = 1f;
+                audioFx.Play(Sfx.Bone); audioFx.Play(Sfx.Crash);
+                if (audioFx.Screaming) audioFx.ScreamHit();
+                rider.StayDown = true;
+                if (wipeoutTimer <= 0f || endTitle == "WIPED OUT") endTitle = limb.EndsWith("leg") ? "LEGLESS" : "DISARMED";   // (a cliff or crevasse keeps its own)
+                if (wipeoutTimer <= 0f) wipeoutTimer = 2.8f;
+            };
             rider.HitObstacle += (ob, at, into) =>
             {
                 if (ob.label == "Tree" && fx != null) fx.TreeShake(at, into);   // the branches dump their snow
@@ -213,8 +230,9 @@ namespace Summit
                 // mid-tumble: a fresh scream on each big hit, above all against trees, rocks and signs
                 if (audioFx.Screaming && rider.Crashed && !isBoard && (v > 14f || (v > 7f && body.RagdollHitObject)))
                     audioFx.ScreamHit();
-                if (rider.Crashed && !isBoard && state == State.Riding && (v > 16f || (v > 10f && body.RagdollHitObject)))
-                    HitStop(0.25f + (v - 10f) / 30f);   // a brutal hit mid-tumble gets its own beat
+                // a hard hit into a tree, rock or sign mid-tumble gets its own beat (never the rolling on the snow)
+                if (rider.Crashed && !isBoard && state == State.Riding && v > 8f && body.RagdollHitObject)
+                    HitStop(0.25f + (v - 8f) / 30f);
                 nextImpactSound = Time.time + 0.07f;
                 audioFx.Play(isBoard ? Sfx.Clack : Sfx.Thump, Mathf.Clamp01(v / 10f));
             };
@@ -262,6 +280,7 @@ namespace Summit
                 int bill = huge ? 95000 : 68000;
                 rider.StayDown = true; wipeoutTimer = 2.6f; endTitle = huge ? "SENT IT" : "CLIFFED"; medical += bill;
                 hud.Flash(endTitle, "helicopter recovery  +$" + bill.ToString("N0"), 2.4f);
+                HitStop(1f);   // the body hitting the snow at the foot of the cliff
                 audioFx.Play(Sfx.BoneBack); audioFx.Play(Sfx.Crash);
             };
 
@@ -311,6 +330,15 @@ namespace Summit
                 if (ob.always) audioFx.Play(Sfx.BearRoar);
                 hurtShake = Mathf.Max(hurtShake, 0.35f);
                 OnTrick(ob.always ? "BEAR BOWLED" : ob.label == "Rock" ? "ROCK SMASH" : "TIMBER!", ob.always ? 500 : 100);
+            };
+            // young trees and dead snags hit fast enough snap: the top falls, you go down but carry on (TreeBreak)
+            treeBreak = new GameObject("TreeBreak").AddComponent<TreeBreak>();
+            treeBreak.Build(props, fx, smasher);
+            treeBreak.Snapped += (at, into, byRider) =>
+            {
+                if (state != State.Riding) return;
+                audioFx.Play(Sfx.SmashWood, byRider ? 1f : 0.85f);
+                hurtShake = Mathf.Max(hurtShake, byRider ? 0.8f : 0.5f);
             };
             // signs and flags: ridden into (or tumbled into), signs break and flags go down (Breakables)
             breaks = new GameObject("Breakables").AddComponent<Breakables>();
@@ -508,14 +536,14 @@ namespace Summit
             trickPoints = 0; chainCount = 0; chainTimer = 0f; runTime = 0f;
             power.ResetRun();
             wild.ResetRun();
-            smasher.Clear(); aura.Clear();
+            smasher.Clear(); aura.Clear(); treeBreak.Clear();
             Breakable.RestoreAll();   // every sign and flag standing again
             terrain.Prewarm();
             props.Prewarm();
             dressing.Prewarm();
             chase.Snap();
             hud.SetWhiteout(0f);
-            falls = 0; wipeoutTimer = 0f; hurtShake = 0f; crevasseWatch = false; medical = 0f;
+            falls = 0; wipeoutTimer = 0f; hurtShake = 0f; crevasseWatch = false; medical = 0f; reattachLine = "";
             flags.Clear();
             hud.SetPrompt("");
             if (paused) SetPaused(false);
@@ -567,7 +595,7 @@ namespace Summit
             hud.Show(title, (title == "YOU SURVIVED" ? "MT. VERTIGO  ·  " : "") + "Score " + s.ToString("N0"),
                      (record ? "NEW BEST  " : "Best ") + Mathf.RoundToInt(best).ToString("N0") +
                      "   ·   " + Mathf.RoundToInt(rider.Distance) + " m   ·   " + Hud.FormatTime(runTime) +
-                     (medical > 0f ? "\nMEDICAL BILL  $" + Mathf.RoundToInt(medical).ToString("N0") : "\nNo medical bills. Clean run!"));
+                     (medical > 0f ? "\nMEDICAL BILL  $" + Mathf.RoundToInt(medical).ToString("N0") + reattachLine : "\nNo medical bills. Clean run!"));
             hud.SetButtons(true, false, "TO CAMP");
             // points for the run (mission rewards were paid as they happened); the score mission sees the final
             // score, finish bonus and all
@@ -1036,7 +1064,7 @@ namespace Summit
             if (audioFx == null) return;
             if (state != State.Riding && state != State.Buried) return;
             Vector3 c = rider.Crashed ? body.RagdollCentre : rider.transform.position;
-            bool overCrevasse = Course.CrevasseNear(c.x, c.z, 2.5f, out _, out _);
+            bool overCrevasse = Course.CrevasseNear(c.x, c.z, 2.5f);
             if (rider.Crashed)
             {
                 audioFx.NoooDepth(body.RagdollBelowSnow);
@@ -1102,7 +1130,9 @@ namespace Summit
             fallsNote = left <= 0 ? "that's " + (Progress.Falls(MaxFalls) == 4 ? "four" : "three") : left == 1 ? "1 fall left" : left + " falls left";
             hud.Flash(why, fallsNote, 1.3f);
             medical += rider.Tube ? 400f : 850f;   // the trip to the clinic
-            HitStop((rider.Speed * 3.6f - 30f) / 110f);                // the impact, frozen for a heartbeat
+            // the impact, frozen for a heartbeat: into a tree, rock or sign, or the ground at the foot of a cliff
+            // (not a crevasse, a slam on landing or the avalanche)
+            if (why != "Slammed!" && !why.StartsWith("Crevasse")) HitStop((rider.Speed * 3.6f - 30f) / 110f);
             if (why.StartsWith("Crevasse")) audioFx.Play(Sfx.Nooo);   // down a crevasse: the long "nooo"
             else StartScreaming();                                     // the player's screams, from the impact until the body slows
             if (why.StartsWith("Crevasse")) { crevasseWatch = true; hud.Flash("CREVASSE!", fallsNote, 1.6f); if (left <= 0) { wipeoutTimer = 2.0f; endTitle = "WIPED OUT"; rider.StayDown = true; } }

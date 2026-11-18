@@ -156,7 +156,8 @@ namespace Summit
 
         // foot: where it meets the snow; vis: how much of it shows above the snow (m); rad: its hit capsule;
         // cut: the snow line in the model's own height (what a felled tree leaves behind in the snow)
-        struct Placed { public Kind kind; public int idx; public Matrix4x4 m; public float size; public Vector3 foot; public float vis, rad, cut; }
+        // girth: the trunk's radius where it comes out of the snow (m); ys: the model's vertical scale (TreeBreak)
+        struct Placed { public Kind kind; public int idx; public Matrix4x4 m; public float size; public Vector3 foot; public float vis, rad, cut, girth, ys; }
 
         // ---- realistic trees: how tall they grow, and how deep the snow buries them
 
@@ -214,6 +215,8 @@ namespace Summit
                 pl.vis = full * yk - sink;
                 pl.cut = (0.25f + sink) / (k * yk);
                 pl.rad = Mathf.Max(0.02f * full, 0.7f * RealFir.CrownRadius(pl.idx, sink / full) * full);
+                pl.ys = k * yk;
+                pl.girth = RealFir.TrunkRadius(pl.idx, pl.cut) * k;
             }
             else if (kind != Kind.None)
             {
@@ -226,6 +229,7 @@ namespace Summit
                                      new Vector3(k, k * (0.92f + 0.2f * Slope.Hash01(x, z, 6)), k));
                 pl.foot = pl.m.GetColumn(3);
                 pl.vis = tree ? 8.5f * s : 1.3f * s; pl.rad = 0.38f * s;
+                pl.ys = k; pl.girth = 0.25f * s;
             }
             cache[key] = pl;
             return pl;
@@ -282,6 +286,7 @@ namespace Summit
         {
             cache.Clear();
             felled.Clear();
+            stumps.Clear(); stumpL.Clear();
             foreach (var kv in live)
             {
                 var g = kv.Value; g.SetActive(false);
@@ -337,6 +342,12 @@ namespace Summit
                     }
                 }
             PlaceColliders(c);
+            stumpL.Clear();
+            foreach (var kv in stumps)
+            {
+                float dxm = (kv.Key.x - c.x) * Cell, dzm = (kv.Key.y - c.y) * Cell;
+                if (dxm * dxm + dzm * dzm < ShadowRange * ShadowRange) stumpL.Add(kv.Value);
+            }
             // forget cells well behind
             if (cache.Count > 30000)
             {
@@ -357,6 +368,7 @@ namespace Summit
             }
             DrawSet(nearL, UnityEngine.Rendering.ShadowCastingMode.On);
             DrawSet(farL, UnityEngine.Rendering.ShadowCastingMode.Off);
+            if (stumpL.Count > 0) TreeBreak.DrawStumps(stumpL, real, bark);
             if (real && impL != null)
             {
                 for (int v = 0; v < impL.Length; v++)
@@ -470,6 +482,72 @@ namespace Summit
                 foreach (var part in pl.kind == Kind.Tree ? treeParts[pl.idx] : rockParts[pl.idx])
                     into.Add(new Piece { mesh = part.mesh, sub = part.sub, mat = part.mat, m = pl.m * part.local, cut = pl.kind == Kind.Tree ? pl.cut : 0f });
                 // redraw without it
+                lastCell = new Vector2Int(int.MinValue, int.MinValue);
+                Refresh(false);
+                return true;
+            }
+            return false;
+        }
+
+        // ---- snapped by a fast hit (TreeBreak): young, thin trees and dead snags; big old trunks stand
+
+        /// <summary>The thickest trunk (radius where it leaves the snow, m) a fast hit snaps; a dead snag's dry wood goes up to SnagGirth.</summary>
+        public const float SnapGirth = 0.22f, SnagGirth = 0.4f;
+        readonly Dictionary<Vector2Int, Matrix4x4> stumps = new Dictionary<Vector2Int, Matrix4x4>();
+        readonly List<Matrix4x4> stumpL = new List<Matrix4x4>();
+
+        /// <summary>Would a fast enough hit snap the tree in this cell (and is it a dead snag)?</summary>
+        public bool Snappable(int x, int z, out bool snag)
+        {
+            var pl = Get(x, z);
+            snag = real && pl.idx == RealFir.Snag;
+            if (pl.kind != Kind.Tree) return false;
+            if (snag) return pl.girth < SnagGirth;
+            // the young ones: the smaller trees of their stand (their own share of the height, Growth's `pick`),
+            // and of those only the thin ones - so high up, where the deep snow leaves only slim tops showing,
+            // more go; down where the trees stand on their whole trunks, hardly any
+            return Slope.Hash01(x, z, 4) < YoungShare && pl.girth < SnapGirth;
+        }
+        /// <summary>The share of the trees in a stand that count as young (the smallest).</summary>
+        public const float YoungShare = 0.4f;
+
+        /// <summary>The same, for the tree behind this collider (false if it is not one of ours).</summary>
+        public bool Snappable(GameObject hit, out bool snag)
+        {
+            snag = false;
+            foreach (var kv in live) if (kv.Value == hit) return Snappable(kv.Key.x, kv.Key.y, out snag);
+            return false;
+        }
+
+        /// <summary>A tree snapped `at` metres above the snow, for TreeBreak to throw down.</summary>
+        public struct Snapped { public Vector3 foot, up; public float vis, girth, at; }
+
+        /// <summary>
+        /// Snaps the tree behind this collider `at` metres above the snow: it is gone from the forest for the run and
+        /// a jagged stump stands in its place. Hands back the pieces it was drawn with, cut off below the break
+        /// (realistic trees; the classic ones go over whole), for the top to fall.
+        /// </summary>
+        public bool Snap(GameObject hit, float at, List<Piece> into, out Snapped info)
+        {
+            info = default;
+            foreach (var kv in live)
+            {
+                if (kv.Value != hit) continue;
+                var pl = Get(kv.Key.x, kv.Key.y);
+                if (pl.kind != Kind.Tree) return false;
+                felled.Add(kv.Key);
+                live.Remove(kv.Key);
+                hit.SetActive(false);
+                spareTree.Enqueue(hit);
+                if (!real) at = 0.25f;   // the classic firs' trunks are short stubs: they go at the foot
+                Vector3 up = ((Vector3)pl.m.GetColumn(1)).normalized;
+                info = new Snapped { foot = pl.foot, up = up, vis = pl.vis, girth = pl.girth, at = at };
+                foreach (var part in treeParts[pl.idx])
+                    into.Add(new Piece { mesh = part.mesh, sub = part.sub, mat = part.mat, m = pl.m * part.local, cut = real ? pl.cut + at / pl.ys : 0f });
+                // the stump: from a little under the snow up to the break, as thick as the trunk there
+                float h = at + 0.35f;
+                stumps[kv.Key] = Matrix4x4.TRS(pl.foot - up * 0.35f, Quaternion.FromToRotation(Vector3.up, up) * Quaternion.Euler(0f, Slope.Hash01(kv.Key.x, kv.Key.y, 12) * 360f, 0f),
+                                               new Vector3(pl.girth * 1.05f, h / TreeBreak.StumpTop, pl.girth * 1.05f));
                 lastCell = new Vector2Int(int.MinValue, int.MinValue);
                 Refresh(false);
                 return true;

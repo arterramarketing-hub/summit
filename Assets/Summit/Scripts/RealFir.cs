@@ -158,6 +158,18 @@ namespace Summit
             return 0;
         }
 
+        /// <summary>The kind that is a dead snag (its top long gone): dry and brittle, it snaps easily (TreeBreak).</summary>
+        public const int Snag = 6;
+
+        /// <summary>The trunk's radius at this height (metres, model space: the tree at its kind's own height).</summary>
+        public static float TrunkRadius(int variant, float y)
+        {
+            var sp = Kinds[variant % Variants];
+            float H = sp.H, y0 = -0.3f, y1 = H * (sp.broken > 0f ? sp.broken + 0.1f : 0.8f);
+            float r0 = H * 0.02f, r1 = sp.broken > 0f ? H * 0.006f : H * 0.004f;
+            return Mathf.Lerp(r0, r1, Mathf.InverseLerp(y0, y1, y));
+        }
+
         /// <summary>A tree of this variant's crown radius at a share of its height (for hit capsules).</summary>
         public static float CrownRadius(int variant, float at)
         {

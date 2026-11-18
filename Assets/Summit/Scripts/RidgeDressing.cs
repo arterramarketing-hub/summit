@@ -7,8 +7,8 @@ namespace Summit
     /// What you see of a ridge besides the terrain itself: rock outcrops breaking out of the cliffs and piled at
     /// their feet, and orange marker poles along the crest's edge where it drops to a cliff, so the line reads
     /// at speed. Built by CourseDressing with the rest of a cycle, and thrown away with it.
-    /// The rocks have no collider: by the time you reach the rock you are already falling. The marker poles can be
-    /// knocked over (Breakable).
+    /// Each rock has a box collider (an Obstacle "Rock") that a body tumbling down the cliff bounces off. The
+    /// marker poles can be knocked over (Breakable). The jagged spires along the edges are CliffSpires.
     /// </summary>
     public static class RidgeDressing
     {
@@ -105,6 +105,12 @@ namespace Summit
             float k = size / tall;
             g.transform.localScale = new Vector3(k, k * 0.8f, k);
             g.transform.SetPositionAndRotation(new Vector3(x, y - size * 0.35f - b.min.y * k * 0.8f, z), rot);
+            // something for a falling body to hit: a box a little inside the model's own
+            var box = g.AddComponent<BoxCollider>();
+            box.center = b.center;
+            box.size = b.size * 0.8f;
+            box.sharedMaterial = CliffSpires.Slick;   // a body slides off it and on down the cliff
+            g.AddComponent<Obstacle>().label = "Rock";
             foreach (var r in g.GetComponentsInChildren<MeshRenderer>(true))
             {
                 var mats = r.sharedMaterials;

@@ -148,6 +148,45 @@ namespace Summit
             if (t1 >= 1f) bleed = 0f;
         }
 
+        /// <summary>
+        /// A limb torn off (see RiderBodyLimbs): a burst at the wound, both ends, and a splat on the snow under it;
+        /// the body then smears as it slides, as after a hard hit on the snow.
+        /// </summary>
+        public void Sever(Vector3 at, Vector3 dir, Vector3 bodyVel)
+        {
+            if (!On || marks == null) return;
+            dir = dir.sqrMagnitude > 1e-4f ? dir.normalized : Vector3.up;
+            Burst(at, dir, 1f, bodyVel);
+            Burst(at, -dir, 0.7f, bodyVel);
+            var g = OnSnow(at + Random.insideUnitSphere * 0.3f);
+            Splat(g, Slope.Normal(g.x, g.z), 0.75f, 0.95f);
+            lastSplat = g; lastSplatTime = Time.time;
+            bleed = 1f; smeared = 0f; smearing = false;
+        }
+
+        /// <summary>A wound still pumping: `n` drops out along `dir` (and a drip running off), carried with `vel`.</summary>
+        public void Gush(Vector3 at, Vector3 dir, int n, float speed, Vector3 vel)
+        {
+            if (!On || drops == null || n <= 0) return;
+            dir = dir.sqrMagnitude > 1e-4f ? dir.normalized : Vector3.up;
+            var ep = new ParticleSystem.EmitParams { applyShapeToPosition = false };
+            for (int i = 0; i < n; i++)
+            {
+                ep.position = at + Random.insideUnitSphere * 0.02f;
+                ep.velocity = (dir + Random.insideUnitSphere * 0.35f).normalized * speed * Random.Range(0.6f, 1.2f) + vel;
+                drops.Emit(ep, 1);
+            }
+            if (Random.value < 0.3f) { ep.position = at; ep.velocity = vel * 0.5f + Vector3.down * 0.2f; drips.Emit(ep, 1); }
+        }
+
+        /// <summary>A small pool on the snow under a wound lying there (the caller spaces them out).</summary>
+        public void Pool(Vector3 at, float size)
+        {
+            if (!On || marks == null) return;
+            var g = OnSnow(at);
+            Splat(g, Slope.Normal(g.x, g.z), size, 0.9f);
+        }
+
         public void Clear()
         {
             bleed = 0f; smearing = false; lastSplatTime = -9f;
