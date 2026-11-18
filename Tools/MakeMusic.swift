@@ -605,6 +605,8 @@ func writeWav(_ path: String, _ chans: [[Double]]) {
 
 // ------------------------------------------------------------------ track 1: the camp (boom bap)
 
+let hubSnare = false
+
 func hubTrack(stem: inout [Double]) -> ([Double], [Double]) {
     let L = Loop(bpm: 90, bars: 32, swing16: 0.18, swing8: 0)
     var rng = RNG(90)
@@ -655,7 +657,8 @@ func hubTrack(stem: inout [Double]) -> ([Double], [Double]) {
             if b == 31 { ks = [0, 10] }
             for s in ks { hit(kicks[Int(rng.u() * 4)], b, s, s == 0 ? 1 : 0.88) }
 
-            if !halfDrop {
+            // (no snare: the player found the backbeat crack harsh, so the camp beat is kick, hats, keys and bass)
+            if hubSnare && !halfDrop {
                 var ss: [(Double, Double)] = [(4, 1), (12, 1)]
                 if b % 2 == 1 { ss.append((7, 0.16)) }                     // a ghost note
                 if b % 4 == 1 { ss.append((15, 0.22)) }
@@ -663,7 +666,7 @@ func hubTrack(stem: inout [Double]) -> ([Double], [Double]) {
                 if b == 15 { ss = [(4, 1)] }
                 for (s, v) in ss { hit(snares[Int(rng.u() * 4)], b, s, v * 0.9, room: 0.55) }
             }
-            if b == 19 { for k in 0..<8 { hit(snares[k % 4], b, 8 + Double(k), 0.22 + 0.08 * Double(k), room: 0.5) } }   // a roll back in
+            if hubSnare && b == 19 { for k in 0..<8 { hit(snares[k % 4], b, 8 + Double(k), 0.22 + 0.08 * Double(k), room: 0.5) } }   // a roll back in
         }
         // hats: every 16th, loudest on the beat, softest on the swung "e" and "a"
         let openHere = b % 2 == 1 && !drop && b != 15 && b != 31

@@ -2,6 +2,8 @@
 // and the roadside on the right, keys out the plain blue sky (so the game's own sky and clouds show round
 // the peaks) and feathers the two ends, then writes a 4096-wide RGBA PNG.
 // Run: swiftc -O Tools/MakePhotoBand.swift -o /tmp/band && /tmp/band in.jpg out.png
+// The extended photo (Tools/art/rainier-extended.jpg, cropped to 2000x664 from row 162 so its top sits at 0.21 rad):
+//   /tmp/band rainier-extended-crop.jpg BackdropPhoto.png edited 0.985 0.175
 import Foundation
 import AppKit
 
@@ -95,7 +97,9 @@ for j in 0..<H {
 if edited {
     // the picture covers PhotoTop..PhotoBottom radians of elevation in the game; below it, down to HazeBottom,
     // each column's own forest colour (the average of its last rows, softened sideways) fades into the haze
-    let photoSpan = 0.737, hazeSpan = 0.85 - 0.527
+    // (optional args: the picture's span of elevation and the haze below it, in radians; the defaults are the
+    // first edit's, Tools/art/rainier-edit.jpg)
+    let photoSpan = args.count > 4 ? Double(args[4])! : 0.737, hazeSpan = args.count > 5 ? Double(args[5])! : 0.85 - 0.527
     let extra = Int((Double(H) * hazeSpan / photoSpan).rounded()), H2 = H + extra
     var ext = [UInt8](repeating: 0, count: W * H2 * 4)
     for k in 0..<(W * H * 4) { ext[k] = out[k] }

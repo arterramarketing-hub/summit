@@ -231,7 +231,6 @@ namespace Summit
         struct Band { public Transform t; public float lag, lagUp; }
         Band[] bands;
         Vector3 bandAnchor;
-        const float PhotoDrop = 0.12f;   // rad (about 7 degrees) the backdrop photo sits lower than it was taken
         const float E0 = -0.07f, E1 = 0.33f;   // the elevations the band textures cover (Tools/MakeSky.swift)
 
         void MakeParallax()
@@ -242,11 +241,10 @@ namespace Summit
             {
                 var go = new GameObject("Mountains Photo");
                 go.transform.SetParent(transform, false);
-                // the texture is the picture (its top 497 rows, spanning -0.527..0.21 rad: the summit sits low, a few
-                // degrees above the horizon) with a plain fade into valley haze below it, down to -0.85 rad
-                // (lowered by PhotoDrop, so the photo's own forest runs on down behind the snow's edge and the blurred
-                // extension below it is never seen)
-                go.AddComponent<MeshFilter>().sharedMesh = Arc(1500f, 1.483f, -0.85f - PhotoDrop, 0.21f - PhotoDrop);
+                // the texture is the player's extended picture (Tools/art/rainier-extended.jpg: its top 664 rows, spanning
+                // -0.775..0.21 rad, the summit a few degrees above the horizon and real forest well below it), with a
+                // short fade into valley haze below that, down to -0.95 rad (Tools/MakePhotoBand.swift)
+                go.AddComponent<MeshFilter>().sharedMesh = Arc(1500f, 1.483f, -0.95f, 0.21f);
                 var r = go.AddComponent<MeshRenderer>();
                 r.sharedMaterial = photo;
                 r.shadowCastingMode = ShadowCastingMode.Off; r.receiveShadows = false;
