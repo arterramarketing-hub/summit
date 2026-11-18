@@ -1,0 +1,12 @@
+Single footsteps cut from user_snow_steps.mp3 by Tools/CutSteps.py. Each clip's onset is 4 ms in.
+00 onset 0.2473 s in the source, 0.420 s long, gain 1.00
+01 onset 1.1392 s in the source, 0.420 s long, gain 1.66
+02 onset 2.0104 s in the source, 0.420 s long, gain 0.75
+03 onset 2.8272 s in the source, 0.271 s long, gain 0.55
+04 onset 3.0982 s in the source, 0.389 s long, gain 0.83
+05 onset 3.4871 s in the source, 0.420 s long, gain 0.93
+06 onset 4.5605 s in the source, 0.420 s long, gain 1.60
+07 onset 5.3291 s in the source, 0.420 s long, gain 1.08
+08 onset 6.0364 s in the source, 0.420 s long, gain 1.10
+09 onset 6.7497 s in the source, 0.420 s long, gain 1.05
+10 onset 7.4331 s in the source, 0.420 s long, gain 0.89

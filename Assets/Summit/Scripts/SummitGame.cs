@@ -1134,7 +1134,7 @@ namespace Summit
             else if (left <= 0) { wipeoutTimer = 2.0f; endTitle = "WIPED OUT"; rider.StayDown = true; }   // the last fall: no getting up   // let the tumble play out, then it's over
             if (why.StartsWith("Tree")) { audioFx.Play(Sfx.HitTree); audioFx.Play(Sfx.Crash, 0.6f); }
             else if (why.StartsWith("Rock") || why.StartsWith("Hit the rocks")) { audioFx.Play(Sfx.HitRock); audioFx.Play(Sfx.Crash, 0.6f); }
-            else if (why.StartsWith("Crevasse")) audioFx.Play(Sfx.Crevasse);
+            else if (why.StartsWith("Crevasse")) { }   // only the "nooo": the old synthesized fall (a falling whoosh that read as a voice) is gone
             else if (why.StartsWith("Bear")) { audioFx.Play(Sfx.Crash); audioFx.Play(Sfx.BearRoar); }
             else audioFx.Play(Sfx.Crash);
 #if UNITY_IOS || UNITY_ANDROID

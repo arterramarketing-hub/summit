@@ -233,17 +233,96 @@ public static class HeroShot
         var seq = Seq("camp");
         int f = 0;
         Vector3 prev = camp.WalkerPosition;
-        for (float t = 0f; t < 6f; t += 1f / 60f)
+        // footstep sync: when each heel really meets the ground (from the animated foot bones) against when the camp
+        // plans each step sound
+        var rig = (RiderRig)typeof(RiderBody).GetField("rig", NP).GetValue(body);
+        var sounds = new List<(float t, bool left)>(); var contacts = new List<(float t, bool left)>();
+        float clock = 0f;
+        System.Action<float, bool, int> onStep = (wait, left, k) => sounds.Add((clock + 1f / 60f + wait, left));
+        camp.StepPlanned += onStep;
+        // each foot's height in the model's own frame (the animation's ground), every frame
+        var hts = new List<float>[] { new List<float>(), new List<float>() }; var tms = new List<float>(); var phs = new List<float>();
+        var modelRoot = rig != null ? rig.Root : null;
+        for (float t = 0f; t < 9f; t += 1f / 60f)
         {
-            float mag = t < 0.6f ? t / 0.6f * 0.8f : t < 3f ? 0.8f : 1f;
+            // walk slowly, then briskly, then run flat out: the steps must stay on the feet at every pace
+            float mag = t < 0.6f ? t / 0.6f * 0.45f : t < 3f ? 0.45f : t < 5.5f ? 0.85f : 1f;
             CampStep(new Vector2(0f, mag));
+            clock += 1f / 60f;
+            if (rig != null && modelRoot != null)
+            {
+                tms.Add(clock); phs.Add(body.WalkPhase);
+                for (int s = 0; s < 2; s++)
+                {
+                    var ft = s == 0 ? rig.FootL : rig.FootR;
+                    hts[s].Add(Vector3.Dot(ft.position - modelRoot.position, modelRoot.up) / Mathf.Max(1e-4f, modelRoot.lossyScale.y));
+                }
+            }
             if (Mathf.RoundToInt(t * 60f) % 2 == 0) { CampSide(); Shoot(seq + "/" + (f++).ToString("D3"), cam, 540, 720, false); }
-            if (Mathf.Abs(t - 2.5f) < 0.008f) { CampSide(); Shoot("CampWalk", cam, 720, 900); }
-            if (Mathf.Abs(t - 5.5f) < 0.008f) { CampSide(); Shoot("CampRun", cam, 720, 900); }
+            if (Mathf.Abs(t - 4.5f) < 0.008f) { CampSide(); Shoot("CampWalk", cam, 720, 900); }
+            if (Mathf.Abs(t - 8.0f) < 0.008f) { CampSide(); Shoot("CampRun", cam, 720, 900); }
         }
+        camp.StepPlanned -= onStep;
+        // a footfall, as the rendered body shows it: the walk and run clips are solved so each heel lands exactly as
+        // the cycle passes pi/2 (left) or 3pi/2 (right); the crossing is found between frames. For each, how low the
+        // foot is then, against its range over the step before (0 = as low as it goes, 1 = top of the lift)
+        float worstLow = 0f;
+        for (int i = 1; i < phs.Count; i++)
+        {
+            float a0 = phs[i - 1], a1 = phs[i];
+            if (a1 <= a0) continue;
+            int k0 = Mathf.FloorToInt((a0 - Mathf.PI * 0.5f) / Mathf.PI), k1 = Mathf.FloorToInt((a1 - Mathf.PI * 0.5f) / Mathf.PI);
+            if (k1 <= k0) continue;
+            float strike = Mathf.PI * 0.5f + k1 * Mathf.PI;
+            float u = (strike - a0) / (a1 - a0);
+            bool left = (k1 % 2 + 2) % 2 == 0;
+            int s = left ? 0 : 1;
+            contacts.Add((Mathf.Lerp(tms[i - 1], tms[i], u), left));
+            int from = Mathf.Max(0, i - 40);
+            float lo = float.MaxValue, hi = float.MinValue;
+            for (int j = from; j <= i; j++) { lo = Mathf.Min(lo, hts[s][j]); hi = Mathf.Max(hi, hts[s][j]); }
+            if (hi - lo > 0.02f) worstLow = Mathf.Max(worstLow, (Mathf.Lerp(hts[s][i - 1], hts[s][i], u) - lo) / (hi - lo));
+        }
+        Log($"footfalls: at each strike the foot is at most {worstLow * 100f:0}% of its lift above the lowest it goes (0% = planted)");
+        var trace = new List<string> { "time,phase,footL,footR" };
+        for (int i = 0; i < tms.Count; i++) trace.Add($"{tms[i]:0.0000},{phs[i]:0.000},{hts[0][i]:0.0000},{hts[1][i]:0.0000}");
+        File.WriteAllLines(Path.Combine(outDir, pre + "StepTrace.csv"), trace);
+        contacts.Sort((a, b) => a.t.CompareTo(b.t));
         Log($"camp: walked {(camp.WalkerPosition - prev).magnitude:0.0} m, footprints {camp.FootprintCount}");
+        // each step sound against the nearest heel strike of the same foot
+        var lines = new List<string> { "time,event,foot" };
+        foreach (var c in contacts) lines.Add($"{c.t:0.0000},contact,{(c.left ? "L" : "R")}");
+        foreach (var c in sounds) lines.Add($"{c.t:0.0000},sound,{(c.left ? "L" : "R")}");
+        File.WriteAllLines(Path.Combine(outDir, pre + "StepSync.csv"), lines);
+        float worst = 0f, sum = 0f; int matched = 0, wrongFoot = 0;
+        foreach (var snd in sounds)
+        {
+            float best = float.MaxValue; bool bestLeft = false;
+            foreach (var c in contacts) if (Mathf.Abs(c.t - snd.t) < Mathf.Abs(best)) { best = c.t - snd.t; bestLeft = c.left; }
+            if (Mathf.Abs(best) > 0.25f) continue;
+            matched++; sum += Mathf.Abs(best); worst = Mathf.Max(worst, Mathf.Abs(best)); if (bestLeft != snd.left) wrongFoot++;
+        }
+        Log($"step sync: {contacts.Count} heel strikes, {sounds.Count} step sounds, {matched} matched; sound vs foot " +
+            $"mean {(matched > 0 ? sum / matched * 1000f : 0f):0.0} ms, worst {worst * 1000f:0.0} ms, wrong foot {wrongFoot}");
+        SyncPlot(Path.Combine(outDir, pre + "StepSync.svg"), contacts, sounds, clock);
         for (int i = 0; i < 30; i++) CampStep(new Vector2(0f, 1f));
         Shoot("CampRunGame", cam, 590, 1278);
+    }
+
+    /// <summary>A timeline: heel strikes (dots) and step sounds (ticks), left foot above, right below.</summary>
+    static void SyncPlot(string path, List<(float t, bool left)> contacts, List<(float t, bool left)> sounds, float span)
+    {
+        const int W = 1600, H = 260;
+        float X(float t) => 40f + t / span * (W - 80f);
+        var sb = new System.Text.StringBuilder();
+        sb.Append($"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{W}\" height=\"{H}\" viewBox=\"0 0 {W} {H}\"><rect width=\"100%\" height=\"100%\" fill=\"#fff\"/>");
+        sb.Append("<text x=\"40\" y=\"24\" font-family=\"sans-serif\" font-size=\"15\">Camp footsteps: heel strikes from the animated feet (dots) and step sounds (red ticks); left foot top row, right bottom. Slow walk, brisk walk, then a run.</text>");
+        foreach (float y in new[] { 90f, 170f }) sb.Append($"<line x1=\"40\" y1=\"{y}\" x2=\"{W - 40}\" y2=\"{y}\" stroke=\"#ccc\"/>");
+        for (int s = 0; s <= Mathf.FloorToInt(span); s++) sb.Append($"<text x=\"{X(s):0}\" y=\"{H - 12}\" font-family=\"sans-serif\" font-size=\"12\" fill=\"#666\">{s}s</text>");
+        foreach (var c in sounds) { float y = c.left ? 90f : 170f; sb.Append($"<line x1=\"{X(c.t):0.0}\" y1=\"{y - 30}\" x2=\"{X(c.t):0.0}\" y2=\"{y + 30}\" stroke=\"#c0392b\" stroke-width=\"2\"/>"); }
+        foreach (var c in contacts) { float y = c.left ? 90f : 170f; sb.Append($"<circle cx=\"{X(c.t):0.0}\" cy=\"{y}\" r=\"6\" fill=\"#2c5aa0\" fill-opacity=\"0.8\"/>"); }
+        sb.Append("</svg>");
+        File.WriteAllText(path, sb.ToString());
     }
 
     static Vector3 campDir = Vector3.forward, lastWalker;

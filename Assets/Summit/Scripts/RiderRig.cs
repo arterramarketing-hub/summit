@@ -170,8 +170,8 @@ namespace Summit
         }
 
         /// <summary>
-        /// On foot in the camp: upright, legs stepping, the left arm swinging and the right one down at the
-        /// side carrying the board. frame: +X is the way the rider walks, +Y up, its origin on the snow.
+        /// On foot in the camp: upright, legs stepping, both arms swinging against the legs (no board: it waits
+        /// at the gate). frame: +X is the way the rider walks, +Y up, its origin on the snow.
         /// phase: the walk cycle (radians); amp: 0 standing .. 1 full pace; run: 0 walking .. 1 running.
         /// </summary>
         public void PoseWalk(Transform frame, float phase, float amp, float t, float run = 0f)
@@ -211,8 +211,11 @@ namespace Summit
             Vector3 lowerWalk = (down + fwd * (0.25f - 0.45f * s * amp) + left * 0.05f).normalized;
             Vector3 lowerRun = (down * 0.15f + fwd * (0.9f - 0.5f * s * amp) + left * 0.05f + up * (0.25f * Mathf.Max(0f, -s))).normalized;
             Aim(laL, wrL, Vector3.Slerp(lowerWalk, lowerRun, run));
-            Aim(uaR, laR, (down - left * 0.18f + fwd * 0.04f).normalized);
-            Aim(laR, wrR, (down - left * 0.1f + fwd * 0.12f).normalized);
+            // the right arm the mirror of the left, half a cycle on
+            Aim(uaR, laR, (down + fwd * sw - left * 0.12f).normalized);
+            Vector3 lowerWalkR = (down + fwd * (0.25f + 0.45f * s * amp) - left * 0.05f).normalized;
+            Vector3 lowerRunR = (down * 0.15f + fwd * (0.9f + 0.5f * s * amp) - left * 0.05f + up * (0.25f * Mathf.Max(0f, s))).normalized;
+            Aim(laR, wrR, Vector3.Slerp(lowerWalkR, lowerRunR, run));
             Leg(ulL, llL, endL, footL, fwd);
             Leg(ulR, llR, endR, footR, fwd);
             PlaceFoot(ftL, footL, frame, 0f);

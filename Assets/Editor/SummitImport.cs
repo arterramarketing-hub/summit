@@ -223,7 +223,7 @@ public class SummitImport : AssetPostprocessor
                 ti.mipmapEnabled = false; ti.alphaIsTransparency = true; ti.alphaSource = TextureImporterAlphaSource.FromInput;
                 ti.wrapModeU = TextureWrapMode.Repeat; ti.wrapModeV = TextureWrapMode.Clamp; ti.maxTextureSize = 4096;
                 var ios = ti.GetPlatformTextureSettings("iPhone");
-                ios.overridden = true; ios.maxTextureSize = 4096; ios.format = TextureImporterFormat.ASTC_6x6;
+                ios.overridden = true; ios.maxTextureSize = 4096; ios.format = n == "Photo" ? TextureImporterFormat.ASTC_4x4 : TextureImporterFormat.ASTC_6x6;   // (the photo: the finest blocks, so it stays sharp)
                 ti.SetPlatformTextureSettings(ios);
                 ti.SaveAndReimport();
             }

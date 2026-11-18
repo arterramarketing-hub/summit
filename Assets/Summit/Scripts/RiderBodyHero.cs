@@ -237,11 +237,6 @@ namespace Summit
             if (dt <= 0f) h.Snap();
             h.Evaluate(dt, blend);
             h.Layer(d, dt);
-            if (Walking)
-            {
-                // the board hangs from the right hand, swinging with it
-                boardRoot.position = h.Hand[1].position + roll.rotation * new Vector3(0.075f, 0f, -0.03f);
-            }
         }
     }
 }

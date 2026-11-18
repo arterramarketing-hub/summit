@@ -3,7 +3,7 @@ using UnityEngine;
 namespace Summit
 {
     /// <summary>
-    /// The rider on foot in the summit camp, and the outfit colours. Kept apart from RiderBody's riding
+    /// The rider on foot in the summit camp (no board: it waits at the gate), and the outfit colours. Kept apart from RiderBody's riding
     /// code: RiderBody only calls WalkFrame and WalkMuscles while Walking is set.
     /// </summary>
     public partial class RiderBody
@@ -34,18 +34,17 @@ namespace Summit
             Walking = on;
             if (on)
             {
-                // nobody walks round camp sitting in a tube: on foot, and the board on your back
+                // nobody walks round camp sitting in a tube; and the board stays at the gate: on foot with both
+                // hands free, so both arms swing (it is back on the feet for the run)
                 tubeBeforeWalk = Tube;
                 if (Tube) SetTube(false);
-                // the model faces +X with its left side to +Z: carry the board upright in the right hand,
-                // at the side, its base just off the snow
-                boardRoot.localPosition = new Vector3(0.04f, 0.78f, -0.36f);
-                boardRoot.localRotation = Quaternion.LookRotation(Vector3.up, Vector3.back);
+                boardRoot.gameObject.SetActive(false);
             }
             else
             {
                 boardRoot.localPosition = boardHomePos;
                 boardRoot.localRotation = boardHomeRot;
+                boardRoot.gameObject.SetActive(true);
                 walkPhase = 0f; walkAmp = 0f; WalkPace = 0f; RunBlend = 0f; runAmp = 0f;
                 if (tubeBeforeWalk) SetTube(true);
             }
@@ -81,8 +80,8 @@ namespace Summit
             W(mTwist, -0.15f * s * a);
             // arms down at the sides, swinging against the legs
             W(mArmL, -0.8f); W(mArmR, -0.8f);
-            W(mArmFL, -Mathf.Lerp(0.55f, 0.9f, r) * s * a + 0.05f); W(mArmFR, 0.55f * s * a * (1f - r) + 0.05f);
-            W(mElbowL, Mathf.Lerp(0.7f, -0.3f, r)); W(mElbowR, 0.7f);   // running: the free arm bent and pumping
+            W(mArmFL, -Mathf.Lerp(0.55f, 0.9f, r) * s * a + 0.05f); W(mArmFR, Mathf.Lerp(0.55f, 0.9f, r) * s * a + 0.05f);
+            W(mElbowL, Mathf.Lerp(0.7f, -0.3f, r)); W(mElbowR, Mathf.Lerp(0.7f, -0.3f, r));   // running: both arms bent and pumping
             // standing about: look round the camp
             W(mNeck, 0f);
             W(mHead, (1f - a) * 0.25f * Mathf.Sin(t * 0.45f));

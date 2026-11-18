@@ -1321,14 +1321,13 @@ def _(t):
               hL=("abs", V(0.58, 0.04, 0.44)), eL=V(0.6, 0.6, -0.2), hR=("abs", V(-0.58, 0.04, 0.44)), eR=V(-0.6, 0.6, -0.2),
               gL=1.0, gR=1.0)
 
-# -- on foot in the camp: the board carried in the right hand ------------------------------------------
-CARRY = V(-0.34, 0.03, 0.78)   # where the right hand holds the board, on the ground (the game hangs the board there)
+# -- on foot in the camp: hands free (the board waits at the gate), both arms swinging --------------------
 STAND = {
     "hips": V(-0.02, 0.0, -0.012), "hrot": (2, -3, 0), "spine": (2, 2, 0), "neck": (0, 0, 0), "head": (2, 0, 0),
     "fL": (V(0.13, -0.03, ANKLE_Z), 10, 0, 0), "fR": (V(-0.12, 0.02, ANKLE_Z), -8, 0, 0),
     "kL": V(0.2, -1, 0), "kR": V(-0.1, -1, 0),
     "hL": ("rel", V(0.07, -0.04, -0.50)), "eL": V(0.4, 0.8, 0), "wL": (0, 0, 0), "gL": 0.35,
-    "hR": ("abs", CARRY), "eR": V(-0.6, 0.6, 0.2), "gR": 1.0,
+    "hR": ("rel", V(-0.06, -0.02, -0.50)), "eR": V(-0.4, 0.8, 0), "wR": (0, 0, 0), "gR": 0.35,
 }
 
 @clip("Stand", 150, True)
@@ -1383,7 +1382,12 @@ def gait(t, run):
     p["hL"] = ("rel", walk_h.lerp(run_h, run))
     p["eL"] = V(0.3, 1, -0.2 - 0.6 * run)
     p["gL"] = lerp(0.35, 0.8, run)
-    p["hR"] = ("abs", CARRY + V(0.02 * run, -0.02 * sw, 0.015 * c2 + 0.06 * run))
+    # the right arm: the mirror of the left, half a cycle on (forward as the left leg comes through)
+    walk_r = V(-0.08, -0.20 * sw, -0.48 + 0.04 * abs(sw))
+    run_r = V(-0.07, -0.24 * sw - 0.06, -0.24 + 0.12 * max(0, sw))
+    p["hR"] = ("rel", walk_r.lerp(run_r, run))
+    p["eR"] = V(-0.3, 1, -0.2 - 0.6 * run)
+    p["gR"] = lerp(0.35, 0.8, run)
     return p
 
 @clip("Walk", 30, True)
@@ -1725,7 +1729,7 @@ if RENDER and ("anims" in WHAT or "all" in WHAT):
         speed = amp * lerp(1.6, 4.4, run)
         camp.x = getattr(camp, "x", 0.0) + speed / 30.0
         ARM.location = V(0, -camp.x, 0); ARM.rotation_euler = Euler((0, 0, 0))
-        board_carry.hide_render = True
+        board_carry.hide_render = True   # the board waits at the gate
     sequence("camp", 180, camp, lambda i: look_from(80, 6, V(0, -getattr(camp, "x", 0) - 0.4, 0.85), 5.0, 50))
     board_carry.hide_render = False
     ARM.location = V(0, 0, 0)

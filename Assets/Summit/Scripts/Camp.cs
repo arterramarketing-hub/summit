@@ -1315,7 +1315,7 @@ namespace Summit
             Active = false;
             Showcase = false;
             CampShadows(false);
-            if (steps != null) { steps.Stop(); stepVol = 0f; }
+            if (stepPool != null) { foreach (var src in stepPool) src.Stop(); stepVol = 0f; }
             if (body != null) body.SetWalking(false);
         }
 
@@ -1430,50 +1430,78 @@ namespace Summit
 
         // ---------------------------------------------------------------- footsteps
 
-        // The player's own recording of boots crunching through snow (Resources/Audio/user_snow_steps), looped
-        // while you move: quicker as you speed up, a short fade in and out, and indoors on the chalet's floor
-        // a softer, duller tread (quieter, the crunch filtered off).
-        AudioSource steps;
-        AudioLowPassFilter stepTone;
-        float stepVol, stepIn;
+        // One footstep each time a foot lands, on the beat of the feet at any pace. The player's own recording of
+        // boots crunching through snow (Resources/Audio/user_snow_steps) is cut into single steps by Tools/CutSteps.py
+        // (Resources/Audio/Steps: each clip's crunch starts 4 ms in). The walk cycle says when each heel strikes
+        // (the left at pi/2, the right at 3pi/2, as the footprints and the hero's walk and run clips have it), so each
+        // step is scheduled for the exact moment the cycle will reach the next strike, never a frame late. Running,
+        // they come harder and a touch higher; indoors on the chalet's floor, softer and duller.
+        AudioSource[] stepPool;
+        AudioLowPassFilter[] stepTones;
+        AudioClip[] stepClips;
+        int stepNext, stepClipLast = -1, stepPlanned = int.MinValue;
+        float stepIn, stepPhLast, stepRate, stepVol;
+        /// <summary>Test tools: a step sound was planned: seconds from now until it sounds, which foot, which strike.</summary>
+        public System.Action<float, bool, int> StepPlanned;
 
         void Footsteps(float dt)
         {
-            if (steps == null)
+            if (stepPool == null)
             {
-                var clip = Resources.Load<AudioClip>("Audio/user_snow_steps");
-                if (clip == null) return;
-                clip.LoadAudioData();   // it isn't preloaded: load it now, so the first step isn't late
+                stepClips = Resources.LoadAll<AudioClip>("Audio/Steps");
+                System.Array.Sort(stepClips, (a, b) => string.CompareOrdinal(a.name, b.name));
+                if (stepClips.Length == 0) return;
+                foreach (var clip in stepClips) clip.LoadAudioData();   // loaded now, so no step is late waiting for it
                 var g = new GameObject("Footsteps");
                 g.transform.SetParent(transform, false);
-                steps = g.AddComponent<AudioSource>();
-                steps.clip = clip; steps.loop = true; steps.playOnAwake = false;
-                steps.spatialBlend = 0f;   // your own feet: in both ears
-                steps.volume = 0f;
-                stepTone = g.AddComponent<AudioLowPassFilter>();
-                stepTone.cutoffFrequency = 22000f;
+                // a few voices, so a step's tail rings on under the next one
+                stepPool = new AudioSource[4]; stepTones = new AudioLowPassFilter[4];
+                for (int i = 0; i < stepPool.Length; i++)
+                {
+                    var v = new GameObject("Step" + i); v.transform.SetParent(g.transform, false);
+                    var voice = v.AddComponent<AudioSource>();
+                    voice.playOnAwake = false; voice.loop = false; voice.spatialBlend = 0f;   // your own feet: in both ears
+                    stepPool[i] = voice;
+                    stepTones[i] = v.AddComponent<AudioLowPassFilter>(); stepTones[i].cutoffFrequency = 22000f;
+                }
             }
-            bool moving = speed > 0.3f;
             float run = Mathf.Clamp01((speed - MaxSpeed) / (RunSpeed - MaxSpeed));
             stepIn = Mathf.MoveTowards(stepIn, Indoors ? 1f : 0f, dt * 4f);
-            float loud = Mathf.Lerp(0.75f, 0.9f, run) * Mathf.Lerp(1f, 0.45f, stepIn);
-            // a tenth of a second to fade in or out, so starting and stopping never clicks
-            stepVol = Mathf.MoveTowards(stepVol, moving ? loud : 0f, dt / 0.1f);
-            if (stepVol > 0.001f && !steps.isPlaying)
+            for (int i = 0; i < stepTones.Length; i++) stepTones[i].cutoffFrequency = Mathf.Lerp(22000f, 1400f, stepIn);
+            // how fast the cycle turns (it moves on in the body's own frame update, after this one)
+            float ph = body.WalkPhase;
+            if (dt > 0f)
             {
-                steps.time = Random.Range(0f, steps.clip.length * 0.9f);   // not the same first step every time
-                steps.Play();
+                float r = (ph - stepPhLast) / dt;
+                stepRate = r >= 0f && r < 40f ? Mathf.Lerp(stepRate, r, 0.5f) : 0f;   // a reset cycle jumps back
             }
-            else if (stepVol <= 0.001f && steps.isPlaying) steps.Stop();
-            steps.volume = stepVol;
-            // the recording is a walking pace: a slow walk slows it a touch, running quickens it
-            // (as quick as the feet: the cadence at a full walk plays it at its own speed)
-            steps.pitch = moving ? Mathf.Clamp(Cadence / (MaxSpeed / 2f), 0.8f, 1.5f) : steps.pitch;
-            stepTone.cutoffFrequency = Mathf.Lerp(22000f, 1400f, stepIn);
+            stepPhLast = ph;
+            bool walking = speed > 0.3f && body.WalkPace > 0.12f && stepRate > 0.5f;
+            stepVol = walking ? Mathf.Lerp(0.72f, 0.95f, run) * Mathf.Lerp(1f, 0.45f, stepIn) * Mathf.Lerp(0.7f, 1f, body.WalkPace) : 0f;
+            if (!walking) { stepPlanned = int.MinValue; return; }
+            // the next strike: the phase will be ph + rate * dt when the body shows this frame
+            float shown = ph + stepRate * dt;
+            int k = Mathf.CeilToInt((shown - Mathf.PI * 0.5f) / Mathf.PI);
+            if (k <= stepPlanned) k = stepPlanned + 1;
+            float strike = Mathf.PI * 0.5f + k * Mathf.PI;
+            float wait = (strike - shown) / stepRate;   // seconds after this frame is shown
+            if (wait > dt + 0.06f) return;             // not yet: it gets planned a frame or so ahead
+            stepPlanned = k;
+            bool left = (k % 2 + 2) % 2 == 0;
+            // never the same crunch twice running
+            int c = Random.Range(0, stepClips.Length);
+            if (c == stepClipLast) c = (c + 1) % stepClips.Length;
+            stepClipLast = c;
+            var src = stepPool[stepNext]; stepNext = (stepNext + 1) % stepPool.Length;
+            src.clip = stepClips[c];
+            src.volume = stepVol * Random.Range(0.88f, 1f) * (left ? 1f : 0.94f);
+            src.pitch = Mathf.Lerp(0.98f, 1.08f, run) * Random.Range(0.96f, 1.04f);
+            src.PlayScheduled(AudioSettings.dspTime + Mathf.Max(0f, wait));
+            StepPlanned?.Invoke(Mathf.Max(0f, wait), left, k);
         }
 
         /// <summary>Test tools: how the footsteps are playing right now.</summary>
-        public string FootstepsState => steps == null ? "no clip" : $"playing={steps.isPlaying} vol={steps.volume:0.00} pitch={steps.pitch:0.00} cutoff={stepTone.cutoffFrequency:0}";
+        public string FootstepsState => stepPool == null ? "no clips" : $"clips={stepClips.Length} vol={stepVol:0.00} rate={stepRate / (2f * Mathf.PI):0.00} cycles/s planned={stepPlanned} cutoff={stepTones[0].cutoffFrequency:0}";
 
         // ---------------------------------------------------------------- footprints
 
