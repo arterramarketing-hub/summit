@@ -300,6 +300,7 @@ namespace Summit
         public void NoooFor(float seconds) { if (voice != null && nooo != null) PlayNooo(seconds); }
         /// <summary>How far the falling body is below the snow (m): the crevasse cry fades with it.</summary>
         public void NoooDepth(float d) { noooDepth = Mathf.Max(noooDepth, d); }
+        public bool NoooPlaying => voice != null && nooo != null && voice.clip == nooo && voice.isPlaying;
 
         void TickNooo()
         {

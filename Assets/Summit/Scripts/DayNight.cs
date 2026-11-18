@@ -169,6 +169,7 @@ namespace Summit
         SnowFX fx;
         Material spray, trail;
         Light headlamp;
+        Transform beam; Material beamMat;   // the lamp's light seen in the cold air: a soft cone
         float shown = -1f;
         Color lastParticles = new Color(-1f, 0f, 0f), lastGlint = new Color(-1f, 0f, 0f);
         RiderGlow glowFx;
@@ -209,11 +210,11 @@ namespace Summit
             headlamp.transform.SetParent(transform, false);
             headlamp.type = LightType.Spot;
             headlamp.color = new Color(1f, 0.95f, 0.86f);
-            headlamp.range = 48f; headlamp.spotAngle = 70f; headlamp.innerSpotAngle = 28f;
+            headlamp.range = 48f; headlamp.spotAngle = 64f; headlamp.innerSpotAngle = 10f;   // a wide soft falloff
             headlamp.shadows = LightShadows.None;   // a real-time shadow map for it would cost too much on the phone
             headlamp.enabled = false;
-            var body = r != null ? r.GetComponent<RiderBody>() : null;
-            if (body != null) glowFx = RiderGlow.Build(body, transform);
+            BuildBeam();
+            // (the old glow round the rider is gone: at night the lamp's own light and beam pick the rider out)
             ApplyNow();
         }
 
@@ -384,7 +385,7 @@ namespace Summit
                 if (!Same(gc, lastGlint)) { lastGlint = gc; fx.TintGlints(gc); }
             }
             Headlamp(Mathf.Lerp(a.headlamp, b.headlamp, t));
-            if (glowFx != null) glowFx.Step(Mathf.Lerp(a.glow, b.glow, t));
+            if (glowFx != null) glowFx.Step(0f);
         }
 
         /// <summary>
@@ -407,23 +408,78 @@ namespace Summit
             if (headlamp == null || rider == null) return;
             bool on = k > 0.01f && (camp == null || !camp.Active) && !HeadlampOff;
             headlamp.enabled = on;
+            bool beamOn = on && !rider.Crashed;   // (the lamp tumbles with the body after a fall: no beam then)
+            if (beam != null) beam.gameObject.SetActive(beamOn);
             // the signs shine this lamp's light back (Resources/SignLit.shader): where it is, where it points, how strong
             Shader.SetGlobalVector("_LampPos", new Vector4(0f, 0f, 0f, on ? 1f : 0f));
             if (!on) return;
             headlamp.intensity = 7f * k;
             var cam = Camera.main;
-            Vector3 fwd = cam != null ? cam.transform.forward : Vector3.forward;
-            fwd.y = 0f;
-            if (fwd.sqrMagnitude < 1e-4f) fwd = Vector3.forward;
-            fwd.Normalize();
-            headlamp.transform.SetPositionAndRotation(rider.transform.position + Vector3.up * 1.7f + fwd * 0.2f,
-                                                      Quaternion.LookRotation(fwd - Vector3.up * 0.32f));
+            // a flashlight carried at the chest, pointed down the line the rider is riding: the pool of light swings
+            // with the carves out ahead on the snow
+            float th = rider.TravelHeading;
+            Vector3 fwd = new Vector3(Mathf.Sin(th), 0f, Mathf.Cos(th));
+            headlamp.transform.SetPositionAndRotation(rider.transform.position + Vector3.up * 1.25f + fwd * 0.35f,
+                                                      Quaternion.LookRotation(fwd - Vector3.up * 0.36f));
             Vector3 lp = headlamp.transform.position;
+            if (beamOn)
+            {
+                beam.SetPositionAndRotation(lp + headlamp.transform.forward * 0.15f, headlamp.transform.rotation);
+                // seen from behind, straight down the beam, a cone is just a disc of glow round the rider: show the
+                // beam only as it swings across the view
+                float along = cam != null ? Vector3.Dot(cam.transform.forward, headlamp.transform.forward) : 1f;
+                float side = 1f - Mathf.SmoothStep(0.78f, 0.96f, along);
+                beamMat.SetColor("_BaseColor", new Color(headlamp.color.r, headlamp.color.g, headlamp.color.b, 0.16f * k * side));
+            }
             Shader.SetGlobalVector("_LampPos", new Vector4(lp.x, lp.y, lp.z, 1f));
             Shader.SetGlobalVector("_LampDir", headlamp.transform.forward);
             Shader.SetGlobalColor("_LampColor", headlamp.color.linear * (headlamp.intensity * SignReturn));
             Shader.SetGlobalVector("_LampCone", new Vector4(Mathf.Cos(headlamp.spotAngle * 0.5f * Mathf.Deg2Rad),
                                                             Mathf.Cos(headlamp.innerSpotAngle * 0.5f * Mathf.Deg2Rad), SignReach, 0f));
+        }
+
+        /// <summary>
+        /// The beam: a cone out of the lamp, additive and faint, brightest at the lamp and gone by its far end, so
+        /// it reads as light in cold air rather than a solid shape. One small mesh, no lighting cost.
+        /// </summary>
+        void BuildBeam()
+        {
+            const int seg = 20; const float len = 11f, spread = 0.36f;   // about 20 degrees either side
+            float[] zs = { 0f, 0.6f, len * 0.35f, len };
+            float[] alpha = { 0.0f, 1f, 0.45f, 0f };
+            var verts = new System.Collections.Generic.List<Vector3>(); var cols = new System.Collections.Generic.List<Color>();
+            var tris = new System.Collections.Generic.List<int>();
+            for (int ring = 0; ring < zs.Length; ring++)
+            {
+                float rad = 0.06f + zs[ring] * spread;
+                for (int i = 0; i <= seg; i++)
+                {
+                    float a = i * Mathf.PI * 2f / seg;
+                    verts.Add(new Vector3(Mathf.Cos(a) * rad, Mathf.Sin(a) * rad, zs[ring]));
+                    cols.Add(new Color(1f, 1f, 1f, alpha[ring]));
+                }
+            }
+            for (int ring = 0; ring < zs.Length - 1; ring++)
+                for (int i = 0; i < seg; i++)
+                {
+                    int a0 = ring * (seg + 1) + i, b0 = a0 + seg + 1;
+                    tris.AddRange(new[] { a0, b0, a0 + 1, a0 + 1, b0, b0 + 1 });
+                }
+            var mesh = new Mesh { name = "LampBeam" };
+            mesh.SetVertices(verts); mesh.SetColors(cols); mesh.SetTriangles(tris, 0); mesh.RecalculateBounds();
+            var go = new GameObject("LampBeam");
+            go.transform.SetParent(transform, false);
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var mr = go.AddComponent<MeshRenderer>();
+            beamMat = new Material(Shader.Find("Universal Render Pipeline/Particles/Unlit")) { name = "LampBeam" };
+            beamMat.SetFloat("_Surface", 1f); beamMat.SetFloat("_Blend", 2f);   // additive
+            beamMat.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha); beamMat.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.One);
+            beamMat.SetFloat("_ZWrite", 0f); beamMat.SetFloat("_Cull", 0f);
+            beamMat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            beamMat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+            mr.sharedMaterial = beamMat; mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; mr.receiveShadows = false;
+            beam = go.transform;
+            go.SetActive(false);
         }
 
         /// <summary>How much more of the headlamp a reflective sign sends back than a matte board would.</summary>

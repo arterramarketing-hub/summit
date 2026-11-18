@@ -484,7 +484,7 @@ namespace Summit
             state = State.Ready;
             ledgeCued = false; ledgeFading = false; if (audioFx != null) { audioFx.StopCue(); audioFx.StopScreaming(true); }
             if (hitStopT >= 0f) { hitStopT = -1f; if (!paused) SetTimeScale(1f); }
-            cliffNooo = false;
+            cliffNooo = false; crevNooo = false;
             rider.input = input; endFade = 1f; if (hud != null) hud.SetAlpha(1f); if (meta != null) meta.SetEndAlpha(1f);   // hands back on, screen solid
             camp.Leave(); chase.enabled = true; terrain.behindChunks = 1; props.behindCells = 3;
             if (newMountain)
@@ -1030,20 +1030,34 @@ namespace Summit
 
         // the "nooo": down a crevasse it fades with the depth; off a cliff, a short one the moment you are clearly
         // falling far below where you left the snow
-        bool cliffNooo;
+        bool cliffNooo, crevNooo;
         void WatchDrop()
         {
             if (audioFx == null) return;
             if (state != State.Riding && state != State.Buried) return;
-            if (rider.Crashed) audioFx.NoooDepth(body.RagdollBelowSnow);
+            Vector3 c = rider.Crashed ? body.RagdollCentre : rider.transform.position;
+            bool overCrevasse = Course.CrevasseNear(c.x, c.z, 2.5f, out _, out _);
+            if (rider.Crashed)
+            {
+                audioFx.NoooDepth(body.RagdollBelowSnow);
+                // into a crevasse, however you got there: only the "nooo", never a scream over it
+                if (!crevNooo && overCrevasse && body.RagdollBelowSnow > 0.8f)
+                {
+                    crevNooo = true;
+                    audioFx.StopScreaming(true);
+                    if (!audioFx.NoooPlaying) audioFx.Play(Sfx.Nooo);
+                }
+            }
             if (state != State.Riding) return;
             if (!rider.Airborne && !rider.Crashed) { cliffNooo = false; return; }
-            if (cliffNooo || crevasseWatch) return;
-            Vector3 c = rider.Crashed ? body.RagdollCentre : rider.transform.position;
+            if (cliffNooo || crevasseWatch || overCrevasse || audioFx.NoooPlaying) return;
+            // off a cliff: only once the snow under you is further down than anyone survives (a jump, however big,
+            // comes down onto a slope that isn't that far below, so it never cries out)
             Vector3 d = rider.DropFrom;
-            float fell = d.y - c.y - Slope.Fall * Mathf.Max(0f, c.z - d.z);
-            float above = c.y - Slope.DrawnHeight(c.x, c.z);
-            if (fell > 10f && above > 3f) { cliffNooo = true; audioFx.NoooFor(1.5f); }
+            float ground = Slope.DrawnHeight(c.x, c.z);
+            float toFall = d.y - ground - Slope.Fall * Mathf.Max(0f, c.z - d.z);
+            float falling = rider.Crashed ? -1f : rider.Body.linearVelocity.y;
+            if (toFall > Rider.DeadlyDrop && c.y - ground > 3f && falling < -1f) { cliffNooo = true; audioFx.StopScreaming(true); audioFx.NoooFor(1.5f); }
         }
 
         void StartScreaming()
