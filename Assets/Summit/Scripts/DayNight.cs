@@ -413,14 +413,20 @@ namespace Summit
             // the signs shine this lamp's light back (Resources/SignLit.shader): where it is, where it points, how strong
             Shader.SetGlobalVector("_LampPos", new Vector4(0f, 0f, 0f, on ? 1f : 0f));
             if (!on) return;
-            headlamp.intensity = 13f * k;
+            headlamp.intensity = 48f * k;   // (falls off with the square of distance: about 1 on the snow 7 m ahead)
             var cam = Camera.main;
             // a flashlight carried at the chest, pointed down the line the rider is riding: the pool of light swings
             // with the carves out ahead on the snow
             float th = rider.TravelHeading;
             Vector3 fwd = new Vector3(Mathf.Sin(th), 0f, Mathf.Cos(th));
-            headlamp.transform.SetPositionAndRotation(rider.transform.position + Vector3.up * 1.25f + fwd * 0.35f,
-                                                      Quaternion.LookRotation(fwd - Vector3.up * 0.36f));
+            // aimed at the snow a few metres ahead (the slope falls away at ~36 degrees, so a fixed tilt would
+            // light the hill far below): a pool of light right in front of the rider
+            Vector3 lampAt = rider.transform.position + Vector3.up * 1.25f + fwd * 0.35f;
+            Vector3 spot = rider.transform.position + fwd * 7f;
+            spot.y = Slope.DrawnHeight(spot.x, spot.z);
+            Vector3 aim = spot - lampAt;
+            if (aim.sqrMagnitude < 0.01f || rider.Airborne) aim = fwd - Vector3.up * 0.9f;
+            headlamp.transform.SetPositionAndRotation(lampAt, Quaternion.LookRotation(aim.normalized));
             Vector3 lp = headlamp.transform.position;
             if (beamOn)
             {
@@ -483,7 +489,7 @@ namespace Summit
         }
 
         /// <summary>How much more of the headlamp a reflective sign sends back than a matte board would.</summary>
-        const float SignReturn = 0.6f;
+        const float SignReturn = 0.16f;   // (scaled with the lamp: 0.6 at its old strength of 13)
         /// <summary>How far a sign still shines the lamp back (a reflector sends it home efficiently: further than the
         /// lamp lights the snow).</summary>
         const float SignReach = 110f;

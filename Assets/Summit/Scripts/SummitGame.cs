@@ -35,12 +35,11 @@ namespace Summit
         public const int MaxFalls = 3;
         int falls;
         float wipeoutTimer, hurtShake;
-        string fallsNote = "", endTitle = "WIPED OUT";
+        string endTitle = "WIPED OUT";
         bool crevasseWatch;   // went over a crevasse: lost only if the body actually drops in
 
         // the medical bill: what this run's falls are costing you
         float medical;
-        string reattachLine = "";   // limbs torn off this run, for the end screen (see RiderBodyLimbs)
         static int BoneCost(string limb) =>
             limb == "Head" ? 12500 : limb == "Ribs" ? 7800 : limb.EndsWith("leg") ? 9400 : limb.EndsWith("arm") ? 4600 : 3000;
 
@@ -199,8 +198,6 @@ namespace Summit
                 hud.Hurt(0.5f);
                 int cost = BoneCost(limb);
                 medical += cost;
-                string named = limb == "Head" ? "Neck" : limb == "Ribs" ? "Back" : limb;
-                hud.Flash("CRACK!", named + " broken  ·  +$" + cost.ToString("N0"), 1.6f);
                 hurtShake = 1f;
             };
             body.LimbLost += (limb, at, whole) =>
@@ -209,13 +206,11 @@ namespace Summit
                 if (state != State.Riding) return;
                 int cost = whole ? 186000 : 124000;
                 medical += cost;
-                reattachLine += "\n" + limb.Substring(limb.IndexOf(' ') + 1).ToUpperInvariant() + " REATTACHMENT  +$" + cost.ToString("N0");   // ("FOREARM REATTACHMENT  +$124,000")
-                hud.Flash(whole ? "TORN OFF!" : "SEVERED!", limb + " gone  ·  reattachment +$" + cost.ToString("N0"), 2.6f);
                 hud.Hurt(1f); hurtShake = 1f;
                 audioFx.Play(Sfx.Bone); audioFx.Play(Sfx.Crash);
                 if (audioFx.Screaming) audioFx.ScreamHit();
                 rider.StayDown = true;
-                if (wipeoutTimer <= 0f || endTitle == "WIPED OUT") endTitle = limb.EndsWith("leg") ? "LEGLESS" : "DISARMED";   // (a cliff or crevasse keeps its own)
+                endTitle = "WIPED OUT";   // (what happened is there to see: the screen doesn't spell it out)
                 if (wipeoutTimer <= 0f) wipeoutTimer = 2.8f;
             };
             rider.HitObstacle += (ob, at, into) =>
@@ -266,7 +261,7 @@ namespace Summit
             wild = new GameObject("Wildlife").AddComponent<Wildlife>();
             wild.rider = rider;
             wild.Build(snow.shader);
-            wild.BearSpotted += () => { if (state == State.Riding) hud.Flash("BEAR!", "outrun it - keep going straight", 1.6f); };
+            wild.BearSpotted += () => { };   // (the bear is there to see and hear: no caption)
             rider.GrindStart += f => { if (state == State.Riding) audioFx.Play(f.kind == Course.Kind.Rail ? Sfx.GrindRail : Sfx.GrindBox); };
             // a numbered flag wherever a fall came to rest, for the rest of the run
             flags = new GameObject("FallFlags").AddComponent<FallFlags>();
@@ -279,8 +274,7 @@ namespace Summit
                 if (state != State.Riding) return;
                 bool huge = fell > 80f;
                 int bill = huge ? 95000 : 68000;
-                rider.StayDown = true; wipeoutTimer = 2.6f; endTitle = huge ? "SENT IT" : "CLIFFED"; medical += bill;
-                hud.Flash(endTitle, "helicopter recovery  +$" + bill.ToString("N0"), 2.4f);
+                rider.StayDown = true; wipeoutTimer = 2.6f; endTitle = "WIPED OUT"; medical += bill;
                 HitStop(1f);   // the body hitting the snow at the foot of the cliff
                 audioFx.Play(Sfx.BoneBack); audioFx.Play(Sfx.Crash);
             };
@@ -378,7 +372,7 @@ namespace Summit
             ApplyLook();
             bool tube = PlayerPrefs.GetInt("summit_tube", 0) == 1;
             rider.Tube = tube; body.SetTube(tube); hud.SetRider(tube);
-            rider.Bounced += into => { if (state != State.Riding) return; body.TubeKick(into); audioFx.Play(Sfx.Thump, Mathf.Clamp01(into / 12f)); hud.Flash("BOING", "", 0.6f); };
+            rider.Bounced += into => { if (state != State.Riding) return; body.TubeKick(into); audioFx.Play(Sfx.Thump, Mathf.Clamp01(into / 12f)); };
             BuildMeta();
             dayNight.Hook(rider, fx, camp, spray, trail);
             ToHub();
@@ -401,7 +395,7 @@ namespace Summit
             Missions.Track(rider, power);
             // the camp's edges give way: a crack and powder, the screams, then back at the chalet (Camp.Collapse)
             camp.Collapsed += (at, dir) => { audioFx.Play(Sfx.Crevasse); fx?.Thud(at, 10f, dir * 3f); audioFx.StartScreaming(); audioFx.NoooFor(1.5f); };
-            camp.Rescued += () => { audioFx.StopScreaming(); hud.Flash("RESCUED", "mountain rescue: on the house", 2.2f); };
+            camp.Rescued += () => { audioFx.StopScreaming(); };
             Missions.Completed += m => { meta.Toast(m); audioFx.Play(Sfx.ShieldFull); };
             Progress.Changed += ApplyOutfit;
             ApplyOutfit();
@@ -547,7 +541,7 @@ namespace Summit
             dressing.Prewarm();
             chase.Snap();
             hud.SetWhiteout(0f);
-            falls = 0; wipeoutTimer = 0f; hurtShake = 0f; crevasseWatch = false; medical = 0f; reattachLine = "";
+            falls = 0; wipeoutTimer = 0f; hurtShake = 0f; crevasseWatch = false; medical = 0f;
             flags.Clear();
             hud.SetPrompt("");
             if (paused) SetPaused(false);
@@ -574,10 +568,10 @@ namespace Summit
             rider.Begin();
             hud.Clear();
             hud.SetButtons(false, true, "");
-            hud.Flash("GO", "drop in", 1.2f);
+            hud.Flash("GO", "", 1.0f);
         }
 
-        void ToBuried() => ToEnd("BURIED", true);
+        void ToBuried() => ToEnd("WIPED OUT", true);
 
         float endFade = 1f;
         void ToEnd(string title, bool buried, bool rollOn = false)
@@ -599,7 +593,7 @@ namespace Summit
             hud.Show(title, (title == "YOU SURVIVED" ? "MT. VERTIGO  ·  " : "") + "Score " + s.ToString("N0"),
                      (record ? "NEW BEST  " : "Best ") + Mathf.RoundToInt(best).ToString("N0") +
                      "   ·   " + Mathf.RoundToInt(rider.Distance) + " m   ·   " + Hud.FormatTime(runTime) +
-                     (medical > 0f ? "\nMEDICAL BILL  $" + Mathf.RoundToInt(medical).ToString("N0") + reattachLine : "\nNo medical bills. Clean run!"));
+                     (medical > 0f ? "\nMEDICAL BILL  $" + Mathf.RoundToInt(medical).ToString("N0") : ""));
             hud.SetButtons(true, false, "TO CAMP");
             // points for the run (mission rewards were paid as they happened); the score mission sees the final
             // score, finish bonus and all
@@ -696,14 +690,14 @@ namespace Summit
                     hud.SetPrompt(rider.CanGetUp ? "TAP TO GET UP" : rider.StayDown && rider.Crashed && !body.RagdollMoving && !slide.Caught ? "TAP TO CONTINUE" : "");
                     runTime += dt;
                     slide.Step(dt, rider, body);
-                    if (slide.JustReleased) { audioFx.Play(Sfx.SlideCrack); hud.Flash("AVALANCHE!", "the slope has let go behind you", 2f); }
+                    if (slide.JustReleased) { audioFx.Play(Sfx.SlideCrack); hud.Flash("AVALANCHE!", "", 1.6f); }
                     // the first ledge: the suspense sting as you roll up to the lip, eased out once you've landed below it
                     if (!ledgeCued && !rider.Crashed && rider.Z > Slope.PadLip - 14f && rider.Z < Slope.PadLip + 1f) { ledgeCued = true; audioFx.Play(Sfx.Ledge); }
                     if (ledgeCued && (ledgeFading || rider.Crashed || (rider.Z > Slope.PadLip + 8f && !rider.Airborne))) { ledgeFading = true; audioFx.FadeCue(dt); }
                     Missions.Step(dt, slide.Gap(rider), Score);
                     if (crevasseWatch)
                     {
-                        if (body.RagdollBelowSnow > 3f) { crevasseWatch = false; rider.StayDown = true; wipeoutTimer = 2.0f; endTitle = "LOST IN A CREVASSE"; medical += 42000f; hud.Flash("GONE", "helicopter rescue  +$42,000", 2f); }
+                        if (body.RagdollBelowSnow > 3f) { crevasseWatch = false; rider.StayDown = true; wipeoutTimer = 2.0f; endTitle = "WIPED OUT"; medical += 42000f; }
                         else if (!rider.Crashed) crevasseWatch = false;   // caught the lip: you live
                     }
                     if (!rider.Crashed && !rider.Airborne && !slide.Caught && rider.Z > Slope.FinishZ + 30f)
@@ -822,7 +816,7 @@ namespace Summit
         void OnRough(string why)
         {
             if (state != State.Riding) return;
-            hud.Flash(why, "speed lost", 1.0f);
+            // (a rough landing shows and sounds rough: no caption)
         }
 
         void OnTrick(string name, int pts)
@@ -843,7 +837,7 @@ namespace Summit
             if (kind == PowerUps.Kind.Soda)
             {
                 rider.AddBoost(ZoomSeconds * Progress.PowerUpTime);
-                hud.Flash("MOUNTAIN ZOOM", "speed boost", 0.9f);
+                hud.Flash("MOUNTAIN ZOOM", "", 0.9f);
                 audioFx.Play(Sfx.Soda);
             }
             else if (kind == PowerUps.Kind.SuperJump)
@@ -855,7 +849,7 @@ namespace Summit
             else if (kind == PowerUps.Kind.Invincible)
             {
                 rider.AddInvincible(InvincibleSeconds * Progress.PowerUpTime);
-                hud.Flash("INVINCIBLE", "smash through anything", 1.2f);
+                hud.Flash("INVINCIBLE", "", 1.2f);
                 audioFx.Play(Sfx.PowerStar);
             }
             else if (rider.Shields >= Rider.MaxShields)
@@ -1120,7 +1114,6 @@ namespace Summit
             {
                 // the slide took the board out from under you: no fall counted, no getting up (see Avalanche)
                 chainCount = 0;
-                hud.Flash("CAUGHT", "the mountain has you", 1.8f);
                 audioFx.Play(Sfx.SlideHit);
                 StartScreaming();
 #if UNITY_IOS || UNITY_ANDROID
@@ -1131,15 +1124,13 @@ namespace Summit
             chainCount = 0;
             falls++;
             int left = Progress.Falls(MaxFalls) - falls;   // a spare helmet from the camp adds one
-            fallsNote = left <= 0 ? "that's " + (Progress.Falls(MaxFalls) == 4 ? "four" : "three") : left == 1 ? "1 fall left" : left + " falls left";
-            hud.Flash(why, fallsNote, 1.3f);
             medical += rider.Tube ? 400f : 850f;   // the trip to the clinic
             // the impact, frozen for a heartbeat: into a tree, rock or sign, or the ground at the foot of a cliff
             // (not a crevasse, a slam on landing or the avalanche)
             if (why != "Slammed!" && !why.StartsWith("Crevasse")) HitStop((rider.Speed * 3.6f - 30f) / 110f);
             if (why.StartsWith("Crevasse")) audioFx.Play(Sfx.Nooo);   // down a crevasse: the long "nooo"
             else StartScreaming();                                     // the player's screams, from the impact until the body slows
-            if (why.StartsWith("Crevasse")) { crevasseWatch = true; hud.Flash("CREVASSE!", fallsNote, 1.6f); if (left <= 0) { wipeoutTimer = 2.0f; endTitle = "WIPED OUT"; rider.StayDown = true; } }
+            if (why.StartsWith("Crevasse")) { crevasseWatch = true; if (left <= 0) { wipeoutTimer = 2.0f; endTitle = "WIPED OUT"; rider.StayDown = true; } }
             else if (left <= 0) { wipeoutTimer = 2.0f; endTitle = "WIPED OUT"; rider.StayDown = true; }   // the last fall: no getting up   // let the tumble play out, then it's over
             if (why.StartsWith("Tree")) { audioFx.Play(Sfx.HitTree); audioFx.Play(Sfx.Crash, 0.6f); }
             else if (why.StartsWith("Rock") || why.StartsWith("Hit the rocks")) { audioFx.Play(Sfx.HitRock); audioFx.Play(Sfx.Crash, 0.6f); }

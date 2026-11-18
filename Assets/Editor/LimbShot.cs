@@ -255,7 +255,7 @@ public static class LimbShot
         Random.InitState(5);
         float lostT = -1f; bool impactShot = false; stumpShot = false;
         bool ok = false;
-        if (withScreens) { typeof(SummitGame).GetField("medical", NP).SetValue(game, 0f); typeof(SummitGame).GetField("reattachLine", NP).SetValue(game, ""); }
+        if (withScreens) { typeof(SummitGame).GetField("medical", NP).SetValue(game, 0f); }
         for (int i = 0; i < 4 && !ok; i++)
         {
             float near = Course.First + 160f + i * 150f;
@@ -355,8 +355,7 @@ public static class LimbShot
     {
         string title = (string)typeof(SummitGame).GetField("endTitle", NP).GetValue(game);
         float medical = (float)typeof(SummitGame).GetField("medical", NP).GetValue(game);
-        string line = (string)typeof(SummitGame).GetField("reattachLine", NP).GetValue(game);
-        Log($"{name}: end title {title}, medical ${medical:N0}, stay down {rider.StayDown}, can get up {rider.CanGetUp}, bill line [{line.Replace("\n", " | ")}]");
+        Log($"{name}: end title {title}, medical ${medical:N0}, stay down {rider.StayDown}, can get up {rider.CanGetUp}");
         typeof(SummitGame).GetMethod("ToEnd", NP).Invoke(game, new object[] { title, false, false });
         var hud = Object.FindFirstObjectByType<Hud>();
         hud.SetAlpha(1f);
