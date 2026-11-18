@@ -74,26 +74,39 @@ namespace Summit
             root.transform.SetParent(transform, false);
             float zb = Course.First + k * Course.Cycle;
 
-            // park: boxes and rails
+            // park: boxes and rails, in short straight pieces following the snow (see Course.FeaturePoint)
             foreach (var f in Course.FeaturesOf(k))
             {
-                Vector3 mid = (f.a + f.b) * 0.5f, dir = f.Dir;
+                bool box = f.kind == Course.Kind.Box;
                 float len = f.Length;
-                var rot = Quaternion.LookRotation(dir, Vector3.up);
-                if (f.kind == Course.Kind.Box)
+                int n = Mathf.CeilToInt(len / (box ? 2f : 2.5f));
+                for (int i = 0; i < n; i++)
                 {
-                    Block(PrimitiveType.Cube, root.transform, mid - Vector3.up * 0.04f, rot, new Vector3(0.64f, 0.08f, len), metal);
-                    Block(PrimitiveType.Cube, root.transform, mid - Vector3.up * (f.height * 0.5f + 0.05f), rot, new Vector3(0.58f, f.height + 0.1f, len - 0.1f), boxSide);
-                }
-                else
-                {
-                    Block(PrimitiveType.Cylinder, root.transform, mid, Quaternion.FromToRotation(Vector3.up, dir), new Vector3(0.09f, len * 0.5f, 0.09f), railMat);
-                    for (int i = 0; i <= 2; i++)
+                    Vector3 p0 = Course.FeaturePoint(f, i / (float)n), p1 = Course.FeaturePoint(f, (i + 1f) / n);
+                    Vector3 mid = (p0 + p1) * 0.5f, d = p1 - p0;
+                    float seg = d.magnitude;
+                    var rot = Quaternion.LookRotation(d / seg, Vector3.up);
+                    if (box)
                     {
-                        Vector3 top = Vector3.Lerp(f.a, f.b, 0.08f + 0.42f * i);
-                        float ground = Slope.Height(top.x, top.z);
-                        float hgt = top.y - ground;
-                        Block(PrimitiveType.Cylinder, root.transform, new Vector3(top.x, ground + hgt * 0.5f - 0.05f, top.z), Quaternion.identity, new Vector3(0.07f, hgt * 0.5f, 0.07f), post);
+                        // a metal top the width of the box over a block that runs down into the snow
+                        float w = 2f * f.halfWidth, hgt = f.height + 0.25f;
+                        Block(PrimitiveType.Cube, root.transform, mid - Vector3.up * 0.05f, rot, new Vector3(w + 0.06f, 0.1f, seg + 0.03f), metal);
+                        Block(PrimitiveType.Cube, root.transform, mid - Vector3.up * (0.1f + hgt * 0.5f), rot, new Vector3(w, hgt, seg + 0.03f), boxSide);
+                        var bc = BodyCollider(root.transform, "BoxCollider", mid, rot).AddComponent<BoxCollider>();
+                        bc.center = new Vector3(0f, -0.5f, 0f); bc.size = new Vector3(w, 1f, seg); bc.sharedMaterial = metalFeel;
+                    }
+                    else
+                    {
+                        // a thick round rail (the pieces overlap a little at the bends), on a post every other piece
+                        Block(PrimitiveType.Cylinder, root.transform, mid, Quaternion.FromToRotation(Vector3.up, d / seg), new Vector3(0.16f, seg * 0.5f + 0.04f, 0.16f), railMat);
+                        var cc = BodyCollider(root.transform, "RailCollider", mid, rot).AddComponent<CapsuleCollider>();
+                        cc.direction = 2; cc.height = seg + 0.16f; cc.radius = 0.08f; cc.sharedMaterial = metalFeel;
+                        if (i % 2 == 0 || i == n - 1)
+                        {
+                            Vector3 top = i == n - 1 ? Vector3.Lerp(p0, p1, 0.85f) : Vector3.Lerp(p0, p1, 0.15f);
+                            float ground = Slope.Height(top.x, top.z) - 0.1f, hgt = top.y - ground;
+                            Block(PrimitiveType.Cylinder, root.transform, new Vector3(top.x, ground + hgt * 0.5f - 0.05f, top.z), Quaternion.identity, new Vector3(0.1f, hgt * 0.5f, 0.1f), post);
+                        }
                     }
                 }
             }
@@ -102,17 +115,16 @@ namespace Summit
             foreach (var cv in Course.CrevassesOf(k))
             {
                 BuildCrevasse(root.transform, cv);
-                if (cv.across) { GapMarkers(root.transform, cv); continue; }
                 float zm = (cv.z0 + cv.z1) * 0.5f;
-                for (float z = cv.z0; z <= cv.z1; z += 7f)
+                for (float z = cv.z0; z <= cv.z1; z += 9f)   // (a pole every 9 m down the long slots)
                     for (int s = -1; s <= 1; s += 2)
                     {
                         float cx = cv.x + (Slope.Centre(z) - Slope.Centre(zm)) + s * (cv.half + 3.0f);
-                        Pole(root.transform, cx, z, 1.6f, false);
+                        Pole(root.transform, cx, z);
                     }
             }
-            // the rider's own sphere never touches the crevasse ice (it rides the snow's height; the crevasse
-            // drops it in, see Rider): only the thrown body and the board do
+            // the rider's own sphere never touches the crevasse ice or the park features' colliders (it rides the snow's
+            // height and grinds a feature by its line, see Rider): only the thrown body and the board do
             if (target != null && target.TryGetComponent<Collider>(out var own)) own.excludeLayers |= 1 << IceLayer;
 
             // a sign at the start of each section, at the side of the piste, facing up the hill
@@ -187,34 +199,33 @@ namespace Summit
         static PhysicsMaterial iceFeel;
 
         /// <summary>
-        /// A crevasse of either kind, laid out along its length (z for a down-slope one, x for a gap) and across it:
+        /// A crevasse, laid out along its length (z) and across it (x):
         /// the snow lips either side over the terrain's ragged hole, a darker band at each lip that shows it from
         /// up the hill, the ice walls down into the dark, and a coarse collider of the walls and floor that the
         /// thrown body tumbles down against and comes to rest on.
         /// </summary>
         void BuildCrevasse(Transform root, Course.Crevasse cv)
         {
-            float step = cv.across ? 0.5f : 0.4f;
+            const float step = 0.4f;
             const float lipDrop = 0.75f, colStep = 1f;
             float[] apron = { 0f, 0.25f, 0.7f, 1.4f, 2.7f };
             float[] band = { 0f, 0.25f, 0.7f, 1.3f, 2.2f };
             const int Wall = 8, ColWall = 4;
-            float ua = cv.Lo - 2.6f, ub = cv.Hi + 2.6f;
+            float ua = cv.z0 - 2.6f, ub = cv.z1 + 2.6f;
             int rows = Mathf.CeilToInt((ub - ua) / step) + 1, crows = Mathf.CeilToInt((ub - ua) / colStep) + 1;
             var sv = new List<Vector3>(); var suv = new List<Vector2>(); var st = new List<int>();
             var bv = new List<Vector3>(); var buv = new List<Vector2>(); var bt = new List<int>();
             var iv = new List<Vector3>(); var iuv = new List<Vector2>(); var it = new List<int>();
             var cvv = new List<Vector3>(); var ct = new List<int>();
-            Vector3 P(float u, float w, float y) { var q = cv.Point(u, w); return new Vector3(q.x, y, q.y); }
-            float Surf(float u, float w) { var q = cv.Point(u, w); return Slope.Surface(q.x, q.y); }
-            // laid out along x instead of z, a gap's axes are swapped, and so is which way round a triangle faces
-            bool flip = cv.across;
+            // laid out along z (u) and across it in x (w)
+            static Vector3 P(float u, float w, float y) => new Vector3(w, y, u);
+            static float Surf(float u, float w) => Slope.Surface(w, u);
             var iBases = new int[2];
             for (int side = -1; side <= 1; side += 2)
             {
                 int sBase = sv.Count, bBase = bv.Count, iBase = iv.Count;
                 iBases[side < 0 ? 0 : 1] = iBase;
-                bool pos = (side > 0) != flip;
+                bool pos = side > 0;
                 for (int r = 0; r < rows; r++)
                 {
                     float u = Mathf.Min(ua + r * step, ub);
@@ -235,7 +246,7 @@ namespace Summit
                     {
                         float w = ctr + side * (e + band[c]);
                         // (over whichever is higher, the true snow or the drawn terrain's facets, so it is never under them)
-                        var q = cv.Point(u, w);
+                        var q = new Vector2(w, u);
                         float top = c == 0 ? Surf(u, w) - 0.04f : Mathf.Max(Surf(u, w), Slope.DrawnHeight(q.x, q.y)) + 0.04f;
                         bv.Add(new Vector3(q.x, top, q.y)); buv.Add(new Vector2(0.5f, 1f - fade * (1f - c / (band.Length - 1f))));
                     }
@@ -267,8 +278,7 @@ namespace Summit
                 for (int r = 0; r < rows - 1; r++)
                 {
                     int a = iBases[0] + r * ic + ic - 1, b = iBases[1] + r * ic + ic - 1, d = a + ic, e = b + ic;
-                    if (!flip) { it.Add(a); it.Add(d); it.Add(b); it.Add(b); it.Add(d); it.Add(e); }
-                    else { it.Add(a); it.Add(b); it.Add(d); it.Add(b); it.Add(e); it.Add(d); }
+                    it.Add(a); it.Add(d); it.Add(b); it.Add(b); it.Add(d); it.Add(e);
                 }
             }
             // the collider: one U per metre along it, down one wall, across the floor and up the other, facing in
@@ -291,7 +301,7 @@ namespace Summit
                         cvv.Add(P(u, w, y));
                     }
             }
-            for (int r = 0; r < crows - 1; r++) Quads(ct, r * cc, cc, !flip);
+            for (int r = 0; r < crows - 1; r++) Quads(ct, r * cc, cc, true);
             MeshObject(root, "CrevasseSnow", sv, suv, st, snow, true);
             MeshObject(root, "CrevasseLip", bv, buv, bt, lipBand, false);
             MeshObject(root, "CrevasseIce", iv, iuv, it, ice, false);
@@ -358,58 +368,32 @@ namespace Summit
             r.receiveShadows = true;
         }
 
-        /// <summary>An orange marker pole on a holder at its foot, so it can be knocked over (Breakable); a flag on top if asked.</summary>
-        void Pole(Transform root, float x, float z, float tall, bool flag)
+        static PhysicsMaterial metalFeel => metalFeelM != null ? metalFeelM : (metalFeelM = new PhysicsMaterial("ParkMetal") { dynamicFriction = 0.3f, staticFriction = 0.4f, bounciness = 0.1f });
+        static PhysicsMaterial metalFeelM;
+
+        /// <summary>
+        /// A holder for a park feature's collider: on the ice's layer, which the rider's own sphere ignores (it grinds
+        /// the feature by its line, see Rider), so only a thrown body and board hit the rail or box.
+        /// </summary>
+        static GameObject BodyCollider(Transform root, string name, Vector3 at, Quaternion rot)
+        {
+            var g = new GameObject(name) { layer = IceLayer };
+            g.transform.SetParent(root, false);
+            g.transform.SetPositionAndRotation(at, rot);
+            return g;
+        }
+
+        /// <summary>An orange marker pole on a holder at its foot, so it can be knocked over (Breakable).</summary>
+        void Pole(Transform root, float x, float z)
         {
             float y = Slope.Height(x, z);
             var pole = new GameObject("CrevassePole").transform;
             pole.SetParent(root, false);
             pole.position = new Vector3(x, y, z);
-            float h = tall * 0.5f;
+            const float tall = 1.6f, h = tall * 0.5f;
             Block(PrimitiveType.Cylinder, pole, new Vector3(x, y + h, z), Quaternion.identity, new Vector3(0.06f, h, 0.06f), poleOrange);
             Block(PrimitiveType.Cylinder, pole, new Vector3(x, y + tall - 0.15f, z), Quaternion.identity, new Vector3(0.065f, 0.12f, 0.065f), poleBlack);
-            // a pennant on the tall ones, standing out across the slope where you can see it from far up the hill
-            if (flag) Block(PrimitiveType.Cube, pole, new Vector3(x + 0.38f, y + tall - 0.32f, z), Quaternion.identity, new Vector3(0.7f, 0.42f, 0.03f), poleOrange);
             Breakable.Flag(pole, tall - 0.03f);
-        }
-
-        /// <summary>
-        /// A glacier gap's warnings: tall flagged poles at the piste's edges on its uphill lip (and at its ends),
-        /// wands along it out in the open mountain, and wands either side of a snow bridge, uphill and down, marking
-        /// the way across. Nothing stands on the piste in front of the gap itself.
-        /// </summary>
-        void GapMarkers(Transform root, Course.Crevasse cv)
-        {
-            const float back = 3.2f;   // up the hill from the lip
-            Vector2 Up(float x) { Course.Opening(cv, x, out float zc); return new Vector2(x, zc - cv.half - back); }
-            float c = cv.x;
-            var spots = new List<(float x, bool flag)>();
-            spots.Add((cv.x0 + 1.5f, true)); spots.Add((cv.x1 - 1.5f, true));
-            foreach (float s in new[] { -1f, 1f })
-            {
-                float edge = c + s * (Slope.PisteHalf - 0.5f);
-                if (edge > cv.x0 + 3f && edge < cv.x1 - 3f) spots.Add((edge, true));
-                for (float a = Slope.PisteHalf + 7f; ; a += 8f)
-                {
-                    float x = c + s * a;
-                    if (x < cv.x0 + 5f || x > cv.x1 - 5f) break;
-                    spots.Add((x, false));
-                }
-            }
-            foreach (var sp in spots)
-            {
-                if (cv.bridgeHalf > 0f && Mathf.Abs(sp.x - cv.bridge) < cv.bridgeHalf + 3f) continue;
-                var q = Up(sp.x);
-                Pole(root, q.x, q.y, sp.flag ? 2.6f : 1.6f, sp.flag);
-            }
-            if (cv.bridgeHalf > 0f)
-                foreach (float s in new[] { -1f, 1f })
-                {
-                    float x = cv.bridge + s * (cv.bridgeHalf - 0.3f);
-                    Course.Opening(cv, cv.bridge, out float zc);
-                    Pole(root, x, zc - 4.5f, 2.0f, true);
-                    Pole(root, x, zc + 4.5f, 1.6f, false);
-                }
         }
 
         void SignAt(Transform root, float z, Material face, float side)

@@ -1396,6 +1396,52 @@ def _(t): return gait(t, 0.0)
 @clip("Run", 30, True)
 def _(t): return gait(t, 1.0)
 
+# -- moves in the camp: a jump and a forward roll ----------------------------------------------------------
+# Timed to the camp's own physics (Camp.Jump / Camp.Roll): a 0.12 s crouch, off the snow at 3.4 m/s (down again
+# 0.69 s later), the landing soaked up; a 0.8 s roll, during which the game turns the whole body head over heels
+# round a point a ball's height up while this clip curls it into the ball and out again into a run.
+def stand_feet(p, up=0.0, fwd=0.0, pitch=0.0):
+    p = deep(p)
+    p["fL"] = (V(0.12, -0.02 - fwd, ANKLE_Z + up), 8, pitch, 0); p["fR"] = (V(-0.12, 0.02 - fwd, ANKLE_Z + up), -6, pitch, 0)
+    p["kL"] = V(0.15, -1, 0); p["kR"] = V(-0.15, -1, 0)
+    return p
+J_CROUCH = stand_feet(dict(STAND, hips=V(0, 0.03, -0.22), hrot=(26, 0, 0), spine=(14, 0, 0), head=(-10, 0, 0), neck=(0, 0, 0),
+                           hL=("rel", V(0.10, 0.24, -0.38)), hR=("rel", V(-0.10, 0.24, -0.38)), eL=V(0.3, 0.6, -0.6), eR=V(-0.3, 0.6, -0.6)))
+J_PUSH = stand_feet(dict(STAND, hips=V(0, 0.0, 0.02), hrot=(4, 0, 0), spine=(-4, 0, 0), head=(-12, 0, 0), neck=(0, 0, 0),
+                         hL=("rel", V(0.14, -0.18, 0.32)), hR=("rel", V(-0.14, -0.18, 0.32)), eL=V(0.4, 0.4, -0.5), eR=V(-0.4, 0.4, -0.5)),
+                    up=0.03, pitch=-28)
+J_AIR = stand_feet(dict(STAND, hips=V(0, 0.0, -0.04), hrot=(10, 0, 0), spine=(4, 0, 0), head=(-6, 0, 0), neck=(0, 0, 0),
+                        hL=("rel", V(0.32, -0.06, 0.22)), hR=("rel", V(-0.32, -0.06, 0.22)), eL=V(0.3, 0.6, -0.6), eR=V(-0.3, 0.6, -0.6)),
+                   up=0.16, fwd=0.06, pitch=-10)
+J_REACH = stand_feet(dict(J_AIR, hips=V(0, 0.0, 0.0), hL=("rel", V(0.30, -0.16, 0.06)), hR=("rel", V(-0.30, -0.16, 0.06))), up=0.03, fwd=0.04, pitch=6)
+J_LAND = stand_feet(dict(STAND, hips=V(0, 0.04, -0.26), hrot=(28, 0, 0), spine=(16, 0, 0), head=(6, 0, 0), neck=(0, 0, 0),
+                         hL=("rel", V(0.18, -0.34, -0.26)), hR=("rel", V(-0.18, -0.34, -0.26)), eL=V(0.3, 0.5, -0.7), eR=V(-0.3, 0.5, -0.7)))
+
+@clip("CampJump", 31)
+def _(t):
+    s_ = t * 31 / 30.0   # seconds
+    keys = [(0.0, STAND), (0.12, J_CROUCH), (0.20, J_PUSH), (0.42, J_AIR), (0.74, J_REACH), (0.86, J_LAND), (1.04, STAND)]
+    for (t0, A), (t1, B) in zip(keys, keys[1:]):
+        if s_ <= t1:
+            k = (s_ - t0) / (t1 - t0)
+            # the arms lag the body on the way up and down (overlap)
+            return overlap(A, B, ease(min(1, k * 1.25)), ease(k))
+    return STAND
+
+R_DIVE = stand_feet(dict(STAND, hips=V(0, -0.04, -0.28), hrot=(30, 0, 0), spine=(30, 0, 0), head=(28, 0, 0), neck=(10, 0, 0),
+                         hL=("rel", V(0.12, -0.40, -0.34)), hR=("rel", V(-0.12, -0.40, -0.34)), eL=V(0.3, 0.3, -0.8), eR=V(-0.3, 0.3, -0.8)), fwd=-0.04)
+R_BALL = dict(STAND, hips=V(0, 0.02, -0.48), hrot=(40, 0, 0), spine=(46, 0, 0), head=(40, 0, 0), neck=(14, 0, 0),
+              fL=(V(0.11, 0.06, 0.16), 0, 30, 0), fR=(V(-0.11, 0.06, 0.16), 0, 30, 0), kL=V(0.1, -1, 0.7), kR=V(-0.1, -1, 0.7),
+              hL=("rel", V(0.06, -0.20, -0.28)), hR=("rel", V(-0.06, -0.20, -0.28)), eL=V(0.5, 0.3, -0.4), eR=V(-0.5, 0.3, -0.4), gL=0.9, gR=0.9)
+
+@clip("CampRoll", 24)
+def _(t):
+    s_ = t * 0.8
+    if s_ < 0.12: return overlap(STAND, R_DIVE, ease(s_ / 0.12), ease(s_ / 0.12))
+    if s_ < 0.22: return mix(R_DIVE, R_BALL, ease((s_ - 0.12) / 0.10))
+    if s_ < 0.60: return R_BALL
+    return overlap(R_BALL, gait(0.15, 1.0), ease((s_ - 0.60) / 0.20), ease(max(0.0, s_ - 0.64) / 0.16))
+
 print("HERO clips:", ", ".join(c[0] for c in CLIPS))
 
 # ----------------------------------------------------------------------------------------------- export

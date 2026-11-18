@@ -241,10 +241,7 @@ public static class GlitchTest
                 float buried = PlayOut(name, r, body, terrain, props, ref n, 16f, out float tDead, out float sank);
                 Debug.Log($"GLITCH-INFO {name}: '{why}' {midAir:0.00} m off the ground, dead={body.Dead} after {tDead:0.0}s, lies {buried:0.00} m under the snow");
                 if (midAir > 1.2f) Report($"{name}: fell off the board in mid-air ({midAir:0.0} m up)");
-                // (a glacier gap runs up to the cliff's edge: dropping into it on the way is the gap's business, neither a
-                // survival nor a death on the snow)
-                if (why == "Crevasse!") { }
-                else if (!body.Dead) Report($"{name}: survived going over a {w.height:0} m cliff ('{why}')");
+                if (!body.Dead) Report($"{name}: survived going over a {w.height:0} m cliff ('{why}')");
                 // (dead on the rocks at the wall's foot is a death too: only on snow does the body go under)
                 else if (buried < 0.6f && !RockFace.IsRock(Slope.Normal(body.RagdollCentre.x, body.RagdollCentre.z), body.RagdollCentre.x, body.RagdollCentre.z)) Report($"{name}: dead but not buried ({buried:0.00} m)");
                 if (sank > 0.6f) Report($"{name}: ragdoll sank {sank:0.00} m into the rock");

@@ -1280,7 +1280,22 @@ namespace Summit
         // ---------------------------------------------------------------- walking
 
         Rider rider; RiderBody body; Camera cam;
-        Vector3 pos; float yaw, speed, camYaw, lookBlend, showBlend, inBlend;
+        Vector3 pos; float yaw, speed, camYaw, camPitch, lookBlend, showBlend, inBlend;
+        // a jump or a roll under way: 0 none, 1 jump, 2 roll; how long it has been going; height off the ground
+        int moveKind; float moveT, jumpY, jumpV, rollSpeed, nextFurrow; bool airborne;
+        Vector3 rollDir;
+        public const float JumpCrouch = 0.12f, JumpPush = 3.4f, JumpLength = 31f / 30f, RollLength = 0.8f;   // (the lengths of the hero's CampJump and CampRoll clips)
+        /// <summary>The hero left the snow (a jump).</summary>
+        public System.Action<Vector3> Jumped;
+        /// <summary>Back down from a jump: where, going which way (m/s), how hard (m/s down).</summary>
+        public System.Action<Vector3, Vector3, float> Landed;
+        /// <summary>A roll started: where, which way.</summary>
+        public System.Action<Vector3, Vector3> Rolled;
+        /// <summary>The rolling body pressing into the snow: where, which way (m/s). A few times a roll.</summary>
+        public System.Action<Vector3, Vector3> Furrowed;
+        /// <summary>A jump or a roll under way (0 none, 1 jump, 2 roll), and how far into it (s).</summary>
+        public int MoveKind => moveKind;
+        public float MoveTime => moveT;
         bool snap;
         public Vector3 WalkerPosition => pos;
         /// <summary>The way the walker faces (degrees).</summary>
@@ -1303,7 +1318,8 @@ namespace Summit
             CampShadows(true);
             // a finger already down (the tap on TO CAMP or < CAMP that brought you here) is not a walk or a tap here:
             // ignore it until it lifts
-            wasDown = Pointer(out _); pressOnUi = true; dragging = false; pressedContext = false; pressAt = Vector2.zero;
+            input.IgnoreCurrent(Touches());
+            moveKind = 0; moveT = 0f; jumpY = 0f; camPitch = 0f;
             Place();
             lastStep = body.WalkPhase;
             Redress();
@@ -1319,11 +1335,70 @@ namespace Summit
             if (body != null) body.SetWalking(false);
         }
 
+        /// <summary>A jump: a crouch, the push off, the air, and a landing that soaks it up. Not mid-jump or mid-roll.</summary>
+        public void Jump()
+        {
+            if (!Active || moveKind != 0 || falling) return;
+            moveKind = 1; moveT = 0f; jumpY = 0f; jumpV = 0f; airborne = false;
+        }
+
+        /// <summary>A forward roll the way of a swipe on the screen (up = away from the camera); you come up running.</summary>
+        public void Roll(Vector2 screenDir)
+        {
+            if (!Active || moveKind != 0 || falling || screenDir.sqrMagnitude < 1e-4f) return;
+            float head = camYaw + Mathf.Atan2(screenDir.x, screenDir.y);
+            yaw = head;   // turn straight into it
+            rollDir = new Vector3(Mathf.Sin(head), 0f, Mathf.Cos(head));
+            rollSpeed = Mathf.Max(speed, 4.6f);
+            moveKind = 2; moveT = 0f; nextFurrow = 0.14f;
+            Rolled?.Invoke(pos, rollDir);
+        }
+
+        /// <summary>The jump or roll under way, each frame: true while it has the walker (no steering, no footsteps).</summary>
+        bool MoveStep(float dt)
+        {
+            if (moveKind == 0) return false;
+            moveT += dt;
+            if (moveKind == 1)
+            {
+                // the crouch, then off the snow; in the air you carry on the way you were going
+                if (!airborne && jumpY <= 0f && moveT >= JumpCrouch && moveT < JumpCrouch + 0.1f)
+                { airborne = true; jumpV = JumpPush; Jumped?.Invoke(pos); }
+                if (airborne)
+                {
+                    jumpV -= 9.81f * dt; jumpY += jumpV * dt;
+                    if (jumpY <= 0f)
+                    {
+                        float hard = -jumpV;
+                        jumpY = 0f; airborne = false;
+                        var f = new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw));
+                        Landed?.Invoke(pos, f * speed, hard);
+                        if (onSnow)
+                        {
+                            // two boots pressed in deep, side by side
+                            var side = new Vector3(-f.z, 0f, f.x);
+                            AddPrint(pos + side * 0.12f + f * 0.04f, f, true, 1f);
+                            AddPrint(pos - side * 0.12f - f * 0.03f, f, false, 1f);
+                        }
+                    }
+                }
+                if (moveT >= JumpLength && !airborne) { moveKind = 0; return false; }
+                return airborne;   // on the ground (the crouch and the landing) you can still steer
+            }
+            // the roll: tucked and over, carried along, slowing a little; you come up running
+            float k = moveT / RollLength;
+            speed = Mathf.Lerp(rollSpeed, Mathf.Max(rollSpeed * 0.8f, MaxSpeed), k);
+            if (onSnow && moveT >= nextFurrow && moveT < RollLength * 0.85f) { nextFurrow += 0.17f; Furrowed?.Invoke(pos, rollDir * speed); }
+            if (moveT >= RollLength) { moveKind = 0; speed = Mathf.Max(speed, MaxSpeed * 1.05f); return false; }
+            return true;
+        }
+
         /// <summary>Walk with a stick (x right, y away from the camera; length 0..1). True once you've walked through the gate.</summary>
         public bool Walk(Vector2 stick, float dt)
         {
             if (!Active) return false;
-            float mag = Mathf.Clamp01(stick.magnitude);
+            bool held = MoveStep(dt);
+            float mag = held ? 0f : Mathf.Clamp01(stick.magnitude);
             if (mag > 0.08f)
             {
                 // the stick is relative to the camera: up the screen is the way it looks
@@ -1332,7 +1407,7 @@ namespace Summit
             }
             // pushed right out, the walk breaks into a run (and eases back down)
             float want = mag > 0.92f ? RunSpeed : mag * MaxSpeed;
-            speed = Mathf.MoveTowards(speed, want, dt * (want > speed ? 9f : 14f));
+            if (!held) speed = Mathf.MoveTowards(speed, want, dt * (want > speed ? 9f : 14f));
             var f = new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw));
             Vector3 next = pos + f * speed * dt;
             // (no edge to the camp: you can walk anywhere; only real things stop you, and the mountain's edges
@@ -1358,9 +1433,11 @@ namespace Summit
                 if (d < s.radius && d < best && Mathf.Abs(s.at.y - pos.y) < 1.5f) { best = d; Near = s.st; }   // on its floor
             }
             if (Near == Station.Lookout) { OnLookout = true; Near = Station.None; }
-            Footsteps(dt);
-            Footprints(dt);
+            // feet on the snow: footsteps and prints (a jump or a roll makes its own marks)
+            if (moveKind == 0) { Footsteps(dt); Footprints(dt); }
+            else lastStep = body.WalkPhase;
             if (onSnow) EdgeCheck(f);
+            body.CampMove = moveKind; body.CampMoveT = moveT;
             return false;
         }
 
@@ -1406,7 +1483,7 @@ namespace Summit
         void Place()
         {
             pos.y = FloorAt(pos, pos.y);
-            var p = pos + Vector3.up * Rider.R;
+            var p = pos + Vector3.up * (Rider.R + jumpY);
             rider.Body.position = p;
             rider.transform.position = p;
             // the model faces the board's toe edge (+X): turn it a quarter so it faces where it walks
@@ -1630,68 +1707,92 @@ namespace Summit
 
         // ---------------------------------------------------------------- the controls
 
-        bool wasDown, dragging, pressOnUi, pressedContext;
-        Vector2 pressAt, lastP;
-        float pressT;
+        readonly CampInput input = new CampInput();
+        readonly List<CampInput.Touch> touchList = new List<CampInput.Touch>();
+        /// <summary>Test tools: touches to use instead of the screen's (null: the real ones).</summary>
+        public static List<CampInput.Touch> TestTouches;
+        /// <summary>Test tools: the camp's touch controls.</summary>
+        public CampInput Controls => input;
 
         /// <summary>
-        /// One frame in camp: a thumb dragged anywhere is the walk stick, a quick tap on a station opens it,
-        /// and the menus take their own taps. True when it's time to drop in.
+        /// One frame in camp, twin sticks: the left thumb walks, the right one turns the camera; a quick tap jumps
+        /// (or, standing on a station, opens it), a flick rolls; the menus take their own taps. True when it's time
+        /// to drop in.
         /// </summary>
         public bool Step(float dt, MetaUi ui)
         {
             fadeUi = ui;
             if (fadeIn) { fade = Mathf.MoveTowards(fade, 0f, dt / 0.6f); ui.SetFade(fade); fadeIn = fade > 0f; }
-            if (falling) { FallStep(dt); ui.SetStick(false, Vector2.zero, Vector2.zero); ui.SetContext(Station.None); return false; }
-            bool down = Pointer(out Vector2 p);
-            Vector2 stick = Vector2.zero;
-            if (down && !wasDown)
+            if (falling) { FallStep(dt); ui.SetStick(false, Vector2.zero, Vector2.zero); ui.SetLookStick(false, Vector2.zero, Vector2.zero); ui.SetContext(Station.None); return false; }
+            input.Step(Touches(), dt, cam != null ? cam.pixelWidth : Screen.width, cam != null ? cam.pixelHeight : Screen.height, ui.Hit, ui.PanelOpen);
+            if (input.Button != null) ui.Act(input.Button);
+            if (input.ContextTapped && Open(Near, ui)) return true;
+            if (input.Tapped && !ui.PanelOpen)
             {
-                pressAt = p; pressT = 0f; dragging = false;
-                string id = ui.Hit(p);
-                pressOnUi = id != null || ui.PanelOpen;
-                if (id == "context")
-                {
-                    // it sits where a thumb goes down to walk: it opens on lifting a tap, never on touching down
-                    pressedContext = true;
-                }
-                else if (id != null)
-                {
-                    wasDown = true;
-                    ui.Act(id);
-                    return false;
-                }
+                // standing still, a tap on a station opens it (the gate drops you in); otherwise it's a jump
+                var st = speed < 0.5f ? StationAt(input.TapAt) : Station.None;
+                if (st != Station.None) { if (Open(st, ui)) return true; }
+                else Jump();
             }
-            float radius = Mathf.Max(60f, Mathf.Min(Screen.width, Screen.height) * 0.14f);
-            if (down && pressedContext) pressT += dt;   // (a press on the context button never walks)
-            else if (down && !pressOnUi)
-            {
-                pressT += dt;
-                var d = p - pressAt;
-                if (!dragging && d.magnitude > radius * 0.12f) dragging = true;
-                // the stick's centre trails the thumb past full throw, so turning round is instant
-                if (d.magnitude > radius) { pressAt = p - d.normalized * radius; d = p - pressAt; }
-                if (dragging) stick = d / radius;
-            }
-            else if (!down && wasDown && pressedContext)
-            {
-                pressedContext = false;
-                wasDown = false;
-                if ((lastP - pressAt).magnitude < radius * 0.12f && ui.Hit(lastP) == "context") return Open(Near, ui);
-            }
-            else if (!down && wasDown && !pressOnUi && !dragging && pressT < 0.4f)
-            {
-                wasDown = false;
-                if (Open(StationAt(lastP), ui)) return true;
-            }
-            if (down) lastP = p;
-            wasDown = down;
-            ui.SetStick(down && dragging && !pressOnUi, pressAt, p);
-            stick = ui.PanelOpen ? Vector2.zero : stick + Keys();
+            if (input.Swiped && !ui.PanelOpen) Roll(input.SwipeDir);
+            if (KeyJump()) Jump();
+            if (KeyRoll()) Roll(Vector2.up);
+            Look(input.Look, dt);
+            ui.SetStick(input.MoveShown && !ui.PanelOpen, input.MoveOrigin, input.MovePos);
+            ui.SetLookStick(input.LookShown && !ui.PanelOpen, input.LookOrigin, input.LookPos);
+            var stick = ui.PanelOpen ? Vector2.zero : input.Move + Keys();
             Showcase = ui.PanelOpen && ui.ShopTab == 1;
             if (Walk(stick, dt)) return true;
             ui.SetContext(Near);
             return false;
+        }
+
+        /// <summary>
+        /// Turn the camera round the hero with the look stick: sideways swings it round (it stays where you leave it),
+        /// up and down tilts it a little, within limits.
+        /// </summary>
+        public void Look(Vector2 look, float dt)
+        {
+            if (look.sqrMagnitude < 0.0025f) return;
+            camYaw += look.x * 2.6f * dt;
+            camPitch = Mathf.Clamp(camPitch - look.y * 40f * dt, -12f, 22f);
+        }
+
+        /// <summary>Every finger on the screen (the mouse is one finger, for the editor).</summary>
+        List<CampInput.Touch> Touches()
+        {
+            if (TestTouches != null) return TestTouches;
+            touchList.Clear();
+#if ENABLE_INPUT_SYSTEM
+            var ts = Touchscreen.current;
+            if (ts != null)
+                foreach (var t in ts.touches)
+                    if (t.press.isPressed) touchList.Add(new CampInput.Touch(t.touchId.ReadValue(), t.position.ReadValue()));
+            var ms = Mouse.current;
+            if (touchList.Count == 0 && ms != null && ms.leftButton.isPressed) touchList.Add(new CampInput.Touch(-1, ms.position.ReadValue()));
+#else
+            for (int i = 0; i < UnityEngine.Input.touchCount; i++) { var t = UnityEngine.Input.GetTouch(i); touchList.Add(new CampInput.Touch(t.fingerId, t.position)); }
+            if (touchList.Count == 0 && UnityEngine.Input.GetMouseButton(0)) touchList.Add(new CampInput.Touch(-1, UnityEngine.Input.mousePosition));
+#endif
+            return touchList;
+        }
+
+        static bool KeyJump()
+        {
+#if ENABLE_INPUT_SYSTEM
+            var k = Keyboard.current; return k != null && k.spaceKey.wasPressedThisFrame;
+#else
+            return UnityEngine.Input.GetKeyDown(KeyCode.Space);
+#endif
+        }
+
+        static bool KeyRoll()
+        {
+#if ENABLE_INPUT_SYSTEM
+            var k = Keyboard.current; return k != null && k.rKey.wasPressedThisFrame;
+#else
+            return UnityEngine.Input.GetKeyDown(KeyCode.R);
+#endif
         }
 
         bool Open(Station st, MetaUi ui)
@@ -1700,20 +1801,6 @@ namespace Summit
             else if (st == Station.Upgrades) ui.ShowShop(0);
             else if (st == Station.Style) ui.ShowShop(1);
             return st == Station.DropIn;
-        }
-
-        static bool Pointer(out Vector2 p)
-        {
-#if ENABLE_INPUT_SYSTEM
-            var ts = Touchscreen.current;
-            if (ts != null && ts.primaryTouch.press.isPressed) { p = ts.primaryTouch.position.ReadValue(); return true; }
-            var ms = Mouse.current;
-            if (ms != null && ms.leftButton.isPressed) { p = ms.position.ReadValue(); return true; }
-            p = Vector2.zero; return false;
-#else
-            if (Input.touchCount > 0) { p = Input.GetTouch(0).position; return true; }
-            p = Input.mousePosition; return Input.GetMouseButton(0);
-#endif
         }
 
         /// <summary>WASD / arrow keys, for the editor.</summary>
@@ -1749,15 +1836,17 @@ namespace Summit
             if (ChaseCamera.TestDt > 0f) dt = ChaseCamera.TestDt;
             if (falling) { FallCamera(dt); return; }
             float k(float rate) => snap ? 1f : 1f - Mathf.Exp(-dt * rate);
-            // follow behind as you walk; standing still, it holds where it is
-            if (speed > 0.4f) camYaw = Mathf.LerpAngle(camYaw * Mathf.Rad2Deg, yaw * Mathf.Rad2Deg, k(1.4f) * Mathf.Clamp01(speed / MaxSpeed)) * Mathf.Deg2Rad;
+            // the camera stays where the look stick leaves it (it no longer swings round behind you as you walk)
             lookBlend = Mathf.Lerp(lookBlend, OnLookout && speed < 0.5f ? 1f : 0f, k(2f));
             showBlend = Mathf.Lerp(showBlend, Showcase ? 1f : 0f, k(4f));
             var f = new Vector3(Mathf.Sin(camYaw), 0f, Mathf.Cos(camYaw));
             // indoors the camera comes in close and low, under the ceilings
             inBlend = Mathf.Lerp(inBlend, Indoors ? 1f : 0f, k(3f));
-            Vector3 target = pos + Vector3.up * Mathf.Lerp(1.25f, 1.35f, inBlend);
+            Vector3 target = pos + Vector3.up * (Mathf.Lerp(1.25f, 1.35f, inBlend) + jumpY * 0.6f);
             Vector3 want = target - f * Mathf.Lerp(6.4f, 4.6f, inBlend) + Vector3.up * Mathf.Lerp(2.7f, 1.3f, inBlend);
+            // the look stick's tilt: higher and looking down, or lower and level, round the hero
+            var tiltAxis = new Vector3(f.z, 0f, -f.x);
+            want = target + Quaternion.AngleAxis(camPitch, tiltAxis) * (want - target);
             Vector3 look = target + f * Mathf.Lerp(4f, 3f, inBlend) + Vector3.up * Mathf.Lerp(0.15f, 0.1f, inBlend);
             // at the lookout, stand back and take in the whole mountain below
             Vector3 lookPos = pos + new Vector3(-0.8f, 4.2f, -5.6f), lookAt = pos + new Vector3(0f, -55f, 190f);

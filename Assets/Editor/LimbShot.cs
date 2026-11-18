@@ -78,19 +78,22 @@ public static class LimbShot
         terrain.Prewarm(); props.Prewarm();
         Shoot("Warmup", true); Shoot("Warmup2", true);   // the first renders come out unlit (and the cloth shader half-compiled)
 
-        if (!old) Tally();
+        if (!old && System.Environment.GetEnvironmentVariable("SUMMIT_TALLY") == "1") Tally();
 
+        // the moment it comes off: an arm into a tree, a leg in a big fall
         blood.SetOn(true);
-        // an arm into a tree, gore on (with the flash on screen, and the end screen), then off
         Arm(true, rig.LowerR, false, "ArmGore", true);
-        Arm(false, rig.LowerR, false, "ArmClean", false);
-        // a leg in a big fall onto the snow, gore on and off
         Leg(true, rig.ThighL, true, "LegGore");
-        Leg(false, rig.ThighL, true, "LegClean");
-        if (!old)
+        if (!old) Arm(false, rig.LowerR, false, "ArmClean", false);
+
+        // and then getting up and riding on: without a forearm, without a lower leg, with both legs broken,
+        // gore on and off; then a second crash with the limb already gone
+        foreach (bool gore in new[] { true, false })
         {
-            Arm(true, rig.UpperL, true, "WholeArmGore", false);
-            Leg(true, rig.ShinR, false, "ShinGore");
+            string g = gore ? "Gore" : "Clean";
+            RideOn("RideForearm" + g, gore, rig.LowerL, new Transform[0], !gore);
+            RideOn("RideShin" + g, gore, rig.ShinR, new Transform[0], false);
+            RideOn("RideLegsBroken" + g, gore, null, new[] { rig.ShinL, rig.ShinR }, false);
         }
         blood.SetOn(true);
         ResetCheck();
@@ -274,7 +277,6 @@ public static class LimbShot
         }
         Log($"{name}: lost {string.Join(", ", lostNames)} at t={lostT:0.00}; hardest obstacle {hardObj:0.0} snow {hardSnow:0.0}");
         Settle(); Aftermath(name);
-        if (withScreens) EndScreen(name);
     }
 
     static void Leg(bool gore, Transform cut, bool whole, string name)
@@ -349,6 +351,86 @@ public static class LimbShot
             Vector3 s = end.transform.position;
             Look(Clear(s, end.transform.up + Vector3.up * 0.5f, 1.2f, end.transform), s, 40f); Shoot(name + "Piece", true);
         }
+    }
+
+    /// <summary>
+    /// Crash, lose this limb (or break these bones), get up and ride on: shots of the rider back on the board from
+    /// the side and from behind, close on what's missing or bandaged, and the piece left on the snow. `again`: then
+    /// crash once more, with the limb already gone, and get up from that too.
+    /// </summary>
+    static void RideOn(string name, bool gore, Transform cut, Transform[] breaks, bool again)
+    {
+        blood.SetOn(gore);
+        Random.InitState(7);
+        // a fresh count of falls: the game's limit (three) would keep this one down otherwise
+        typeof(SummitGame).GetField("falls", NP).SetValue(game, 0);
+        typeof(SummitGame).GetField("wipeoutTimer", NP).SetValue(game, 0f);
+        float z = Course.First + 250f;
+        SnowRun(17f, 1.5f, z, 0.5f);
+        if (cut != null && !body.Sever(cut, false, Vector3.up)) Log($"{name}: couldn't take {cut.name}");
+        var brk = typeof(RiderBody).GetMethod("Break", NP);
+        foreach (var b in breaks) brk.Invoke(body, new object[] { b, b.position });
+        Settle();
+        float up = GetUp();
+        if (rider.Crashed) { Log($"{name}: NEVER GOT UP (stay down {rider.StayDown}, hold {rider.HoldCrash})"); return; }
+        int pieces = 0; foreach (var _ in body.LostPieces) pieces++;
+        int wraps = 0; foreach (var t in body.GetComponentsInChildren<Transform>()) if (t.name.StartsWith("BandageHeavy") || t.name.StartsWith("BandageLight")) wraps++;
+        int hidden = 0; foreach (var r in body.GetComponentsInChildren<Renderer>(true)) if (!r.gameObject.activeInHierarchy) hidden++;
+        Log($"{name}: up after {up:0.0} s; lost {body.LimbsLost}, pieces on the snow {pieces}, hand gone L {body.HandGone(0)} R {body.HandGone(1)}, bandage wraps {wraps}, renderers put away {hidden}");
+        // ride on, carving
+        for (float t = 0f; t < 3f; t += Dt) { rider.Steer = Mathf.Sin(t * 1.7f) * 0.7f; Step(); }
+        Log($"{name}: riding at {rider.Speed * 3.6f:0} km/h, crashed {rider.Crashed}");
+        RidingShots(name, cut);
+        // the piece where it was left
+        foreach (var pc in body.LostPieces)
+        {
+            var rs = pc.GetComponentsInChildren<Renderer>();
+            if (rs.Length == 0) continue;
+            var bounds = rs[0].bounds;
+            foreach (var r in rs) bounds.Encapsulate(r.bounds);
+            Vector3 c = bounds.center;
+            Look(Clear(c, Vector3.up + Vector3.back * 0.6f, 1.6f, null), c, 40f); Shoot(name + "Left", true);
+            Log($"{name}: piece at {c} size {bounds.size}, {(rider.transform.position - c).magnitude:0} m behind");
+            break;
+        }
+        if (!again) return;
+        // crash again, with the forearm gone: its parts stay asleep, and you still get up
+        rider.DoCrash("test");
+        int awake = 0;
+        for (float t = 0f; t < 1.5f; t += Dt) Step();
+        foreach (var rb in body.RagdollForTest.Bodies) if (!rb.isKinematic) awake++;
+        Settle();
+        float up2 = GetUp();
+        Log($"{name}: crashed again: {awake} parts thrown (of {CountParts()}), up again after {up2:0.0} s: {!rider.Crashed}, lost {body.LimbsLost}");
+        for (float t = 0f; t < 2f; t += Dt) { rider.Steer = Mathf.Sin(t * 1.7f) * 0.7f; Step(); }
+        RidingShots(name + "Again", cut);
+    }
+
+    /// <summary>Tap to get up as soon as the game lets you (up to 10 s): how long it took.</summary>
+    static float GetUp()
+    {
+        for (float t = 0f; t < 10f; t += Dt)
+        {
+            if (!rider.Crashed) return t;
+            if (rider.CanGetUp) rider.RequestUp = true;
+            Step();
+        }
+        return -1f;
+    }
+
+    static void RidingShots(string name, Transform cut)
+    {
+        Vector3 p = rider.transform.position;
+        Vector3 f = rider.Velocity; f.y = 0f; f = f.sqrMagnitude > 0.1f ? f.normalized : Vector3.forward;
+        Vector3 right = Vector3.Cross(Vector3.up, f);
+        // the rider faces the toe edge, side-on to the way they're going: from in front of their chest, a little ahead
+        Vector3 chest = right;   // (the board's toe edge: the side the rider faces)
+        Vector3 mid = rig.Hips.position;   // (what you see of the rider, not its physics ball)
+        Look(mid + chest * 3.6f + f * 1.0f + Vector3.up * 0.4f, mid, 50f); Shoot(name + "Ride", true);
+        Look(mid - f * 4.0f + right * 1.0f + Vector3.up * 1.2f, mid, 50f); Shoot(name + "RideBack", true);
+        // close on what's missing (the stump) or bandaged (the legs)
+        Vector3 at = cut != null ? cut.position : (rig.ShinL.position + rig.ShinR.position) * 0.5f;
+        Look(at + chest * 1.6f + Vector3.up * 0.4f + f * 0.5f, at, 45f); Shoot(name + "Close", true);
     }
 
     static void EndScreen(string name)

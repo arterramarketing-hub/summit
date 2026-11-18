@@ -913,64 +913,10 @@ namespace Summit
 
         // ---- bandages: wrapped round each limb that broke, for the rest of the run
 
-        void Bandage(Transform bone)
-        {
-            if (bone == null || bandaged.Contains(bone)) return;
-            bandaged.Add(bone);
-            if (bandageMat == null)
-            {
-                var sh = jacketShader != null ? jacketShader : Shader.Find("Universal Render Pipeline/Lit");
-                bandageMat = new Material(sh); bandageMat.SetColor("_BaseColor", new Color(0.97f, 0.96f, 0.91f)); bandageMat.SetFloat("_Smoothness", 0.08f);
-                bandageLine = new Material(sh); bandageLine.SetColor("_BaseColor", new Color(0.82f, 0.80f, 0.74f)); bandageLine.SetFloat("_Smoothness", 0.05f);
-            }
-            Transform child = bone == rig.UpperL ? rig.LowerL : bone == rig.LowerL ? rig.HandL : bone == rig.UpperR ? rig.LowerR : bone == rig.LowerR ? rig.HandR
-                            : bone == rig.ThighL ? rig.ShinL : bone == rig.ShinL ? rig.EndL : bone == rig.ThighR ? rig.ShinR : bone == rig.ShinR ? rig.EndR : null;
-            if (child != null)
-            {
-                bool leg = bone == rig.ThighL || bone == rig.ShinL || bone == rig.ThighR || bone == rig.ShinR;
-                float r = leg ? (bone == rig.ThighL || bone == rig.ThighR ? 0.105f : 0.09f) : 0.07f;
-                Wrap(bone, bone.position, child.position, r, 0.2f, 0.75f);
-            }
-            else if (bone == rig.Head)
-            {
-                // round the jaw and over the top of the head, under the beanie
-                Vector3 up = rig.Neck != null ? (rig.Head.position - rig.Neck.position).normalized : Vector3.up;
-                Vector3 c = rig.Head.position + up * 0.03f;
-                Wrap(bone, c - up * 0.03f, c + up * 0.03f, 0.118f, 0f, 1f);
-                var side = Vector3.Cross(up, upper.forward).normalized;
-                Wrap(bone, c - side * 0.012f, c + side * 0.012f, 0.13f, 0f, 1f, false);
-            }
-            else
-            {
-                // ribs: strapped round the chest
-                Vector3 up = rig.Neck != null ? (rig.Neck.position - rig.Chest.position).normalized : Vector3.up;
-                Wrap(bone, rig.Chest.position - up * 0.04f, rig.Chest.position + up * 0.12f, 0.19f, 0.05f, 0.95f);
-            }
-        }
+        // (Bandage: RiderBodyBandage.cs)
 
-        /// <summary>A bandage round the segment a..b (from t0 to t1 along it), with wrap lines, fixed to the bone.</summary>
-        void Wrap(Transform bone, Vector3 a, Vector3 b, float r, float t0, float t1, bool lines = true)
-        {
-            Vector3 p0 = Vector3.Lerp(a, b, t0), p1 = Vector3.Lerp(a, b, t1), d = p1 - p0;
-            float len = Mathf.Max(0.02f, d.magnitude);
-            var rot = Quaternion.FromToRotation(Vector3.up, d.normalized);
-            GameObject Cyl(Vector3 at, float radius, float half, Material m)
-            {
-                var g = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                Object.DestroyImmediate(g.GetComponent<Collider>());
-                g.GetComponent<MeshRenderer>().sharedMaterial = m;
-                g.transform.SetPositionAndRotation(at, rot);
-                g.transform.localScale = new Vector3(radius * 2f, half, radius * 2f);
-                g.transform.SetParent(bone, true);
-                bandages.Add(g);
-                return g;
-            }
-            Cyl((p0 + p1) * 0.5f, r, len * 0.5f, bandageMat);
-            if (!lines) return;
-            int k = Mathf.Clamp(Mathf.RoundToInt(len / 0.06f), 2, 6);
-            for (int i = 1; i <= k; i++)
-                Cyl(Vector3.Lerp(p0, p1, i / (k + 1f)) + d.normalized * (i % 2 == 0 ? 0.004f : -0.004f), r * 1.06f, 0.006f, bandageLine);
-        }
+        /// <summary>A dent in the snow, stretched along travel (the camp's roll: a body-shaped furrow, as a fall makes).</summary>
+        public void SnowMark(Vector3 at, Vector3 travel, float size, float depth) => craters.Add(at, travel, size, depth);
 
         /// <summary>The avalanche carrying the thrown body along in its debris (see Ragdoll.Carry).</summary>
         public void Carry(Vector3 flow, float rate, float dt) { if (ragdoll != null && ragdoll.Active) ragdoll.Carry(flow, rate, dt); }
@@ -988,7 +934,7 @@ namespace Summit
                 if (ragdoll.Active)
                 {
                     // crashed again before the last one was tidied away: patch up, then throw again
-                    ragdoll.End(); RestoreLimbs();
+                    DetachLimbs(); ragdoll.End();   // (a limb lost stays lost: RiderBodyLimbs)
                     foreach (var b in brokenThisCrash) Bandage(b);
                 }
                 ragdoll.Begin(lastVel);
@@ -1049,7 +995,7 @@ namespace Summit
                 else
                 {
                     FallRested?.Invoke(ragdoll.Centre);   // a flag where you came to rest
-                    ragdoll.End(); RestoreLimbs(); spray.Emit(30);   // back up on the board, patched up
+                    DetachLimbs(); ragdoll.End(); spray.Emit(30);   // back up on the board, patched up (a lost limb left on the snow: RiderBodyLimbs)
                     RagdollMoving = false; rider.HoldCrash = false;
                     RagdollBelowSnow = 0f;
                     foreach (var b in brokenThisCrash) Bandage(b);

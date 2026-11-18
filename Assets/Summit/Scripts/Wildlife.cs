@@ -294,7 +294,7 @@ namespace Summit
                     float side = Slope.Hash01(cyc, 6, 77) < 0.5f ? -1f : 1f;
                     float z = rp.z + 85f + Slope.Hash01(cyc, 7, 77) * 25f;
                     float x = Slope.Centre(z) + side * (16f + 7f * Slope.Hash01(cyc, 8, 77));
-                    // never on a crevasse's lip or over a glacier gap: a little up the hill of it
+                    // never on a crevasse's lip: a little up the hill of it
                     for (int i = 0; i < 6 && Course.CrevasseNear(x, z, 3f); i++) { z -= 6f; x = Slope.Centre(z) + side * (16f + 7f * Slope.Hash01(cyc, 8, 77)); }
                     var p = new Vector3(x, Slope.DrawnHeight(x, z), z);
                     bear.SetActive(true);
@@ -354,7 +354,7 @@ namespace Summit
             }
             Vector3 fwd = Quaternion.Euler(0f, bearYaw, 0f) * Vector3.forward;
             Vector3 np = bp + fwd * bearSpeed * dt;
-            // it will not go into a crevasse or jump a gap: it pulls up at the lip (jumping one is a way to lose it)
+            // it will not go into a crevasse: it pulls up at the lip
             if (Course.CrevasseNear(np.x, np.z, 0.6f)) { np = bp; bearSpeed = 0f; }
             np.y = Slope.DrawnHeight(np.x, np.z);
             bearRb.MovePosition(np);

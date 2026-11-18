@@ -25,6 +25,8 @@ namespace Summit
         /// <summary>How far into a run the legs are (0 walking .. 1 running), eased.</summary>
         public float RunAmount => runAmp;
         float walkPhase, walkAmp;
+        /// <summary>A jump or a roll in the camp (0 none, 1 jump, 2 roll), and how far into it (s): the camp sets them.</summary>
+        public int CampMove; public float CampMoveT;
         Vector3 boardHomePos; Quaternion boardHomeRot; bool boardHomeSet, tubeBeforeWalk;
 
         public void SetWalking(bool on)
@@ -59,8 +61,18 @@ namespace Summit
             float want = Cadence > 0f ? Cadence : Mathf.Lerp(Mathf.Lerp(0.55f, 1.0f, walkAmp), 1.45f, runAmp);
             cadence = Mathf.MoveTowards(cadence, want, dt * 4f);
             walkPhase += dt * Mathf.PI * 2f * cadence * (walkAmp > 0.02f ? 1f : 0f);
-            roll.localRotation = Quaternion.identity;
+            roll.localRotation = Quaternion.identity; roll.localPosition = Vector3.zero;
             upper.localRotation = Quaternion.identity;
+            if (CampMove == 2)
+            {
+                // a forward roll: the whole body turns head over heels round its middle (about a ball's height up),
+                // the tuck itself is the pose
+                float k = Mathf.Clamp01((CampMoveT - 0.1f) / 0.56f);
+                float ang = 360f * k * k * (3f - 2f * k);
+                var pv = new Vector3(0f, 0.45f, 0f);
+                var rot = Quaternion.AngleAxis(-ang, Vector3.forward);   // the top tips the way you're going (+X)
+                roll.localRotation = rot; roll.localPosition = pv - rot * pv;
+            }
             // the humanoid's feet are planted at a board's height: stand them on the snow instead
             // (the rig plants its own feet, see RiderRig.PoseWalk)
             if (poser != null) pivot.position += pivot.up * (Mathf.Abs(Mathf.Sin(walkPhase)) * Mathf.Lerp(0.05f, 0.09f, runAmp) * walkAmp - BoardTop - 0.02f);

@@ -29,7 +29,7 @@ public static class SimTest
         r.RoughLanding += _ => rough++;
         r.Landed += imp => { if (r.Peak > 3f) Debug.Log($"SIMAIR peak={r.Peak:0.0} air={r.AirTime:0.00} z={r.Z:0} sec={Course.At(r.Z)} x-c={r.Body.position.x - Slope.Centre(r.Z):0.0} imp={imp:0}"); };
         r.Trick += (n, p) => Debug.Log($"SIMTRICK {n} {p} z={r.Z:0} sec={Course.At(r.Z)}");
-        r.Crash += w => { Course.CrevasseNear(r.Body.position.x, r.Z, 1f, out var cv); Debug.Log($"SIMCRASH {w} z={r.Z:0} x-c={r.Body.position.x - Slope.Centre(r.Z):0.0} sec={Course.At(r.Z)}{(w.StartsWith("Crevasse") ? (cv.across ? " (a gap)" : " (a slot)") : "")}"); };
+        r.Crash += w => Debug.Log($"SIMCRASH {w} z={r.Z:0} x-c={r.Body.position.x - Slope.Centre(r.Z):0.0} sec={Course.At(r.Z)}");
         r.Trick += (n, p) => { if (n == "Close call") calls++; };
         int takeoffs = 0; bool wasAir = false;
 
@@ -45,8 +45,6 @@ public static class SimTest
             if (Slope.NextKicker(r.Z, out Vector3 kk) && kk.z - r.Z < 70f) aimX = kk.x;
             float off = aimX - r.Body.position.x;
             r.Steer = Mathf.Clamp(0.4f * Mathf.Sin(t * 1.1f) + off * 0.06f - (r.Heading) * 0.8f, -1f, 1f);
-            // and ollies a glacier gap, as a player would, just before its lip
-            if (!r.Airborne && !r.Crashed && Course.GapAhead(r.Body.position.x, r.Z, 40f, out _, out float lipZ) && lipZ - r.Z < 1.5f + r.Speed * 0.08f) r.QueuePop(0.5f);
             r.Tick(Dt);
             Physics.Simulate(Dt);
             if (i % 12 == 0) forest.Prewarm();

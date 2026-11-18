@@ -202,16 +202,14 @@ namespace Summit
             };
             body.LimbLost += (limb, at, whole) =>
             {
-                // a limb torn off: no getting up from that, the run is over once the body stops (RiderBodyLimbs)
+                // a limb torn off: it goes on the bill, and you get up and ride on without it (RiderBodyLimbs).
+                // (the crash it came off in has already counted as a fall)
                 if (state != State.Riding) return;
                 int cost = whole ? 186000 : 124000;
                 medical += cost;
                 hud.Hurt(1f); hurtShake = 1f;
                 audioFx.Play(Sfx.Bone); audioFx.Play(Sfx.Crash);
                 if (audioFx.Screaming) audioFx.ScreamHit();
-                rider.StayDown = true;
-                endTitle = "WIPED OUT";   // (what happened is there to see: the screen doesn't spell it out)
-                if (wipeoutTimer <= 0f) wipeoutTimer = 2.8f;
             };
             rider.HitObstacle += (ob, at, into) =>
             {
@@ -396,6 +394,13 @@ namespace Summit
             // the camp's edges give way: a crack and powder, the screams, then back at the chalet (Camp.Collapse)
             camp.Collapsed += (at, dir) => { audioFx.Play(Sfx.Crevasse); fx?.Thud(at, 10f, dir * 3f); audioFx.StartScreaming(); audioFx.NoooFor(1.5f); };
             camp.Rescued += () => { audioFx.StopScreaming(); };
+            // jumping and rolling in the camp: a grunt off the snow, a thump and a puff landing, a whoosh and a crunch
+            // rolling, and the marks they leave (two deep boot prints are the camp's own; the roll's furrow is a crater
+            // trail, like a fall's)
+            camp.Jumped += at => audioFx.Play(Sfx.Grunt);
+            camp.Landed += (at, travel, hard) => { audioFx.Play(hard > 3f ? Sfx.Thump : Sfx.Land); fx?.Landing(at, Vector3.up, hard + 2f, travel); };
+            camp.Rolled += (at, dir) => { audioFx.Play(Sfx.Spin); audioFx.Play(Sfx.Scrape); };
+            camp.Furrowed += (at, travel) => { body.SnowMark(at, travel, 0.4f, 0.07f); fx?.Puff(at, 1.2f); };
             Missions.Completed += m => { meta.Toast(m); audioFx.Play(Sfx.ShieldFull); };
             Progress.Changed += ApplyOutfit;
             ApplyOutfit();

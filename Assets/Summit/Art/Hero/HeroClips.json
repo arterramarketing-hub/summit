@@ -125,6 +125,16 @@
    "name": "Run",
    "frames": 30,
    "loop": true
+  },
+  {
+   "name": "CampJump",
+   "frames": 31,
+   "loop": false
+  },
+  {
+   "name": "CampRoll",
+   "frames": 24,
+   "loop": false
   }
  ]
 }

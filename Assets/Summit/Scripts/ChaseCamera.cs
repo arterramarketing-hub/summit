@@ -87,14 +87,10 @@ namespace Summit
             {
                 // the rider went into a crevasse: lean out over the edge and look straight down after them
                 float k = Mathf.SmoothStep(0f, 1f, peek);
-                // from over the crevasse's middle, backed off along its length (not along the way you were going: across
-                // a glacier gap that hung the camera over the near lip, its white top looking straight down the ice wall)
+                // from over the crevasse's middle line, backed off up it (from over a lip, its white top looked like a
+                // pillar standing straight down the ice wall)
                 Vector3 over = peekAt, back = f;
-                if (Course.CrevasseNear(peekAt.x, peekAt.z, 4f, out var cv))
-                {
-                    over = Course.CrevasseMiddle(cv, peekAt);
-                    if (cv.across) back = new Vector3(f.x < 0f ? -1f : 1f, 0f, 0f);
-                }
+                if (Course.CrevasseNear(peekAt.x, peekAt.z, 4f, out var cv)) { over = Course.CrevasseMiddle(cv, peekAt); back = Vector3.forward; }
                 Vector3 rim = new Vector3(over.x, Mathf.Max(focus.y, Slope.Height(over.x, over.z) + 1f), over.z);
                 pos = Vector3.Lerp(pos, rim - back * 1.8f + Vector3.up * 3.2f, k);
                 look = Vector3.Lerp(look, peekAt, k);

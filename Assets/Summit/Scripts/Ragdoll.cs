@@ -17,6 +17,8 @@ namespace Summit
             public Transform bone; public Rigidbody rb; public Collider col; public Joint joint;
             public Rigidbody parentRb; public Vector3 axis; public float twist, swing1, swing2;   // to rebuild the joint after a sever
             public bool free;          // torn off: its own piece (or a part hanging off one), no longer held to the body
+            public bool gone;          // lost in an earlier crash this run: the rider rides on without it, so it stays asleep
+                                       // (no collider, no joint) in every later crash until the run is reset (Reattach)
             public Rigidbody slab;     // the snow under a torn-off piece (on its root part only)
         }
 
@@ -102,7 +104,7 @@ namespace Summit
             a = b = v = Vector3.zero; r = rDown = mass = 0f;
             Collider col; Rigidbody rb;
             if (!Active) return false;
-            if (i < parts.Count) { col = parts[i].col; rb = parts[i].rb; }
+            if (i < parts.Count) { if (parts[i].gone) return false; col = parts[i].col; rb = parts[i].rb; }
             else if (boardRb != null && boardCol != null) { col = boardCol; rb = boardRb; }
             else return false;
             var t = col.transform;
@@ -180,6 +182,7 @@ namespace Summit
             foreach (var p in parts) if (p.joint != null) { var cb = p.joint.connectedBody; p.joint.connectedBody = null; p.joint.connectedBody = cb; }
             foreach (var p in parts)
             {
+                if (p.gone) continue;   // (a limb lost earlier in the run: nothing there to throw)
                 p.col.enabled = true;
                 p.rb.isKinematic = false;
                 p.rb.interpolation = RigidbodyInterpolation.Interpolate;
@@ -187,8 +190,9 @@ namespace Summit
 
             for (int i = 0; i < parts.Count; i++)
             {
+                if (parts[i].gone) continue;
                 if (riderCollider != null) Physics.IgnoreCollision(parts[i].col, riderCollider);
-                for (int j = i + 1; j < parts.Count; j++) Physics.IgnoreCollision(parts[i].col, parts[j].col);
+                for (int j = i + 1; j < parts.Count; j++) if (!parts[j].gone) Physics.IgnoreCollision(parts[i].col, parts[j].col);
             }
             // thrown forward and up, tumbling head over heels about the axis across the line of travel
             Vector3 flat = new Vector3(velocity.x, 0f, velocity.z);
@@ -200,6 +204,7 @@ namespace Summit
             Vector3 pivot = parts[0].rb.worldCenterOfMass, lin = velocity * 0.85f + Vector3.up * 2.5f;
             foreach (var p in parts)
             {
+                if (p.gone) continue;
                 p.rb.linearVelocity = lin + Vector3.Cross(spin, p.rb.worldCenterOfMass - pivot);
                 p.rb.angularVelocity = spin;
             }
@@ -217,7 +222,7 @@ namespace Summit
             boardCol.sharedMaterial = snowFeel;
             var bimp = board.gameObject.AddComponent<Impact>(); bimp.owner = this; bimp.board = true;
             if (riderCollider != null) Physics.IgnoreCollision(boardCol, riderCollider);
-            foreach (var p in parts) Physics.IgnoreCollision(boardCol, p.col);
+            foreach (var p in parts) if (!p.gone) Physics.IgnoreCollision(boardCol, p.col);
             // each slab of snow is only for its own body: the body's for the body, the board's for the board
             // (and neither for the rider's own sphere, which turns collisions back on when it gets up).
             // Unity only accepts IgnoreCollision between active colliders, so the slabs go live first
@@ -227,7 +232,7 @@ namespace Summit
             PlaceSlab(boardGroundBody, board.position, true);
             var gCol = groundBody.GetComponent<Collider>(); var bgCol = boardGroundBody.GetComponent<Collider>();
             Physics.IgnoreCollision(gCol, boardCol);
-            foreach (var p in parts) Physics.IgnoreCollision(bgCol, p.col);
+            foreach (var p in parts) if (!p.gone) Physics.IgnoreCollision(bgCol, p.col);
             if (riderCollider != null) { Physics.IgnoreCollision(gCol, riderCollider); Physics.IgnoreCollision(bgCol, riderCollider); }
             boardRb.linearVelocity = velocity * 0.75f + Vector3.up * 3.5f + Random.insideUnitSphere * 2f;
             boardRb.angularVelocity = new Vector3(Random.Range(-9f, 9f), Random.Range(-4f, 4f), Random.Range(-9f, 9f));
@@ -360,7 +365,9 @@ namespace Summit
         readonly List<Rigidbody> limbSlabs = new List<Rigidbody>();
 
         /// <summary>Is this bone a part of the body that is still held to it (not torn off, nor hanging off a torn-off piece)?</summary>
-        public bool Attached(Transform bone) { var p = PartOf(bone); return p != null && !p.free; }
+        public bool Attached(Transform bone) { var p = PartOf(bone); return p != null && !p.free && !p.gone; }
+        /// <summary>Is this bone (or a bone above it) a part lost earlier in the run?</summary>
+        public bool Gone(Transform bone) { for (var t = bone; t != null; t = t.parent) { var p = PartOf(t); if (p != null && p.gone) return true; } return false; }
 
         Part PartOf(Transform bone) { foreach (var p in parts) if (p.bone == bone) return p; return null; }
 
@@ -384,7 +391,7 @@ namespace Summit
             if (p.joint != null) Kill(p.joint);
             p.joint = null;
             var piece = new List<Part>();
-            foreach (var q in parts) if (q.bone == bone || q.bone.IsChildOf(bone)) { q.free = true; piece.Add(q); }
+            foreach (var q in parts) if ((q.bone == bone || q.bone.IsChildOf(bone)) && !q.gone) { q.free = true; piece.Add(q); }
             // its own slab of snow, for it alone
             Rigidbody slab = null;
             foreach (var s in limbSlabs) if (!s.gameObject.activeSelf) { slab = s; break; }
@@ -394,7 +401,7 @@ namespace Summit
             p.slab = slab;
             var sCol = slab.GetComponent<Collider>(); var gCol = groundBody.GetComponent<Collider>();
             // (a slab used before still remembers what it ignored then: IgnoreCollision outlives switching it off)
-            foreach (var q in parts) Physics.IgnoreCollision(sCol, q.col, !piece.Contains(q));
+            foreach (var q in parts) if (!q.gone) Physics.IgnoreCollision(sCol, q.col, !piece.Contains(q));
             if (boardCol != null) Physics.IgnoreCollision(sCol, boardCol);
             if (riderCollider != null) Physics.IgnoreCollision(sCol, riderCollider);
             foreach (var q in piece) Physics.IgnoreCollision(q.col, gCol);
@@ -416,13 +423,20 @@ namespace Summit
             foreach (var p in parts)
             {
                 if (!p.free) continue;
-                p.free = false;
+                p.free = false; p.gone = true;   // the rider gets up and rides on without it
                 p.rb.maxAngularVelocity = 18f;
                 if (p.col.enabled && gCol.enabled && gCol.gameObject.activeInHierarchy) Physics.IgnoreCollision(p.col, gCol, false);
                 p.slab = null;
             }
             foreach (var s in limbSlabs) s.gameObject.SetActive(false);
-            foreach (var p in parts) MakeJoint(p);
+            foreach (var p in parts) if (!p.gone) MakeJoint(p);
+        }
+
+        /// <summary>Every lost limb back on, its joint rebuilt at rest (a new run: call after End).</summary>
+        public void Reattach()
+        {
+            if (Active) return;
+            foreach (var p in parts) { p.gone = false; p.free = false; p.slab = null; MakeJoint(p); }
         }
 
         /// <summary>
@@ -435,6 +449,7 @@ namespace Summit
             float k = 1f - Mathf.Exp(-rate * dt);
             foreach (var p in parts)
             {
+                if (p.gone) continue;
                 p.rb.linearVelocity = Vector3.Lerp(p.rb.linearVelocity, flow, k);
                 p.rb.angularVelocity += Random.insideUnitSphere * (6f * k);
             }
@@ -454,6 +469,7 @@ namespace Summit
             Vector3 gp = groundBody.position, gn = groundBody.rotation * Vector3.up;
             foreach (var p in parts)
             {
+                if (p.gone) continue;
                 var s = p.free ? SlabOf(p) : null;
                 Vector3 sp = s != null ? s.position : gp, sn = s != null ? s.rotation * Vector3.up : gn;
                 float h = Vector3.Dot(p.rb.position - sp, sn);
@@ -468,7 +484,7 @@ namespace Summit
             Vector3 pv = parts[0].rb.linearVelocity;
             for (int i = 1; i < parts.Count; i++)
             {
-                if (parts[i].free) continue;   // a torn-off limb goes where it was thrown
+                if (parts[i].free || parts[i].gone) continue;   // a torn-off limb goes where it was thrown
                 Vector3 rel = parts[i].rb.linearVelocity - pv;
                 if (rel.sqrMagnitude > LimbMaxRel * LimbMaxRel) parts[i].rb.linearVelocity = pv + rel * (LimbMaxRel / rel.magnitude);
             }
@@ -513,7 +529,7 @@ namespace Summit
             float sideSpeed = Vector3.Dot(v, side) * Mathf.Sign(Steer);
             a *= Mathf.Clamp01(1f - sideSpeed / GuideMaxSide);
             if (a == 0f) return;
-            foreach (var p in parts) if (!p.free) p.rb.AddForce(side * a, ForceMode.Acceleration);
+            foreach (var p in parts) if (!p.free && !p.gone) p.rb.AddForce(side * a, ForceMode.Acceleration);
         }
 
         /// <summary>
@@ -551,7 +567,7 @@ namespace Summit
             if (!Active) return;
             Buried = depth;
             Vector3 v = new Vector3(vel.x * 0.12f, -Mathf.Clamp(depth * 6f, 5f, 9f), vel.z * 0.12f);
-            foreach (var p in parts) { p.rb.linearVelocity = v; p.rb.angularVelocity *= 0.3f; }
+            foreach (var p in parts) if (!p.gone) { p.rb.linearVelocity = v; p.rb.angularVelocity *= 0.3f; }
             if (boardRb != null) boardRb.linearVelocity = boardRb.linearVelocity * 0.3f + Vector3.up * 4f;   // the board flies on
         }
 

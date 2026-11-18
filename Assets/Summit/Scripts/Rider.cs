@@ -689,7 +689,7 @@ namespace Summit
                 Vector3 dir = d / len;
                 float s = Vector3.Dot(p - feat.a, dir);
                 if (s < -1.5f || s > len * 0.8f) continue;
-                Vector3 onLine = feat.a + dir * Mathf.Clamp(s, 0f, len);
+                Vector3 onLine = Course.FeaturePoint(feat, s / len);
                 float lateral = new Vector2(p.x - onLine.x, p.z - onLine.z).magnitude;
                 if (lateral > feat.halfWidth + 0.65f) continue;
                 float bottom = p.y - R;
@@ -703,7 +703,7 @@ namespace Summit
                 grindS = Mathf.Max(0f, s);
                 grindSpeed = along;
                 // ease onto the line over a few frames instead of snapping onto it
-                grindOff = p - (feat.a + dir * grindS + Vector3.up * R);
+                grindOff = p - (onLine + Vector3.up * R);
                 Airborne = false;
                 ClearTrick();
                 Lean = 0f; leanVel = 0f;
@@ -716,9 +716,9 @@ namespace Summit
         Vector3 GrindStep(float dt, Vector3 p, Vector3 v)
         {
             var feat = GrindFeature;
-            Vector3 d = feat.b - feat.a;
-            float len = d.magnitude;
-            Vector3 dir = d / len;
+            float len = feat.Length;
+            // along the feature's top as it follows the snow
+            Vector3 dir = Course.FeatureDir(feat, grindS / len);
             grindSpeed += (G * -dir.y - 0.06f * G) * dt;
             grindSpeed = Mathf.Max(grindSpeed, 3f);
             grindS += grindSpeed * dt;
@@ -734,7 +734,7 @@ namespace Summit
                 return TakeOff(p, dir * grindSpeed + Vector3.up * 3.5f, 0.1f);
             }
             grindOff *= Mathf.Exp(-dt * 12f);
-            Vector3 target = feat.a + dir * grindS + Vector3.up * R + grindOff;
+            Vector3 target = Course.FeaturePoint(feat, grindS / len) + Vector3.up * R + grindOff;
             return (target - p) / dt;
         }
 

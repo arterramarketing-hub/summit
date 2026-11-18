@@ -21,7 +21,7 @@ namespace Summit
         Vector3 heroRidePos;            // the model's place under the body with the Root bone on the deck
         Quaternion heroRootRot;         // the Root bone's turn in the board's frame
         int idIdle, idRide, idToe, idHeel, idTuck, idPop, idAir, idLand, idFlip, idFlail, idSit, idStand, idWalk, idRun;
-        int idWindL, idWindR, idSpinL, idSpinR;
+        int idWindL, idWindR, idSpinL, idSpinR, idCampJump, idCampRoll;
         readonly int[] idGrab = new int[6];
         // which hand holds the board in each grab (0 left, 1 right): Indy, Melon, Mute, Method, Stalefish, Tail
         static readonly int[] grabHand = { 1, 0, 0, 0, 1, 1 };
@@ -114,6 +114,7 @@ namespace Summit
             idIdle = h.Id("Ride_Idle"); idRide = h.Id("Ride"); idToe = h.Id("Carve_Toe"); idHeel = h.Id("Carve_Heel"); idTuck = h.Id("Tuck");
             idPop = h.Id("Ollie_Pop"); idAir = h.Id("Air"); idLand = h.Id("Land"); idFlip = h.Id("Flip_Tuck"); idFlail = h.Id("Flail");
             idSit = h.Id("Sit"); idStand = h.Id("Stand"); idWalk = h.Id("Walk"); idRun = h.Id("Run");
+            idCampJump = h.Id("CampJump"); idCampRoll = h.Id("CampRoll");
             idWindL = h.Id("Spin_WindL"); idWindR = h.Id("Spin_WindR"); idSpinL = h.Id("Spin_AirL"); idSpinR = h.Id("Spin_AirR");
             string[] g = { "Indy", "Melon", "Mute", "Method", "Stalefish", "TailGrab" };
             for (int i = 0; i < g.Length; i++) { idGrab[i] = h.Id("Grab_" + g[i]); grabHold[i] = h.CaptureHold(idGrab[i], grabHand[i]); }
@@ -157,11 +158,23 @@ namespace Summit
             {
                 // on foot: the Root bone stands on the snow, the clips stride in time with the camp's footsteps
                 model.localPosition = heroRidePos - new Vector3(0f, BoardTop, 0f);
-                h.Want(idStand, 1f - walkAmp);
-                h.Want(idWalk, walkAmp * (1f - runAmp));
-                h.Want(idRun, walkAmp * runAmp);
-                float ph = walkPhase / (2f * Mathf.PI);   // the left heel strikes at a quarter, as in the clips
-                h.At(idWalk, ph); h.At(idRun, ph);
+                int move = CampMove == 1 ? idCampJump : CampMove == 2 ? idCampRoll : -1;
+                if (move >= 0)
+                {
+                    // a jump or a roll: its clip, held at the camp's own clock for it, so the push off and the
+                    // landing happen exactly when the camp lifts and drops the body
+                    h.Want(move, 1f);
+                    h.At(move, Mathf.Clamp01(CampMoveT / Mathf.Max(0.01f, h.Length(move))) * 0.999f);
+                    blend = 16f;
+                }
+                else
+                {
+                    h.Want(idStand, 1f - walkAmp);
+                    h.Want(idWalk, walkAmp * (1f - runAmp));
+                    h.Want(idRun, walkAmp * runAmp);
+                    float ph = walkPhase / (2f * Mathf.PI);   // the left heel strikes at a quarter, as in the clips
+                    h.At(idWalk, ph); h.At(idRun, ph);
+                }
                 d.board = null; d.feet = false;
             }
             else
@@ -236,6 +249,8 @@ namespace Summit
             }
             if (dt <= 0f) h.Snap();
             h.Evaluate(dt, blend);
+            if (HandGone(0)) d.handL = 0f;   // no reaching for the board with a hand that's gone (RiderBodyLimbs)
+            if (HandGone(1)) d.handR = 0f;
             h.Layer(d, dt);
         }
     }

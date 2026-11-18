@@ -22,6 +22,7 @@ namespace Summit
         Font font;
         Sprite round, coin, disc, ring;
         RectTransform safe, hubRoot, panelRoot, card, endRoot, toastRoot, stickRing, stickKnob, campBtn, rideBtn, contextBtn;
+        RectTransform lookRing, lookKnob;   // the camp's second stick: the camera
         Image contextImg, fadeImg;
 
         /// <summary>Black over the whole screen, 0..1.</summary>
@@ -72,6 +73,9 @@ namespace Summit
             var sr = Img("StickRing", transform, new Color(1f, 1f, 1f, 0.2f), ring); stickRing = sr.rectTransform;
             var sk = Img("StickKnob", transform, new Color(1f, 1f, 1f, 0.65f), disc); stickKnob = sk.rectTransform;
             stickRing.gameObject.SetActive(false); stickKnob.gameObject.SetActive(false);
+            var lr = Img("LookRing", transform, new Color(0.75f, 0.88f, 1f, 0.2f), ring); lookRing = lr.rectTransform;
+            var lk = Img("LookKnob", transform, new Color(0.75f, 0.88f, 1f, 0.65f), disc); lookKnob = lk.rectTransform;
+            lookRing.gameObject.SetActive(false); lookKnob.gameObject.SetActive(false);
 
             // ---- at the start pad: back to camp
             var cbk = Img("CampButton", safe, new Color(0f, 0f, 0f, 0.45f), round);
@@ -160,7 +164,20 @@ namespace Summit
             bool on = label != null && !PanelOpen;
             if (contextBtn.gameObject.activeSelf != on) contextBtn.gameObject.SetActive(on);
             if (on) { contextText.text = label; contextImg.color = st == Camp.Station.DropIn ? new Color(0.85f, 0.2f, 0.12f, 0.97f) : Blue; }
-            hintText.text = PanelOpen ? "" : on ? "" : "Drag to walk  ·  tap the board, bench, rack or gate";
+            hintText.text = PanelOpen ? "" : on ? "" : "Left: walk  ·  right: look  ·  tap: jump  ·  swipe: roll";
+        }
+
+        /// <summary>The camera stick under the right thumb (screen pixels), tinted so the two sticks read apart.</summary>
+        public void SetLookStick(bool show, Vector2 origin, Vector2 pos)
+        {
+            if (lookRing.gameObject.activeSelf != show) { lookRing.gameObject.SetActive(show); lookKnob.gameObject.SetActive(show); }
+            if (!show) return;
+            var cr = (RectTransform)transform;
+            RectTransformUtility.ScreenPointToLocalPointInRectangle(cr, origin, UiCam, out Vector2 o);
+            RectTransformUtility.ScreenPointToLocalPointInRectangle(cr, pos, UiCam, out Vector2 k);
+            float r = 150f;
+            lookRing.anchoredPosition = o; lookRing.sizeDelta = Vector2.one * r * 2f;
+            lookKnob.anchoredPosition = o + Vector2.ClampMagnitude(k - o, r); lookKnob.sizeDelta = Vector2.one * r * 0.9f;
         }
 
         /// <summary>The walk stick under the thumb (screen pixels).</summary>
@@ -169,8 +186,8 @@ namespace Summit
             if (stickRing.gameObject.activeSelf != show) { stickRing.gameObject.SetActive(show); stickKnob.gameObject.SetActive(show); }
             if (!show) return;
             var cr = (RectTransform)transform;
-            RectTransformUtility.ScreenPointToLocalPointInRectangle(cr, origin, null, out Vector2 o);
-            RectTransformUtility.ScreenPointToLocalPointInRectangle(cr, pos, null, out Vector2 k);
+            RectTransformUtility.ScreenPointToLocalPointInRectangle(cr, origin, UiCam, out Vector2 o);
+            RectTransformUtility.ScreenPointToLocalPointInRectangle(cr, pos, UiCam, out Vector2 k);
             float r = 150f;
             stickRing.anchoredPosition = o; stickRing.sizeDelta = Vector2.one * r * 2f;
             stickKnob.anchoredPosition = o + Vector2.ClampMagnitude(k - o, r); stickKnob.sizeDelta = Vector2.one * r * 0.9f;
@@ -184,7 +201,7 @@ namespace Summit
                 var b = buttons[i];
                 if (b.Key == null || !b.Key.gameObject.activeInHierarchy) continue;
                 if (PanelOpen && !b.Key.IsChildOf(panelRoot)) continue;
-                if (RectTransformUtility.RectangleContainsScreenPoint(b.Key, p, null)) return b.Value;
+                if (RectTransformUtility.RectangleContainsScreenPoint(b.Key, p, UiCam)) return b.Value;
             }
             return null;
         }
@@ -523,6 +540,9 @@ namespace Summit
         }
 
         /// <summary>Test tools: render the overlay with a camera (overlay canvases don't draw into render textures).</summary>
+        /// <summary>The camera the menus are drawn by (null when they're an overlay, as on the phone).</summary>
+        Camera UiCam { get { var cv = GetComponent<Canvas>(); return cv != null && cv.renderMode == RenderMode.ScreenSpaceCamera ? cv.worldCamera : null; } }
+
         public void UseCamera(Camera cam)
         {
             var cv = GetComponent<Canvas>();
