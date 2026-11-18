@@ -444,7 +444,8 @@ public static class GlitchTest
         {
             Debug.Log($"GLITCH-INFO {name} ({kind} side): after {t:0.0}s at off={off:0.0}, {below:0} m below the crest, {airT:0.0}s in the air, crashed={r.Crashed} {(r.Crashed ? lastCrash : "")}");
             // (beside a plain side the rough is the open mountain, rock and all: a crash there is the mountain's)
-            if (r.Crashed && !(kind == Ridge.Side.Plain && Fell(lastCrash))) Report($"{name}: crashed ({lastCrash}) riding down the snow side");
+            // (the open mountain beyond, rock, trees and all, is the mountain's: only the slope itself must ride clean)
+            if (r.Crashed && !((kind == Ridge.Side.Plain || kind == Ridge.Side.Bank) && Fell(lastCrash)) && !lastCrash.StartsWith("Tree")) Report($"{name}: crashed ({lastCrash}) riding down the snow side");
             else if (Mathf.Abs(off) < Ridge.HalfWidth(at.z) + 15f) Report($"{name}: never got off the crest down the snow side (off={off:0.0})");
             return;
         }

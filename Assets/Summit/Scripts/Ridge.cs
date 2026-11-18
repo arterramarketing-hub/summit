@@ -17,10 +17,11 @@ namespace Summit
     /// The canyons outlast the crest: past its end the piste widens again along a spine between them, and they
     /// fill back in slowly, so a rider down on a canyon floor always has a way on downhill to rejoin the run.
     ///
-    /// Valleys are the same thing turned over: the run stays at its own height on a floor a couple of dozen metres
-    /// wide, and rock walls as tall as the ridges' cliffs are deep rise beside it, their tops a plateau that falls
-    /// back to the mountain a couple of hundred metres out. Ride into a wall and it is rock: a tumble back down to
-    /// the floor, as high as you got up it.
+    /// Valleys are cut into the mountain: the run sinks into it, down a long steepening ramp, onto a floor a couple
+    /// of dozen metres wide 40 to 52 m below the ground either side, and climbs back out as the gorge ends. The
+    /// ground beyond the rims is the mountain's own, trees and all, so a gorge sits in the world like a trench, not
+    /// a pair of towers. Its sides are rock walls from the floor to the rim (or, on a one-sided valley's other side,
+    /// a steep snow bank). Ride into a wall and it is rock: a tumble back down to the floor.
     ///
     /// Which a stretch gets is drawn for each one from the day's mountain (FormOf): a ridge (cliffs both sides,
     /// or a cliff and a snow slope), a valley (walls both sides, or one), a ledge (a cliff on one side and a wall
@@ -56,8 +57,8 @@ namespace Summit
 
         /// <summary>What a stretch is: nothing, a ridge (cliffs both sides, or one and a snow slope), a valley (walls both sides, or one), or a ledge.</summary>
         public enum Form { Plain, Ridge, RidgeOneSided, Valley, ValleyOneSided, Ledge }
-        /// <summary>What lies beside the run on one side: nothing, a cliff down, a long snow slope down, or a wall up.</summary>
-        public enum Side { Plain, Cliff, Snow, Wall }
+        /// <summary>What lies beside the run on one side: nothing, a cliff down, a long snow slope down, a wall up (to the ground beside a gorge), or a steep snow bank up.</summary>
+        public enum Side { Plain, Cliff, Snow, Wall, Bank }
 
         /// <summary>The stretch a cycle gets: drawn from the day's mountain, the same every time for that cycle.</summary>
         public static Form FormOf(int cycle)
@@ -76,7 +77,7 @@ namespace Summit
                 case Form.Ridge: return Side.Cliff;
                 case Form.RidgeOneSided: return odd ? Side.Cliff : Side.Snow;
                 case Form.Valley: return Side.Wall;
-                case Form.ValleyOneSided: return odd ? Side.Wall : Side.Plain;
+                case Form.ValleyOneSided: return odd ? Side.Wall : Side.Bank;
                 case Form.Ledge: return odd ? Side.Cliff : Side.Wall;
                 default: return Side.Plain;
             }
@@ -102,6 +103,7 @@ namespace Summit
             float a = x - Slope.Centre(z), side = a < 0f ? -1f : 1f;
             var k = SideAt(z, side);
             if (k == Side.Snow) return true;
+            if (k == Side.Bank) return Mathf.Abs(a) < Reach(z, side);
             return k == Side.Wall && Mathf.Abs(a) < HalfWidth(z) + Shoulder * 0.5f + Apron(x, z, side) * 0.8f;
         }
 
@@ -196,7 +198,35 @@ namespace Summit
         public static float DepthHere(float z, float side)
         {
             var k = SideAt(z, side);
-            return k == Side.Plain ? 0f : (k == Side.Snow ? SafeDepth : CliffDepth) * Scale(Owner(z)) * Depth(z);
+            if (k == Side.Plain) return 0f;
+            if (k == Side.Wall || k == Side.Bank) return Cut(z);   // up to the ground beside the gorge
+            // (a ledge's cliff drops from the sunk path, so it is shallower by the cut)
+            return Mathf.Max(0f, (k == Side.Snow ? SafeDepth : CliffDepth) * Scale(Owner(z)) * Depth(z) - Cut(z));
+        }
+
+        // how deep a stretch's gorge is cut (valleys and ledges; a ridge is not cut at all)
+        static float CutOf(int cycle)
+        {
+            var f = FormOf(cycle);
+            return f == Form.Valley || f == Form.ValleyOneSided || f == Form.Ledge ? 40f + 12f * Slope.Hash01(cycle, 11, 61) : 0f;
+        }
+        // the path ramps down into the gorge over this far from the stretch's start (at most about a quarter steeper
+        // than the mountain: 43 degrees), and back out over this far, ending this far past its end (never level, never uphill)
+        const float CutIn = 285f, CutOut = 190f, CutPast = 170f;
+
+        /// <summary>How far the run has sunk into the mountain here, in metres (0 outside a valley or ledge).</summary>
+        public static float Cut(float z)
+        {
+            if (!InCanyons(z)) return 0f;
+            int c = Owner(z);
+            float depth = CutOf(c);
+            if (depth <= 0f) return 0f;
+            float u = Local(z);
+            float a = Ease(Mathf.Clamp01((u - At) / CutIn)), b = Ease(Mathf.Clamp01((EndOf(c) + CutPast - u) / CutOut));
+            // the lesser of the two, rounded where they cross (a plain minimum kinks there: a jolt underfoot)
+            const float k = 0.15f;
+            float h = Mathf.Max(k - Mathf.Abs(a - b), 0f) / k;
+            return depth * Mathf.Max(0f, Mathf.Min(a, b) - h * h * k * 0.25f);
         }
 
         /// <summary>
@@ -238,25 +268,30 @@ namespace Summit
             float half = Mathf.Lerp(Slope.PisteHalf, HalfOf(owner), w);
             float t = Mathf.Min(d, half) / half;
             float e = d - half;
-            // the top: the crest along the ridge (or the valley's floor), and past its end the piste itself
-            float top = Mathf.Lerp(y, Top(z) - CrownOf(owner) * t * t, w);
+            // the top: the crest along the ridge (or the valley's floor), and past its end the piste itself; in a
+            // gorge, sunk into the mountain
+            float cut = Cut(z);
+            float top = Mathf.Lerp(y, Top(z) - CrownOf(owner) * t * t, w) - cut;
             // nothing this side: the top eases back into the open mountain past its edge
             if (kind == Side.Plain) return Mathf.Lerp(top, y, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(e / 10f)));
             float steep = kind == Side.Snow ? SafeSteep : Steep(z, side);
             float far = 1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((d - FarIn) / (FarOut - FarIn)));
-            if (kind == Side.Wall)
+            if (kind == Side.Wall || kind == Side.Bank)
             {
-                // a wall: rock like a cliff's, rising instead, up to a plateau the stretch's height above the open
-                // mountain, which falls back to it far out. At its foot an apron of snow (avalanche debris and drift)
-                // as wide as the snow has made it here, so the snow meets the rock along a wandering line, not the
-                // grid's; then the face, climbing in strata
-                float apron = Apron(x, z, side);
-                float wall = top + Drop(e, ApronSteep) + Drop(e - apron, steep - ApronSteep) + Strata(e - apron, steep, z, side)
-                           + Buttresses(z, e - apron, side) + Drifts(x, z, e, apron);
-                // its top is ragged along the run: towers and notches, never one straight skyline
-                float height = CliffDepth * Scale(owner) * wd * far * (0.8f + 0.4f * Slope.Noise(z * 0.022f + side * 9.1f, 4.4f)
-                                                                         + 0.12f * (Slope.Noise(z * 0.11f + side * 3.7f, 8.2f) - 0.5f));
-                return -SmoothMax(-wall, -(y + height), Mathf.Min(3f, 0.3f * height + 0.01f));
+                // a gorge's side, climbing from the sunk floor until it meets the mountain's own ground, which goes on
+                // beyond the rim untouched (a rounded, snowy edge, then the drop).
+                // A wall is rock: at its foot an apron of snow (avalanche debris and drift) as wide as the snow has
+                // made it here, so the snow meets the rock along a wandering line, not the grid's; then the face,
+                // climbing in strata. A bank is a steep snow slope, rideable back up to the rim.
+                float side2;
+                if (kind == Side.Bank) side2 = top + Drop(e, SafeSteep);
+                else
+                {
+                    float apron = Apron(x, z, side);
+                    side2 = top + Drop(e, ApronSteep) + Drop(e - apron, steep - ApronSteep) + Strata(e - apron, steep, z, side)
+                          + Buttresses(z, e - apron, side) + Drifts(x, z, e, apron);
+                }
+                return -SmoothMax(-side2, -y, Mathf.Min(3f, 0.3f * cut + 0.01f));
             }
             float ridge = top - Drop(e, steep);
             // the rock is broken into buttresses and ledges (none on the crest or its shoulder), ribs and gullies
@@ -394,8 +429,9 @@ namespace Summit
         {
             var k = SideAt(z, side);
             if (k == Side.Plain) return HalfWidth(z) + 10f;
-            // (a wall also has its snow apron, and its top can stand a fifth higher than the stretch's height)
-            if (k == Side.Wall) return HalfWidth(z) + Shoulder + 8.5f + DepthHere(z, side) * 1.2f / Steep(z, side) + 3f;
+            // (a wall also has its snow apron, and the ground at its rim stands a little above the floor's own line)
+            if (k == Side.Wall) return HalfWidth(z) + Shoulder + 8.5f + (DepthHere(z, side) * 1.15f + 3f) / Steep(z, side) + 3f;
+            if (k == Side.Bank) return HalfWidth(z) + Shoulder + (DepthHere(z, side) * 1.15f + 3f) / SafeSteep + 3f;
             return HalfWidth(z) + Shoulder + DepthHere(z, side) / (k == Side.Snow ? SafeSteep : Steep(z, side)) + 3f;
         }
 
@@ -408,7 +444,8 @@ namespace Summit
             {
                 float side = a < 0f ? -1f : 1f;
                 if (d < Reach(z, side) + margin + 3f) return true;
-                if (DepthHere(z, side) > 8f && d > FarIn - 10f - margin && d < FarOut + 4f + margin) return true;
+                var k = SideAt(z, side);
+                if ((k == Side.Cliff || k == Side.Snow) && DepthHere(z, side) > 8f && d > FarIn - 10f - margin && d < FarOut + 4f + margin) return true;   // a canyon's far wall
             }
             // and a clear piste onto the crest and off its end: you come off it locked onto the middle
             if (Has(z + 15f) || Has(z - 50f)) return d < Slope.PisteHalf + margin + 3f;
@@ -429,8 +466,8 @@ namespace Summit
             float half = HalfWidth(z);
             if (d < half) return x;   // on the crest itself
             float dir = a < 0f ? -1f : 1f;
-            // up against a valley's wall: back down on its floor
-            if (WallSide(z, dir)) return Slope.Centre(z) + dir * Mathf.Max(0f, half - 1.5f);
+            // up against a gorge's wall (or on its bank): back down on its floor
+            if (WallSide(z, dir) || SideAt(z, dir) == Side.Bank) return Slope.Centre(z) + dir * Mathf.Max(0f, half - 1.5f);
             // anywhere on a cliff, get up past its foot: a ledge part way down would only throw you off again, and
             // the rocks on the face and piled at its foot all stop short of there. Only a fall at the very top of the
             // edge, onto snow you can stand on, gets up where it is.

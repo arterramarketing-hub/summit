@@ -64,7 +64,10 @@ public static class RidgeTest
                 }
                 float launch = worstCurv < 0f ? Mathf.Sqrt(Rider.G / -worstCurv) : 999f;
                 Debug.Log($"RIDGE seed{seed} cycle {cyc}: crest min normal.y={minNy:0.00}, tightest roll-over at z={worstAt:0} launches above {launch * 3.6f:0} km/h, crest wanders up to {Mathf.Atan(maxWander) * Mathf.Rad2Deg:0} deg off the fall line");
-                if (minNy < 0.7f) Bad($"seed{seed} cycle {cyc}: crest too steep underfoot (normal.y {minNy:0.00})");
+                // (a narrow crest must stay gentle underfoot; a gorge's wide floor may plunge in more steeply, so long as
+                // the board stays on it: it takes off from anything steeper than normal.y 0.62)
+                bool gorge = Ridge.SideOf(cyc, -1f) == Ridge.Side.Wall || Ridge.SideOf(cyc, 1f) == Ridge.Side.Wall;
+                if (minNy < (gorge ? 0.64f : 0.7f)) Bad($"seed{seed} cycle {cyc}: crest too steep underfoot (normal.y {minNy:0.00})");
                 if (launch < 34f) Bad($"seed{seed} cycle {cyc}: crest roll-over at z={worstAt:0} launches at {launch * 3.6f:0} km/h");
                 // nothing built on the ridge
                 for (float z = z0; z < z1; z += 1f)
@@ -147,6 +150,7 @@ public static class RidgeTest
             terrain.Rebuild(); props.Rebuild(); dress.Rebuild();
             float zr = Course.First + Ridge.At;
             float zFull = zr + Ridge.RampIn + 10f;
+            if (Ridge.Cut(zr + 250f) > 0f) zFull = zr + 210f;   // a gorge is deepest further in
 
             void Settle()
             {
@@ -258,7 +262,7 @@ public static class RidgeTest
                 // from the canyon floor up at the crest; in a valley, from its floor up at the wall's top
                 float x = wall ? Slope.Centre(z) - side * (Ridge.HalfWidth(z) - 2f) : Slope.Centre(z) + side * (Ridge.Reach(z, side) + 25f);
                 var eye = new Vector3(x, Slope.Height(x, z) + (wall ? 1.8f : 3f), z - 25f);
-                var at = wall ? new Vector3(Slope.Centre(z + 25f) + side * Ridge.Reach(z + 25f, side), Ridge.Top(z + 25f) + Ridge.DepthHere(z + 25f, side) * 0.85f, z + 25f)
+                var at = wall ? new Vector3(Slope.Centre(z + 25f) + side * Ridge.Reach(z + 25f, side), Ridge.Top(z + 25f) - Ridge.Cut(z + 25f) * 0.15f, z + 25f)
                               : new Vector3(Slope.Centre(z + 25f), Ridge.Top(z + 25f) - 10f, z + 25f);
                 rider.ResetAt(x, z); Settle();
                 cam.fieldOfView = 65f;
@@ -322,10 +326,20 @@ public static class RidgeTest
                 float x = Slope.Centre(z) + side * 120f;
                 rider.ResetAt(Slope.Centre(z), z); Settle();
                 var eye = new Vector3(x, Mathf.Max(Ridge.Top(z) + 35f, Slope.Height(x, z - 70f) + 25f), z - 70f);
-                var at = new Vector3(Slope.Centre(z + 60f), Ridge.Top(z + 60f) - (Ridge.SideOf(0, side) == Ridge.Side.Wall ? 5f : 70f), z + 60f);
+                var at = new Vector3(Slope.Centre(z + 60f), Ridge.Top(z + 60f) - (Ridge.SideOf(0, side) == Ridge.Side.Wall || Ridge.SideOf(0, side) == Ridge.Side.Bank ? Ridge.Cut(z + 60f) : 70f), z + 60f);
                 cam.fieldOfView = 68f;
                 cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(at - eye));
                 Shoot(cam, Path.Combine(outDir, $"RidgeShotCanyon{tag}.png"));
+                // and high over it all, off to one side: how the stretch sits in the mountain round it
+                float zo = zr - 40f, xo = Slope.Centre(zo) + side * 150f;
+                var eyeO = new Vector3(xo, Ridge.Top(zo) + 150f, zo);
+                var atO = new Vector3(Slope.Centre(zFull + 120f), Ridge.Top(zFull + 120f) - 40f, zFull + 120f);
+                rider.ResetAt(Slope.Centre(zFull + 60f), zFull + 60f);
+                for (int k = 0; k < 4; k++) { terrain.Prewarm(); props.Prewarm(); dress.Prewarm(); }
+                Settle();
+                cam.fieldOfView = 70f;
+                cam.transform.SetPositionAndRotation(eyeO, Quaternion.LookRotation(atO - eyeO));
+                Shoot(cam, Path.Combine(outDir, $"RidgeShotOverview{tag}.png"));
             }
             if (seed != both) continue;
             // 7. a jump cliff: the lip and its rock band, and flying off it
@@ -395,6 +409,83 @@ public static class RidgeTest
             }
         }
         ChaseCamera.TestDt = 0f;
+        Physics.simulationMode = SimulationMode.FixedUpdate;
+        EditorApplication.Exit(0);
+    }
+
+    /// <summary>
+    /// The rock, near and far, by day and by night: a gorge wall, a ridge's cliff, and the spires along a cliff's edge.
+    /// Unity -batchmode -projectPath . -executeMethod RidgeTest.RockShots (writes Rock*.png to $RIDGE_SHOTS)
+    /// </summary>
+    public static void RockShots()
+    {
+        SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
+        var rockSh = Resources.Load<Shader>("RockLit");
+        if (rockSh != null)
+        {
+            Debug.Log($"ROCKSHOT RockLit supported {rockSh.isSupported} errors {ShaderUtil.ShaderHasError(rockSh)}");
+            foreach (var m in ShaderUtil.GetShaderMessages(rockSh)) Debug.Log($"ROCKSHOT RockLit: {m.severity} {m.message} line {m.line}");
+        }
+        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
+        var game = Object.FindFirstObjectByType<SummitGame>();
+        TestBoot.Boot(game);
+        Physics.simulationMode = SimulationMode.Script;
+        Debug.Log($"ROCKSHOT rock material shader: {RockFace.Material(Shader.Find("Universal Render Pipeline/Lit")).shader.name}");
+        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
+        var rider = Get<Rider>("rider"); var body = Get<RiderBody>("body");
+        var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props"); var dayNight = Get<DayNight>("dayNight");
+        var dress = Object.FindFirstObjectByType<CourseDressing>();
+        var atmo = Object.FindFirstObjectByType<Atmosphere>();
+        var draw = typeof(Forest).GetMethod("Draw", NP);
+        rider.input = null;
+        var cam = Camera.main;
+        cam.GetComponent<ChaseCamera>().enabled = false;
+        string outDir = System.Environment.GetEnvironmentVariable("RIDGE_SHOTS");
+        if (string.IsNullOrEmpty(outDir)) outDir = ".";
+        int SeedOf(Ridge.Form f) { for (int s = 1; s < 2000; s++) { Slope.Init(s); if (Ridge.Built(0) && Ridge.FormOf(0) == f) return s; } return 1; }
+        // a view: the rider stands by the camera (so the headlamp lights what it looks at, at night) and the world is built round it
+        void View(string file, Vector3 eye, Vector3 at, float fov, bool night)
+        {
+            TimeOfDay.TestClock = night ? 3.4f : 1.4f; dayNight.ApplyNow();
+            Vector3 flat = at - eye; flat.y = 0f;
+            // (just behind the camera: the headlamp lights the view, and the rider is never in it)
+            float rz = eye.z - flat.normalized.z * 2.5f, rx = eye.x - flat.normalized.x * 2.5f;
+            rider.ResetAt(rx, rz); body.ResetVisual();
+            rider.Heading = Mathf.Clamp(Mathf.Atan2(flat.x, flat.z), -1.4f, 1.4f);
+            for (int k = 0; k < 5; k++) { terrain.Prewarm(); props.Prewarm(); dress.Prewarm(); }
+            body.Apply(Dt);
+            typeof(Atmosphere).GetMethod("LateUpdate", NP).Invoke(atmo, null);
+            draw.Invoke(props, null);
+            dayNight.ApplyNow();
+            cam.fieldOfView = fov;
+            cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(at - eye));
+            Shoot(cam, Path.Combine(outDir, file));
+        }
+        foreach (bool night in new[] { false, true })
+        {
+            string when = night ? "Night" : "Day";
+            // a gorge: along its wall from the floor, and from far off and high, how it sits in the mountain
+            Slope.Init(SeedOf(Ridge.Form.Valley));
+            terrain.Rebuild(); props.Rebuild(); dress.Rebuild();
+            float zg = Course.First + Ridge.At + 200f;
+            float half = Ridge.HalfWidth(zg);
+            View($"RockGorgeNear{when}.png", new Vector3(Slope.Centre(zg) - half * 0.4f, Slope.Height(Slope.Centre(zg), zg) + 1.8f, zg),
+                 new Vector3(Slope.Centre(zg + 30f) + half + 6f, Slope.Height(Slope.Centre(zg + 30f), zg + 30f) + 14f, zg + 30f), 62f, night);
+            View($"RockGorgeFar{when}.png", new Vector3(Slope.Centre(zg - 260f) + 160f, Ridge.Top(zg - 260f) + 120f, zg - 260f),
+                 new Vector3(Slope.Centre(zg + 40f), Ridge.Top(zg + 40f) - 30f, zg + 40f), 55f, night);
+            // a ridge: its cliff from the canyon floor, from far off across the canyon, and the spires along its edge
+            Slope.Init(SeedOf(Ridge.Form.Ridge));
+            terrain.Rebuild(); props.Rebuild(); dress.Rebuild();
+            float zr = Course.First + Ridge.At + 150f;
+            float x0 = Slope.Centre(zr) + Ridge.Reach(zr, 1f) + 14f;
+            View($"RockCliffNear{when}.png", new Vector3(x0, Slope.Height(x0, zr) + 12f, zr - 30f),
+                 new Vector3(Slope.Centre(zr + 20f) + Ridge.HalfWidth(zr) + 10f, Ridge.Top(zr + 20f) - 60f, zr + 20f), 66f, night);
+            View($"RockCliffFar{when}.png", new Vector3(Slope.Centre(zr) + 230f, Ridge.Top(zr) + 20f, zr - 120f),
+                 new Vector3(Slope.Centre(zr + 60f), Ridge.Top(zr + 60f) - 70f, zr + 60f), 55f, night);
+            View($"RockSpires{when}.png", new Vector3(Slope.Centre(zr) + 1.5f, Ridge.Top(zr) + 2.2f, zr - 12f),
+                 new Vector3(Slope.Centre(zr + 30f) + 12f, Ridge.Top(zr + 30f) - 25f, zr + 30f), 70f, night);
+        }
+        TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt;
         Physics.simulationMode = SimulationMode.FixedUpdate;
         EditorApplication.Exit(0);
     }

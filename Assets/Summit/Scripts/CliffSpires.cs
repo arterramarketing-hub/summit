@@ -185,7 +185,7 @@ namespace Summit
                 for (float z = zb + Ridge.At + Ridge.RampIn; z < zb + Ridge.FadeEnd - 80f; i++)
                 {
                     z += 9f + 16f * H(cycle * 5 + si, i, 60);
-                    if (Ridge.DepthHere(z, s) < 40f) continue;
+                    if (Ridge.DepthHere(z, s) < 40f || Ridge.SideAt(z, s) == Ridge.Side.Wall || Ridge.SideAt(z, s) == Ridge.Side.Bank) continue;   // (a gorge has no far wall)
                     float big = Ridge.DepthHere(z, s) / Ridge.CliffDepth;
                     int n = 1 + (int)(H(cycle, i * 2 + si, 61) * 3f);
                     for (int m = 0; m < n; m++)

@@ -20,8 +20,13 @@ namespace Summit
         public static Material Material(Shader lit)
         {
             if (shared != null) return shared;
-            var m = new Material(lit) { name = "Rock" };
-            m.SetTexture("_BaseMap", Texture());
+            // one rock for every rock face on the mountain: Tools/MakeRock.swift's granite, mapped in world space with
+            // strata and caught snow by Resources/RockLit.shader (the plain granite below only where that cannot run)
+            var sh = Resources.Load<Shader>("RockLit");
+            var tex = Resources.Load<Texture2D>("RockTex/RockAlbedo");
+            bool full = sh != null && sh.isSupported && tex != null;
+            var m = new Material(full ? sh : lit) { name = "Rock" };
+            m.SetTexture("_BaseMap", full ? tex : Texture());
             m.SetColor("_BaseColor", Color.white);
             m.SetFloat("_Smoothness", 0.12f);
             m.SetFloat("_Metallic", 0f);
