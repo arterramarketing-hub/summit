@@ -44,7 +44,16 @@ public class SummitImport : AssetPostprocessor
             return;
         }
         // Rides.fbx is the skis, poles and sled: gear with no skeleton, so not a Humanoid (it has no Hips to find)
-        if (assetPath.Contains("/Rider/") && !assetPath.EndsWith("/Rides.fbx"))
+        if (assetPath.EndsWith("/Rider/Character.fbx"))
+        {
+            // the previous rider: its feet hang off the root, not the shins, so it can never be a Humanoid
+            // ("Required human bone 'LeftFoot' not found"). RiderRig poses it by bone name instead.
+            m.animationType = ModelImporterAnimationType.Generic;
+            m.avatarSetup = ModelImporterAvatarSetup.NoAvatar;
+            m.importAnimation = false;
+            m.isReadable = true;
+        }
+        else if (assetPath.Contains("/Rider/") && !assetPath.EndsWith("/Rides.fbx"))
         {
             m.animationType = ModelImporterAnimationType.Human;
             m.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
