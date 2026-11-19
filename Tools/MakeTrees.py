@@ -590,6 +590,7 @@ def fir_mesh(sp, tree, rich):
     cy0, cy1, cr0 = H * (cb + 0.04), H * top * 0.86, H * sp["reach"] * 0.42
     sides = 9 if rich else 7
     cu0, cv0, cu1, cv1 = FIR_CORE
+    if rich: cr0 *= 0.4   # rich: only a thin dark sleeve round the trunk (never see-through); inner fronds do the rest
     rings = [(cy0, cr0), (lerp(cy0, cy1, 0.45), cr0 * 0.66), (cy1, 0.0)] if rich else [(cy0, cr0), (cy1, 0.0)]
     rows = []
     for (y, r) in rings:
@@ -597,7 +598,7 @@ def fir_mesh(sp, tree, rich):
         for i in range(sides if r > 0 else 1):
             a = i * 2 * math.pi / sides
             d = horiz(a)
-            row.append(m.vert(d * r + UP * y, (d + UP * 0.5) if r > 0 else UP, (lerp(cu0, cu1, (y - cy0) / (cy1 - cy0)), lerp(cv0, cv1, tri_wave(i / sides))), 0.62))
+            row.append(m.vert(d * r + UP * y, (d + UP * 0.5) if r > 0 else UP, (lerp(cu0, cu1, (y - cy0) / (cy1 - cy0)), lerp(cv0, cv1, tri_wave(i / sides))), 0.4 if rich else 0.62))
         rows.append(row)
     for k in range(len(rows) - 1):
         for i in range(sides):
@@ -645,20 +646,28 @@ def fir_mesh(sp, tree, rich):
                 scl = sl / (STEM_END - STEM_START)
                 ac = turn(norm(np.cross(up, sd)), sd, rb.uniform(-28, 28)) * scl * 0.5
                 card(m, spine(t) - sd * (scl * STEM_START), sd * scl, ac, fir_cell(rb.randrange(2), b["row"] if rb.random() < 0.6 else 1), 0.5, nrm, shade)
-    # rich: short fronds near the trunk between the tiers, so the crown is full inside
+    # rich: the inside of the crown is needles, not a solid shape: whorls of short dark fronds off the trunk between
+    # the tiers, some lying flat and some on edge, turned from one whorl to the next so that from any side one
+    # stands across the view
     if rich:
         rb = random.Random(len(tree["branches"]) * 31 + 7)
         y = H * (cb + 0.03)
-        while y < H * min(top, 0.88) - 0.5:
+        az0 = rb.random() * 2 * math.pi
+        def inner(p): return shade(p) * 0.78
+        while y < H * min(top, 0.9) - 0.4:
             r = fir_crown_radius(sp, y)
-            for k in range(3):
-                az = rb.random() * 2 * math.pi
-                e = math.radians(rb.uniform(8, 30))
+            n = 6 if r > 1.2 else 4
+            az0 += 0.9
+            for k in range(n):
+                az = az0 + k * 2 * math.pi / n + rb.uniform(-0.25, 0.25)
+                e = math.radians(rb.uniform(-12, 28))
                 d = horiz(az) * math.cos(e) + UP * math.sin(e)
-                sl = r * rb.uniform(0.42, 0.6); scl = sl / (STEM_END - STEM_START)
+                sl = max(0.5, r * rb.uniform(0.5, 0.72)); scl = sl / (STEM_END - STEM_START)
                 side = norm(np.cross(UP, d))
-                card(m, UP * (y + rb.uniform(-0.3, 0.3)) - d * (scl * STEM_START), d * scl, turn(side, d, rb.uniform(-35, 35)) * scl * 0.55, fir_cell(rb.randrange(2), 1), 0.5, nrm, shade)
-            y += max(1.1, spacing * 1.25)
+                on_edge = k % 2 == 1
+                ac = turn(side, d, (90 if on_edge else 0) + rb.uniform(-25, 25)) * (scl * (0.7 if on_edge else 0.55))
+                card(m, UP * (y + rb.uniform(-0.3, 0.3)) - d * (scl * STEM_START), d * scl, ac, fir_cell(rb.randrange(2), 0 if on_edge else 1), STEM_UPRIGHT if on_edge else 0.5, nrm, inner)
+            y += max(0.8, spacing * 0.9)
     # ---- the leader: crossed fronds pointing up (a hemlock's nods over; a snapped tree has none)
     if sp["broken"] <= 0:
         y, length = H * 0.86, H * 0.14
@@ -1082,10 +1091,16 @@ def render_all(kinds, folder, pine_atlas, fir_atlas):
         isflat = nt.nodes.new("ShaderNodeMath"); isflat.operation = "GREATER_THAN"; isflat.inputs[1].default_value = 0.5; nt.links.new(flat.outputs[0], isflat.inputs[0])
         below = nt.nodes.new("ShaderNodeMath"); below.operation = "LESS_THAN"; below.inputs[1].default_value = 0.0; nt.links.new(inc.outputs["Z"], below.inputs[0])
         both = nt.nodes.new("ShaderNodeMath"); both.operation = "MULTIPLY"; nt.links.new(isflat.outputs[0], both.inputs[0]); nt.links.new(below.outputs[0], both.inputs[1])
+        # ... and the snow on its top does not show through: pale becomes needle green first
+        lum = nt.nodes.new("ShaderNodeRGBToBW"); nt.links.new(tex.outputs["Color"], lum.inputs[0])
+        pale = nt.nodes.new("ShaderNodeMath"); pale.operation = "MULTIPLY_ADD"; pale.inputs[1].default_value = 8.0; pale.inputs[2].default_value = -1.44; pale.use_clamp = True
+        nt.links.new(lum.outputs[0], pale.inputs[0])
+        snowy = nt.nodes.new("ShaderNodeMath"); snowy.operation = "MULTIPLY"; nt.links.new(pale.outputs[0], snowy.inputs[0]); nt.links.new(both.outputs[0], snowy.inputs[1])
+        green = nt.nodes.new("ShaderNodeMixRGB"); green.blend_type = "MIX"; green.inputs[2].default_value = (0.04, 0.06, 0.04, 1)
+        nt.links.new(snowy.outputs[0], green.inputs[0]); nt.links.new(tex.outputs["Color"], green.inputs[1]); nt.links.new(green.outputs[0], mul.inputs[1])
         dark = nt.nodes.new("ShaderNodeMixRGB"); dark.blend_type = "MULTIPLY"; dark.inputs[2].default_value = (0.28, 0.28, 0.28, 1)
         nt.links.new(both.outputs[0], dark.inputs[0]); nt.links.new(mul.outputs[0], dark.inputs[1])
-        under = nt.nodes.new("ShaderNodeMixRGB"); under.blend_type = "DARKEN"; under.inputs[2].default_value = (0.03, 0.042, 0.035, 1)
-        nt.links.new(both.outputs[0], under.inputs[0]); nt.links.new(dark.outputs[0], under.inputs[1])
+        under = dark
         # the mesh's own normal whichever side is seen (the game's shader does not flip it for back faces)
         na = nt.nodes.new("ShaderNodeAttribute"); na.attribute_name = "nrm"
         nw = nt.nodes.new("ShaderNodeVectorMath"); nw.operation = "MULTIPLY_ADD"; nw.inputs[1].default_value = (2, 2, 2); nw.inputs[2].default_value = (-1, -1, -1)

@@ -119,8 +119,13 @@ Shader "Summit/FirCards"
                 clip(i.objY - _CutY);
                 c.rgb = Needles(c.rgb);
                 // a branch card lying flat, seen from underneath: its snow is on top, so here it is shaded needles
+                // (what is pale in the picture - the snow - becomes needle green first, then all of it goes dark)
                 float3 ng = normalize(cross(ddx(i.positionWS), ddy(i.positionWS)));
-                if (abs(ng.y) > 0.5 && dot(ng * sign(ng.y), GetCameraPositionWS() - i.positionWS) < 0) c.rgb = min(c.rgb * 0.28h, half3(0.03h, 0.042h, 0.035h));
+                if (abs(ng.y) > 0.5 && dot(ng * sign(ng.y), GetCameraPositionWS() - i.positionWS) < 0)
+                {
+                    half pale = saturate((dot(c.rgb, half3(0.3h, 0.59h, 0.11h)) - 0.18h) * 8.0h);
+                    c.rgb = lerp(c.rgb, half3(0.04h, 0.06h, 0.04h), pale) * 0.28h;
+                }
                 c.rgb *= i.shade;
                 float3 n = normalize(i.normalWS);
                 if (_Bake > 0.5) return _Bake < 1.5 ? half4(c.rgb, 1) : half4(n * 0.5 + 0.5, 1);
