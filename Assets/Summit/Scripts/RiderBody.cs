@@ -29,6 +29,8 @@ namespace Summit
         Vector3 lastVel;
         /// <summary>The thrown body or board hit something: impact speed, and whether it was the board.</summary>
         public System.Action<float, bool> RagdollHit;
+        /// <summary>The tumbling body struck something (a tree, rock, sign): what, where, how hard (m/s into it).</summary>
+        public System.Action<Collider, Vector3, float> RagdollStruck;
         /// <summary>A bone gave way: which limb ("Left arm", "Ribs", ...), and where.</summary>
         public System.Action<string, Vector3> BoneBroke;
         public SnowFX fx;
@@ -444,6 +446,7 @@ namespace Summit
             ragdoll.Drag += OnRagdollDrag;
             ragdoll.Ploughed += (bone, down, v) => snowy?.Plough(down, v, Time.fixedDeltaTime);   // snow packed onto the clothes
             ragdoll.Struck += OnRagdollStruck; ragdoll.Ploughed += BleedAlong;   // blood on a hard hit (RiderBodyBlood)
+            ragdoll.Struck += (c, at, n, into, bone) => RagdollStruck?.Invoke(c, at, into);
             ragdoll.Prebuild();
             HookLimbs();   // limbs torn off by the worst hits (RiderBodyLimbs)
         }

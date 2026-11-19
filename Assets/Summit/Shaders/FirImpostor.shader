@@ -45,6 +45,7 @@ Shader "Summit/FirImpostor"
             #pragma multi_compile_fog
             #pragma multi_compile_instancing
             #include "Fir.hlsl"
+            #include "TreeWind.hlsl"
 
             struct Attributes
             {
@@ -71,7 +72,8 @@ Shader "Summit/FirImpostor"
                 Varyings o = (Varyings)0;
                 UNITY_SETUP_INSTANCE_ID(i);
                 UNITY_TRANSFER_INSTANCE_ID(i, o);
-                o.positionWS = TransformObjectToWorld(i.positionOS.xyz);
+                // far off, only the trunk's lean in a gust (TreeWind.hlsl), as the near cards lean
+                o.positionWS = TreeSway(TransformObjectToWorld(i.positionOS.xyz), TransformObjectToWorld(float3(0, 0, 0)), 0.0, 1.0);
                 o.positionCS = TransformWorldToHClip(o.positionWS);
                 o.sideWS = normalize(TransformObjectToWorldDir(i.tangentOS.xyz));
                 o.upWS = normalize(TransformObjectToWorldDir(i.normalOS));
@@ -116,13 +118,14 @@ Shader "Summit/FirImpostor"
             #pragma fragment frag
             #pragma multi_compile_instancing
             #include "Fir.hlsl"
+            #include "TreeWind.hlsl"
             struct Attributes { float4 positionOS : POSITION; float2 uv : TEXCOORD0; UNITY_VERTEX_INPUT_INSTANCE_ID };
             struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; half fade : TEXCOORD1; };
             Varyings vert(Attributes i)
             {
                 UNITY_SETUP_INSTANCE_ID(i);
                 Varyings o;
-                o.positionCS = TransformObjectToHClip(i.positionOS.xyz);
+                o.positionCS = TransformWorldToHClip(TreeSway(TransformObjectToWorld(i.positionOS.xyz), TransformObjectToWorld(float3(0, 0, 0)), 0.0, 1.0));
                 o.uv = TRANSFORM_TEX(i.uv, _BaseMap);
                 o.fade = FirFade(TransformObjectToWorld(float3(0, 0, 0)));
                 if (o.fade <= 0.0h) o.positionCS = FirGone();

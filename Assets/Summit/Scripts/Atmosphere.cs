@@ -18,6 +18,7 @@ namespace Summit
         bool streaksAimed;
         Rider rider;
         ParticleSystem snow, streaks, mist, wind;
+        Vector2 lastDrift = new Vector2(-99f, -99f);
         ParticleSystem.EmissionModule windEm;
         ParticleSystem.EmissionModule snowEm, streakEm;
         Transform backdrop;
@@ -445,6 +446,19 @@ namespace Summit
             // the peaks are infinitely far away: they travel with the camera
             backdrop.position = cp;
             UpdateParallax(cp);
+
+            // the falling snow drifts with the wind, and a gust through the trees drives it sideways (TreeWind)
+            if (snow != null)
+            {
+                Vector2 w = TreeWind.Dir * ((0.9f + 3.2f * TreeWind.Here) * TreeWind.Strength);
+                if (Mathf.Abs(w.x - lastDrift.x) + Mathf.Abs(w.y - lastDrift.y) > 0.05f)
+                {
+                    lastDrift = w;
+                    var sv = snow.velocityOverLifetime;
+                    sv.x = new ParticleSystem.MinMaxCurve(w.x * 0.6f + 0.3f, w.x * 1.4f + 1.1f);
+                    sv.z = new ParticleSystem.MinMaxCurve(w.y * 0.6f - 0.3f, w.y * 1.4f + 0.3f);
+                }
+            }
 
             // keep the snow box ahead of the camera, where the rider is heading
             Vector3 fwd = cam.transform.forward; fwd.y = 0f;

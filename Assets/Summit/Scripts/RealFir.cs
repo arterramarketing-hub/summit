@@ -316,8 +316,8 @@ namespace Summit
             var colour = new Material[2]; var normal = new Material[2];
             for (int a = 0; a < 2; a++)
             {
-                colour[a] = new Material(standaloneMats[a]); colour[a].SetFloat("_Bake", 1f);
-                normal[a] = new Material(standaloneMats[a]); normal[a].SetFloat("_Bake", 2f);
+                colour[a] = new Material(standaloneMats[a]); colour[a].SetFloat("_Bake", 1f); colour[a].SetFloat("_Sway", 0f);
+                normal[a] = new Material(standaloneMats[a]); normal[a].SetFloat("_Bake", 2f); normal[a].SetFloat("_Sway", 0f);
             }
             int pass = standaloneMats[0].FindPass("ForwardLit"); if (pass < 0) pass = 0;
             var cmd = new UnityEngine.Rendering.CommandBuffer { name = "FirImpostorBake" };

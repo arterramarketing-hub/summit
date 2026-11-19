@@ -812,6 +812,7 @@ namespace Summit
                     continue;
                 }
                 var g = Instantiate(kinds[i % kinds.Length], root, false);
+                TreeWind.SwayAll(g);   // moves in the wind like the forest's
                 foreach (var c in g.GetComponentsInChildren<Collider>()) DestroyImmediate(c);
                 var rs = g.GetComponentsInChildren<Renderer>();
                 if (rs.Length == 0) continue;

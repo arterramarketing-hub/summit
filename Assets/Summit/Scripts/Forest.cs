@@ -144,7 +144,8 @@ namespace Summit
                 for (int s = 0; s < mf.sharedMesh.subMeshCount; s++)
                 {
                     var src = mr.sharedMaterials[Mathf.Min(s, mr.sharedMaterials.Length - 1)];
-                    var m = new Material(src) { enableInstancing = true };
+                    // the trees move in the wind (TreeWind); rocks keep their own material
+                    var m = into == treeParts ? TreeWind.Swaying(src) : new Material(src) { enableInstancing = true };
                     parts.Add(new Part { mesh = mf.sharedMesh, sub = s, mat = m, local = local });
                 }
                 var b = mf.sharedMesh.bounds;

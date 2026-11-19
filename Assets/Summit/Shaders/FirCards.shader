@@ -5,6 +5,8 @@
 // dissolves away over (1 the far one, into its picture; 2 the near one: the rich tree), _FadeIn that it appears
 // over the near band (the plain tree). The camp's and the start tape's own trees leave both off.
 // _Bake is for RealFir.BakeImpostors only: 1 writes the plain colour, 2 the normal, for the far pictures.
+// Every pass moves the vertices with the wind (TreeWind.hlsl); _Sway 0 holds a felled piece still, and _Snow below 1
+// shows boughs that have lost their snow (a snapped or smashed tree's top).
 Shader "Summit/FirCards"
 {
     Properties
@@ -17,6 +19,8 @@ Shader "Summit/FirCards"
         _Bake ("Bake output (0 lit, 1 colour, 2 normal)", Float) = 0
         _NeedleTint ("Needles graded toward the dark blue-green of the Cascades' firs", Color) = (0.62, 0.78, 0.86, 1)
         _CutY ("Nothing drawn below this height (model space): a felled tree's buried part", Float) = -10000
+        _Sway ("Moves in the wind (0: a felled piece lying still)", Float) = 1
+        _Snow ("Snow left on the boughs (1 all of it; less: shaken off, bare and darker)", Range(0, 1)) = 1
     }
     SubShader
     {
@@ -35,6 +39,8 @@ Shader "Summit/FirCards"
             half _Bake;
             float _CutY;
             half4 _NeedleTint;
+            half _Sway;
+            half _Snow;
         CBUFFER_END
 
         // the atlas's greens graded darker and bluer; the snow (pale, unsaturated) is left white
@@ -60,6 +66,7 @@ Shader "Summit/FirCards"
             #pragma multi_compile_fog
             #pragma multi_compile_instancing
             #include "Fir.hlsl"
+            #include "TreeWind.hlsl"
 
             // how much of a tree standing at `originWS` has dissolved away (x) and has appeared (y), each 0..1
             half2 Fades(float3 originWS)
@@ -95,11 +102,11 @@ Shader "Summit/FirCards"
                 Varyings o = (Varyings)0;
                 UNITY_SETUP_INSTANCE_ID(i);
                 UNITY_TRANSFER_INSTANCE_ID(i, o);
-                o.positionWS = TransformObjectToWorld(i.positionOS.xyz);
+                float3 origin = TransformObjectToWorld(float3(0, 0, 0));
+                o.positionWS = TreeSway(TransformObjectToWorld(i.positionOS.xyz), origin, 1.0, _Sway);
                 o.positionCS = TransformWorldToHClip(o.positionWS);
                 o.normalWS = TransformObjectToWorldNormal(i.normalOS);
                 o.uv = TRANSFORM_TEX(i.uv, _BaseMap);
-                float3 origin = TransformObjectToWorld(float3(0, 0, 0));
                 half2 fades = Fades(origin);
                 o.fadeFogLift = half4(fades.x, ComputeFogFactor(o.positionCS.z), FirLiftShare(origin), fades.y);
                 o.objY = i.positionOS.y;
@@ -117,7 +124,13 @@ Shader "Summit/FirCards"
                 half4 c = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, i.uv) * _BaseColor;
                 clip(c.a - _Cutoff);
                 clip(i.objY - _CutY);
+                // what is snow in the atlas: pale, and not needle green (white, or blue-white in shade); read before
+                // the needles are graded
+                half greener = c.g - max(c.r, c.b);
+                half snowy = saturate((dot(c.rgb, half3(0.3h, 0.59h, 0.11h)) - 0.33h) * 5.0h) * saturate(1.0h - greener * 15.0h);
                 c.rgb = Needles(c.rgb);
+                // the snow has let go: there the bare bough under it shows, dark needles
+                if (_Snow < 0.999h) c.rgb = lerp(c.rgb, half3(0.045h, 0.07h, 0.055h), snowy * (1.0h - _Snow));
                 // a branch card lying flat, seen from underneath: its snow is on top, so here it is shaded needles
                 // (what is pale in the picture - the snow - becomes needle green first, then all of it goes dark)
                 float3 ng = normalize(cross(ddx(i.positionWS), ddy(i.positionWS)));
@@ -154,6 +167,7 @@ Shader "Summit/FirCards"
             #pragma multi_compile_vertex _ _CASTING_PUNCTUAL_LIGHT_SHADOW
             #pragma multi_compile_instancing
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
+            #include "TreeWind.hlsl"
             float3 _LightDirection;
             float3 _LightPosition;
             struct Attributes { float4 positionOS : POSITION; float3 normalOS : NORMAL; float2 uv : TEXCOORD0; UNITY_VERTEX_INPUT_INSTANCE_ID };
@@ -163,7 +177,7 @@ Shader "Summit/FirCards"
                 UNITY_SETUP_INSTANCE_ID(i);
                 Varyings o;
                 o.objY = i.positionOS.y;
-                float3 pos = TransformObjectToWorld(i.positionOS.xyz);
+                float3 pos = TreeSway(TransformObjectToWorld(i.positionOS.xyz), TransformObjectToWorld(float3(0, 0, 0)), 1.0, _Sway);
                 float3 nrm = TransformObjectToWorldNormal(i.normalOS);
             #if _CASTING_PUNCTUAL_LIGHT_SHADOW
                 float3 toLight = normalize(_LightPosition - pos);
@@ -195,6 +209,7 @@ Shader "Summit/FirCards"
             #pragma fragment frag
             #pragma multi_compile_instancing
             #include "Fir.hlsl"
+            #include "TreeWind.hlsl"
 
             // how much of a tree standing at `originWS` has dissolved away (x) and has appeared (y), each 0..1
             half2 Fades(float3 originWS)
@@ -210,9 +225,10 @@ Shader "Summit/FirCards"
             {
                 UNITY_SETUP_INSTANCE_ID(i);
                 Varyings o;
-                o.positionCS = TransformObjectToHClip(i.positionOS.xyz);
+                float3 origin = TransformObjectToWorld(float3(0, 0, 0));
+                o.positionCS = TransformWorldToHClip(TreeSway(TransformObjectToWorld(i.positionOS.xyz), origin, 1.0, _Sway));
                 o.uv = TRANSFORM_TEX(i.uv, _BaseMap);
-                o.fades = Fades(TransformObjectToWorld(float3(0, 0, 0)));
+                o.fades = Fades(origin);
                 if (o.fades.x >= 1.0h || o.fades.y <= 0.0h) o.positionCS = FirGone();
                 return o;
             }

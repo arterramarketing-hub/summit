@@ -37,7 +37,7 @@ namespace Summit
             public bool on, landed;
             public readonly List<Forest.Piece> parts = new List<Forest.Piece>();
             public Vector3 a0, u0, a, b, va, vb, stump;
-            public float len, girth, stumpTop, t;
+            public float len, girth, stumpTop, t, snow, landedAt;
             public MaterialPropertyBlock props;
         }
         const int Pool = 6;
@@ -107,9 +107,11 @@ namespace Summit
             if (!forest.Snap(col.gameObject, breakAt, pieces, out var s)) return false;
             at = s.foot + s.up * s.at;
             Throw(s, flat, into);
-            // the branches dump their snow, and the trunk bursts into splinters where it went
+            // the branches dump their snow (and leave a heap of it round the stump), and the trunk bursts into
+            // splinters where it went
             Vector3 dir = flat.normalized;
-            fx?.TreeShake(s.foot, 16f);
+            fx?.TreeDump(s.foot, s.vis, Mathf.Max(1f, s.vis * 0.17f), 16f);
+            AddHeap(s.foot, Mathf.Max(0.5f, s.girth));
             fx?.Impact(at, 9f, flat * 0.2f);
             smasher?.Splinters(at, dir, 120, into);
             return true;
@@ -121,7 +123,7 @@ namespace Summit
             Top top = null;
             foreach (var t in tops) if (!t.on) { top = t; break; }
             if (top == null) { top = tops[0]; foreach (var t in tops) if (t.t > top.t) top = t; }
-            top.on = true; top.landed = false; top.t = 0f;
+            top.on = true; top.landed = false; top.t = 0f; top.snow = 1f; top.landedAt = -1f;
             top.parts.Clear(); top.parts.AddRange(pieces);
             top.u0 = s.up;
             top.a0 = top.a = s.foot + s.up * s.at;
@@ -130,6 +132,8 @@ namespace Summit
             top.girth = s.girth; top.stump = s.foot; top.stumpTop = top.a0.y;
             float cut = pieces.Count > 0 ? pieces[0].cut : 0f;
             top.props.SetFloat(CutY, cut > 0.01f ? cut : -10000f);
+            top.props.SetFloat(Sway, 0f);   // a broken top lies still (TreeWind)
+            top.props.SetFloat(SnowLeft, 1f);
             // rammed: the butt is knocked on off the stump and the crown goes over ahead and to one side, away
             // from the camera following the body along the same line (and the body is long gone by the time it lands)
             Vector3 dir = flat.normalized, side = Vector3.Cross(Vector3.up, dir) * (Random.value < 0.5f ? -1f : 1f);
@@ -166,6 +170,13 @@ namespace Summit
                 top.t += dt;
                 // lying still well behind you: done with
                 if (forest != null && forest.target != null && (top.a - far).sqrMagnitude > 240f * 240f) { top.on = false; continue; }
+                // the snow lets go as it goes over: shed along the crown, a curtain of powder behind it (SnowFX)
+                if (top.snow > 0.12f)
+                {
+                    fx?.TreeTrail(top.a, top.b, top.vb, dt, top.snow);
+                    top.snow = Mathf.Max(0.12f, top.snow - dt / (top.landed ? 0.4f : 1.4f));
+                    top.props.SetFloat(SnowLeft, top.snow);
+                }
                 if (top.va.sqrMagnitude + top.vb.sqrMagnitude < 1e-4f && top.t > 1f) continue;   // at rest
                 int n = Mathf.CeilToInt(dt / (1f / 90f));
                 float h = dt / n;
@@ -201,11 +212,9 @@ namespace Summit
             if (bDown && !top.landed && top.vb.y < -3f)
             {
                 // the crown hits the snow: it throws up a cloud along its length
-                top.landed = true;
+                top.landed = true; top.landedAt = top.t;
                 float force = Mathf.Min(16f, -top.vb.y);
-                fx?.Impact(Vector3.Lerp(top.a, top.b, 0.55f), force, Vector3.zero);
-                fx?.Impact(Vector3.Lerp(top.a, top.b, 0.85f), force * 0.8f, Vector3.zero);
-                fx?.Impact(Vector3.Lerp(top.a, top.b, 0.3f), force * 0.6f, Vector3.zero);
+                fx?.TopLands(top.a, top.b, force);
             }
             if (aDown) na *= Mathf.Exp(-h * 10f);
             if (bDown) nb *= Mathf.Exp(-h * 12f);
@@ -218,6 +227,7 @@ namespace Summit
 
         public void Draw()
         {
+            DrawHeaps();
             foreach (var top in tops)
             {
                 if (!top.on) continue;
@@ -238,9 +248,69 @@ namespace Summit
             }
         }
 
-        public void Clear() { foreach (var t in tops) t.on = false; }
+        public void Clear() { foreach (var t in tops) t.on = false; heaps.Clear(); }
 
-        static readonly int CutY = Shader.PropertyToID("_CutY");
+        // ---------------------------------------------------------------- the snow left at a broken tree's foot
+
+        readonly List<Matrix4x4> heaps = new List<Matrix4x4>();
+        static Mesh heapMesh;
+        static Material heapMat;
+
+        /// <summary>The snow off a snapped or smashed tree, heaped round where it stood (girth: the trunk's radius).</summary>
+        public void AddHeap(Vector3 foot, float girth)
+        {
+            if (heaps.Count >= 24) heaps.RemoveAt(0);
+            float r = Mathf.Clamp(girth * 3f, 1.1f, 1.8f) * Random.Range(0.9f, 1.15f);
+            float g = Slope.DrawnHeight(foot.x, foot.z);
+            heaps.Add(Matrix4x4.TRS(new Vector3(foot.x, g - 0.05f, foot.z), Quaternion.FromToRotation(Vector3.up, Slope.Normal(foot.x, foot.z)) * Quaternion.Euler(0f, Random.value * 360f, 0f),
+                                    new Vector3(r, r * Random.Range(0.32f, 0.4f), r * Random.Range(0.8f, 1f))));
+        }
+
+        void DrawHeaps()
+        {
+            if (heaps.Count == 0) return;
+            if (heapMesh == null) heapMesh = BuildHeap();
+            if (heapMat == null)
+            {
+                var sh = Shader.Find("Universal Render Pipeline/Lit");
+                if (sh == null) return;
+                heapMat = new Material(sh) { name = "SnowHeap", enableInstancing = true };
+                heapMat.SetColor("_BaseColor", new Color(0.93f, 0.95f, 0.98f)); heapMat.SetFloat("_Smoothness", 0.18f);
+            }
+            Graphics.RenderMeshInstanced(new RenderParams(heapMat) { shadowCastingMode = ShadowCastingMode.On, receiveShadows = true }, heapMesh, 0, heaps);
+        }
+
+        /// <summary>A lumpy, low dome of snow, radius 1 and about 1 high (scaled down flat where it is used).</summary>
+        static Mesh BuildHeap()
+        {
+            var rs = Random.state; Random.InitState(9173);
+            const int rings = 6, segs = 14;
+            var v = new List<Vector3>(); var t = new List<int>();
+            var bump = new float[segs];
+            for (int j = 0; j < segs; j++) bump[j] = Random.Range(0.85f, 1.15f);
+            for (int i = 0; i <= rings; i++)
+            {
+                float a = i / (float)rings * Mathf.PI * 0.5f;
+                for (int j = 0; j < segs; j++)
+                {
+                    float b = j / (float)segs * Mathf.PI * 2f, lump = Mathf.Lerp(bump[j], 1f, i / (float)rings);
+                    v.Add(new Vector3(Mathf.Cos(b) * Mathf.Cos(a) * lump, Mathf.Sin(a) * Random.Range(0.9f, 1.1f), Mathf.Sin(b) * Mathf.Cos(a) * lump));
+                }
+            }
+            for (int i = 0; i < rings; i++)
+                for (int j = 0; j < segs; j++)
+                {
+                    int a0 = i * segs + j, a1 = i * segs + (j + 1) % segs, b0 = a0 + segs, b1 = a1 + segs;
+                    t.Add(a0); t.Add(b0); t.Add(a1); t.Add(a1); t.Add(b0); t.Add(b1);
+                }
+            var m = new Mesh { name = "SnowHeap" };
+            m.SetVertices(v); m.SetTriangles(t, 0);
+            m.RecalculateNormals(); m.RecalculateBounds();
+            Random.state = rs;
+            return m;
+        }
+
+        static readonly int CutY = Shader.PropertyToID("_CutY"), Sway = Shader.PropertyToID("_Sway"), SnowLeft = Shader.PropertyToID("_Snow");
 
         // ---------------------------------------------------------------- stumps
 

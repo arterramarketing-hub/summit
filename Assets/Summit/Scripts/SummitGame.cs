@@ -129,6 +129,24 @@ namespace Summit
 
         void OnDestroy() { Progress.Changed -= ApplyOutfit; Missions.Completed = null; }
 
+        Collider lastShaken; float lastShakeTime = -9f;
+
+        /// <summary>
+        /// A tree knocked but standing (the rider into it, or a tumbling body): its snow comes down off it, from the
+        /// foot of its crown to the top, and it shudders (softer than a snap: by how hard it was hit).
+        /// </summary>
+        void ShakeTree(Collider c, float into, Vector3 knock)
+        {
+            if (c == null || fx == null) return;
+            if (c == lastShaken && Time.time - lastShakeTime < 0.6f) return;   // a body tumbling against it: once
+            lastShaken = c; lastShakeTime = Time.time;
+            Vector3 foot = c.transform.position;
+            float h = 7.5f, crown = 2.2f;
+            if (c is CapsuleCollider cap) { h = Mathf.Max(2f, cap.height * c.transform.lossyScale.y * 1.1f); crown = Mathf.Max(1.2f, Mathf.Max(cap.radius * 2.5f, h * 0.15f)); }
+            fx.TreeDump(foot, h, crown, into * 0.65f);
+            TreeWind.Shake(foot, knock, into);
+        }
+
         void SetPaused(bool on)
         {
             paused = on;
@@ -235,9 +253,12 @@ namespace Summit
                 audioFx.Play(Sfx.Bone); audioFx.Play(Sfx.Crash);
                 if (audioFx.Screaming) audioFx.ScreamHit();
             };
-            rider.HitObstacle += (ob, at, into) =>
+            // a tree hit and still standing: it shudders and its snow comes down off it (SnowFX, TreeWind)
+            rider.HitObstacle += (ob, at, into) => { if (ob.label == "Tree") ShakeTree(ob.GetComponent<Collider>(), into, rider.Body.linearVelocity); };
+            body.RagdollStruck += (c, at, into) =>
             {
-                if (ob.label == "Tree" && fx != null) fx.TreeShake(at, into);   // the branches dump their snow
+                var ob = c != null ? c.GetComponentInParent<Obstacle>() : null;
+                if (ob != null && ob.label == "Tree" && into > 4f) ShakeTree(c, into, c.transform.position - at);
             };
             body.RagdollHit += (v, isBoard) =>
             {
@@ -582,6 +603,7 @@ namespace Summit
             power.ResetRun();
             wild.ResetRun();
             smasher.Clear(); aura.Clear(); treeBreak.Clear();
+            TreeWind.Avalanche(false, 0f, 0f);
             Breakable.RestoreAll();   // every sign and flag standing again
             terrain.Prewarm();
             props.Prewarm();
@@ -744,6 +766,7 @@ namespace Summit
                     hud.SetPrompt(rider.CanGetUp ? "TAP TO GET UP" : rider.StayDown && rider.Crashed && !body.RagdollMoving && !slide.Caught ? "TAP TO CONTINUE" : "");
                     runTime += dt;
                     slide.Step(dt, rider, body);
+                    TreeWind.Avalanche(slide.Released, slide.Z, slide.Speed);   // its air blast bends the trees ahead of it
                     if (slide.JustReleased) { audioFx.Play(Sfx.SlideCrack); hud.Flash("AVALANCHE!", "", 1.6f); }
                     // the first ledge: the suspense sting as you roll up to the lip, eased out once you've landed below it
                     if (!ledgeCued && !rider.Crashed && rider.Z > Slope.PadLip - 14f && rider.Z < Slope.PadLip + 1f) { ledgeCued = true; audioFx.Play(Sfx.Ledge); }

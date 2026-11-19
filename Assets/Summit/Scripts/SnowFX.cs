@@ -41,7 +41,7 @@ namespace Summit
             gsz.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(new Keyframe(0f, 0f), new Keyframe(0.3f, 1f), new Keyframe(1f, 0f)));
             var grot = glints.main; grot.startRotation = new ParticleSystem.MinMaxCurve(0f, Mathf.PI);
 
-            clumps = System("TreeSnow", soft, 600);
+            clumps = System("TreeSnow", soft, 1400);
             var cm = clumps.main;
             cm.startLifetime = new ParticleSystem.MinMaxCurve(1.4f, 2.4f);
             cm.startSize = new ParticleSystem.MinMaxCurve(0.12f, 0.42f);
@@ -54,7 +54,7 @@ namespace Summit
             col.dampen = 0.9f; col.bounce = 0.05f; col.lifetimeLoss = 0.35f;
             Fade(clumps, 0.85f);
 
-            mist = System("TreeMist", soft, 300);
+            mist = System("TreeMist", soft, 700);
             var mm = mist.main;
             mm.startLifetime = new ParticleSystem.MinMaxCurve(1.2f, 2.2f);
             mm.startSize = new ParticleSystem.MinMaxCurve(0.6f, 1.5f);
@@ -177,29 +177,110 @@ namespace Summit
         }
 
         /// <summary>Snow shaken off a tree you hit: clumps from the branches and a cloud of powder.</summary>
-        public void TreeShake(Vector3 trunk, float force)
+        /// <summary>
+        /// All the snow on a tree lets go at once (it is hit hard, snapped or smashed): clumps and slabs off every
+        /// bough from the foot of the crown to its top, the broadest low down, and a veil of powder coming down round
+        /// it. foot: where the trunk meets the snow; height: how much of the tree stands above it (m); crown: its
+        /// widest reach (m); force: how hard it was hit (m/s): a glancing knock dumps less.
+        /// </summary>
+        public void TreeDump(Vector3 foot, float height, float crown, float force)
         {
-            float g = Slope.DrawnHeight(trunk.x, trunk.z);
-            Vector3 n = Slope.Normal(trunk.x, trunk.z);
-            groundPlane.SetPositionAndRotation(new Vector3(trunk.x, g, trunk.z), Quaternion.FromToRotation(Vector3.up, n));
-            int k = Mathf.RoundToInt(Mathf.Lerp(50f, 140f, Mathf.Clamp01(force / 14f)));
+            float g = Slope.DrawnHeight(foot.x, foot.z);
+            Ground(foot);
+            float k = Mathf.Clamp01(force / 14f);
+            height = Mathf.Max(height, 2f); crown = Mathf.Clamp(crown, 0.8f, 5f);
+            int n = Mathf.RoundToInt(Mathf.Lerp(45f, 150f, k) * Mathf.Clamp(height / 9f, 0.7f, 1.9f));
             var ep = new ParticleSystem.EmitParams();
-            for (int i = 0; i < k; i++)
+            for (int i = 0; i < n; i++)
             {
-                Vector2 d = Random.insideUnitCircle * 2.2f;
-                float h = Random.Range(1.6f, 7f);
-                ep.position = new Vector3(trunk.x + d.x * (1.1f - h / 9f), g + h, trunk.z + d.y * (1.1f - h / 9f));
-                ep.velocity = new Vector3(d.x * 0.4f, Random.Range(-0.5f, 0.6f), d.y * 0.4f);
+                float f = Random.Range(0.1f, 0.97f);
+                Vector2 d = Random.insideUnitCircle * crown * (1.05f - f * 0.85f);
+                ep.position = new Vector3(foot.x + d.x, g + f * height, foot.z + d.y);
+                ep.velocity = new Vector3(d.x * 0.35f, Random.Range(-0.8f, 0.4f), d.y * 0.35f);
+                bool slab = Random.value < 0.22f;   // whole slabs off the boughs, among the clumps
+                ep.startSize = slab ? Random.Range(0.45f, 1.0f) : Random.Range(0.12f, 0.4f);
                 clumps.Emit(ep, 1);
             }
-            for (int i = 0; i < k / 4; i++)
+            for (int i = 0; i < n / 3; i++)
             {
-                Vector2 d = Random.insideUnitCircle * 2.5f;
-                ep.position = new Vector3(trunk.x + d.x, g + Random.Range(1f, 6f), trunk.z + d.y);
-                ep.velocity = new Vector3(d.x * 0.3f, -0.3f, d.y * 0.3f);
+                float f = Random.Range(0.1f, 0.9f);
+                Vector2 d = Random.insideUnitCircle * crown * (1.1f - f * 0.7f);
+                ep.position = new Vector3(foot.x + d.x, g + f * height, foot.z + d.y);
+                ep.velocity = new Vector3(d.x * 0.25f, Random.Range(-1.2f, -0.3f), d.y * 0.25f);
+                ep.startSize = Random.Range(1.0f, 2.2f);
                 mist.Emit(ep, 1);
             }
         }
+
+        /// <summary>
+        /// A falling top shedding its snow as it goes over: clumps and slabs drop off along the crown and a curtain
+        /// of powder hangs where it swept through. Call every frame while it falls; tipVel is how fast its tip
+        /// moves, left the share of its snow still on it (it runs out).
+        /// </summary>
+        public void TreeTrail(Vector3 butt, Vector3 tip, Vector3 tipVel, float dt, float left)
+        {
+            if (left <= 0.02f || dt <= 0f) return;
+            float speed = tipVel.magnitude;
+            trailCarry += (60f + speed * 26f) * left * dt;
+            int n = (int)trailCarry; trailCarry -= n;
+            if (n <= 0) return;
+            Ground(Vector3.Lerp(butt, tip, 0.5f));
+            var ep = new ParticleSystem.EmitParams();
+            float len = Vector3.Distance(butt, tip);
+            for (int i = 0; i < n; i++)
+            {
+                float s = Random.Range(0.25f, 1f);
+                ep.position = Vector3.Lerp(butt, tip, s) + Random.insideUnitSphere * Mathf.Lerp(0.4f, 1.6f, 1f - s) * Mathf.Min(1f, len / 8f);
+                bool powder = Random.value < 0.5f;
+                if (powder)
+                {
+                    // the curtain: powder left hanging behind the crown, sinking slowly
+                    ep.velocity = tipVel * s * 0.12f + Vector3.down * Random.Range(0.2f, 0.8f);
+                    ep.startSize = Random.Range(1.2f, 2.6f);
+                    mist.Emit(ep, 1);
+                }
+                else
+                {
+                    // the snow it was carrying lets go and drops, with some of the crown's swing
+                    ep.velocity = tipVel * s * Random.Range(0.25f, 0.6f) + Random.insideUnitSphere * 0.6f;
+                    ep.startSize = Random.value < 0.25f ? Random.Range(0.4f, 0.9f) : Random.Range(0.12f, 0.38f);
+                    clumps.Emit(ep, 1);
+                }
+            }
+        }
+        float trailCarry;
+
+        /// <summary>A falling top hits the snow: a burst of powder along where the crown lands, rolling out low.</summary>
+        public void TopLands(Vector3 butt, Vector3 tip, float force)
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                float s = 0.3f + 0.22f * i;
+                Impact(Vector3.Lerp(butt, tip, s), force * (0.55f + 0.45f * s), Vector3.zero);
+            }
+            var ep = new ParticleSystem.EmitParams();
+            Vector3 along = tip - butt; along.y = 0f;
+            Vector3 side = Vector3.Cross(Vector3.up, along.sqrMagnitude > 1e-4f ? along.normalized : Vector3.forward);
+            int n = Mathf.RoundToInt(Mathf.Lerp(10f, 34f, Mathf.Clamp01(force / 14f)));
+            for (int i = 0; i < n; i++)
+            {
+                Vector3 p = Vector3.Lerp(butt, tip, Random.Range(0.25f, 1f));
+                p.y = Slope.DrawnHeight(p.x, p.z) + 0.4f;
+                ep.position = p;
+                ep.velocity = side * Random.Range(-3f, 3f) + Vector3.up * Random.Range(0.3f, 1.6f);
+                ep.startSize = Random.Range(1.1f, 2.4f);
+                mist.Emit(ep, 1);
+            }
+        }
+
+        void Ground(Vector3 at)
+        {
+            float g = Slope.DrawnHeight(at.x, at.z);
+            groundPlane.SetPositionAndRotation(new Vector3(at.x, g, at.z), Quaternion.FromToRotation(Vector3.up, Slope.Normal(at.x, at.z)));
+        }
+
+        /// <summary>The snow shaken off a tree by a knock (the older call: a tree of the forest's usual size).</summary>
+        public void TreeShake(Vector3 trunk, float force) { TreeDump(trunk, 7.5f, 2.2f, force); }
 
         /// <summary>Snow kicked up where something hits the snow.</summary>
         public void Puff(Vector3 at, float force)

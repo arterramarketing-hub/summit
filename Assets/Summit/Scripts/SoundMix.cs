@@ -174,8 +174,10 @@ namespace Summit
 
             // air and wind
             Mix(ambience, 0.22f * (1f - 0.5f * s), 1f, 2f, 2f, dt);
-            Mix(windLow, (0.05f + 0.55f * s * s) * master, 0.8f + 0.4f * s, 4f, 3f, dt);
-            Mix(windHigh, (0.02f + 0.42f * Mathf.Pow(s, 2.2f) + (r.air ? 0.12f + 0.15f * s : 0f)) * master, 0.85f + 0.35f * s, 4f, 3f, dt);
+            // (a gust through the trees, TreeWind, lifts both: you hear it as you see the forest bend)
+            float gust = TreeWind.Here;
+            Mix(windLow, (0.05f + 0.55f * s * s + 0.16f * gust) * master, 0.8f + 0.4f * s - 0.08f * gust, 4f, 3f, dt);
+            Mix(windHigh, (0.02f + 0.42f * Mathf.Pow(s, 2.2f) + (r.air ? 0.12f + 0.15f * s : 0f) + 0.07f * gust) * master, 0.85f + 0.35f * s + 0.1f * gust, 4f, 3f, dt);
 
             // the board on the snow: snaps on when you land, cuts out the moment you leave the ground
             float snowUp = 30f, snowDown = 25f;
