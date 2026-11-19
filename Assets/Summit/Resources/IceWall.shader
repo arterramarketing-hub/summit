@@ -25,7 +25,7 @@ Shader "Summit/IceWall"
         _BumpScale ("Normal strength", Range(0, 3)) = 1.2
         _Smoothness ("Smoothness", Range(0, 1)) = 0.8
         _Tile ("Metres per repeat: near, far", Vector) = (4.5, 23, 0, 0)
-        _Parallax ("Parallax depth in metres (0 = off)", Range(0, 0.2)) = 0.07
+        _Parallax ("Parallax depth in metres (0 = off)", Range(0, 0.2)) = 0.15
         _Layers ("Annual layers: thickness (m), strength", Vector) = (0.9, 1, 0, 0)
         _Glow ("Glow (light through the ice)", Color) = (0.30, 0.46, 0.58, 1)
     }

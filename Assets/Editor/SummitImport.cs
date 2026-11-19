@@ -171,11 +171,11 @@ public class SummitImport : AssetPostprocessor
 
     /// <summary>
     /// How deep the snow's wind grooves look (parallax: the height map shifts the texture lookup with the view angle).
-    /// The height map's full range, as a fraction of one 36 m tile: 0.0007 is about 2.5 cm from trough to crest,
-    /// a little under what the normal map implies (~4 cm). Kept small on purpose: the stock shader cannot fade it
-    /// with distance. 0 turns the relief off, on the terrain and in the snow layer round the rider alike.
+    /// The height map's full range, as a fraction of one 36 m tile: 0.0011 is about 4 cm from trough to crest,
+    /// what the normal map implies (at 0.0007, about 2.5 cm, it could hardly be seen). Not much deeper: the stock
+    /// shader cannot fade it with distance. 0 turns the relief off, on the terrain and in the snow layer alike.
     /// </summary>
-    public const float SnowGrooveDepth = 0.0007f;
+    public const float SnowGrooveDepth = 0.0011f;
 
     /// <summary>
     /// Gives the snow a surface without visible repeats: a large map (one tile spans ~36 m of slope)

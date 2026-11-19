@@ -18,11 +18,12 @@ namespace Summit
         public const float Tile = 11f;
 
         static Material shared;
-        static bool parallax = true;
+        static bool parallax = false;
 
         /// <summary>
-        /// The rock's depth near the camera (parallax occlusion mapping in RockLit.shader): on unless switched off.
-        /// Off, rock keeps its normal-mapped relief but costs a handful of texture samples less per pixel close up.
+        /// The rock's depth near the camera (parallax occlusion mapping in RockLit.shader): off unless switched on,
+        /// because it is the costly part and adds little to a still view beside the normal-mapped relief.
+        /// Off, rock keeps that relief but costs a handful of texture samples less per pixel close up.
         /// Takes effect at once, on every rock face (one global shader keyword).
         /// </summary>
         public static bool Parallax

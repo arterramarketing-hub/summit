@@ -162,7 +162,7 @@ namespace Summit
         // ---------------------------------------------------------------- crevasses
 
         /// <summary>The depth, in metres, of the parallax step on the ice walls' relief. 0 turns it off.</summary>
-        public const float IceParallax = 0.07f;
+        public const float IceParallax = 0.15f;
 
         /// <summary>
         /// Glacier ice (Resources/IceWall.shader): a photo-scanned fractured ice surface, blue by depth, in annual
