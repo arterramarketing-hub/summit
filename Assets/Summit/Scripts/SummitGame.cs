@@ -65,6 +65,7 @@ namespace Summit
         static readonly float[] LensWarp = { 0f, -0.28f, -0.42f, -0.6f };
         static readonly string[] LensName = { "STANDARD", "WIDE", "WIDER", "FISHEYE" };
         int angleLevel = 1, lensLevel = 1;
+        bool pov;   // first person instead of the chase camera (the VIEW button; ChaseCamera does the rest)
         UnityEngine.Rendering.Universal.LensDistortion lens;
         // colour filter (LookGrade) and its strength in tenths, and the lens type (LensFX), from the pause menu
         int filterLevel, filterStrength = 10, lensMode;
@@ -79,7 +80,23 @@ namespace Summit
             chase.extraFov = LensFov[lensLevel];
             lensFx.Apply(lens, LensWarp[lensLevel], lensLevel, lensMode);
             hud.SetAngle(AngleName[angleLevel]); hud.SetLens(LensName[lensLevel]); hud.SetLensType(LensFX.ModeName[lensMode]);
+            ShowView();
             PlayerPrefs.SetInt("summit_angle", angleLevel); PlayerPrefs.SetInt("summit_lens", lensLevel); PlayerPrefs.SetInt("summit_lenstype", lensMode); PlayerPrefs.Save();
+        }
+
+        // the VIEW tab's top button, and the two rows that only mean something to the chase camera
+        void ShowView()
+        {
+            hud.SetPausePov(pov);
+            hud.SetCamera(pov ? "N/A" : CamName[camLevel]);
+            hud.SetAngle(pov ? "N/A" : AngleName[angleLevel]);
+        }
+
+        void SetPov(bool on)
+        {
+            pov = on; chase.pov = on;
+            ShowView();
+            PlayerPrefs.SetInt(ChaseCamera.PovPref, on ? 1 : 0); PlayerPrefs.Save();
         }
 
         void ApplyLook()
@@ -116,8 +133,8 @@ namespace Summit
             if (!on) { rider.CancelPop(); input.SwallowCurrentPress(); }   // a menu tap is never a jump
             AudioListener.pause = on;
             hud.ShowPause(on);
-            hud.SetCamera(CamName[camLevel]);
-            hud.SetAngle(AngleName[angleLevel]); hud.SetLens(LensName[lensLevel]);
+            hud.SetLens(LensName[lensLevel]);
+            ShowView();
             hud.SetPauseSteer(input.useTilt);
             hud.SetPauseTrees(props.IsRealistic);
             if (blood != null) hud.SetBlood(blood.On);
@@ -366,6 +383,8 @@ namespace Summit
             post = vol != null ? vol.profile : null;
             lensFx = cam.gameObject.AddComponent<LensFX>();
             lensFx.Build(cam);
+            pov = PlayerPrefs.GetInt(ChaseCamera.PovPref, 0) == 1;
+            chase.pov = pov; chase.body = body; chase.lensFx = lensFx;
             ApplyCamera();
             ApplyLook();
             bool tube = PlayerPrefs.GetInt("summit_tube", 0) == 1;
@@ -669,6 +688,8 @@ namespace Summit
                             else if (hud.OnPauseTab(pp)) audioFx.Play(Sfx.Click);
                             else if (hud.OnHalationMinus(pp) || hud.OnHalationPlus(pp)) { audioFx.Play(Sfx.Click); halation = Mathf.Clamp(halation + (hud.OnHalationPlus(pp) ? 1 : -1), 0, LensFX.HalationName.Length - 1); ApplyLook(); }
                             else if (hud.OnMusicMinus(pp) || hud.OnMusicPlus(pp)) { audioFx.Play(Sfx.Click); StepMusic(hud.OnMusicPlus(pp) ? 1 : -1); }
+                            else if (hud.OnPausePov(pp)) { audioFx.Play(Sfx.Click); SetPov(!pov); }
+                            else if (pov && (hud.OnCamMinus(pp) || hud.OnCamPlus(pp) || hud.OnAngMinus(pp) || hud.OnAngPlus(pp))) { }   // the chase camera's rows: greyed out
                             else if (hud.OnCamMinus(pp)) { audioFx.Play(Sfx.Click); SetCamLevel(camLevel - 1); }
                             else if (hud.OnCamPlus(pp)) { audioFx.Play(Sfx.Click); SetCamLevel(camLevel + 1); }
                             else if (hud.OnAngMinus(pp)) { audioFx.Play(Sfx.Click); angleLevel = Mathf.Max(0, angleLevel - 1); ApplyCamera(); }

@@ -246,7 +246,8 @@ namespace Summit
         public bool OnPlay(Vector2 p) => Inside(playBtn, p);
         public bool OnRestart(Vector2 p) => Inside(restartBtn, p);
 
-        // ---- the pause menu: RESUME always, then four tabs. VIEW: camera distance, angle, lens, lens type.
+        // ---- the pause menu: RESUME always, then four tabs. VIEW: chase camera or first person, camera distance,
+        //      angle (those two are for the chase camera: greyed out in first person), lens, lens type.
         //      LOOK: filter, filter strength, halation, time of day. GAME: steering, blood, trees, restart run.
         //      SOUND: music volume. A hidden tab's buttons are inactive, so they can't be hit.
 
@@ -302,11 +303,12 @@ namespace Summit
                 plus = Button(parent, "+", new Vector2(270f, y), new Vector2(150f, 120f), grey, out _, 80);
                 return NewText(label + "Value", parent, new Vector2(0.5f, 0.5f), new Vector2(0f, y), 54, TextAnchor.MiddleCenter);
             }
-            // VIEW
-            camLabel = Row(0, "CAMERA DISTANCE", 180f, out camMinus, out camPlus);
-            angLabel = Row(0, "CAMERA ANGLE", -20f, out angMinus, out angPlus);
-            lensLabel = Row(0, "LENS", -220f, out lensMinus, out lensPlus);
-            lensTypeLabel = Row(0, "LENS TYPE", -420f, out lensTypeMinus, out lensTypePlus);
+            // VIEW: the first-person switch on top, and the four rows closed up under it (173 apart) to make room
+            povBtn = Button(tabPage[0].transform, "FirstPerson", new Vector2(0f, 262f), new Vector2(700f, 100f), grey, out povLabel, 38);
+            camLabel = Row(0, "CAMERA DISTANCE", 85f, out camMinus, out camPlus);
+            angLabel = Row(0, "CAMERA ANGLE", -88f, out angMinus, out angPlus);
+            lensLabel = Row(0, "LENS", -261f, out lensMinus, out lensPlus);
+            lensTypeLabel = Row(0, "LENS TYPE", -434f, out lensTypeMinus, out lensTypePlus);
             // LOOK
             filterLabel = Row(1, "FILTER", 180f, out filterMinus, out filterPlus);
             strengthLabel = Row(1, "FILTER STRENGTH", -20f, out strengthMinus, out strengthPlus);
@@ -360,6 +362,17 @@ namespace Summit
         public bool OnStrengthPlus(Vector2 p) => Inside(strengthPlus, p);
         public bool OnPauseTrees(Vector2 p) => Inside(treesBtn, p);
         public void SetPauseTrees(bool realistic) { treesLabel.text = realistic ? "TREES: REALISTIC  (tap to change)" : "TREES: ORIGINAL  (tap to change)"; }
+        RectTransform povBtn; Text povLabel;
+        public bool OnPausePov(Vector2 p) => Inside(povBtn, p);
+        /// <summary>The VIEW button's state. In first person the distance and angle rows are greyed out: they set the chase camera.</summary>
+        public void SetPausePov(bool firstPerson)
+        {
+            povLabel.text = firstPerson ? "VIEW: FIRST PERSON  (tap to change)" : "VIEW: CHASE CAMERA  (tap to change)";
+            camLabel.color = angLabel.color = new Color(1f, 1f, 1f, firstPerson ? 0.35f : 1f);
+            var c = new Color(1f, 1f, 1f, firstPerson ? 0.06f : 0.16f);
+            camMinus.GetComponent<Image>().color = camPlus.GetComponent<Image>().color = c;
+            angMinus.GetComponent<Image>().color = angPlus.GetComponent<Image>().color = c;
+        }
         public void SetTime(string value) { timeLabel.text = value; }
         public void SetHalation(string value) { halationLabel.text = value; }
         public bool OnHalationMinus(Vector2 p) => Inside(halationMinus, p);
