@@ -234,6 +234,101 @@ public static class SpireShot
     }
 
     /// <summary>
+    /// The crag beside the run up close, as the player saw it from a one-sided gorge's floor (its wall on one side,
+    /// a treed snow bank on the other): from the floor a few metres off, looking down the run past it, and a close
+    /// pass of the same block. By day and by night.
+    ///   Unity -batchmode -projectPath . -executeMethod SpireShot.Detail -logFile detail.log
+    ///   Writes Detail*{Day,Night}.png to $SPIRE_SHOTS.
+    /// </summary>
+    public static void Detail()
+    {
+        SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
+        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
+        var game = Object.FindFirstObjectByType<SummitGame>();
+        TestBoot.Boot(game);
+        Physics.simulationMode = SimulationMode.Script;
+        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
+        var rider = Get<Rider>("rider"); var body = Get<RiderBody>("body");
+        var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props"); var dayNight = Get<DayNight>("dayNight");
+        var dress = Object.FindFirstObjectByType<CourseDressing>();
+        var atmo = Object.FindFirstObjectByType<Atmosphere>();
+        var draw = typeof(Forest).GetMethod("Draw", NP);
+        rider.input = null;
+        var cam = Camera.main;
+        cam.GetComponent<ChaseCamera>().enabled = false;
+        string outDir = System.Environment.GetEnvironmentVariable("SPIRE_SHOTS");
+        if (string.IsNullOrEmpty(outDir)) outDir = ".";
+        Directory.CreateDirectory(outDir);
+        // a mountain whose first deadly wall is built: from its terrace the wall runs on down the slope beside you,
+        // the run's forest on the other side, as in the player's screenshot
+        int seed = 1;
+        for (int s = 1; s < 2000; s++) { Slope.Init(s); if (Cliffs.WallOf(0, out var w0) && w0.height > 35f) { seed = s; break; } }
+        Slope.Init(seed);
+        Cliffs.WallOf(0, out var w);
+        bool warm = false;
+        void View(string file, Vector3 eye, Vector3 at, float fov, bool night)
+        {
+            TimeOfDay.TestClock = night ? 3.4f : 1.4f; dayNight.ApplyNow();
+            Vector3 flat = at - eye; flat.y = 0f;
+            float rz = eye.z - flat.normalized.z * 2.5f, rx = eye.x - flat.normalized.x * 2.5f;
+            rider.ResetAt(rx, rz); body.ResetVisual();
+            rider.Heading = Mathf.Clamp(Mathf.Atan2(flat.x, flat.z), -1.4f, 1.4f);
+            for (int k = 0; k < 5; k++) { terrain.Prewarm(); props.Prewarm(); dress.Prewarm(); }
+            body.Apply(1f / 120f);
+            typeof(Atmosphere).GetMethod("LateUpdate", NP).Invoke(atmo, null);
+            draw.Invoke(props, null);
+            CliffSpires.DrawNow();
+            dayNight.ApplyNow();
+            cam.fieldOfView = fov;
+            cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(at - eye));
+            if (!warm) { Shoot(cam, Path.Combine(outDir, "DetailWarmup.png")); warm = true; }
+            Bake(() => Shoot(cam, Path.Combine(outDir, file)));
+        }
+        terrain.Rebuild(); props.Rebuild(); dress.Rebuild();
+        float zv = w.z1 + 20f;
+        float foot = w.edge + w.height * 0.55f;
+        rider.ResetAt(Slope.Centre(zv) + w.side * (foot + 5f), zv);
+        for (int k = 0; k < 4; k++) { terrain.Prewarm(); props.Prewarm(); dress.Prewarm(); }
+        Physics.SyncTransforms();
+        // the biggest block standing low on the wall, near where the terrace begins
+        Collider best = null; float bestSize = 0f;
+        foreach (var c in Object.FindObjectsByType<MeshCollider>(FindObjectsSortMode.None))
+        {
+            if (c.name != "SpireHit") continue;
+            var bb = c.bounds;
+            if (bb.center.z < w.z1 || bb.center.z > w.z1 + 70f) continue;
+            float a = (bb.center.x - Slope.Centre(bb.center.z)) * w.side;
+            if (a < w.edge + 3f || a > foot + 6f) continue;
+            float size = Mathf.Min(bb.size.y, 18f) * Mathf.Min(bb.size.x, bb.size.z) - (foot - a) * 0.5f;
+            if (size > bestSize) { bestSize = size; best = c; }
+        }
+        Vector3 rc = best != null ? best.bounds.center : new Vector3(Slope.Centre(zv) + w.side * (foot - 4f), 0f, zv);
+        if (best == null) rc.y = Slope.Height(rc.x, rc.z) + 4f;
+        Debug.Log($"SPIRESHOT detail seed {seed}, wall side {w.side} edge {w.edge:0.0} height {w.height:0}, block at {rc} ({(best != null ? best.bounds.size.ToString() : "none")})");
+        foreach (bool night in new[] { false, true })
+        {
+            string when = night ? "Night" : "Day";
+            // standing on the terrace by the wall's foot, looking down the run along it (the player's view)
+            float ze = zv - 14f;
+            float xe = Slope.Centre(ze) + w.side * (foot + 7f);
+            var eye = new Vector3(xe, Slope.DrawnHeight(xe, ze) + 1.7f, ze);
+            float za = zv + 26f, xa = Slope.Centre(za) + w.side * (foot + 1f);
+            var at = new Vector3(xa, Slope.DrawnHeight(xa, za) + 5f, za);
+            View($"DetailRun{when}.png", eye, at, 64f, night);
+            // a close pass: further down the same wall, a few metres off its foot
+            float zc = zv + 2f;
+            float xc = Slope.Centre(zc) + w.side * (foot + 6f);
+            var eye2 = new Vector3(xc, Slope.DrawnHeight(xc, zc) + 2.2f, zc);
+            float zt = zc + 14f, xt = Slope.Centre(zt) + w.side * (foot - 2f);
+            rc = new Vector3(xt, Slope.DrawnHeight(xt, zt) + 4f, zt);
+            View($"DetailClose{when}.png", eye2, rc, 64f, night);
+        }
+        Stats();
+        TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt;
+        EditorApplication.Exit(0);
+    }
+
+    /// <summary>
     /// Do thrown bodies hit the spires? Rides off a ridge's cliff edge at a dozen places along it, and watches each
     /// tumble: which of the body's parts come into contact with a spire's collider (batchmode fires no collision
     /// callbacks, so contact is measured: ComputePenetration against the spires near each part), how deep any
@@ -324,19 +419,22 @@ public static class SpireShot
     static void Stats()
     {
         Physics.SyncTransforms();
-        int cols = 0, draws = 0, groups = 0; long tris = 0;
+        int cols = 0, groups = 0, nearDraws = 0, farDraws = 0, boulders = 0; long nearTris = 0, farTris = 0;
         float zMin = float.MaxValue, zMax = float.MinValue;
         foreach (var g in Object.FindObjectsByType<Transform>(FindObjectsSortMode.None))
         {
             if (g.name != "CliffSpires") continue;
             groups++;
             if (g.GetComponent<Obstacle>() == null || g.GetComponent<Obstacle>().label != "Rock") Debug.Log("SPIRESHOT BAD group without a Rock obstacle");
-            var mf = g.GetComponent<MeshFilter>();
-            draws += mf.sharedMesh.subMeshCount;
-            for (int sm = 0; sm < mf.sharedMesh.subMeshCount; sm++) tris += mf.sharedMesh.GetIndexCount(sm) / 3;
-            foreach (var c in g.GetComponentsInChildren<Collider>(true)) { cols++; zMin = Mathf.Min(zMin, c.bounds.min.z); zMax = Mathf.Max(zMax, c.bounds.max.z); }
+            foreach (var mf in g.GetComponentsInChildren<MeshFilter>(true))
+            {
+                long t = 0;
+                for (int sm = 0; sm < mf.sharedMesh.subMeshCount; sm++) t += mf.sharedMesh.GetIndexCount(sm) / 3;
+                if (mf.name == "Near") { nearTris += t; nearDraws++; } else { farTris += t; farDraws++; }
+            }
+            foreach (var c in g.GetComponentsInChildren<Collider>(true)) { cols++; if (c is BoxCollider) boulders++; zMin = Mathf.Min(zMin, c.bounds.min.z); zMax = Mathf.Max(zMax, c.bounds.max.z); }
         }
-        Debug.Log($"SPIRESHOT stats: {groups} groups, {cols} spires (each its own convex collider), {draws} draws, {tris} triangles, z {zMin:0}-{zMax:0}");
+        Debug.Log($"SPIRESHOT stats: {groups} groups, {cols} blocks with colliders ({boulders} scanned boulders, instanced), near look {nearDraws} meshes {nearTris} tris, far look {farDraws} meshes {farTris} tris, z {zMin:0}-{zMax:0}");
         var hits = new Collider[16];
         bool Rock(Vector3 p, float r)
         {

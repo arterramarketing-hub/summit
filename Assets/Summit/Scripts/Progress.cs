@@ -35,27 +35,24 @@ namespace Summit
 
         public static Item Find(Up id) { foreach (var it in Shop) if (it.id == id) return it; return null; }
 
-        // outfits: the first of each is the one you start with
-        public static readonly Color[] Jackets =
-        {
-            new Color(0.93f, 0.31f, 0.14f), new Color(0.12f, 0.45f, 0.92f), new Color(0.98f, 0.82f, 0.10f),
-            new Color(0.15f, 0.62f, 0.32f), new Color(0.85f, 0.22f, 0.62f), new Color(0.10f, 0.11f, 0.13f),
-        };
-        public static readonly string[] JacketNames = { "ORANGE", "COBALT", "SUNSHINE", "PINE", "MAGENTA", "STEALTH" };
-        public static readonly Color[] Boards =
-        {
-            new Color(0.10f, 0.45f, 0.90f), new Color(0.90f, 0.12f, 0.12f), new Color(0.95f, 0.95f, 0.97f),
-            new Color(0.40f, 0.85f, 0.20f), new Color(0.98f, 0.55f, 0.05f), new Color(0.55f, 0.30f, 0.85f),
-        };
-        public static readonly string[] BoardNames = { "BLUE", "RED", "WHITE", "LIME", "TANGERINE", "VIOLET" };
-        public static int OutfitCost(int i) => i == 0 ? 0 : 100 + 50 * i;
+        // outfits (the closet's stock is Wardrobe's): the colours and names of the jackets and boards, for the camp's
+        // board rack and the older callers
+        public static Color[] Jackets => Colours(Wardrobe.Cat.Jacket);
+        public static Color[] Boards => Colours(Wardrobe.Cat.Board);
+        static Color[] Colours(Wardrobe.Cat c) { var it = Wardrobe.Items(c); var r = new Color[it.Length]; for (int i = 0; i < r.Length; i++) r[i] = it[i].a; return r; }
+        public static int OutfitCost(int i) => Wardrobe.Get(Wardrobe.Cat.Jacket, i).cost;
 
         // ---------------------------------------------------------------- state
 
         static bool loaded;
         static int points, lifetime;
         static readonly int[] levels = new int[System.Enum.GetValues(typeof(Up)).Length];
-        static int jacket, board, ride, jacketsOwned = 1, boardsOwned = 1;
+        static int ride;
+        // per closet category: what is worn, and a bit for each item owned (the first is everyone's). The jackets and
+        // boards keep the keys they had before the closet, so old saves carry over; the ride has its own key
+        static readonly int[] worn = new int[Wardrobe.Count], owned = new int[Wardrobe.Count];
+        static string WornKey(Wardrobe.Cat c) => c == Wardrobe.Cat.Jacket ? "summit_jacket" : c == Wardrobe.Cat.Board ? "summit_boardcol" : "summit_wear_" + c;
+        static string OwnedKey(Wardrobe.Cat c) => c == Wardrobe.Cat.Jacket ? "summit_jackets" : c == Wardrobe.Cat.Board ? "summit_boards" : "summit_own_" + c;
 
         static void Load()
         {
@@ -64,11 +61,15 @@ namespace Summit
             points = PlayerPrefs.GetInt("summit_points", 0);
             lifetime = PlayerPrefs.GetInt("summit_points_life", 0);
             for (int i = 0; i < levels.Length; i++) levels[i] = PlayerPrefs.GetInt("summit_up_" + (Up)i, 0);
-            jacket = PlayerPrefs.GetInt("summit_jacket", 0);
-            board = PlayerPrefs.GetInt("summit_boardcol", 0);
             ride = Mathf.Clamp(PlayerPrefs.GetInt("summit_ride", 0), 0, Rides.Count - 1);
-            jacketsOwned = PlayerPrefs.GetInt("summit_jackets", 1) | 1;
-            boardsOwned = PlayerPrefs.GetInt("summit_boards", 1) | 1;
+            for (int c = 0; c < Wardrobe.Count; c++)
+            {
+                var cat = (Wardrobe.Cat)c;
+                if (cat == Wardrobe.Cat.Ride) continue;
+                owned[c] = PlayerPrefs.GetInt(OwnedKey(cat), 1) | 1;
+                int w = PlayerPrefs.GetInt(WornKey(cat), 0);
+                worn[c] = w >= 0 && w < Wardrobe.Items(cat).Length && (owned[c] & (1 << w)) != 0 ? w : 0;
+            }
         }
 
         static void Save()
@@ -76,11 +77,14 @@ namespace Summit
             PlayerPrefs.SetInt("summit_points", points);
             PlayerPrefs.SetInt("summit_points_life", lifetime);
             for (int i = 0; i < levels.Length; i++) PlayerPrefs.SetInt("summit_up_" + (Up)i, levels[i]);
-            PlayerPrefs.SetInt("summit_jacket", jacket);
-            PlayerPrefs.SetInt("summit_boardcol", board);
             PlayerPrefs.SetInt("summit_ride", ride);
-            PlayerPrefs.SetInt("summit_jackets", jacketsOwned);
-            PlayerPrefs.SetInt("summit_boards", boardsOwned);
+            for (int c = 0; c < Wardrobe.Count; c++)
+            {
+                var cat = (Wardrobe.Cat)c;
+                if (cat == Wardrobe.Cat.Ride) continue;
+                PlayerPrefs.SetInt(WornKey(cat), worn[c]);
+                PlayerPrefs.SetInt(OwnedKey(cat), owned[c]);
+            }
             PlayerPrefs.Save();
         }
 
@@ -120,23 +124,31 @@ namespace Summit
             return true;
         }
 
-        public static int Jacket { get { Load(); return jacket; } }
-        public static int Board { get { Load(); return board; } }
-        public static bool OwnsJacket(int i) { Load(); return (jacketsOwned & (1 << i)) != 0; }
-        public static bool OwnsBoard(int i) { Load(); return (boardsOwned & (1 << i)) != 0; }
+        public static int Jacket => Worn(Wardrobe.Cat.Jacket);
+        public static int Board => Worn(Wardrobe.Cat.Board);
+        public static bool OwnsJacket(int i) => Owns(Wardrobe.Cat.Jacket, i);
+        public static bool OwnsBoard(int i) => Owns(Wardrobe.Cat.Board, i);
+        public static bool PickJacket(int i) => Wear(Wardrobe.Cat.Jacket, i);
+        public static bool PickBoard(int i) => Wear(Wardrobe.Cat.Board, i);
 
-        /// <summary>Wear a jacket, buying it first if needed; false if you can't afford it.</summary>
-        public static bool PickJacket(int i)
+        /// <summary>The item worn in a closet category (the ride: what you ride).</summary>
+        public static int Worn(Wardrobe.Cat c) { Load(); return c == Wardrobe.Cat.Ride ? ride : worn[(int)c]; }
+
+        public static bool Owns(Wardrobe.Cat c, int i)
         {
-            if (!OwnsJacket(i)) { if (!Spend(OutfitCost(i))) return false; jacketsOwned |= 1 << i; }
-            jacket = i; Save(); Changed?.Invoke();
-            return true;
+            Load();
+            if (c == Wardrobe.Cat.Ride || i == 0) return true;
+            return i > 0 && i < 31 && (owned[(int)c] & (1 << i)) != 0;
         }
 
-        public static bool PickBoard(int i)
+        /// <summary>Wear something from the closet, buying it first if needed; false if you can't afford it.</summary>
+        public static bool Wear(Wardrobe.Cat c, int i)
         {
-            if (!OwnsBoard(i)) { if (!Spend(OutfitCost(i))) return false; boardsOwned |= 1 << i; }
-            board = i; Save(); Changed?.Invoke();
+            Load();
+            if (i < 0 || i >= Wardrobe.Items(c).Length) return false;
+            if (c == Wardrobe.Cat.Ride) { PickRide((RideKind)i); return true; }
+            if (!Owns(c, i)) { if (!Spend(Wardrobe.Items(c)[i].cost)) return false; owned[(int)c] |= 1 << i; }
+            worn[(int)c] = i; Save(); Changed?.Invoke();
             return true;
         }
 
@@ -196,7 +208,8 @@ namespace Summit
             Load();
             points = lifetime = 0;
             for (int i = 0; i < levels.Length; i++) levels[i] = 0;
-            jacket = board = ride = 0; jacketsOwned = boardsOwned = 1;
+            ride = 0;
+            for (int c = 0; c < Wardrobe.Count; c++) { worn[c] = 0; owned[c] = 1; }
             Save(); Changed?.Invoke();
         }
 

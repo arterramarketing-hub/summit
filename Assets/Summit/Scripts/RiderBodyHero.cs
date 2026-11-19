@@ -69,9 +69,15 @@ namespace Summit
             }
             var jacketM = Cloth(new Color(0.93f, 0.31f, 0.14f), 0.35f, 1.5f);   // the jacket takes about as much as the trousers show
             var pantsM = Cloth(new Color(0.17f, 0.19f, 0.24f), 0.2f, 0.5f);    // (white on the dark trousers shows far more)
+            pantsMat = pantsM;
             var gearM = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? sh);
             var pal = Resources.Load<Texture2D>("Rider/HeroPalette");
-            if (pal != null) { gearM.SetTexture("_BaseMap", pal); gearM.mainTexture = pal; }
+            if (pal != null)
+            {
+                // this rider's own copy of the palette: the closet repaints the helmet, goggles, gloves, boots and pack in it
+                var mine = OwnPalette(pal);
+                gearM.SetTexture("_BaseMap", mine != null ? mine : pal); gearM.mainTexture = mine != null ? mine : pal;
+            }
             gearM.SetColor("_BaseColor", Color.white);
             gearM.SetFloat("_Smoothness", 1f);
             gearM.SetFloat("_SmoothnessTextureChannel", 1f);

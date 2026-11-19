@@ -9,7 +9,7 @@ namespace Summit
     /// the walk stick, the missions board, the shop, mission-complete toasts and the points earned at the
     /// end of a run. Built in code like Hud; buttons are hit-tested by the caller (Hit), no EventSystem.
     /// </summary>
-    public class MetaUi : MonoBehaviour
+    public partial class MetaUi : MonoBehaviour
     {
         public enum Mode { Off, Hub, Ready, Riding, End }
         public Mode Current { get; private set; }
@@ -121,6 +121,7 @@ namespace Summit
             // ---- the panel: a dim over everything and a card at the bottom (contents built per panel)
             panelRoot = New("Panel", transform); Stretch(panelRoot);
             var dim = Img("Dim", panelRoot, new Color(0.02f, 0.04f, 0.09f, 0.55f), null); Stretch(dim.rectTransform);
+            dimImg = dim;   // (the closet has no dim: its studio shows through)
             panelRoot.gameObject.SetActive(false);
             // a black fade over everything (the camp's rescue after a fall)
             fadeImg = Img("Fade", transform, new Color(0f, 0f, 0f, 0f), null); Stretch(fadeImg.rectTransform);
@@ -160,7 +161,7 @@ namespace Summit
         public void SetContext(Camp.Station st)
         {
             string label = st == Camp.Station.Missions ? "DAILY MISSIONS" : st == Camp.Station.Upgrades ? "UPGRADES"
-                         : st == Camp.Station.Style ? "OUTFITS & RIDE" : st == Camp.Station.DropIn ? "DROP IN" : null;
+                         : st == Camp.Station.Style ? "WARDROBE" : st == Camp.Station.DropIn ? "DROP IN" : null;
             bool on = label != null && !PanelOpen;
             if (contextBtn.gameObject.activeSelf != on) contextBtn.gameObject.SetActive(on);
             if (on) { contextText.text = label; contextImg.color = st == Camp.Station.DropIn ? new Color(0.85f, 0.2f, 0.12f, 0.97f) : Blue; }
@@ -214,6 +215,7 @@ namespace Summit
 
         RectTransform OpenCard(float height, string title, string sub)
         {
+            if (ClosetOpen) EndCloset(false);
             foreach (var g in panelBits) { if (Application.isPlaying) Destroy(g); else DestroyImmediate(g); }
             panelBits.Clear();
             buttons.RemoveAll(b => b.Key == null || b.Key.IsChildOf(panelRoot));
@@ -241,6 +243,7 @@ namespace Summit
         public void ClosePanel(bool click = true)
         {
             if (!PanelOpen) return;
+            if (ClosetOpen) { EndCloset(click); return; }
             if (click) Clicked?.Invoke();
             panelRoot.gameObject.SetActive(false);
             ShopTab = -1;
@@ -276,6 +279,7 @@ namespace Summit
 
         public void ShowShop(int tab)
         {
+            if (tab == 1) { ShowCloset(); return; }   // the outfits are the closet now (MetaUiCloset)
             ShopTab = tab;
             var c = OpenCard(tab == 0 ? 1640f : 1180f, tab == 0 ? "UPGRADES" : "OUTFITS & RIDE", null);
             // balance, top left of the card
@@ -289,7 +293,7 @@ namespace Summit
                 Label(tb.transform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(420f, 90f), 42, TextAnchor.MiddleCenter).text = k == 0 ? "UPGRADES" : "OUTFITS";
                 buttons.Add(new KeyValuePair<RectTransform, string>(tb.rectTransform, "tab" + k));
             }
-            if (tab == 0) GearRows(c); else StyleRows(c);
+            GearRows(c);
         }
 
         void GearRows(RectTransform c)
@@ -325,43 +329,6 @@ namespace Summit
             }
         }
 
-        void StyleRows(RectTransform c)
-        {
-            void Swatches(string label, float y, Color[] cols, string[] names, int worn, System.Func<int, bool> owns, string id)
-            {
-                var l = Label(c, new Vector2(0f, 1f), new Vector2(50f, y), new Vector2(600f, 60f), 40, TextAnchor.UpperLeft);
-                l.text = label + "  ·  " + names[worn]; l.color = Dim;
-                for (int i = 0; i < cols.Length; i++)
-                {
-                    float x = -375f + i * 150f;
-                    if (i == worn)
-                        Place(Img("Worn", c, Color.white, disc).rectTransform, new Vector2(0.5f, 1f), new Vector2(x, y - 62f), new Vector2(138f, 138f), new Vector2(0.5f, 1f));
-                    var s = Img("Swatch", c, cols[i], disc);
-                    Place(s.rectTransform, new Vector2(0.5f, 1f), new Vector2(x, y - 70f), new Vector2(122f, 122f), new Vector2(0.5f, 1f));
-                    buttons.Add(new KeyValuePair<RectTransform, string>(s.rectTransform, id + i));
-                    if (!owns(i))
-                    {
-                        var pr = Label(c, new Vector2(0.5f, 1f), new Vector2(x, y - 200f), new Vector2(150f, 44f), 32, TextAnchor.UpperCenter);
-                        pr.text = Progress.OutfitCost(i).ToString(); pr.color = Progress.Points >= Progress.OutfitCost(i) ? Gold : new Color(1f, 1f, 1f, 0.45f);
-                    }
-                }
-            }
-            Swatches("JACKET", -260f, Progress.Jackets, Progress.JacketNames, Progress.Jacket, Progress.OwnsJacket, "jacket");
-            Swatches(Progress.Ride == RideKind.Snowboard ? "BOARD" : Rides.Of(Progress.Ride).Name, -540f, Progress.Boards, Progress.BoardNames, Progress.Board, Progress.OwnsBoard, "board");
-            // what to ride: free, all there from the start; the one worn is lit
-            var rl = Label(c, new Vector2(0f, 1f), new Vector2(50f, -820f), new Vector2(900f, 60f), 40, TextAnchor.UpperLeft);
-            rl.text = "RIDE  ·  " + Rides.Of(Progress.Ride).Name + "  ·  free to swap"; rl.color = Dim;
-            int rides = Rides.Count;
-            float pillW = Mathf.Min(440f, 900f / rides);
-            for (int k = 0; k < rides; k++)
-            {
-                var pill = Img("Ride", c, k == (int)Progress.Ride ? Blue : Grey, round);
-                Place(pill.rectTransform, new Vector2(0.5f, 1f), new Vector2((k - (rides - 1) * 0.5f) * (pillW + 16f), -900f), new Vector2(pillW, 110f), new Vector2(0.5f, 1f));
-                Label(pill.transform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(pillW - 20f, 90f), 42, TextAnchor.MiddleCenter).text = Rides.Of((RideKind)k).Name;
-                buttons.Add(new KeyValuePair<RectTransform, string>(pill.rectTransform, "mount" + k));
-            }
-        }
-
         /// <summary>Do what a panel button says. Returns false if the id isn't a panel/menu action.</summary>
         public bool Act(string id)
         {
@@ -374,24 +341,6 @@ namespace Summit
                 int cost = Progress.NextCost(u);
                 if (Progress.Buy(u)) { Bought?.Invoke(); ShowShop(0); cardMsg.text = Progress.Find(u).title + (Progress.Find(u).decor ? " is up in camp" : " fitted"); cardMsg.color = new Color(0.5f, 1f, 0.55f); }
                 else { Denied?.Invoke(); cardMsg.text = "Need " + (cost - Progress.Points).ToString("N0") + " more points: ride to earn them"; cardMsg.color = new Color(1f, 0.5f, 0.42f); }
-                return true;
-            }
-            if (id.StartsWith("mount"))
-            {
-                // snowboard, skis or toboggan: nothing to pay, it is on your feet at the gate
-                var k = (RideKind)int.Parse(id.Substring(5));
-                bool same = k == Progress.Ride;
-                Progress.PickRide(k); Clicked?.Invoke(); ShowShop(1);
-                if (!same) { cardMsg.text = Rides.Of(k).Name + " at the gate"; cardMsg.color = new Color(0.5f, 1f, 0.55f); }
-                return true;
-            }
-            if (id.StartsWith("jacket") || id.StartsWith("board"))
-            {
-                bool jk = id.StartsWith("jacket");
-                int i = int.Parse(id.Substring(jk ? 6 : 5));
-                bool owned = jk ? Progress.OwnsJacket(i) : Progress.OwnsBoard(i);
-                if (jk ? Progress.PickJacket(i) : Progress.PickBoard(i)) { if (owned) Clicked?.Invoke(); else Bought?.Invoke(); ShowShop(1); }
-                else { Denied?.Invoke(); cardMsg.text = "Need " + (Progress.OutfitCost(i) - Progress.Points).ToString("N0") + " more points"; }
                 return true;
             }
             return false;

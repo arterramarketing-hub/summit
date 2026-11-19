@@ -1724,6 +1724,14 @@ namespace Summit
             fadeUi = ui;
             if (fadeIn) { fade = Mathf.MoveTowards(fade, 0f, dt / 0.6f); ui.SetFade(fade); fadeIn = fade > 0f; }
             if (falling) { FallStep(dt); ui.SetStick(false, Vector2.zero, Vector2.zero); ui.SetLookStick(false, Vector2.zero, Vector2.zero); ui.SetContext(Station.None); return false; }
+            if (ui.ClosetOpen)
+            {
+                // the closet takes every finger (its list scrolls, its hero turns); nothing walks or looks meanwhile
+                ui.ClosetStep(Touches(), dt);
+                ui.SetStick(false, Vector2.zero, Vector2.zero); ui.SetLookStick(false, Vector2.zero, Vector2.zero);
+                Showcase = false;
+                return false;
+            }
             input.Step(Touches(), dt, cam != null ? cam.pixelWidth : Screen.width, cam != null ? cam.pixelHeight : Screen.height, ui.Hit, ui.PanelOpen);
             if (input.Button != null) ui.Act(input.Button);
             if (input.ContextTapped && Open(Near, ui)) return true;
@@ -1835,6 +1843,7 @@ namespace Summit
             if (cam == null) return;
             if (ChaseCamera.TestDt > 0f) dt = ChaseCamera.TestDt;
             if (falling) { FallCamera(dt); return; }
+            if (ClosetStage.Showing != null) { ClosetStage.Showing.Frame(cam); snap = true; return; }   // the closet's studio has the camera
             float k(float rate) => snap ? 1f : 1f - Mathf.Exp(-dt * rate);
             // the camera stays where the look stick leaves it (it no longer swings round behind you as you walk)
             lookBlend = Mathf.Lerp(lookBlend, OnLookout && speed < 0.5f ? 1f : 0f, k(2f));

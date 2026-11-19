@@ -415,6 +415,12 @@ namespace Summit
             meta.Clicked = () => audioFx.Play(Sfx.Click);
             meta.Bought = () => audioFx.Play(Sfx.ShieldGet, 2);
             meta.Denied = () => audioFx.Play(Sfx.Scrape, 0.4f);
+            // the closet's studio, and the rider repainted for each try-on (ApplyOutfit shows meta.TryOn while it's open)
+            Wardrobe.Classic = body.Hero == null;
+            var closet = new GameObject("Closet").AddComponent<ClosetStage>();
+            closet.Setup(body, Camera.main);
+            meta.Stage = closet;
+            meta.TriedOn = ApplyOutfit;
             camp = new GameObject("SummitCamp").AddComponent<Camp>();
             camp.soft = spray;
             camp.Build(snow.shader);
@@ -436,7 +442,8 @@ namespace Summit
 
         void ApplyOutfit()
         {
-            body.SetColours(Progress.Jackets[Progress.Jacket], Progress.Boards[Progress.Board]);
+            // what's worn, or, while the closet is open, what's being tried on (Wardrobe; RiderBody.Wear)
+            body.Wear(meta != null && meta.TryOn != null ? meta.TryOn : Wardrobe.Worn());
             // what was picked at the rack (Progress.Ride): the rider's physics and what you see of them
             // (the physics follows what the body could actually put on: without the gear's files it stays a snowboard)
             if (rider.Ride != Progress.Ride) { body.SetRide(Progress.Ride); rider.SetRide(body.Ride); if (hud != null) ShowRider(); }
@@ -671,7 +678,8 @@ namespace Summit
             WatchWoah();
             WatchWarn();
             // a gentler lens in the camp (its camera is close, among straight lines), the player's own on the slope
-            lensFx.Strength = Mathf.MoveTowards(lensFx.Strength, state == State.Hub ? 0.3f : 1f, Time.unscaledDeltaTime * 1.4f);
+            // (none at all in the closet's studio: it would bend the hero)
+            lensFx.Strength = ClosetStage.Showing != null ? 0f : Mathf.MoveTowards(lensFx.Strength, state == State.Hub ? 0.3f : 1f, Time.unscaledDeltaTime * 1.4f);
             switch (state)
             {
                 case State.Hub:

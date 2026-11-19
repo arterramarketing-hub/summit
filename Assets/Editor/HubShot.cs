@@ -134,14 +134,17 @@ public static class HubShot
         meta.Act("buy" + (int)Progress.Up.Fizz);
         Shoot("HubShot9_upgrades.png");
         meta.ClosePanel(false);
-        // 10: outfits by the board wall, the camera round in front
+        // 10: the wardrobe, from the board wall (the closet lays itself out as it opens: at the phone's shape)
         camp.TeleportTo(C(-3.3f, 3.6f, -3.4f), cy);
         Frames(10);
         meta.SetContext(camp.Near);
-        meta.ShowShop(1); camp.Showcase = true; meta.SetContext(camp.Near);
-        Frames(60);
+        Debug.Log($"HUBSHOT at the board wall: near={camp.Near}");
+        cam.targetTexture = new RenderTexture(590, 1278, 24); cam.aspect = 590f / 1278f;
+        Canvas.ForceUpdateCanvases();
+        meta.ShowShop(1);
+        for (int i = 0; i < 40; i++) { meta.Stage.Pose(dt); Step(Vector2.zero); }
         Shoot("HubShot10_outfits.png");
-        camp.Showcase = false; meta.ClosePanel(false);
+        meta.ClosePanel(false);
         // 11: from the mezzanine over the great room and out through the glass
         camp.TeleportTo(C(1.5f, 3.6f, -1.3f), cy);
         Frames(60);
@@ -258,10 +261,12 @@ public static class HubShot
         Canvas.ForceUpdateCanvases();
         var skins = Object.FindObjectsByType<SkinnedMeshRenderer>(FindObjectsSortMode.None);
         var baked = new System.Collections.Generic.List<GameObject>();
-        foreach (var sk in skins) { var m = new Mesh(); sk.BakeMesh(m); var g = new GameObject("b", typeof(MeshFilter), typeof(MeshRenderer)); g.GetComponent<MeshFilter>().sharedMesh = m; g.GetComponent<MeshRenderer>().sharedMaterials = sk.sharedMaterials; g.transform.SetPositionAndRotation(sk.transform.position, sk.transform.rotation); sk.enabled = false; baked.Add(g); }
+        int mask = cam.cullingMask; cam.cullingMask |= 1 << meta.gameObject.layer;   // (the canvas draws with this camera here; the closet's studio limits what it sees)
+        foreach (var sk in skins) { var m = new Mesh(); sk.BakeMesh(m); var g = new GameObject("b", typeof(MeshFilter), typeof(MeshRenderer)); g.layer = sk.gameObject.layer; g.GetComponent<MeshFilter>().sharedMesh = m; g.GetComponent<MeshRenderer>().sharedMaterials = sk.sharedMaterials; g.transform.SetPositionAndRotation(sk.transform.position, sk.transform.rotation); sk.enabled = false; baked.Add(g); }
         cam.Render();
         foreach (var g in baked) Object.DestroyImmediate(g);
         foreach (var sk in skins) sk.enabled = true;
+        cam.cullingMask = mask;
         RenderTexture.active = rt;
         var tex = new Texture2D(w, h, TextureFormat.RGB24, false);
         tex.ReadPixels(new Rect(0, 0, w, h), 0, 0); tex.Apply();
