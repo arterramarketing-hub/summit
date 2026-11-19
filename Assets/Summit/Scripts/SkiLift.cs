@@ -26,8 +26,9 @@ namespace Summit
     /// Solid: a tower's mast and pad, and each station, are colliders marked as obstacles, so riding into one off
     /// the piste is a crash like a tree ("Lift tower", "Lift station"). A chair is solid too: a jump high enough to
     /// reach one is a crash ("Chairlift!", or a shield spent), found by a simple test against the few nearest
-    /// chairs. The cable itself is not: it is a few centimetres thick, and being clotheslined by something you
-    /// cannot see coming would only feel unfair. Nothing hangs within 9 m of the piste's snow (LiftLine).
+    /// chairs. The cable never knocks anyone down: it is there to be ground (CableGrind.cs), from the launch ramp
+    /// that stands under each lift (LiftRamp.cs), and while a rider is on it the chairs skim under the board and the
+    /// rope dips and bounces with them. Nothing hangs within 9 m of the piste's snow (LiftLine).
     ///
     /// At dusk and night the work lamps under each crossarm, the red beacon on each tower and the stations'
     /// windows and floodlights glow (the palette's glow picture, brought up with DayNight.Darkness), and one real
@@ -128,6 +129,13 @@ namespace Summit
             cableMat.SetColor("_BaseColor", new Color(0.13f, 0.13f, 0.14f));
             cableMat.SetFloat("_Smoothness", 0.5f); cableMat.SetFloat("_Metallic", 0.6f);
             cableMat.SetFloat("_Cull", 0f);
+            rampMat = new Material(paint) { name = "LiftRamp" };   // (the palette again, seen from both sides: no winding to get wrong)
+            rampMat.SetFloat("_Cull", 0f);
+            litShader = lit;
+            // the rider's own sphere never touches a launch ramp's collider (it is carried over the ramp by CableGrind)
+            if (target != null && target.TryGetComponent<Collider>(out var own)) own.excludeLayers |= 1 << CourseDressing.IceLayer;
+            CableGrind.Hook(rider);
+            CableGrind.ChairTick = at => { if (sound != null) sound.LiftClack(at, 0.6f); };
 
             var lg = new GameObject("LiftLamp");
             lg.transform.SetParent(transform, false);
@@ -135,7 +143,7 @@ namespace Summit
             lamp.type = LightType.Point; lamp.color = new Color(1f, 0.9f, 0.74f); lamp.range = 34f; lamp.shadows = LightShadows.None;
             lamp.enabled = false;
             ready = true;
-            if (System.Environment.GetEnvironmentVariable("SUMMIT_LIFTCHECK") == "1") Debug.Log("SkiLift\n" + LiftLine.Report());
+            if (System.Environment.GetEnvironmentVariable("SUMMIT_LIFTCHECK") == "1") Debug.Log("SkiLift\n" + LiftLine.Report() + LiftLine.RampReport());
         }
 
         // ---------------------------------------------------------------- what is built near the rider
@@ -163,6 +171,7 @@ namespace Summit
                 Refresh(p);
             }
             Chairs(p);
+            Bend();
             Draw();
             Glow(p);
             Sound(p);
@@ -176,12 +185,14 @@ namespace Summit
             foreach (var part in parts) part.list.Clear();
             refreshClock = 0f;
             clackTower = -1;
+            bent = null;
+            CableGrind.Reset();
         }
 
         void Free(Live lv)
         {
             if (lv.root == null) return;
-            foreach (var mf in lv.root.GetComponentsInChildren<MeshFilter>(true)) if (mf.sharedMesh != null) Destroy(mf.sharedMesh);   // the cables' meshes are ours
+            foreach (var mf in lv.root.GetComponentsInChildren<MeshFilter>(true)) if (mf.sharedMesh != null && mf.sharedMesh.name.StartsWith("Lift")) Destroy(mf.sharedMesh);   // the cables' and the ramp's meshes are ours (the sign's are Unity's)
             Destroy(lv.root);
             lv.root = null;
         }
@@ -202,7 +213,9 @@ namespace Summit
                 if (have) continue;
                 var root = new GameObject("Lift " + l.k);
                 root.transform.SetParent(transform, false);
-                live.Add(new Live { lift = l, root = root, span = new GameObject[l.Spans], tower = new GameObject[l.s.Length] });
+                var made = new Live { lift = l, root = root, span = new GameObject[l.Spans], tower = new GameObject[l.s.Length] };
+                live.Add(made);
+                Ramp(made);
             }
 
             foreach (var part in parts) if (part != chair && part != chairLod && System.Array.IndexOf(riders, part) < 0 && System.Array.IndexOf(ridersLod, part) < 0) part.list.Clear();
@@ -277,38 +290,18 @@ namespace Summit
         GameObject Cable(Live lv, int i)
         {
             var l = lv.lift;
-            const float R = 0.035f;
-            float sa = l.nodeS[i], sb = l.nodeS[i + 1];
-            int m = Mathf.Max(4, Mathf.CeilToInt((sb - sa) / 8f));
-            var pts = new List<Vector3>();
             var v = new List<Vector3>(); var tri = new List<int>();
-            Vector3 origin = l.At(sa, 0f, l.nodeY[i]);
-            for (int side = -1; side <= 1; side += 2)
-            {
-                pts.Clear();
-                if (i == 0) pts.Add(l.At(-LiftLine.WheelBack, side * LiftLine.Half, l.nodeY[0]));
-                for (int q = 0; q <= m; q++)
-                {
-                    float s = Mathf.Lerp(sa, sb, q / (float)m);
-                    pts.Add(l.At(s, side * LiftLine.Half, l.CableY(i, s)));
-                }
-                if (i == l.Spans - 1) pts.Add(l.At(l.plan + LiftLine.WheelBack, side * LiftLine.Half, l.nodeY[l.Spans]));
-                int b = v.Count;
-                for (int q = 0; q < pts.Count; q++)
-                {
-                    Vector3 t = (pts[Mathf.Min(q + 1, pts.Count - 1)] - pts[Mathf.Max(q - 1, 0)]).normalized;
-                    Vector3 up = Vector3.Cross(t, l.across).normalized;
-                    Vector3 c = pts[q] - origin;
-                    v.Add(c + up * R); v.Add(c + l.across * R); v.Add(c - up * R); v.Add(c - l.across * R);
-                }
-                for (int q = 0; q < pts.Count - 1; q++)
+            Vector3 origin = l.At(l.nodeS[i], 0f, l.nodeY[i]);
+            CableVerts(l, i, v, 0f, 0f, 0f);
+            int ring = v.Count / 8;   // points along each rope, four vertices a point, two ropes
+            for (int side = 0; side < 2; side++)
+                for (int q = 0; q < ring - 1; q++)
                     for (int e = 0; e < 4; e++)
                     {
-                        int a0 = b + q * 4 + e, a1 = b + q * 4 + (e + 1) % 4, b0 = a0 + 4, b1 = a1 + 4;
+                        int a0 = side * ring * 4 + q * 4 + e, a1 = side * ring * 4 + q * 4 + (e + 1) % 4, b0 = a0 + 4, b1 = a1 + 4;
                         tri.Add(a0); tri.Add(b0); tri.Add(a1);
                         tri.Add(a1); tri.Add(b0); tri.Add(b1);
                     }
-            }
             var mesh = new Mesh { name = "LiftCable" };
             mesh.SetVertices(v); mesh.SetTriangles(tri, 0);
             mesh.RecalculateNormals(); mesh.RecalculateBounds();
@@ -321,6 +314,137 @@ namespace Summit
             mr.shadowCastingMode = ShadowCastingMode.Off; mr.receiveShadows = false;
             return go;
         }
+
+        /// <summary>
+        /// A span's cable as vertices round its own first support: the rope coming down (side -1), then the rope
+        /// going up. With a rider on one of them (bendSide), that rope hangs in a V under the board, `dip` deep.
+        /// </summary>
+        void CableVerts(LiftLine.Lift l, int i, List<Vector3> v, float bendSide, float bendAlong, float dip)
+        {
+            const float R = 0.035f;
+            float sa = l.nodeS[i], sb = l.nodeS[i + 1];
+            int m = Mathf.Max(4, Mathf.CeilToInt((sb - sa) / 8f));
+            Vector3 origin = l.At(sa, 0f, l.nodeY[i]);
+            v.Clear();
+            for (int side = -1; side <= 1; side += 2)
+            {
+                cablePts.Clear();
+                if (i == 0) cablePts.Add(l.At(-LiftLine.WheelBack, side * LiftLine.Half, l.nodeY[0]));
+                for (int q = 0; q <= m; q++)
+                {
+                    float s = Mathf.Lerp(sa, sb, q / (float)m);
+                    float y = l.CableY(i, s);
+                    if (dip != 0f && side == (int)bendSide)
+                        y -= dip * Mathf.Clamp01(s < bendAlong ? (s - sa) / Mathf.Max(0.5f, bendAlong - sa) : (sb - s) / Mathf.Max(0.5f, sb - bendAlong));
+                    cablePts.Add(l.At(s, side * LiftLine.Half, y));
+                }
+                if (i == l.Spans - 1) cablePts.Add(l.At(l.plan + LiftLine.WheelBack, side * LiftLine.Half, l.nodeY[l.Spans]));
+                for (int q = 0; q < cablePts.Count; q++)
+                {
+                    Vector3 t = (cablePts[Mathf.Min(q + 1, cablePts.Count - 1)] - cablePts[Mathf.Max(q - 1, 0)]).normalized;
+                    Vector3 up = Vector3.Cross(t, l.across).normalized;
+                    Vector3 c = cablePts[q] - origin;
+                    v.Add(c + up * R); v.Add(c + l.across * R); v.Add(c - up * R); v.Add(c - l.across * R);
+                }
+            }
+        }
+        readonly List<Vector3> cablePts = new List<Vector3>(), bendVerts = new List<Vector3>();
+        Mesh bent;   // the span's mesh that is hanging under the rider just now
+
+        /// <summary>The cable under a grinding rider dips and bounces with them, and springs back when they leave it.</summary>
+        void Bend()
+        {
+            Mesh now = null;
+            if (CableGrind.Riding(out var l, out int i, out float side, out float along, out float dip))
+                foreach (var lv in live)
+                    if (lv.lift == l && i < lv.span.Length && lv.span[i] != null)
+                    {
+                        now = lv.span[i].GetComponent<MeshFilter>().sharedMesh;
+                        // (the board is carried along a little ahead of the rope's middle point: draw the V where it is)
+                        CableVerts(l, i, bendVerts, side, along, dip);
+                        now.SetVertices(bendVerts); now.RecalculateBounds();
+                    }
+            if (bent != null && bent != now)
+                foreach (var lv in live)
+                    for (int k = 0; k < lv.span.Length; k++)
+                        if (lv.span[k] != null && lv.span[k].GetComponent<MeshFilter>().sharedMesh == bent)
+                        {
+                            CableVerts(lv.lift, k, bendVerts, 0f, 0f, 0f);
+                            bent.SetVertices(bendVerts); bent.RecalculateBounds();
+                        }
+            bent = now;
+        }
+
+        // ---------------------------------------------------------------- the launch ramp (LiftRamp.cs)
+
+        static Vector2 Paint(int cell) => new Vector2((cell % 8 + 0.5f) / 8f, 1f - (cell / 8 + 0.5f) / 8f);   // a colour of LiftPaint.png (Tools/MakeLift.py's palette)
+
+        /// <summary>
+        /// A lift's launch ramp: a steel kicker standing under one cable, its sides
+        /// running down into the snow; and a jump sign at the piste's edge where the cleared lane to it starts.
+        /// The rider is carried over it by CableGrind, so its collider is only for a thrown body and the board.
+        /// </summary>
+        void Ramp(Live lv)
+        {
+            var l = lv.lift; var r = l.ramp;
+            if (r == null) return;
+            const int N = 8;
+            const int Deck = 7, Steel = 0, Accent = 6, Dark = 1;
+            var v = new List<Vector3>(); var uv = new List<Vector2>(); var tri = new List<int>();
+            Vector3 origin = LiftLine.RampPoint(l, r, 0f);
+            System.Action<Vector3, Vector3, Vector3, Vector3, int> Quad = (a, b, c, d, cell) =>
+            {
+                int n = v.Count;
+                v.Add(a - origin); v.Add(b - origin); v.Add(c - origin); v.Add(d - origin);
+                for (int q = 0; q < 4; q++) uv.Add(Paint(cell));
+                tri.Add(n); tri.Add(n + 1); tri.Add(n + 2); tri.Add(n); tri.Add(n + 2); tri.Add(n + 3);
+            };
+            Vector3 w = l.across * CableTune.RampHalfWidth;
+            for (int k = 0; k < N; k++)
+            {
+                Vector3 p0 = LiftLine.RampPoint(l, r, r.length * k / N), p1 = LiftLine.RampPoint(l, r, r.length * (k + 1f) / N);
+                // (the sides go down to a metre under the snow, wherever the snow is)
+                Vector3 g0 = new Vector3(0f, Mathf.Min(p0.y, Slope.Height(p0.x, p0.z)) - 1f - p0.y, 0f), g1 = new Vector3(0f, Mathf.Min(p1.y, Slope.Height(p1.x, p1.z)) - 1f - p1.y, 0f);
+                Vector3 rim = Vector3.down * 0.18f;
+                Quad(p0 - w, p0 + w, p1 + w, p1 - w, Deck);                                   // the top: steel plate, like a park box
+                for (int e = -1; e <= 1; e += 2)
+                {
+                    Quad(p0 + w * e, p1 + w * e, p1 + w * e + rim, p0 + w * e + rim, k % 2 == 0 ? Accent : Dark);   // a striped rim
+                    Quad(p0 + w * e + rim, p1 + w * e + rim, p1 + w * e + g1, p0 + w * e + g0, Steel);              // the side
+                }
+                if (k == N - 1) Quad(p1 - w, p1 + w, p1 + w + g1, p1 - w + g1, Steel);        // the back, under the lip
+            }
+            var mesh = new Mesh { name = "LiftRamp" };
+            mesh.SetVertices(v); mesh.SetUVs(0, uv); mesh.SetTriangles(tri, 0);
+            mesh.RecalculateNormals(); mesh.RecalculateBounds();
+            var go = new GameObject("LaunchRamp") { layer = CourseDressing.IceLayer };
+            go.transform.SetParent(lv.root.transform, false);
+            go.transform.position = origin;
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            go.AddComponent<MeshRenderer>().sharedMaterial = rampMat;
+            go.AddComponent<MeshCollider>().sharedMesh = mesh;
+
+            // the sign: a board on a post, facing up the hill
+            if (signMat == null) signMat = CourseDressing.Sign(litShader, "Signs/SignJump");
+            var post = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            Destroy(post.GetComponent<Collider>());
+            post.name = "LiftRampSignPost";
+            post.transform.SetParent(lv.root.transform, false);
+            post.transform.position = r.sign + Vector3.up * 1.2f;
+            post.transform.localScale = new Vector3(0.12f, 3.4f, 0.12f);
+            post.GetComponent<MeshRenderer>().sharedMaterial = cableMat;
+            var board = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            Destroy(board.GetComponent<Collider>());
+            board.name = "LiftRampSign";
+            board.transform.SetParent(lv.root.transform, false);
+            // (a quad shows its face to whoever looks along its own +z: turned to face the rider coming down the lane)
+            Vector3 lane = LiftLine.RampPoint(l, r, 0f) - r.laneFrom; lane.y = 0f;
+            board.transform.SetPositionAndRotation(r.sign + Vector3.up * 2.4f - lane.normalized * 0.08f, Quaternion.LookRotation(lane.normalized, Vector3.up));
+            board.transform.localScale = new Vector3(1.7f, 1.7f, 1f);
+            board.GetComponent<MeshRenderer>().sharedMaterial = signMat;
+        }
+        Material rampMat, signMat;
+        Shader litShader;
 
         // ---------------------------------------------------------------- solid things
 
@@ -374,7 +498,7 @@ namespace Summit
             for (int i = 0; i < 4; i++) { riders[i].list.Clear(); ridersLod[i].list.Clear(); }
             double clock = Time.timeAsDouble;
             float t = (float)(clock % 3600.0);
-            bool canHit = rider != null && rider.Running && !rider.Crashed;
+            bool canHit = rider != null && rider.Running && !rider.Crashed && CableGrind.ChairsHit;   // (on a cable the board skims over the chairs' grips)
             foreach (var lv in live)
             {
                 var l = lv.lift;

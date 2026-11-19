@@ -12,7 +12,8 @@ namespace Summit
         Text diag;
         RectTransform playBtn, restartBtn, modeBtn, riderBtn;
         Text riderLabel;
-        public void SetRider(bool tube) { riderLabel.text = tube ? "RIDER: SNOW TUBE  (tap to change)" : "RIDER: SNOWBOARD  (tap to change)"; }
+        /// <summary>The start pad's RIDER label: what is being ridden, by name ("SNOWBOARD", "SKIS", "TOBOGGAN", "SNOW TUBE").</summary>
+        public void SetRider(string ride) { riderLabel.text = "RIDER: " + ride + "  (tap to change)"; }
         public bool OnRider(Vector2 p) => Inside(riderBtn, p);
         Text modeLabel;
         Text playLabel;

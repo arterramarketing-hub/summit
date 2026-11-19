@@ -62,4 +62,5 @@ namespace UnityEngine
 namespace Summit
 {
     public static class Camp { public static bool InCamp(float x, float z) => false; }   // (the camp is behind the start: no lift goes there)
+    public static class Hamlets { public static bool Taken(float x, float z) => false; }  // (Hamlets.cs needs the whole engine: the harness lays the lifts as if no hamlet stood in the way)
 }
