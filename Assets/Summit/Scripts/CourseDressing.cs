@@ -161,12 +161,32 @@ namespace Summit
 
         // ---------------------------------------------------------------- crevasses
 
+        /// <summary>The depth, in metres, of the parallax step on the ice walls' relief. 0 turns it off.</summary>
+        public const float IceParallax = 0.07f;
+
         /// <summary>
-        /// Ice from the lip down: snow white, pale blue, a luminous blue, then deep blue, darkening only at the very
+        /// Glacier ice (Resources/IceWall.shader): a photo-scanned fractured ice surface, blue by depth, in annual
+        /// layers, glossy, with a glow of its own. Without the shader or its textures, the plain ice below.
+        /// </summary>
+        static Material IceMaterial(Shader lit)
+        {
+            var sh = Resources.Load<Shader>("IceWall");
+            var albedo = Resources.Load<Texture2D>("Ice/IceAlbedo");
+            var normal = Resources.Load<Texture2D>("Ice/IceNormal");
+            if (sh == null || albedo == null || normal == null) return PlainIceMaterial(lit);
+            var m = new Material(sh) { name = "CrevasseIce" };
+            m.SetTexture("_BaseMap", albedo);
+            m.SetTexture("_BumpMap", normal);
+            m.SetFloat("_Parallax", IceParallax);
+            return m;
+        }
+
+        /// <summary>
+        /// Plain ice from the lip down: snow white, pale blue, a luminous blue, then deep blue, darkening only at the very
         /// bottom. It glows a little (light through the ice), and is only half glossy: a mirror-smooth wall deep in
         /// the dark showed the grey sky instead of its own blue.
         /// </summary>
-        static Material IceMaterial(Shader lit)
+        static Material PlainIceMaterial(Shader lit)
         {
             var t = new Texture2D(2, 128, TextureFormat.RGB24, true) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
             for (int y = 0; y < 128; y++)
@@ -216,6 +236,10 @@ namespace Summit
             var sv = new List<Vector3>(); var suv = new List<Vector2>(); var st = new List<int>();
             var bv = new List<Vector3>(); var buv = new List<Vector2>(); var bt = new List<int>();
             var iv = new List<Vector3>(); var iuv = new List<Vector2>(); var it = new List<int>();
+            // the ice's own mapping for its shader: (metres below the lip, 0 at the lip to 1 at the bottom), and where
+            // on the wall in metres (along the crevasse, up), from the crevasse's start so the numbers stay small
+            var iflat = new List<Vector2>();
+            float yRef = Slope.Surface(cv.x, ua);
             var cvv = new List<Vector3>(); var ct = new List<int>();
             // laid out along z (u) and across it in x (w)
             static Vector3 P(float u, float w, float y) => new Vector3(w, y, u);
@@ -252,15 +276,15 @@ namespace Summit
                     }
                     // the snow face under the lip (overhanging a touch), then the ice down into the dark
                     float w0 = ctr + side * e, y0 = Surf(u, w0) - 0.06f;
-                    iv.Add(P(u, w0, y0)); iuv.Add(new Vector2(0.5f, 0f));
-                    iv.Add(P(u, w0 + side * 0.22f, y0 - lipDrop)); iuv.Add(new Vector2(0.5f, 0.06f));
+                    iv.Add(P(u, w0, y0)); iuv.Add(new Vector2(0f, 0f)); iflat.Add(new Vector2(u - ua, y0 - yRef));
+                    iv.Add(P(u, w0 + side * 0.22f, y0 - lipDrop)); iuv.Add(new Vector2(lipDrop, 0.06f)); iflat.Add(new Vector2(u - ua, y0 - lipDrop - yRef));
                     for (int k = 1; k <= Wall; k++)
                     {
                         float f = k / (float)Wall;
                         float wob = (Slope.Noise(u * 0.8f + side * 5f, k * 1.7f + 3f) - 0.5f) * 0.7f * Mathf.Min(1f, open);
                         float w = ctr + side * (Mathf.Lerp(e + 0.22f, open * 0.12f, Mathf.Pow(f, 0.75f)) + wob);
                         float y = y0 - lipDrop - Mathf.Max(0f, depth - lipDrop) * f;
-                        iv.Add(P(u, w, y)); iuv.Add(new Vector2(0.5f, Mathf.Lerp(0.07f, 1f, f)));
+                        iv.Add(P(u, w, y)); iuv.Add(new Vector2(y0 - y, Mathf.Lerp(0.07f, 1f, f))); iflat.Add(new Vector2(u - ua, y - yRef));
                     }
                 }
                 int sc = apron.Length, bc = band.Length, ic = Wall + 2;
@@ -304,7 +328,7 @@ namespace Summit
             for (int r = 0; r < crows - 1; r++) Quads(ct, r * cc, cc, true);
             MeshObject(root, "CrevasseSnow", sv, suv, st, snow, true);
             MeshObject(root, "CrevasseLip", bv, buv, bt, lipBand, false);
-            MeshObject(root, "CrevasseIce", iv, iuv, it, ice, false);
+            MeshObject(root, "CrevasseIce", iv, iuv, it, ice, false, iflat);
             IceCollider(root, cvv, ct);
         }
 
@@ -353,13 +377,13 @@ namespace Summit
             return m;
         }
 
-        static void MeshObject(Transform root, string name, List<Vector3> v, List<Vector2> uv, List<int> t, Material m, bool shadows)
+        static void MeshObject(Transform root, string name, List<Vector3> v, List<Vector2> uv, List<int> t, Material m, bool shadows, List<Vector2> uv1 = null)
         {
             var g = new GameObject(name);
             g.transform.SetParent(root, false);
             var mesh = new Mesh();
             mesh.indexFormat = v.Count > 65000 ? UnityEngine.Rendering.IndexFormat.UInt32 : UnityEngine.Rendering.IndexFormat.UInt16;
-            mesh.SetVertices(v); mesh.SetUVs(0, uv); mesh.SetTriangles(t, 0);
+            mesh.SetVertices(v); mesh.SetUVs(0, uv); if (uv1 != null) mesh.SetUVs(1, uv1); mesh.SetTriangles(t, 0);
             mesh.RecalculateNormals(); mesh.RecalculateTangents(); mesh.RecalculateBounds();
             g.AddComponent<MeshFilter>().sharedMesh = mesh;
             var r = g.AddComponent<MeshRenderer>();
