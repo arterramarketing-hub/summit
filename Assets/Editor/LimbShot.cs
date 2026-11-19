@@ -79,6 +79,7 @@ public static class LimbShot
         Shoot("Warmup", true); Shoot("Warmup2", true);   // the first renders come out unlit (and the cloth shader half-compiled)
 
         if (!old && System.Environment.GetEnvironmentVariable("SUMMIT_TALLY") == "1") Tally();
+        if (System.Environment.GetEnvironmentVariable("SUMMIT_MODE") == "rides") { RidesCheck(old); return; }
 
         // the moment it comes off: an arm into a tree, a leg in a big fall
         blood.SetOn(true);
@@ -131,6 +132,102 @@ public static class LimbShot
                 if (score > bestScore) { bestScore = score; best = eye; }
             }
         return best;
+    }
+
+    // ---- SUMMIT_MODE=rides: bones broken, get up and ride on, crash after crash, on each ride (the bandage glitch)
+
+    static string PathOf(Transform t) { string p = t.name; for (var q = t.parent; q != null && q != body.transform; q = q.parent) p = q.name + "/" + p; return p; }
+
+    /// <summary>The biggest thing drawn on the rider this frame (bandages, stumps, gear, the rides), by its world bounds.</summary>
+    static float Biggest(out string what)
+    {
+        float best = 0f; what = "";
+        foreach (var r in body.GetComponentsInChildren<Renderer>())
+        {
+            if (!r.enabled || r is ParticleSystemRenderer || r is TrailRenderer || r is LineRenderer) continue;
+            if (r.GetComponentInParent<SkinnedMeshRenderer>() == null && r.name.StartsWith("Trail")) continue;
+            float sz = r.bounds.size.magnitude;
+            if (sz > best) { best = sz; what = $"{PathOf(r.transform)} lossy {r.transform.lossyScale.x:0.###}"; }
+        }
+        return best;
+    }
+
+    static void ListBig(string name, float over)
+    {
+        foreach (var r in body.GetComponentsInChildren<Renderer>())
+        {
+            if (!r.enabled || r is ParticleSystemRenderer) continue;
+            float sz = r.bounds.size.magnitude;
+            if (sz > over) Log($"{name}:   BIG {PathOf(r.transform)} size {sz:0.00} m, lossy {r.transform.lossyScale}, local {r.transform.localScale}");
+        }
+    }
+
+    static void RidesCheck(bool old)
+    {
+        string tagged = System.Environment.GetEnvironmentVariable("SUMMIT_TAG") ?? "";
+        blood.SetOn(true);
+        var brk = typeof(RiderBody).GetMethod("Break", NP);
+        foreach (var kind in new[] { RideKind.Snowboard, RideKind.Skis, RideKind.Toboggan })
+        {
+            body.SetRide(kind); rider.SetRide(body.Ride);
+            if (old && kind != RideKind.Snowboard) break;   // (the previous rider has only the board)
+            string name = "Rides" + tagged + body.Ride;
+            Log($"{name}: riding {body.Ride} ({(old ? "previous rider" : "hero")})");
+            // bandages on and how big the wrapped bones are, from the start
+            foreach (var t in new[] { rig.Head, rig.HandR, rig.HandL, rig.ShinL }) Log($"{name}: bone {t.name} lossy {t.lossyScale.x:0.####}");
+            float worst = 0f; string worstWhat = "";
+            for (int crash = 1; crash <= 3; crash++)
+            {
+                typeof(SummitGame).GetField("falls", NP).SetValue(game, 0);
+                typeof(SummitGame).GetField("wipeoutTimer", NP).SetValue(game, 0f);
+                Random.InitState(7 + crash);
+                SnowRun(17f, 1.5f, Course.First + 200f + crash * 60f, 0.5f);
+                if (crash == 1) foreach (var b in new[] { rig.ShinL, rig.ShinR, rig.LowerR, rig.Head }) brk.Invoke(body, new object[] { b, b.position });
+                Settle();
+                float up = GetUp();
+                if (rider.Crashed) { Log($"{name}: crash {crash}: NEVER GOT UP"); break; }
+                float most = 0f; string mostWhat = "";
+                for (float t = 0f; t < 2f; t += Dt)
+                {
+                    rider.Steer = Mathf.Sin(t * 1.7f) * 0.6f; Step();
+                    float b = Biggest(out var w); if (b > most) { most = b; mostWhat = w; }
+                }
+                Log($"{name}: crash {crash}: up after {up:0.0} s; riding at {rider.Speed * 3.6f:0} km/h; biggest thing on the rider {most:0.00} m ({mostWhat})");
+                ListBig(name, 2.2f);
+                if (most > worst) { worst = most; worstWhat = mostWhat; }
+                if (crash == 1 || crash == 3)
+                {
+                    Vector3 mid = rig.Hips.position, f = rider.Velocity; f.y = 0f; f = f.sqrMagnitude > 0.1f ? f.normalized : Vector3.forward;
+                    Vector3 right = Vector3.Cross(Vector3.up, f);
+                    Look(mid + right * 3.6f + f * 1.0f + Vector3.up * 0.5f, mid, 50f); Shoot(name + "Crash" + crash + "Side", true);
+                    // the game's own chase camera, as the player sees it
+                    chase.enabled = true; late.Invoke(chase, null); Shoot(name + "Crash" + crash + "Chase", true);
+                }
+            }
+            Log($"{name}: WORST {worst:0.00} m ({worstWhat})");
+        }
+        if (!old)
+        {
+            // first person, on skis, after the breaks: the head (and its bandage) has to stay out of the lens
+            body.SetRide(RideKind.Skis); rider.SetRide(body.Ride);
+            chase.pov = true;
+            typeof(SummitGame).GetField("falls", NP).SetValue(game, 0);
+            Random.InitState(3);
+            SnowRun(17f, 1.5f, Course.First + 420f, 0.5f);
+            foreach (var b in new[] { rig.ShinL, rig.Head }) brk.Invoke(body, new object[] { b, b.position });
+            Settle();
+            povFirst = true; GetUp();
+            float most = 0f; string mostWhat = "";
+            for (float t = 0f; t < 2f; t += Dt) { rider.Steer = Mathf.Sin(t * 1.7f) * 0.6f; Step(); float b = Biggest(out var w); if (b > most) { most = b; mostWhat = w; } }
+            float headBand = 0f; foreach (Transform c in rig.Head) if (c.name.StartsWith("Bandage")) headBand = Mathf.Max(headBand, c.GetComponent<Renderer>().bounds.size.magnitude);
+            Log($"RidesPov{tagged}: in first person: biggest {most:0.00} m ({mostWhat}); head lossy {rig.Head.lossyScale.x:0.####}, head bandage {headBand:0.00} m (want ~0: hidden with the head)");
+            chase.enabled = true; late.Invoke(chase, null); Shoot("RidesPov" + tagged, true);
+            povFirst = false; chase.pov = false; body.SetPovHead(false);
+            headBand = 0f; foreach (Transform c in rig.Head) if (c.name.StartsWith("Bandage")) headBand = Mathf.Max(headBand, c.GetComponent<Renderer>().bounds.size.magnitude);
+            Log($"RidesPov{tagged}: back in the chase view: head lossy {rig.Head.lossyScale.x:0.####}, head bandage {headBand:0.00} m (want ~0.3)");
+            Look(rig.Head.position + rider.Velocity.normalized * 1.6f + Vector3.up * 0.4f, rig.Head.position, 40f); Shoot("RidesPovAfter" + tagged, true);
+        }
+        body.SetRide(RideKind.Snowboard); rider.SetRide(body.Ride);
     }
 
     static void ToRiding()
@@ -294,7 +391,7 @@ public static class LimbShot
         Settle(); Aftermath(name);
     }
 
-    static bool stumpShot;
+    static bool stumpShot, povFirst;
 
     /// <summary>The stump and the piece half a second on, while they tumble apart.</summary>
     static void StumpShot(string name)
@@ -493,6 +590,7 @@ public static class LimbShot
         }
         tUpd.Invoke(terrain, null);
         fUpd.Invoke(props, null);
+        if (povFirst && !rider.Crashed) body.SetPovHead(true);   // the game's camera hides the head before the body is posed
         body.Apply(Dt);
         late.Invoke(chase, null);
         typeof(Atmosphere).GetMethod("LateUpdate", NP).Invoke(atmo, null);

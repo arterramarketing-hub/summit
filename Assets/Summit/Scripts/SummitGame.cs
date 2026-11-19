@@ -675,6 +675,7 @@ namespace Summit
             if (!(Application.isBatchMode && TestHitStops)) TickHitStop(Time.unscaledDeltaTime);
             WatchDrop();
             WatchWoah();
+            WatchWarn();
             // a gentler lens in the camp (its camera is close, among straight lines), the player's own on the slope
             lensFx.Strength = Mathf.MoveTowards(lensFx.Strength, state == State.Hub ? 0.3f : 1f, Time.unscaledDeltaTime * 1.4f);
             switch (state)
@@ -1126,6 +1127,29 @@ namespace Summit
         // the "nooo": down a crevasse it fades with the depth; off a cliff, a short one the moment you are clearly
         // falling far below where you left the snow
         bool cliffNooo, crevNooo;
+        // the warnings, a beat before it happens: "don't go down there" with a deadly drop or a crevasse ahead on the
+        // line you're riding, "lookout" with a tree, rock or sign right in the way
+        float nextWarnCheck;
+        void WatchWarn()
+        {
+            if (state != State.Riding || audioFx == null || rider.Crashed || rider.Airborne || paused) return;
+            if (Time.unscaledTime < nextWarnCheck) return;
+            nextWarnCheck = Time.unscaledTime + 0.25f;
+            Vector3 p = rider.transform.position, v = rider.Body.linearVelocity;
+            Vector3 flat = new Vector3(v.x, 0f, v.z);
+            float sp = flat.magnitude;
+            if (sp < 8f) return;
+            Vector3 dir = flat / sp;
+            for (float t = 0.8f; t <= 1.6f; t += 0.4f)
+            {
+                Vector3 q = p + dir * sp * t;
+                if (Deadly.Below(q.x, q.z) || Course.CrevasseNear(q.x, q.z, 1.5f)) { audioFx.Play(Sfx.BuddyDeep); return; }
+            }
+            if (Physics.SphereCast(p + Vector3.up * 0.8f, 0.5f, dir, out RaycastHit hit, sp * 0.9f, ~0, QueryTriggerInteraction.Ignore) &&
+                hit.collider.GetComponentInParent<Obstacle>() != null)
+                audioFx.Play(Sfx.BuddyWarn);
+        }
+
         // the woahs: high off a jump (once per air), and now and then at full tilt
         bool airWoah; float nextSpeedWoah;
         void WatchWoah()

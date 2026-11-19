@@ -30,7 +30,7 @@ namespace Summit
         Rigidbody boardRb; BoxCollider boardCol;
         Rigidbody groundBody, boardGroundBody;
         Transform modelHome;
-        Vector3 modelPos, boardPos; Quaternion modelRot, boardRot; Vector3 modelScale;
+        Vector3 modelPos, boardPos, boardScl = Vector3.one; Quaternion modelRot, boardRot; Vector3 modelScale;
         Quaternion footRelL, footRelR;
         public bool Active { get; private set; }
         public static float Plough = 2.2f;   // 1/s: how hard snow drags a body sliding through it
@@ -146,7 +146,7 @@ namespace Summit
         public class Loose
         {
             public Transform t; public Vector3 size, center; public float mass = 1.5f;
-            internal Transform home; internal Vector3 pos; internal Quaternion rot; internal Rigidbody rb; internal BoxCollider col;
+            internal Transform home; internal Vector3 pos, scl; internal Quaternion rot; internal Rigidbody rb; internal BoxCollider col;
         }
         readonly List<Loose> extras = new List<Loose>();
 
@@ -164,7 +164,7 @@ namespace Summit
             {
                 x.rb = null; x.col = null;
                 if (x.t == null || !x.t.gameObject.activeInHierarchy) continue;   // (a pole in a hand that is gone, say)
-                x.home = x.t.parent; x.pos = x.t.localPosition; x.rot = x.t.localRotation;
+                x.home = x.t.parent; x.pos = x.t.localPosition; x.rot = x.t.localRotation; x.scl = x.t.localScale;
                 x.t.SetParent(null, true);
                 x.rb = x.t.gameObject.AddComponent<Rigidbody>();
                 x.rb.mass = x.mass;
@@ -212,8 +212,11 @@ namespace Summit
                 if (x.rb == null || x.t == null) { x.rb = null; x.col = null; continue; }
                 Kill(x.t.GetComponent<Impact>());
                 x.col.enabled = false; Kill(x.col); Kill(x.rb); x.rb = null; x.col = null;
+                // back exactly as it was, scale and all: loose in the world it took on its parent's scale (a pole's
+                // parent is the hand bone, which the hero's file scales by 100), and SetParent(home, false) keeps
+                // that, so without this a pole came back 100 times bigger after every crash
                 x.t.SetParent(x.home, false);
-                x.t.localPosition = x.pos; x.t.localRotation = x.rot;
+                x.t.localPosition = x.pos; x.t.localRotation = x.rot; x.t.localScale = x.scl;
             }
         }
 
@@ -256,7 +259,7 @@ namespace Summit
             var model = rig.Root;
             modelHome = model.parent;
             modelPos = model.localPosition; modelRot = model.localRotation; modelScale = model.localScale;
-            boardPos = board.localPosition; boardRot = board.localRotation;
+            boardPos = board.localPosition; boardRot = board.localRotation; boardScl = board.localScale;
             footRelL = Quaternion.Inverse(rig.ShinL.rotation) * rig.FootL.rotation;
             footRelR = Quaternion.Inverse(rig.ShinR.rotation) * rig.FootR.rotation;
             model.SetParent(null, true);
@@ -697,7 +700,7 @@ namespace Summit
             model.SetParent(modelHome, false);
             model.localPosition = modelPos; model.localRotation = modelRot; model.localScale = modelScale;
             board.SetParent(boardHome, false);
-            board.localPosition = boardPos; board.localRotation = boardRot;
+            board.localPosition = boardPos; board.localRotation = boardRot; board.localScale = boardScl;   // (as the loose gear: see EndExtras)
             rig.RestoreBind();
             Rejoin();   // any limb torn off is back on, its joint rebuilt at rest
         }

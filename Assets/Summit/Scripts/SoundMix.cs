@@ -12,7 +12,8 @@ namespace Summit
         BigScream,    // one of the player's screams (Resources/Audio/UserScreams), shuffled
         SlideCrack,   // the slope letting go behind you: a crack, and the rumble building
         BoneLeg, BoneBack, BoneNeck, BoneArm,  // the harsh breaks: a big bone, the spine, the neck, an arm
-        BuddyWoah, BuddyClose, BuddyCheer, BuddyOuch   // the player's own voice lines (Resources/Audio/Buddy/<group>)
+        BuddyWoah, BuddyClose, BuddyCheer, BuddyOuch,  // the player's own voice lines (Resources/Audio/Buddy/<group>)
+        BuddyWarn, BuddyDeep                            // "lookout" (something in the way), "don't go down there" (a deadly drop or crevasse)
     }
 
     /// <summary>What the ride sounds like this frame (all 0..1 unless noted).</summary>
@@ -109,7 +110,8 @@ namespace Summit
             nooo = C("user_crevasse_nooo"); ledge = C("user_ledge_suspense");
             bigScreams = Resources.LoadAll<AudioClip>("Audio/UserScreams");
             buddy = new[] { new Bag(Resources.LoadAll<AudioClip>("Audio/Buddy/Woah")), new Bag(Resources.LoadAll<AudioClip>("Audio/Buddy/Close")),
-                            new Bag(Resources.LoadAll<AudioClip>("Audio/Buddy/Cheer")), new Bag(Resources.LoadAll<AudioClip>("Audio/Buddy/Ouch")) };
+                            new Bag(Resources.LoadAll<AudioClip>("Audio/Buddy/Cheer")), new Bag(Resources.LoadAll<AudioClip>("Audio/Buddy/Ouch")),
+                            new Bag(Resources.LoadAll<AudioClip>("Audio/Buddy/Warn")), new Bag(Resources.LoadAll<AudioClip>("Audio/Buddy/Deep")) };
             screamBag = new int[bigScreams.Length]; screamNext = screamBag.Length;   // shuffled on first use
             cue = gameObject.AddComponent<AudioSource>(); cue.playOnAwake = false; cue.spatialBlend = 0f;
             music = new GameObject("Music").AddComponent<Music>();
@@ -459,8 +461,7 @@ namespace Summit
                     return;
                 }
             }
-            if (kind == Sfx.BuddyWoah || kind == Sfx.BuddyClose || kind == Sfx.BuddyCheer || kind == Sfx.BuddyOuch)
-            { PlayBuddy(kind == Sfx.BuddyWoah ? 0 : kind == Sfx.BuddyClose ? 1 : kind == Sfx.BuddyCheer ? 2 : 3); return; }
+            if (kind >= Sfx.BuddyWoah && kind <= Sfx.BuddyDeep) { PlayBuddy(kind - Sfx.BuddyWoah); return; }
             if (kind == Sfx.Ledge)
             {
                 if (ledge != null) { cue.clip = ledge; cue.volume = 0.9f; cue.pitch = 1f; cue.Play(); }

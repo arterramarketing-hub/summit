@@ -18,6 +18,18 @@ namespace Summit
         void Bandage(Transform bone)
         {
             if (bone == null || bandaged.Contains(bone) || rig == null) return;
+            // the first-person view shrinks the head bone to nothing while the lens is in it, and the camera does
+            // that before the body is posed in the same frame (so on getting up, before these are made). A wrap
+            // fixed to the bone at that size would keep a scale a thousand times too big for it: the head is put
+            // back to its full size while the bandages are made, then hidden again
+            bool povWas = povHidden;
+            if (povWas) SetPovHead(false);
+            try { Wrapped(bone); }
+            finally { if (povWas) SetPovHead(true); }
+        }
+
+        void Wrapped(Transform bone)
+        {
             if (ragdoll != null && ragdoll.Gone(bone)) return;   // nothing left there to wrap
             BandageMats();
             bool limb = bone == rig.UpperL || bone == rig.LowerL || bone == rig.UpperR || bone == rig.LowerR
