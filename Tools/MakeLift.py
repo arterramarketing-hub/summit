@@ -5,11 +5,11 @@
 #   ... -- Assets/Summit/Resources/Lift --previews Tools/art           also renders the preview pictures
 #
 # A modern detachable four-seat chairlift, in pieces the game draws in instanced batches (SkiLift.cs):
-#   Mast       a tapered steel tube with a ladder, one metre tall: the game stretches it to each tower's height
-#   Head       the top of a tower: crossarm, work platforms with railings, lifting frame, a work lamp and a beacon
-#   Pad        the safety pad round a tower's foot
-#   Sheaves    one sheave train (six wheels on rocker beams), set on each end of the crossarm along the cable
-#   Chair      a four-seat chair: grip, hanger, bail, seat and back, the bar down with its footrests
+#   Mast       a plain galvanised tube with a ladder, one metre tall: the game stretches it to each tower's height
+#   Head       the top of a tower: T crossarm, a railed catwalk across it, the ladder's cage, work lamps, a beacon
+#   Pad        the orange-red padding round a tower's foot
+#   Sheaves    one sheave train (eight wheels on rocker beams), set on each end of the crossarm along the cable
+#   Chair      a detachable four-seat chair: grip, slim hanger, bail, seat and back, the bar down with its footrests
 #   RidersA-D  seated riders for a chair, in varied jackets, skis or a board hanging
 #   Station    a terminal on a steel deck on legs: housing, bullwheel, operator's hut, lamps
 #   *Lod       plain versions of the above for far away
@@ -37,11 +37,11 @@ TOB = Matrix(((1, 0, 0, 0), (0, 0, 1, 0), (0, 1, 0, 0), (0, 0, 0, 1)))
 CELLS = 8          # cells a side
 CELL_PX = 8        # pixels a cell
 PAINT = {          # name: (cell, colour, glow)
-    "steel":    (0, (0.52, 0.55, 0.58), None),          # galvanised
+    "steel":    (0, (0.66, 0.68, 0.70), None),          # galvanised: pale grey
     "dark":     (1, (0.10, 0.10, 0.11), None),          # rubber, painted black steel
-    "liner":    (2, (0.22, 0.22, 0.24), None),          # sheave liners, the bullwheel
-    "pad":      (3, (0.96, 0.74, 0.06), None),          # safety yellow
-    "cushion":  (4, (0.12, 0.16, 0.24), None),          # the chair's seat
+    "liner":    (2, (0.17, 0.20, 0.20), None),          # sheave liners, the bullwheel
+    "pad":      (3, (0.90, 0.25, 0.08), None),          # tower padding: orange-red
+    "cushion":  (4, (0.09, 0.10, 0.12), None),          # the chair's seat: black padding
     "shell":    (5, (0.90, 0.91, 0.93), None),          # a station's housing
     "accent":   (6, (0.80, 0.11, 0.09), None),          # its stripe
     "deck":     (7, (0.42, 0.43, 0.45), None),          # steel grating
@@ -181,6 +181,18 @@ def beam(paint, a, b_, w, t):
     add(b, paint, Matrix.Translation((a + b_) / 2) @ rot @ Matrix.Diagonal(Vector((w, t, d.length, 1))))
 
 
+def strip(paint, pts, across, w):
+    """A flat bar through pts (game space), w wide along `across`, seen from both sides."""
+    h = Vector(across).normalized() * (w / 2)
+    b = bmesh.new()
+    for face in (1, -1):
+        vs = [(b.verts.new(Vector(p) - h), b.verts.new(Vector(p) + h)) for p in pts]
+        for i in range(len(pts) - 1):
+            q = [vs[i][0], vs[i + 1][0], vs[i + 1][1], vs[i][1]]
+            b.faces.new(q if face > 0 else list(reversed(q)))
+    add(b, paint, Matrix.Identity(4))
+
+
 def wheel(paint, pos, r, w, seg=10):
     """A disc on an axle along x."""
     tube(paint, (pos[0] - w / 2, pos[1], pos[2]), (pos[0] + w / 2, pos[1], pos[2]), r, seg)
@@ -206,119 +218,180 @@ WHEEL_Z = -2.4         # the bullwheel's centre along a station (its portal is a
 LEGS = 14.0            # how far a station's legs reach below its deck
 
 # ---------------------------------------------------------------- tower
+# After the lifts at Whistler: a tall plain galvanised tube, a T crossarm with a sheave train under each end, a
+# railed catwalk across the head with the ladder coming up through a safety cage, and an orange-red pad at the snow.
+
+MAST_R0, MAST_R1 = 0.36, 0.30
+LADDER_Z0, LADDER_Z1 = -(MAST_R0 + 0.09), -(MAST_R1 + 0.09)
 
 PART = "Mast"
 # one metre of mast: the game scales it along y from 1.5 m under the snow to the head
-tube("steel", (0, 0, 0), (0, 1, 0), 0.42, seg=12, r2=0.30, caps=False)
+tube("steel", (0, 0, 0), (0, 1, 0), MAST_R0, seg=12, r2=MAST_R1, caps=False)
 for sx in (-0.2, 0.2):                                    # the ladder up its uphill face
-    beam("steel", (sx, 0.12, -0.50), (sx, 1.0, -0.38), 0.035, 0.035)
+    beam("steel", (sx, 0.12, LADDER_Z0), (sx, 1.0, LADDER_Z1), 0.035, 0.035)
 for i in range(22):
     y = 0.14 + i * 0.039
-    box("steel", (0, y, -0.50 + (y - 0.12) * 0.136), (0.4, 0.0025, 0.03))
+    box("steel", (0, y, LADDER_Z0 + (y - 0.12) / 0.88 * (LADDER_Z1 - LADDER_Z0)), (0.4, 0.0025, 0.03))
+for y in (0.3, 0.62, 0.94):                               # the flanges where its lengths are bolted together
+    r = MAST_R0 + (MAST_R1 - MAST_R0) * y + 0.035
+    tube("steel", (0, y - 0.004, 0), (0, y + 0.004, 0), r, seg=12)
 
 PART = "MastLod"
-tube("steel", (0, 0, 0), (0, 1, 0), 0.42, seg=5, r2=0.30, caps=False)
+tube("steel", (0, 0, 0), (0, 1, 0), MAST_R0, seg=5, r2=MAST_R1, caps=False)
 
 PART = "Pad"
-tube("pad", (0, -0.4, 0), (0, 0.75, 0), 0.82, seg=14, caps=False)
-tube("dark", (0, 0.75, 0), (0, 1.05, 0), 0.82, seg=14, caps=False)
-tube("pad", (0, 1.05, 0), (0, 2.0, 0), 0.82, seg=14, caps=False)
-tube("pad", (0, 2.0, 0), (0, 2.12, 0), 0.82, seg=14, r2=0.5)
+# the padding strapped round its foot: orange-red, in two halves, a dark strap round the middle
+tube("pad", (0, -0.4, 0), (0, 0.86, 0), 0.74, seg=14, caps=False)
+tube("dark", (0, 0.86, 0), (0, 0.96, 0), 0.755, seg=14, caps=False)
+tube("pad", (0, 0.96, 0), (0, 1.82, 0), 0.74, seg=14, caps=False)
+tube("pad", (0, 1.82, 0), (0, 1.94, 0), 0.74, seg=14, r2=0.46)
+for a in (90, 270):                                       # the seam down each side
+    x, z = 0.75 * math.cos(math.radians(a)), 0.75 * math.sin(math.radians(a))
+    box("dark", (x, 0.9, z), (0.05, 1.84, 0.03))
 
 ARM_Y = 0.95           # the crossarm's middle, above the cable
+ARM_HALF = HALF + 0.85
+WALK_Y = ARM_Y + 0.18  # the catwalk's deck, on top of the arm
+WALK_HALF = HALF - 0.9 # it stops short of the cables: a rider hopping the tower off a cable passes outside it
+RAIL = 1.1
+TRAIN = 4.2            # a sheave train's length
 PART = "Head"
-tube("steel", (0, -0.3, 0), (0, ARM_Y + 0.25, 0), 0.30, seg=12)                 # the mast's last stretch
-box("steel", (0, ARM_Y, 0), (2 * HALF + 2.0, 0.42, 0.5))                         # the crossarm
+tube("steel", (0, -0.3, 0), (0, ARM_Y + 0.1, 0), MAST_R1, seg=12)                # the mast's last stretch
+box("steel", (0, ARM_Y, 0), (2 * ARM_HALF, 0.36, 0.42))                          # the crossarm
 for s in (-1, 1):
-    box("steel", (s * (HALF + 1.0), ARM_Y, 0), (0.06, 0.6, 0.7))                 # its end plates
-    box("steel", (s * 0.75, ARM_Y - 0.45, 0), (0.9, 0.5, 0.08), rot=(0, 0, s * 38))   # gussets to the mast
+    box("steel", (s * ARM_HALF, ARM_Y, 0), (0.05, 0.5, 0.6))                     # its end plates
+    box("steel", (s * 0.62, ARM_Y - 0.4, 0), (0.85, 0.42, 0.06), rot=(0, 0, s * 40))   # gussets to the mast
     # the yoke each sheave train hangs from, on the inside of the cable so the chairs' hangers pass outside
-    box("steel", (s * (HALF - 0.42), ARM_Y - 0.55, 0), (0.16, 0.9, 0.34))
-    box("steel", (s * (HALF - 0.21), 0.02 - 0.52, 0), (0.5, 0.14, 0.3))
+    box("steel", (s * (HALF - 0.42), ARM_Y - 0.55, 0), (0.14, 0.9, 0.3))
+    box("steel", (s * (HALF - 0.21), 0.02 - 0.52, 0), (0.5, 0.12, 0.28))
     # a work platform outside each cable, along it, with a railing
     px = s * (HALF + 0.78)
-    box("deck", (px, -0.62, 0), (0.55, 0.05, 3.4))
-    for z in (-1.7, 0, 1.7):
-        tube("steel", (px + s * 0.25, -0.62, z), (px + s * 0.25, 0.42, z), 0.022, seg=4)
-        beam("steel", (px - s * 0.2, -0.6, z), (s * (HALF + 0.95), ARM_Y - 0.2, 0), 0.05, 0.05)   # hangers up to the arm
+    box("deck", (px, -0.62, 0), (0.5, 0.04, TRAIN))
+    for z in (-TRAIN / 2, 0, TRAIN / 2):
+        tube("steel", (px + s * 0.23, -0.62, z), (px + s * 0.23, 0.42, z), 0.02, seg=4, caps=False)
+    for z in (-TRAIN / 2 + 0.2, TRAIN / 2 - 0.2):
+        beam("steel", (px - s * 0.2, -0.6, z), (s * (ARM_HALF - 0.1), ARM_Y - 0.1, 0), 0.04, 0.04)   # hangers up to the arm
     for y in (-0.1, 0.42):
-        tube("steel", (px + s * 0.25, y, -1.7), (px + s * 0.25, y, 1.7), 0.022, seg=4)
-# the lifting frame over the arm, for changing a sheave train
+        tube("steel", (px + s * 0.23, y, -TRAIN / 2), (px + s * 0.23, y, TRAIN / 2), 0.02, seg=4, caps=False)
+# the catwalk across the head: grating on the arm, a railing either side leaning out, wider at the top
+box("deck", (0, WALK_Y + 0.025, 0), (2 * WALK_HALF, 0.05, 0.95))
+TOP_HALF = WALK_HALF + 0.3
+for sz in (-1, 1):
+    for i in range(5):
+        u = -1 + i * 0.5
+        tube("steel", (u * WALK_HALF, WALK_Y, sz * 0.46), (u * TOP_HALF, WALK_Y + RAIL, sz * 0.6), 0.022, seg=4, caps=False)
+    for k in (0.5, 1.0):
+        half = WALK_HALF + (TOP_HALF - WALK_HALF) * k
+        tube("steel", (-half, WALK_Y + RAIL * k, sz * (0.46 + 0.14 * k)), (half, WALK_Y + RAIL * k, sz * (0.46 + 0.14 * k)), 0.022, seg=4, caps=False)
+    box("steel", (0, WALK_Y + 0.09, sz * 0.47), (2 * WALK_HALF, 0.1, 0.012))       # the kick plate
 for s in (-1, 1):
-    beam("steel", (s * 1.5, ARM_Y + 0.2, 0), (s * 1.1, ARM_Y + 1.75, 0), 0.1, 0.1)
-beam("steel", (-1.25, ARM_Y + 1.75, 0), (1.25, ARM_Y + 1.75, 0), 0.1, 0.12)
-box("beacon", (0, ARM_Y + 1.92, 0), (0.16, 0.2, 0.16))                           # the red light on top
-box("dark", (0, ARM_Y + 1.84, 0), (0.22, 0.06, 0.22))
-# work lamps under the arm, looking down each cable, and the tower's number plate
+    for k in (0.5, 1.0):
+        half = WALK_HALF + (TOP_HALF - WALK_HALF) * k
+        z = 0.46 + 0.14 * k
+        tube("steel", (s * half, WALK_Y + RAIL * k, -z), (s * half, WALK_Y + RAIL * k, z), 0.022, seg=4, caps=False)
+# the ladder comes up the mast's uphill face through a cage of hoops to a gap in the railing
+LZ = LADDER_Z1
+for sx in (-0.2, 0.2):
+    beam("steel", (sx, -0.05, LZ), (sx, WALK_Y + RAIL, LZ), 0.035, 0.035)
+for i in range(4):
+    box("steel", (0, 0.1 + i * 0.3, LZ), (0.4, 0.025, 0.03))
+HOOPS = (-3.3, -2.5, -1.7, -0.9, -0.1, 0.7)
+def hoop_pt(a, y):
+    return Vector((0.37 * math.cos(a), y, LZ - 0.66 * math.sin(a)))
+for y in HOOPS:
+    strip("steel", [hoop_pt(math.pi * i / 6, y) for i in range(7)], (0, 1, 0), 0.05)
+for i in (1, 3, 5):
+    a = math.pi * i / 6
+    t = Vector((-math.sin(a), 0, -math.cos(a)))
+    strip("steel", [hoop_pt(a, HOOPS[0]), hoop_pt(a, HOOPS[-1])], t, 0.04)
+# the red light on its short post over the catwalk, work lamps under the arm looking down each cable, the number plate
+tube("steel", (0, WALK_Y, 0.3), (0, WALK_Y + 1.62, 0.3), 0.03, seg=4, caps=False)
+box("beacon", (0, WALK_Y + 1.74, 0.3), (0.16, 0.2, 0.16))
+box("dark", (0, WALK_Y + 1.63, 0.3), (0.22, 0.06, 0.22))
 for s in (-1, 1):
-    box("dark", (s * 1.7, ARM_Y - 0.29, 0), (0.3, 0.12, 0.26))
-    box("lamp", (s * 1.7, ARM_Y - 0.36, 0), (0.24, 0.04, 0.2))
-for s in (-1, 1):
-    box("plate", (0, 0.1, s * 0.33), (0.46, 0.46, 0.03))
+    box("dark", (s * 1.7, ARM_Y - 0.25, 0), (0.3, 0.12, 0.26))
+    box("lamp", (s * 1.7, ARM_Y - 0.32, 0), (0.24, 0.04, 0.2))
+box("plate", (0, -1.0, MAST_R1 + 0.02), (0.44, 0.44, 0.03))
 
 PART = "HeadLod"
 box("steel", (0, ARM_Y / 2, 0), (0.5, ARM_Y + 0.6, 0.5))
-box("steel", (0, ARM_Y, 0), (2 * HALF + 2.0, 0.42, 0.5))
+box("steel", (0, ARM_Y, 0), (2 * ARM_HALF, 0.36, 0.42))
 for s in (-1, 1):
-    box("deck", (s * (HALF + 0.78), -0.1, 0), (0.55, 1.05, 3.4))
-box("beacon", (0, ARM_Y + 1.92, 0), (0.16, 0.2, 0.16))
-box("lamp", (0, ARM_Y - 0.36, 0), (3.6, 0.04, 0.2))
+    box("deck", (s * (HALF + 0.78), -0.1, 0), (0.5, 1.05, TRAIN))
+    box("steel", (s * (WALK_HALF + 0.15), WALK_Y + RAIL / 2, 0), (0.06, RAIL, 1.1))     # the catwalk's railing, as its outline
+for sz in (-1, 1):
+    box("steel", (0, WALK_Y + RAIL, sz * 0.6), (2 * TOP_HALF, 0.06, 0.06))
+box("steel", (0, WALK_Y - 1.6, LZ - 0.33), (0.7, 3.6, 0.06))                           # the ladder's cage
+box("beacon", (0, WALK_Y + 1.74, 0.3), (0.16, 0.2, 0.16))
+box("lamp", (0, ARM_Y - 0.32, 0), (3.6, 0.04, 0.2))
 
 PART = "Sheaves"
-# a sheave train: six wheels under the cable in three pairs, each pair on a rocker, the rockers on one beam.
+# a sheave train: eight wheels under the cable in four pairs, each pair on a rocker, the rockers on one beam.
 # The cable lies along z through the origin; the yoke that carries the train is toward -x.
-for i in range(6):
-    z = -1.5 + i * 0.6
+for i in range(8):
+    z = -2.1 + i * 0.6
     wheel("liner", (0, -0.235, z), 0.21, 0.09, seg=10)
-    wheel("steel", (-0.02, -0.235, z), 0.09, 0.16, seg=6)
-for i in range(3):
-    z = -1.2 + i * 1.2
+    wheel("steel", (-0.02, -0.235, z), 0.085, 0.16, seg=5)
+for i in range(4):
+    z = -1.8 + i * 1.2
     for sx in (-0.085, 0.085):
         box("steel", (sx, -0.3, z), (0.02, 0.2, 0.95))                           # the rocker's side plates
     box("steel", (-0.1, -0.44, z), (0.12, 0.16, 0.14))
-box("steel", (-0.16, -0.52, 0), (0.14, 0.14, 3.0))                               # the main beam
-box("dark", (0, -0.03, -1.86), (0.06, 0.05, 0.3))                                # cable catchers at each end
-box("dark", (0, -0.03, 1.86), (0.06, 0.05, 0.3))
+box("steel", (-0.16, -0.52, 0), (0.14, 0.14, TRAIN - 0.2))                       # the main beam
+box("dark", (0, -0.03, -2.46), (0.06, 0.05, 0.3))                                # cable catchers at each end
+box("dark", (0, -0.03, 2.46), (0.06, 0.05, 0.3))
 
 PART = "SheavesLod"
-box("liner", (0, -0.24, 0), (0.1, 0.42, 3.4))
-box("steel", (-0.16, -0.52, 0), (0.14, 0.14, 3.0))
+box("liner", (0, -0.24, 0), (0.1, 0.42, TRAIN + 0.4))
+box("steel", (-0.16, -0.52, 0), (0.14, 0.14, TRAIN - 0.2))
 
 # ---------------------------------------------------------------- chair
+# A detachable quad: the grip with its running wheels, a slim hanger cranked back over the riders' heads, a
+# light tube frame round a dark slatted seat, and the restraint bar down with its footrests.
 
 BAIL_Y = -1.75
 BACK_Z = -0.27
 BAR_Y, BAR_Z = SEAT + 0.0, 0.5
+HANG_Z = -0.2
 PART = "Chair"
-box("dark", (0, 0.03, 0), (0.14, 0.2, 0.5))                                       # the grip on the cable
-box("steel", (0, -0.12, 0), (0.1, 0.14, 0.26))
-tube("steel", (0, -0.15, 0), (0, BAIL_Y, 0), 0.05, seg=6)                          # the hanger
-tube("steel", (-CHAIR_WIDTH / 2, BAIL_Y, 0), (CHAIR_WIDTH / 2, BAIL_Y, 0), 0.04, seg=6)   # the bail
+box("dark", (0, 0.02, 0), (0.12, 0.17, 0.56))                                     # the grip's jaw on the cable
+box("steel", (0.0, -0.13, 0), (0.09, 0.16, 0.3))                                  # its body
+for z in (-0.19, 0.19):
+    wheel("liner", (0.1, 0.07, z), 0.075, 0.05, seg=6)                            # the wheels it runs on through a station
+box("dark", (0.1, -0.03, 0), (0.03, 0.05, 0.5))                                   # and the lever that opens it
+tube("steel", (0, -0.2, 0), (0, -0.62, HANG_Z), 0.04, seg=6)                       # the hanger
+tube("steel", (0, -0.62, HANG_Z), (0, BAIL_Y + 0.3, HANG_Z), 0.04, seg=6)
+tube("steel", (0, BAIL_Y + 0.3, HANG_Z), (0, BAIL_Y, 0), 0.04, seg=6)
+CW = CHAIR_WIDTH / 2
+tube("steel", (-CW + 0.14, BAIL_Y, 0), (CW - 0.14, BAIL_Y, 0), 0.032, seg=6)       # the bail
 for s in (-1, 1):
-    x = s * CHAIR_WIDTH / 2
-    tube("steel", (x, BAIL_Y, 0), (x, -SEAT + 0.55, BACK_Z), 0.035, seg=5)        # down to the seat's back corners
-    tube("steel", (x, -SEAT + 0.55, BACK_Z), (x, -SEAT - 0.02, BACK_Z + 0.03), 0.035, seg=5)
-    tube("steel", (x, -SEAT - 0.02, BACK_Z + 0.03), (x, -SEAT - 0.02, 0.27), 0.035, seg=5)   # under the seat's ends
-    tube("steel", (x, -SEAT + 0.2, BACK_Z + 0.02), (x, -SEAT + 0.2, 0.2), 0.025, seg=4)        # armrests
+    x = s * CW
+    tube("steel", (s * (CW - 0.14), BAIL_Y, 0), (x, BAIL_Y - 0.16, -0.02), 0.032, seg=5)   # its rounded shoulders
+    tube("steel", (x, BAIL_Y - 0.16, -0.02), (x, -SEAT + 0.55, BACK_Z), 0.03, seg=5)        # down to the seat's back corners
+    tube("steel", (x, -SEAT + 0.55, BACK_Z), (x, -SEAT - 0.02, BACK_Z + 0.03), 0.03, seg=5)
+    tube("steel", (x, -SEAT - 0.02, BACK_Z + 0.03), (x, -SEAT - 0.02, 0.27), 0.03, seg=5)   # under the seat's ends
+    tube("steel", (x, -SEAT + 0.2, BACK_Z + 0.02), (x, -SEAT + 0.2, 0.2), 0.022, seg=4)     # armrests
     # the restraint bar's arms, pivoting on the frame
-    tube("steel", (x, BAIL_Y - 0.25, -0.02), (x, -SEAT + 0.42, BAR_Z), 0.03, seg=5)
-box("cushion", (0, -SEAT + 0.02, 0.0), (CHAIR_WIDTH - 0.04, 0.07, 0.52))           # the seat
-box("cushion", (0, -SEAT + 0.36, BACK_Z), (CHAIR_WIDTH - 0.04, 0.56, 0.06), rot=(-7, 0, 0))   # its back
-box("dark", (0, -SEAT + 0.66, BACK_Z - 0.04), (CHAIR_WIDTH - 0.04, 0.05, 0.07), rot=(-7, 0, 0))
-tube("steel", (-CHAIR_WIDTH / 2, -SEAT + 0.42, BAR_Z), (CHAIR_WIDTH / 2, -SEAT + 0.42, BAR_Z), 0.03, seg=6)   # the bar
+    tube("steel", (x, BAIL_Y - 0.25, -0.02), (x, -SEAT + 0.42, BAR_Z), 0.026, seg=5)
+box("cushion", (0, -SEAT + 0.02, 0.0), (CHAIR_WIDTH - 0.06, 0.06, 0.5))            # the seat
+for y in (0.2, 0.47):                                                              # its back: two padded slats
+    box("cushion", (0, -SEAT + y, BACK_Z + (0.36 - y) * 0.12), (CHAIR_WIDTH - 0.06, 0.2, 0.05), rot=(-7, 0, 0))
+tube("steel", (-CW, -SEAT + 0.64, BACK_Z - 0.04), (CW, -SEAT + 0.64, BACK_Z - 0.04), 0.026, seg=5)   # the rail along its top
+tube("steel", (-CW, -SEAT + 0.42, BAR_Z), (CW, -SEAT + 0.42, BAR_Z), 0.028, seg=6)   # the bar
 for s in (-1, 1):
     # a footrest for each pair of seats: a post down from the bar and a T at its foot
-    tube("steel", (s * 0.55, -SEAT + 0.42, BAR_Z), (s * 0.55, -SEAT - 0.5, BAR_Z + 0.14), 0.025, seg=5)
-    tube("dark", (s * 0.55 - 0.42, -SEAT - 0.5, BAR_Z + 0.14), (s * 0.55 + 0.42, -SEAT - 0.5, BAR_Z + 0.14), 0.03, seg=5)
+    tube("steel", (s * 0.55, -SEAT + 0.42, BAR_Z), (s * 0.55, -SEAT - 0.5, BAR_Z + 0.14), 0.022, seg=5)
+    tube("dark", (s * 0.55 - 0.42, -SEAT - 0.5, BAR_Z + 0.14), (s * 0.55 + 0.42, -SEAT - 0.5, BAR_Z + 0.14), 0.028, seg=5)
 
 PART = "ChairLod"
-box("steel", (0, BAIL_Y / 2, 0), (0.1, -BAIL_Y, 0.1))
-box("steel", (0, BAIL_Y, 0), (CHAIR_WIDTH, 0.07, 0.07))
+box("dark", (0, 0.02, 0), (0.12, 0.17, 0.56))
+beam("steel", (0, -0.2, 0), (0, BAIL_Y, HANG_Z / 2), 0.08, 0.08)
+box("steel", (0, BAIL_Y, 0), (CHAIR_WIDTH, 0.06, 0.06))
 for s in (-1, 1):
-    beam("steel", (s * CHAIR_WIDTH / 2, BAIL_Y, 0), (s * CHAIR_WIDTH / 2, -SEAT, BACK_Z), 0.07, 0.07)
-box("cushion", (0, -SEAT + 0.02, 0.0), (CHAIR_WIDTH, 0.08, 0.52))
-box("cushion", (0, -SEAT + 0.36, BACK_Z), (CHAIR_WIDTH, 0.6, 0.06))
-box("steel", (0, -SEAT + 0.42, BAR_Z), (CHAIR_WIDTH, 0.06, 0.06))
+    beam("steel", (s * CW, BAIL_Y, 0), (s * CW, -SEAT, BACK_Z), 0.06, 0.06)
+box("cushion", (0, -SEAT + 0.02, 0.0), (CHAIR_WIDTH, 0.08, 0.5))
+box("cushion", (0, -SEAT + 0.36, BACK_Z), (CHAIR_WIDTH, 0.5, 0.05))
+box("steel", (0, -SEAT + 0.42, BAR_Z), (CHAIR_WIDTH, 0.055, 0.055))
 
 # ---------------------------------------------------------------- riders
 
@@ -329,24 +402,29 @@ def rider(seat, jacket, pants, helmet, gear, paint, tall=1.0):
     """A rider sitting on seat 0..3 behind the bar: skis on the footrest, or a board hanging from one foot."""
     x = SEATS[seat]
     hip = -SEAT + 0.13
-    box(pants, (x, hip, 0.02), (0.36, 0.17, 0.34))                                 # the seat of the trousers
+    box(pants, (x, hip - 0.01, 0.0), (0.36, 0.15, 0.3))                            # the seat of the trousers
     for s in (-1, 1):
-        box(pants, (x + s * 0.095, hip + 0.01, 0.26), (0.15, 0.15, 0.36))          # thighs
-        box(pants, (x + s * 0.095, hip - 0.25, 0.47), (0.13, 0.46, 0.14), rot=(-14, 0, 0))   # shins
-        box("boot", (x + s * 0.095, -SEAT - 0.4, 0.6), (0.13, 0.15, 0.32))
-    box(jacket, (x, hip + 0.36 * tall, -0.08), (0.42, 0.56 * tall, 0.25), rot=(-8, 0, 0))    # the body, leaning back
+        lx = x + s * 0.1
+        tube(pants, (lx, hip + 0.02, 0.05), (lx, hip + 0.0, 0.46), 0.085, seg=6, r2=0.07)          # thighs
+        tube(pants, (lx, hip + 0.0, 0.46), (lx, -SEAT - 0.34, 0.56), 0.07, seg=6, r2=0.06)         # shins
+        box("boot", (lx, -SEAT - 0.4, 0.61), (0.125, 0.16, 0.31))
+    chest = hip + 0.34 * tall
+    ball(jacket, (x, chest, -0.07), (0.45, 0.62 * tall, 0.3), seg=8)               # the body, in a padded jacket
+    sh = hip + 0.54 * tall
     for s in (-1, 1):
         # arms forward to the bar
-        beam(jacket, (x + s * 0.24, hip + 0.52 * tall, -0.08), (x + s * 0.2, hip + 0.22, 0.2), 0.11, 0.11)
-        beam(jacket, (x + s * 0.2, hip + 0.22, 0.2), (x + s * 0.14, -SEAT + 0.44, BAR_Z - 0.03), 0.1, 0.1)
-        box("dark", (x + s * 0.14, -SEAT + 0.44, BAR_Z - 0.02), (0.1, 0.1, 0.11))   # gloves
-    head = hip + 0.36 * tall + 0.28 * tall + 0.17
-    box("skin", (x, head - 0.06, -0.085), (0.15, 0.15, 0.16))
-    ball(helmet, (x, head, -0.12), (0.27, 0.26, 0.29), seg=8)
-    box("goggles", (x, head + 0.0, 0.015), (0.2, 0.08, 0.04))
+        el = (x + s * 0.24, hip + 0.2, 0.16)
+        tube(jacket, (x + s * 0.22, sh, -0.08), el, 0.07, seg=5, r2=0.06)
+        tube(jacket, el, (x + s * 0.15, -SEAT + 0.44, BAR_Z - 0.04), 0.06, seg=5, r2=0.05)
+        box("dark", (x + s * 0.15, -SEAT + 0.44, BAR_Z - 0.02), (0.09, 0.1, 0.11))  # gloves
+    head = hip + 0.64 * tall + 0.19
+    box("skin", (x, head - 0.07, -0.075), (0.15, 0.16, 0.16))
+    ball(helmet, (x, head, -0.11), (0.27, 0.26, 0.29), seg=8)
+    box("goggles", (x, head + 0.0, 0.02), (0.2, 0.08, 0.04))
     if gear == "ski":
         for s in (-1, 1):
-            box(paint, (x + s * 0.095, -SEAT - 0.5, 0.82), (0.085, 0.022, 1.62), rot=(-9, 0, 0))    # tips up a little
+            box(paint, (x + s * 0.1, -SEAT - 0.5, 0.82), (0.085, 0.022, 1.62), rot=(-9, 0, 0))     # tips up a little
+            box(paint, (x + s * 0.1, -SEAT - 0.345, 1.66), (0.085, 0.022, 0.16), rot=(-40, 0, 0))  # and turned up at the end
     else:
         box(paint, (x + 0.05, -SEAT - 0.56, 0.72), (0.27, 0.025, 1.45), rot=(-24, 38, 0))
         for s in (-1, 1):

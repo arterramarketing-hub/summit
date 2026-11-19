@@ -76,7 +76,7 @@ namespace Summit
             lastKey = int.MinValue; bonkKey = int.MinValue;
         }
 
-        static int Key(LiftLine.Lift l, int i, float s) => l.k * 1000 + i * 2 + (s > 0f ? 1 : 0);
+        static int Key(LiftLine.Lift l, int i, float s) => l.id * 1000 + i * 2 + (s > 0f ? 1 : 0);
 
         /// <summary>The stand-in rail under the board: a metre of the line, which is all the pose and the sounds ask of it.</summary>
         static Course.Feature Feature(Vector3 at, Vector3 dir, bool cable, float above) => new Course.Feature

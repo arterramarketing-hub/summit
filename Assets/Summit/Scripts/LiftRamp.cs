@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Summit
@@ -142,11 +143,12 @@ namespace Summit
         }
 
         /// <summary>Find a lift its ramp: the spot and the lip height from which the cable is reached at the least speed.</summary>
-        static void PlaceRamp(Lift l)
+        static void PlaceRamp(Lift l, IList<Lift> laid = null)
         {
             Ramp best = null; float bestScore = float.MaxValue;
             for (int i = 0; i < l.Spans - 1; i++)
             {
+                if (Tangled(l, i, laid)) continue;   // (not where this line and another cross)
                 float sa = l.nodeS[i] + (i == 0 ? 25f : CableTune.RampFromTower), sb = l.nodeS[i + 1] - 25f - CableTune.RampLength;
                 for (float s0 = sa; s0 <= sb; s0 += 6f)
                 {
@@ -155,6 +157,7 @@ namespace Summit
                     float side = (mid.x - Slope.Centre(mid.z)) * l.across.x > 0f ? -1f : 1f;
                     var r = new Ramp { span = i, side = side, s0 = s0, length = CableTune.RampLength };
                     if (!RampGround(l, r, out float off)) continue;
+                    if (laid != null && RampInTheWay(l, r, laid)) continue;
                     // no taller than leaves a rider's height under the chairs passing over its lip
                     float room = l.CableY(i, s0 + r.length) - ChairDrop - r.y1 - CableTune.RampHeadroom;
                     foreach (float h in CableTune.RampHeights)
@@ -166,6 +169,7 @@ namespace Summit
                         // (and the flight must come down on the cable with a fair slide still ahead of it)
                         float slide = l.nodeS[r.catchSpan + 1] - r.catchAlong;
                         if (slide < CableTune.RampMinSlide) continue;
+                        if (r.catchSpan != i && Tangled(l, r.catchSpan, laid)) continue;
                         // the least speed first (any that 24 m/s reaches is as good as another), then the longest slide
                         // and the lowest lip, then the nearest the piste
                         float score = Mathf.Max(r.needSpeed, CableTune.RampWantSpeed) * 100f + h * 10f + off * 0.1f - Mathf.Min(slide, 60f) * 1.5f;
@@ -189,6 +193,8 @@ namespace Summit
             float xs = Slope.Centre(zl) + sgn * (Slope.PisteHalf + 2.5f);
             best.sign = new Vector3(xs, Slope.Height(xs, zl), zl);
             l.ramp = best;
+            // (a second line's lane must not run into another line's tower or station: then it has no ramp)
+            if (laid != null && LaneBlocked(l, laid)) l.ramp = null;
         }
 
         /// <summary>
@@ -249,10 +255,10 @@ namespace Summit
             foreach (var l in Lifts)
             {
                 var r = l.ramp;
-                if (r == null) { sb.AppendLine($"lift {l.k}: no launch ramp (no spot reaches the cable at {CableTune.RampMaxSpeed:0} m/s or less)"); continue; }
+                if (r == null) { sb.AppendLine($"lift {l.k}{(l.second ? "b" : "")}: no launch ramp (no spot reaches the cable at {CableTune.RampMaxSpeed:0} m/s or less)"); continue; }
                 Vector3 foot = RampPoint(l, r, 0f), lip = RampPoint(l, r, r.length);
                 Reaches(l, r, r.needSpeed, out int cs, out float ca);
-                sb.AppendLine($"lift {l.k}: launch ramp under the {(r.side > 0f ? "up" : "down")}-going cable at x={foot.x:0} z={foot.z:0} ({Mathf.Abs(foot.x - Slope.Centre(foot.z)):0} m from the piste's centre, {Course.At(foot.z)}), lip {r.height:0.00} m; the cable is {l.CableY(r.span, r.s0 + r.length) - lip.y:0.0} m over the lip; reached from {r.needSpeed:0} m/s ({r.needSpeed * 3.6f:0} km/h) with no pop, meeting the cable {ca - r.s0 - r.length:0} m past the lip on span {cs}; sign at the piste's edge at z={r.sign.z:0}");
+                sb.AppendLine($"lift {l.k}{(l.second ? "b" : "")}: launch ramp under the {(r.side > 0f ? "up" : "down")}-going cable at x={foot.x:0} z={foot.z:0} ({Mathf.Abs(foot.x - Slope.Centre(foot.z)):0} m from the piste's centre, {Course.At(foot.z)}), lip {r.height:0.00} m; the cable is {l.CableY(r.span, r.s0 + r.length) - lip.y:0.0} m over the lip; reached from {r.needSpeed:0} m/s ({r.needSpeed * 3.6f:0} km/h) with no pop, meeting the cable {ca - r.s0 - r.length:0} m past the lip on span {cs}; sign at the piste's edge at z={r.sign.z:0}");
             }
             return sb.ToString();
         }

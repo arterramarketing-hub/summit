@@ -599,18 +599,55 @@ namespace Summit
                     if (tree)
                     {
                         // from the snow up, as much of the tree as shows (a buried tree's crown, a whole one's trunk)
+                        // where the trunk comes out of the snow, leaning as the tree does. (A tree leans from its foot
+                        // under the snow: buried metres deep, a lean of a few degrees puts its trunk a metre or two
+                        // from the spot straight above that foot, where an upright capsule stood round nothing)
+                        Vector3 axis = ((Vector3)pl.m.GetColumn(1)).normalized, pivot = pl.m.GetColumn(3);
+                        Vector3 at = axis.y > 0.2f ? pivot + axis * ((pl.foot.y - pivot.y) / axis.y) : pl.foot;
+                        g.transform.SetPositionAndRotation(at, Quaternion.FromToRotation(Vector3.up, axis));
                         var cap = g.GetComponent<CapsuleCollider>();
                         float h = pl.vis;
                         cap.radius = pl.rad; cap.height = Mathf.Max(h * 0.9f, pl.rad * 2f); cap.center = new Vector3(0f, cap.height * 0.5f, 0f);
                     }
-                    else
-                    {
-                        var sc = g.GetComponent<SphereCollider>();
-                        float h = 1.3f * pl.size;
-                        sc.radius = h * 0.55f; sc.center = new Vector3(0f, h * 0.35f, 0f);
-                    }
+                    else RockBox(g, pl);
                     live[key] = g;
                 }
+        }
+
+        /// <summary>
+        /// A rock's hit shape: the boulder as drawn, a tapered eight-sided hull inside its box (CliffSpires.Frustum),
+        /// placed, turned and scaled as the rock is. (It was a sphere 0.55 of the rock's height across its middle,
+        /// which stood a metre clear of a long, low boulder's sides at the snow: a hit on nothing.)
+        /// </summary>
+        void RockBox(GameObject g, Placed pl)
+        {
+            var mc = g.GetComponent<MeshCollider>();
+            mc.sharedMesh = RockHull(pl.idx);
+            Vector3 s = pl.m.lossyScale;
+            g.transform.SetPositionAndRotation(pl.m.GetColumn(3), pl.m.rotation);
+            g.transform.localScale = s;
+        }
+
+        readonly Dictionary<int, Mesh> rockHulls = new Dictionary<int, Mesh>();
+
+        /// <summary>A rock model's hit hull, in the model's own space (its parts' boxes together).</summary>
+        Mesh RockHull(int idx)
+        {
+            if (rockHulls.TryGetValue(idx, out var m) && m != null) return m;
+            Bounds b = default; bool any = false;
+            foreach (var part in rockParts[idx])
+            {
+                var mb = part.mesh.bounds;
+                for (int i = 0; i < 8; i++)
+                {
+                    var c = part.local.MultiplyPoint3x4(mb.center + Vector3.Scale(mb.extents, new Vector3((i & 1) == 0 ? -1 : 1, (i & 2) == 0 ? -1 : 1, (i & 4) == 0 ? -1 : 1)));
+                    if (any) b.Encapsulate(c); else { b = new Bounds(c, Vector3.zero); any = true; }
+                }
+            }
+            if (!any) b = new Bounds(Vector3.up * 0.5f, Vector3.one);
+            m = CliffSpires.Frustum(b, 0.8f, "RockHull" + idx);
+            rockHulls[idx] = m;
+            return m;
         }
 
         // ---- smashed by an invincible rider
@@ -810,7 +847,7 @@ namespace Summit
             var g = new GameObject(tree ? "TreeHit" : "RockHit");
             g.transform.SetParent(transform, false);
             if (tree) { var cap = g.AddComponent<CapsuleCollider>(); cap.direction = 1; }
-            else g.AddComponent<SphereCollider>();
+            else g.AddComponent<MeshCollider>().convex = true;
             var ob = g.AddComponent<Obstacle>();
             ob.label = tree ? "Tree" : "Rock";
             return g;

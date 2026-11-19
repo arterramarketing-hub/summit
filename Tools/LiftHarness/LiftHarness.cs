@@ -3,7 +3,7 @@
 // UnityEngine maths types those files use. With mono installed (apt-get install mono-mcs):
 //
 //   S=Assets/Summit/Scripts
-//   mcs -langversion:latest -out:/tmp/lift.exe Tools/LiftHarness/*.cs $S/Slope.cs $S/Course.cs $S/Ridge.cs $S/Cliffs.cs $S/Deadly.cs $S/LiftLine.cs $S/LiftRamp.cs $S/CableTune.cs
+//   mcs -langversion:latest -out:/tmp/lift.exe Tools/LiftHarness/*.cs $S/Slope.cs $S/Course.cs $S/Ridge.cs $S/Cliffs.cs $S/Deadly.cs $S/LiftLine.cs $S/LiftNetwork.cs $S/LiftRamp.cs $S/CableTune.cs
 //   mono /tmp/lift.exe 1 3000          seeds 1..3000: a summary, and every problem found
 //   mono /tmp/lift.exe 4242            one mountain: every lift, tower and span listed
 //
@@ -11,7 +11,10 @@
 // stretches and their canyons, not under a deadly cliff; the lowest thing on every chair clear of the snow by
 // the margins LiftLine asks for, along both cables every 1.5 m; the chairs' loop continuous and closed; and each
 // lift's launch ramp (LiftRamp.cs): off the piste, on sound ground, under the chairs with room to spare, and the
-// cable over it reached by the flight off its lip at the speed it claims.
+// cable over it reached by the flight off its lip at the speed it claims. And for each cycle's second line
+// (LiftNetwork.cs), all of the above, and wherever two lines cross: the upper one's chairs clear of the lower one's
+// cable and tower heads, no tower or station of either under the other's chairs.
+// (Without mono, Unity's own compiler will do: Tools/LiftHarness/run.py builds and runs it with the editor's Roslyn.)
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -26,6 +29,8 @@ public static class LiftHarness
     static readonly int[] needHist = new int[8];
     static float minRampOff = 1e9f, maxLip, minHeadroom = 1e9f;
     static int grinds, relands; static float minHopClear = 1e9f, maxGrindSpeed, sumGrindTime, sumSteer, minLandClear = 1e9f;
+    static int seconds, secondCycles, secondsOver, secondRamps, secondTowers, mountainsNetworked, crossings; static float minOver = 1e9f, maxSecondH, minSecondAngle = 1e9f, maxSecondAngle, maxSecondTries;
+    static readonly List<float> secondH = new List<float>();
 
     public static void Main(string[] args)
     {
@@ -35,9 +40,15 @@ public static class LiftHarness
         {
             Slope.Init(seed);
             var all = LiftLine.Lifts;
-            int want = Course.CycleOf(Slope.FinishZ) + 1;
-            missing += want - all.Length;
+            int want = Course.CycleOf(Slope.FinishZ) + 1, firsts = 0, had = seconds;
+            foreach (var l in all) if (!l.second) firsts++;
+            missing += want - firsts;
+            secondCycles += firsts;
+            for (int i = 0; i < all.Length; i++) if (all[i].id != i) Bad(seed, all[i], "its id is not its place in Lifts");
             foreach (var l in all) Check(seed, l, verbose);
+            foreach (var l in all) if (l.second) CheckSecond(seed, l, all, verbose);
+            CheckPairs(seed, all, verbose);
+            if (seconds > had) mountainsNetworked++;
             int before = ramps, beforeWant = rampsAtWant;
             foreach (var l in all) CheckRamp(seed, l, verbose);
             if (ramps > before) mountainsWithRamp++;
@@ -45,7 +56,7 @@ public static class LiftHarness
             if (verbose) Console.Write(LiftLine.RampReport());
         }
         heights.Sort(); spanList.Sort(); plans.Sort();
-        Console.WriteLine("{0} lifts on {1} mountains ({2} not built); {3} towers", lifts, hi - lo + 1, missing, towers);
+        Console.WriteLine("{0} lifts on {1} mountains ({2} first lines not built); {3} towers", lifts, hi - lo + 1, missing, towers);
         Console.WriteLine("PROBLEMS: {0}", problems);
         Console.WriteLine("lift length in plan: {0:0} to {1:0} m, median {2:0}", minPlan, maxPlan, plans[plans.Count / 2]);
         Console.WriteLine("spans between towers: {0:0} to {1:0} m, median {2:0}; over 95 m: {3:0.0}%", minSpan, maxSpan, spanList[spanList.Count / 2], 100f * longSpans / spans);
@@ -54,13 +65,118 @@ public static class LiftHarness
         Console.WriteLine("least clearance under a chair: {0:0.00} m off the piste, {1:0.00} m over it", minOff, minPiste);
         Console.WriteLine("lifts with chairs over the piste: {0} ({1:0}%); longest span over it {2:0} m", crossing, 100f * crossing / lifts, maxCross);
         Console.WriteLine("towers in a danger stretch (the side away from its cliff): {0}", dangerTowers);
-        Console.WriteLine("most lines tried for one lift: {0:0}; steepest line off the fall line: {1:0.0} deg", maxTries, maxAngle);
+        Console.WriteLine("most lines tried for one first line: {0:0}; steepest first line off the fall line: {1:0.0} deg", maxTries, maxAngle);
         Console.WriteLine("launch ramps: {0} of {1} lifts have one ({2:0}%); {3} ({4:0}%) reach the cable at {5:0} m/s or less", ramps, lifts, 100f * ramps / lifts, rampsAtWant, 100f * rampsAtWant / Mathf.Max(1, lifts), CableTune.RampWantSpeed);
         Console.WriteLine("mountains with at least one ramp: {0} of {1} ({2:0.0}%); with one reached at {3:0} m/s or less: {4} ({5:0.0}%)", mountainsWithRamp, hi - lo + 1, 100f * mountainsWithRamp / (hi - lo + 1), CableTune.RampWantSpeed, mountainsAtWant, 100f * mountainsAtWant / (hi - lo + 1));
         Console.Write("speed a ramp needs (m/s: ramps):"); for (int i = 0; i < needHist.Length; i++) if (needHist[i] > 0) Console.Write("  {0}: {1}", 18 + 2 * i, needHist[i]); Console.WriteLine();
         Console.WriteLine("a pop alone (8 m/s across the slope, no ramp) tops out {0:0.0} m over the snow; a Super Jump {1:0.0} m; the lowest cable is {2:0.0} m up", 9.9f * 9.9f / 44f, 18.8f * 18.8f / 44f, minOff + LiftLine.ChairDrop);
         if (grinds > 0) Console.WriteLine("grinds from each ramp's meeting point: {0}; they last {1:0.0} s on average and reach {2:0} m/s at most; the hop clears the cable at the tower by {3:0.00} m at least; {4} ({5:0}%) come down on the next span if steered back (by {6:0.0} m on average)", grinds, sumGrindTime / grinds, maxGrindSpeed, minHopClear, relands, 100f * relands / grinds, relands > 0 ? sumSteer / relands : 0f);
         Console.WriteLine("ramps: nearest the piste's centre {0:0.0} m; tallest lip {1:0.00} m; least room between a lip and the chairs {2:0.00} m", minRampOff, maxLip, minHeadroom);
+        secondH.Sort();
+        Console.WriteLine("second lines: {0} of {1} cycles with a first line ({2:0}%); mountains with at least one: {3} of {4} ({5:0.0}%); most lines tried for one: {6:0}", seconds, secondCycles, 100f * seconds / Mathf.Max(1, secondCycles), mountainsNetworked, hi - lo + 1, 100f * mountainsNetworked / (hi - lo + 1), maxSecondTries);
+        if (seconds > 0)
+        {
+            Console.WriteLine("second lines: {0:0} to {1:0} deg off their cycle's first line; {2} ({3:0}%) are carried over another line, {4} crossings in all; least room between the upper line's chairs and the lower line's cable {5:0.00} m (wanted {6:0.0})", minSecondAngle, maxSecondAngle, secondsOver, 100f * secondsOver / seconds, crossings, minOver, LiftLine.OverTop + LiftLine.OverClear);
+            Console.WriteLine("second lines: {0} towers, {1:0.0} to {2:0.0} m tall, median {3:0.0}; {4} ({5:0}%) have a launch ramp", secondTowers, secondH[0], maxSecondH, secondH[secondH.Count / 2], secondRamps, 100f * secondRamps / seconds);
+        }
+    }
+
+    /// <summary>A cycle's second line: across the piste, above the danger stretch, and standing clear of every other line.</summary>
+    static void CheckSecond(int seed, LiftLine.Lift l, LiftLine.Lift[] all, bool verbose)
+    {
+        seconds++;
+        maxSecondTries = Mathf.Max(maxSecondTries, l.tries);
+        if (l.under.Length > 0) secondsOver++;
+        if (l.ramp != null) secondRamps++;
+        if (l.offTop * l.offBottom >= 0f) Bad(seed, l, "a second line that does not cross the piste");
+        if (Course.At(l.bottom.z) == Course.Section.Ridge) Bad(seed, l, "a second line ending in the ridge stretch");
+        // over the piste only above the danger stretch (never over its crevasses)
+        for (float s = 0f; s <= l.plan; s += 1.5f)
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Vector3 p = l.At(s, side * LiftLine.Half, 0f);
+                if (Course.At(p.z) == Course.Section.Danger && Mathf.Abs(p.x - Slope.Centre(p.z)) < Slope.PisteHalf + 4f) { Bad(seed, l, "over the piste in the danger stretch at z=" + p.z); s = 1e9f; break; }
+            }
+        foreach (var o in all)
+            if (o.k == l.k && !o.second)
+            {
+                float a = Mathf.Abs(Mathf.Asin(Mathf.Clamp(l.dir.x * o.dir.z - l.dir.z * o.dir.x, -1f, 1f))) * Mathf.Rad2Deg;
+                minSecondAngle = Mathf.Min(minSecondAngle, a); maxSecondAngle = Mathf.Max(maxSecondAngle, a);
+            }
+        for (int i = 0; i < l.s.Length; i++)
+        {
+            secondTowers++; secondH.Add(l.h[i]); maxSecondH = Mathf.Max(maxSecondH, l.h[i]);
+            if (l.h[i] > (l.under.Length > 0 ? LiftLine.HMaxOver : LiftLine.HMax) + 0.01f) Bad(seed, l, "tower " + i + " is " + l.h[i] + " m tall");
+            // none of its towers in another line's swath (under its chairs), nor in the lane to its ramp
+            for (float up = 0f; up <= 1f; up += 0.25f)
+            {
+                Vector3 p = Vector3.Lerp(l.foot[i], l.head[i], up);
+                foreach (var o in all)
+                {
+                    if (o == l) continue;
+                    if (LiftLine.InSwath(o, p.x, p.z, LiftLine.Swath)) Bad(seed, l, "tower " + i + " stands in lift " + o.k + "'s swath");
+                    if (o.ramp != null && Dist(p, o.ramp.laneFrom, LiftLine.RampPoint(o, o.ramp, 0f)) < CableTune.RampLane) Bad(seed, l, "tower " + i + " stands in the lane to lift " + o.k + "'s ramp");
+                }
+            }
+        }
+        foreach (var o in all)
+        {
+            if (o == l) continue;
+            foreach (var st in new[] { l.top, l.bottom })
+                if (LiftLine.InSwath(o, st.x, st.z, LiftLine.Swath + LiftLine.StationHalfWid)) Bad(seed, l, "its station at z=" + st.z + " is in lift " + o.k + "'s swath");
+            foreach (var st in new[] { o.top, o.bottom })
+                if (LiftLine.InSwath(l, st.x, st.z, LiftLine.Swath + LiftLine.StationHalfWid)) Bad(seed, l, "it passes over lift " + o.k + "'s station at z=" + st.z);
+            // the lane to its ramp runs into none of the other's towers
+            if (l.ramp != null)
+                foreach (var f in o.foot)
+                    if (Dist(f, l.ramp.laneFrom, LiftLine.RampPoint(l, l.ramp, 0f)) < CableTune.RampLane) Bad(seed, l, "the lane to its ramp runs into lift " + o.k + "'s tower");
+        }
+        if (verbose && l.under.Length > 0) Console.WriteLine("   carried over lift {0}", l.under[0].k);
+    }
+
+    /// <summary>How far p is, in plan, from the line a to b.</summary>
+    static float Dist(Vector3 p, Vector3 a, Vector3 b)
+    {
+        float dx = b.x - a.x, dz = b.z - a.z;
+        float t = Mathf.Clamp01(((p.x - a.x) * dx + (p.z - a.z) * dz) / (dx * dx + dz * dz));
+        float ex = p.x - (a.x + dx * t), ez = p.z - (a.z + dz * t);
+        return Mathf.Sqrt(ex * ex + ez * ez);
+    }
+
+    /// <summary>
+    /// Wherever one line's chairs are over or under another's (either cable, sampled every 1.5 m): the upper
+    /// one's lowest point clears the lower one's cable by what a tower's head needs and the margin on top.
+    /// </summary>
+    static void CheckPairs(int seed, LiftLine.Lift[] all, bool verbose)
+    {
+        for (int ia = 0; ia < all.Length; ia++)
+            for (int ib = 0; ib < all.Length; ib++)
+            {
+                var a = all[ia]; var b = all[ib];
+                if (ia == ib || !a.second) continue;          // (each crossing once, from its second line: two first lines never meet)
+                if (b.ZMax < a.ZMin - 30f || b.ZMin > a.ZMax + 30f) continue;
+                bool meet = false; float least = 1e9f;
+                for (float s = -LiftLine.WheelBack; s <= a.plan + LiftLine.WheelBack; s += 1.5f)
+                    for (int side = -1; side <= 1; side += 2)
+                    {
+                        Vector3 p = a.At(s, side * LiftLine.Half, 0f);
+                        if (!LiftLine.InSwath(b, p.x, p.z, LiftLine.Half + 2.2f)) continue;
+                        float sa = Mathf.Clamp(s, a.nodeS[0], a.nodeS[a.Spans]);
+                        float ya = a.CableY(LiftLine.SpanAt(a, sa), sa);
+                        float tb = Mathf.Clamp((p.x - b.top.x) * b.dir.x + (p.z - b.top.z) * b.dir.z, b.nodeS[0], b.nodeS[b.Spans]);
+                        float yb = b.CableY(LiftLine.SpanAt(b, tb), tb);
+                        meet = true;
+                        float room = Mathf.Max(ya - LiftLine.ChairDrop - yb, yb - LiftLine.ChairDrop - ya);   // whichever is the upper one
+                        least = Mathf.Min(least, room);
+                        if (yb > ya && !b.second) Bad(seed, a, "it passes under lift " + b.k + " at " + s + " m");
+                    }
+                if (!meet) continue;
+                crossings++;
+                minOver = Mathf.Min(minOver, least);
+                if (least < LiftLine.OverTop + LiftLine.OverClear - 0.05f) Bad(seed, a, "its chairs clear lift " + b.k + (b.second ? "b" : "") + "'s cable by only " + least + " m");
+                if (System.Array.IndexOf(a.under, b) < 0 && System.Array.IndexOf(b.under, a) < 0) Bad(seed, a, "it crosses lift " + b.k + " without knowing it");
+                if (verbose) Console.WriteLine("lift {0}b crosses lift {1}{2}: its chairs clear the cable below by {3:0.0} m at least", a.k, b.k, b.second ? "b" : "", least);
+            }
     }
 
     static void CheckRamp(int seed, LiftLine.Lift l, bool verbose)
@@ -164,18 +280,18 @@ public static class LiftHarness
     static void Bad(int seed, LiftLine.Lift l, string what)
     {
         problems++;
-        if (problems <= 40) Console.WriteLine("PROBLEM seed {0} lift {1}: {2}", seed, l.k, what);
+        if (problems <= 40) Console.WriteLine("PROBLEM seed {0} lift {1}{2}: {3}", seed, l.k, l.second ? "b" : "", what);
     }
 
     static void Check(int seed, LiftLine.Lift l, bool verbose)
     {
         lifts++; towers += l.s.Length;
         plans.Add(l.plan); minPlan = Mathf.Min(minPlan, l.plan); maxPlan = Mathf.Max(maxPlan, l.plan);
-        maxTries = Mathf.Max(maxTries, l.tries);
-        maxAngle = Mathf.Max(maxAngle, Mathf.Abs(Mathf.Atan2(l.dir.x, l.dir.z)) * Mathf.Rad2Deg);
+        if (!l.second) maxTries = Mathf.Max(maxTries, l.tries);
+        if (!l.second) maxAngle = Mathf.Max(maxAngle, Mathf.Abs(Mathf.Atan2(l.dir.x, l.dir.z)) * Mathf.Rad2Deg);
         if (verbose)
-            Console.WriteLine("lift {0}: top station z={1:0} ({2:+0;-0} m off the piste), bottom z={3:0} ({4:+0;-0} m); {5:0} m in plan, {6:0} m of rise; {7} towers leaning {8:0.0} deg; {9} chairs {10:0.0} m apart on a {11:0} m loop; line {12} tried",
-                l.k, l.top.z, l.offTop, l.bottom.z, l.offBottom, l.plan, l.top.y - l.bottom.y, l.s.Length, l.lean * Mathf.Rad2Deg, l.chairs, l.spacing, l.loop, l.tries);
+            Console.WriteLine("lift {0}{13}: top station z={1:0} ({2:+0;-0} m off the piste), bottom z={3:0} ({4:+0;-0} m); {5:0} m in plan, {6:0} m of rise; {7} towers leaning {8:0.0} deg; {9} chairs {10:0.0} m apart on a {11:0} m loop; line {12} tried",
+                l.k, l.top.z, l.offTop, l.bottom.z, l.offBottom, l.plan, l.top.y - l.bottom.y, l.s.Length, l.lean * Mathf.Rad2Deg, l.chairs, l.spacing, l.loop, l.tries, l.second ? "b (second line)" : "");
         // towers
         for (int i = 0; i < l.s.Length; i++)
         {

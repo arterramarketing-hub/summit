@@ -432,7 +432,7 @@ public static class SpireShot
                 for (int sm = 0; sm < mf.sharedMesh.subMeshCount; sm++) t += mf.sharedMesh.GetIndexCount(sm) / 3;
                 if (mf.name == "Near") { nearTris += t; nearDraws++; } else { farTris += t; farDraws++; }
             }
-            foreach (var c in g.GetComponentsInChildren<Collider>(true)) { cols++; if (c is BoxCollider) boulders++; zMin = Mathf.Min(zMin, c.bounds.min.z); zMax = Mathf.Max(zMax, c.bounds.max.z); }
+            foreach (var c in g.GetComponentsInChildren<Collider>(true)) { cols++; if (c is MeshCollider hc && hc.sharedMesh != null && hc.sharedMesh.name.StartsWith("TalusHull")) boulders++; zMin = Mathf.Min(zMin, c.bounds.min.z); zMax = Mathf.Max(zMax, c.bounds.max.z); }
         }
         Debug.Log($"SPIRESHOT stats: {groups} groups, {cols} blocks with colliders ({boulders} scanned boulders, instanced), near look {nearDraws} meshes {nearTris} tris, far look {farDraws} meshes {farTris} tris, z {zMin:0}-{zMax:0}");
         var hits = new Collider[16];

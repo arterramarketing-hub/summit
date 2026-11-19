@@ -467,6 +467,47 @@ namespace Summit
         // ---------------------------------------------------------------- baking a group into one mesh
 
         static readonly List<Vector3> bv = new List<Vector3>(), bn = new List<Vector3>();
+        static Mesh[] talusHulls;
+
+        /// <summary>
+        /// A scanned boulder's hit shape: its box (0.8 of the model's) with the corners cut off and the top drawn in,
+        /// an eight-sided frustum. The plain box's corners stood up to a metre clear of a big rounded boulder, at
+        /// the height a board passes: a hit on nothing.
+        /// </summary>
+        static Mesh TalusHull(int v)
+        {
+            if (talusHulls == null || talusHulls.Length != scanBox.Length) talusHulls = new Mesh[scanBox.Length];
+            if (talusHulls[v] != null) return talusHulls[v];
+            talusHulls[v] = Frustum(scanBox[v], 0.75f, "TalusHull" + v);
+            return talusHulls[v];
+        }
+
+        /// <summary>
+        /// A rounded rock's hit shape inside its box `b` (shrunk by `k`): an eight-sided frustum, corners cut and the
+        /// top drawn in, as a convex mesh (PhysX hulls the points).
+        /// </summary>
+        public static Mesh Frustum(Bounds b, float shrink, string name)
+        {
+            Vector3 c = b.center, e = b.extents * shrink;
+            var pts = new List<Vector3>();
+            const float cut = 0.38f;   // how much of each half-side the corners lose
+            foreach (var (y, k) in new[] { (-e.y, 1f), (e.y, 0.55f) })
+            {
+                float x = e.x * k, z = e.z * k;
+                pts.Add(c + new Vector3(x, y, z * (1f - cut))); pts.Add(c + new Vector3(x * (1f - cut), y, z));
+                pts.Add(c + new Vector3(-x * (1f - cut), y, z)); pts.Add(c + new Vector3(-x, y, z * (1f - cut)));
+                pts.Add(c + new Vector3(-x, y, -z * (1f - cut))); pts.Add(c + new Vector3(-x * (1f - cut), y, -z));
+                pts.Add(c + new Vector3(x * (1f - cut), y, -z)); pts.Add(c + new Vector3(x, y, -z * (1f - cut)));
+            }
+            // (PhysX builds the convex hull from the points: the triangles only have to hold them)
+            var tri = new List<int>();
+            for (int i = 1; i < 7; i++) { tri.Add(0); tri.Add(i + 1); tri.Add(i); tri.Add(8); tri.Add(8 + i); tri.Add(8 + i + 1); }
+            for (int i = 0; i < 8; i++) { int j = (i + 1) % 8; tri.Add(i); tri.Add(j); tri.Add(8 + j); tri.Add(i); tri.Add(8 + j); tri.Add(8 + i); }
+            var m = new Mesh { name = name };
+            m.SetVertices(pts); m.SetTriangles(tri, 0); m.RecalculateBounds();
+            return m;
+        }
+
         static readonly List<int> bt = new List<int>();
 
         static void Bake(Transform root, List<Spot> spots)
@@ -497,10 +538,10 @@ namespace Summit
                     for (int i = 0; i < 8; i++)
                         wb.Encapsulate(m.MultiplyPoint3x4(scanBox[s.v].center + Vector3.Scale(scanBox[s.v].extents, new Vector3((i & 1) == 0 ? -1 : 1, (i & 2) == 0 ? -1 : 1, (i & 4) == 0 ? -1 : 1))));
                     if (anyTalus) tb.Encapsulate(wb); else { tb = wb; anyTalus = true; }
-                    var box = c.AddComponent<BoxCollider>();
-                    box.center = scanBox[s.v].center;
-                    box.size = scanBox[s.v].size * 0.8f;
-                    box.sharedMaterial = Slick;
+                    var hull = c.AddComponent<MeshCollider>();
+                    hull.convex = true;
+                    hull.sharedMesh = TalusHull(s.v);
+                    hull.sharedMaterial = Slick;
                     continue;
                 }
                 Append(farV, farN, farT, sv[s.v], sn[s.v], st[s.v], m);

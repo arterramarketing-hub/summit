@@ -12,7 +12,9 @@ namespace Summit
     /// is a lift for every cycle of the course instead, each with its own two stations: its bottom station where
     /// the danger stretch ends, just above the ridge (the last one's is at the finish), and its top station as far
     /// up as the open ground goes: below the foot of the canyons of the ridge above, or beside the start for the
-    /// first. That is five lifts, 290 to 530 m long in plan (850 m where the ridge above was never built).
+    /// first. That is five lifts, 290 to 530 m long in plan (850 m where the ridge above was never built). Each
+    /// cycle then gets a second, shorter line across the piste and over the first, where one will go
+    /// (LiftNetwork.cs): this file lays both kinds.
     ///
     /// A lift is dead straight in plan, as real ones are, while the piste meanders beside it or under it:
     ///   - Each end is set 38 to 84 m to one side of the piste. Through the danger stretch the line keeps to the
@@ -86,6 +88,9 @@ namespace Summit
         public class Lift
         {
             public int k;                         // the course cycle it serves
+            public int id;                        // which of the day's lifts it is (its place in Lifts)
+            public bool second;                   // a cycle's second line, laid across the piste (LiftNetwork.cs)
+            public Lift[] under = NoLifts;        // the lines it is carried over: its chairs clear them by OverClear
             public Vector3 top, bottom;           // the stations: the middle of each deck
             public Vector3 dir, across;           // level unit vectors: down the line, and to its right looking down
             public float plan;                    // between the stations, in plan
@@ -199,6 +204,7 @@ namespace Summit
 
         // ---------------------------------------------------------------- today's lifts
 
+        static readonly Lift[] NoLifts = new Lift[0];
         static Lift[] lifts;
         static int laidFor = int.MinValue;
 
@@ -218,6 +224,14 @@ namespace Summit
                             var l = Lay(k);
                             if (l != null) list.Add(l);
                         }
+                    // then each cycle's second line, across the piste and over whatever the first lines put in its way
+                    if (On && Network)
+                        for (int k = 0; k <= LastCycle; k++)
+                        {
+                            var l = LaySecond(k, list);
+                            if (l != null) list.Add(l);
+                        }
+                    for (int i = 0; i < list.Count; i++) list[i].id = i;
                     lifts = list.ToArray();
                 }
                 return lifts;
@@ -228,10 +242,11 @@ namespace Summit
         /// True under a lift's line or on one of its stations: its cleared swath, where no tree, rock or building
         /// may stand. The same shape as Course.Keep, so placement can ask both alike.
         /// </summary>
-        public static bool Taken(float x, float z, float margin)
+        public static bool Taken(float x, float z, float margin) => TakenBy(Lifts, x, z, margin);
+
+        static bool TakenBy(IList<Lift> all, float x, float z, float margin)
         {
-            var all = Lifts;
-            for (int i = 0; i < all.Length; i++)
+            for (int i = 0; i < all.Count; i++)
             {
                 var l = all[i];
                 if (z < l.ZMin - 60f || z > l.ZMax + 60f) continue;
@@ -330,9 +345,9 @@ namespace Summit
         }
 
         /// <summary>Lay lift k along the straight line from ot beside the piste at zt to ob beside it at zb. Null if it will not go.</summary>
-        static Lift Try(int k, float zt, float zb, float ot, float ob)
+        static Lift Try(int k, float zt, float zb, float ot, float ob, IList<Lift> laid = null)
         {
-            var l = new Lift { k = k, offTop = ot, offBottom = ob };
+            var l = new Lift { k = k, offTop = ot, offBottom = ob, second = laid != null };
             float xt = Slope.Centre(zt) + ot, xb = Slope.Centre(zb) + ob;
             float plan = Mathf.Sqrt((xb - xt) * (xb - xt) + (zb - zt) * (zb - zt));
             l.plan = plan;
@@ -347,6 +362,14 @@ namespace Summit
                         if (Occupied(xt + l.dir.x * s + l.across.x * side * Swath, zt + l.dir.z * s + l.across.z * side * Swath)) return null;
             l.lean = 0.5f * Mathf.Atan2(deckT - deckB, plan);
             float sl = Mathf.Sin(l.lean);
+            // a second line: clear of the lines already laid (their stations, their ramps' lanes), and over them
+            // only where it can be (LiftNetwork.cs)
+            float hMax = HMax;
+            if (laid != null)
+            {
+                if (!Meets(l, laid)) return null;
+                if (l.under.Length > 0) hMax = HMaxOver;
+            }
 
             // where a tower may stand: spots every Step along the line, between the stations' portals
             float s0 = StationHalfLen, s1 = plan - StationHalfLen;
@@ -361,7 +384,13 @@ namespace Summit
                 // (wherever its height puts its foot: it leans, so its foot is up the line from its top)
                 ok[i] = GroundOk(xt + l.dir.x * s, zt + l.dir.z * s, TowerOff)
                      && GroundOk(xt + l.dir.x * (s - HMin * sl), zt + l.dir.z * (s - HMin * sl), TowerOff)
-                     && GroundOk(xt + l.dir.x * (s - HMax * sl), zt + l.dir.z * (s - HMax * sl), TowerOff);
+                     && GroundOk(xt + l.dir.x * (s - hMax * sl), zt + l.dir.z * (s - hMax * sl), TowerOff);
+                // (and no tower of a second line in another line's swath, under its chairs, or in the lane to its ramp)
+                // (its towers may be taller, so its foot may be further up the line: looked at every few metres of that)
+                if (ok[i] && laid != null)
+                    for (float back = 0f; back <= hMax + 0.01f && ok[i]; back += hMax * 0.125f)
+                        ok[i] = GroundOk(xt + l.dir.x * (s - back * sl), zt + l.dir.z * (s - back * sl), TowerOff)
+                             && !TakenBy(laid, xt + l.dir.x * (s - back * sl), zt + l.dir.z * (s - back * sl), 3f);
                 knoll[i] = ok[i] ? KnollAt(l, s) : 0f;
             }
 
@@ -414,7 +443,7 @@ namespace Summit
                     if (i > 0) l.h[i - 1] += d;
                     if (i < l.h.Length) l.h[i] += d;
                 }
-                for (int i = 0; i < l.h.Length; i++) if (l.h[i] > HMax) return null;
+                for (int i = 0; i < l.h.Length; i++) if (l.h[i] > hMax) return null;
             }
             if (!done) return null;
             Nodes(l);
@@ -487,6 +516,12 @@ namespace Summit
                     if (i == last) need = Mathf.Min(need, 0.4f + 0.2f * (sb - s));
                     need += extra;
                     float d = Slope.Height(x, z) + need - y;
+                    // over another line: its cable, and whatever stands above its cable, count as the ground
+                    if (l.under.Length > 0)
+                    {
+                        float roof = Roof(l, x, z);
+                        if (roof > float.MinValue) d = Mathf.Max(d, roof + OverClear + extra - y);
+                    }
                     // (a span from a station can only be lifted at its tower end; right at the portal, not at all)
                     if (i == 0 && q > 0) { if (d > 0f) d /= q / (float)m; }
                     else if (i == last && q < m) { if (d > 0f) d /= 1f - q / (float)m; }
@@ -511,7 +546,7 @@ namespace Summit
                 foreach (float h in l.h) tall = Mathf.Max(tall, h);
                 float near = float.MaxValue;
                 foreach (var f in l.foot) near = Mathf.Min(near, Mathf.Abs(f.x - Slope.Centre(f.z)));
-                sb.AppendLine($"lift {l.k}: z {l.top.z:0} to {l.bottom.z:0}, {l.offTop:+0;-0} and {l.offBottom:+0;-0} m off the piste, {l.plan:0} m, {l.s.Length} towers (tallest {tall:0.0} m, nearest the piste {near:0.0} m), longest span {longest:0} m, {l.chairs} chairs {l.spacing:0.0} m apart, clearance to spare {-worst:0.00} m (0 at a station's portal), try {l.tries}");
+                sb.AppendLine($"lift {l.k}{(l.second ? "b" : "")}: z {l.top.z:0} to {l.bottom.z:0}, {l.offTop:+0;-0} and {l.offBottom:+0;-0} m off the piste, {l.plan:0} m, {l.s.Length} towers (tallest {tall:0.0} m, nearest the piste {near:0.0} m), longest span {longest:0} m, {l.chairs} chairs {l.spacing:0.0} m apart, clearance to spare {-worst:0.00} m (0 at a station's portal), try {l.tries}{(l.under.Length > 0 ? ", carried over lift " + l.under[0].k : "")}");
             }
             return sb.ToString();
         }

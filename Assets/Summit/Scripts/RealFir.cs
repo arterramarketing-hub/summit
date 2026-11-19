@@ -297,7 +297,9 @@ namespace Summit
             int v = variant % Variants;
             float at = sink / full;
             if (v < Legacy) return Mathf.Max(0.02f * full, 0.7f * CrownRadius(v, at) * full);
-            float crown = 0f, top = Mathf.Min(1f, at + 2.5f / full);
+            // (only what a board meets: the rider is hit at the feet. Within 2.5 m, a pine's first limbs high over
+            // its bare trunk made a capsule as wide as its crown down at the snow, round nothing but the trunk)
+            float crown = 0f, top = Mathf.Min(1f, at + 1.2f / full);
             for (int i = 0; i <= 4; i++) crown = Mathf.Max(crown, CrownRadius(v, Mathf.Lerp(at, top, i / 4f)));
             float trunk = TrunkRadius(v, at * Heights[v]) * full / Heights[v];
             return Mathf.Max(Mathf.Max(0.25f, trunk), (IsPine(v) ? 0.3f : 0.7f) * crown * full);

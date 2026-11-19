@@ -7,16 +7,23 @@ namespace Summit
     /// <summary>
     /// The chairlifts you see: detachable four-seat chairs running up one side of a line of steel towers and
     /// back down the other, between a station at each end. Where they run is LiftLine's business (a pure function
-    /// of the day's mountain); this draws them near the rider and makes them solid.
+    /// of the day's mountain: a line beside the piste in each cycle, and a second across it and over the first,
+    /// LiftNetwork.cs, so there is more than one line in the sky); this draws them near the rider and makes them
+    /// solid. They are modelled on the lifts at Whistler: tall plain galvanised tube towers with a T crossarm, a
+    /// railed catwalk across the head and the ladder's cage under it, an orange-red pad at the snow.
     ///
     /// The models are made in Blender by Tools/MakeLift.py (Resources/Lift/Lift.fbx), every part painted from one
     /// small palette picture, so the whole lift is one material:
     ///   - Towers (a mast stretched to each tower's height, a head with its crossarm and platforms, a safety pad,
     ///     two sheave trains set along the cable), chairs, the riders on them and the stations are drawn in
     ///     instanced batches, one draw call a part. Within NearRange the full models, casting shadows; beyond it
-    ///     plain versions, out to FarRange, where the fog has all but taken them.
+    ///     plain versions, out to FarRange, where the fog has all but taken them. (Chairs, their riders and the
+    ///     sheave trains go plain sooner, at ChairNear and TrainNear.)
     ///   - The cable is one small mesh for each span (both ropes, sagging), built as the span comes into range
-    ///     and freed behind the rider, with the towers' and stations' colliders.
+    ///     and freed behind the rider, with the towers' and stations' colliders. It has its own shader
+    ///     (Resources/LiftRope.shader): a haul rope's six strands and the wear on them up close, moving with the
+    ///     line; far off, a line never thinner than a pixel and a half, so the other lifts' cables stay drawn
+    ///     across the sky and do not crawl.
     ///   - The chairs have no state: each frame every chair's place on the loop is worked out from the clock
     ///     (LiftLine.Lift.Loop), with a slow swing of its own and a kick that dies away as it comes off each
     ///     tower's sheaves. More than half the chairs going up carry one to four seated riders, in jackets of
@@ -37,7 +44,8 @@ namespace Summit
     public class SkiLift : MonoBehaviour
     {
         public const float NearRange = 140f;       // full towers and shadows (the render asset's shadow distance)
-        public const float ChairNear = 100f;       // full chairs and riders
+        public const float ChairNear = 64f;        // full chairs and riders (there are two lines to a cycle now: twice the chairs)
+        public const float TrainNear = 80f;        // full sheave trains, wheel by wheel
         public const float FarRange = 650f;        // nothing of the lift is drawn or built past here
         public float behind = 150f;                // kept this far up the hill behind the rider
         public const float ColliderRange = 170f;
@@ -52,9 +60,16 @@ namespace Summit
             return s;
         }
 
+        /// <summary>For the render tools (Assets/Editor/LiftShot.cs): the chairs' clock, in seconds, when it is not the game's own.</summary>
+        public static double TestClock = -1.0;
+        static double Clock => TestClock >= 0.0 ? TestClock : Time.timeAsDouble;
+
         Transform target;
         Rider rider;
-        Material paint, cableMat;
+        Material paint, cableMat, cableFar, postMat;
+        public const float RopeR = 0.03f;          // the haul rope: 60 mm
+        public const float RopeNear = 120f;        // nearer than this a span is drawn opaque, its strands showing
+        const int RopeSides = 6;
         bool ready;
         int seed = int.MinValue;
 
@@ -79,8 +94,10 @@ namespace Summit
             foreach (var mf in prefab.GetComponentsInChildren<MeshFilter>(true))
             {
                 if (mf.sharedMesh == null) continue;
-                // relative to the root, keeping the root's own rotation (how Blender's axes come in), as Forest does
-                found[mf.name] = new Part { mesh = mf.sharedMesh, local = Matrix4x4.Rotate(prefab.transform.localRotation) * rootInv * mf.transform.localToWorldMatrix };
+                // relative to the root, keeping the root's own rotation and scale (how Blender's axes and units come in:
+                // its FBX holds the meshes in centimetres under a root scaled by 100, and without the root's scale every
+                // part was drawn a hundredth of its size, which is to say not at all)
+                found[mf.name] = new Part { mesh = mf.sharedMesh, local = Matrix4x4.TRS(Vector3.zero, prefab.transform.localRotation, prefab.transform.localScale) * rootInv * mf.transform.localToWorldMatrix };
             }
             System.Func<string, bool, Part> P = (name, shadows) =>
             {
@@ -102,6 +119,19 @@ namespace Summit
             }
             if (chair.mesh == null || mast.mesh == null) return;
 
+            // The file is made in metres, but it says its unit is the centimetre (UnitScaleFactor 1), so the importer
+            // brings every part in a hundred times too small: towers, heads, chairs and stations a few centimetres
+            // across, drawn as nothing, while their colliders (built here in metres) stand full size - a rider hit an
+            // invisible tower or station. Measure a chair (a couple of metres) and scale the parts back up if so
+            {
+                var wb = chair.local.MultiplyVector(chair.mesh.bounds.size);
+                float chairSize = new Vector3(Mathf.Abs(wb.x), Mathf.Abs(wb.y), Mathf.Abs(wb.z)).magnitude;
+                if (chairSize < 0.2f)
+                {
+                    var up = Matrix4x4.Scale(Vector3.one * 100f);
+                    foreach (var p in parts) p.local = p.local * up;
+                }
+            }
             // The file is made in the game's axes, a chair facing +z with its seat below its grip. If the import
             // turned it round, turn every part back (and say so: the importer settings in Lift.fbx.meta have changed)
             var cb = chair.mesh.bounds;
@@ -125,10 +155,30 @@ namespace Summit
             paint.EnableKeyword("_EMISSION");
             if (glowTex != null) paint.SetTexture("_EmissionMap", glowTex);
             paint.SetColor("_EmissionColor", Color.black);
-            cableMat = new Material(lit) { name = "LiftCable" };
-            cableMat.SetColor("_BaseColor", new Color(0.13f, 0.13f, 0.14f));
-            cableMat.SetFloat("_Smoothness", 0.5f); cableMat.SetFloat("_Metallic", 0.6f);
-            cableMat.SetFloat("_Cull", 0f);
+            // the haul rope has a shader of its own (Resources/LiftRope.shader): stranded steel up close, a thin dark
+            // line far off. Two materials of it: near spans opaque, far ones blended (a rope kept a pixel and a half
+            // wide on screen is drawn fainter by as much)
+            var rope = Resources.Load<Shader>("LiftRope");
+            if (rope != null)
+            {
+                cableMat = new Material(rope) { name = "LiftRope" };
+                cableMat.SetFloat("_Radius", RopeR); cableMat.SetFloat("_Speed", LiftLine.Speed);
+                cableFar = new Material(cableMat) { name = "LiftRopeFar", renderQueue = (int)RenderQueue.Transparent - 20 };
+                cableFar.SetFloat("_SrcBlend", (float)BlendMode.SrcAlpha); cableFar.SetFloat("_DstBlend", (float)BlendMode.OneMinusSrcAlpha);
+                cableFar.SetFloat("_ZWrite", 0f);
+                cableFar.SetOverrideTag("RenderType", "Transparent");
+            }
+            else
+            {
+                Debug.LogWarning("SkiLift: Resources/LiftRope.shader is missing; the cables are drawn plain");
+                cableMat = new Material(lit) { name = "LiftCable" };
+                cableMat.SetColor("_BaseColor", new Color(0.13f, 0.13f, 0.14f));
+                cableMat.SetFloat("_Cull", 0f);
+                cableFar = cableMat;
+            }
+            postMat = new Material(lit) { name = "LiftPost" };
+            postMat.SetColor("_BaseColor", new Color(0.13f, 0.13f, 0.14f));
+            postMat.SetFloat("_Smoothness", 0.5f); postMat.SetFloat("_Metallic", 0.6f);
             rampMat = new Material(paint) { name = "LiftRamp" };   // (the palette again, seen from both sides: no winding to get wrong)
             rampMat.SetFloat("_Cull", 0f);
             litShader = lit;
@@ -211,7 +261,7 @@ namespace Summit
                 bool have = false;
                 foreach (var lv in live) if (lv.lift == l) have = true;
                 if (have) continue;
-                var root = new GameObject("Lift " + l.k);
+                var root = new GameObject("Lift " + l.k + (l.second ? "b" : ""));
                 root.transform.SetParent(transform, false);
                 var made = new Live { lift = l, root = root, span = new GameObject[l.Spans], tower = new GameObject[l.s.Length] };
                 live.Add(made);
@@ -230,6 +280,15 @@ namespace Summit
                     bool want = InRange(Mathf.Min(za, zb), Mathf.Max(za, zb), p.z);
                     if (want && lv.span[i] == null) lv.span[i] = Cable(lv, i);
                     else if (!want && lv.span[i] != null) { Destroy(lv.span[i].GetComponent<MeshFilter>().sharedMesh); Destroy(lv.span[i]); lv.span[i] = null; }
+                    if (lv.span[i] != null)
+                    {
+                        // near the rider it is opaque steel; further off, the blended line
+                        float along = Mathf.Clamp((p.x - l.top.x) * l.dir.x + (p.z - l.top.z) * l.dir.z, l.nodeS[i], l.nodeS[i + 1]);
+                        Vector3 nearest = l.At(along, 0f, l.CableY(i, along));
+                        var mat = (nearest - p).sqrMagnitude < RopeNear * RopeNear ? cableMat : cableFar;
+                        var mr = lv.span[i].GetComponent<MeshRenderer>();
+                        if (mr.sharedMaterial != mat) mr.sharedMaterial = mat;
+                    }
                 }
                 // the towers: drawn, and solid when near
                 for (int i = 0; i < l.s.Length; i++)
@@ -257,7 +316,7 @@ namespace Summit
                     Vector3 t = (l.dir + Vector3.up * (0.5f * (slopeIn + slopeOut))).normalized;
                     Vector3 n = Vector3.Cross(t, l.across).normalized;   // square to the cable, upward
                     float k = slopeOut > slopeIn + 0.01f ? -1f : 1f;      // a hold-down train is the same one turned over
-                    var train = near ? sheaves : sheavesLod;
+                    var train = d2 < TrainNear * TrainNear ? sheaves : sheavesLod;
                     for (int side = -1; side <= 1; side += 2)
                         train.list.Add(Frame(h + l.across * (side * LiftLine.Half), l.across * side, n * k, t * (side * k)) * train.local);
                 }
@@ -285,43 +344,55 @@ namespace Summit
 
         /// <summary>
         /// One span's cable: both ropes from one support to the next, hanging in their sag. The first and last
-        /// spans carry on level into their station, to the bullwheel.
+        /// spans carry on level into their station, to the bullwheel. Each vertex is a point of a rope's centre
+        /// line, with the way out from it as its normal and the way along it as its tangent: the shader gives the
+        /// rope its thickness (and keeps a far one from vanishing between pixels).
         /// </summary>
         GameObject Cable(Live lv, int i)
         {
             var l = lv.lift;
             var v = new List<Vector3>(); var tri = new List<int>();
+            var nrm = new List<Vector3>(); var tan = new List<Vector4>(); var uv = new List<Vector3>();
             Vector3 origin = l.At(l.nodeS[i], 0f, l.nodeY[i]);
-            CableVerts(l, i, v, 0f, 0f, 0f);
-            int ring = v.Count / 8;   // points along each rope, four vertices a point, two ropes
+            CableVerts(l, i, v, 0f, 0f, 0f, nrm, tan, uv);
+            const int per = RopeSides + 1;   // (the seam's vertex twice: the strands' pattern runs right round)
+            int ring = v.Count / (2 * per);  // points along each rope
             for (int side = 0; side < 2; side++)
                 for (int q = 0; q < ring - 1; q++)
-                    for (int e = 0; e < 4; e++)
+                    for (int e = 0; e < RopeSides; e++)
                     {
-                        int a0 = side * ring * 4 + q * 4 + e, a1 = side * ring * 4 + q * 4 + (e + 1) % 4, b0 = a0 + 4, b1 = a1 + 4;
+                        int a0 = (side * ring + q) * per + e, a1 = a0 + 1, b0 = a0 + per, b1 = b0 + 1;
                         tri.Add(a0); tri.Add(b0); tri.Add(a1);
                         tri.Add(a1); tri.Add(b0); tri.Add(b1);
                     }
             var mesh = new Mesh { name = "LiftCable" };
-            mesh.SetVertices(v); mesh.SetTriangles(tri, 0);
-            mesh.RecalculateNormals(); mesh.RecalculateBounds();
+            mesh.SetVertices(v); mesh.SetNormals(nrm); mesh.SetTangents(tan); mesh.SetUVs(0, uv); mesh.SetTriangles(tri, 0);
+            RopeBounds(mesh);
             var go = new GameObject("Cable " + i);
             go.transform.SetParent(lv.root.transform, false);
             go.transform.position = origin;
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
             var mr = go.AddComponent<MeshRenderer>();
-            mr.sharedMaterial = cableMat;
+            mr.sharedMaterial = cableFar;
             mr.shadowCastingMode = ShadowCastingMode.Off; mr.receiveShadows = false;
             return go;
         }
 
+        /// <summary>(the vertices are the centre line: room for the rope's own thickness, and for a far one's fattening)</summary>
+        static void RopeBounds(Mesh mesh)
+        {
+            mesh.RecalculateBounds();
+            var b = mesh.bounds; b.Expand(1.2f); mesh.bounds = b;
+        }
+
         /// <summary>
         /// A span's cable as vertices round its own first support: the rope coming down (side -1), then the rope
-        /// going up. With a rider on one of them (bendSide), that rope hangs in a V under the board, `dip` deep.
+        /// going up; RopeSides + 1 vertices at each point of a rope's centre line. With a rider on one of them
+        /// (bendSide), that rope hangs in a V under the board, `dip` deep. Given the other lists, fills them too.
         /// </summary>
-        void CableVerts(LiftLine.Lift l, int i, List<Vector3> v, float bendSide, float bendAlong, float dip)
+        void CableVerts(LiftLine.Lift l, int i, List<Vector3> v, float bendSide, float bendAlong, float dip,
+                        List<Vector3> nrm = null, List<Vector4> tan = null, List<Vector3> uv = null)
         {
-            const float R = 0.035f;
             float sa = l.nodeS[i], sb = l.nodeS[i + 1];
             int m = Mathf.Max(4, Mathf.CeilToInt((sb - sa) / 8f));
             Vector3 origin = l.At(sa, 0f, l.nodeY[i]);
@@ -339,12 +410,22 @@ namespace Summit
                     cablePts.Add(l.At(s, side * LiftLine.Half, y));
                 }
                 if (i == l.Spans - 1) cablePts.Add(l.At(l.plan + LiftLine.WheelBack, side * LiftLine.Half, l.nodeY[l.Spans]));
+                float run = l.nodeS[i] * 1.03f;   // metres along the rope, near enough: the strands' and the wear's pattern
                 for (int q = 0; q < cablePts.Count; q++)
                 {
+                    Vector3 c = cablePts[q] - origin;
+                    for (int e = 0; e <= RopeSides; e++) v.Add(c);
+                    if (nrm == null) continue;
+                    if (q > 0) run += (cablePts[q] - cablePts[q - 1]).magnitude;
                     Vector3 t = (cablePts[Mathf.Min(q + 1, cablePts.Count - 1)] - cablePts[Mathf.Max(q - 1, 0)]).normalized;
                     Vector3 up = Vector3.Cross(t, l.across).normalized;
-                    Vector3 c = cablePts[q] - origin;
-                    v.Add(c + up * R); v.Add(c + l.across * R); v.Add(c - up * R); v.Add(c - l.across * R);
+                    for (int e = 0; e <= RopeSides; e++)
+                    {
+                        float a = e * (2f * Mathf.PI / RopeSides);
+                        nrm.Add(up * Mathf.Cos(a) + l.across * Mathf.Sin(a));
+                        tan.Add(new Vector4(t.x, t.y, t.z, 1f));
+                        uv.Add(new Vector3(e / (float)RopeSides, run, side));
+                    }
                 }
             }
         }
@@ -362,7 +443,7 @@ namespace Summit
                         now = lv.span[i].GetComponent<MeshFilter>().sharedMesh;
                         // (the board is carried along a little ahead of the rope's middle point: draw the V where it is)
                         CableVerts(l, i, bendVerts, side, along, dip);
-                        now.SetVertices(bendVerts); now.RecalculateBounds();
+                        now.SetVertices(bendVerts); RopeBounds(now);
                     }
             if (bent != null && bent != now)
                 foreach (var lv in live)
@@ -370,7 +451,7 @@ namespace Summit
                         if (lv.span[k] != null && lv.span[k].GetComponent<MeshFilter>().sharedMesh == bent)
                         {
                             CableVerts(lv.lift, k, bendVerts, 0f, 0f, 0f);
-                            bent.SetVertices(bendVerts); bent.RecalculateBounds();
+                            bent.SetVertices(bendVerts); RopeBounds(bent);
                         }
             bent = now;
         }
@@ -432,7 +513,7 @@ namespace Summit
             post.transform.SetParent(lv.root.transform, false);
             post.transform.position = r.sign + Vector3.up * 1.2f;
             post.transform.localScale = new Vector3(0.12f, 3.4f, 0.12f);
-            post.GetComponent<MeshRenderer>().sharedMaterial = cableMat;
+            post.GetComponent<MeshRenderer>().sharedMaterial = postMat;
             var board = GameObject.CreatePrimitive(PrimitiveType.Quad);
             Destroy(board.GetComponent<Collider>());
             board.name = "LiftRampSign";
@@ -496,7 +577,7 @@ namespace Summit
         {
             chair.list.Clear(); chairLod.list.Clear();
             for (int i = 0; i < 4; i++) { riders[i].list.Clear(); ridersLod[i].list.Clear(); }
-            double clock = Time.timeAsDouble;
+            double clock = Clock;
             float t = (float)(clock % 3600.0);
             bool canHit = rider != null && rider.Running && !rider.Crashed && CableGrind.ChairsHit;   // (on a cable the board skims over the chairs' grips)
             foreach (var lv in live)
@@ -523,7 +604,7 @@ namespace Summit
                     bool near = d2 < ChairNear * ChairNear;
                     (near ? chair : chairLod).list.Add(m * (near ? chair : chairLod).local);
                     // who is aboard: drawn when the chair left the bottom station, and gone at the top
-                    float h = Slope.Hash01(c + l.k * 977, lap, 151);
+                    float h = Slope.Hash01(c + l.id * 977, lap, 151);
                     int who = up ? (h < 0.56f ? Mathf.Min(3, (int)(h / 0.56f * 4f)) : -1) : (h > 0.95f ? 2 : -1);
                     if (who >= 0) { var r = near ? riders[who] : ridersLod[who]; r.list.Add(m * r.local); }
                     // jumped into: the seat, its frame and whoever is on it, as a box under the grip
@@ -611,7 +692,7 @@ namespace Summit
                 }
             // (it fades out, moves, and fades in again, rather than jumping from one lamp to the next)
             bool move = any && (!lampSet || (best - lampAt).sqrMagnitude > 1f);
-            lampK = Mathf.MoveTowards(lampK, any && !move ? 1f : 0f, Time.deltaTime * 3f);
+            lampK = Mathf.MoveTowards(lampK, any && !move ? 1f : 0f, (TestClock >= 0.0 ? 1f : Time.deltaTime) * 3f);
             if (move && lampK <= 0.001f) { lampAt = best; lampSet = true; lampPower = power; lamp.transform.position = best; }
             lamp.intensity = lampPower * glow * lampK;
             lamp.enabled = lamp.intensity > 0.05f;
@@ -647,7 +728,7 @@ namespace Summit
             }
             if (tower < 0) { clackTower = -1; return; }
             // how many chairs have crossed this tower so far, each way: when the count goes up, one just has
-            double moved = Time.timeAsDouble * LiftLine.Speed;
+            double moved = Clock * LiftLine.Speed;
             int n = nearest.Spans;
             int up = (int)System.Math.Floor((moved - nearest.cum[n - tower]) / nearest.spacing);
             int down = (int)System.Math.Floor((moved - nearest.cum[n + 5 + tower]) / nearest.spacing);
