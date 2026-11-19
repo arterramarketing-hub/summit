@@ -464,6 +464,15 @@ namespace Summit
             if (parts.Count > 0) Breakable.Probe(parts[0].rb.position, parts[0].rb.position, 0.9f, parts[0].col);
             // tumbling into a young tree or a snag fast enough snaps it, and the body carries on through (TreeBreak)
             if (parts.Count > 0 && TreeBreak.Instance != null && TreeBreak.Instance.BodyAhead(parts[0].rb.position, parts[0].rb.linearVelocity)) Slow(TreeBreak.BodyKeep);
+            // the mountain's own gravity (Rider.G), not PhysX's 9.81: thrown at the board's speed off a lip or a roller, a
+            // body under 9.81 flew more than twice as long and as high as the board ever does (seven seconds and 60 m
+            // up off a kicker at 200 km/h): launched, and never coming down
+            Vector3 extra = Vector3.down * (Rider.G + Physics.gravity.y);
+            if (extra.y < 0f)
+            {
+                foreach (var p in parts) if (!p.gone && !p.rb.isKinematic) p.rb.AddForce(extra, ForceMode.Acceleration);
+                if (boardRb != null) boardRb.AddForce(extra, ForceMode.Acceleration);
+            }
             // ploughing through snow: any part down in it is dragged back in proportion to its speed
             // (snow has to be pushed aside), on top of the contact friction
             Vector3 gp = groundBody.position, gn = groundBody.rotation * Vector3.up;

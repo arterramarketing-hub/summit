@@ -633,7 +633,7 @@ namespace Summit
             float dt = Time.deltaTime;
             stateTimer += dt;
             WatchScream(dt);
-            TickHitStop();
+            if (!(Application.isBatchMode && TestHitStops)) TickHitStop(Time.unscaledDeltaTime);
             WatchDrop();
             // a gentler lens in the camp (its camera is close, among straight lines), the player's own on the slope
             lensFx.Strength = Mathf.MoveTowards(lensFx.Strength, state == State.Hub ? 0.3f : 1f, Time.unscaledDeltaTime * 1.4f);
@@ -1037,22 +1037,33 @@ namespace Summit
         float hitStopT = -1f, hitStopHold, hitStopScale, nextHitStop;
         const float HitStopEase = 0.4f;
 
+        /// <summary>
+        /// For the test tools: the hit-stop runs in batchmode too, on a clock they advance themselves (TestTickHitStop,
+        /// one call per physics step with the real time it stands for), since batchmode never calls Update.
+        /// </summary>
+        public static bool TestHitStops;
+        float hitClock;
+        public void TestTickHitStop(float realDt) => TickHitStop(realDt);
+        /// <summary>The time scale the hit-stop has set right now (1 when none is running).</summary>
+        public static float HitStopScaleNow => Time.timeScale;
+
         void HitStop(float strength)
         {
-            if (paused || Application.isBatchMode || Time.unscaledTime < nextHitStop) return;
+            if (paused || (Application.isBatchMode && !TestHitStops) || hitClock < nextHitStop) return;
             strength = Mathf.Clamp01(strength);
             if (hitStopT >= 0f && hitStopT < hitStopHold && strength < 0.5f) return;   // don't stack small ones on a big one
             hitStopHold = Mathf.Lerp(0.05f, 0.14f, strength);
             hitStopScale = Mathf.Lerp(0.3f, 0.04f, strength);
             hitStopT = 0f;
-            nextHitStop = Time.unscaledTime + 0.7f;
+            nextHitStop = hitClock + 0.7f;
             SetTimeScale(hitStopScale);
         }
 
-        void TickHitStop()
+        void TickHitStop(float realDt)
         {
+            hitClock += realDt;
             if (paused || hitStopT < 0f) return;
-            hitStopT += Time.unscaledDeltaTime;
+            hitStopT += realDt;
             if (hitStopT < hitStopHold) { SetTimeScale(hitStopScale); return; }
             float k = (hitStopT - hitStopHold) / HitStopEase;
             if (k >= 1f) { hitStopT = -1f; SetTimeScale(1f); return; }

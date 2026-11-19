@@ -57,7 +57,13 @@ namespace Summit
         /// <summary>0..1, set by the avalanche while it flows under the board: the snow heaves, the edge cannot bite.</summary>
         public float Undercut;
         public float Lift;   // how high the debris under the board stands over the snow (the slide sets it)
-        float lastLift, liftVy;   // and how fast it was lifting the board last step (not riding speed: kept out of the carve)
+        // the part of last step's vertical speed that only put the board onto the drawn snow, not riding: the mesh's
+        // 1.5 m facets standing off the smooth slope the board steers on, the debris lifting it, a landing's leftover
+        // depth. Kept out of the next step's speed along the snow, which is the board's own motion. Fed back in, the
+        // facets bled speed on every curve (a kicker's ramp, a jump's bench: tens of m/s^2 of braking from nothing),
+        // and a landing's few centimetres, divided by the step and laid onto a steep face, threw the board back up
+        // the hill
+        float fixVy;
         float churnT;
         public float Lean { get; private set; }          // edge angle, rad: + = leaning right
         public float YawRate { get; private set; }
@@ -214,7 +220,7 @@ namespace Summit
             transform.position = p;
             StartZ = z;
             DropFrom = p;
-            Heading = 0f; Speed = 0f; Steer = 0f; groundVy = 0f;
+            Heading = 0f; Speed = 0f; Steer = 0f; groundVy = 0f; fixVy = 0f;
             Airborne = false; Crashed = false; Running = false; Grinding = false; pipeAir = false;
             HasCrashFollow = false; rb.detectCollisions = true; StayDown = false; HoldCrash = false;
             AirTime = 0f; Tuck = 0f; Carve = 0f; Skid = 0f; Peak = 0f; AboveGround = 0f;
@@ -222,7 +228,7 @@ namespace Summit
             ClearTrick();
             popPending = false; airLock = 0f; lastGrind = -1;
             Flow = 0f; Shields = 0; BoostTime = 0f; invulnerable = 0f; SuperJumpTime = 0f; InvincibleTime = 0f; superAir = false;
-            Undercut = 0f; Lift = 0f; lastLift = 0f; liftVy = 0f;
+            Undercut = 0f; Lift = 0f; fixVy = 0f;
             wobble = 0f; slowFor = 0f;
         }
 
@@ -336,7 +342,8 @@ namespace Summit
         Vector3 GroundStep(float dt, Vector3 p, Vector3 v)
         {
             Vector3 n = Slope.Normal(p.x, p.z);
-            Vector3 vt = Vector3.ProjectOnPlane(v - Vector3.up * liftVy, n);
+            Vector3 vIn = v - Vector3.up * fixVy;   // the board's own motion, without last step's correction onto the snow
+            Vector3 vt = Vector3.ProjectOnPlane(vIn, n);
             float sp = vt.magnitude;
 
             // riding backwards (coming back down a pipe wall, or after a crash): switch to face the way you go
@@ -408,18 +415,23 @@ namespace Summit
                                1f - Mathf.Exp(-dt * 12f));
             Speed = sp;
 
-            // follow the snow: the vertical speed that puts the board on the mesh next step
+            // follow the snow: the vertical speed that puts the board on the mesh next step. Only vt is riding; the rest
+            // of that vertical speed is the drawn snow's own facets (and any depth the board is off it) and is kept apart
+            // (fixVy). The mesh's own rise or fall under the path (surfVy) is what tells a lip from a slope
             float nx = p.x + vt.x * dt, nz = p.z + vt.z * dt;
-            liftVy = (Lift - lastLift) / dt; lastLift = Lift;
-            float wantY = Slope.DrawnHeight(nx, nz) + R + Lift + Undercut * (0.3f + 0.08f * Mathf.Sin(churnT * 9f));   // lifted on the churning snow
+            float churn = Lift + Undercut * (0.3f + 0.08f * Mathf.Sin(churnT * 9f));   // lifted on the churning snow
+            float hereY = Slope.DrawnHeight(p.x, p.z) + R + churn;
+            float wantY = Slope.DrawnHeight(nx, nz) + R + churn;
+            float surfVy = (wantY - hereY) / dt;
             float vy = (wantY - p.y) / dt;
+            float fix = vy - vt.y;
             AboveGround = 0f;
 
             // fell into a crevasse
 
             // carried on the avalanche's debris: it holds the board down in it, no jumping off and no flying off
             // its lumps (or off the slope's features under it)
-            if (Undercut > 0f) { popPending = false; groundVy = vy; return new Vector3(vt.x, vy, vt.z); }
+            if (Undercut > 0f) { popPending = false; groundVy = surfVy; fixVy = fix; return new Vector3(vt.x, vy, vt.z); }
             if (popPending)
             {
                 popPending = false;
@@ -441,21 +453,24 @@ namespace Summit
             float steep = inPipe ? 0.22f : 0.62f;
             if (n.y < steep)
             {
-                // off the edge of a drop. Running into a wall that rises in front must not turn the
-                // speed into a launch straight up, so the climb is capped at the ground's own rate
+                // off the edge of a drop: the face falls away from the way you are going, so you leave it on your own
+                // line (laid onto that face, the speed into the air would be taken away, or turned back up the hill)
+                if (!inPipe && Vector3.Dot(vIn, n) >= 0f) return TakeOff(p, vIn, 0.05f);
+                // running into a wall that rises in front must not turn the speed into a launch straight up, so the
+                // climb is capped at the ground's own rate
                 if (!inPipe) vt.y = Mathf.Min(vt.y, Mathf.Max(groundVy, 0f) + 1.5f);
                 return TakeOff(p, inPipe ? PipeAir(p, vt) : vt, 0.05f);
             }
             // the snow falls away faster than gravity can follow (a kicker's lip, a crest, a pipe's coping): fly
             // (leave with the slope's own vertical speed, never the mesh-following one, which can spike on coarse facets)
             float vUp = Mathf.Clamp(groundVy, vt.y - 2f, vt.y + 2f);
-            if (sp > 7f && vy < groundVy - G * dt * 1.2f && FallsAway(p, new Vector3(vt.x, vUp, vt.z)))
+            if (sp > 7f && surfVy < groundVy - G * dt * 1.2f && FallsAway(p, new Vector3(vt.x, vUp, vt.z)))
                 return TakeOff(p, new Vector3(vt.x, vUp, vt.z), 0.08f);
             // riding up a pipe wall: leave it with the wall's own vertical speed
             if (inPipe && vt.y > 1f && vy < vt.y - G * dt * 2f)
                 return TakeOff(p, PipeAir(p, vt), 0.08f);
 
-            groundVy = vy;
+            groundVy = surfVy; fixVy = fix;
             DropFrom = p;
             return new Vector3(vt.x, vy, vt.z);
         }
@@ -477,12 +492,24 @@ namespace Summit
             return v;
         }
 
+        /// <summary>
+        /// The snow drops away from the line the board would fly: clear of it by TakeoffClearance 0.12 s on, and never
+        /// under it on the way there. (At speed that look-ahead is several metres: from part way up a kicker's ramp it
+        /// reaches past the lip, and a launch from there would fly into the rest of the ramp.)
+        /// </summary>
         bool FallsAway(Vector3 p, Vector3 v)
         {
             const float T = 0.12f;
-            float by = p.y + v.y * T - 0.5f * G * T * T;
-            float gy = Slope.DrawnHeight(p.x + v.x * T, p.z + v.z * T) + R;
-            return by - gy > TakeoffClearance;
+            const int N = 6;
+            for (int i = 1; i <= N; i++)
+            {
+                float t = T * i / N;
+                float by = p.y + v.y * t - 0.5f * G * t * t;
+                float gy = Slope.DrawnHeight(p.x + v.x * t, p.z + v.z * t) + R;
+                if (i < N && by < gy - 0.02f) return false;
+                if (i == N) return by - gy > TakeoffClearance;
+            }
+            return false;
         }
 
         Vector3 TakeOff(Vector3 p, Vector3 v, float lockTime)
@@ -493,6 +520,7 @@ namespace Summit
             float off = Mathf.Abs(p.x - Slope.Centre(p.z));
             if (Course.PipeWeight(p.z) > 0.5f && off > Course.PipeFlat + 1f && off < Course.PipeHalfWidth + Course.PipeDeck) pipeAir = true;
             airLock = lockTime;
+            fixVy = 0f;
             AirTime = 0f; Peak = 0f;
             Carve = 0f; Skid = 0f;
             superAir = false;
@@ -591,10 +619,12 @@ namespace Summit
 
             float nx = p.x + v.x * dt, nz = p.z + v.z * dt;
             float gy = Slope.DrawnHeight(nx, nz) + R + Lift;   // (come down on the avalanche's debris, if it is under you)
-            lastLift = Lift; liftVy = 0f;
+            fixVy = 0f;
             AboveGround = Mathf.Max(0f, p.y - (Slope.DrawnHeight(p.x, p.z) + R));
             Peak = Mathf.Max(Peak, AboveGround);
-            if (airLock <= 0f && p.y + v.y * dt <= gy) return Land(dt, p, v, gy);
+            // (the lock after a takeoff keeps a lip's facets from landing you straight back on it, but never holds you
+            // up while the snow comes up through the board)
+            if (p.y + v.y * dt <= gy && (airLock <= 0f || p.y + v.y * dt < gy - 0.1f)) return Land(dt, p, v, gy);
             return v;
         }
 
@@ -643,8 +673,11 @@ namespace Summit
             }
             vt *= keep;
             Landed?.Invoke(impact);
+            // onto the snow's own line from here, and back up out of it if the board had come down into it (kept apart:
+            // see fixVy)
+            float hereY = Slope.DrawnHeight(p.x, p.z) + R + Lift;
             float vy = (gyNext - p.y) / dt;
-            groundVy = vy;
+            groundVy = (gyNext - hereY) / dt; fixVy = vy - vt.y;
             if (TrickName != null)
             {
                 if (AirTime >= 0.8f * TrickTime) Trick?.Invoke(TrickName, trickPoints);
@@ -696,6 +729,10 @@ namespace Summit
                 if (bottom < onLine.y - feat.height - 0.3f || bottom > onLine.y + 1.0f) continue;
                 float along = Vector3.Dot(v, dir);
                 if (along < 4f) continue;
+                // only lined up with it (within 45 degrees): boarded from across it, the grind keeps only the speed along
+                // it, and a rider crossing a box at 90 km/h was stopped in his tracks onto a 30 km/h slide
+                float flatSp = new Vector2(v.x, v.z).magnitude, flatAlong = Vector2.Dot(new Vector2(v.x, v.z), new Vector2(dir.x, dir.z).normalized);
+                if (flatAlong < 0.707f * flatSp) continue;
                 // on it: ride-on features are boarded automatically
                 Grinding = true;
                 GrindFeature = feat;
@@ -859,12 +896,17 @@ namespace Summit
                 var d = CrashFollow - p; d.y = 0f;
                 h = Vector3.ClampMagnitude(d * 8f, 40f);
             }
-            float wantY = Slope.DrawnHeight(p.x + h.x * dt, p.z + h.z * dt) + R;
             Speed = h.magnitude;
             // get up only once the thrown body has come to rest (or after a long slide, regardless)
             // back on your feet only when the player asks: watching where the body ends up is half the fun
             if (crashTimer <= 0f && RequestUp && !StayDown) return Recover(p);
-            return new Vector3(h.x, (wantY - p.y) / dt, h.z);
+            // the board's sphere (nothing to hit while the body is thrown) goes along the snow under it. Put on the snow
+            // directly, not by a speed that gets it there in one step: in a crash's hit-stop a step is a few
+            // thousandths of a second, and a metre off the snow (thrown from the air) became thousands of m/s
+            float hereY = Slope.DrawnHeight(p.x, p.z) + R;
+            if (Mathf.Abs(p.y - hereY) > 1e-4f) { p.y = hereY; rb.position = p; }
+            float wantY = Slope.DrawnHeight(p.x + h.x * dt, p.z + h.z * dt) + R;
+            return new Vector3(h.x, (wantY - hereY) / dt, h.z);
         }
 
         /// <summary>Where the thrown rider is, set by the ragdoll while a crash plays out.</summary>
@@ -897,7 +939,7 @@ namespace Summit
             p.y = Slope.DrawnHeight(p.x, p.z) + R;
             rb.position = p;
             DropFrom = p;
-            groundVy = 0f;
+            groundVy = 0f; fixVy = 0f;
             return new Vector3(0f, 0f, 3f);
         }
 
