@@ -319,6 +319,7 @@ namespace Summit
             steerBtn = Button(game, "STEERING", new Vector2(0f, 200f), new Vector2(700f, 120f), grey, out steerLabel, 38);
             bloodBtn = Button(game, "BLOOD", new Vector2(0f, 50f), new Vector2(700f, 120f), grey, out bloodLabel, 38);
             treesBtn = Button(game, "TREES", new Vector2(0f, -100f), new Vector2(700f, 120f), grey, out treesLabel, 38);
+            torchBtn = Button(game, "FLASHLIGHT", new Vector2(0f, -250f), new Vector2(700f, 120f), grey, out torchLabel, 38);
             againBtn = Button(game, "RESTART RUN", new Vector2(0f, -400f), new Vector2(560f, 120f), new Color(0.8f, 0.2f, 0.15f, 0.9f), out _, 48);
             // SOUND
             musicLabel = Row(3, "MUSIC", 180f, out musicMinus, out musicPlus);
@@ -349,6 +350,9 @@ namespace Summit
         public bool OnPauseSteer(Vector2 p) => Inside(steerBtn, p);
         public bool OnPauseRestart(Vector2 p) => Inside(againBtn, p);
         RectTransform bloodBtn; Text bloodLabel;
+        RectTransform torchBtn; Text torchLabel;
+        public void SetFlashlight(bool on) { torchLabel.text = on ? "FLASHLIGHT: ON  (tap to change)" : "FLASHLIGHT: OFF  (tap to change)"; }
+        public bool OnPauseFlashlight(Vector2 p) => Inside(torchBtn, p);
         public void SetBlood(bool on) { bloodLabel.text = on ? "BLOOD: ON  (tap to change)" : "BLOOD: OFF  (tap to change)"; }
         public bool OnPauseBlood(Vector2 p) => Inside(bloodBtn, p);
         public void SetLensType(string name) { lensTypeLabel.text = name; }

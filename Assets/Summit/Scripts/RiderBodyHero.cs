@@ -18,6 +18,8 @@ namespace Summit
         HeroRig hero;
         /// <summary>The hero's rig, when the hero is the rider (for the test tools).</summary>
         public HeroRig Hero => hero;
+        /// <summary>The bone the chest flashlight is strapped to (it tumbles with the body after a fall).</summary>
+        public Transform ChestBone => hero != null ? (hero.UpperChest != null ? hero.UpperChest : hero.Chest) : rig != null ? rig.Chest : null;
         Vector3 heroRidePos;            // the model's place under the body with the Root bone on the deck
         Quaternion heroRootRot;         // the Root bone's turn in the board's frame
         int idIdle, idRide, idToe, idHeel, idTuck, idPop, idAir, idLand, idFlip, idFlail, idSit, idStand, idWalk, idRun;
