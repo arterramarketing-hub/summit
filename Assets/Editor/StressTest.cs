@@ -51,6 +51,10 @@ public static class StressTest
         typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
         r.input = null;
         r.Crash += why => lastCrash = why;
+        // $STRESS_RIDE=Skis|Toboggan rides the other rides (the same takeoff, landing and crash code, their own numbers)
+        var rideName = System.Environment.GetEnvironmentVariable("STRESS_RIDE");
+        if (!string.IsNullOrEmpty(rideName) && System.Enum.TryParse<RideKind>(rideName, out var ride)) { body.SetRide(ride); r.SetRide(ride); }
+        Debug.Log($"STRESS riding {r.Ride}");
         bool hitStop = System.Environment.GetEnvironmentVariable("STRESS_HITSTOP") != "0";
         SummitGame.TestHitStops = hitStop;
         int seeds = int.TryParse(System.Environment.GetEnvironmentVariable("STRESS_SEEDS"), out int sv) ? sv : 4;
@@ -70,7 +74,7 @@ public static class StressTest
         SummitGame.TestHitStops = false;
         var sb = new System.Text.StringBuilder();
         foreach (var kv in kinds) sb.Append($"{kv.Key}={kv.Value} ");
-        Debug.Log($"STRESS summary (hit-stop {(hitStop ? "on" : "off")}): {crashes} crashes, {launched} launched (>30 m up at the end), {fast} fast (>80 m/s after 2 s); " +
+        Debug.Log($"STRESS summary ({r.Ride}, hit-stop {(hitStop ? "on" : "off")}): {crashes} crashes, {launched} launched (>30 m up at the end), {fast} fast (>80 m/s after 2 s); " +
                   $"{rides} rides, {stopped} stopped dead, {reversed} thrown back up the hill, {launchedRides} launched; by kind: {sb}");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         Time.timeScale = 1f; Time.fixedDeltaTime = 1f / 120f;
