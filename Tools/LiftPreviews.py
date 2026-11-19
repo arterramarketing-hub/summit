@@ -327,6 +327,58 @@ def render(objs, tex_dir, out_dir, TOB):
     clear()
     paint["m"] = palette_mat(0)
 
+    # ---- grinding the cable: a rider on the up-going rope, boardslide, the rope dipping under the board; and
+    #      the launch ramp under the other rope further down, as SkiLift.Ramp builds it
+    def box_at(pos, x, y, z, size, mat):
+        hx, hy, hz = [v * 0.5 for v in size]
+        c = [pos + x * (sx * hx) + y * (sy * hy) + z * (sz * hz) for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)]
+        mesh_obj("Box", c, [(0, 1, 3, 2), (4, 6, 7, 5), (0, 4, 5, 1), (2, 3, 7, 6), (0, 2, 6, 4), (1, 5, 7, 3)], mat, smooth=False)
+
+    def snowboarder(feet, along, jacket):
+        """Standing across the line (a boardslide): the board square to the cable, knees bent, arms out."""
+        side = Vector((along.z, 0, -along.x)).normalized()
+        y = Vector((0, 1, 0))
+        box_at(feet + y * 0.03, side, y, along, (1.5, 0.03, 0.27), flat("Board", (0.95, 0.5, 0.08)))
+        for sx in (-1, 1):
+            box_at(feet + side * (sx * 0.27) + y * 0.4, side, y, along, (0.15, 0.7, 0.17), flat("Pants", (0.09, 0.09, 0.11)))
+            box_at(feet + side * (sx * 0.62) + y * 1.22, side, y, along, (0.5, 0.1, 0.1), jacket)
+        box_at(feet + y * 1.05, side, y, along, (0.44, 0.6, 0.26), jacket)
+        box_at(feet + y * 1.5, side, y, along, (0.22, 0.24, 0.24), flat("Helmet", (0.08, 0.08, 0.09)))
+        box_at(feet + y * 1.5 + along * 0.11, side, y, along, (0.2, 0.08, 0.04), flat("Goggles", (0.85, 0.45, 0.1)))
+
+    l = toy()
+    build(l, plain, chairs_t=0.9, ground_box=box)
+    sl, cl = math.sin(l.lean), math.cos(l.lean)
+    nodes = [(6, l.deck_t + 4.6)] + [(s, plain(0, s - h * sl) + h * cl) for s, h in zip(l.s, l.h)] + [(220, l.deck_b + 4.6)]
+    s_r, dip = 84.0, 0.4
+    cy = LC.cable_y(nodes, 1, s_r) - dip
+    slope = (LC.cable_y(nodes, 1, s_r + 0.5) - LC.cable_y(nodes, 1, s_r - 0.5))
+    snowboarder(Vector((HALF, cy + 0.04, s_r)), Vector((0, slope, 1)).normalized(), flat("Jacket", (0.85, 0.12, 0.1)))
+    # (the rope's V under the board, drawn over the resting rope)
+    tube([Vector((HALF, LC.cable_y(nodes, 1, 44.0), 44.0)), Vector((HALF, cy, s_r)), Vector((HALF, LC.cable_y(nodes, 1, 113.0), 113.0))], 0.04, cable_mat)
+    # the ramp: 13 m long, 4.5 m at the lip, under the down-going rope
+    s0, ln, hgt = 127.0, 13.0, 4.5
+    y0, y1 = plain(-HALF, s0), plain(-HALF, s0 + ln)
+    def ramp_pt(t):
+        u = t / ln
+        return Vector((-HALF, y0 + (y1 - y0) * u + hgt * u * u, s0 + t))
+    steel, deck, red = flat("Steel", (0.52, 0.55, 0.58)), flat("Deck", (0.42, 0.43, 0.45)), flat("Accent", (0.8, 0.11, 0.09))
+    w = Vector((1.1, 0, 0))
+    for k in range(8):
+        p0, p1 = ramp_pt(ln * k / 8), ramp_pt(ln * (k + 1) / 8)
+        g0, g1 = Vector((p0.x, plain(p0.x, p0.z) - 1, p0.z)), Vector((p1.x, plain(p1.x, p1.z) - 1, p1.z))
+        mesh_obj("RampTop", [p0 - w, p0 + w, p1 + w, p1 - w], [(0, 1, 2, 3)], deck, smooth=False)
+        for e in (-1, 1):
+            rim = Vector((0, -0.18, 0))
+            mesh_obj("RampRim", [p0 + w * e, p1 + w * e, p1 + w * e + rim, p0 + w * e + rim], [(0, 1, 2, 3)], red if k % 2 == 0 else flat("Dark", (0.1, 0.1, 0.11)), smooth=False)
+            mesh_obj("RampSide", [p0 + w * e + rim, p1 + w * e + rim, g1 + w * e, g0 + w * e], [(0, 1, 2, 3)], steel, smooth=False)
+        if k == 7:
+            mesh_obj("RampBack", [p1 - w, p1 + w, g1 + w, g1 - w], [(0, 1, 2, 3)], steel, smooth=False)
+    snowboarder(ramp_pt(9.0) + Vector((0, 0.04, 0)), Vector((0, (ramp_pt(9.5).y - ramp_pt(8.5).y), 1)).normalized(), flat("Jacket2", (0.1, 0.32, 0.8)))
+    shoot("lift-cable-grind.jpg", (HALF + 7.5, cy + 2.2, s_r + 13), (HALF - 0.6, cy + 0.6, s_r - 2), lens=32, sun=(45, 60))
+    shoot("lift-ramp.jpg", (-HALF - 15, y0 + 0.5, s0 + 30), (-HALF + 1, y1 + 5.5, s0 + 9), lens=26, sun=(45, -50))
+    clear()
+
     # ---- a real lift on a real mountain: the first that crosses the piste, seen from the piste below the crossing
     for sd in (4242, 7, 11, 23, 5, 3):
         res = LC.check(sd)

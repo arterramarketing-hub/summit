@@ -40,7 +40,7 @@ namespace Summit
     ///
     /// Taken() is the lift's cleared swath, for the forest (and anything else placed on the mountain) to ask.
     /// </summary>
-    public static class LiftLine
+    public static partial class LiftLine
     {
         public const bool On = true;
 
@@ -95,6 +95,7 @@ namespace Summit
             public Vector3[] foot, head;          // each tower's foot on the snow, and where the cable's centre line crosses it
             public float[] nodeS, nodeY;          // what the cable hangs between: top portal, towers, bottom portal
             public int tries;
+            public Ramp ramp;                     // its launch ramp, if a spot was found for one (LiftRamp.cs)
             // the chairs' loop: its pieces in the order the chairs travel them, from leaving the bottom bullwheel
             public float[] cum;                   // loop distance at the start of each piece (and the whole length last)
             public float loop, spacing;
@@ -234,6 +235,7 @@ namespace Summit
             {
                 var l = all[i];
                 if (z < l.ZMin - 60f || z > l.ZMax + 60f) continue;
+                if (l.ramp != null && InLane(l, x, z, margin)) return true;   // the way in to its launch ramp
                 float along = (x - l.top.x) * l.dir.x + (z - l.top.z) * l.dir.z;
                 if (along < -StationHalfLen - 6f - margin || along > l.plan + StationHalfLen + 6f + margin) continue;
                 float side = (x - l.top.x) * l.across.x + (z - l.top.z) * l.across.z;
@@ -282,7 +284,7 @@ namespace Summit
                 {
                     tries++;
                     var l = Try(k, zt, zb, st * pairs[i].x, sb * pairs[i].y);
-                    if (l != null) { l.tries = tries; return l; }
+                    if (l != null) { l.tries = tries; PlaceRamp(l); return l; }
                 }
             }
             return null;
@@ -303,7 +305,9 @@ namespace Summit
         }
 
         // (a lift stays out of a ridge stretch altogether, canyons, gorge and all, not just off its rock)
-        static bool Kept(float x, float z) => Ridge.InCanyons(z) || Course.Keep(x, z, 3f) || Cliffs.WallCut(x, z) < -0.01f || Slope.OnPad(x, z);
+        // (asked with a small margin as well as a wide one: near two jump cliffs at once, Cliffs.Keep's wide look can
+        // find the further one first and miss the nearer)
+        static bool Kept(float x, float z) => Ridge.InCanyons(z) || Course.Keep(x, z, 3f) || Course.Keep(x, z, 0.5f) || Cliffs.WallCut(x, z) < -0.01f || Slope.OnPad(x, z);
 
         static readonly float[] StationAcross = { -StationHalfWid, -Half, 0f, Half, StationHalfWid };
 

@@ -3,7 +3,8 @@
 #   python3 Tools/LiftCheck.py 4242            one mountain (the day's seed), every lift, tower and span listed
 #   python3 Tools/LiftCheck.py 1 2000          seeds 1..2000 (uses every core)
 #   python3 Tools/LiftCheck.py budget 1 60     the triangles and draw calls the lifts add, rider at every 15 m of 60 mountains
-# (Tools/LiftHarness runs the same checks on the game's own C#, which is the last word; this is the quick one.)
+# (Tools/LiftHarness runs the same checks on the game's own C#, which is the last word; this is the quick one, kept
+# for the preview pictures. It does not know the launch ramps or the cable grind: those are checked by the harness only.)
 #
 # The first half is a port of the mountain (Slope, Course, Ridge, Cliffs: only what a lift's ground needs),
 # the second a port of LiftLine.cs, line for line, so what is checked here is what the game lays out. The seed's

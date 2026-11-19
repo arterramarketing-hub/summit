@@ -55,14 +55,8 @@ namespace Summit
             body.ResetVisual();
             return true;
         }
-        /// <summary>The start pad's RIDER label (Hud only knows the board and the tube: name the other rides on it here).</summary>
-        void ShowRider()
-        {
-            hud.SetRider(rider.Tube);
-            if (rider.Tube || rider.Ride == RideKind.Snowboard) return;
-            foreach (var t in hud.GetComponentsInChildren<UnityEngine.UI.Text>(true))
-                if (t.name == "RiderLabel") t.text = "RIDER: " + Rides.Of(rider.Ride).Name + "  (tap to change)";
-        }
+        /// <summary>The start pad's RIDER label: the ride's own name, or the tube.</summary>
+        void ShowRider() => hud.SetRider(rider.Tube ? "SNOW TUBE" : Rides.Of(rider.Ride).Name);
         // pause menu and the camera distance setting
         bool paused;
         static readonly float[] CamDist = { 0.65f, 0.82f, 1f, 1.22f, 1.5f };

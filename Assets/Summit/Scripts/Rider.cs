@@ -324,10 +324,11 @@ namespace Summit
                 v = new Vector3(v.x * 0.4f, Mathf.Min(v.y, -2f), v.z * 0.4f);
             }
             if (Crashed) v = CrashStep(dt, p, v);
-            else if (Grinding) v = GrindStep(dt, p, v);
+            else if (Grinding) v = OnCable ? CableGrind.Step(this, dt, p, v) : GrindStep(dt, p, v);
             else
             {
                 if (TryGrind(p, v)) v = GrindStep(dt, p, v);
+                else if (CableGrind.TryBoard(this, p, v)) v = CableGrind.Step(this, dt, p, v);   // a lift's cable, or the ramp up to it
                 else if (Airborne) v = AirStep(dt, p, v);
                 else v = GroundStep(dt, p, v);
             }
@@ -814,6 +815,40 @@ namespace Summit
             Vector3 target = Course.FeaturePoint(feat, grindS / len) + Vector3.up * R + grindOff;
             return (target - p) / dt;
         }
+
+        // ---------------------------------------------------------------- lift cables (CableGrind.cs)
+        // The same grind on a line the lifts supply: CableGrind decides when the board is on a cable or a launch
+        // ramp and where it goes; these few doors are all it needs into the rider. Its stand-in features have
+        // negative ids (the course's own count from 0).
+
+        /// <summary>Grinding a lift's cable or riding one of its ramps, not a park feature.</summary>
+        public bool OnCable => Grinding && GrindFeature.id < 0;
+        /// <summary>Put the rider on a cable (announced, like boarding a rail) or a ramp (not).</summary>
+        public void CableBoard(Course.Feature f, bool announce)
+        {
+            Grinding = true; GrindFeature = f; Airborne = false; pipeAir = false; fixVy = 0f;
+            ClearTrick(); Lean = 0f; leanVel = 0f;
+            if (announce) GrindStart?.Invoke(f);
+        }
+        /// <summary>Where the grind has got to this step: the line under the board, its speed, its height over the snow.</summary>
+        public void CableRide(Course.Feature f, float speed, float above)
+        {
+            GrindFeature = f; Speed = speed; Carve = 0f; Skid = 0f; AboveGround = above;
+            Vector3 d = f.Dir;
+            Heading = Mathf.Clamp(Mathf.Atan2(d.x, d.z), -MaxHeading, MaxHeading);
+        }
+        /// <summary>Off the cable or the ramp's lip, into the air with this velocity.</summary>
+        public Vector3 CableLeave(Vector3 p, Vector3 v) { Grinding = false; return TakeOff(p, v, 0.1f); }
+        /// <summary>A pop asked for since the last step, taken (so it is not also a jump off the snow later).</summary>
+        public bool TakePop(out bool super)
+        {
+            bool pop = popPending; popPending = false;
+            super = pop && SuperJumpTime > 0f;
+            if (pop) Jumped?.Invoke();
+            return pop;
+        }
+        /// <summary>Points for something done on a cable, into the same feed as every other trick.</summary>
+        public void Score(string name, int points) => Trick?.Invoke(name, points);
 
         // ---------------------------------------------------------------- trees, rocks, animals
 
