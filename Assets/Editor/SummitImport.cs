@@ -170,6 +170,14 @@ public class SummitImport : AssetPostprocessor
     }
 
     /// <summary>
+    /// How deep the snow's wind grooves look (parallax: the height map shifts the texture lookup with the view angle).
+    /// The height map's full range, as a fraction of one 36 m tile: 0.0007 is about 2.5 cm from trough to crest,
+    /// a little under what the normal map implies (~4 cm). Kept small on purpose: the stock shader cannot fade it
+    /// with distance. 0 turns the relief off, on the terrain and in the snow layer round the rider alike.
+    /// </summary>
+    public const float SnowGrooveDepth = 0.0007f;
+
+    /// <summary>
     /// Gives the snow a surface without visible repeats: a large map (one tile spans ~36 m of slope)
     /// for broad drifts and wind-scoured patches, plus a fine detail layer (~2 m) for grain and sparkle,
     /// on separate tilings so neither pattern lines up with the other.
@@ -204,6 +212,12 @@ public class SummitImport : AssetPostprocessor
         mat.SetFloat("_Smoothness", 0.32f);
         mat.EnableKeyword("_NORMALMAP");
         mat.EnableKeyword("_DETAIL_MULX2");
+        // the grooves' height (Tools/MakeSnowHeight.py, the same height field as the two maps above): a little depth
+        // by parallax. The snow layer round the rider copies all of this from the material (SnowLayer.cs).
+        var relief = SnowGrooveDepth > 0f ? AssetDatabase.LoadAssetAtPath<Texture2D>(dir + "SnowGroovesHeight.png") : null;
+        mat.SetTexture("_ParallaxMap", relief);
+        mat.SetFloat("_Parallax", SnowGrooveDepth);
+        if (relief != null) mat.EnableKeyword("_PARALLAXMAP"); else mat.DisableKeyword("_PARALLAXMAP");
         EditorUtility.SetDirty(mat);
         AssetDatabase.SaveAssets();
     }
