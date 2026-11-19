@@ -84,6 +84,8 @@ namespace Summit
             if (template == null || terrainSnow == null) { enabled = false; return; }
             mat = new Material(template);
             mat.CopyPropertiesFromMaterial(terrainSnow);
+            // the groove relief (parallax) is switched on the terrain's material alone: on there, on here
+            if (terrainSnow.IsKeywordEnabled("_PARALLAXMAP")) mat.EnableKeyword("_PARALLAXMAP"); else mat.DisableKeyword("_PARALLAXMAP");
             mat.name = "SnowLayer";
             groundBuf = new GraphicsBuffer(GraphicsBuffer.Target.Structured, Slots * Slots, 16);
             snowBuf = new GraphicsBuffer(GraphicsBuffer.Target.Structured, Slots * Slots, 16);
