@@ -323,6 +323,7 @@ namespace Summit
             againBtn = Button(game, "RESTART RUN", new Vector2(0f, -400f), new Vector2(560f, 120f), new Color(0.8f, 0.2f, 0.15f, 0.9f), out _, 48);
             // SOUND
             musicLabel = Row(3, "MUSIC", 180f, out musicMinus, out musicPlus);
+            voiceBtn = Button(tabPage[3].transform, "VOICE LINES", new Vector2(0f, -60f), new Vector2(700f, 120f), grey, out voiceLabel, 38);
             ShowTab(0);
             pausePanel.SetActive(false);
         }
@@ -351,6 +352,9 @@ namespace Summit
         public bool OnPauseRestart(Vector2 p) => Inside(againBtn, p);
         RectTransform bloodBtn; Text bloodLabel;
         RectTransform torchBtn; Text torchLabel;
+        RectTransform voiceBtn; Text voiceLabel;
+        public void SetVoiceLines(bool on) { voiceLabel.text = on ? "VOICE LINES: ON  (tap to change)" : "VOICE LINES: OFF  (tap to change)"; }
+        public bool OnPauseVoiceLines(Vector2 p) => Inside(voiceBtn, p);
         public void SetFlashlight(bool on) { torchLabel.text = on ? "FLASHLIGHT: ON  (tap to change)" : "FLASHLIGHT: OFF  (tap to change)"; }
         public bool OnPauseFlashlight(Vector2 p) => Inside(torchBtn, p);
         public void SetBlood(bool on) { bloodLabel.text = on ? "BLOOD: ON  (tap to change)" : "BLOOD: OFF  (tap to change)"; }

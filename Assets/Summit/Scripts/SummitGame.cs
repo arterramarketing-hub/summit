@@ -149,6 +149,7 @@ namespace Summit
             hud.SetPauseTrees(props.IsRealistic);
             if (blood != null) hud.SetBlood(blood.On);
             hud.SetFlashlight(DayNight.FlashlightOn);
+            hud.SetVoiceLines(SoundMix.VoiceLines);
             hud.SetTime(TimeOfDay.LockLabel);
             hud.SetMusic(Mathf.RoundToInt(AudioPrefs.MusicVolume * 10f) * 10 + "%");
             input.SwallowCurrentPress();
@@ -214,6 +215,7 @@ namespace Summit
             {
                 if (state != State.Riding || impact <= 3f) return;
                 if (impact > 11f) audioFx.Play(Sfx.LandHard);
+                if (impact > 13f && impact <= 18f && !rider.Crashed) audioFx.Play(Sfx.BuddyClose);   // a big landing ridden away (harder is the ouch)
                 hurtShake = Mathf.Max(hurtShake, Mathf.Clamp01((impact - 7f) / 12f) * 0.7f);
                 audioFx.Play(Sfx.Land, Mathf.Clamp01(impact / 14f));
             };
@@ -672,6 +674,7 @@ namespace Summit
             WatchScream(dt);
             if (!(Application.isBatchMode && TestHitStops)) TickHitStop(Time.unscaledDeltaTime);
             WatchDrop();
+            WatchWoah();
             // a gentler lens in the camp (its camera is close, among straight lines), the player's own on the slope
             lensFx.Strength = Mathf.MoveTowards(lensFx.Strength, state == State.Hub ? 0.3f : 1f, Time.unscaledDeltaTime * 1.4f);
             switch (state)
@@ -723,6 +726,7 @@ namespace Summit
                             else if (hud.OnTimeMinus(pp) || hud.OnTimePlus(pp)) { audioFx.Play(Sfx.Click); TimeOfDay.StepLock(hud.OnTimePlus(pp) ? 1 : -1); hud.SetTime(TimeOfDay.LockLabel); }
                             else if (hud.OnPauseSteer(pp)) { audioFx.Play(Sfx.Click); input.SetTilt(!input.useTilt); hud.SetPauseSteer(input.useTilt); hud.SetMode(input.useTilt); }
                             else if (hud.OnPauseTrees(pp)) { audioFx.Play(Sfx.Click); props.SetRealistic(!props.IsRealistic); hud.SetPauseTrees(props.IsRealistic); }
+                            else if (hud.OnPauseVoiceLines(pp)) { audioFx.Play(Sfx.Click); SoundMix.VoiceLines = !SoundMix.VoiceLines; hud.SetVoiceLines(SoundMix.VoiceLines); PlayerPrefs.SetInt("summit_voicelines", SoundMix.VoiceLines ? 1 : 0); PlayerPrefs.Save(); }
                             else if (hud.OnPauseFlashlight(pp)) { audioFx.Play(Sfx.Click); DayNight.FlashlightOn = !DayNight.FlashlightOn; hud.SetFlashlight(DayNight.FlashlightOn); PlayerPrefs.SetInt("summit_flashlight", DayNight.FlashlightOn ? 1 : 0); PlayerPrefs.Save(); dayNight.ApplyNow(); }
                             else if (hud.OnPauseBlood(pp)) { audioFx.Play(Sfx.Click); blood.SetOn(!blood.On); hud.SetBlood(blood.On); PlayerPrefs.SetInt("summit_blood", blood.On ? 1 : 0); PlayerPrefs.Save(); }
                             else if (hud.OnPauseRestart(pp)) { audioFx.Play(Sfx.Click); SetPaused(false); ToReady(); input.SwallowCurrentPress(); }
@@ -863,6 +867,7 @@ namespace Summit
         {
             if (state != State.Riding) return;
             // (a rough landing shows and sounds rough: no caption)
+            if (why == "Hard landing") audioFx.Play(Sfx.BuddyOuch);
         }
 
         void OnTrick(string name, int pts)
@@ -873,8 +878,12 @@ namespace Summit
             chainCount = Mathf.Min(chainCount + 1, 8);
             chainTimer = 4f;
             hud.Flash(name, "+" + got);
-            if (name == "Close call") audioFx.Play(Sfx.CloseCall);
-            else audioFx.Play(pts >= 700 ? Sfx.TrickBig : Sfx.Trick, chainCount - 1);
+            if (name == "Close call") { audioFx.Play(Sfx.CloseCall); audioFx.Play(Sfx.BuddyClose); }
+            else
+            {
+                audioFx.Play(pts >= 700 ? Sfx.TrickBig : Sfx.Trick, chainCount - 1);
+                if (pts >= 600 || chainCount >= 3) audioFx.Play(Sfx.BuddyCheer);   // a big trick, or a long chain
+            }
         }
 
         void OnPickup(PowerUps.Kind kind)
@@ -1114,6 +1123,19 @@ namespace Summit
         // the "nooo": down a crevasse it fades with the depth; off a cliff, a short one the moment you are clearly
         // falling far below where you left the snow
         bool cliffNooo, crevNooo;
+        // the woahs: high off a jump (once per air), and now and then at full tilt
+        bool airWoah; float nextSpeedWoah;
+        void WatchWoah()
+        {
+            if (state != State.Riding || audioFx == null || rider.Crashed) { airWoah = false; return; }
+            if (!rider.Airborne) airWoah = false;
+            else if (!airWoah && rider.AboveGround > 5f) { airWoah = true; audioFx.Play(Sfx.BuddyWoah); }
+            if (!rider.Airborne && rider.Speed * 3.6f > 150f && Time.unscaledTime > nextSpeedWoah)
+            {
+                nextSpeedWoah = Time.unscaledTime + 25f;
+                if (Random.value < 0.5f) audioFx.Play(Sfx.BuddyWoah);
+            }
+        }
         void WatchDrop()
         {
             if (audioFx == null) return;

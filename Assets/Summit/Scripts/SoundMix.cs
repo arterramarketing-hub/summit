@@ -11,7 +11,8 @@ namespace Summit
         Nooo, Ledge,  // the player's own clips (Resources/Audio/user_*.mp3)
         BigScream,    // one of the player's screams (Resources/Audio/UserScreams), shuffled
         SlideCrack,   // the slope letting go behind you: a crack, and the rumble building
-        BoneLeg, BoneBack, BoneNeck, BoneArm   // the harsh breaks: a big bone, the spine, the neck, an arm
+        BoneLeg, BoneBack, BoneNeck, BoneArm,  // the harsh breaks: a big bone, the spine, the neck, an arm
+        BuddyWoah, BuddyClose, BuddyCheer, BuddyOuch   // the player's own voice lines (Resources/Audio/Buddy/<group>)
     }
 
     /// <summary>What the ride sounds like this frame (all 0..1 unless noted).</summary>
@@ -107,6 +108,8 @@ namespace Summit
             voice = gameObject.AddComponent<AudioSource>(); voice.playOnAwake = false; voice.spatialBlend = 0f;
             nooo = C("user_crevasse_nooo"); ledge = C("user_ledge_suspense");
             bigScreams = Resources.LoadAll<AudioClip>("Audio/UserScreams");
+            buddy = new[] { new Bag(Resources.LoadAll<AudioClip>("Audio/Buddy/Woah")), new Bag(Resources.LoadAll<AudioClip>("Audio/Buddy/Close")),
+                            new Bag(Resources.LoadAll<AudioClip>("Audio/Buddy/Cheer")), new Bag(Resources.LoadAll<AudioClip>("Audio/Buddy/Ouch")) };
             screamBag = new int[bigScreams.Length]; screamNext = screamBag.Length;   // shuffled on first use
             cue = gameObject.AddComponent<AudioSource>(); cue.playOnAwake = false; cue.spatialBlend = 0f;
             music = new GameObject("Music").AddComponent<Music>();
@@ -260,6 +263,51 @@ namespace Summit
         }
         public void StopCue() { if (cue != null) cue.Stop(); }
 
+        // ---- the player's voice lines (the Pjama Buddy recording): woahs on big air, a line on a close call, a whoop
+        // on a big trick, an ouch on a hard landing. Each group is a shuffle bag (never the same line twice in a row);
+        // they share the rider's one voice, never talk over a scream or the "nooo", and keep a few seconds apart
+        /// <summary>The player's VOICE LINES setting (pause menu, SOUND tab).</summary>
+        public static bool VoiceLines
+        {
+            get { if (voiceSetting < 0) voiceSetting = PlayerPrefs.GetInt("summit_voicelines", 1); return voiceSetting == 1; }
+            set { voiceSetting = value ? 1 : 0; }
+        }
+        static int voiceSetting = -1;   // (read on first use: Unity refuses PlayerPrefs while a component is being built)
+        class Bag
+        {
+            readonly AudioClip[] clips; readonly int[] order; int next; int last = -1;
+            public Bag(AudioClip[] c) { clips = c ?? new AudioClip[0]; order = new int[clips.Length]; next = order.Length; }
+            public AudioClip Next()
+            {
+                if (clips.Length == 0) return null;
+                if (next >= order.Length)
+                {
+                    for (int i = 0; i < order.Length; i++) order[i] = i;
+                    for (int i = order.Length - 1; i > 0; i--) { int j = Random.Range(0, i + 1); (order[i], order[j]) = (order[j], order[i]); }
+                    if (order.Length > 1 && order[0] == last) (order[0], order[1]) = (order[1], order[0]);
+                    next = 0;
+                }
+                last = order[next]; return clips[order[next++]];
+            }
+        }
+        Bag[] buddy;
+        float nextBuddy;
+        /// <summary>Seconds of quiet the voice lines keep between them.</summary>
+        public const float BuddyGap = 7f;
+
+        void PlayBuddy(int group)
+        {
+            if (!VoiceLines || buddy == null || voice == null) return;
+            if (Time.unscaledTime < nextBuddy) return;
+            if (screamOn || NoooPlaying) return;                                         // a scream or the "nooo" has the voice
+            if (voice.isPlaying && Time.unscaledTime < voiceLock) return;               // nor talk over a cry still going
+            var c = buddy[group].Next();
+            if (c == null) return;
+            voice.clip = c; voice.pitch = 1f; voice.volume = 0.95f; voice.Play();
+            voiceLock = Time.unscaledTime + c.length;
+            nextBuddy = Time.unscaledTime + c.length + BuddyGap;
+        }
+
         // the player's screams, one after another from the impact until the tumble has slowed (SummitGame decides when)
         bool screamOn, screamFading;
         public bool Screaming => screamOn;
@@ -411,6 +459,8 @@ namespace Summit
                     return;
                 }
             }
+            if (kind == Sfx.BuddyWoah || kind == Sfx.BuddyClose || kind == Sfx.BuddyCheer || kind == Sfx.BuddyOuch)
+            { PlayBuddy(kind == Sfx.BuddyWoah ? 0 : kind == Sfx.BuddyClose ? 1 : kind == Sfx.BuddyCheer ? 2 : 3); return; }
             if (kind == Sfx.Ledge)
             {
                 if (ledge != null) { cue.clip = ledge; cue.volume = 0.9f; cue.pitch = 1f; cue.Play(); }

@@ -173,7 +173,12 @@ namespace Summit
         RiderBody body;
         Transform torch; Material torchLens; Vector3 torchLocalPos; Quaternion torchLocalRot = Quaternion.identity;   // the little flashlight strapped to the jacket: the light comes from it
         /// <summary>The player's FLASHLIGHT setting (pause menu): on, it lights up at dusk and night; off, never.</summary>
-        public static bool FlashlightOn = PlayerPrefs.GetInt("summit_flashlight", 1) == 1;
+        public static bool FlashlightOn
+        {
+            get { if (torchSetting < 0) torchSetting = PlayerPrefs.GetInt("summit_flashlight", 1); return torchSetting == 1; }
+            set { torchSetting = value ? 1 : 0; }
+        }
+        static int torchSetting = -1;   // (read on first use: Unity refuses PlayerPrefs while a component is being built)
         float shown = -1f;
         Color lastParticles = new Color(-1f, 0f, 0f), lastGlint = new Color(-1f, 0f, 0f);
         RiderGlow glowFx;
