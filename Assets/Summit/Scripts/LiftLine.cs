@@ -1,0 +1,514 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace Summit
+{
+    /// <summary>
+    /// Where the chairlifts run: a pure function of the day's mountain, like everything else on it.
+    ///
+    /// One long lift from the finish to the summit would not suit this mountain: it is 4.2 km long and falls
+    /// 3,048 m (no chairlift does that), and once a cycle a ridge stretch opens canyons or a gorge up to 240 m
+    /// out on either side of the piste for half a kilometre, which no line beside the run could cross. So there
+    /// is a lift for every cycle of the course instead, each with its own two stations: its bottom station where
+    /// the danger stretch ends, just above the ridge (the last one's is at the finish), and its top station as far
+    /// up as the open ground goes: below the foot of the canyons of the ridge above, or beside the start for the
+    /// first. That is five lifts, 290 to 530 m long in plan (850 m where the ridge above was never built).
+    ///
+    /// A lift is dead straight in plan, as real ones are, while the piste meanders beside it or under it:
+    ///   - Each end is set 38 to 84 m to one side of the piste. Through the danger stretch the line keeps to the
+    ///     side away from that stretch's deadly cliff; whether its top end is on the same side is drawn from the
+    ///     day's mountain. If it is not, the line crosses over the piste on one long span.
+    ///     (That stretch's own hazards are the crevasses, which are on the piste, and the cliff: the line and its
+    ///     towers pass on the far side from both. BottomAt = 365 would end every lift above the stretch instead,
+    ///     at about half its length.)
+    ///   - Towers stand every 70 m or so (40 to 92; up to 140 for a span over the piste or a jump cliff's band),
+    ///     only on ground that can hold them: 27 m or more from the piste's centre line (7 m off the groomed
+    ///     edge), off the cliffs, never in a ridge stretch or a canyon, not too steep; and by choice on knolls
+    ///     and the lips of benches, so the cable is carried over the rises. They lean out from the slope, half
+    ///     way to square with the cable.
+    ///   - Each tower starts 10 m tall and is raised (to 24 m at most) until the lowest thing on every chair, a
+    ///     rider's skis 4 m under the cable, clears the snow by 5 m everywhere and by 9 m over the piste, with
+    ///     the cable sagging between towers by its span squared over 3,500.
+    /// Lines are tried from the nearest to the piste outward and the first that meets all of that is the lift
+    /// (two or three tries as a rule; a mountain's five lifts take a few hundredths of a second to lay, once).
+    /// Tools/LiftHarness runs this very file outside Unity, on the mountain's own code, and checks every lift of
+    /// thousands of mountains; Tools/LiftCheck.py is the same again in Python, for the preview pictures.
+    ///
+    /// The chairs are a pure function of time: they sit every Spacing metres round the loop (up the side that is
+    /// on the right looking down the line, round the top bullwheel, down the other side, round the bottom one) and the
+    /// whole loop moves at Speed, so no chair has any state of its own and none can bunch or pop.
+    ///
+    /// Taken() is the lift's cleared swath, for the forest (and anything else placed on the mountain) to ask.
+    /// </summary>
+    public static class LiftLine
+    {
+        public const bool On = true;
+
+        public const float Gauge = 5.2f, Half = Gauge / 2f;      // between the cable going up and the one coming down
+        public const float ChairDrop = 4.0f;                      // from the cable to the lowest thing on a chair
+        public const float StationCable = 4.6f;                   // the cable's height over a station's deck
+        public const float StationHalfLen = 6f, StationHalfWid = 5.5f, WheelBack = 2.4f;   // (Tools/MakeLift.py's station)
+        public const float Swath = 10f;                           // half the cleared swath under the line
+        public const float TowerOff = Slope.PisteHalf + 7f;       // no tower's foot nearer the piste's centre line
+        public const float StationOff = Slope.PisteHalf + 14f;
+        public const float HMin = 10f, HMax = 24f;
+        public const float ClearOff = 5f, ClearPiste = 9f;
+        const float Step = 4f;                                    // tower spots are tried this far apart along the line
+        // (the limits sit half a metre off the spots' 4 m grid, so rounding never decides whether a span is allowed)
+        const float SpanMin = 39.5f, SpanWant = 70f, SpanEasy = 92f, SpanMax = 140.5f;
+        const float EndMin = 22f, EndWant = 45f, EndMax = 80f;
+        static readonly float[] Offsets = { 38f, 46f, 54f, 62f, 72f, 84f };
+        public const float BottomAt = 505f;                       // a lift's bottom station, metres into its cycle
+        const float Knoll = 0.8f;                                 // what a metre of knoll under a tower is worth to the chain
+        const float SagK = 1f / 3500f;
+
+        public const float Speed = 5f;                            // m/s: a detachable's line speed
+        public const float SpacingWanted = 18f;                   // between chairs (each loop rounds it to fit)
+
+        public static float Sag(float length) => length * length * SagK;
+
+        /// <summary>
+        /// Whatever else is built beside the piste can say where it stands (set this once, before the mountain is
+        /// first asked for anything): a line whose swath would pass through such a place is not used, and the
+        /// next one out, or the one on the other side, is tried instead.
+        /// </summary>
+        public static System.Func<float, float, bool> Occupied;
+
+        /// <summary>How far the lowest thing on a chair must clear the snow at (x, z).</summary>
+        public static float WantClear(float x, float z)
+        {
+            float a = Mathf.Abs(x - Slope.Centre(z));
+            return Mathf.Lerp(ClearPiste, ClearOff, Mathf.Clamp01((a - (Slope.PisteHalf + 4f)) / 6f));
+        }
+
+        /// <summary>One lift, laid out.</summary>
+        public class Lift
+        {
+            public int k;                         // the course cycle it serves
+            public Vector3 top, bottom;           // the stations: the middle of each deck
+            public Vector3 dir, across;           // level unit vectors: down the line, and to its right looking down
+            public float plan;                    // between the stations, in plan
+            public float lean;                    // how far the towers lean out from upright (radians)
+            public float offTop, offBottom;       // how far each end is from the piste's centre (signed)
+            public float[] s, h;                  // each tower: where its top is along the line (from the top station), its mast's length
+            public Vector3[] foot, head;          // each tower's foot on the snow, and where the cable's centre line crosses it
+            public float[] nodeS, nodeY;          // what the cable hangs between: top portal, towers, bottom portal
+            public int tries;
+            // the chairs' loop: its pieces in the order the chairs travel them, from leaving the bottom bullwheel
+            public float[] cum;                   // loop distance at the start of each piece (and the whole length last)
+            public float loop, spacing;
+            public int chairs;
+            public int Spans => nodeS.Length - 1;
+            public int Pieces => cum.Length - 1;
+            public Vector3 Axis => Vector3.up * Mathf.Cos(lean) + dir * Mathf.Sin(lean);   // up a tower's mast
+            public float ZMin => Mathf.Min(top.z, bottom.z) - StationHalfLen;
+            public float ZMax => Mathf.Max(top.z, bottom.z) + StationHalfLen;
+
+            /// <summary>A point of the line's centre, s metres along it from the top station, at height y.</summary>
+            public Vector3 At(float along, float side, float y) => new Vector3(top.x + dir.x * along + across.x * side, y, top.z + dir.z * along + across.z * side);
+
+            /// <summary>The cable's height on span i (between nodes i and i + 1) at s along the line.</summary>
+            public float CableY(int i, float along)
+            {
+                float u = (along - nodeS[i]) / (nodeS[i + 1] - nodeS[i]);
+                return Mathf.Lerp(nodeY[i], nodeY[i + 1], u) - 4f * Sag(nodeS[i + 1] - nodeS[i]) * u * (1f - u);
+            }
+
+            /// <summary>
+            /// Where the loop is at distance d round it (0 leaving the bottom bullwheel on the way up): the point on
+            /// the cable, the way the chairs are travelling, whether this is the way up, and the cable node it last
+            /// passed with how far back that was (for the swing a chair picks up crossing a tower's sheaves).
+            /// </summary>
+            public void Loop(float d, out Vector3 pos, out Vector3 travel, out bool up, out float sinceTower)
+            {
+                d = Mathf.Repeat(d, loop);
+                int n = Spans, lo = 0, hi = Pieces - 1;
+                while (lo < hi) { int mid = (lo + hi + 1) >> 1; if (cum[mid] <= d) lo = mid; else hi = mid - 1; }
+                int piece = lo;
+                float len = cum[piece + 1] - cum[piece], u = len > 1e-4f ? (d - cum[piece]) / len : 0f;
+                float yT = top.y + StationCable, yB = bottom.y + StationCable;
+                float sT = nodeS[0], sB = nodeS[n];
+                sinceTower = 1000f;
+                up = piece <= n + 1;
+                if (piece == 0) { pos = At(Mathf.Lerp(plan + WheelBack, sB, u), Half, yB); travel = -dir; }
+                else if (piece <= n)
+                {
+                    // up the right-hand side: spans from the bottom portal to the top one
+                    int i = n - piece;
+                    float along = Mathf.Lerp(nodeS[i + 1], nodeS[i], u);
+                    pos = At(along, Half, CableY(i, along));
+                    travel = new Vector3(-dir.x * (nodeS[i + 1] - nodeS[i]), nodeY[i] - nodeY[i + 1], -dir.z * (nodeS[i + 1] - nodeS[i])).normalized;
+                    if (i + 1 < n) sinceTower = u * len;
+                }
+                else if (piece == n + 1) { pos = At(Mathf.Lerp(sT, -WheelBack, u), Half, yT); travel = -dir; }
+                else if (piece == n + 2)
+                {
+                    float a = u * Mathf.PI;
+                    pos = At(-WheelBack - Half * Mathf.Sin(a), Half * Mathf.Cos(a), yT);
+                    travel = -dir * Mathf.Cos(a) - across * Mathf.Sin(a);
+                }
+                else if (piece == n + 3) { pos = At(Mathf.Lerp(-WheelBack, sT, u), -Half, yT); travel = dir; }
+                else if (piece <= 2 * n + 3)
+                {
+                    int i = piece - (n + 4);
+                    float along = Mathf.Lerp(nodeS[i], nodeS[i + 1], u);
+                    pos = At(along, -Half, CableY(i, along));
+                    travel = new Vector3(dir.x * (nodeS[i + 1] - nodeS[i]), nodeY[i + 1] - nodeY[i], dir.z * (nodeS[i + 1] - nodeS[i])).normalized;
+                    if (i > 0) sinceTower = u * len;
+                }
+                else if (piece == 2 * n + 4) { pos = At(Mathf.Lerp(sB, plan + WheelBack, u), -Half, yB); travel = dir; }
+                else
+                {
+                    float a = u * Mathf.PI;
+                    pos = At(plan + WheelBack + Half * Mathf.Sin(a), -Half * Mathf.Cos(a), yB);
+                    travel = dir * Mathf.Cos(a) + across * Mathf.Sin(a);
+                }
+            }
+
+            /// <summary>How far round the loop a chair going up is as it crosses tower i (the cable node i + 1).</summary>
+            public float LoopAtTowerUp(int i) => cum[Spans - i];
+
+            internal void MakeLoop()
+            {
+                int n = Spans;
+                cum = new float[2 * n + 7];
+                float straight = StationHalfLen + WheelBack, arc = Mathf.PI * Half, d = 0f;
+                int p = 0;
+                cum[p++] = d; d += straight;
+                for (int i = n - 1; i >= 0; i--) { cum[p++] = d; d += SpanLength(i); }
+                cum[p++] = d; d += straight;
+                cum[p++] = d; d += arc;
+                cum[p++] = d; d += straight;
+                for (int i = 0; i < n; i++) { cum[p++] = d; d += SpanLength(i); }
+                cum[p++] = d; d += straight;
+                cum[p++] = d; d += arc;
+                cum[p] = d;
+                loop = d;
+                chairs = Mathf.Max(2, Mathf.RoundToInt(loop / SpacingWanted));
+                spacing = loop / chairs;
+            }
+
+            float SpanLength(int i)
+            {
+                float ds = nodeS[i + 1] - nodeS[i], dy = nodeY[i + 1] - nodeY[i];
+                return Mathf.Sqrt(ds * ds + dy * dy);
+            }
+        }
+
+        // ---------------------------------------------------------------- today's lifts
+
+        static Lift[] lifts;
+        static int laidFor = int.MinValue;
+
+        /// <summary>Every lift on today's mountain, from the summit down (laid out the first time it is asked for).</summary>
+        public static Lift[] Lifts
+        {
+            get
+            {
+                if (lifts == null || laidFor != Slope.Seed)
+                {
+                    laidFor = Slope.Seed;
+                    lifts = new Lift[0];   // (so nothing that asks about the ground while they are laid sees the old ones)
+                    var list = new List<Lift>();
+                    if (On)
+                        for (int k = 0; k <= LastCycle; k++)
+                        {
+                            var l = Lay(k);
+                            if (l != null) list.Add(l);
+                        }
+                    lifts = list.ToArray();
+                }
+                return lifts;
+            }
+        }
+
+        /// <summary>
+        /// True under a lift's line or on one of its stations: its cleared swath, where no tree, rock or building
+        /// may stand. The same shape as Course.Keep, so placement can ask both alike.
+        /// </summary>
+        public static bool Taken(float x, float z, float margin)
+        {
+            var all = Lifts;
+            for (int i = 0; i < all.Length; i++)
+            {
+                var l = all[i];
+                if (z < l.ZMin - 60f || z > l.ZMax + 60f) continue;
+                float along = (x - l.top.x) * l.dir.x + (z - l.top.z) * l.dir.z;
+                if (along < -StationHalfLen - 6f - margin || along > l.plan + StationHalfLen + 6f + margin) continue;
+                float side = (x - l.top.x) * l.across.x + (z - l.top.z) * l.across.z;
+                if (Mathf.Abs(side) < Swath + margin) return true;
+            }
+            return false;
+        }
+
+        static int LastCycle => Course.CycleOf(Slope.FinishZ);
+
+        /// <summary>Where lift k's stations go down the mountain (z of its top and bottom); false if there is no room.</summary>
+        public static bool Range(int k, out float zt, out float zb)
+        {
+            float b = Course.First + k * Course.Cycle;
+            zb = k == LastCycle ? Slope.FinishZ + 15f : b + BottomAt;
+            if (k == 0) zt = 40f;                                                         // beside the start
+            else if (Ridge.Built(k - 1)) zt = b + Ridge.EndOf(k - 1) + Ridge.FadeAfter - Course.Cycle + 30f;   // below the canyons' foot
+            else zt = b - Course.Cycle + 640f;                                            // no ridge above: on up past it
+            return zb - zt >= 180f;
+        }
+
+        static Lift Lay(int k)
+        {
+            if (!Range(k, out float zt, out float zb)) return null;
+            // through the danger stretch, the side away from its deadly cliff
+            float sb = k < LastCycle && Cliffs.WallOf(k, out var w) ? -w.side : Slope.Hash01(k, 1, 171) < 0.5f ? -1f : 1f;
+            bool cross = Slope.Hash01(k, 2, 171) < 0.4f;
+            int tries = 0;
+            var pairs = new List<Vector2>();
+            for (int pass = 0; pass < 2; pass++)
+            {
+                bool same = cross ? pass == 1 : pass == 0;
+                float st = same ? sb : -sb;
+                pairs.Clear();
+                foreach (float a in Offsets) foreach (float b in Offsets) pairs.Add(new Vector2(a, b));
+                // beside the piste: the nearest first. Across it: from 54 m out either side (nearer, the span over
+                // the piste would be too long), then further
+                if (same) pairs.Sort((p, q) => Compare(Mathf.Max(p.x, p.y), Mathf.Max(q.x, q.y), p.x + p.y, q.x + q.y, p.x, q.x));
+                else pairs.Sort((p, q) =>
+                {
+                    int np = Mathf.Min(p.x, p.y) < 54f ? 1 : 0, nq = Mathf.Min(q.x, q.y) < 54f ? 1 : 0;
+                    return np != nq ? np.CompareTo(nq) : Compare(Mathf.Max(p.x, p.y), Mathf.Max(q.x, q.y), p.x + p.y, q.x + q.y, p.x, q.x);
+                });
+                int n = same ? pairs.Count : 10;
+                for (int i = 0; i < n; i++)
+                {
+                    tries++;
+                    var l = Try(k, zt, zb, st * pairs[i].x, sb * pairs[i].y);
+                    if (l != null) { l.tries = tries; return l; }
+                }
+            }
+            return null;
+        }
+
+        static int Compare(float a0, float b0, float a1, float b1, float a2, float b2) =>
+            a0 != b0 ? a0.CompareTo(b0) : a1 != b1 ? a1.CompareTo(b1) : a2.CompareTo(b2);
+
+        /// <summary>Ground that can hold a tower's foot: off the piste, off the cliffs, out of the canyons, not too steep.</summary>
+        static bool GroundOk(float x, float z, float off)
+        {
+            if (Mathf.Abs(x - Slope.Centre(z)) < off) return false;
+            if (Kept(x, z)) return false;
+            if (Cliffs.WallCut(x - 4f, z) < -0.01f || Cliffs.WallCut(x + 4f, z) < -0.01f) return false;
+            float gx = (Slope.Height(x + 3f, z) - Slope.Height(x - 3f, z)) / 6f;
+            float gz = (Slope.Height(x, z + 3f) - Slope.Height(x, z - 3f)) / 6f;
+            return Mathf.Abs(gx) <= 0.55f && gz <= 0.3f && gz >= -1.25f;
+        }
+
+        // (a lift stays out of a ridge stretch altogether, canyons, gorge and all, not just off its rock)
+        static bool Kept(float x, float z) => Ridge.InCanyons(z) || Course.Keep(x, z, 3f) || Cliffs.WallCut(x, z) < -0.01f || Slope.OnPad(x, z);
+
+        static readonly float[] StationAcross = { -StationHalfWid, -Half, 0f, Half, StationHalfWid };
+
+        /// <summary>A station's deck: just over the highest snow under it. False if the ground will not do.</summary>
+        static bool StationAt(Lift l, float x, float z, out float deck)
+        {
+            deck = float.MinValue;
+            // (under its edges, its middle, and the two cables: the chairs leave it only just above its deck)
+            for (int i = -2; i <= 2; i++)
+                for (int s = 0; s < StationAcross.Length; s++)
+                {
+                    float px = x + l.dir.x * i * StationHalfLen * 0.5f + l.across.x * StationAcross[s];
+                    float pz = z + l.dir.z * i * StationHalfLen * 0.5f + l.across.z * StationAcross[s];
+                    if (Mathf.Abs(px - Slope.Centre(pz)) < StationOff - StationHalfWid - 1f) return false;
+                    if (Kept(px, pz)) return false;
+                    deck = Mathf.Max(deck, Slope.Height(px, pz));
+                }
+            deck += 0.3f;
+            return true;
+        }
+
+        /// <summary>Lay lift k along the straight line from ot beside the piste at zt to ob beside it at zb. Null if it will not go.</summary>
+        static Lift Try(int k, float zt, float zb, float ot, float ob)
+        {
+            var l = new Lift { k = k, offTop = ot, offBottom = ob };
+            float xt = Slope.Centre(zt) + ot, xb = Slope.Centre(zb) + ob;
+            float plan = Mathf.Sqrt((xb - xt) * (xb - xt) + (zb - zt) * (zb - zt));
+            l.plan = plan;
+            l.dir = new Vector3((xb - xt) / plan, 0f, (zb - zt) / plan);
+            l.across = new Vector3(l.dir.z, 0f, -l.dir.x);
+            l.top = new Vector3(xt, 0f, zt); l.bottom = new Vector3(xb, 0f, zb);
+            if (!StationAt(l, xt, zt, out float deckT) || !StationAt(l, xb, zb, out float deckB)) return null;
+            l.top.y = deckT; l.bottom.y = deckB;
+            if (Occupied != null)
+                for (float s = -StationHalfLen - 6f; s <= plan + StationHalfLen + 6f; s += 5f)
+                    for (int side = -1; side <= 1; side++)
+                        if (Occupied(xt + l.dir.x * s + l.across.x * side * Swath, zt + l.dir.z * s + l.across.z * side * Swath)) return null;
+            l.lean = 0.5f * Mathf.Atan2(deckT - deckB, plan);
+            float sl = Mathf.Sin(l.lean);
+
+            // where a tower may stand: spots every Step along the line, between the stations' portals
+            float s0 = StationHalfLen, s1 = plan - StationHalfLen;
+            int n = Mathf.FloorToInt((s1 - s0 - 2f * EndMin) / Step) + 1;
+            if (n < 1) return null;
+            float first = s0 + EndMin + ((s1 - s0 - 2f * EndMin) - (n - 1) * Step) * 0.5f;
+            var spot = new float[n]; var ok = new bool[n]; var knoll = new float[n];
+            for (int i = 0; i < n; i++)
+            {
+                float s = first + i * Step;
+                spot[i] = s;
+                // (wherever its height puts its foot: it leans, so its foot is up the line from its top)
+                ok[i] = GroundOk(xt + l.dir.x * s, zt + l.dir.z * s, TowerOff)
+                     && GroundOk(xt + l.dir.x * (s - HMin * sl), zt + l.dir.z * (s - HMin * sl), TowerOff)
+                     && GroundOk(xt + l.dir.x * (s - HMax * sl), zt + l.dir.z * (s - HMax * sl), TowerOff);
+                knoll[i] = ok[i] ? KnollAt(l, s) : 0f;
+            }
+
+            // the cheapest chain of spans from the top portal to the bottom one
+            const float Inf = 1e18f;
+            var cost = new float[n]; var prev = new int[n];
+            for (int i = 0; i < n; i++)
+            {
+                cost[i] = Inf; prev[i] = -1;
+                if (!ok[i]) continue;
+                float g = spot[i] - s0;
+                if (g <= EndMax) cost[i] = EndCost(g) - knoll[i];
+                for (int j = i - 1; j >= 0; j--)
+                {
+                    g = spot[i] - spot[j];
+                    if (g > SpanMax) break;
+                    if (g < SpanMin || cost[j] >= Inf) continue;
+                    float c = cost[j] + SpanCost(g) - knoll[i];
+                    if (c < cost[i]) { cost[i] = c; prev[i] = j; }
+                }
+            }
+            float best = Inf; int at = -1;
+            for (int i = 0; i < n; i++)
+            {
+                float g = s1 - spot[i];
+                if (cost[i] < Inf && g <= EndMax && cost[i] + EndCost(g) < best) { best = cost[i] + EndCost(g); at = i; }
+            }
+            if (at < 0) return null;
+            var chain = new List<float>();
+            for (; at >= 0; at = prev[at]) chain.Add(spot[at]);
+            chain.Reverse();
+            l.s = chain.ToArray();
+            l.h = new float[l.s.Length];
+            for (int i = 0; i < l.h.Length; i++) l.h[i] = HMin;
+            l.foot = new Vector3[l.s.Length]; l.head = new Vector3[l.s.Length];
+            l.nodeS = new float[l.s.Length + 2]; l.nodeY = new float[l.s.Length + 2];
+
+            // heights: every tower starts at its least and is raised until the chairs clear the snow everywhere
+            bool done = false;
+            for (int pass = 0; pass < 14 && !done; pass++)
+            {
+                Nodes(l);
+                done = true;
+                for (int i = 0; i < l.Spans; i++)
+                {
+                    float d = Deficit(l, i, 2f, 0.15f);
+                    if (d <= 0.01f) continue;
+                    done = false;
+                    d += 0.25f;
+                    if (i > 0) l.h[i - 1] += d;
+                    if (i < l.h.Length) l.h[i] += d;
+                }
+                for (int i = 0; i < l.h.Length; i++) if (l.h[i] > HMax) return null;
+            }
+            if (!done) return null;
+            Nodes(l);
+            // (and where each foot has ended up, the snow must not be too steep to stand a tower on: about 50 degrees)
+            for (int i = 0; i < l.foot.Length; i++) if (Slope.Normal(l.foot[i].x, l.foot[i].z).y < 0.64f) return null;
+            l.MakeLoop();
+            return l;
+        }
+
+        static float EndCost(float g)
+        {
+            if (g < EndMin) return 1e18f;
+            float d = (g - EndWant) / 15f;
+            return d * d;
+        }
+
+        static float SpanCost(float g)
+        {
+            float d = (g - SpanWant) / 12f;
+            return d * d + (g > SpanEasy ? 6f + (g - SpanEasy) * 0.25f : 0f);
+        }
+
+        /// <summary>
+        /// How far the ground at s stands above the line between the ground 35 m up and down the lift's line: a
+        /// tower on a knoll or a bench's lip carries the cable over it; one in a hollow leaves the next rise in
+        /// the chairs' way.
+        /// </summary>
+        static float KnollAt(Lift l, float s) => Knoll * Mathf.Clamp(Ground(l, s) - 0.5f * (Ground(l, s - 35f) + Ground(l, s + 35f)), -3f, 3f);
+
+        static float Ground(Lift l, float along)
+        {
+            along = Mathf.Clamp(along, 0f, l.plan);
+            return Slope.Height(l.top.x + l.dir.x * along, l.top.z + l.dir.z * along);
+        }
+
+        /// <summary>Each tower's foot and head for its present height, and the nodes the cable hangs between.</summary>
+        static void Nodes(Lift l)
+        {
+            float sl = Mathf.Sin(l.lean), cl = Mathf.Cos(l.lean);
+            int n = l.s.Length;
+            l.nodeS[0] = StationHalfLen; l.nodeY[0] = l.top.y + StationCable;
+            for (int i = 0; i < n; i++)
+            {
+                float back = l.h[i] * sl;
+                float fx = l.top.x + l.dir.x * (l.s[i] - back), fz = l.top.z + l.dir.z * (l.s[i] - back);
+                float fy = Slope.Height(fx, fz);
+                l.foot[i] = new Vector3(fx, fy, fz);
+                l.head[i] = new Vector3(l.top.x + l.dir.x * l.s[i], fy + l.h[i] * cl, l.top.z + l.dir.z * l.s[i]);
+                l.nodeS[i + 1] = l.s[i]; l.nodeY[i + 1] = l.head[i].y;
+            }
+            l.nodeS[n + 1] = l.plan - StationHalfLen; l.nodeY[n + 1] = l.bottom.y + StationCable;
+        }
+
+        /// <summary>How far short of its clearance the lowest chair on span i comes (negative: clear by that much).</summary>
+        public static float Deficit(Lift l, int i, float step = 3f, float extra = 0f)
+        {
+            float sa = l.nodeS[i], sb = l.nodeS[i + 1];
+            float worst = -1e9f;
+            int m = Mathf.Max(2, Mathf.CeilToInt((sb - sa) / step)), last = l.Spans - 1;
+            for (int q = 0; q <= m; q++)
+            {
+                float s = sa + (sb - sa) * q / m;
+                float y = l.CableY(i, s) - ChairDrop;
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    float x = l.top.x + l.dir.x * s + l.across.x * side * Half, z = l.top.z + l.dir.z * s + l.across.z * side * Half;
+                    float need = WantClear(x, z);
+                    // coming out of a station the chairs start at its deck: the clearance builds over the first metres
+                    if (i == 0) need = Mathf.Min(need, 0.4f + 0.2f * (s - sa));
+                    if (i == last) need = Mathf.Min(need, 0.4f + 0.2f * (sb - s));
+                    need += extra;
+                    float d = Slope.Height(x, z) + need - y;
+                    // (a span from a station can only be lifted at its tower end; right at the portal, not at all)
+                    if (i == 0 && q > 0) { if (d > 0f) d /= q / (float)m; }
+                    else if (i == last && q < m) { if (d > 0f) d /= 1f - q / (float)m; }
+                    else if ((i == 0 && q == 0) || (i == last && q == m)) d = d < 0.3f ? Mathf.Min(d, 0f) : 99f;
+                    if (d > worst) worst = d;
+                }
+            }
+            return worst;
+        }
+
+        /// <summary>
+        /// A line of text for each lift, with its least clearances measured afresh every 1.5 m: for checking a
+        /// mountain in the editor (SkiLift logs it when SUMMIT_LIFTCHECK=1).
+        /// </summary>
+        public static string Report()
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var l in Lifts)
+            {
+                float worst = -1e9f, tall = 0f, longest = 0f;
+                for (int i = 0; i < l.Spans; i++) { worst = Mathf.Max(worst, Deficit(l, i, 1.5f)); longest = Mathf.Max(longest, l.nodeS[i + 1] - l.nodeS[i]); }
+                foreach (float h in l.h) tall = Mathf.Max(tall, h);
+                float near = float.MaxValue;
+                foreach (var f in l.foot) near = Mathf.Min(near, Mathf.Abs(f.x - Slope.Centre(f.z)));
+                sb.AppendLine($"lift {l.k}: z {l.top.z:0} to {l.bottom.z:0}, {l.offTop:+0;-0} and {l.offBottom:+0;-0} m off the piste, {l.plan:0} m, {l.s.Length} towers (tallest {tall:0.0} m, nearest the piste {near:0.0} m), longest span {longest:0} m, {l.chairs} chairs {l.spacing:0.0} m apart, clearance to spare {-worst:0.00} m (0 at a station's portal), try {l.tries}");
+            }
+            return sb.ToString();
+        }
+    }
+}
