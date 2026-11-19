@@ -170,6 +170,10 @@ namespace Summit
         Material spray, trail;
         Light headlamp;
         Transform beam; Material beamMat;   // the lamp's light seen in the cold air: a soft cone
+        RiderBody body;
+        Transform torch; Material torchLens; Vector3 torchLocalPos; Quaternion torchLocalRot = Quaternion.identity;   // the little flashlight strapped to the jacket: the light comes from it
+        /// <summary>The player's FLASHLIGHT setting (pause menu): on, it lights up at dusk and night; off, never.</summary>
+        public static bool FlashlightOn = PlayerPrefs.GetInt("summit_flashlight", 1) == 1;
         float shown = -1f;
         Color lastParticles = new Color(-1f, 0f, 0f), lastGlint = new Color(-1f, 0f, 0f);
         RiderGlow glowFx;
@@ -214,6 +218,8 @@ namespace Summit
             headlamp.shadows = LightShadows.None;   // a real-time shadow map for it would cost too much on the phone
             headlamp.enabled = false;
             BuildBeam();
+            body = r != null ? r.GetComponent<RiderBody>() : null;
+            BuildTorch();
             // (the old glow round the rider is gone: at night the lamp's own light and beam pick the rider out)
             ApplyNow();
         }
@@ -385,6 +391,7 @@ namespace Summit
                 if (!Same(gc, lastGlint)) { lastGlint = gc; fx.TintGlints(gc); }
             }
             Headlamp(Mathf.Lerp(a.headlamp, b.headlamp, t));
+            PlaceTorch(headlamp != null && headlamp.enabled);
             if (glowFx != null) glowFx.Step(0f);
         }
 
@@ -406,31 +413,35 @@ namespace Summit
         void Headlamp(float k)
         {
             if (headlamp == null || rider == null) return;
-            bool on = k > 0.01f && (camp == null || !camp.Active) && !HeadlampOff;
+            bool on = k > 0.01f && (camp == null || !camp.Active) && !HeadlampOff && FlashlightOn;
             headlamp.enabled = on;
             bool beamOn = on && !rider.Crashed;   // (the lamp tumbles with the body after a fall: no beam then)
             if (beam != null) beam.gameObject.SetActive(beamOn);
             // the signs shine this lamp's light back (Resources/SignLit.shader): where it is, where it points, how strong
             Shader.SetGlobalVector("_LampPos", new Vector4(0f, 0f, 0f, on ? 1f : 0f));
             if (!on) return;
-            headlamp.intensity = 48f * k;   // (falls off with the square of distance: about 1 on the snow 7 m ahead)
+            headlamp.intensity = 32f * k;   // (falls off with the square of distance: about 1 on the snow ahead)
             var cam = Camera.main;
-            // a flashlight carried at the chest, pointed down the line the rider is riding: the pool of light swings
-            // with the carves out ahead on the snow
+            // the flashlight strapped to the jacket, pointed down the line the rider is riding: the pool of light
+            // swings with the carves out ahead on the snow
             float th = rider.TravelHeading;
             Vector3 fwd = new Vector3(Mathf.Sin(th), 0f, Mathf.Cos(th));
+            Vector3 torchAt = torch != null ? torch.position : rider.transform.position + Vector3.up * 1.25f + fwd * 0.2f;
             // aimed at the snow a few metres ahead (the slope falls away at ~36 degrees, so a fixed tilt would
             // light the hill far below): a pool of light right in front of the rider
-            Vector3 lampAt = rider.transform.position + Vector3.up * 1.25f + fwd * 0.35f;
             Vector3 spot = rider.transform.position + fwd * 7f;
             spot.y = Slope.DrawnHeight(spot.x, spot.z);
-            Vector3 aim = spot - lampAt;
+            Vector3 aim = spot - torchAt;
             if (aim.sqrMagnitude < 0.01f || rider.Airborne) aim = fwd - Vector3.up * 0.9f;
-            headlamp.transform.SetPositionAndRotation(lampAt, Quaternion.LookRotation(aim.normalized));
+            if (rider.Crashed && torch != null) aim = torch.forward;   // strapped to the tumbling body: it points where the chest does
+            Quaternion aimRot = Quaternion.LookRotation(aim.normalized);
+            // the light itself sits a little out along the beam, past the rider's own arms and board: from right at
+            // the jacket it would blaze the hands and helmet white (light falls off with the square of distance)
+            headlamp.transform.SetPositionAndRotation(torchAt + aimRot * Vector3.forward * 1.3f, aimRot);
             Vector3 lp = headlamp.transform.position;
             if (beamOn)
             {
-                beam.SetPositionAndRotation(lp + headlamp.transform.forward * 0.15f, headlamp.transform.rotation);
+                beam.SetPositionAndRotation(torchAt + headlamp.transform.forward * 0.1f, headlamp.transform.rotation);
                 // seen from behind, straight down the beam, a cone is just a disc of glow round the rider: show the
                 // beam only as it swings across the view
                 float along = cam != null ? Vector3.Dot(cam.transform.forward, headlamp.transform.forward) : 1f;
@@ -452,7 +463,7 @@ namespace Summit
         {
             const int seg = 20; const float len = 11f, spread = 0.36f;   // about 20 degrees either side
             float[] zs = { 0f, 0.6f, len * 0.35f, len };
-            float[] alpha = { 0.0f, 1f, 0.45f, 0f };
+            float[] alpha = { 0.0f, 0.05f, 0.55f, 0f };   // (nothing at the lamp itself: a hot spot there reads as a glow on the rider)
             var verts = new System.Collections.Generic.List<Vector3>(); var cols = new System.Collections.Generic.List<Color>();
             var tris = new System.Collections.Generic.List<int>();
             for (int ring = 0; ring < zs.Length; ring++)
@@ -486,6 +497,62 @@ namespace Summit
             mr.sharedMaterial = beamMat; mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; mr.receiveShadows = false;
             beam = go.transform;
             go.SetActive(false);
+        }
+
+        /// <summary>
+        /// The flashlight on the jacket: a small dark body with a lens that glows when it's on, strapped to the
+        /// chest a little to the left, facing the way the rider faces. Placed every frame from the chest bone, so it
+        /// rides with every pose and tumbles with the body.
+        /// </summary>
+        void BuildTorch()
+        {
+            var root = new GameObject("ChestTorch").transform;
+            root.SetParent(transform, false);
+            var bodyGo = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            Kill(bodyGo.GetComponent<Collider>());
+            bodyGo.transform.SetParent(root, false);
+            bodyGo.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            bodyGo.transform.localScale = new Vector3(0.045f, 0.045f, 0.045f);   // 4.5 cm across, 9 cm long
+            var dark = new Material(Shader.Find("Universal Render Pipeline/Lit")) { name = "TorchBody" };
+            dark.SetColor("_BaseColor", new Color(0.12f, 0.12f, 0.13f)); dark.SetFloat("_Smoothness", 0.6f);
+            bodyGo.GetComponent<MeshRenderer>().sharedMaterial = dark;
+            var lens = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            Kill(lens.GetComponent<Collider>());
+            lens.transform.SetParent(root, false);
+            lens.transform.localPosition = new Vector3(0f, 0f, 0.045f);
+            lens.transform.localScale = new Vector3(0.042f, 0.042f, 0.012f);
+            torchLens = new Material(Shader.Find("Universal Render Pipeline/Unlit")) { name = "TorchLens" };
+            lens.GetComponent<MeshRenderer>().sharedMaterial = torchLens;
+            foreach (var mr in root.GetComponentsInChildren<MeshRenderer>()) mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            torch = root;
+        }
+
+        static void Kill(Object o) { if (Application.isPlaying) Object.Destroy(o); else Object.DestroyImmediate(o); }
+
+        void PlaceTorch(bool lit)
+        {
+            if (torch == null) return;
+            var chest = body != null ? body.ChestBone : null;
+            bool show = chest != null && body.gameObject.activeInHierarchy;
+            if (torch.gameObject.activeSelf != show) torch.gameObject.SetActive(show);
+            if (!show) return;
+            if (rider != null && rider.Crashed)
+            {
+                // strapped on: once the body is thrown it goes wherever the chest goes
+                torch.SetPositionAndRotation(chest.TransformPoint(torchLocalPos), chest.rotation * torchLocalRot);
+            }
+            else
+            {
+                // on the jacket's front, a little to the left, facing the way the rider rides
+                float th = rider != null ? rider.TravelHeading : 0f;
+                Vector3 face = new Vector3(Mathf.Sin(th), 0f, Mathf.Cos(th));
+                Vector3 left = Vector3.Cross(face, Vector3.up).normalized;
+                torch.SetPositionAndRotation(chest.position + face * 0.17f + left * 0.07f + Vector3.up * 0.02f,
+                                             Quaternion.LookRotation(face - Vector3.up * 0.35f));
+                torchLocalPos = chest.InverseTransformPoint(torch.position);
+                torchLocalRot = Quaternion.Inverse(chest.rotation) * torch.rotation;
+            }
+            torchLens.SetColor("_BaseColor", lit ? new Color(1.6f, 1.5f, 1.3f) : new Color(0.25f, 0.25f, 0.27f));
         }
 
         /// <summary>How much more of the headlamp a reflective sign sends back than a matte board would.</summary>

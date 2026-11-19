@@ -121,6 +121,7 @@ namespace Summit
             hud.SetPauseSteer(input.useTilt);
             hud.SetPauseTrees(props.IsRealistic);
             if (blood != null) hud.SetBlood(blood.On);
+            hud.SetFlashlight(DayNight.FlashlightOn);
             hud.SetTime(TimeOfDay.LockLabel);
             hud.SetMusic(Mathf.RoundToInt(AudioPrefs.MusicVolume * 10f) * 10 + "%");
             input.SwallowCurrentPress();
@@ -683,6 +684,7 @@ namespace Summit
                             else if (hud.OnTimeMinus(pp) || hud.OnTimePlus(pp)) { audioFx.Play(Sfx.Click); TimeOfDay.StepLock(hud.OnTimePlus(pp) ? 1 : -1); hud.SetTime(TimeOfDay.LockLabel); }
                             else if (hud.OnPauseSteer(pp)) { audioFx.Play(Sfx.Click); input.SetTilt(!input.useTilt); hud.SetPauseSteer(input.useTilt); hud.SetMode(input.useTilt); }
                             else if (hud.OnPauseTrees(pp)) { audioFx.Play(Sfx.Click); props.SetRealistic(!props.IsRealistic); hud.SetPauseTrees(props.IsRealistic); }
+                            else if (hud.OnPauseFlashlight(pp)) { audioFx.Play(Sfx.Click); DayNight.FlashlightOn = !DayNight.FlashlightOn; hud.SetFlashlight(DayNight.FlashlightOn); PlayerPrefs.SetInt("summit_flashlight", DayNight.FlashlightOn ? 1 : 0); PlayerPrefs.Save(); dayNight.ApplyNow(); }
                             else if (hud.OnPauseBlood(pp)) { audioFx.Play(Sfx.Click); blood.SetOn(!blood.On); hud.SetBlood(blood.On); PlayerPrefs.SetInt("summit_blood", blood.On ? 1 : 0); PlayerPrefs.Save(); }
                             else if (hud.OnPauseRestart(pp)) { audioFx.Play(Sfx.Click); SetPaused(false); ToReady(); input.SwallowCurrentPress(); }
                         }
