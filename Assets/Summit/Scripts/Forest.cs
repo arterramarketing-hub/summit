@@ -70,6 +70,7 @@ namespace Summit
             float x = wx + (Slope.Hash01(cx, cz, 2) - 0.5f) * Cell * 0.75f;
             float z = wz + (Slope.Hash01(cx, cz, 3) - 0.5f) * Cell * 0.75f;
             if (Course.Keep(x, z, 0.5f)) return Kind.None;   // (where it really stands, too: the long park features)
+            if (Hamlets.Taken(x, z)) return Kind.None;       // hamlets (Hamlets.cs): nothing grows in a house, its fence or its clearing
             if (Mathf.Abs(Slope.Kicker(x, z)) > 0.01f || Mathf.Abs(Slope.Kicker(x, z - 14f)) > 0.01f) return Kind.None;   // keep kickers clear
             variant = (int)(Slope.Hash01(cx, cz, 7) * 64f);
             bool rock = Slope.Hash01(cx, cz, 8) < (off < Slope.PisteHalf ? 0.25f : 0.12f);
