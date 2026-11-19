@@ -283,6 +283,7 @@ namespace Summit
             dressing = new GameObject("Course").AddComponent<CourseDressing>();
             dressing.target = rg.transform;
             dressing.Build(snow.shader, snow);
+            Hamlets.Create(rg.transform, snow.shader, spray);   // hamlets beside the piste (Hamlets.cs): they stream and rebuild themselves
             wild = new GameObject("Wildlife").AddComponent<Wildlife>();
             wild.rider = rider;
             wild.Build(snow.shader);
