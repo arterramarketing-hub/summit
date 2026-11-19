@@ -153,6 +153,11 @@ namespace Summit
                 sled.SetPositionAndRotation(origin, square);
                 sledMesh.SetParent(sled, true);
                 sled.SetParent(sledRoot, true);
+                // that was with the hero stood side-on, as on the board. On the sled the rider is turned to face
+                // the way they go (RideTurn, in PoseSled), and nothing carries the sled round with them as the
+                // feet carry the skis: turn it the same way about the middle of the deck, once, here
+                sled.localRotation = RideTurn * sled.localRotation;
+                sled.localPosition = deck + RideTurn * (sled.localPosition - deck);
                 rider.Landed += impact => { if (hero != null && impact > 1.5f) hero.Restart(idSledBump); };
                 sledGear = true;
             }
