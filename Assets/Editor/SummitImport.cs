@@ -43,7 +43,8 @@ public class SummitImport : AssetPostprocessor
             if (clips.Length > 0) m.clipAnimations = clips;
             return;
         }
-        if (assetPath.Contains("/Rider/"))
+        // Rides.fbx is the skis, poles and sled: gear with no skeleton, so not a Humanoid (it has no Hips to find)
+        if (assetPath.Contains("/Rider/") && !assetPath.EndsWith("/Rides.fbx"))
         {
             m.animationType = ModelImporterAnimationType.Human;
             m.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
