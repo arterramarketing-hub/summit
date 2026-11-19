@@ -1,13 +1,13 @@
-# Builds what Summit's hero rides besides the snowboard: a pair of skis with two poles, with every clip the
-# rider needs on them. It runs Tools/MakeHero.py first (for the skeleton, the body and the
+# Builds what Summit's hero rides besides the snowboard: a pair of skis with two poles, and a wooden toboggan,
+# with every clip the rider needs on them. It runs Tools/MakeHero.py first (for the skeleton, the body and the
 # posing code), so the two tools always agree, and it never rewrites the hero itself.
 #
 #   python3 Tools/MakeRides.py -- --project .                       (exports; needs "pip install bpy")
-#   python3 Tools/MakeRides.py -- --render DIR [--what skis,gear]   (preview pictures, rendered with Cycles)
+#   python3 Tools/MakeRides.py -- --render DIR [--what skis,sled,gear]   (preview pictures, rendered with Cycles)
 #   blender --background --factory-startup --python Tools/MakeRides.py -- ...      (the same, from Blender)
 #
 # Writes (with --project):
-#   Assets/Summit/Resources/Rider/Rides.fbx       one ski and one pole, as plain meshes (the game
+#   Assets/Summit/Resources/Rider/Rides.fbx       one ski, one pole and the sled, as plain meshes (the game
 #                                                 makes the second ski and pole itself)
 #   Assets/Summit/Art/Hero/HeroAnims.fbx          every clip, the hero's and the new ones, each its own take
 #   Assets/Summit/Art/Hero/HeroClips.json         the list of them for the editor's bake
@@ -17,12 +17,14 @@
 #                                                 game is right without opening Unity. (Summit > Bake Hero
 #                                                 Animations still works, and gives the same table.)
 #
-# Axes are Blender's, as in MakeHero.py: z up, the rider faces -y, their left is +x. On skis the rider faces
-# the way they go, so the tips of the skis point along -y, and the game turns the model a quarter turn from the snowboard's side-on stance (RiderBodyRide.cs).
+# Axes are Blender's, as in MakeHero.py: z up, the rider faces -y, their left is +x. On skis and on the sled
+# the rider faces the way they go, so the tips of the skis and the curl of the sled point along -y, and the
+# game turns the model a quarter turn from the snowboard's side-on stance (RiderBodyRide.cs).
 #
 # Where things sit, which the game relies on:
 #   Ski   its origin is the middle of the boot, on the plate the sole stands on; the tip is toward -y.
 #   Pole  its origin is the middle of the grip; the shaft runs down -z to the tip, the top of the handle is +z.
+#   Sled  its origin is on its centre line, on top of the cross battens (where the rider sits), the curl at -y.
 # A pole is held like this: the top of the handle comes out of the thumb side of the fist. At rest that is
 # "forward, squared off against the hand's own length"; a pose's pL / pR says which way the shaft should point
 # (from the grip to the tip) and the hand is turned to suit, so the clips carry the poles' directions.
@@ -41,6 +43,10 @@ WHAT = set((arg("--what", "all") or "all").split(","))
 HERO_CLIPS = len(CLIPS)                       # everything after these is ours
 
 # ----------------------------------------------------------------------------------------------- the models
+for nm, rgb, sm_ in (("Wood", (0.66, 0.47, 0.26), 0.3), ("WoodDark", (0.38, 0.24, 0.12), 0.3),
+                     ("Rope", (0.86, 0.80, 0.62), 0.1)):
+    material(nm, rgb, sm_)
+
 class Shape:
     """A plain mesh built face by face: each face has its own material and palette swatch."""
     def __init__(self, name):
@@ -133,8 +139,45 @@ def make_pole():
     S_.tube([(V(0, 0, -1.0), 0.006), (V(0, 0, -POLE_LEN), 0.0025)], 5, "Gear", "vent", ref=V(0, 1, 0))
     return S_.build(smooth=True)
 
-SKI_OB, POLE_OB = make_ski(), make_pole()
-for ob in (SKI_OB, POLE_OB): ob.hide_render = True
+# ---- the toboggan: six ash slats side by side, steamed into a curl at the front, held by cross battens whose
+# ends stick out as hand holds, and a rope from the curl lying slack on the deck
+SLED_HALF, SLED_REAR, SLED_FLAT, SLED_CURL = 0.2125, 0.75, -0.50, 0.17
+SLAT_TOP, SLAT_BOTTOM = -0.02, -0.05
+BATTENS = (0.66, 0.30, 0.02, -0.40)            # where the cross battens are (y); the rider holds the third
+HOLD_X = 0.235                                 # a hand's place on a batten's end
+def curl_point(th, r=SLED_CURL):
+    """Along the middle of a slat round the curl: th = 0 where the flat ends, 90 the very front, 180 the top."""
+    zc = (SLAT_TOP + SLAT_BOTTOM) / 2 + SLED_CURL
+    return V(0, SLED_FLAT - r * math.sin(math.radians(th)), zc - r * math.cos(math.radians(th)))
+def make_sled():
+    S_ = Shape("Sled")
+    half = (SLAT_TOP - SLAT_BOTTOM) / 2
+    path = [(V(0, y, (SLAT_TOP + SLAT_BOTTOM) / 2), V(0, 0, 1)) for y in (SLED_REAR, 0.3, -0.1, SLED_FLAT)]
+    for th in range(25, 226, 25):
+        c = curl_point(th)
+        path.append((c, (V(0, SLED_FLAT, (SLAT_TOP + SLAT_BOTTOM) / 2 + SLED_CURL) - c).normalized()))   # "up" is in toward the curl's middle
+    for i in range(6):
+        x = (i - 2.5) * 0.072; w = 0.0325
+        rs = []
+        for j, (c, up) in enumerate(path):
+            k = 0.75 if j == len(path) - 1 else 1.0   # the tip of the curl thinned a little
+            rs.append([S_.vert(c + V(x - w, 0, 0) + up * half * k), S_.vert(c + V(x + w, 0, 0) + up * half * k),
+                       S_.vert(c + V(x + w, 0, 0) - up * half * k), S_.vert(c + V(x - w, 0, 0) - up * half * k)])
+        S_.rings(rs, "Wood", "spare")
+    for y in BATTENS:
+        S_.box((-HOLD_X - 0.02, y - 0.022, SLAT_TOP), (HOLD_X + 0.02, y + 0.022, 0.0), "WoodDark")
+    # a batten across the end of the curl, and one where the curl begins to rise
+    end = curl_point(215, SLED_CURL - half - 0.012)
+    S_.box((-SLED_HALF - 0.012, end.y - 0.018, end.z - 0.014), (SLED_HALF + 0.012, end.y + 0.018, end.z + 0.014), "WoodDark")
+    # the rope: tied to the ends of the curl's batten, down over the front battens and across in a slack loop
+    for sx in (1, -1):
+        pts = [V(sx * 0.19, end.y, end.z - 0.012), V(sx * 0.185, -0.42, 0.012), V(sx * 0.17, -0.30, 0.004),
+               V(sx * 0.12, -0.16, 0.0), V(0.0, -0.11, 0.0)]
+        S_.tube([(p, 0.008) for p in pts], 5, "Rope", "spare")
+    return S_.build()
+
+SKI_OB, POLE_OB, SLED_OB = make_ski(), make_pole(), make_sled()
+for ob in (SKI_OB, POLE_OB, SLED_OB): ob.hide_render = True
 
 # ----------------------------------------------------------------------------------------------- holding poles
 # The pole's handle top, in the hand bone's own frame, at rest (see the header). The game works the same
@@ -345,6 +388,73 @@ SKI_FLIP = over(SKI, hips=V(0, 0.14, -0.50), hrot=(42, 0, 0), spine=(40, 0, 0), 
                 **sym(kL=V(0.2, -1, 0.3), hL=("rel", V(0.04, -0.26, -0.30)), eL=V(0.8, 0.3, -0.4), pL=V(0.25, 0.93, 0.15)))
 CLIPS.append(("Ski_Flip", 30, True, lambda t: breathe(SKI_FLIP, t, 0.3)))
 
+# ----------------------------------------------------------------------------------------------- on the toboggan
+# Sat on the battens with the feet out in front, heels on the slats behind the curl, hunched forward a little
+# with a hand on a batten's end either side. Steering is leaning and dragging: the hand on the inside of the
+# turn goes down into the snow behind the hip and that heel swings out and digs in.
+SEAT = V(0, 0.33, -0.80)
+def HOLD(sx, y=BATTENS[2]): return ("abs", V(sx * HOLD_X, y, -0.035))
+SLED = sym(hips=SEAT, hrot=(-12, 0, 0), spine=(34, 0, 0), neck=(-8, 0, 0), head=(-12, 0, 0),
+           fL=(V(0.13, -0.32, 0.085), 6, 10, 0), kL=side_pole(0.22, -0.3, 1),
+           hL=HOLD(1), eL=V(0.9, 0.5, 0.2), wL=(0, 0, 0), gL=1.0)
+
+@rclip("Sled_Idle", 120, True)
+def _(t):
+    # waiting at the gate: sat up, both feet down in the snow either side, looking about
+    p = over(SLED, hrot=(-4, 0, 0), spine=(18, 0, 0), **sym(fL=(V(0.33, -0.02, 0.055), 16, 0, 0), kL=side_pole(0.5, -0.5, 1),
+                                                           hL=("rel", V(0.10, -0.24, -0.34)), eL=V(0.8, 0.6, -0.2), gL=0.4))
+    p = breathe(p, t * 2)
+    look = math.sin(t * 2 * math.pi) * 34 + math.sin(t * 4 * math.pi + 1) * 6
+    p["head"] = (-6 + 3 * math.sin(t * 2 * math.pi + 2), 0, look); p["neck"] = (-4, 0, look * 0.3)
+    return p
+
+@rclip("Sled_Ride", 60, True)
+def _(t):
+    p = breathe(SLED, t, 0.8)
+    j = math.sin(t * 6 * math.pi) * math.sin(t * 2 * math.pi)        # rattling along
+    x, y, z = p["spine"]; p["spine"] = (x + 2 * j, y, z)
+    x, y, z = p["head"]; p["head"] = (x - 3 * j, y, z)
+    return p
+
+SLED_LEAN_L = over(SLED, hips=SEAT + V(0.05, 0, 0), hrot=(-12, 12, 4), spine=(26, 20, 12), neck=(-6, -8, 8), head=(-10, -10, 14),
+                   fL=(V(0.37, -0.26, 0.05), 34, 24, 0), kL=side_pole(0.6, -0.4, 1),
+                   hL=("abs", V(0.44, 0.50, -0.10)), eL=V(0.9, 0.7, 0.3), gL=0.2)
+CLIPS.append(("Sled_LeanL", 30, True, lambda t: breathe(SLED_LEAN_L, t, 0.6)))
+CLIPS.append(("Sled_LeanR", 30, True, lambda t: breathe(mirror(SLED_LEAN_L), t, 0.6)))
+
+# the tuck: lying back like a luger, feet first, chin on the chest to see past the toes
+SLED_TUCK = over(SLED, hips=V(0, 0.24, -0.80), hrot=(-60, 0, 0), spine=(-10, 0, 0), neck=(22, 0, 0), head=(30, 0, 0),
+                 **sym(fL=(V(0.10, -0.46, 0.11), 4, 24, 0), kL=side_pole(0.3, -0.2, 1), hL=HOLD(1, BATTENS[1]), eL=V(1, 0.2, 0.1)))
+CLIPS.append(("Sled_Tuck", 30, True, lambda t: breathe(SLED_TUCK, t, 0.3)))
+
+# in the air: knees up, hanging on; and letting go altogether, arms up and legs out (the no-hander)
+SLED_AIR = over(SLED, hrot=(-16, 0, 0), spine=(40, 0, 0), head=(-18, 0, 0),
+                **sym(fL=(V(0.14, -0.20, 0.27), 4, 22, 0), kL=side_pole(0.3, -0.2, 1)))
+SLED_NOHANDS = over(SLED, hrot=(-26, 0, 0), spine=(6, 0, 0), neck=(4, 0, 0), head=(6, 0, 0),
+                    **sym(fL=(V(0.24, -0.50, 0.36), 14, -8, 0), kL=side_pole(0.4, -0.2, 1),
+                          hL=("rel", V(0.26, -0.06, 0.50)), eL=V(0.9, 0.4, 0.0), gL=0.0))
+@rclip("Sled_Air", 30, True)
+def _(t):
+    p = breathe(SLED_AIR, t, 0.5)
+    k = math.sin(t * 2 * math.pi) * 0.02
+    for f_ in ("fL", "fR"): at_, a, b, c = p[f_]; p[f_] = (at_ + V(0, 0, k if f_ == "fL" else -k), a, b, c)
+    return p
+@rclip("Sled_NoHands", 30, True)
+def _(t):
+    p = breathe(SLED_NOHANDS, t, 0.5)
+    w = math.sin(t * 4 * math.pi) * 0.04
+    p["hL"] = ("rel", p["hL"][1] + V(w, 0, 0)); p["hR"] = ("rel", p["hR"][1] + V(w, 0, 0))
+    return p
+
+# a landing or a bump: the body folds over the knees and the head nods, then sits back up
+SLED_JOLT = over(SLED, hrot=(-6, 0, 0), spine=(52, 0, 0), neck=(6, 0, 0), head=(14, 0, 0),
+                 **sym(fL=(V(0.15, -0.30, 0.12), 8, 4, 0), eL=V(1.0, 0.2, 0.5)))
+@rclip("Sled_Bump", 14)
+def _(t):
+    if t < 0.3: return overlap(SLED_AIR, SLED_JOLT, ease(t / 0.3), ease(t / 0.3) * 0.7)
+    k = (t - 0.3) / 0.7
+    return overlap(SLED_JOLT, SLED, ease(k), ease(max(0, k - 0.2) / 0.8))
+
 print("RIDES clips:", ", ".join(c[0] for c in CLIPS[HERO_CLIPS:]))
 
 # ----------------------------------------------------------------------------------------------- export
@@ -435,7 +545,7 @@ def export_rides():
     common = dict(apply_unit_scale=True, add_leaf_bones=False, use_armature_deform_only=True, primary_bone_axis='Y',
                   secondary_bone_axis='X', armature_nodetype='NULL', path_mode='AUTO', embed_textures=False, mesh_smooth_type='OFF')
     bpy.ops.object.select_all(action='DESELECT')
-    for o in (SKI_OB, POLE_OB): o.hide_render = False; o.select_set(True)
+    for o in (SKI_OB, POLE_OB, SLED_OB): o.hide_render = False; o.select_set(True)
     bpy.context.view_layer.objects.active = SKI_OB
     bpy.ops.export_scene.fbx(filepath=rides, use_selection=True, object_types={'MESH'}, bake_anim=False, **common)
     for o in bpy.context.selected_objects: o.hide_render = True          # (the previews show copies of them)
@@ -457,7 +567,7 @@ if PROJECT:
 
 # ----------------------------------------------------------------------------------------------- renders
 # Cycles on the processor, so it runs anywhere bpy does. The gear is placed exactly as the game places it:
-# each ski carried by its foot, each pole by its hand.
+# each ski carried by its foot, each pole by its hand, the sled under the seat.
 def cycles_setup(w, h, samples=20):
     render_setup(w, h)
     scene.render.engine = 'CYCLES'
@@ -474,7 +584,7 @@ def copy_of(ob, name):
 GEAR = {}
 def gear():
     if not GEAR:
-        GEAR.update(skiL=copy_of(SKI_OB, "SkiL"), skiR=copy_of(SKI_OB, "SkiR"), poleL=copy_of(POLE_OB, "PoleL"), poleR=copy_of(POLE_OB, "PoleR"))
+        GEAR.update(skiL=copy_of(SKI_OB, "SkiL"), skiR=copy_of(SKI_OB, "SkiR"), poleL=copy_of(POLE_OB, "PoleL"), poleR=copy_of(POLE_OB, "PoleR"), sled=copy_of(SLED_OB, "SledShown"))
     return GEAR
 
 def pole_rest(sd):
@@ -484,7 +594,7 @@ def pole_rest(sd):
     return Matrix.Translation(grip) @ V(0, 0, 1).rotation_difference(top).to_matrix().to_4x4()
 
 def dress(s, kind, lift=0.0, at=Matrix.Identity(4)):
-    """Show the pose with its gear: kind is 'skis' or None."""
+    """Show the pose with its gear: kind is 'skis', 'sled' or None."""
     g = gear()
     for o in g.values(): o.hide_render = True
     OBJS["Snowboard"].hide_render = True
@@ -495,6 +605,8 @@ def dress(s, kind, lift=0.0, at=Matrix.Identity(4)):
             sk.matrix_world = at @ s.M[sd + "Foot"] @ REST[sd + "Foot"].inverted() @ ski_rest(sd)
             po = g["pole" + key]; po.hide_render = False
             po.matrix_world = at @ s.M[sd + "Hand"] @ REST[sd + "Hand"].inverted() @ pole_rest(sd)
+    elif kind == "sled":
+        g["sled"].hide_render = False; g["sled"].matrix_world = at
 
 def bank(deg, yaw=0.0):
     """The whole rider tipped about the line of travel through the snow under them, as the game banks a turn."""
@@ -546,6 +658,19 @@ if RENDER:
             ("Spin (left)", P_at("Ski_SpinL"), 0, I4, cam(front)),
             ("Flip tuck", P_at("Ski_Flip"), GRAB_LIFT, I4, cam(side, 0.6)),
         ], 4)
+    if "sled" in WHAT or "all" in WHAT:
+        sheet("RideToboggan", "sled", [
+            ("Toboggan Idle", P_at("Sled_Idle"), 0, I4, cam(front, 0.45, 4.0)),
+            ("Toboggan Ride", P_at("Sled_Ride"), 0, I4, cam(front, 0.45, 4.0)),
+            ("Ride (side)", P_at("Sled_Ride"), 0, I4, cam(side, 0.45, 4.0)),
+            ("Ride (behind)", P_at("Sled_Ride"), 0, I4, cam(back, 0.45, 4.0)),
+            ("Lean left, hand and heel dragging", P_at("Sled_LeanL"), 0, bank(6), cam((35, 14), 0.4, 4.0)),
+            ("Lean right", P_at("Sled_LeanR"), 0, bank(-6), cam((165, 18), 0.4, 4.0)),
+            ("Tuck (luge)", P_at("Sled_Tuck"), 0, I4, cam(side, 0.4, 4.0)),
+            ("Air: hang on", P_at("Sled_Air"), 0, I4, cam(front, 0.45, 4.0)),
+            ("No-hander", P_at("Sled_NoHands"), 0, I4, cam(front, 0.6, 4.4)),
+            ("Bump", P_at("Sled_Bump", 0.3), 0, I4, cam(side, 0.45, 4.0)),
+        ], 5)
     if "gear" in WHAT or "all" in WHAT:
         # the models on their own, close up
         cycles_setup(900, 420, 24)
@@ -553,10 +678,11 @@ if RENDER:
         for o in g.values(): o.hide_render = True
         OBJS["Snowboard"].hide_render = True
         for o in (OBJS["HeroBody"], OBJS["HeroLegs"], OBJS["HeroGear"]): o.hide_render = True
-        g["skiL"].hide_render = g["skiR"].hide_render = g["poleL"].hide_render = False
-        g["skiL"].matrix_world = Matrix.Translation(V(-0.1, 0.0, 0.0)); g["skiR"].matrix_world = Matrix.Translation(V(0.1, 0.05, 0.0))
-        g["poleL"].matrix_world = Matrix.Translation(V(0.35, 0.45, -0.03)) @ Matrix.Rotation(math.radians(90), 4, 'X')
-        look_from(52, 26, V(0.1, -0.05, 0.0), 3.4, 50)
+        g["skiL"].hide_render = g["skiR"].hide_render = g["poleL"].hide_render = g["sled"].hide_render = False
+        g["skiL"].matrix_world = Matrix.Translation(V(0.55, 0.0, 0.0)); g["skiR"].matrix_world = Matrix.Translation(V(0.75, 0.05, 0.0))
+        g["poleL"].matrix_world = Matrix.Translation(V(1.0, 0.45, -0.03)) @ Matrix.Rotation(math.radians(90), 4, 'X')
+        g["sled"].matrix_world = Matrix.Translation(V(-0.55, 0.0, 0.0))
+        look_from(52, 26, V(0.1, -0.05, 0.0), 4.6, 50)
         shot(os.path.join(RENDER, "RideGear.png"))
         for o in (OBJS["HeroBody"], OBJS["HeroLegs"], OBJS["HeroGear"]): o.hide_render = False
         print("RIDES gear picture")

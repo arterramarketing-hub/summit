@@ -4,7 +4,7 @@ namespace Summit
 {
     /// <summary>
     /// What the player keeps between runs: the points balance, the upgrades bought with it and the
-    /// outfit and the ride (snowboard or skis) picked. Everything lives in PlayerPrefs, so it survives quitting and app updates.
+    /// outfit and the ride (snowboard, skis or toboggan) picked. Everything lives in PlayerPrefs, so it survives quitting and app updates.
     /// Gameplay code asks the query helpers (GripScale, Falls, PowerUpTime, HeadStart, Has) and
     /// never reads the levels itself, so a balance change happens in one place.
     /// </summary>

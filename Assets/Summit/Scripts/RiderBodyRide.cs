@@ -3,10 +3,16 @@ using UnityEngine;
 namespace Summit
 {
     /// <summary>
-    /// What the hero rides besides the snowboard: a pair of skis with two poles (Resources/Rider/Rides.fbx and
-    /// the Ski_ clips, built by Tools/MakeRides.py). Kept apart from the snowboard's code: RiderBodyHero hands a
-    /// frame over to PoseSkis when skis are on, and RiderBody asks RidingGear where the two differ (which way a
-    /// flip turns, the tracks in the snow).
+    /// What the hero rides besides the snowboard: a pair of skis with two poles, and a wooden toboggan
+    /// (Resources/Rider/Rides.fbx and the Ski_ and Sled_ clips, built by Tools/MakeRides.py). Kept apart from
+    /// the snowboard's code: RiderBodyHero hands a frame over to PoseSkis or PoseSled when one is on, and
+    /// RiderBody asks RidingGear where they differ (which way a flip turns, the bank, the tracks in the snow).
+    ///
+    /// On the toboggan the rider sits on the battens, feet first, a hand on a batten's end either side. Leaning
+    /// is in the clips: the inside hand goes down into the snow behind the hip and that heel swings out and
+    /// drags (and leaves its scuff beside the sled's wide flat track). It lies back to tuck, hangs on in the air
+    /// or lets go altogether for a no-hander, and folds over its knees when it lands and skips. In a crash the
+    /// rider is thrown and the sled tumbles on by itself.
     ///
     /// On skis the rider faces the way they go, so the model is turned a quarter turn from the board's side-on
     /// stance, about the Root bone. Each ski is carried by its own foot (the clips move the legs separately: in a
@@ -32,7 +38,11 @@ namespace Summit
         Quaternion heroBaseRot = Quaternion.identity;   // the model side-on, as the board has it
         Vector3 rideModelPos;                           // the model facing forward, the Root bone still on the deck
         static readonly Quaternion RideTurn = Quaternion.Euler(0f, -90f, 0f);   // the toe edge (+X) round to the nose (+Z)
-        SnowTrail[] sideTrail;                          // the skis' two tracks
+        SnowTrail[] sideTrail;                          // the skis' two tracks; or the scuff of the toboggan's dragged heel
+        bool sledGear;                                  // the toboggan and its clips are there
+        Transform sledRoot, sled;                       // under the roll; the sled itself (thrown in a crash)
+        int idSledIdle, idSledRide, idSledLeanL, idSledLeanR, idSledTuck, idSledAir, idSledNoHands, idSledBump;
+        static readonly Vector3 SledBox = new Vector3(0.47f, 0.10f, 1.42f), SledBoxAt = new Vector3(0f, -0.02f, -0.04f);
 
         int idSkiIdle, idSkiRide, idSkiTurnL, idSkiTurnR, idSkiTuck, idSkiPlantL, idSkiPlantR, idSkiPop, idSkiAir, idSkiLand;
         int idSkiWindL, idSkiWindR, idSkiSpinL, idSkiSpinR, idSkiFlip;
@@ -74,15 +84,23 @@ namespace Summit
             go.name = "Rides";
             go.transform.localPosition = model.localPosition; go.transform.localRotation = model.localRotation; go.transform.localScale = model.localScale;
             foreach (var c in go.GetComponentsInChildren<Collider>()) DestroyImmediate(c);
-            Transform skiMesh = null, poleMesh = null;
-            foreach (var t in go.GetComponentsInChildren<Transform>(true)) { if (t.name == "Ski") skiMesh = t; else if (t.name == "Pole") poleMesh = t; }
+            Transform skiMesh = null, poleMesh = null, sledMesh = null;
+            foreach (var t in go.GetComponentsInChildren<Transform>(true)) { if (t.name == "Ski") skiMesh = t; else if (t.name == "Pole") poleMesh = t; else if (t.name == "Sled") sledMesh = t; }
             Transform fingersL = h.Bone("LeftIndexProximal"), fingersR = h.Bone("RightIndexProximal");
             if (skiMesh == null || poleMesh == null || fingersL == null || fingersR == null || h.Foot[0] == null || h.Foot[1] == null || h.Hand[0] == null || h.Hand[1] == null)
             { Debug.LogWarning("Rides: no Ski or Pole in Rides.fbx: snowboard only"); DestroyImmediate(go); return; }
+            // the sled's own materials: pale ash slats, darker battens, a hemp rope
+            Shader lit = jacketShader != null ? jacketShader : Shader.Find("Universal Render Pipeline/Lit");
+            Material Plain(Color col, float smooth) { var m = new Material(lit); m.SetColor("_BaseColor", col); m.SetFloat("_Smoothness", smooth); return m; }
+            Material wood = Plain(new Color(0.66f, 0.47f, 0.26f), 0.3f), woodDark = Plain(new Color(0.38f, 0.24f, 0.12f), 0.3f), rope = Plain(new Color(0.84f, 0.78f, 0.60f), 0.1f);
             foreach (var mr in go.GetComponentsInChildren<MeshRenderer>(true))
             {
                 var mats = mr.sharedMaterials;
-                for (int i = 0; i < mats.Length; i++) mats[i] = mats[i] != null && mats[i].name.StartsWith("Board") ? boardPaint : gearM;
+                for (int i = 0; i < mats.Length; i++)
+                {
+                    string mn = mats[i] != null ? mats[i].name : "";
+                    mats[i] = mn.StartsWith("Board") ? boardPaint : mn.StartsWith("WoodDark") ? woodDark : mn.StartsWith("Wood") ? wood : mn.StartsWith("Rope") ? rope : gearM;
+                }
                 mr.sharedMaterials = mats;
                 mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
             }
@@ -124,7 +142,21 @@ namespace Summit
                 grip.SetParent(hand, true);
                 pole[s] = grip;
             }
-            DestroyImmediate(go);   // (emptied: both meshes now live on their holders)
+            // the toboggan: its seat (the tops of the battens) at the Root bone, the curl the way the rider faces
+            idSledIdle = h.Id("Sled_Idle"); idSledRide = h.Id("Sled_Ride"); idSledLeanL = h.Id("Sled_LeanL"); idSledLeanR = h.Id("Sled_LeanR");
+            idSledTuck = h.Id("Sled_Tuck"); idSledAir = h.Id("Sled_Air"); idSledNoHands = h.Id("Sled_NoHands"); idSledBump = h.Id("Sled_Bump");
+            if (sledMesh != null && idSledIdle >= 0 && idSledRide >= 0 && idSledLeanL >= 0 && idSledLeanR >= 0 && idSledTuck >= 0 && idSledAir >= 0 && idSledNoHands >= 0)
+            {
+                sledRoot = new GameObject("Toboggan").transform;
+                sledRoot.SetParent(roll, false);
+                sled = new GameObject("Sled").transform;
+                sled.SetPositionAndRotation(origin, square);
+                sledMesh.SetParent(sled, true);
+                sled.SetParent(sledRoot, true);
+                rider.Landed += impact => { if (hero != null && impact > 1.5f) hero.Restart(idSledBump); };
+                sledGear = true;
+            }
+            DestroyImmediate(go);   // (emptied: the meshes now live on their holders)
 
             for (int i = 0; i < g.Length; i++) skiGrabHold[i] = h.CaptureHold(idSkiGrab[i], skiGrabHand[i]);
             rider.Jumped += () => { if (hero != null) hero.Restart(idSkiPop); };
@@ -133,10 +165,10 @@ namespace Summit
             ShowRide();
         }
 
-        /// <summary>Snowboard or skis (without the gear, always the snowboard).</summary>
+        /// <summary>Snowboard, skis or toboggan (without the gear, always the snowboard).</summary>
         public void SetRide(RideKind k)
         {
-            if (!rideGear) k = RideKind.Snowboard;
+            if (!rideGear || (k == RideKind.Toboggan && !sledGear)) k = RideKind.Snowboard;
             if (Ride == k && rideSet) return;
             rideSet = true;
             Ride = k;
@@ -152,17 +184,24 @@ namespace Summit
         void ShowRide()
         {
             bool on = !Walking && !Tube;
-            bool skis = rideGear && Ride == RideKind.Skis;
-            boardRoot.gameObject.SetActive(on && !skis);
+            bool skis = rideGear && Ride == RideKind.Skis, onSled = sledGear && Ride == RideKind.Toboggan;
+            boardRoot.gameObject.SetActive(on && !skis && !onSled);
             if (!rideGear) return;
+            if (sledRoot != null) sledRoot.gameObject.SetActive(on && onSled);
             skiRoot.gameObject.SetActive(on && skis);
             for (int s = 0; s < 2; s++) if (pole[s] != null) pole[s].gameObject.SetActive(on && skis && !HandGone(s));
         }
 
-        /// <summary>What flies off with the rider in a crash: the board; or both skis and both poles.</summary>
+        /// <summary>What flies off with the rider in a crash: the board; or both skis and both poles; or the sled.</summary>
         void RideRagdoll()
         {
             if (ragdoll == null || Tube) return;
+            if (sledGear && Ride == RideKind.Toboggan)
+            {
+                ragdoll.SetBoard(sled, SledBox, SledBoxAt);
+                ragdoll.SetExtras(null);
+                return;
+            }
             if (rideGear && Ride == RideKind.Skis)
             {
                 ragdoll.SetBoard(ski[0], SkiBox, SkiBoxAt);
@@ -279,18 +318,75 @@ namespace Summit
             }
         }
 
-        /// <summary>The skis' two tracks in the snow (in place of the board's one trench).</summary>
-        void FeedSkiTracks(Vector3 at, bool onSnow, float scale, float dt)
+        /// <summary>
+        /// The narrow tracks beside the middle one: the skis' two (in place of the board's one trench), or, by the
+        /// toboggan's wide flat track, the scuff of whichever heel is dragging in a turn.
+        /// </summary>
+        void FeedSideTracks(Vector3 at, bool onSnow, float scale, float dt)
         {
             if (sideTrail == null) return;
+            bool skis = onSnow && RidingGear && Ride == RideKind.Skis, onSled = onSnow && RidingGear && Ride == RideKind.Toboggan;
             float travel = rider.TravelHeading;
             var dir = new Vector3(Mathf.Sin(travel), 0f, Mathf.Cos(travel));
             Vector3 right = Vector3.Cross(normal, Vector3.ProjectOnPlane(dir, normal).normalized);
+            float turn = rider.Lean / Rider.MaxLean;
             for (int s = 0; s < 2; s++)
             {
-                float off = onSnow && ski[s] != null ? Vector3.Dot(ski[s].position - at, right) : 0f;
-                sideTrail[s].Feed(at + right * off, normal, travel, onSnow, scale * 0.42f, rider.Lean / Rider.MaxLean, rider.Skid * 0.5f, dt);
+                if (skis && ski[s] != null)
+                    sideTrail[s].Feed(at + right * Vector3.Dot(ski[s].position - at, right), normal, travel, true, scale * 0.42f, turn, rider.Skid * 0.5f, dt);
+                else if (onSled && hero != null && (s == 0 ? turn < -0.3f : turn > 0.3f))   // the left heel in a left turn, the right in a right
+                    sideTrail[s].Feed(at + right * Vector3.Dot(hero.Foot[s].position - at, right), normal, travel, true, scale * 0.5f, 0f, 0.3f, dt);
+                else sideTrail[s].Feed(at, normal, travel, false, scale, 0f, 0f, dt);
             }
+        }
+
+        /// <summary>The rider on the toboggan, posed for this frame (PoseHero's place, when the sled is on).</summary>
+        void PoseSled(float dt, bool down)
+        {
+            var h = hero;
+            // sat facing the way they go, the Root bone on the seat
+            model.localRotation = RideTurn * heroBaseRot;
+            model.localPosition = rideModelPos;
+            var d = new HeroRig.Drive
+            {
+                board = sledRoot, rootInBoard = new Vector3(0f, BoardTop, 0f), rootRotInBoard = RideTurn * heroRootRot,
+                up = roll.up, toe = roll.forward, nose = -roll.right, feet = !down,
+            };
+            float blend = 9f;
+            Flutter(dt);
+            bool idle = !rider.Running, air = rider.Airborne;
+            float turn = Mathf.Clamp(rider.Lean / Rider.MaxLean, -1f, 1f);   // + = turning right
+            if (down) h.Want(idFlail, 1f);
+            else if (idle) h.Want(idSledIdle, 1f);
+            else if (air)
+            {
+                // hanging on with the knees up; a "grab" is letting go of everything instead
+                blend = 11f;
+                float k = rider.TrickProgress;
+                float free = rider.TrickGrab > 0 ? Sm(0.08f, 0.22f, k) * (1f - Sm(0.8f, 0.95f, k)) : 0f;
+                h.Want(idSledAir, Mathf.Max(0.05f, 1f - free));
+                h.Want(idSledNoHands, free * 3f);
+            }
+            else
+            {
+                float tuck = rider.Tuck, tw = Mathf.Abs(turn);
+                h.Want(idSledRide, (1f - tw) * (1f - tuck));
+                h.Want(idSledTuck, (1f - tw) * tuck);
+                h.Want(turn > 0f ? idSledLeanR : idSledLeanL, tw);
+                // a landing (and each skip after it) folds the rider over their knees
+                if (idSledBump >= 0 && landT < h.Length(idSledBump)) h.Want(idSledBump, Mathf.Max(0.4f, landK) * 2f * (1f - Sm(0.4f, 1f, landT / h.Length(idSledBump))));
+                Vector3 v = rider.Velocity; v.y = 0f;
+                if (v.sqrMagnitude > 9f && tuck < 0.5f)
+                {
+                    d.look = Quaternion.AngleAxis(rider.YawRate * Mathf.Rad2Deg * 0.35f, Vector3.up) * v + Vector3.down * v.magnitude * 0.1f;
+                    d.lookWeight = 0.5f;
+                }
+            }
+            popT += dt; landT += dt;
+            heroLift = 0f;
+            if (dt <= 0f) h.Snap();
+            h.Evaluate(dt, blend);
+            h.Layer(d, dt);
         }
     }
 }

@@ -109,7 +109,7 @@ namespace Summit
             snowy?.SetFrame(model, h.Hips);
             snowy?.BakeRigid(go.transform);
             Loosen(go, 0.35f);   // already baggy: only a little looser, but the wind shapes are wanted
-            SetUpRides(h, gearM);   // the skis and poles, on the bones at rest (RiderBodyRide)
+            SetUpRides(h, gearM);   // the skis and poles and the toboggan, on the bones at rest (RiderBodyRide)
             rig = r; hero = h;
 
             idIdle = h.Id("Ride_Idle"); idRide = h.Id("Ride"); idToe = h.Id("Carve_Toe"); idHeel = h.Id("Carve_Heel"); idTuck = h.Id("Tuck");
@@ -139,7 +139,7 @@ namespace Summit
             bool down = rider.Crashed;
             if (heroWasDown && !down) h.ResetSprings();   // back up after the ragdoll: no spring kick from the jump
             heroWasDown = down;
-            if (RidingGear) { PoseSkis(dt, down); return; }   // on skis: its own stance and clips (RiderBodyRide)
+            if (RidingGear) { if (Ride == RideKind.Toboggan) PoseSled(dt, down); else PoseSkis(dt, down); return; }   // on skis or the toboggan: their own stance and clips (RiderBodyRide)
             model.localRotation = heroBaseRot;                 // side-on (skis turn the model to face forward)
             var d = new HeroRig.Drive
             {

@@ -1057,6 +1057,12 @@ namespace Summit
                 roll.localRotation = Tube ? Quaternion.Euler(leanDeg * 0.5f, 0f, 0f) : Quaternion.Euler(0f, 0f, -leanDeg * 0.75f);
                 upper.localRotation = Quaternion.Euler(0f, 0f, -leanDeg * 0.25f);
                 if (RidingGear) upper.localRotation = Quaternion.identity;   // a skier's upper body angles back out of the turn (in the clips)
+                if (RidingGear && Ride == RideKind.Toboggan)
+                {
+                    // a toboggan has no edge to stand on: it stays nearly flat and the rider leans over its side
+                    roll.localRotation = Quaternion.Euler(0f, 0f, -leanDeg * 0.2f);
+                    upper.localRotation = Quaternion.Euler(0f, 0f, -leanDeg * 0.3f);
+                }
                 if (Walking) WalkFrame(dt);   // on foot in the camp
                 if (poser != null) Pose(dt);
                 else if (rig != null) PoseRig(dt);
@@ -1065,11 +1071,12 @@ namespace Summit
 
             // the track: a groove pressed into the snow under the board (none in snow the avalanche is churning)
             bool tracking = rider.Running && !rider.Crashed && !rider.Airborne && !rider.Grinding && rider.Undercut < 0.05f;
-            bool onSkis = RidingGear && Ride == RideKind.Skis;   // two narrow tracks instead of the one trench
-            FeedSkiTracks(p + Vector3.down * Rider.R, tracking && onSkis, Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Slope.Rough(p.x, p.z)), dt);
+            bool onSkis = RidingGear && Ride == RideKind.Skis;        // two narrow tracks instead of the one trench
+            bool onSled = RidingGear && Ride == RideKind.Toboggan;    // a wide flat track, and the dragged heel's scuff beside it
+            FeedSideTracks(p + Vector3.down * Rider.R, tracking, Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Slope.Rough(p.x, p.z)), dt);
             trail.Feed(p + Vector3.down * Rider.R, normal, rider.TravelHeading, tracking && !onSkis,
-                       Tube ? 1.25f : Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Slope.Rough(p.x, p.z)),
-                       Tube ? 0f : rider.Lean / Rider.MaxLean, Tube ? 0.5f : rider.Skid, dt);   // a tube leaves a wide, shallow chute
+                       (Tube ? 1.25f : Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Slope.Rough(p.x, p.z))) * (onSled ? 1.6f : 1f),
+                       Tube || onSled ? 0f : rider.Lean / Rider.MaxLean, Tube ? 0.5f : onSled ? rider.Skid * 0.3f : rider.Skid, dt);   // a tube leaves a wide, shallow chute
 
             // bow wave off the nose: more with speed, deeper snow and when the edge bites
             bool riding = rider.Running && !rider.Crashed && !rider.Airborne && !rider.Grinding;

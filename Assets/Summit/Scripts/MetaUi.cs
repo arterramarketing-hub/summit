@@ -378,7 +378,7 @@ namespace Summit
             }
             if (id.StartsWith("mount"))
             {
-                // snowboard or skis: nothing to pay, it is on your feet at the gate
+                // snowboard, skis or toboggan: nothing to pay, it is on your feet at the gate
                 var k = (RideKind)int.Parse(id.Substring(5));
                 bool same = k == Progress.Ride;
                 Progress.PickRide(k); Clicked?.Invoke(); ShowShop(1);

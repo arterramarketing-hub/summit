@@ -225,6 +225,46 @@
    "name": "Ski_Flip",
    "frames": 30,
    "loop": true
+  },
+  {
+   "name": "Sled_Idle",
+   "frames": 120,
+   "loop": true
+  },
+  {
+   "name": "Sled_Ride",
+   "frames": 60,
+   "loop": true
+  },
+  {
+   "name": "Sled_LeanL",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Sled_LeanR",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Sled_Tuck",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Sled_Air",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Sled_NoHands",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Sled_Bump",
+   "frames": 14,
+   "loop": false
   }
  ]
 }

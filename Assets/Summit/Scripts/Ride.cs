@@ -2,8 +2,8 @@ using UnityEngine;
 
 namespace Summit
 {
-    /// <summary>What the rider rides. Picked at the camp's rack (Progress.Ride); the rider's own copy is Rider.Ride.</summary>
-    public enum RideKind { Snowboard, Skis }
+    /// <summary>What the rider rides: a snowboard, skis or a wooden toboggan. Picked at the camp's rack (Progress.Ride); the rider's own copy is Rider.Ride.</summary>
+    public enum RideKind { Snowboard, Skis, Toboggan }
 
     /// <summary>
     /// How one ride feels: a handful of multipliers on the rider's carving model (Rider.cs), so every ride goes
@@ -26,6 +26,10 @@ namespace Summit
         public float Pop = 1f;
         /// <summary>How far steering bends the flight in the air (on Rider.AirControl).</summary>
         public float AirControl = 1f;
+        /// <summary>How much of a landing's speed into the snow throws it back up again (0: the legs soak it all up).</summary>
+        public float Bounce = 0f;
+        /// <summary>Can it slide a rail? (If not it is knocked off the end of one: see Rider.TryGrind.)</summary>
+        public bool Rails = true;
         /// <summary>What its grabs are called, and for each the snowboard grabs a daily mission would accept it as.</summary>
         public string[] Grabs, GrabCountsAs;
         /// <summary>What sliding a box and a rail are called on it.</summary>
@@ -57,6 +61,20 @@ namespace Summit
                 Grabs = new[] { "Safety", "Mute", "Tail" },
                 GrabCountsAs = new[] { "Indy Stalefish", "Mute Melon", "Method Tail Grab" },
                 BoxTrick = "Box Slide", RailTrick = "Rail Slide",
+            },
+            // The toboggan: a plank of wood with no edges and nobody's legs under it. It comes round slowly, and
+            // what it is asked to turn it mostly slides (lean gently and it tracks; haul on it and it drifts wide,
+            // the dragged heel scrubbing speed). A released tuck is only a hop; it flies off kickers like anything
+            // else but there is little to steer with up there, and it lands flat and skips. A touch slower flat
+            // out, which the drift more than makes up for in the trees. It slides boxes; rails knock it aside.
+            new RideFeel
+            {
+                Name = "TOBOGGAN",
+                TurnResponse = 0.55f, TurnRate = 0.62f, Grip = 0.18f, TopSpeed = 0.95f, Pop = 0.6f, AirControl = 0.45f,
+                Bounce = 0.35f, Rails = false,
+                Grabs = new[] { "No-Hander" },
+                GrabCountsAs = new[] { "Indy Melon Mute Method Stalefish Tail Grab" },
+                BoxTrick = "Sled Slide", RailTrick = "Rail Bonk",
             },
         };
 

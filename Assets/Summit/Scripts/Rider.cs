@@ -4,8 +4,8 @@ namespace Summit
 {
     /// <summary>
     /// The rider's physics. A Unity Rigidbody carries the motion (interpolated between physics
-    /// steps, colliding with trees, rocks and animals); this script supplies riding a board (or skis:
-    /// the same model with each ride's own numbers on it, see Ride.cs).
+    /// steps, colliding with trees, rocks and animals); this script supplies riding a board (or skis, or a
+    /// toboggan: the same model with each ride's own numbers on it, see Ride.cs).
     ///
     /// Steering is built like real carving. Your thumb sets an edge (lean) angle; the body
     /// moves to it on a damped spring, so turns start at once but build smoothly. A carve's
@@ -148,6 +148,7 @@ namespace Summit
 
         // ---- signs and flags ridden through (see Breakables)
         float wobble, slowFor, slowRate;
+        Vector3 shove;
         /// <summary>Just back on your feet (or saved by a shield): nothing can knock you down for a moment.</summary>
         public bool Invulnerable => invulnerable > 0f;
         /// <summary>The share of your speed the thrown body carries on with in this crash (a snapped tree: TreeBreak).</summary>
@@ -233,7 +234,7 @@ namespace Summit
             popPending = false; airLock = 0f; lastGrind = -1;
             Flow = 0f; Shields = 0; BoostTime = 0f; invulnerable = 0f; SuperJumpTime = 0f; InvincibleTime = 0f; superAir = false;
             Undercut = 0f; Lift = 0f; lastLift = 0f; liftVy = 0f;
-            wobble = 0f; slowFor = 0f;
+            wobble = 0f; slowFor = 0f; shove = Vector3.zero;
         }
 
         public void Begin()
@@ -290,6 +291,7 @@ namespace Summit
                 Heading = Mathf.Lerp(Heading, Mathf.Clamp(Heading, -0.5f, 0.5f), Undercut);   // swung about, but carried on down the hill
             }
             Vector3 p = rb.position, v = rb.linearVelocity;
+            if (shove.sqrMagnitude > 0f) { if (!Crashed) v += shove; shove = Vector3.zero; }   // knocked aside off a rail's end (TryGrind)
             if (slowFor > 0f && !Crashed) { slowFor -= dt; v *= Mathf.Exp(-slowRate * dt); }
             if (wobble > 0f && !Crashed)
             {
@@ -666,6 +668,13 @@ namespace Summit
             else if (Peak > 0.8f && AirTime > 0.45f) Trick?.Invoke("Air " + AirTime.ToString("0.0") + "s", Mathf.RoundToInt(AirTime * 120f));
             if (hard) RoughLanding?.Invoke("Hard landing");
             ClearTrick();
+            // a ride with no legs under it (the toboggan) comes down flat and skips back up off the snow, a
+            // smaller hop each time until it settles
+            if (feel.Bounce > 0f && impact > 4.5f && Undercut <= 0f)
+            {
+                Bounced?.Invoke(impact);
+                return TakeOff(p, vt + n * (impact * feel.Bounce), 0.05f);
+            }
             return new Vector3(vt.x, vy, vt.z);
         }
 
@@ -707,6 +716,23 @@ namespace Summit
                 if (bottom < onLine.y - feat.height - 0.3f || bottom > onLine.y + 1.0f) continue;
                 float along = Vector3.Dot(v, dir);
                 if (along < 4f) continue;
+                if (!feel.Rails && feat.kind == Course.Kind.Rail)
+                {
+                    // a toboggan cannot balance on a rail: it clatters into the end of it and is knocked off to
+                    // the side it came from, slower and wobbling. Worth a few points for the nerve, and it counts
+                    // as the rail for the day's missions
+                    lastGrind = feat.id;
+                    var off = new Vector3(p.x - onLine.x, 0f, p.z - onLine.z);
+                    Vector3 aside = off.sqrMagnitude > 1e-4f ? off.normalized : Vector3.Cross(Vector3.up, dir).normalized;
+                    shove = aside * 3.5f;
+                    const float over = 0.2f;
+                    slowFor = over; slowRate = -Mathf.Log(0.8f) / over;
+                    wobble = Mathf.Max(wobble, 0.5f);
+                    GrindStart?.Invoke(feat);
+                    Bounced?.Invoke(8f);
+                    Trick?.Invoke(feel.RailTrick, 60);
+                    continue;
+                }
                 // on it: ride-on features are boarded automatically
                 Grinding = true;
                 GrindFeature = feat;

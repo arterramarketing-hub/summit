@@ -145,7 +145,7 @@ namespace Summit
 
         /// <summary>
         /// A mission's wording for what is being ridden: a grab mission names the grab that ride has in its place
-        /// (the trick itself is counted by Rider.TrickAlias), so no mission is out of reach on skis.
+        /// (the trick itself is counted by Rider.TrickAlias), so no mission is out of reach on skis or a toboggan.
         /// </summary>
         public static string TitleFor(Mission m)
         {
@@ -153,7 +153,8 @@ namespace Summit
             var f = Rides.Of(Progress.Ride);
             if (m.kind == Kind.Trick && Progress.Ride != RideKind.Snowboard && f.Grabs != null && f.GrabCountsAs != null)
                 for (int i = 0; i < f.Grabs.Length && i < f.GrabCountsAs.Length; i++)
-                    if (f.GrabCountsAs[i].Contains(m.match)) return "Land " + m.target + " " + f.Grabs[i] + " grabs";
+                    if (f.GrabCountsAs[i].Contains(m.match)) return "Land " + m.target + " " + f.Grabs[i] + (f.Grabs[i].EndsWith("er") ? "s" : " grabs");
+            if (m.kind == Kind.Rails && !f.Rails) return "Bonk " + m.target + " rails";   // (a toboggan is knocked off them: Rider.TryGrind)
             return m.title;
         }
 
