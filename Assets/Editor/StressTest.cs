@@ -24,7 +24,7 @@ using Summit;
 public static class StressTest
 {
     const BindingFlags NP = BindingFlags.NonPublic | BindingFlags.Instance;
-    const float RealStep = 1f / 120f;   // real time per physics step (the hit-stop shrinks the step, not their rate)
+    const float RealStep = 1f / 120f;   // real time per physics step outside a hit-stop (in one, Step says how much)
     static SummitGame game; static Rider r; static RiderBody body; static SlopeStreamer terrain; static Forest props;
     static string lastCrash = "";
     static int crashes, launched, fast, rides, stopped, reversed, launchedRides, longFlights;
@@ -33,6 +33,10 @@ public static class StressTest
     static int n;
     static readonly string trace = System.Environment.GetEnvironmentVariable("STRESS_TRACE");
     static readonly string only = System.Environment.GetEnvironmentVariable("STRESS_ONLY");
+    static readonly string crashOnly = System.Environment.GetEnvironmentVariable("STRESS_CRASH");
+    static readonly string watch = System.Environment.GetEnvironmentVariable("STRESS_WATCH");
+    static readonly int Repeats = int.TryParse(System.Environment.GetEnvironmentVariable("STRESS_REPEAT"), out int rv) ? rv : 1;
+    static bool Skip(string name) => crashOnly != null && !name.StartsWith(crashOnly);
 
     public static void Run()
     {
@@ -59,7 +63,7 @@ public static class StressTest
                 var dress = Object.FindFirstObjectByType<CourseDressing>();
                 if (dress != null) { r.ResetAt(Slope.Centre(Course.First), Course.First); dress.Rebuild(); }
                 Crashes(seed);
-                Rides(seed);
+                if (crashOnly == null) Rides(seed);
             }
         }
         catch (System.Exception e) { Debug.LogError("STRESS exception " + e); }
@@ -76,9 +80,11 @@ public static class StressTest
     static void Count(string kind) { kinds.TryGetValue(kind, out int c); kinds[kind] = c + 1; }
 
     /// <summary>One physics step as the game runs it: the hit-stop's clock, then the rider, the body and PhysX, at the step the hit-stop leaves.</summary>
-    static void Step()
+    static float Step()
     {
-        game.TestTickHitStop(RealStep);
+        // one physics step stands for this much real time: the hit-stop slows time, so the steps come further apart
+        float realDt = Time.fixedDeltaTime / Mathf.Max(Time.timeScale, 1e-4f);
+        game.TestTickHitStop(realDt);
         float dt = Time.fixedDeltaTime;
         // what OnCollisionEnter does on the phone (batchmode sends no collision messages): the board into an obstacle
         if (!r.Crashed && r.Running)
@@ -95,6 +101,7 @@ public static class StressTest
         if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
         if (n % 2 == 0 || r.Crashed) body.Apply(r.Crashed ? dt : 2f * dt);
         n++;
+        return realDt;
     }
 
     static void HitStopNow(float strength)
@@ -120,7 +127,7 @@ public static class StressTest
 
     static void Crashes(int seed)
     {
-        if (only != null && !only.StartsWith("crash")) return;
+        if (only != null && !only.StartsWith("crash") && crashOnly == null) return;
         // obstacles: trees, rocks and crags along the first two cycles, near enough the piste to be ridden at
         var targets = new List<(Vector3 at, string label)>();
         for (float z = 150f; z < Course.First + 2f * Course.Cycle && targets.Count < 24; z += 70f)
@@ -185,8 +192,11 @@ public static class StressTest
         {
             zq = kat.z + 5f; kq++;
             foreach (float kmh in new[] { 120f, 200f })
+            for (int rep = 0; rep < Repeats; rep++)
             {
                 string name = $"seed{seed} lipcrash z{kat.z:0} {kmh:0}kmh";
+                if (Skip(name)) continue;
+                if (Repeats > 1) { Random.InitState(rep * 7919 + 13); name += $" rep{rep}"; }
                 StartAt(kat - new Vector3(0f, 0f, 30f), 0f, kmh / 3.6f);
                 for (float t = 0f; t < 4f && !r.Crashed; t += RealStep)
                 {
@@ -208,6 +218,7 @@ public static class StressTest
     /// <summary>Ride straight at a point (a tree, a rock, a sign's post) from 25 m up the hill.</summary>
     static void CrashInto(string name, Vector3 at, float v0, bool sign = false)
     {
+        if (Skip(name)) return;
         Vector3 from = at - new Vector3(0f, 0f, 25f);
         from.x += (at.x - from.x) * 0f;
         float head = Mathf.Atan2(at.x - from.x, at.z - from.z);
@@ -227,6 +238,7 @@ public static class StressTest
     /// <summary>Ride from a point heading a fixed way for a while (over a cliff, into a crevasse), until it crashes.</summary>
     static void Free(string name, Vector3 from, float heading, float v0, float secs)
     {
+        if (Skip(name)) return;
         StartAt(from, heading, v0);
         for (float t = 0f; t < secs && !r.Crashed; t += RealStep)
         {
@@ -240,6 +252,7 @@ public static class StressTest
     /// <summary>Off a jump cliff's lip, and thrown from the board at the top of the flight.</summary>
     static void AirCrash(string name, Cliffs.Jump j, float v0)
     {
+        if (Skip(name)) return;
         StartAt(new Vector3(Slope.Centre(j.Start - 20f), 0f, j.Start - 20f), 0f, v0);
         for (float t = 0f; t < 10f && !r.Crashed; t += RealStep)
         {
@@ -259,14 +272,23 @@ public static class StressTest
         float maxV = 0f, maxVAt = 0f, maxUp = 0f, maxUpAt = 0f, maxRiderV = 0f, maxRiderAt = 0f, gameT = 0f, minScale = 1f;
         float flying = 0f, longestFlight = 0f, longestUp = 0f;
         Vector3 c = Vector3.zero;
-        for (float t = 0f; t < 8f; t += RealStep)
+        bool hit1 = false, hit2 = false;
+        for (float t = 0f; t < 8f; )
         {
-            if (Mathf.Abs(t - 0.6f) < RealStep * 0.5f || Mathf.Abs(t - 1.5f) < RealStep * 0.5f) HitStopNow(0.8f);   // a tumble into something (RagdollHit)
+            if (!hit1 && t >= 0.6f) { hit1 = true; HitStopNow(0.8f); }   // a tumble into something (RagdollHit)
+            if (!hit2 && t >= 1.5f) { hit2 = true; HitStopNow(0.8f); }
             minScale = Mathf.Min(minScale, Time.timeScale);
             gameT += Time.fixedDeltaTime;
-            Step();
+            t += Step();
             c = body.RagdollCentre;
             float up = c.y - Slope.DrawnHeight(c.x, c.z);
+            if (watch != null && name == watch && Mathf.Repeat(t, 0.05f) < RealStep)
+            {
+                var parts = Object.FindObjectsByType<Rigidbody>(FindObjectsSortMode.None);
+                string fastest = ""; float fv = 0f;
+                foreach (var prb in parts) if (!prb.isKinematic && prb != r.Body && prb.linearVelocity.magnitude > fv) { fv = prb.linearVelocity.magnitude; fastest = $"{prb.name} {prb.linearVelocity} at up {prb.position.y - Slope.DrawnHeight(prb.position.x, prb.position.z):0.0}"; }
+                Debug.Log($"STRESS-CTRACE t={t:0.00} c=({c.x - Slope.Centre(c.z):0.0},{c.z:0.0}) up={up:0.0} vel={((Ragdoll)typeof(RiderBody).GetField("ragdoll", NP).GetValue(body)).Velocity} scale={Time.timeScale:0.00} n=({Slope.Normal(c.x, c.z).x:0.00},{Slope.Normal(c.x, c.z).y:0.00},{Slope.Normal(c.x, c.z).z:0.00}) rock={RockFace.IsRock(Slope.Normal(c.x, c.z), c.x, c.z)} fastest {fastest} hitObj={body.RagdollHitObject}");
+            }
             float v = body.RagdollSpeed;
             float rv = r.Body.linearVelocity.magnitude;
             if (rv > maxRiderV) { maxRiderV = rv; maxRiderAt = t; }

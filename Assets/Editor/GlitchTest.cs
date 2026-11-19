@@ -508,7 +508,9 @@ public static class GlitchTest
                 maxV = Mathf.Max(maxV, rb.linearVelocity.magnitude);
                 if (rb.angularVelocity.magnitude > maxW) { maxW = rb.angularVelocity.magnitude; spinner = rb.name; }
                 if (rb.angularVelocity.magnitude > 40f) jitterFrames++;
-                if (rb.name != "Board" && (rb.position - c).magnitude > maxSpread) { maxSpread = (rb.position - c).magnitude; if (maxSpread > 1.3f) spikeNote += $" | spread {rb.name} {maxSpread:0.00} at t={t:0.00} near {Near(rb.position, rbs)}"; }
+                // (only while thrown: on the step you get up the body is put away and the rider steps clear of the tree
+                // that stopped it, a few metres off, which is not the body coming apart)
+                if (r.Crashed && rb.name != "Board" && (rb.position - c).magnitude > maxSpread) { maxSpread = (rb.position - c).magnitude; if (maxSpread > 1.3f) spikeNote += $" | spread {rb.name} {maxSpread:0.00} at t={t:0.00} near {Near(rb.position, rbs)}"; }
                 if (float.IsNaN(rb.position.x)) { Report($"{name}: ragdoll NaN"); return; }
             }
             maxBelow = Mathf.Max(maxBelow, Slope.DrawnHeight(c.x, c.z) - c.y);

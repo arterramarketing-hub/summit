@@ -664,7 +664,10 @@ namespace Summit
             Airborne = false;
             AboveGround = 0f;
             pipeAir = false;
-            Vector3 vt = Vector3.ProjectOnPlane(v, n);
+            // (moving away from that face, not into it, the board is only a few centimetres into the drawn snow where its
+            // facets cut the corner of a lip: put back on it, it keeps its own line. Laid onto the face it was leaving, a
+            // kicker's back side took two thirds of the speed)
+            Vector3 vt = Vector3.Dot(v, n) < 0f ? Vector3.ProjectOnPlane(v, n) : v;
             if (v.z > 0f && vt.z < 0.2f * v.z) vt.z = 0.2f * v.z;   // landing on an up-facing slope never reverses you
             // land facing where you are going: a trick always comes round clean
             if (vt.sqrMagnitude > 1f) Heading = Mathf.Clamp(Mathf.Atan2(vt.x, vt.z), -MaxHeading, MaxHeading);

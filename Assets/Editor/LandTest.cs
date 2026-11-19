@@ -170,7 +170,8 @@ public static class LandTest
             // (a crevasse's walls are rock: a hop after the big landing can come down on one)
             // (and riding on after it, off the piste, the steering can take the rider over the deadly cliff beside it)
             bool offPiste = Mathf.Abs(crashAt.x - Slope.Centre(crashAt.z)) > Slope.PisteHalf;
-            bool mountain = lastCrash == "Crevasse!" || (lastCrash == "Hit the rocks!" && (offPiste || Course.CrevasseNear(crashAt.x, crashAt.z, 3f)))
+            // (a flight that comes down on the next jump cliff's rock band lands on rock, which crashes by design)
+            bool mountain = lastCrash == "Crevasse!" || (lastCrash == "Hit the rocks!" && (offPiste || Course.CrevasseNear(crashAt.x, crashAt.z, 3f) || Cliffs.OnJumpFace(crashAt.x, crashAt.z)))
                             || (lastCrash == "Cliffed!" && offPiste)
                             // (or, held to a line off the centre, off a ridge's narrow crest)
                             || (Ridge.Has(crashAt.z) && Mathf.Abs(crashAt.x - Slope.Centre(crashAt.z)) > Ridge.HalfWidth(crashAt.z))

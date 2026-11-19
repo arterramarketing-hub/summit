@@ -1080,7 +1080,10 @@ namespace Summit
         }
 
         // the hit-stop: on a crash, time all but stops for a split moment and then eases back, to sell the impact.
-        // Physics steps shrink with it, so the slow motion is smooth, not a slideshow.
+        // Only time slows: the physics step stays at FixedStep, and the rider, the thrown body and the board are
+        // interpolated between steps, so the slow motion is still smooth. (Shrinking the step with it, down to 1/3000 s,
+        // made PhysX's joint and contact corrections, which scale with 1/step, throw the body tens of metres into the
+        // air, once 660 m: launched, and never coming down)
         const float FixedStep = 1f / 120f;
         float hitStopT = -1f, hitStopHold, hitStopScale, nextHitStop;
         const float HitStopEase = 0.4f;
@@ -1118,7 +1121,7 @@ namespace Summit
             SetTimeScale(Mathf.Lerp(hitStopScale, 1f, k * k * (3f - 2f * k)));
         }
 
-        static void SetTimeScale(float s) { Time.timeScale = s; Time.fixedDeltaTime = FixedStep * s; }
+        static void SetTimeScale(float s) { Time.timeScale = s; Time.fixedDeltaTime = FixedStep; }
 
         // the "nooo": down a crevasse it fades with the depth; off a cliff, a short one the moment you are clearly
         // falling far below where you left the snow
