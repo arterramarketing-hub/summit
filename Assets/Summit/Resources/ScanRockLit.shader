@@ -4,8 +4,8 @@
 //     normal map, which is where the 900-triangle rocks get their cracks and grain back
 //   - snow caught on whatever faces up enough to hold it, with a ragged edge - the same rule, thresholds and snow
 //     colour as the cliffs (RockLit.shader), worked out in the world, so it stays on top however a rock is turned
-//   - snow banked against the foot: Forest.cs sinks every rock about a quarter into the slope, and a drift up its
-//     sides hides the hard line where rock meets snow
+//   - snow banked against the foot: Forest.cs sinks every rock about a quarter into the slope, and a drift fading
+//     up its sloping sides softens the line where rock meets snow (never on upright faces or under overhangs)
 // Lit like the cliffs and the firs (the sun or moon with its shadows, the sky's light, the headlamp and other lamps,
 // fog), so it works at night too. Two texture samples and a few lines of arithmetic.
 Shader "Summit/ScanRock"
@@ -19,7 +19,7 @@ Shader "Summit/ScanRock"
         _Smoothness ("Smoothness", Range(0, 1)) = 0.12
         _Snow ("Snow on faces up from, to (normal.y)", Vector) = (0.48, 0.66, 0, 0)
         _SnowColor ("Snow", Color) = (0.86, 0.9, 0.96, 1)
-        _Drift ("Snow banked at the foot: all below, none above (m up the model)", Vector) = (0.38, 0.56, 0, 0)
+        _Drift ("Snow banked at the foot: all below, none above (m up the model)", Vector) = (0.34, 0.62, 0, 0)
     }
     SubShader
     {
@@ -113,8 +113,10 @@ Shader "Summit/ScanRock"
                 // mostly, a little on its relief, so ledges and the tops of blocks hold it and cracks stay dark
                 half up = lerp(ng.y, n.y, 0.5) + tone * 0.7;
                 half snow = smoothstep(_Snow.x, _Snow.y, up);
-                // and banked against the foot, a little higher in the hollows than on the bulges, not under overhangs
-                half bank = smoothstep(_Drift.y, _Drift.x, i.fogUp.y + tone * 0.5 - ng.y * 0.08) * saturate(ng.y * 2.0 + 1.2);
+                // and banked against the foot, thinning out gradually up the rock - only on faces snow can lie against:
+                // less as a face steepens, none on one that is upright or leans out over the snow (an overhang's underside)
+                half bank = smoothstep(_Drift.y, _Drift.x, i.fogUp.y + tone * 0.6);
+                bank *= bank * smoothstep(0.0, 0.2, ng.y);
                 snow = max(snow, bank);
                 albedo = lerp(albedo, _SnowColor.rgb, snow);
                 n = normalize(lerp(n, ng, snow * 0.8));      // snow fills the relief in
