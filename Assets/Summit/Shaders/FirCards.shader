@@ -1,6 +1,9 @@
-// The realistic firs up close: branch cards cut out of the atlas (alpha test, both sides), lit by Fir.hlsl's
-// sums so they match their far pictures (FirImpostor). With _FadeOn, a forest tree dissolves into its picture
-// over the hand-over band (Forest.cs); the camp's and the start tape's own trees leave it off.
+// The realistic trees as cards: branch cards cut out of an atlas (alpha test, both sides), lit by Fir.hlsl's
+// sums so they match their far pictures (FirImpostor). The mesh's normals shade a crown as one rounded mass, and
+// its vertex colour darkens the inside of the crown.
+// A forest tree dissolves from one level of detail into the next (Forest.cs, Fir.hlsl): _FadeOut says which band it
+// dissolves away over (1 the far one, into its picture; 2 the near one: the rich tree), _FadeIn that it appears
+// over the near band (the plain tree). The camp's and the start tape's own trees leave both off.
 // _Bake is for RealFir.BakeImpostors only: 1 writes the plain colour, 2 the normal, for the far pictures.
 Shader "Summit/FirCards"
 {
@@ -9,7 +12,8 @@ Shader "Summit/FirCards"
         [MainTexture] _BaseMap ("Atlas", 2D) = "white" {}
         [MainColor] _BaseColor ("Colour", Color) = (1, 1, 1, 1)
         _Cutoff ("Alpha cutoff", Range(0, 1)) = 0.5
-        _FadeOn ("Hands over to the far picture", Float) = 1
+        _FadeOut ("Dissolves away over (0 never, 1 the far band, 2 the near band)", Float) = 0
+        _FadeIn ("Appears over the near band", Float) = 0
         _Bake ("Bake output (0 lit, 1 colour, 2 normal)", Float) = 0
         _NeedleTint ("Needles graded toward the dark blue-green of the Cascades' firs", Color) = (0.62, 0.78, 0.86, 1)
         _CutY ("Nothing drawn below this height (model space): a felled tree's buried part", Float) = -10000
@@ -26,7 +30,8 @@ Shader "Summit/FirCards"
             float4 _BaseMap_ST;
             half4 _BaseColor;
             half _Cutoff;
-            half _FadeOn;
+            half _FadeOut;
+            half _FadeIn;
             half _Bake;
             float _CutY;
             half4 _NeedleTint;
@@ -56,10 +61,19 @@ Shader "Summit/FirCards"
             #pragma multi_compile_instancing
             #include "Fir.hlsl"
 
+            // how much of a tree standing at `originWS` has dissolved away (x) and has appeared (y), each 0..1
+            half2 Fades(float3 originWS)
+            {
+                half away = _FadeOut > 1.5h ? FirNearFade(originWS) : (_FadeOut > 0.5h ? FirFade(originWS) : 0.0h);
+                half here = _FadeIn > 0.5h ? FirNearFade(originWS) : 1.0h;
+                return half2(away, here);
+            }
+
             struct Attributes
             {
                 float4 positionOS : POSITION;
                 float3 normalOS : NORMAL;
+                half4 color : COLOR;   // r: how much light reaches this part of the crown (white where a mesh has none)
                 float2 uv : TEXCOORD0;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
@@ -69,9 +83,10 @@ Shader "Summit/FirCards"
                 float2 uv : TEXCOORD0;
                 float3 positionWS : TEXCOORD1;
                 half3 normalWS : TEXCOORD2;
-                half4 fadeFogLift : TEXCOORD3;   // x hand-over, y fog, z night lift share, w model-space height
+                half4 fadeFogLift : TEXCOORD3;   // x dissolved away, y fog, z night lift share, w appeared
                 half3 vertexLight : TEXCOORD4;
                 float objY : TEXCOORD5;
+                half shade : TEXCOORD6;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -85,8 +100,11 @@ Shader "Summit/FirCards"
                 o.normalWS = TransformObjectToWorldNormal(i.normalOS);
                 o.uv = TRANSFORM_TEX(i.uv, _BaseMap);
                 float3 origin = TransformObjectToWorld(float3(0, 0, 0));
-                o.fadeFogLift = half4(FirFade(origin) * _FadeOn, ComputeFogFactor(o.positionCS.z), FirLiftShare(origin), 0);
+                half2 fades = Fades(origin);
+                o.fadeFogLift = half4(fades.x, ComputeFogFactor(o.positionCS.z), FirLiftShare(origin), fades.y);
                 o.objY = i.positionOS.y;
+                o.shade = i.color.r;
+                if (fades.x >= 1.0h || fades.y <= 0.0h) o.positionCS = FirGone();   // all of it is the other level of detail's
             #if defined(_ADDITIONAL_LIGHTS_VERTEX)
                 o.vertexLight = VertexLighting(o.positionWS, o.normalWS);
             #endif
@@ -102,10 +120,13 @@ Shader "Summit/FirCards"
                 c.rgb = Needles(c.rgb);
                 // a branch card lying flat, seen from underneath: its snow is on top, so here it is shaded needles
                 float3 ng = normalize(cross(ddx(i.positionWS), ddy(i.positionWS)));
-                if (abs(ng.y) > 0.5 && dot(ng * sign(ng.y), GetCameraPositionWS() - i.positionWS) < 0) c.rgb *= 0.28h;
+                if (abs(ng.y) > 0.5 && dot(ng * sign(ng.y), GetCameraPositionWS() - i.positionWS) < 0) c.rgb = min(c.rgb * 0.28h, half3(0.03h, 0.042h, 0.035h));
+                c.rgb *= i.shade;
                 float3 n = normalize(i.normalWS);
                 if (_Bake > 0.5) return _Bake < 1.5 ? half4(c.rgb, 1) : half4(n * 0.5 + 0.5, 1);
-                clip(FirDither(i.positionCS) - i.fadeFogLift.x);
+                half dither = FirDither(i.positionCS);
+                clip(dither - i.fadeFogLift.x);
+                clip(i.fadeFogLift.w - dither);
                 half3 col = FirLight(c.rgb, n, i.positionWS, i.positionCS, i.vertexLight, 1, i.fadeFogLift.z);
                 return half4(MixFog(col, i.fadeFogLift.y), 1);
             }
@@ -114,7 +135,8 @@ Shader "Summit/FirCards"
 
         Pass
         {
-            // the whole tree casts its shadow through the hand-over (shadows have faded out by its far end)
+            // the whole tree casts its shadow through the hand-overs (shadows have faded out by the far one's end;
+            // up close the forest draws the plain tree for its shadow and the rich one without: Forest.cs)
             Name "ShadowCaster"
             Tags { "LightMode" = "ShadowCaster" }
             ZWrite On
@@ -168,21 +190,33 @@ Shader "Summit/FirCards"
             #pragma fragment frag
             #pragma multi_compile_instancing
             #include "Fir.hlsl"
+
+            // how much of a tree standing at `originWS` has dissolved away (x) and has appeared (y), each 0..1
+            half2 Fades(float3 originWS)
+            {
+                half away = _FadeOut > 1.5h ? FirNearFade(originWS) : (_FadeOut > 0.5h ? FirFade(originWS) : 0.0h);
+                half here = _FadeIn > 0.5h ? FirNearFade(originWS) : 1.0h;
+                return half2(away, here);
+            }
+
             struct Attributes { float4 positionOS : POSITION; float2 uv : TEXCOORD0; UNITY_VERTEX_INPUT_INSTANCE_ID };
-            struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; half fade : TEXCOORD1; };
+            struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; half2 fades : TEXCOORD1; };
             Varyings vert(Attributes i)
             {
                 UNITY_SETUP_INSTANCE_ID(i);
                 Varyings o;
                 o.positionCS = TransformObjectToHClip(i.positionOS.xyz);
                 o.uv = TRANSFORM_TEX(i.uv, _BaseMap);
-                o.fade = FirFade(TransformObjectToWorld(float3(0, 0, 0))) * _FadeOn;
+                o.fades = Fades(TransformObjectToWorld(float3(0, 0, 0)));
+                if (o.fades.x >= 1.0h || o.fades.y <= 0.0h) o.positionCS = FirGone();
                 return o;
             }
             half frag(Varyings i) : SV_Target
             {
                 clip(SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, i.uv).a * _BaseColor.a - _Cutoff);
-                clip(FirDither(i.positionCS) - i.fade);
+                half dither = FirDither(i.positionCS);
+                clip(dither - i.fades.x);
+                clip(i.fades.y - dither);
                 return 0;
             }
             ENDHLSL
