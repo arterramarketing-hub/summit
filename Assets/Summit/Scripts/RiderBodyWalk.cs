@@ -40,13 +40,13 @@ namespace Summit
                 // hands free, so both arms swing (it is back on the feet for the run)
                 tubeBeforeWalk = Tube;
                 if (Tube) SetTube(false);
-                boardRoot.gameObject.SetActive(false);
+                ShowRide();   // nothing carried: the board (or the skis and poles) waits at the gate
             }
             else
             {
                 boardRoot.localPosition = boardHomePos;
                 boardRoot.localRotation = boardHomeRot;
-                boardRoot.gameObject.SetActive(true);
+                ShowRide();
                 walkPhase = 0f; walkAmp = 0f; WalkPace = 0f; RunBlend = 0f; runAmp = 0f;
                 if (tubeBeforeWalk) SetTube(true);
             }

@@ -47,11 +47,21 @@ namespace Summit
         {
             if (!hud.OnRider(RiderInput.PointerPosition())) return false;
             audioFx.Play(Sfx.Click);
-            bool tube = !rider.Tube;
-            rider.Tube = tube; body.SetTube(tube); hud.SetRider(tube);
+            // round the rides, then the snow tube, then back to the first
+            bool tube = !rider.Tube && (int)Progress.Ride >= Rides.Count - 1;
+            if (!rider.Tube && !tube) Progress.PickRide(Progress.Ride + 1); else if (!tube) Progress.PickRide(RideKind.Snowboard);
+            rider.Tube = tube; body.SetTube(tube); ShowRider();
             PlayerPrefs.SetInt("summit_tube", tube ? 1 : 0); PlayerPrefs.Save();
             body.ResetVisual();
             return true;
+        }
+        /// <summary>The start pad's RIDER label (Hud only knows the board and the tube: name the other rides on it here).</summary>
+        void ShowRider()
+        {
+            hud.SetRider(rider.Tube);
+            if (rider.Tube || rider.Ride == RideKind.Snowboard) return;
+            foreach (var t in hud.GetComponentsInChildren<UnityEngine.UI.Text>(true))
+                if (t.name == "RiderLabel") t.text = "RIDER: " + Rides.Of(rider.Ride).Name + "  (tap to change)";
         }
         // pause menu and the camera distance setting
         bool paused;
@@ -388,7 +398,7 @@ namespace Summit
             ApplyCamera();
             ApplyLook();
             bool tube = PlayerPrefs.GetInt("summit_tube", 0) == 1;
-            rider.Tube = tube; body.SetTube(tube); hud.SetRider(tube);
+            rider.Tube = tube; body.SetTube(tube); ShowRider();
             rider.Bounced += into => { if (state != State.Riding) return; body.TubeKick(into); audioFx.Play(Sfx.Thump, Mathf.Clamp01(into / 12f)); };
             BuildMeta();
             dayNight.Hook(rider, fx, camp, spray, trail);
@@ -425,7 +435,13 @@ namespace Summit
             ApplyOutfit();
         }
 
-        void ApplyOutfit() => body.SetColours(Progress.Jackets[Progress.Jacket], Progress.Boards[Progress.Board]);
+        void ApplyOutfit()
+        {
+            body.SetColours(Progress.Jackets[Progress.Jacket], Progress.Boards[Progress.Board]);
+            // what was picked at the rack (Progress.Ride): the rider's physics and what you see of them
+            // (the physics follows what the body could actually put on: without the gear's files it stays a snowboard)
+            if (rider.Ride != Progress.Ride) { body.SetRide(Progress.Ride); rider.SetRide(body.Ride); if (hud != null) ShowRider(); }
+        }
 
         /// <summary>To the camp: on foot, with the menus. A fresh mountain unless you just came up from the start pad.</summary>
         void ToHub(bool fresh = true)

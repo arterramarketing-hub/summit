@@ -4,7 +4,7 @@ namespace Summit
 {
     /// <summary>
     /// What the player keeps between runs: the points balance, the upgrades bought with it and the
-    /// outfit picked. Everything lives in PlayerPrefs, so it survives quitting and app updates.
+    /// outfit and the ride (snowboard, skis or toboggan) picked. Everything lives in PlayerPrefs, so it survives quitting and app updates.
     /// Gameplay code asks the query helpers (GripScale, Falls, PowerUpTime, HeadStart, Has) and
     /// never reads the levels itself, so a balance change happens in one place.
     /// </summary>
@@ -55,7 +55,7 @@ namespace Summit
         static bool loaded;
         static int points, lifetime;
         static readonly int[] levels = new int[System.Enum.GetValues(typeof(Up)).Length];
-        static int jacket, board, jacketsOwned = 1, boardsOwned = 1;
+        static int jacket, board, ride, jacketsOwned = 1, boardsOwned = 1;
 
         static void Load()
         {
@@ -66,6 +66,7 @@ namespace Summit
             for (int i = 0; i < levels.Length; i++) levels[i] = PlayerPrefs.GetInt("summit_up_" + (Up)i, 0);
             jacket = PlayerPrefs.GetInt("summit_jacket", 0);
             board = PlayerPrefs.GetInt("summit_boardcol", 0);
+            ride = Mathf.Clamp(PlayerPrefs.GetInt("summit_ride", 0), 0, Rides.Count - 1);
             jacketsOwned = PlayerPrefs.GetInt("summit_jackets", 1) | 1;
             boardsOwned = PlayerPrefs.GetInt("summit_boards", 1) | 1;
         }
@@ -77,6 +78,7 @@ namespace Summit
             for (int i = 0; i < levels.Length; i++) PlayerPrefs.SetInt("summit_up_" + (Up)i, levels[i]);
             PlayerPrefs.SetInt("summit_jacket", jacket);
             PlayerPrefs.SetInt("summit_boardcol", board);
+            PlayerPrefs.SetInt("summit_ride", ride);
             PlayerPrefs.SetInt("summit_jackets", jacketsOwned);
             PlayerPrefs.SetInt("summit_boards", boardsOwned);
             PlayerPrefs.Save();
@@ -138,6 +140,16 @@ namespace Summit
             return true;
         }
 
+        /// <summary>What the rider rides. Every ride is free and there from the start: it is a way to play, not a prize.</summary>
+        public static RideKind Ride { get { Load(); return (RideKind)ride; } }
+
+        public static void PickRide(RideKind k)
+        {
+            Load();
+            ride = Mathf.Clamp((int)k, 0, Rides.Count - 1);
+            Save(); Changed?.Invoke();
+        }
+
         // ---------------------------------------------------------------- what the upgrades do (the hooks)
 
         /// <summary>Multiplier on the edge's grip (Rider.GripLimit and Rider.Grip).</summary>
@@ -184,7 +196,7 @@ namespace Summit
             Load();
             points = lifetime = 0;
             for (int i = 0; i < levels.Length; i++) levels[i] = 0;
-            jacket = board = 0; jacketsOwned = boardsOwned = 1;
+            jacket = board = ride = 0; jacketsOwned = boardsOwned = 1;
             Save(); Changed?.Invoke();
         }
 
