@@ -241,8 +241,11 @@ namespace Summit
         {
             var g = new GameObject(name);
             var c = g.AddComponent<BoxCollider>();
-            c.size = new Vector3(14f, 2f, 14f);
-            c.center = new Vector3(0f, -1f, 0f);
+            // deep, so whatever is inside it is always pushed out of its top: the slab is teleported under the body every
+            // step, and on a steep face (the surface under it moving a metre a step) a part could end up more than half way
+            // into a 2 m slab, be pushed out of its bottom, and fall on through the mountain for good
+            c.size = new Vector3(14f, 20f, 14f);
+            c.center = new Vector3(0f, -10f, 0f);
             c.sharedMaterial = snowFeel;
             var rb = g.AddComponent<Rigidbody>();
             rb.isKinematic = true;
