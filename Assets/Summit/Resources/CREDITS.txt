@@ -11,6 +11,9 @@ Rider: "Adventurer" from Ultimate Modular Men by Quaternius (CC0)
   https://poly.pizza/m/5EGWBMpuXq
 Bear: Running Brown Bear by Google Data Arts Team [CC-BY 3.0] (https://creativecommons.org/licenses/by/3.0/)
   via Poly Pizza (https://poly.pizza/m/Coppphok4P)
+Rock faces (Resources/RockTex/RockAlbedo.png, RockRelief.png): "Rock Face 03" by Dario Barresi (photography)
+  and Rico Cilliers (processing), CC0, Poly Haven - https://polyhaven.com/a/rock_face_03
+  (its detail regraded to the game's granite, its normal and height maps packed into one texture, by Tools/MakeRockScan.py)
 Sign and banner lettering rendered to textures by Tools/MakeSigns.swift
 All sounds are synthesised from scratch by Tools/MakeAudio.swift (no recordings)
 Backdrop photo: "Mount Rainier panorama" by Deathgleaner, stitched by Richardprins, public domain

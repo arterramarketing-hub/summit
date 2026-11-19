@@ -5,7 +5,8 @@
 //   - lichen and meltwater streaks running down the face (texture v is up the face)
 //   - pale quartz veins wandering across it
 //   - a fine grain
-// Run: swift Tools/MakeRock.swift <outdir>   (writes RockAlbedo.png; copy it to Assets/Summit/Resources/RockTex/)
+// Run: swift Tools/MakeRock.swift <outdir>   (writes RockAlbedo.png; keep it as Tools/art/rock-procedural.png: the
+// game's RockAlbedo is now a scanned cliff regraded to this granite's colours by Tools/MakeRockScan.py)
 import AppKit
 
 let out = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "."
