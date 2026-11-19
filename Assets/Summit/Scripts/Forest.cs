@@ -15,6 +15,9 @@ namespace Summit
     /// Two looks, switched from the pause menu (PlayerPrefs "summit_trees"): the original low-poly firs, or
     /// realistic snowy firs built from photo-scanned branch cards (see RealFir), which dissolve into flat
     /// impostor pictures between FadeStart and FadeEnd.
+    ///
+    /// The rocks are photo-scanned boulders (Resources/ScanRocks, built by Tools/MakeScanRocks.py) in either look,
+    /// with their snow laid on by Resources/ScanRockLit.shader.
     /// </summary>
     public class Forest : MonoBehaviour
     {
@@ -101,7 +104,13 @@ namespace Summit
                 for (int i = 0; i < impL.Length; i++) impL[i] = new List<Matrix4x4>();
             }
             else foreach (var g in Resources.LoadAll<GameObject>("Trees")) Add(g, treeParts, treeH);
-            if (rockParts.Count == 0) foreach (var g in Resources.LoadAll<GameObject>("Rocks")) Add(g, rockParts, rockH);
+            if (rockParts.Count == 0)
+            {
+                // photo-scanned boulders (Tools/MakeScanRocks.py), all wearing the one snowy rock material
+                foreach (var g in Resources.LoadAll<GameObject>("ScanRocks")) Add(g, rockParts, rockH);
+                var scan = ScanRockMaterial();
+                if (scan != null) foreach (var parts in rockParts) foreach (var part in parts) part.mat = scan;
+            }
             if (treeParts.Count == 0) { treeParts.Add(Fallback(FirMesh(), new[] { foliage, bark })); treeH.Add(6.3f); }
             if (lodMesh == null && foliage != null && bark != null)
             {
@@ -140,6 +149,23 @@ namespace Summit
             if (parts.Count == 0) return;
             into.Add(parts);
             heights.Add(top > bottom ? top - bottom : 1f);
+        }
+
+        /// <summary>
+        /// The rocks' material: Resources/ScanRockLit.shader over the scans' shared colour and normal atlases
+        /// (snow on what faces up and banked at the foot). Null if any of it is missing: the rocks then keep the
+        /// plain material their models came with.
+        /// </summary>
+        static Material ScanRockMaterial()
+        {
+            var sh = Resources.Load<Shader>("ScanRockLit");
+            var albedo = Resources.Load<Texture2D>("ScanRocks/ScanRocksAlbedo");
+            var normal = Resources.Load<Texture2D>("ScanRocks/ScanRocksNormal");
+            if (sh == null || !sh.isSupported || albedo == null || normal == null) return null;
+            var m = new Material(sh) { name = "ScanRock", enableInstancing = true };
+            m.SetTexture("_BaseMap", albedo);
+            m.SetTexture("_BumpMap", normal);
+            return m;
         }
 
         static List<Part> Fallback(Mesh mesh, Material[] mats)

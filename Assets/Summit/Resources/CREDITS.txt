@@ -1,7 +1,14 @@
 Third-party assets are CC0 (public domain) unless marked otherwise below; credit is given with thanks.
 
-Trees (PineTree_Snow_1-5) and rocks (Rock_Snow_1-7): Ultimate Nature Pack by Quaternius
+Trees (PineTree_Snow_1-5): Ultimate Nature Pack by Quaternius
   https://opengameart.org/content/low-poly-nature-pack-1
+Rocks (ScanRocks/ScanRock_1-6): photo-scanned boulders, CC0, Poly Haven - "Namaqualand Boulder 04" by
+  Jenelle van Heerden, "Namaqualand Boulder 05" by Jenelle van Heerden (modeling) and Dario Barresi (photography),
+  "Namaqualand Boulder 06" by Jenelle van Heerden (modeling) and Greg Zaal (photography), "Boulder 01" by
+  Rico Cilliers, "Rock Moss Set 02" by Kless Gyzen
+  https://polyhaven.com/a/namaqualand_boulder_04  https://polyhaven.com/a/namaqualand_boulder_06
+  https://polyhaven.com/a/namaqualand_boulder_05  https://polyhaven.com/a/boulder_01  https://polyhaven.com/a/rock_moss_set_02
+  (cut down to 900 triangles each, re-baked into one atlas and graded grey by Tools/MakeScanRocks.py)
 Realistic trees (RealTrees/FirCards.png): fir twig and bark textures from "Fir Tree 01" by Rob Tuytel (photography)
   and Rico Cilliers (modeling), CC0, Poly Haven - https://polyhaven.com/a/fir_tree_01
   (twigs cut out, stamped into branch fronds, snowed on and packed into an atlas by Tools/MakeFirCards.swift)
