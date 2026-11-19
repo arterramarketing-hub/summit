@@ -506,6 +506,7 @@ namespace Summit
         /// </summary>
         void BuildTorch()
         {
+            var lensSh0 = Shader.Find("Universal Render Pipeline/Particles/Unlit") ?? Shader.Find("Universal Render Pipeline/Lit");
             var root = new GameObject("ChestTorch").transform;
             root.SetParent(transform, false);
             var bodyGo = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
@@ -513,7 +514,9 @@ namespace Summit
             bodyGo.transform.SetParent(root, false);
             bodyGo.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
             bodyGo.transform.localScale = new Vector3(0.045f, 0.045f, 0.045f);   // 4.5 cm across, 9 cm long
-            var dark = new Material(Shader.Find("Universal Render Pipeline/Lit")) { name = "TorchBody" };
+            var darkSh = Shader.Find("Universal Render Pipeline/Lit");
+            if (darkSh == null || lensSh0 == null) { Kill(root.gameObject); return; }   // (never stop the game for a prop)
+            var dark = new Material(darkSh) { name = "TorchBody" };
             dark.SetColor("_BaseColor", new Color(0.12f, 0.12f, 0.13f)); dark.SetFloat("_Smoothness", 0.6f);
             bodyGo.GetComponent<MeshRenderer>().sharedMaterial = dark;
             var lens = GameObject.CreatePrimitive(PrimitiveType.Sphere);
@@ -521,7 +524,8 @@ namespace Summit
             lens.transform.SetParent(root, false);
             lens.transform.localPosition = new Vector3(0f, 0f, 0.045f);
             lens.transform.localScale = new Vector3(0.042f, 0.042f, 0.012f);
-            torchLens = new Material(Shader.Find("Universal Render Pipeline/Unlit")) { name = "TorchLens" };
+            // (Particles/Unlit, which the beam uses too: plain URP/Unlit is stripped from the phone build)
+            torchLens = new Material(lensSh0) { name = "TorchLens" };
             lens.GetComponent<MeshRenderer>().sharedMaterial = torchLens;
             foreach (var mr in root.GetComponentsInChildren<MeshRenderer>()) mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             torch = root;
