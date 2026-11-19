@@ -226,6 +226,28 @@ namespace Summit
             s.PlayOneShot(c, vol);
         }
 
+        // ---- the ski lifts (SkiLift.cs): the hum of the line from its nearest point, and a clack as a chair crosses a tower
+        AudioSource liftHum; AudioClip liftClack; bool liftLoaded;
+
+        public void LiftHum(Vector3 at, float level)
+        {
+            if (!liftLoaded)
+            {
+                liftLoaded = true;
+                liftClack = C("lift_clack");
+                var hum = C("lift_hum");
+                if (hum != null) liftHum = Source3D("Lift Hum", hum, 9f, 130f);
+            }
+            if (liftHum == null) return;
+            liftHum.transform.position = at;
+            liftHum.volume = Mathf.MoveTowards(liftHum.volume, 0.42f * Mathf.Clamp01(level), Time.unscaledDeltaTime * 0.7f);
+        }
+
+        public void LiftClack(Vector3 at, float vol)
+        {
+            if (liftClack != null) PlayAt(liftClack, at, vol, Random.Range(0.93f, 1.07f), 7f);
+        }
+
         // pentatonic steps up the scale as a trick chain grows
         static readonly int[] Scale = { 0, 2, 4, 7, 9, 12, 14, 16, 19 };
 

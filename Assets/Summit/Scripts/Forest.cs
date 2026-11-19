@@ -67,6 +67,7 @@ namespace Summit
             if (Slope.OnPad(wx, wz)) return Kind.None;
             if (Slope.Hash01(cx, cz, 1) >= density) return Kind.None;
             if (Course.Keep(wx, wz, 1f)) return Kind.None;   // pipe, crevasses, park features
+            if (LiftLine.Taken(wx, wz, 3.5f)) return Kind.None;   // ski lifts (LiftLine.cs): the cleared swath under a line, and its stations
             float x = wx + (Slope.Hash01(cx, cz, 2) - 0.5f) * Cell * 0.75f;
             float z = wz + (Slope.Hash01(cx, cz, 3) - 0.5f) * Cell * 0.75f;
             if (Course.Keep(x, z, 0.5f)) return Kind.None;   // (where it really stands, too: the long park features)

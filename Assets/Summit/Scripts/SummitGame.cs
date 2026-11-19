@@ -260,6 +260,7 @@ namespace Summit
             wild.rider = rider;
             wild.Build(snow.shader);
             wild.BearSpotted += () => { };   // (the bear is there to see and hear: no caption)
+            SkiLift.Create(rg.transform, snow.shader);   // ski lifts beside the run (SkiLift.cs): they stream, and follow a new mountain, by themselves
             rider.GrindStart += f => { if (state == State.Riding) audioFx.Play(f.kind == Course.Kind.Rail ? Sfx.GrindRail : Sfx.GrindBox); };
             // a numbered flag wherever a fall came to rest, for the rest of the run
             flags = new GameObject("FallFlags").AddComponent<FallFlags>();
