@@ -4,7 +4,8 @@ namespace Summit
 {
     /// <summary>
     /// The rider's physics. A Unity Rigidbody carries the motion (interpolated between physics
-    /// steps, colliding with trees, rocks and animals); this script supplies riding a board.
+    /// steps, colliding with trees, rocks and animals); this script supplies riding a board (or skis:
+    /// the same model with each ride's own numbers on it, see Ride.cs).
     ///
     /// Steering is built like real carving. Your thumb sets an edge (lean) angle; the body
     /// moves to it on a damped spring, so turns start at once but build smoothly. A carve's
@@ -45,6 +46,15 @@ namespace Summit
         /// throw a snowboarder; no tricks, but airs still score.
         /// </summary>
         public bool Tube;
+
+        /// <summary>What is being ridden (the game sets it from Progress.Ride). Everything that needs to know asks here.</summary>
+        public RideKind Ride { get; private set; }
+        /// <summary>That ride's numbers (Ride.cs): all ones on the snowboard.</summary>
+        public RideFeel Feel => feel;
+        RideFeel feel = Rides.Of(RideKind.Snowboard);
+        public void SetRide(RideKind k) { Ride = k; feel = Rides.Of(k); }
+        /// <summary>The snowboard tricks a daily mission would take the trick in hand as (its grab's namesakes), or null.</summary>
+        public string TrickAlias { get; private set; }
 
         public const float R = 0.3f;              // the collision sphere around the feet
         const float MaxHeading = 1.45f;           // about 83 degrees off the fall line
@@ -325,10 +335,11 @@ namespace Summit
         {
             float target = Steer * MaxLean * Mathf.Lerp(1f, 0.65f, Tuck);
             // critically damped spring: starts at once, settles in about 0.4 s, never overshoots
-            float acc = LeanSpring * LeanSpring * (target - Lean) - 2f * LeanSpring * leanVel;
+            float spring = LeanSpring * feel.TurnResponse;
+            float acc = spring * spring * (target - Lean) - 2f * spring * leanVel;
             leanVel += acc * dt;
             Lean += leanVel * dt;
-            float yaw = Mathf.Sign(Lean) * Mathf.Min(MaxYawRate, CarveK * Mathf.Tan(Mathf.Abs(Lean)) / Mathf.Max(sp, MinCarveSpeed));
+            float yaw = Mathf.Sign(Lean) * Mathf.Min(MaxYawRate * feel.TurnRate, CarveK * feel.TurnRate * Mathf.Tan(Mathf.Abs(Lean)) / Mathf.Max(sp, MinCarveSpeed));
             YawRate = yaw;
             return yaw;
         }
@@ -381,18 +392,18 @@ namespace Summit
                 else if (sp < 12f) Flow = Mathf.Max(0f, Flow - dt / 3f);
                 // (momentum carries you up to about 170 km/h; past that the air takes over again, so it never runs away)
                 float flowK = Mathf.Lerp(1f, FlowDrag, Flow * Mathf.Clamp01((52f - sp) / 8f));
-                float drag = (Tube ? DragOpen * 1.15f : Mathf.Lerp(DragOpen, DragTuck, Tuck)) * (BoostTime > 0f ? 0.6f : 1f) * flowK * sp * sp + (Tube ? Friction * 1.3f : Friction) * G * n.y;
+                float drag = (Tube ? DragOpen * 1.15f : Mathf.Lerp(DragOpen, DragTuck, Tuck)) * feel.Drag * (BoostTime > 0f ? 0.6f : 1f) * flowK * sp * sp + (Tube ? Friction * 1.3f : Friction) * G * n.y;
                 vt -= vt / sp * Mathf.Min(sp, drag * dt);
             }
             // 4. the edge swings the velocity round to where the board points. It holds as long as the
             //    sideways pull is within its grip; beyond that the board skids
             float lost = 0f, demand = sp * Mathf.Abs(yaw);
-            float hold = Mathf.Min(1f, GripLimit / Mathf.Max(demand, 1e-3f));
+            float hold = Mathf.Min(1f, GripLimit * feel.Grip / Mathf.Max(demand, 1e-3f));
             sp = vt.magnitude;
             if (sp > 0.05f)
             {
                 float beta = Mathf.Clamp(Mathf.Atan2(Vector3.Dot(vt, r), Vector3.Dot(vt, f)), -1.5f, 1.5f);
-                float beta2 = beta * Mathf.Exp(-(Tube ? 2.5f : Grip * hold * (1f - 0.85f * Undercut)) * dt);   // a tube has no edge: it slides
+                float beta2 = beta * Mathf.Exp(-(Tube ? 2.5f : Grip * feel.Grip * hold * (1f - 0.85f * Undercut)) * dt);   // a tube has no edge: it slides
                 float scrub = Mathf.Abs(beta - beta2);
                 lost = scrub * sp;
                 sp *= 1f - 0.18f * scrub;
@@ -427,7 +438,7 @@ namespace Summit
                 // pop up off the snow; on a face that tilts back up the hill, push straight up rather than
                 // along its normal, which would send a slow rider backwards
                 Vector3 popDir = n.z < 0f ? Vector3.Slerp(n, Vector3.up, 0.85f) : n;
-                float pop = Mathf.Lerp(5.5f, 8f, Mathf.Clamp01(popHold / 0.8f));
+                float pop = Mathf.Lerp(5.5f, 8f, Mathf.Clamp01(popHold / 0.8f)) * feel.Pop;
                 // Super Jump: SuperJumpLift times the height, straight up off the snow so the extra air is height,
                 // not a launch down the hill (height goes with the square of the pop's speed)
                 bool super = SuperJumpTime > 0f && !Tube;
@@ -502,9 +513,7 @@ namespace Summit
 
         // ---------------------------------------------------------------- tricks
 
-        static readonly string[] grabs = { "Indy", "Melon", "Mute", "Method", "Stalefish", "Tail Grab" };
-
-        void ClearTrick() { TrickName = null; TrickSpin = 0f; TrickFlip = 0f; TrickGrab = 0; TrickTime = 0f; }
+        void ClearTrick() { TrickAlias = null; TrickName = null; TrickSpin = 0f; TrickFlip = 0f; TrickGrab = 0; TrickTime = 0f; }
 
         /// <summary>Predict the airtime, and pick a trick that can be finished before the landing.</summary>
         void PlanTrick(Vector3 p, Vector3 v)
@@ -520,6 +529,7 @@ namespace Summit
             if (T < 0.6f || Tube) return;   // tubes just fly (airs still score on landing)
             TrickTime = T;
             int pick = (int)(Mathf.Abs(Mathf.Sin(Time.realtimeSinceStartup * 7.13f + p.z)) * 1000f);
+            var grabs = feel.Grabs;   // each ride has its own grabs (Ride.cs)
             string grab = grabs[pick % grabs.Length];
             int pts;
             bool pipe = Course.InPipe(p.x, p.z);
@@ -546,6 +556,7 @@ namespace Summit
             }
             if (Random.value < 0.5f) TrickSpin = -TrickSpin;
             trickPoints = pts;
+            if (TrickGrab > 0 && feel.GrabCountsAs != null && TrickGrab <= feel.GrabCountsAs.Length) TrickAlias = feel.GrabCountsAs[TrickGrab - 1];
         }
         int trickPoints;
 
@@ -582,7 +593,7 @@ namespace Summit
             if (!pipeAir && flat > 4f && Mathf.Abs(Steer) > 0.02f)
             {
                 float travelNow = Mathf.Atan2(v.x, v.z);
-                float turn = Steer * AirControl * dt;
+                float turn = Steer * AirControl * feel.AirControl * dt;
                 if (Mathf.Abs(travelNow + turn) > MaxHeading) turn = 0f;
                 float cs = Mathf.Cos(turn), sn = Mathf.Sin(turn);
                 v = new Vector3(v.x * cs + v.z * sn, v.y, -v.x * sn + v.z * cs);
@@ -729,7 +740,7 @@ namespace Summit
             {
                 // off the end with a little pop
                 Grinding = false;
-                string name = feat.kind == Course.Kind.Box ? "50-50 Box" : "Boardslide";
+                string name = feat.kind == Course.Kind.Box ? feel.BoxTrick : feel.RailTrick;
                 Trick?.Invoke(name, 150 + Mathf.RoundToInt(len * 25f));
                 return TakeOff(p, dir * grindSpeed + Vector3.up * 3.5f, 0.1f);
             }

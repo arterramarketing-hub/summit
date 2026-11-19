@@ -50,6 +50,7 @@ namespace Summit
         {
             foreach (var p in parts) if (!p.rb.isKinematic) p.rb.linearVelocity *= keep;
             if (boardRb != null && !boardRb.isKinematic) boardRb.linearVelocity *= keep;
+            foreach (var x in extras) if (x.rb != null) x.rb.linearVelocity *= keep;
         }
         /// <summary>The body's parts (for the test tools).</summary>
         public IEnumerable<Rigidbody> Bodies { get { foreach (var p in parts) yield return p.rb; } }
@@ -92,7 +93,7 @@ namespace Summit
         public Vector3 Velocity => Active && parts.Count > 0 ? parts[0].rb.linearVelocity : Vector3.zero;
 
         /// <summary>How many solid shapes the thrown body has, its parts and then the board (see Capsule).</summary>
-        public int ShapeCount => Active ? parts.Count + (boardRb != null ? 1 : 0) : 0;
+        public int ShapeCount => Active ? parts.Count + (boardRb != null ? 1 : 0) + extras.Count : 0;
 
         /// <summary>
         /// One of the thrown body's shapes as a capsule, for pressing it into the snow: the ends of its core line,
@@ -105,8 +106,14 @@ namespace Summit
             Collider col; Rigidbody rb;
             if (!Active) return false;
             if (i < parts.Count) { if (parts[i].gone) return false; col = parts[i].col; rb = parts[i].rb; }
-            else if (boardRb != null && boardCol != null) { col = boardCol; rb = boardRb; }
-            else return false;
+            else if (i == parts.Count && boardRb != null && boardCol != null) { col = boardCol; rb = boardRb; }
+            else
+            {
+                // the rest of the loose gear (after the board, or in its place if there is none)
+                int k = i - parts.Count - (boardRb != null ? 1 : 0);
+                if (k < 0 || k >= extras.Count || extras[k].rb == null || extras[k].col == null) return false;
+                col = extras[k].col; rb = extras[k].rb;
+            }
             var t = col.transform;
             float s = Mathf.Abs(t.lossyScale.x);
             v = rb.linearVelocity; mass = rb.mass;
@@ -130,6 +137,85 @@ namespace Summit
         }
 
         Vector3 boardSize = new Vector3(0.29f, 0.07f, 1.55f), boardCenter = new Vector3(0f, 0.04f, 0f);
+
+        // ---- more loose gear than the one board: the second ski and the two poles (RiderBodyRide). Each flies off
+        // on its own body like the board does. They are light and there can be several, so instead of a slab of
+        // snow each they are simply kept on top of the snow (LooseStep): they skid, tumble and come to rest on it.
+
+        /// <summary>A piece of gear that comes off in a crash: its transform (z down its length), and its box.</summary>
+        public class Loose
+        {
+            public Transform t; public Vector3 size, center; public float mass = 1.5f;
+            internal Transform home; internal Vector3 pos; internal Quaternion rot; internal Rigidbody rb; internal BoxCollider col;
+        }
+        readonly List<Loose> extras = new List<Loose>();
+
+        /// <summary>The gear, beyond the board itself, that flies off with the rider (none on a snowboard).</summary>
+        public void SetExtras(IEnumerable<Loose> gear)
+        {
+            if (Active) End();
+            extras.Clear();
+            if (gear != null) extras.AddRange(gear);
+        }
+
+        void ThrowExtras(Vector3 velocity, Collider gCol, Collider bgCol)
+        {
+            foreach (var x in extras)
+            {
+                x.rb = null; x.col = null;
+                if (x.t == null || !x.t.gameObject.activeInHierarchy) continue;   // (a pole in a hand that is gone, say)
+                x.home = x.t.parent; x.pos = x.t.localPosition; x.rot = x.t.localRotation;
+                x.t.SetParent(null, true);
+                x.rb = x.t.gameObject.AddComponent<Rigidbody>();
+                x.rb.mass = x.mass;
+                x.rb.maxAngularVelocity = 25f;
+                x.rb.maxDepenetrationVelocity = 2.5f;
+                x.rb.useGravity = true;
+                x.rb.interpolation = RigidbodyInterpolation.Interpolate;
+                x.rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+                x.col = x.t.gameObject.AddComponent<BoxCollider>();
+                x.col.center = x.center; x.col.size = x.size;
+                x.col.sharedMaterial = snowFeel;
+                var imp = x.t.gameObject.AddComponent<Impact>(); imp.owner = this; imp.board = true;
+                if (riderCollider != null) Physics.IgnoreCollision(x.col, riderCollider);
+                foreach (var p in parts) if (!p.gone) Physics.IgnoreCollision(x.col, p.col);
+                if (boardCol != null) Physics.IgnoreCollision(x.col, boardCol);
+                Physics.IgnoreCollision(x.col, gCol); Physics.IgnoreCollision(x.col, bgCol);
+                foreach (var y in extras) if (y != x && y.col != null) Physics.IgnoreCollision(x.col, y.col);
+                x.rb.linearVelocity = velocity * Random.Range(0.6f, 0.85f) + Vector3.up * Random.Range(2.5f, 4.5f) + Random.insideUnitSphere * 2.5f;
+                x.rb.angularVelocity = new Vector3(Random.Range(-10f, 10f), Random.Range(-5f, 5f), Random.Range(-10f, 10f));
+            }
+        }
+
+        /// <summary>Each physics step: the loose gear stays on top of the snow, skidding and losing its spin there.</summary>
+        void LooseStep()
+        {
+            foreach (var x in extras)
+            {
+                if (x.rb == null) continue;
+                Vector3 c = x.rb.worldCenterOfMass;
+                float floor = Slope.DrawnHeight(c.x, c.z) - Course.CrevasseCut(c.x, c.z) + 0.03f;
+                if (c.y >= floor) continue;
+                Vector3 v = x.rb.linearVelocity;
+                x.rb.position += Vector3.up * (floor - c.y);
+                if (v.y < 0f) v.y = -v.y * 0.25f;
+                float k = Mathf.Exp(-Time.fixedDeltaTime * 2.5f);
+                x.rb.linearVelocity = new Vector3(v.x * k, v.y, v.z * k);
+                x.rb.angularVelocity *= Mathf.Exp(-Time.fixedDeltaTime * 4f);
+            }
+        }
+
+        void EndExtras()
+        {
+            foreach (var x in extras)
+            {
+                if (x.rb == null || x.t == null) { x.rb = null; x.col = null; continue; }
+                Kill(x.t.GetComponent<Impact>());
+                x.col.enabled = false; Kill(x.col); Kill(x.rb); x.rb = null; x.col = null;
+                x.t.SetParent(x.home, false);
+                x.t.localPosition = x.pos; x.t.localRotation = x.rot;
+            }
+        }
 
         /// <summary>The thing that flies off with the rider: a board by default; a tube is a big flat ring.</summary>
         public Ragdoll(RiderRig rig, Transform board, Collider riderCollider, Vector3 size, Vector3 center) : this(rig, board, riderCollider)
@@ -236,7 +322,7 @@ namespace Summit
             if (riderCollider != null) { Physics.IgnoreCollision(gCol, riderCollider); Physics.IgnoreCollision(bgCol, riderCollider); }
             boardRb.linearVelocity = velocity * 0.75f + Vector3.up * 3.5f + Random.insideUnitSphere * 2f;
             boardRb.angularVelocity = new Vector3(Random.Range(-9f, 9f), Random.Range(-4f, 4f), Random.Range(-9f, 9f));
-
+            ThrowExtras(velocity, gCol, bgCol);   // the other ski and the poles, on skis
         }
 
         /// <summary>
@@ -454,6 +540,7 @@ namespace Summit
                 p.rb.angularVelocity += Random.insideUnitSphere * (6f * k);
             }
             if (boardRb != null) boardRb.linearVelocity = Vector3.Lerp(boardRb.linearVelocity, flow, k * 0.7f);
+            foreach (var x in extras) if (x.rb != null) x.rb.linearVelocity = Vector3.Lerp(x.rb.linearVelocity, flow, k * 0.7f);
         }
 
         /// <summary>Each physics step: keep a slab of snow under the body and under the board.</summary>
@@ -497,6 +584,7 @@ namespace Summit
                 groundBody.position = lowered; groundBody.transform.position = lowered;
             }
             if (boardRb != null) PlaceSlab(boardGroundBody, FloorPoint(boardRb.position), false);
+            LooseStep();
             foreach (var p in parts) if (p.slab != null) PlaceSlab(p.slab, FloorPoint(p.rb.position), false);
         }
 
@@ -595,6 +683,7 @@ namespace Summit
             if (boardRb != null) { boardRb.isKinematic = true; boardCol.enabled = false; Kill(boardCol); Kill(boardRb); boardRb = null; }
             groundBody.gameObject.SetActive(false);
             boardGroundBody.gameObject.SetActive(false);
+            EndExtras();
             var model = rig.Root;
             model.SetParent(modelHome, false);
             model.localPosition = modelPos; model.localRotation = modelRot; model.localScale = modelScale;

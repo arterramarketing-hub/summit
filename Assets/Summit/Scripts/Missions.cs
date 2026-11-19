@@ -131,7 +131,7 @@ namespace Summit
                 if (name == "Close call") { Bump(Kind.CloseCalls, 1f); return; }
                 RunTricks++;
                 Bump(Kind.Tricks, 1f);
-                for (int i = 0; i < Today.Count; i++) { var m = Today[i]; if (m.kind == Kind.Trick && !m.done && name.Contains(m.match)) Add(m, 1f); }
+                for (int i = 0; i < Today.Count; i++) { var m = Today[i]; if (m.kind == Kind.Trick && !m.done && (name.Contains(m.match) || (r.TrickAlias != null && r.TrickAlias.Contains(m.match)))) Add(m, 1f); }   // (a ride's own grab counts as its snowboard namesakes: Ride.cs)
             };
             r.Crash += why => { if (active) { cleanFrom = -1f; Restart(Kind.CleanDistance); } };
             r.GrindStart += f => { if (active) Bump(f.kind == Course.Kind.Rail ? Kind.Rails : Kind.Boxes, 1f); };
@@ -141,6 +141,20 @@ namespace Summit
                 if (k == PowerUps.Kind.Soda) Bump(Kind.Cans, 1f);           // Mountain Zoom cans
                 else if (k == PowerUps.Kind.Shield) Bump(Kind.Shields, 1f); // not Super Jump or Invincibility
             };
+        }
+
+        /// <summary>
+        /// A mission's wording for what is being ridden: a grab mission names the grab that ride has in its place
+        /// (the trick itself is counted by Rider.TrickAlias), so no mission is out of reach on skis.
+        /// </summary>
+        public static string TitleFor(Mission m)
+        {
+            if (m == null) return "";
+            var f = Rides.Of(Progress.Ride);
+            if (m.kind == Kind.Trick && Progress.Ride != RideKind.Snowboard && f.Grabs != null && f.GrabCountsAs != null)
+                for (int i = 0; i < f.Grabs.Length && i < f.GrabCountsAs.Length; i++)
+                    if (f.GrabCountsAs[i].Contains(m.match)) return "Land " + m.target + " " + f.Grabs[i] + " grabs";
+            return m.title;
         }
 
         public static void RunStart()

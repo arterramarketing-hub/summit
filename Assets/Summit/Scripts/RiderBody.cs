@@ -99,6 +99,8 @@ namespace Summit
 
             // a groove pressed into the snow behind the board
             trail = new SnowTrail(jacket != null ? jacket.shader : Shader.Find("Universal Render Pipeline/Lit"));
+            sideTrail = new[] { new SnowTrail(jacket != null ? jacket.shader : Shader.Find("Universal Render Pipeline/Lit")),
+                                new SnowTrail(jacket != null ? jacket.shader : Shader.Find("Universal Render Pipeline/Lit")) };   // the skis' two tracks (RiderBodyRide)
             craters = new Craters(jacket != null ? jacket.shader : Shader.Find("Universal Render Pipeline/Lit"));
 
             // powder off the edge
@@ -500,12 +502,12 @@ namespace Summit
         {
             Tube = on;
             if (ragdoll != null && ragdoll.Active) ragdoll.End();
-            boardRoot.gameObject.SetActive(!on);
+            ShowRide();   // the board (or the skis) when not in the tube (RiderBodyRide)
             tubeRoot.gameObject.SetActive(on);
             MakeRagdoll();
             if (ragdoll == null) return;
-            if (on) ragdoll.SetBoard(tubeRoot, new Vector3(1.6f, 0.44f, 1.6f), new Vector3(0f, 0.22f, 0f));
-            else ragdoll.SetBoard(boardRoot, new Vector3(0.29f, 0.07f, 1.55f), new Vector3(0f, 0.04f, 0f));
+            if (on) { ragdoll.SetBoard(tubeRoot, new Vector3(1.6f, 0.44f, 1.6f), new Vector3(0f, 0.22f, 0f)); ragdoll.SetExtras(null); }
+            else RideRagdoll();   // the board, or the skis and poles
             tubeSpin = 0f; tubeSpinRate = 0f;
         }
 
@@ -853,6 +855,7 @@ namespace Summit
             foreach (var g in bandages) if (g != null) { if (Application.isPlaying) Destroy(g); else DestroyImmediate(g); }
             bandages.Clear(); bandaged.Clear(); brokenThisCrash.Clear();
             trail.Clear();
+            if (sideTrail != null) foreach (var st in sideTrail) st.Clear();
             RagdollBelowSnow = 0f;
             RagdollMoving = false;
             Dead = false;
@@ -1035,7 +1038,7 @@ namespace Summit
                 {
                     float k = rider.TrickProgress;
                     rot = baseRot * Quaternion.AngleAxis(rider.TrickSpin * k * Mathf.Rad2Deg, Vector3.up)
-                                  * Quaternion.AngleAxis(rider.TrickFlip * k * Mathf.Rad2Deg, Vector3.forward);
+                                  * Quaternion.AngleAxis(rider.TrickFlip * k * Mathf.Rad2Deg, RidingGear ? Vector3.right : Vector3.forward);   // (a skier faces the way they go: a flip is head over heels along the line)
                 }
                 if (Tube)
                 {
@@ -1053,6 +1056,7 @@ namespace Summit
                 float leanDeg = rider.Lean * Mathf.Rad2Deg;
                 roll.localRotation = Tube ? Quaternion.Euler(leanDeg * 0.5f, 0f, 0f) : Quaternion.Euler(0f, 0f, -leanDeg * 0.75f);
                 upper.localRotation = Quaternion.Euler(0f, 0f, -leanDeg * 0.25f);
+                if (RidingGear) upper.localRotation = Quaternion.identity;   // a skier's upper body angles back out of the turn (in the clips)
                 if (Walking) WalkFrame(dt);   // on foot in the camp
                 if (poser != null) Pose(dt);
                 else if (rig != null) PoseRig(dt);
@@ -1060,7 +1064,10 @@ namespace Summit
             }
 
             // the track: a groove pressed into the snow under the board (none in snow the avalanche is churning)
-            trail.Feed(p + Vector3.down * Rider.R, normal, rider.TravelHeading, rider.Running && !rider.Crashed && !rider.Airborne && !rider.Grinding && rider.Undercut < 0.05f,
+            bool tracking = rider.Running && !rider.Crashed && !rider.Airborne && !rider.Grinding && rider.Undercut < 0.05f;
+            bool onSkis = RidingGear && Ride == RideKind.Skis;   // two narrow tracks instead of the one trench
+            FeedSkiTracks(p + Vector3.down * Rider.R, tracking && onSkis, Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Slope.Rough(p.x, p.z)), dt);
+            trail.Feed(p + Vector3.down * Rider.R, normal, rider.TravelHeading, tracking && !onSkis,
                        Tube ? 1.25f : Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Slope.Rough(p.x, p.z)),
                        Tube ? 0f : rider.Lean / Rider.MaxLean, Tube ? 0.5f : rider.Skid, dt);   // a tube leaves a wide, shallow chute
 

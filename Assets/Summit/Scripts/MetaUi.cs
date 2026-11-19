@@ -160,7 +160,7 @@ namespace Summit
         public void SetContext(Camp.Station st)
         {
             string label = st == Camp.Station.Missions ? "DAILY MISSIONS" : st == Camp.Station.Upgrades ? "UPGRADES"
-                         : st == Camp.Station.Style ? "OUTFITS" : st == Camp.Station.DropIn ? "DROP IN" : null;
+                         : st == Camp.Station.Style ? "OUTFITS & RIDE" : st == Camp.Station.DropIn ? "DROP IN" : null;
             bool on = label != null && !PanelOpen;
             if (contextBtn.gameObject.activeSelf != on) contextBtn.gameObject.SetActive(on);
             if (on) { contextText.text = label; contextImg.color = st == Camp.Station.DropIn ? new Color(0.85f, 0.2f, 0.12f, 0.97f) : Blue; }
@@ -257,7 +257,7 @@ namespace Summit
                 var r = Img("Mission", c, m.done ? new Color(0.2f, 0.7f, 0.32f, 0.18f) : Row, round);
                 Place(r.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -200f - i * 290f), new Vector2(930f, 260f), new Vector2(0.5f, 1f));
                 var tt = Label(r.transform, new Vector2(0f, 1f), new Vector2(36f, -28f), new Vector2(600f, 120f), 46, TextAnchor.UpperLeft);
-                tt.horizontalOverflow = HorizontalWrapMode.Wrap; tt.text = m.title;
+                tt.horizontalOverflow = HorizontalWrapMode.Wrap; tt.text = Missions.TitleFor(m);
                 Place(Img("Coin", r.transform, Color.white, coin).rectTransform, new Vector2(1f, 1f), new Vector2(-170f, -32f), new Vector2(60f, 60f), new Vector2(1f, 1f));
                 var rw = Label(r.transform, new Vector2(1f, 1f), new Vector2(-30f, -28f), new Vector2(140f, 70f), 50, TextAnchor.UpperRight);
                 rw.text = "+" + m.reward; rw.color = Gold;
@@ -277,7 +277,7 @@ namespace Summit
         public void ShowShop(int tab)
         {
             ShopTab = tab;
-            var c = OpenCard(tab == 0 ? 1640f : 900f, tab == 0 ? "UPGRADES" : "OUTFITS", null);
+            var c = OpenCard(tab == 0 ? 1640f : 1180f, tab == 0 ? "UPGRADES" : "OUTFITS & RIDE", null);
             // balance, top left of the card
             Place(Img("Coin", c, Color.white, coin).rectTransform, new Vector2(0f, 1f), new Vector2(36f, -40f), new Vector2(64f, 64f), new Vector2(0f, 1f));
             var bal = Label(c, new Vector2(0f, 1f), new Vector2(112f, -40f), new Vector2(260f, 70f), 50, TextAnchor.UpperLeft);
@@ -347,7 +347,19 @@ namespace Summit
                 }
             }
             Swatches("JACKET", -260f, Progress.Jackets, Progress.JacketNames, Progress.Jacket, Progress.OwnsJacket, "jacket");
-            Swatches("BOARD", -540f, Progress.Boards, Progress.BoardNames, Progress.Board, Progress.OwnsBoard, "board");
+            Swatches(Progress.Ride == RideKind.Snowboard ? "BOARD" : Rides.Of(Progress.Ride).Name, -540f, Progress.Boards, Progress.BoardNames, Progress.Board, Progress.OwnsBoard, "board");
+            // what to ride: free, all there from the start; the one worn is lit
+            var rl = Label(c, new Vector2(0f, 1f), new Vector2(50f, -820f), new Vector2(900f, 60f), 40, TextAnchor.UpperLeft);
+            rl.text = "RIDE  ·  " + Rides.Of(Progress.Ride).Name + "  ·  free to swap"; rl.color = Dim;
+            int rides = Rides.Count;
+            float pillW = Mathf.Min(440f, 900f / rides);
+            for (int k = 0; k < rides; k++)
+            {
+                var pill = Img("Ride", c, k == (int)Progress.Ride ? Blue : Grey, round);
+                Place(pill.rectTransform, new Vector2(0.5f, 1f), new Vector2((k - (rides - 1) * 0.5f) * (pillW + 16f), -900f), new Vector2(pillW, 110f), new Vector2(0.5f, 1f));
+                Label(pill.transform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(pillW - 20f, 90f), 42, TextAnchor.MiddleCenter).text = Rides.Of((RideKind)k).Name;
+                buttons.Add(new KeyValuePair<RectTransform, string>(pill.rectTransform, "mount" + k));
+            }
         }
 
         /// <summary>Do what a panel button says. Returns false if the id isn't a panel/menu action.</summary>
@@ -362,6 +374,15 @@ namespace Summit
                 int cost = Progress.NextCost(u);
                 if (Progress.Buy(u)) { Bought?.Invoke(); ShowShop(0); cardMsg.text = Progress.Find(u).title + (Progress.Find(u).decor ? " is up in camp" : " fitted"); cardMsg.color = new Color(0.5f, 1f, 0.55f); }
                 else { Denied?.Invoke(); cardMsg.text = "Need " + (cost - Progress.Points).ToString("N0") + " more points: ride to earn them"; cardMsg.color = new Color(1f, 0.5f, 0.42f); }
+                return true;
+            }
+            if (id.StartsWith("mount"))
+            {
+                // snowboard or skis: nothing to pay, it is on your feet at the gate
+                var k = (RideKind)int.Parse(id.Substring(5));
+                bool same = k == Progress.Ride;
+                Progress.PickRide(k); Clicked?.Invoke(); ShowShop(1);
+                if (!same) { cardMsg.text = Rides.Of(k).Name + " at the gate"; cardMsg.color = new Color(0.5f, 1f, 0.55f); }
                 return true;
             }
             if (id.StartsWith("jacket") || id.StartsWith("board"))
@@ -407,7 +428,7 @@ namespace Summit
             if (toastT < 0f && toasts.Count > 0)
             {
                 var m = toasts.Dequeue();
-                toastTitle.text = m.title; toastReward.text = "+" + m.reward;
+                toastTitle.text = Missions.TitleFor(m); toastReward.text = "+" + m.reward;
                 toastRoot.gameObject.SetActive(true);
                 toastT = 0f;
             }
