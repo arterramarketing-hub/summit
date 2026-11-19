@@ -860,11 +860,26 @@ namespace Summit
             Vector3 normal = c.contactCount > 0 ? c.GetContact(0).normal : -rb.linearVelocity.normalized;
             float into = Mathf.Abs(Vector3.Dot(c.relativeVelocity, normal));
             if (ob.always) into = Mathf.Max(into, 10f);   // animals always knock you down
-            if (InvincibleTime > 0f && Smash(ob, c.collider))
+            if (InvincibleTime > 0f && ob.Smashable && Smash(ob, c.collider))
             {
                 // the step ahead missed it (it came from the side, or the bear ran into you): carry on as if it
                 // were never there, minus the smash's toll
                 rb.linearVelocity = lastV * SmashKeep;
+                return;
+            }
+            if (InvincibleTime > 0f && !ob.Smashable)
+            {
+                // a building, a car, a fence, a lift tower: invincible doesn't go through it. Thrown off it with a
+                // good part of the speed gone, still on the board
+                Vector3 v = lastV.sqrMagnitude > rb.linearVelocity.sqrMagnitude ? lastV : rb.linearVelocity;
+                Vector3 nh = new Vector3(normal.x, 0f, normal.z);
+                if (nh.sqrMagnitude < 1e-4f) nh = -new Vector3(v.x, 0f, v.z);
+                nh.Normalize();
+                if (Vector3.Dot(v, nh) < 0f) v -= nh * Vector3.Dot(v, nh) * 1.6f;
+                rb.linearVelocity = v * 0.6f;
+                Heading = Mathf.Clamp(Mathf.Atan2(v.x, v.z), -MaxHeading, MaxHeading);
+                invulnerable = Mathf.Max(invulnerable, 0.4f);
+                Scraped?.Invoke(into);
                 return;
             }
             HitObstacle?.Invoke(ob, c.collider.bounds.center, into);
@@ -913,7 +928,7 @@ namespace Summit
             {
                 if (near[i].attachedRigidbody == rb) continue;
                 var ob = near[i].GetComponentInParent<Obstacle>();
-                if (ob != null && Smash(ob, near[i])) v *= SmashKeep;
+                if (ob != null && ob.Smashable && Smash(ob, near[i])) v *= SmashKeep;   // (the rest stays solid: see OnCollisionEnter)
             }
             return v;
         }
