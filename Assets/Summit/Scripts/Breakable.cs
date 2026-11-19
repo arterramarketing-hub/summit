@@ -16,7 +16,7 @@ namespace Summit
     /// </summary>
     public class Breakable : MonoBehaviour
     {
-        public enum Kind { Flag, Sign }
+        public enum Kind { Flag, Sign, Fence }
         public Kind kind;
         public bool Down { get; private set; }
         /// <summary>How tall a flag stands above its base (its holder's origin, on the snow).</summary>
@@ -45,6 +45,27 @@ namespace Summit
             b.kind = Kind.Flag; b.height = height;
             // a little wider than the pole, so brushing past it with the board takes it down
             b.Box(new Vector3(0f, height * 0.5f + 0.1f, 0f), new Vector3(0.45f, height - 0.2f, 0.45f));
+            b.Arm();
+            return b;
+        }
+
+        /// <summary>A piece of wood to throw when a fence span breaks: where it was, its size, what it is painted with.</summary>
+        public struct Plank { public Vector3 at; public Quaternion rot; public Vector3 size; public Material mat; }
+
+        // a fence span drawn as part of a mesh shared with its neighbours (Hamlets): taken out of it when it breaks,
+        // handing back the wood to throw, and put back on a new run
+        System.Func<List<Plank>> takeOut;
+        System.Action putBack;
+
+        /// <summary>
+        /// Make the holder (in the middle of the span, turned along it) a fence span that breaks at the lightest
+        /// touch. size: its box. takeOut hides the span in the shared mesh and returns its planks; putBack shows it.
+        /// </summary>
+        public static Breakable Span(Transform holder, Vector3 size, System.Func<List<Plank>> takeOut, System.Action putBack)
+        {
+            var b = holder.gameObject.AddComponent<Breakable>();
+            b.kind = Kind.Fence; b.takeOut = takeOut; b.putBack = putBack;
+            b.Box(Vector3.zero, size);
             b.Arm();
             return b;
         }
@@ -135,6 +156,7 @@ namespace Summit
             Vector3 dir = flat.sqrMagnitude > 0.04f ? flat.normalized : transform.forward;
             float speed = flat.magnitude;
             if (kind == Kind.Flag) return speed > SnapSpeed ? SnapFlag(dir, speed) : Bend(dir, speed);
+            if (kind == Kind.Fence) return Splinter(at, vel, dir);
             return Shatter(at, vel, dir);
         }
 
@@ -293,6 +315,38 @@ namespace Summit
             return m;
         }
 
+        /// <summary>
+        /// A fence span: its rails snap in two and fly, with any post left with no rail either side; the span is
+        /// taken out of the fence's shared mesh (no object per span while it stands).
+        /// </summary>
+        Vector3 Splinter(Vector3 at, Vector3 vel, Vector3 dir)
+        {
+            var planks = takeOut != null ? takeOut() : null;
+            if (planks == null) return transform.position;
+            foreach (var pk in planks)
+            {
+                bool rail = pk.size.z > pk.size.y;
+                // a rail breaks where it was hit (near enough its middle); a post goes whole
+                int parts = rail ? 2 : 1;
+                for (int i = 0; i < parts; i++)
+                {
+                    float f = parts == 1 ? 0f : (i - 0.5f) * 0.5f;
+                    var g = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    DestroyImmediate(g.GetComponent<Collider>());
+                    g.name = rail ? "Rail" : "Post";
+                    g.transform.SetParent(transform, false);
+                    g.transform.SetPositionAndRotation(pk.at + pk.rot * new Vector3(0f, 0f, f * pk.size.z), pk.rot);
+                    var s = pk.size; if (rail) s.z *= 0.5f * Random.Range(0.85f, 1f);
+                    g.transform.localScale = s;
+                    var r = g.GetComponent<MeshRenderer>();
+                    r.sharedMaterial = pk.mat; r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    made.Add(g);
+                    Fling(g.transform, s * 0.5f, at, vel, dir);
+                }
+            }
+            return transform.position;
+        }
+
         /// <summary>Throw a broken piece: mostly the way the hit was going, harder the nearer it was to the hit.</summary>
         void Fling(Transform piece, Vector3 ext, Vector3 at, Vector3 vel, Vector3 dir)
         {
@@ -332,6 +386,7 @@ namespace Summit
             }
             foreach (var g in made) if (g != null) Kill(g);
             made.Clear();
+            putBack?.Invoke();
             foreach (var bc in triggers) bc.enabled = true;
             Down = false;
         }

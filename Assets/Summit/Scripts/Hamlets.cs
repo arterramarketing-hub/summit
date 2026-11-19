@@ -21,7 +21,8 @@ namespace Summit
     /// and the stone base or the stilts, modelled well down below the floor, take up the fall of the slope.
     /// Nothing is cut into the mountain: the terrain and the ride are exactly as they were.
     ///
-    /// Solid: every building and fence span is an Obstacle (Rider crashes into it like a tree). Forest asks
+    /// Solid: every building is an Obstacle (Rider crashes into it like a tree); the fence is not: each span gives way
+    /// at a touch (Breakable, Kind.Fence) and is back for the next run. Forest asks
     /// Taken() so no tree or rock grows in a house, in the fence or between the houses and the piste.
     ///
     /// Cheap: a hamlet is built as the rider comes within StreamAhead of it and freed StreamBehind past it. Each
@@ -651,42 +652,131 @@ namespace Summit
         /// <summary>
         /// Posts every 3 m and two rails between them, following the snow, with snow on the posts and along the top
         /// rail: two meshes for the whole fence (wood, snow). It breaks at the gap and wherever the ground steps
-        /// away under it (a jump cliff's rock band). Each span is a solid Obstacle.
+        /// away under it (a jump cliff's rock band). Each span gives way at a touch (a Breakable): its rails and caps
+        /// are taken out of the meshes, and so is a post once neither side of it has a rail left; all of it is put
+        /// back for the next run. So a standing fence is still two draw calls however many spans it has.
         /// </summary>
         void Fence(Built b, Hamlet h)
         {
             var wood = new Shape(); var caps = new Shape();
             var holder = new GameObject("Fence").transform;
             holder.SetParent(b.root.transform, false);
+            var parts = new FenceParts { wood = wood, caps = caps, mat = darkWood };
             bool have = false; Vector3 last = Vector3.zero;
+            int lastPost = -1;
             for (float z = h.fenceZ0; z <= h.fenceZ1; z += FenceStep)
             {
                 float x = Slope.Centre(z) + h.side * (Slope.PisteHalf + FenceOff);
                 var p = new Vector3(x, Slope.DrawnHeight(x, z), z);
                 bool gap = Mathf.Abs(z - h.gapZ) < FenceGap * 0.5f || Course.At(z) != Course.Section.Cruise || Cliffs.OnJumpFace(x, z);
                 if (gap) { have = false; continue; }
-                wood.Box(p + Vector3.up * (PostTop * 0.5f - 0.3f), Quaternion.identity, new Vector3(0.15f, PostTop + 0.6f, 0.15f));
-                caps.Box(p + Vector3.up * (PostTop + 0.06f), Quaternion.identity, new Vector3(0.2f, 0.12f, 0.2f));
+                int post = parts.posts.Count;
+                var postPiece = new Breakable.Plank { at = p + Vector3.up * (PostTop * 0.5f - 0.3f), rot = Quaternion.identity, size = new Vector3(0.15f, PostTop + 0.6f, 0.15f), mat = darkWood };
+                parts.posts.Add(new FenceParts.Part { wood = wood.Box(postPiece.at, postPiece.rot, postPiece.size), caps = caps.Box(p + Vector3.up * (PostTop + 0.06f), Quaternion.identity, new Vector3(0.2f, 0.12f, 0.2f)), plank = postPiece });
                 if (have && Mathf.Abs(p.y - last.y) < FenceStep * 1.4f)
                 {
                     Vector3 d = p - last; float len = d.magnitude;
                     var rot = Quaternion.LookRotation(d / len, Vector3.up);
                     Vector3 mid = (p + last) * 0.5f;
-                    wood.Box(mid + Vector3.up * 1.0f, rot, new Vector3(0.07f, 0.13f, len));
-                    wood.Box(mid + Vector3.up * 0.55f, rot, new Vector3(0.07f, 0.13f, len));
-                    caps.Box(mid + Vector3.up * 1.09f, rot, new Vector3(0.1f, 0.06f, len - 0.25f));
-                    var g = new GameObject("FenceHit");
+                    var top = new Breakable.Plank { at = mid + Vector3.up * 1.0f, rot = rot, size = new Vector3(0.07f, 0.13f, len), mat = darkWood };
+                    var low = new Breakable.Plank { at = mid + Vector3.up * 0.55f, rot = rot, size = new Vector3(0.07f, 0.13f, len), mat = darkWood };
+                    int w0 = wood.Box(top.at, top.rot, top.size); wood.Box(low.at, low.rot, low.size);
+                    int c0 = caps.Box(mid + Vector3.up * 1.09f, rot, new Vector3(0.1f, 0.06f, len - 0.25f));
+                    int span = parts.spans.Count;
+                    parts.spans.Add(new FenceParts.Span { wood = w0, woodBoxes = 2, caps = c0, a = lastPost, b = post, top = top, low = low });
+                    // (a little thicker than the rails, so brushing the fence with the board takes it down)
+                    var g = new GameObject("FenceSpan");
                     g.transform.SetParent(holder, false);
-                    g.transform.SetPositionAndRotation(mid + Vector3.up * 0.55f, rot);
-                    var box = g.AddComponent<BoxCollider>(); box.size = new Vector3(0.2f, 1.5f, len);
-                    g.AddComponent<Obstacle>().label = "Fence!";
-                    b.solid.Add(box);
+                    g.transform.SetPositionAndRotation(mid + Vector3.up * 0.6f, rot);
+                    Breakable.Span(g.transform, new Vector3(0.5f, 1.3f, len), () => parts.Break(span), () => parts.Mend(span));
                 }
-                have = true; last = p;
+                have = true; last = p; lastPost = post;
             }
             var rw = wood.Renderer(holder, "FenceWood", darkWood, b.meshes);
             var rs = caps.Renderer(holder, "FenceSnow", snow, b.meshes);
             b.fence = rw != null && rs != null ? new[] { rw, rs } : rw != null ? new[] { rw } : null;
+            parts.Ready(rw, rs);
+        }
+
+        /// <summary>
+        /// Which boxes of a fence's two meshes belong to which post and span, so a broken span can be taken out of
+        /// them (its corners all moved onto one point: nothing left to draw) and put back.
+        /// </summary>
+        class FenceParts
+        {
+            public struct Part { public int wood, caps; public Breakable.Plank plank; }
+            public struct Span { public int wood, woodBoxes, caps, a, b; public Breakable.Plank top, low; }
+            public Shape wood, caps; public Material mat;
+            public readonly List<Part> posts = new List<Part>();
+            public readonly List<Span> spans = new List<Span>();
+            bool[] broken; bool[] postGone;
+            Mesh woodMesh, capsMesh;
+            Vector3[] woodFull, capsFull, woodNow, capsNow;
+
+            public void Ready(Renderer rw, Renderer rs)
+            {
+                broken = new bool[spans.Count]; postGone = new bool[posts.Count];
+                woodMesh = rw != null ? rw.GetComponent<MeshFilter>().sharedMesh : null;
+                capsMesh = rs != null ? rs.GetComponent<MeshFilter>().sharedMesh : null;
+                if (woodMesh != null) { woodFull = woodMesh.vertices; woodNow = (Vector3[])woodFull.Clone(); woodMesh.MarkDynamic(); }
+                if (capsMesh != null) { capsFull = capsMesh.vertices; capsNow = (Vector3[])capsFull.Clone(); capsMesh.MarkDynamic(); }
+            }
+
+            // a post stands while it has a rail on either side still up (or never had one)
+            bool PostStands(int post)
+            {
+                bool any = false;
+                for (int i = 0; i < spans.Count; i++)
+                    if (spans[i].a == post || spans[i].b == post) { any = true; if (!broken[i]) return true; }
+                return !any;
+            }
+
+            public List<Breakable.Plank> Break(int span)
+            {
+                if (broken == null || broken[span]) return null;
+                broken[span] = true;
+                var s = spans[span];
+                var planks = new List<Breakable.Plank> { s.top, s.low };
+                Hide(woodNow, s.wood, s.woodBoxes); Hide(capsNow, s.caps, 1);
+                foreach (int post in new[] { s.a, s.b })
+                {
+                    if (post < 0 || postGone[post] || PostStands(post)) continue;
+                    postGone[post] = true;
+                    Hide(woodNow, posts[post].wood, 1); Hide(capsNow, posts[post].caps, 1);
+                    planks.Add(posts[post].plank);
+                }
+                Upload();
+                return planks;
+            }
+
+            public void Mend(int span)
+            {
+                if (broken == null || !broken[span]) return;
+                broken[span] = false;
+                var s = spans[span];
+                Show(woodNow, woodFull, s.wood, s.woodBoxes); Show(capsNow, capsFull, s.caps, 1);
+                foreach (int post in new[] { s.a, s.b })
+                    if (post >= 0 && postGone[post]) { postGone[post] = false; Show(woodNow, woodFull, posts[post].wood, 1); Show(capsNow, capsFull, posts[post].caps, 1); }
+                Upload();
+            }
+
+            const int PerBox = 24;
+            static void Hide(Vector3[] v, int box, int count)
+            {
+                if (v == null) return;
+                int i0 = box * PerBox;
+                for (int i = i0; i < i0 + count * PerBox && i < v.Length; i++) v[i] = v[i0];
+            }
+            static void Show(Vector3[] v, Vector3[] full, int box, int count)
+            {
+                if (v == null) return;
+                System.Array.Copy(full, box * PerBox, v, box * PerBox, Mathf.Min(count * PerBox, v.Length - box * PerBox));
+            }
+            void Upload()
+            {
+                if (woodMesh != null) woodMesh.vertices = woodNow;
+                if (capsMesh != null) capsMesh.vertices = capsNow;
+            }
         }
 
         /// <summary>Boxes gathered into one mesh.</summary>
@@ -697,8 +787,10 @@ namespace Summit
             readonly List<int> tri = new List<int>();
             static readonly Vector3[] Faces = { Vector3.right, Vector3.left, Vector3.up, Vector3.down, Vector3.forward, Vector3.back };
 
-            public void Box(Vector3 centre, Quaternion rot, Vector3 size)
+            /// <summary>Adds a box; returns its number (each box is 24 corners, in order).</summary>
+            public int Box(Vector3 centre, Quaternion rot, Vector3 size)
             {
+                int box = v.Count / 24;
                 for (int f = 0; f < 6; f++)
                 {
                     Vector3 nf = Faces[f];
@@ -718,6 +810,7 @@ namespace Summit
                     }
                     tri.Add(s); tri.Add(s + 1); tri.Add(s + 2); tri.Add(s); tri.Add(s + 2); tri.Add(s + 3);
                 }
+                return box;
             }
 
             public Renderer Renderer(Transform parent, string name, Material m, List<Mesh> made)

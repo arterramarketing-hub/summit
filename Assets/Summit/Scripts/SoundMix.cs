@@ -438,7 +438,7 @@ namespace Summit
                 case Sfx.BoneArm: c = bonesLeg[Random.Range(0, bonesLeg.Length)]; vol = 0.95f; pitch = Random.Range(1.08f, 1.18f); break;
                 case Sfx.BoneBack: c = bonesBack[Random.Range(0, bonesBack.Length)]; vol = 1f; pitch = Random.Range(0.92f, 1.02f); break;
                 case Sfx.BoneNeck: c = bonesNeck[Random.Range(0, bonesNeck.Length)]; vol = 1f; pitch = Random.Range(0.96f, 1.04f); break;
-                case Sfx.SmashWood: c = smashWood; vol = 1f; pitch = Random.Range(0.9f, 1.1f); break;
+                case Sfx.SmashWood: c = smashWood; vol = Mathf.Clamp(amount, 0.3f, 1f); pitch = Random.Range(0.9f, 1.1f) * (amount < 0.7f ? 1.15f : 1f); break;   // (quieter and lighter: a fence's thin rails)
                 case Sfx.SmashRock: c = smashRock; vol = 1f; pitch = Random.Range(0.9f, 1.1f); break;
                 case Sfx.PowerJump: c = powerJump; vol = 0.7f; pitch = 1f; break;
                 case Sfx.PowerStar: c = powerStar; vol = 0.65f; pitch = 1f; break;

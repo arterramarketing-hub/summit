@@ -165,7 +165,7 @@ namespace Summit
             bool on = label != null && !PanelOpen;
             if (contextBtn.gameObject.activeSelf != on) contextBtn.gameObject.SetActive(on);
             if (on) { contextText.text = label; contextImg.color = st == Camp.Station.DropIn ? new Color(0.85f, 0.2f, 0.12f, 0.97f) : Blue; }
-            hintText.text = PanelOpen ? "" : on ? "" : "Left: walk  ·  right: look  ·  tap: jump  ·  swipe: roll";
+            hintText.text = PanelOpen ? "" : on ? "" : "Drag: walk  ·  hold a second finger: look  ·  tap: jump  ·  swipe: roll";
         }
 
         /// <summary>The camera stick under the right thumb (screen pixels), tinted so the two sticks read apart.</summary>

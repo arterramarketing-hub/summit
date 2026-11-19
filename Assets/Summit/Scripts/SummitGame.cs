@@ -367,6 +367,7 @@ namespace Summit
                 if (state != State.Riding) return;
                 bool sign = b.kind == Breakable.Kind.Sign;
                 if (sign) audioFx.Play(Sfx.SmashWood, crashed || invincible ? 1f : 0.8f);
+                else if (b.kind == Breakable.Kind.Fence) { audioFx.Play(Sfx.SmashWood, 0.55f); if (!thrown) hurtShake = Mathf.Max(hurtShake, 0.2f); }
                 else audioFx.Play(Sfx.Clack, 0.7f);
                 if (!sign || thrown) return;
                 hurtShake = Mathf.Max(hurtShake, crashed ? 0.8f : 0.45f);
@@ -596,8 +597,8 @@ namespace Summit
             if (fx != null) fx.Clear();
             if (blood != null) blood.Clear();
             hud.Show("", "Best " + Mathf.RoundToInt(best).ToString("N0"),
-                Application.isMobilePlatform ? "Drag a finger left / right to steer  ·  add a second finger to tuck  ·  lift it to jump"
-                              : "A / D to steer  ·  hold Space to tuck  ·  let go to jump");
+                Application.isMobilePlatform ? "Drag a finger left / right to steer  ·  tap a second finger to jump  ·  hold it to tuck"
+                              : "A / D to steer  ·  tap Space to jump  ·  hold it to tuck");
             hud.SetButtons(true, false, "PLAY");
             hud.SetMode(input.useTilt);
             meta.SetMode(MetaUi.Mode.Ready);
@@ -901,7 +902,7 @@ namespace Summit
             else if (kind == PowerUps.Kind.SuperJump)
             {
                 rider.AddSuperJump(SuperJumpSeconds * Progress.PowerUpTime);
-                hud.Flash("SUPER JUMP", "lift your thumb for big air", 1.2f);
+                hud.Flash("SUPER JUMP", "tap a second finger for big air", 1.2f);
                 audioFx.Play(Sfx.PowerJump);
             }
             else if (kind == PowerUps.Kind.Invincible)

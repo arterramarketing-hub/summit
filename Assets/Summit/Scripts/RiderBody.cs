@@ -860,6 +860,7 @@ namespace Summit
             RagdollMoving = false;
             Dead = false;
             spray.Clear();
+            if (sparks != null) sparks.Clear();
             bow.Clear();
             marks.Clear();
             craters.Clear();
@@ -1084,6 +1085,7 @@ namespace Summit
                 ? rider.Speed * (4.5f + 4f * Slope.Rough(p.x, p.z)) * (1f + 1.2f * Mathf.Abs(rider.Lean) / Rider.MaxLean + rider.Skid)
                 : 0f;
 
+            GrindSparks(p, dt);   // a few sparks off a rail (RiderBodySparks)
             sprayEm.rateOverTime = rider.Running && !rider.Crashed && !rider.Airborne
                 ? rider.Carve * rider.Speed * 7f + Mathf.Max(0f, rider.Speed - 22f) * 1.5f + (rider.BoostTime > 0f ? 60f : 0f)
                 : 0f;

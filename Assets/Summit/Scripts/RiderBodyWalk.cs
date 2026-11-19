@@ -232,7 +232,10 @@ namespace Summit
         {
             ownMats = true;
             var copies = new System.Collections.Generic.Dictionary<Material, Material>();
-            Material Copy(Material m) { if (!copies.TryGetValue(m, out var c)) { c = new Material(m); copies[m] = c; } return c; }
+            // (the snowy cloth is already this rider's own, made at start, not a project asset: it must stay the
+            // very material SnowyClothes writes the snow to. Copied, the jacket wore a copy that never got any,
+            // and stayed clean through every fall while the trousers caked up)
+            Material Copy(Material m) { if (snowy != null && snowy.Owns(m)) return m; if (!copies.TryGetValue(m, out var c)) { c = new Material(m); copies[m] = c; } return c; }
             foreach (var r in GetComponentsInChildren<Renderer>(true))
             {
                 var ms = r.sharedMaterials;

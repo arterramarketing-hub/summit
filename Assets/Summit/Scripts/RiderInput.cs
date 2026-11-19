@@ -6,19 +6,26 @@ using UnityEngine.InputSystem;
 namespace Summit
 {
     /// <summary>
-    /// Tilt the phone to steer. Hold anywhere to tuck; let go to pop.
-    /// In the editor: A/D or arrows steer, Space or the mouse button holds.
+    /// Drag one finger left and right to steer (or tilt the phone). With that finger still down, a quick tap of a
+    /// second finger jumps; pressing and holding the second finger tucks low for speed (letting go of a tuck is
+    /// not a jump). In tilt mode the one finger does both. In the editor: A/D or arrows steer, Space taps or
+    /// holds. A controller: left stick steers, the bottom face button taps or holds.
     /// Works with either the new Input System or the old Input Manager.
     /// </summary>
     [DefaultExecutionOrder(-100)]   // read input before anything uses it this frame
     public class RiderInput : MonoBehaviour
     {
         public float Steer { get; private set; }     // -1 left .. +1 right
-        public bool Hold { get; private set; }
-        public bool Pressed { get; private set; }    // went down this frame
-        public bool Released { get; private set; }   // came up this frame
-        public float HoldTime { get; private set; }  // how long the current press has lasted
-        public float LastHold { get; private set; }  // how long the press that just ended lasted
+        public bool Hold { get; private set; }       // tucking: the jump finger has been held past a tap
+        public bool Pressed { get; private set; }    // the tuck began this frame
+        public bool Released { get; private set; }   // the tuck ended this frame
+        public float HoldTime { get; private set; }  // how long the current tuck has lasted
+        public float LastHold { get; private set; }  // how long the tuck that just ended lasted
+        /// <summary>A quick tap of the jump finger just lifted: jump (true for the one frame).</summary>
+        public bool Jump { get; private set; }
+        /// <summary>A press shorter than this (seconds) is a tap, a jump; held longer it is a tuck.</summary>
+        public const float TapTime = 0.22f;
+        float pressTime;
         public bool HasTilt { get; private set; }
 
         public float tiltRange = 0.36f;   // sin of the tilt that gives full lock (about 21 degrees)
@@ -61,7 +68,8 @@ namespace Summit
             swallow = PointerDown();
             Hold = false;
             Released = false;
-            HoldTime = 0f;
+            Jump = false;
+            HoldTime = 0f; pressTime = 0f;
         }
 
         void Update()
@@ -94,7 +102,6 @@ namespace Summit
                 // expo response: the first half of the throw is gentle fine carving (a fifth of the edge at
                 // half throw); only the outer part opens to a full edge
                 target = Mathf.Sign(d) * Curve(a);
-                // a second finger held down tucks; a quick overlap does not count
                 twoTime = fingers >= 2 ? twoTime + Time.unscaledDeltaTime : 0f;
             }
             else if (HasTilt)
@@ -108,19 +115,36 @@ namespace Summit
             }
             float key = KeyAxis();
             if (key != 0f) target = key;
+            float pad = PadSteer();
+            if (pad != 0f) target = pad;
             // a short low-pass takes the jitter out of the finger or sensor without feeling laggy
             Steer = Mathf.Lerp(Steer, target, 1f - Mathf.Exp(-Time.unscaledDeltaTime * (useTilt ? 16f : 60f)));
 
-            // hold / release
-            // stick mode: a second finger (or Space) tucks; tilt mode: any press tucks
-            bool down = useTilt ? PointerDown() : (twoTime > 0.22f || SpaceDown());
-            if (swallow) { if (!down) swallow = false; down = false; wasDown = false; }
+            // jump / tuck
+            // the jump finger: in stick mode a second finger while the first steers; in tilt mode any finger; or
+            // Space, or a controller's bottom face button. A quick tap of it is a jump, on lifting; held past a
+            // tap it is a tuck, and letting go of a tuck is just standing back up
+            bool press = (useTilt ? PointerDown() : (twoTime > 0f || SpaceDown())) || PadButton();
+            if (swallow) { if (!press) swallow = false; press = false; pressTime = 0f; }
+            bool down = TapOrTuck(press, Time.unscaledDeltaTime, ref pressTime, out bool jump);
+            Jump = jump;
             Pressed = down && !wasDown;
             Released = !down && wasDown;
             if (Released) LastHold = HoldTime;
             HoldTime = down ? HoldTime + Time.unscaledDeltaTime : 0f;
             Hold = down;
             wasDown = down;
+        }
+
+        /// <summary>
+        /// The jump finger's rule on its own (the test tools drive it too): given whether it is down this frame and
+        /// how long it has been, is it a tuck (returned), and did a tap just lift (jump)?
+        /// </summary>
+        public static bool TapOrTuck(bool press, float dt, ref float pressTime, out bool jump)
+        {
+            jump = !press && pressTime > 0f && pressTime < TapTime;
+            pressTime = press ? pressTime + dt : 0f;
+            return press && pressTime >= TapTime;
         }
 
         /// <summary>Any new touch or click this frame, even one being swallowed.</summary>
@@ -212,6 +236,28 @@ namespace Summit
             return false;
 #else
             return Input.touchCount > 0 || Input.GetMouseButton(0) || Input.GetKey(KeyCode.Space);
+#endif
+        }
+
+        /// <summary>A controller's left stick, sideways (0 with none plugged in or inside its dead zone).</summary>
+        static float PadSteer()
+        {
+#if ENABLE_INPUT_SYSTEM
+            var g = Gamepad.current;
+            if (g == null) return 0f;
+            float x = g.leftStick.ReadValue().x, a = Mathf.Abs(x);
+            return a < 0.12f ? 0f : Mathf.Sign(x) * Curve((a - 0.12f) / 0.88f);
+#else
+            return 0f;
+#endif
+        }
+
+        static bool PadButton()
+        {
+#if ENABLE_INPUT_SYSTEM
+            return Gamepad.current != null && Gamepad.current.buttonSouth.isPressed;
+#else
+            return false;
 #endif
         }
 

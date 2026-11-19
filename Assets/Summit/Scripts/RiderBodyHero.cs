@@ -67,7 +67,7 @@ namespace Summit
                 if (snowy != null) return snowy.Make(c, smooth, holds);
                 var m = new Material(sh); m.SetColor("_BaseColor", c); m.SetFloat("_Smoothness", smooth); return m;
             }
-            var jacketM = Cloth(new Color(0.93f, 0.31f, 0.14f), 0.35f, 1.5f);   // the jacket takes about as much as the trousers show
+            var jacketM = Cloth(new Color(0.93f, 0.31f, 0.14f), 0.35f, 0.85f);   // (it was 1.5 while a bug kept the jacket clean: see RiderBodyWalk.OwnMaterials)
             var pantsM = Cloth(new Color(0.17f, 0.19f, 0.24f), 0.2f, 0.5f);    // (white on the dark trousers shows far more)
             pantsMat = pantsM;
             var gearM = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? sh);

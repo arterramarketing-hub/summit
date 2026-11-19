@@ -6,14 +6,17 @@ namespace Summit
     /// <summary>
     /// The camp's touch controls, as plain logic (no Unity input in here, so the test tools can drive it with made-up
     /// touches). Every finger is one of:
-    ///   - the MOVE stick: put down on the left half, it walks the hero (floating: wherever the thumb lands);
-    ///   - the LOOK stick: held on the right half, it turns the camera round the hero;
+    ///   - the MOVE stick: the first finger down, anywhere on the screen (floating: wherever the thumb lands). It
+    ///     walks the hero, and the camera swings round behind as you go, so one thumb does both;
+    ///   - the LOOK stick: a second finger pressed and held while the first is down, for turning the camera round
+    ///     the hero by hand when you want to;
     ///   - a TAP: a quick touch anywhere (not on a button) that hardly moves: the hero jumps (or, standing still on
     ///     a station, opens it);
     ///   - a SWIPE: a quick flick that lets go: the hero rolls that way;
     ///   - a button: the menus and the context button take their own touches, as before.
-    /// A finger on the right half isn't the look stick straight away: it waits a moment, so a tap or a flick there
-    /// never nudges the camera first.
+    /// A second finger isn't the look stick straight away: it waits a moment, so a tap or a flick with it never
+    /// nudges the camera first. (Two sticks at once, one per thumb, was too much to handle on a phone; a plugged-in
+    /// controller still has its two sticks, see Camp.)
     /// </summary>
     public class CampInput
     {
@@ -53,13 +56,13 @@ namespace Summit
                 var f = fingers.Find(x => x.id == t.id);
                 if (f == null)
                 {
-                    // a new finger: a button, the move stick (left half), or wait and see (right half)
+                    // a new finger: a button, the move stick (the first finger down), or wait and see (a second)
                     f = new Finger { id = t.id, start = t.pos, origin = t.pos, last = t.pos };
                     string id = hit != null ? hit(t.pos) : null;
                     if (id == "context") f.role = Role.Context;   // it opens on lifting a tap, never on touching down
                     else if (id != null) { f.role = Role.Button; Button = id; }
                     else if (panelOpen) f.role = Role.Ignore;
-                    else f.role = t.pos.x < w * 0.5f ? Role.Move : Role.Undecided;
+                    else f.role = fingers.Exists(x => x.role == Role.Move) ? Role.Undecided : Role.Move;
                     fingers.Add(f);
                 }
                 f.seen = true;

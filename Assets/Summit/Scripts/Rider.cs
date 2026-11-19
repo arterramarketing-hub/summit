@@ -258,11 +258,11 @@ namespace Summit
 
         void Update()
         {
-            // a jump is a released tuck; input is read per frame, physics runs on its own clock
-            if (Running && Time.timeScale > 0f && input != null && input.Released && input.LastHold > 0.08f)   // (pause-menu taps are not jumps)
+            // a jump is a quick tap (of the second finger); input is read per frame, physics runs on its own clock
+            if (Running && Time.timeScale > 0f && input != null && input.Jump)   // (pause-menu taps are not jumps)
             {
                 popPending = true;
-                popHold = input.LastHold;
+                popHold = TapPop;
             }
         }
 
@@ -270,6 +270,12 @@ namespace Summit
         public void CancelPop() { popPending = false; }
 
         void FixedUpdate() { if (Running) Tick(Time.fixedDeltaTime); }
+
+        /// <summary>
+        /// How strong a tapped jump is, on the old scale of "seconds the tuck was held" (0 a hop .. 0.8 the most):
+        /// a tap has no wind-up, so every jump is the same good pop.
+        /// </summary>
+        public static float TapPop = 0.5f;
 
         /// <summary>A jump as if the thumb had just lifted after holding this long (for the test tools).</summary>
         public void QueuePop(float hold) { popPending = true; popHold = hold; }

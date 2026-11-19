@@ -1297,6 +1297,8 @@ namespace Summit
         public int MoveKind => moveKind;
         public float MoveTime => moveT;
         bool snap;
+        float lookRest = 99f;   // seconds since the camera was last turned by hand
+        bool padMode;           // a controller's sticks are in use (two sticks: the camera stays where the right one leaves it)
         public Vector3 WalkerPosition => pos;
         /// <summary>The way the walker faces (degrees).</summary>
         public float WalkerYaw => yaw * Mathf.Rad2Deg;
@@ -1319,7 +1321,7 @@ namespace Summit
             // a finger already down (the tap on TO CAMP or < CAMP that brought you here) is not a walk or a tap here:
             // ignore it until it lifts
             input.IgnoreCurrent(Touches());
-            moveKind = 0; moveT = 0f; jumpY = 0f; camPitch = 0f;
+            moveKind = 0; moveT = 0f; jumpY = 0f; camPitch = 0f; lookRest = 99f;
             Place();
             lastStep = body.WalkPhase;
             Redress();
@@ -1715,24 +1717,26 @@ namespace Summit
         public CampInput Controls => input;
 
         /// <summary>
-        /// One frame in camp, twin sticks: the left thumb walks, the right one turns the camera; a quick tap jumps
-        /// (or, standing on a station, opens it), a flick rolls; the menus take their own taps. True when it's time
-        /// to drop in.
+        /// One frame in camp. One thumb, anywhere, walks, and the camera follows round behind; a second finger held
+        /// down turns the camera by hand; a quick tap jumps (or, standing on a station, opens it), a flick rolls; the
+        /// menus take their own taps. A plugged-in controller has its two sticks: left walks, right turns the camera.
+        /// True when it's time to drop in.
         /// </summary>
         public bool Step(float dt, MetaUi ui)
         {
             fadeUi = ui;
             if (fadeIn) { fade = Mathf.MoveTowards(fade, 0f, dt / 0.6f); ui.SetFade(fade); fadeIn = fade > 0f; }
             if (falling) { FallStep(dt); ui.SetStick(false, Vector2.zero, Vector2.zero); ui.SetLookStick(false, Vector2.zero, Vector2.zero); ui.SetContext(Station.None); return false; }
+            var touches = Touches();
             if (ui.ClosetOpen)
             {
                 // the closet takes every finger (its list scrolls, its hero turns); nothing walks or looks meanwhile
-                ui.ClosetStep(Touches(), dt);
+                ui.ClosetStep(touches, dt);
                 ui.SetStick(false, Vector2.zero, Vector2.zero); ui.SetLookStick(false, Vector2.zero, Vector2.zero);
                 Showcase = false;
                 return false;
             }
-            input.Step(Touches(), dt, cam != null ? cam.pixelWidth : Screen.width, cam != null ? cam.pixelHeight : Screen.height, ui.Hit, ui.PanelOpen);
+            input.Step(touches, dt, cam != null ? cam.pixelWidth : Screen.width, cam != null ? cam.pixelHeight : Screen.height, ui.Hit, ui.PanelOpen);
             if (input.Button != null) ui.Act(input.Button);
             if (input.ContextTapped && Open(Near, ui)) return true;
             if (input.Tapped && !ui.PanelOpen)
@@ -1745,10 +1749,21 @@ namespace Summit
             if (input.Swiped && !ui.PanelOpen) Roll(input.SwipeDir);
             if (KeyJump()) Jump();
             if (KeyRoll()) Roll(Vector2.up);
-            Look(input.Look, dt);
+            // a controller: its sticks take over until the screen is touched again
+            bool padUsed = Pad(out Vector2 padMove, out Vector2 padLook, out bool padJump, out bool padRoll);
+            if (padUsed) padMode = true; else if (touches.Count > 0) padMode = false;
+            if (ui.PanelOpen) { padMove = padLook = Vector2.zero; }
+            else
+            {
+                // the bottom button: standing at a station it opens it (the gate drops you in), otherwise a jump
+                if (padJump) { if (speed < 0.5f && Near != Station.None) { if (Open(Near, ui)) return true; } else Jump(); }
+                if (padRoll) Roll(Vector2.up);
+            }
+            Look(input.Look + padLook, dt);
+            lookRest = input.Look.sqrMagnitude > 0.0025f ? 0f : lookRest + dt;
             ui.SetStick(input.MoveShown && !ui.PanelOpen, input.MoveOrigin, input.MovePos);
             ui.SetLookStick(input.LookShown && !ui.PanelOpen, input.LookOrigin, input.LookPos);
-            var stick = ui.PanelOpen ? Vector2.zero : input.Move + Keys();
+            var stick = ui.PanelOpen ? Vector2.zero : Vector2.ClampMagnitude(input.Move + padMove + Keys(), 1f);
             Showcase = ui.PanelOpen && ui.ShopTab == 1;
             if (Walk(stick, dt)) return true;
             ui.SetContext(Near);
@@ -1756,8 +1771,8 @@ namespace Summit
         }
 
         /// <summary>
-        /// Turn the camera round the hero with the look stick: sideways swings it round (it stays where you leave it),
-        /// up and down tilts it a little, within limits.
+        /// Turn the camera round the hero with the look stick: sideways swings it round, up and down tilts it a
+        /// little, within limits.
         /// </summary>
         public void Look(Vector2 look, float dt)
         {
@@ -1783,6 +1798,25 @@ namespace Summit
             if (touchList.Count == 0 && UnityEngine.Input.GetMouseButton(0)) touchList.Add(new CampInput.Touch(-1, UnityEngine.Input.mousePosition));
 #endif
             return touchList;
+        }
+
+        /// <summary>
+        /// A plugged-in controller, twin sticks: the left one walks, the right one turns the camera, the bottom face
+        /// button jumps and the right one rolls. True while any of it is in use.
+        /// </summary>
+        static bool Pad(out Vector2 move, out Vector2 look, out bool jump, out bool roll)
+        {
+            move = look = Vector2.zero; jump = roll = false;
+#if ENABLE_INPUT_SYSTEM
+            var g = Gamepad.current;
+            if (g == null) return false;
+            Vector2 Dead(Vector2 v) { float m = v.magnitude; return m < 0.15f ? Vector2.zero : v / m * Mathf.Clamp01((m - 0.15f) / 0.8f); }
+            move = Dead(g.leftStick.ReadValue()); look = Dead(g.rightStick.ReadValue());
+            jump = g.buttonSouth.wasPressedThisFrame; roll = g.buttonEast.wasPressedThisFrame;
+            return move != Vector2.zero || look != Vector2.zero || jump || roll;
+#else
+            return false;
+#endif
         }
 
         static bool KeyJump()
@@ -1845,7 +1879,12 @@ namespace Summit
             if (falling) { FallCamera(dt); return; }
             if (ClosetStage.Showing != null) { ClosetStage.Showing.Frame(cam); snap = true; return; }   // the closet's studio has the camera
             float k(float rate) => snap ? 1f : 1f - Mathf.Exp(-dt * rate);
-            // the camera stays where the look stick leaves it (it no longer swings round behind you as you walk)
+            // one thumb walks and turns: the camera swings round behind you as you go, as it first did. Turned by
+            // hand (a second finger held), it stays where you left it for a moment, then eases back to following.
+            // With a controller's two sticks it stays where the right stick leaves it
+            float follow = padMode ? 0f : Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(1.2f, 2.6f, lookRest));
+            if (speed > 0.4f && follow > 0f)
+                camYaw = Mathf.LerpAngle(camYaw * Mathf.Rad2Deg, yaw * Mathf.Rad2Deg, k(1.4f) * Mathf.Clamp01(speed / MaxSpeed) * follow) * Mathf.Deg2Rad;
             lookBlend = Mathf.Lerp(lookBlend, OnLookout && speed < 0.5f ? 1f : 0f, k(2f));
             showBlend = Mathf.Lerp(showBlend, Showcase ? 1f : 0f, k(4f));
             var f = new Vector3(Mathf.Sin(camYaw), 0f, Mathf.Cos(camYaw));

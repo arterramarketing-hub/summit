@@ -7,7 +7,9 @@ namespace Summit
     ///  - a flag goes down with a little snow; it barely slows you
     ///  - a sign breaks in a burst of splinters and snow; it costs real speed and knocks you off balance, and a
     ///    hit square on at more than CrashAbove knocks you down the way a tree would (a shield takes that for you)
-    ///  - invincible, you go through either clean
+    ///  - a fence span (the hamlets' post-and-rail fence) gives way at a touch: it costs a tenth of your speed and a
+    ///    light wobble, never a fall
+    ///  - invincible, you go through any of them clean
     /// The thrown body breaks them too, and is slowed by what it goes through.
     /// </summary>
     public class Breakables : MonoBehaviour
@@ -15,6 +17,7 @@ namespace Summit
         public const float CrashAbove = 24f;      // m/s into a sign's face (about 86 km/h): that hurts
         public const float SignKeep = 0.72f, FlagKeep = 0.98f;   // speed kept riding through
         public const float SignWobble = 0.7f;     // s of being knocked about after a sign
+        public const float FenceKeep = 0.9f, FenceWobble = 0.3f;   // a fence span: flimsy, it hardly checks you
 
         Rider rider;
         SnowFX fx;
@@ -57,7 +60,7 @@ namespace Summit
                 v = rb.linearVelocity; at = rb.position;
                 if (v.magnitude < 2.5f) return;   // (a body at rest beside one, or a fall flag planted where it lies)
                 // what it goes through takes some of its speed
-                thrown.Slow(b.kind == Breakable.Kind.Sign ? 0.7f : 0.92f);
+                thrown.Slow(b.kind == Breakable.Kind.Sign ? 0.7f : b.kind == Breakable.Kind.Fence ? 0.9f : 0.92f);
             }
             else return;
 
@@ -78,6 +81,14 @@ namespace Summit
                     float into = Mathf.Abs(Vector3.Dot(v, face));
                     crashed = rider.Breakthrough(SignKeep, SignWobble, into, CrashAbove, "Signpost!");
                 }
+            }
+            else if (b.kind == Breakable.Kind.Fence)
+            {
+                // the snow on its rails comes off in a puff, and the wood cracks into splinters
+                fx?.Puff(mid, 4f + flat.magnitude * 0.15f);
+                smasher?.Splinters(mid, flat.sqrMagnitude > 0.01f ? flat.normalized : b.transform.right, 35, flat.magnitude);
+                // (invincible: not even the tenth of your speed)
+                if (!body) rider.Breakthrough(invincible ? 1f : FenceKeep, invincible ? 0f : FenceWobble, 0f, float.MaxValue, "");
             }
             else
             {
