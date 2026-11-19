@@ -14,6 +14,8 @@ namespace Summit
     public class Atmosphere : MonoBehaviour
     {
         Camera cam;
+        ChaseCamera chase;
+        bool streaksAimed;
         Rider rider;
         ParticleSystem snow, streaks, mist, wind;
         ParticleSystem.EmissionModule windEm;
@@ -27,6 +29,7 @@ namespace Summit
         public void Build(Camera camera, Rider r, Material flake)
         {
             cam = camera;
+            chase = camera.GetComponent<ChaseCamera>();
             rider = r;
             snow = MakeSnow(flake);
             mist = MakeMist(flake);
@@ -458,7 +461,14 @@ namespace Summit
             speed01 = Mathf.Lerp(speed01, s, 1f - Mathf.Exp(-Time.deltaTime * (rider.Crashed ? 14f : 4f)));
             streakEm.rateOverTime = speed01 * speed01 * 220f;
             // the wind box sits just ahead of the lens and a little low, where the rider is heading
-            wind.transform.SetPositionAndRotation(cp + cam.transform.forward * 9f + Vector3.down * 0.5f, Quaternion.LookRotation(fwd));
+            // (in first person the lens is tipped down at the snow, where that box and the ring the speed lines start
+            // from would be buried: both go out along the line of travel over the snow instead)
+            bool pov = chase != null && chase.enabled && chase.Pov > 0.5f;
+            Vector3 along = pov ? chase.PovAhead : cam.transform.forward;
+            if (pov) streaks.transform.SetPositionAndRotation(cp + along * 17f, Quaternion.LookRotation(-along, Vector3.up));
+            else if (streaksAimed) { streaks.transform.localPosition = new Vector3(0f, 0f, 17f); streaks.transform.localRotation = Quaternion.Euler(0f, 180f, 0f); }
+            streaksAimed = pov;
+            wind.transform.SetPositionAndRotation(cp + along * 9f + Vector3.down * 0.5f, Quaternion.LookRotation(fwd));
             windEm.rateOverTime = speed01 * 650f;
             snowEm.rateOverTime = 2300f + 900f * speed01;
             if (vignette != null) vignette.intensity.value = baseVignette + 0.17f * speed01;

@@ -25,6 +25,10 @@ namespace Summit
     /// full-screen pass, one more read per pixel. It works on the finished, graded picture, so it follows the
     /// colour filter; as it gets dark it catches dimmer lights and glows harder, so lamps and the headlamp
     /// bloom red at night and the low sun does in the evening.
+    ///
+    /// EDGE STREAKS (first person only, set each frame by ChaseCamera): speed smears the edges of the frame into
+    /// streaks that run out from the point you are heading for, and leaves the middle sharp. Done in the same
+    /// full-screen pass with five more reads, and only on the pixels that streak; nothing is read when `Blur` is 0.
     /// </summary>
     public class LensFX : MonoBehaviour
     {
@@ -54,6 +58,15 @@ namespace Summit
         /// open slope hides bend every line, so it eases to about a third there and back to 1 when you drop in.
         /// </summary>
         public float Strength = 1f;
+        /// <summary>Edge streaks: their length at the frame edge as a fraction of the screen (0: off, and no cost).</summary>
+        public float Blur;
+        /// <summary>The point the streaks run out from: where you are heading, in the view (0..1 across and up).</summary>
+        public Vector2 BlurCentre = new Vector2(0.5f, 0.5f);
+        /// <summary>
+        /// Which way up the full-screen pass sees the picture: 1 if its v runs up the screen (as Unity's blits do),
+        /// -1 if the streaks turn out to be centred too low and the rider's legs are smeared instead of the sky's edge.
+        /// </summary>
+        public static float BlurUp = 1f;
         LensDistortion lensRef;
         float warpBase, scaleBase = 1f, shown = -1f;
         DayNight dayNight; bool lookedForDayNight;
@@ -63,7 +76,7 @@ namespace Summit
         static readonly int EdgeId = Shader.PropertyToID("_LensEdge"), AnaId = Shader.PropertyToID("_LensAna"),
                             AspectId = Shader.PropertyToID("_LensAspect"), HaloId = Shader.PropertyToID("_Halo"),
                             HaloTexId = Shader.PropertyToID("_HaloTex"), HaloSrcId = Shader.PropertyToID("_HaloSrc"),
-                            HaloBlurId = Shader.PropertyToID("_HaloBlur");
+                            HaloBlurId = Shader.PropertyToID("_HaloBlur"), BlurId = Shader.PropertyToID("_LensBlur");
 
         public void Build(Camera camera)
         {
@@ -129,6 +142,7 @@ namespace Summit
             mat.SetVector(EdgeId, new Vector4(edge.x * Strength, edge.y * Strength, edge.z, edge.w));
             mat.SetVector(AnaId, new Vector4(ana.x * Strength, ana.y * Strength, ana.z, ana.w));
             mat.SetFloat(AspectId, c.aspect);
+            mat.SetVector(BlurId, new Vector4(Mathf.Max(0f, Blur), BlurCentre.x, BlurUp < 0f ? 1f - BlurCentre.y : BlurCentre.y, BlurUp < 0f ? -1f : 1f));
             float dark = 0f;
             if (!lookedForDayNight) { dayNight = FindFirstObjectByType<DayNight>(); lookedForDayNight = dayNight != null; }
             if (dayNight != null) dark = dayNight.Darkness;
