@@ -1,31 +1,44 @@
-// Shared by the realistic firs' two shaders (FirCards: the near card trees; FirImpostor: their far pictures),
-// so the two are lit by exactly the same sums and a tree looks the same colour either side of the hand-over.
+// Shared by the realistic trees' two shaders (FirCards: the card trees, rich and plain; FirImpostor: their far
+// pictures), so all are lit by exactly the same sums and a tree looks the same colour either side of a hand-over.
 //
 // Lighting: what URP's Simple Lit does with no specular (the sky's ambient on the normal, the sun or moon with
 // its shadow, and any other lights such as the headlamp), then the fog. On top, at dusk and night, a faint
 // moonlit lift that grows with distance, so the far forest reads as shapes instead of going black.
 //
-// The hand-over (Forest.cs): between _FirFade.x and _FirFade.y metres from the rider (across the ground, to the
-// tree's foot) a tree is drawn both ways, and a fixed screen pattern decides which of the two each pixel
-// shows; the share of picture pixels grows with distance. The two use the same pattern the opposite way
-// round, so every pixel is exactly one or the other: no doubled tree, no gap, no line, and only alpha test.
+// The hand-overs (Forest.cs), counted in metres from the rider across the ground to the tree's foot:
+//  - far, between _FirFade.x and _FirFade.y: the plain card tree gives way to its picture;
+//  - near, between _FirFade.z and _FirFade.w: the rich tree gives way to the plain one.
+// Through a band a tree is drawn both ways, and a fixed screen pattern decides which of the two each pixel
+// shows; the farther one's share grows with distance. The two use the same pattern the opposite way round, so
+// every pixel is exactly one or the other: no doubled tree, no gap, no line, and only alpha test. A tree that
+// has no pixels left to show (FirGone) is not drawn at all: its vertices are folded away.
 #ifndef SUMMIT_FIR_INCLUDED
 #define SUMMIT_FIR_INCLUDED
 
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
 
-// set by Forest every frame (x: fade starts, y: fade ends, metres) and the point distance is counted from
+// set by Forest every frame (x, y: the far band; z, w: the near band; metres) and the point distance is counted from
 float4 _FirFade;
 float4 _FirCentre;
 // set by DayNight: rgb = the extra light on the far forest at dusk and night (0 by day)
 half4 _FirLift;
 
-// how far along the hand-over a tree standing at `originWS` is: 0 cards, 1 picture
+// how far along the far hand-over a tree standing at `originWS` is: 0 cards, 1 picture
 half FirFade(float3 originWS)
 {
     float d = length(originWS.xz - _FirCentre.xz);
     return (half)saturate((d - _FirFade.x) / max(_FirFade.y - _FirFade.x, 1e-3));
 }
+
+// how far along the near hand-over: 0 the rich tree, 1 the plain one
+half FirNearFade(float3 originWS)
+{
+    float d = length(originWS.xz - _FirCentre.xz);
+    return (half)saturate((d - _FirFade.z) / max(_FirFade.w - _FirFade.z, 1e-3));
+}
+
+// where a tree with nothing left to show sends its vertices: one point outside the view, so no triangle has any area
+float4 FirGone() { return float4(2.0, 2.0, 2.0, 1.0); }
 
 // the night lift's share for a tree that far away: none close up (the headlamp has those), all of it far off
 half FirLiftShare(float3 originWS)

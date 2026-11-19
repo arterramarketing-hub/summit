@@ -12,6 +12,10 @@ Rocks (ScanRocks/ScanRock_1-6): photo-scanned boulders, CC0, Poly Haven - "Namaq
 Realistic trees (RealTrees/FirCards.png): fir twig and bark textures from "Fir Tree 01" by Rob Tuytel (photography)
   and Rico Cilliers (modeling), CC0, Poly Haven - https://polyhaven.com/a/fir_tree_01
   (twigs cut out, stamped into branch fronds, snowed on and packed into an atlas by Tools/MakeFirCards.swift)
+Pines and dead snags (RealTrees/PineCards.png): needle shoots and bark textures from "Pine Tree 01" by Rob Tuytel
+  (photography) and Rico Cilliers (modeling), CC0, Poly Haven - https://polyhaven.com/a/pine_tree_01
+  (shoots cut out, stamped into pads and boughs, snowed on and packed into an atlas by Tools/MakeTrees.py, which
+  also builds every tree's mesh: RealTrees/Trees.bytes)
 Former rider (replaced): Animated Human by Quaternius
   https://opengameart.org/content/animated-human-low-poly
 Rider: "Adventurer" from Ultimate Modular Men by Quaternius (CC0)

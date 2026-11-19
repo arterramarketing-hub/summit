@@ -1,4 +1,4 @@
-// The realistic firs far away: a picture of the tree on two crossed quads (RealFir.BakeImpostors), lit like
+// The realistic trees far away: a picture of the tree on two crossed quads (RealFir.BakeImpostors), lit like
 // the near card trees (Fir.hlsl). The picture holds the tree's plain colour and, in _NormalMap, the normals
 // the near tree has there, so sun, sky and moon fall on it the same way in every time of day. Near the hand-over
 // band it dissolves into the card tree (Forest.cs), by the same screen pattern the cards use the other way round.
@@ -78,6 +78,7 @@ Shader "Summit/FirImpostor"
                 o.uv = TRANSFORM_TEX(i.uv, _BaseMap);
                 float3 origin = TransformObjectToWorld(float3(0, 0, 0));
                 o.fadeFogLift = half4(FirFade(origin), ComputeFogFactor(o.positionCS.z), FirLiftShare(origin), 0);
+                if (o.fadeFogLift.x <= 0.0h) o.positionCS = FirGone();   // still all cards
             #if defined(_ADDITIONAL_LIGHTS_VERTEX)
                 o.vertexLight = VertexLighting(o.positionWS, o.upWS);
             #endif
@@ -124,6 +125,7 @@ Shader "Summit/FirImpostor"
                 o.positionCS = TransformObjectToHClip(i.positionOS.xyz);
                 o.uv = TRANSFORM_TEX(i.uv, _BaseMap);
                 o.fade = FirFade(TransformObjectToWorld(float3(0, 0, 0)));
+                if (o.fade <= 0.0h) o.positionCS = FirGone();
                 return o;
             }
             half frag(Varyings i) : SV_Target

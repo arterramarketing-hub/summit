@@ -38,6 +38,11 @@ namespace Summit
         // pixel one or the other (Shaders/Fir.hlsl), the pictures' share growing with distance. The band ends where
         // the shadows have faded out (the render asset's 140 m), so the cards hand over shadowless, like the pictures.
         public float FadeStart = 100f, FadeEnd = 140f;
+        // and right beside the rider the rich trees (RealFir), which dissolve into the plain card trees the same way
+        // between RichStart and RichEnd. The plain tree is still drawn in there, for its shadow: the shader folds
+        // away whichever of the two has no pixels to show.
+        public float RichStart = 30f, RichEnd = 44f;
+        readonly Dictionary<int, List<Matrix4x4>> richL = new Dictionary<int, List<Matrix4x4>>();
         const float FadeSlack = 9f;   // lists are made from cell centres when the rider changes cell; the shader
                                       // fades by the exact distance, so each list reaches a little past the band
         List<Matrix4x4>[] impL;
@@ -48,7 +53,7 @@ namespace Summit
             PlayerPrefs.SetInt(TreesPref, on ? 1 : 0); PlayerPrefs.Save();
             loaded = false;
             treeParts.Clear(); treeH.Clear();   // rocks stay as they are
-            nearL.Clear(); farL.Clear();
+            nearL.Clear(); farL.Clear(); richL.Clear();
             Rebuild();
         }
 
@@ -95,10 +100,12 @@ namespace Summit
             real = Realistic && RealFir.Load();
             if (real)
             {
-                for (int i = 0; i < RealFir.Variants; i++)
+                // every kind twice: first the plain trees of the middle distance, then (from RealFir.Variants on) the rich ones
+                for (int i = 0; i < RealFir.Variants * 2; i++)
                 {
-                    treeParts.Add(new List<Part> { new Part { mesh = RealFir.Meshes[i], sub = 0, mat = RealFir.Cards, local = Matrix4x4.identity } });
-                    treeH.Add(RealFir.Heights[i]);
+                    int v = i % RealFir.Variants; bool rich = i >= RealFir.Variants;
+                    treeParts.Add(new List<Part> { new Part { mesh = rich ? RealFir.Meshes[v] : RealFir.Plain[v], sub = 0, mat = rich ? RealFir.RichOf(v) : RealFir.PlainOf(v), local = Matrix4x4.identity } });
+                    treeH.Add(RealFir.Heights[v]);
                 }
                 impL = new List<Matrix4x4>[RealFir.Variants];
                 for (int i = 0; i < impL.Length; i++) impL[i] = new List<Matrix4x4>();
@@ -184,7 +191,8 @@ namespace Summit
         // foot: where it meets the snow; vis: how much of it shows above the snow (m); rad: its hit capsule;
         // cut: the snow line in the model's own height (what a felled tree leaves behind in the snow)
         // girth: the trunk's radius where it comes out of the snow (m); ys: the model's vertical scale (TreeBreak)
-        struct Placed { public Kind kind; public int idx; public Matrix4x4 m; public float size; public Vector3 foot; public float vis, rad, cut, girth, ys; }
+        // deco: a sapling in an otherwise empty cell (kind None): drawn, but nothing to hit
+        struct Placed { public Kind kind; public int idx; public Matrix4x4 m; public float size; public Vector3 foot; public float vis, rad, cut, girth, ys; public bool deco; }
 
         // ---- realistic trees: how tall they grow, and how deep the snow buries them
 
@@ -219,6 +227,75 @@ namespace Summit
             rad = Mathf.Max(0.02f * full, 0.7f * RealFir.CrownRadius(v, sink / full) * full);
             return RealFir.Plant(parent, ground + Vector3.down * (0.25f + sink), full, yaw, v, name);
         }
+
+        // ---- realistic trees away from the piste: stands of one species, of one age
+
+        /// <summary>
+        /// Beyond this far outside the groomed piste the forest grows in patches of species and ages (Stand). On the
+        /// piste and up to here beside it, every tree is one of the original firs and hemlocks at the size it always
+        /// was, so what there is to hit along the rideable line has not changed.
+        /// </summary>
+        public const float WildMargin = 6f;
+
+        /// <summary>
+        /// What grows around (x, z), away from the piste. Pure functions of the place, in patches a hundred metres or
+        /// two across: `pines` is the chance a tree here is a pine (stands of them on the open, thinly wooded and
+        /// rocky ground; the dense groves are fir and hemlock), `young` and `old` the shares of young trees and old
+        /// giants (young at the edges of clearings and in stands of their own, giants in patches of old growth),
+        /// `dead` the share of dead snags (a few everywhere, more among the pines, many in the odd burnt patch) and
+        /// `edge` how much this is the fringe of a clearing (where saplings come up).
+        /// </summary>
+        public static void Stand(int cx, int cz, float x, float z, out float pines, out float young, out float old, out float dead, out float edge)
+        {
+            float glade = Slope.Noise(x * 0.016f + 9f, z * 0.016f);   // (At: the stands of forest and the open glades)
+            // rocky ground: how many of the cells around are likely to hold a rock (At gives a cell a rock on hash 8)
+            int rocks = 0;
+            for (int dz = -1; dz <= 1; dz++)
+                for (int dx = -1; dx <= 1; dx++)
+                    if ((dx != 0 || dz != 0) && Slope.Hash01(cx + dx, cz + dz, 8) < 0.12f && Slope.Hash01(cx + dx, cz + dz, 1) < 0.45f) rocks++;
+            float p = Slope.Noise(x * 0.0075f + 53f, z * 0.0055f + 17f) + 0.35f * (0.5f - glade) + 0.07f * rocks;
+            pines = Mathf.Lerp(0.03f, 0.92f, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.68f, 0.80f, p)));
+            edge = Mathf.Clamp01(1f - Mathf.Abs(glade - 0.42f) / 0.14f);
+            float age = Slope.Noise(x * 0.012f + 91f, z * 0.010f + 37f);
+            young = Mathf.Lerp(0.5f, 0.07f, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.22f, 0.45f, age))) + 0.22f * edge;
+            old = 0.02f + 0.3f * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.62f, 0.82f, age));
+            bool burnt = Slope.Noise(x * 0.03f + 141f, z * 0.03f + 5f) > 0.8f;
+            dead = burnt ? 0.4f : 0.035f + 0.04f * pines;
+        }
+
+        /// <summary>Is the cell centred on (wx, wz) far enough off the piste for the patchwork forest?</summary>
+        static bool Wild(float wx, float wz) => Mathf.Abs(wx - Slope.Centre(wz)) > Slope.PisteHalf + WildMargin;
+
+        /// <summary>
+        /// A sapling for an empty cell, or false: the tops of young trees poking out of the snow at the edges of
+        /// clearings and among young stands, well away from the piste and clear of everything the course keeps clear.
+        /// Decoration only: there is nothing to hit, and the rider goes straight through.
+        /// </summary>
+        static bool Sapling(int cx, int cz, out Placed pl)
+        {
+            pl = default;
+            float wx = (cx + 0.5f) * Cell, wz = (cz + 0.5f) * Cell;
+            if (Mathf.Abs(wx - Slope.Centre(wz)) < Slope.PisteHalf + 8f) return false;
+            if (wz < 70f) return false;                                   // a clean start
+            float r = Slope.Hash01(cx, cz, 13);
+            if (r >= 0.4f) return false;                                  // (the most a cell's chance can be: skip the sums)
+            Stand(cx, cz, wx, wz, out float pines, out float young, out _, out _, out float edge);
+            if (r >= 0.04f + 0.26f * edge + 0.2f * Mathf.Max(0f, young - 0.25f)) return false;
+            if (Slope.OnPad(wx, wz) || Course.Keep(wx, wz, 1f)) return false;
+            float x = wx + (Slope.Hash01(cx, cz, 17) - 0.5f) * Cell * 0.75f;
+            float z = wz + (Slope.Hash01(cx, cz, 18) - 0.5f) * Cell * 0.75f;
+            if (Course.Keep(x, z, 0.5f)) return false;
+            if (Mathf.Abs(Slope.Kicker(x, z)) > 0.01f || Mathf.Abs(Slope.Kicker(x, z - 14f)) > 0.01f) return false;
+            int idx = RealFir.PickSapling(Slope.Hash01(cx, cz, 15) < pines, Slope.Hash01(cx, cz, 9));
+            if (idx < 0) return false;
+            // 1.5 to 3.5 m tall, up to a third of it under the snow
+            float k = Mathf.Lerp(0.7f, 1.5f, Slope.Hash01(cx, cz, 4));
+            float sink = RealFir.Heights[idx] * k * 0.35f * Slope.Hash01(cx, cz, 6);
+            var p = new Vector3(x, Slope.DrawnHeight(x, z), z);
+            pl.deco = true; pl.idx = idx; pl.foot = p;
+            pl.m = Matrix4x4.TRS(p - Vector3.up * (0.25f * k + sink), Quaternion.Euler(0f, Slope.Hash01(cx, cz, 5) * 360f, 0f), Vector3.one * k);
+            return true;
+        }
         readonly Dictionary<Vector2Int, Placed> cache = new Dictionary<Vector2Int, Placed>();
 
         Placed Get(int x, int z)
@@ -228,7 +305,35 @@ namespace Summit
             if (cache.TryGetValue(key, out var pl)) return pl;
             var kind = At(x, z, out Vector3 p, out float s, out int variant);
             pl = new Placed { kind = kind, size = s };
-            if (kind == Kind.Tree && real)
+            if (kind == Kind.None && real) Sapling(x, z, out pl);
+            else if (kind == Kind.Tree && real && Wild((x + 0.5f) * Cell, (z + 0.5f) * Cell))
+            {
+                // away from the piste: the kind for this stand (species and age in patches), grown to its age,
+                // standing in the same depth of snow as its neighbours; pines and snags lean more
+                Stand(x, z, p.x, p.z, out float pines, out float young, out float old, out float dead, out _);
+                pl.idx = RealFir.PickWild(Low(p.z), pines, young, old, dead, Slope.Hash01(x, z, 9), Slope.Hash01(x, z, 14), Slope.Hash01(x, z, 15), Slope.Hash01(x, z, 16));
+                Growth(p.x, p.z, Slope.Hash01(x, z, 4), out float full, out float sink);
+                if (pl.idx >= 8)
+                {
+                    float grown = full * RealFir.SizeOf(pl.idx);
+                    // the snow is as deep as round a full-grown tree, but a small tree still shows its top third
+                    sink = Mathf.Min(sink, grown * 0.66f);
+                    full = grown;
+                }
+                float k = full / RealFir.Heights[pl.idx], yk = 0.94f + 0.12f * Slope.Hash01(x, z, 6);
+                bool loose = RealFir.IsPine(pl.idx) || RealFir.IsSnag(pl.idx);
+                float lean = Mathf.Pow(Slope.Hash01(x, z, 10), loose ? 2f : 3f) * (loose ? 11f : 7f);
+                var rot = Quaternion.AngleAxis(lean, Quaternion.Euler(0f, Slope.Hash01(x, z, 11) * 360f, 0f) * Vector3.right)
+                        * Quaternion.Euler(0f, Slope.Hash01(x, z, 5) * 360f, 0f);
+                pl.m = Matrix4x4.TRS(p - Vector3.up * (0.25f + sink), rot, new Vector3(k, k * yk, k));
+                pl.foot = p;
+                pl.vis = full * yk - sink;
+                pl.cut = (0.25f + sink) / (k * yk);
+                pl.rad = RealFir.HitRadius(pl.idx, full, sink);
+                pl.ys = k * yk;
+                pl.girth = RealFir.TrunkRadius(pl.idx, pl.cut) * k;
+            }
+            else if (kind == Kind.Tree && real)
             {
                 // a realistic tree: the kind for this height on the mountain, grown and buried for it, a few leaning
                 pl.idx = RealFir.Pick(Low(p.z), Slope.Hash01(x, z, 9));
@@ -293,6 +398,12 @@ namespace Summit
                     draws += d; tris += t; instances += n;
                     if (set == nearL) { shadowDraws += d; shadowTris += t; }
                 }
+            foreach (var kv in richL)   // the rich trees: no shadow pass, and each also counted above as its plain tree
+            {
+                int n = kv.Value.Count; if (n == 0) continue;
+                var part = PartsOf(kv.Key)[kv.Key & 15];
+                draws += (n + 999) / 1000; tris += (long)part.mesh.GetIndexCount(part.sub) / 3 * n;
+            }
             if (real && impL != null)
                 for (int v = 0; v < impL.Length; v++)
                 {
@@ -335,22 +446,31 @@ namespace Summit
             lastCell = c;
             foreach (var l in nearL.Values) l.Clear();
             foreach (var l in farL.Values) l.Clear();
+            foreach (var l in richL.Values) l.Clear();
             distL.Clear();
             if (impL != null) foreach (var l in impL) l.Clear();
             for (int z = c.y - behindCells; z <= c.y + farAhead; z++)
                 for (int x = c.x - farSide; x <= c.x + farSide; x++)
                 {
                     var pl = Get(x, z);
-                    if (pl.kind == Kind.None) continue;
+                    if (pl.kind == Kind.None && !pl.deco) continue;
                     // shadows for every tree within the shadow range, so none pops a shadow on as it nears
                     // (the render asset fades shadows out over the last part of that range)
                     float dxm = (x - c.x) * Cell, dzm = (z - c.y) * Cell;
                     float d2 = dxm * dxm + dzm * dzm;
+                    if (pl.deco)
+                    {
+                        // a sapling: its cards as far as the trees' reach (it fades out with them; no picture beyond)
+                        if (d2 <= (FadeEnd + FadeSlack) * (FadeEnd + FadeSlack)) ListFor(nearL, Key(Kind.Tree, pl.idx, 0)).Add(pl.m);
+                        continue;
+                    }
                     if (real && pl.kind == Kind.Tree)
                     {
                         // far realistic tree: its picture on two crossed quads; through the band, the cards too
                         if (d2 > (FadeStart - FadeSlack) * (FadeStart - FadeSlack)) impL[pl.idx].Add(pl.m);
                         if (d2 > (FadeEnd + FadeSlack) * (FadeEnd + FadeSlack)) continue;
+                        // close by, the rich tree as well (the plain one below still casts the shadow for both)
+                        if (d2 < (RichEnd + FadeSlack) * (RichEnd + FadeSlack)) ListFor(richL, Key(Kind.Tree, RealFir.Variants + pl.idx, 0)).Add(pl.m);
                     }
                     if (d2 > LodRange * LodRange)
                     {
@@ -384,17 +504,24 @@ namespace Summit
             }
         }
 
+        static List<Matrix4x4> ListFor(Dictionary<int, List<Matrix4x4>> set, int key)
+        {
+            if (!set.TryGetValue(key, out var list)) set[key] = list = new List<Matrix4x4>();
+            return list;
+        }
+
         static readonly int FirFadeId = Shader.PropertyToID("_FirFade"), FirCentreId = Shader.PropertyToID("_FirCentre");
 
         void Draw()
         {
             if (real && target != null)
             {
-                Shader.SetGlobalVector(FirFadeId, new Vector4(FadeStart, FadeEnd, 0f, 0f));
+                Shader.SetGlobalVector(FirFadeId, new Vector4(FadeStart, FadeEnd, RichStart, RichEnd));
                 Shader.SetGlobalVector(FirCentreId, target.position);
             }
             DrawSet(nearL, UnityEngine.Rendering.ShadowCastingMode.On);
             DrawSet(farL, UnityEngine.Rendering.ShadowCastingMode.Off);
+            DrawSet(richL, UnityEngine.Rendering.ShadowCastingMode.Off);
             if (stumpL.Count > 0) TreeBreak.DrawStumps(stumpL, real, bark);
             if (real && impL != null)
             {
@@ -506,7 +633,8 @@ namespace Summit
                 if (pl.kind == Kind.None) return false;
                 // a tree goes over from where it meets the snow, as tall as it shows (Smasher: 8.5 m a size)
                 basePos = pl.foot; size = pl.kind == Kind.Tree ? pl.vis / 8.5f : pl.size;
-                foreach (var part in pl.kind == Kind.Tree ? treeParts[pl.idx] : rockParts[pl.idx])
+                if (real && pl.kind == Kind.Tree) into.Add(Whole(pl, pl.cut));
+                else foreach (var part in pl.kind == Kind.Tree ? treeParts[pl.idx] : rockParts[pl.idx])
                     into.Add(new Piece { mesh = part.mesh, sub = part.sub, mat = part.mat, m = pl.m * part.local, cut = pl.kind == Kind.Tree ? pl.cut : 0f });
                 // redraw without it
                 lastCell = new Vector2Int(int.MinValue, int.MinValue);
@@ -515,6 +643,11 @@ namespace Summit
             }
             return false;
         }
+
+        /// <summary>A realistic tree taken out of the forest to be knocked down: its rich mesh, in the material that
+        /// never dissolves (it is seen from close by, and lies there as the rider leaves).</summary>
+        static Piece Whole(Placed pl, float cut) =>
+            new Piece { mesh = RealFir.Meshes[pl.idx], sub = 0, mat = RealFir.StandaloneOf(pl.idx), m = pl.m, cut = cut };
 
         // ---- snapped by a fast hit (TreeBreak): young, thin trees and dead snags; big old trunks stand
 
@@ -527,9 +660,10 @@ namespace Summit
         public bool Snappable(int x, int z, out bool snag)
         {
             var pl = Get(x, z);
-            snag = real && pl.idx == RealFir.Snag;
-            if (pl.kind != Kind.Tree) return false;
+            if (pl.kind != Kind.Tree) { snag = false; return false; }
+            snag = real && RealFir.IsSnag(pl.idx);
             if (snag) return pl.girth < SnagGirth;
+            if (real && RealFir.IsYoung(pl.idx)) return pl.girth < SnapGirth;   // a young tree, away from the piste
             // the young ones: the smaller trees of their stand (their own share of the height, Growth's `pick`),
             // and of those only the thin ones - so high up, where the deep snow leaves only slim tops showing,
             // more go; down where the trees stand on their whole trunks, hardly any
@@ -569,8 +703,9 @@ namespace Summit
                 if (!real) at = 0.25f;   // the classic firs' trunks are short stubs: they go at the foot
                 Vector3 up = ((Vector3)pl.m.GetColumn(1)).normalized;
                 info = new Snapped { foot = pl.foot, up = up, vis = pl.vis, girth = pl.girth, at = at };
-                foreach (var part in treeParts[pl.idx])
-                    into.Add(new Piece { mesh = part.mesh, sub = part.sub, mat = part.mat, m = pl.m * part.local, cut = real ? pl.cut + at / pl.ys : 0f });
+                if (real) into.Add(Whole(pl, pl.cut + at / pl.ys));
+                else foreach (var part in treeParts[pl.idx])
+                    into.Add(new Piece { mesh = part.mesh, sub = part.sub, mat = part.mat, m = pl.m * part.local, cut = 0f });
                 // the stump: from a little under the snow up to the break, as thick as the trunk there
                 float h = at + 0.35f;
                 stumps[kv.Key] = Matrix4x4.TRS(pl.foot - up * 0.35f, Quaternion.FromToRotation(Vector3.up, up) * Quaternion.Euler(0f, Slope.Hash01(kv.Key.x, kv.Key.y, 12) * 360f, 0f),
