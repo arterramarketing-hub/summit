@@ -284,9 +284,11 @@ namespace Summit
             Stand(cx, cz, wx, wz, out float pines, out float young, out _, out _, out float edge);
             if (r >= 0.04f + 0.26f * edge + 0.2f * Mathf.Max(0f, young - 0.25f)) return false;
             if (Slope.OnPad(wx, wz) || Course.Keep(wx, wz, 1f)) return false;
+            if (LiftLine.Taken(wx, wz, 3.5f)) return false;   // not in a ski lift's cleared swath, like the trees
             float x = wx + (Slope.Hash01(cx, cz, 17) - 0.5f) * Cell * 0.75f;
             float z = wz + (Slope.Hash01(cx, cz, 18) - 0.5f) * Cell * 0.75f;
             if (Course.Keep(x, z, 0.5f)) return false;
+            if (Hamlets.Taken(x, z)) return false;            // nor in a hamlet's houses, fence or clearing
             if (Mathf.Abs(Slope.Kicker(x, z)) > 0.01f || Mathf.Abs(Slope.Kicker(x, z - 14f)) > 0.01f) return false;
             int idx = RealFir.PickSapling(Slope.Hash01(cx, cz, 15) < pines, Slope.Hash01(cx, cz, 9));
             if (idx < 0) return false;

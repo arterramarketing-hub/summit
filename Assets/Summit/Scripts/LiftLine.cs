@@ -70,9 +70,10 @@ namespace Summit
         /// <summary>
         /// Whatever else is built beside the piste can say where it stands (set this once, before the mountain is
         /// first asked for anything): a line whose swath would pass through such a place is not used, and the
-        /// next one out, or the one on the other side, is tried instead.
+        /// next one out, or the one on the other side, is tried instead. The hamlets (Hamlets.cs) are there from
+        /// the start, so no lift is laid through a house, its fence or its clearing.
         /// </summary>
-        public static System.Func<float, float, bool> Occupied;
+        public static System.Func<float, float, bool> Occupied = Hamlets.Taken;
 
         /// <summary>How far the lowest thing on a chair must clear the snow at (x, z).</summary>
         public static float WantClear(float x, float z)
