@@ -43,6 +43,7 @@ namespace Summit
         // figure on screen jump (HudPoints): the fall's own bill, racking up while the rider is down
         float medical;
         bool downBefore;
+        float billBankIn;   // a bill run up while still riding (a sign: Breakables.RiderHit) goes into the total after this long
         void Bill(float cost)
         {
             if (cost <= 0f) return;
@@ -497,10 +498,24 @@ namespace Summit
                 bool sign = b.kind == Breakable.Kind.Sign;
                 if (sign) audioFx.Play(Sfx.SmashWood, crashed || invincible ? 1f : 0.8f);
                 else if (b.kind == Breakable.Kind.Fence) { audioFx.Play(Sfx.SmashWood, 0.55f); if (!thrown) hurtShake = Mathf.Max(hurtShake, 0.2f); }
+                else if (b.kind == Breakable.Kind.Banner) audioFx.Play(Sfx.ClothRip, thrown ? 0.5f : Mathf.Clamp01(rider.Speed / 25f));
                 else audioFx.Play(Sfx.Clack, 0.7f);
                 if (!sign || thrown) return;
                 hurtShake = Mathf.Max(hurtShake, crashed ? 0.8f : 0.45f);
                 if (invincible) Link("SIGN SMASH", 100, LinkKind.Smash);
+            };
+
+            // a sign (or a banner's stake) ridden into: you stay up, and it hurts. The camera shakes, the hero flinches
+            // from it, and it goes on the bill while you ride, banked into the total a moment later
+            breaks.RiderHit += (kind, speed, at, part, cost) =>
+            {
+                if (state != State.Riding) return;
+                float k = Mathf.Clamp01(speed / 30f);
+                hurtShake = Mathf.Max(hurtShake, kind == Breakable.Kind.Sign ? 0.4f + 0.45f * k : 0.25f);
+                body.Flinch(at, 0.5f + 0.5f * k);
+                if (kind == Breakable.Kind.Sign && speed > 12f) audioFx.Play(Sfx.Grunt);
+                Bill(cost);
+                billBankIn = 1.6f;
             };
 
             atmo = new GameObject("Atmosphere").AddComponent<Atmosphere>();
@@ -723,7 +738,7 @@ namespace Summit
             dressing.Prewarm();
             chase.Snap();
             hud.SetWhiteout(0f);
-            falls = 0; wipeoutTimer = 0f; hurtShake = 0f; crevasseWatch = false; medical = 0f;
+            falls = 0; wipeoutTimer = 0f; hurtShake = 0f; crevasseWatch = false; medical = 0f; billBankIn = 0f;
             flags.Clear();
             hud.SetPrompt("");
             if (paused) SetPaused(false);
@@ -1074,6 +1089,7 @@ namespace Summit
             combo.Step(dt, rider.Airborne || rider.Grinding);
             if (downBefore && !rider.Crashed) hud.BillBank();
             downBefore = rider.Crashed;
+            if (billBankIn > 0f && (billBankIn -= dt) <= 0f && !rider.Crashed) hud.BillBank();   // (a fall meanwhile banks it as it ends)
         }
 
         /// <summary>For the test tools (batchmode never runs Update): a frame of the points, on their clock.</summary>

@@ -138,6 +138,7 @@ namespace Summit
                 RidgeDressing.Build(root.transform, k, poleOrange, poleBlack);
             }
             CliffDressing.Build(root.transform, k, post.shader, poleOrange, poleBlack, post, signBack, target != null ? target.GetComponent<Rider>() : null);
+            SlowZones.Build(root.transform, k, post.shader);   // SLOW banners, here and there (they tear when ridden into)
             CliffSpires.Build(root.transform, k, post.shader);   // jagged rock along the cliffs' edges and faces
             return root;
         }

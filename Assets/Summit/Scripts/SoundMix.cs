@@ -15,7 +15,8 @@ namespace Summit
         BuddyWoah, BuddyClose, BuddyCheer, BuddyOuch,  // the player's own voice lines (Resources/Audio/Buddy/<group>)
         BuddyWarn, BuddyDeep,                           // "lookout" (something in the way), "don't go down there" (a deadly drop or crevasse)
         PointTick, Bank, ComboLost, BillTick,           // the points running up (a note that climbs), a combo banked (by its size, 0..4), one lost; the bill running up
-        Branches      // riding through a tree's branches: needles swishing past and twigs cracking (made here: BranchClips)
+        Branches,     // riding through a tree's branches: needles swishing past and twigs cracking (made here: BranchClips)
+        ClothRip      // a SLOW banner torn off its stakes: the fabric ripping and a flap (made here: ClothClips)
     }
 
     /// <summary>What the ride sounds like this frame (all 0..1 unless noted).</summary>
@@ -121,6 +122,43 @@ namespace Summit
             Random.state = rs;
             return takes;
         }
+
+        /// <summary>
+        /// A banner ripping (three takes): a grainy tear (noise in the fabric's band, gated on and off every few
+        /// milliseconds like threads giving one after another) and the slap of the cloth as it comes free.
+        /// </summary>
+        static AudioClip[] ClothClips()
+        {
+            const int rate = 44100; int n = (int)(rate * 0.5f);
+            var takes = new AudioClip[3];
+            var rs = Random.state;
+            for (int k = 0; k < takes.Length; k++)
+            {
+                Random.InitState(7717 + k * 131);
+                var d = new float[n];
+                float lp1 = 0f, lp2 = 0f, gate = 1f; int nextGate = 0;
+                float len = 0.22f + 0.05f * k;
+                for (int i = 0; i < n; i++)
+                {
+                    float t = i / (float)rate;
+                    if (i >= nextGate) { gate = Random.Range(0.15f, 1f); nextGate = i + (int)(rate * Random.Range(0.002f, 0.006f)); }
+                    float env = Mathf.Min(1f, t / 0.008f) * (t < len ? 1f - 0.4f * t / len : 0.6f * Mathf.Exp(-(t - len) / 0.03f));
+                    float w = Random.value * 2f - 1f;
+                    lp1 += (w - lp1) * 0.4f; lp2 += (lp1 - lp2) * 0.04f;   // about 600 Hz to 5 kHz: cloth, not wind
+                    d[i] = (lp1 - lp2) * env * gate;
+                    // the flap, as it comes off the stake
+                    float tf = t - len;
+                    if (tf > 0f) d[i] += Mathf.Sin(tf * 150f * 2f * Mathf.PI) * Mathf.Exp(-tf / 0.035f) * 0.5f;
+                }
+                float peak = 0.01f; foreach (var x in d) peak = Mathf.Max(peak, Mathf.Abs(x));
+                for (int i = 0; i < n; i++) d[i] *= 0.9f / peak;
+                takes[k] = AudioClip.Create("ClothRip" + k, n, 1, rate, false);
+                takes[k].SetData(d, 0);
+            }
+            Random.state = rs;
+            return takes;
+        }
+        AudioClip[] clothRips;
 
         public void Build()
         {
@@ -507,6 +545,9 @@ namespace Summit
                 case Sfx.Branches:
                     if (branches == null) branches = BranchClips();
                     c = branches[Random.Range(0, branches.Length)]; vol = 0.35f + 0.6f * Mathf.Clamp01(amount); pitch = Random.Range(0.9f, 1.12f); break;
+                case Sfx.ClothRip:
+                    if (clothRips == null) clothRips = ClothClips();
+                    c = clothRips[Random.Range(0, clothRips.Length)]; vol = 0.4f + 0.5f * Mathf.Clamp01(amount); pitch = Random.Range(0.92f, 1.1f); break;
             }
             if (kind == Sfx.Nooo)
             {

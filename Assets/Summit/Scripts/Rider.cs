@@ -181,6 +181,13 @@ namespace Summit
             wobble = Mathf.Max(wobble, wobbleFor);
             return false;
         }
+        /// <summary>
+        /// Knocked sideways off your line by what you rode into (a sign: Breakables): dv m/s, given over 0.2 s like
+        /// Breakthrough's slowing, so it is a shove and not a jolt.
+        /// </summary>
+        public void Knock(Vector3 dv) { if (Running && !Crashed && InvincibleTime <= 0f) { knock = dv; knockFor = KnockOver; } }
+        Vector3 knock; float knockFor;
+        const float KnockOver = 0.2f;
         public void AddBoost(float seconds)
         {
             BoostTime = Mathf.Max(BoostTime, 0f) + seconds;
@@ -241,7 +248,7 @@ namespace Summit
             popPending = false; airLock = 0f; lastGrind = -1;
             Flow = 0f; Shields = 0; BoostTime = 0f; invulnerable = 0f; SuperJumpTime = 0f; InvincibleTime = 0f; superAir = false;
             Undercut = 0f; Lift = 0f; fixVy = 0f;
-            wobble = 0f; slowFor = 0f; shove = Vector3.zero;
+            wobble = 0f; slowFor = 0f; shove = Vector3.zero; knockFor = 0f;
             // (and the clocks behind the wobble and the churn: carried over, the same landing swung the board a
             // different way depending on every wobble before it, so a ride never came out the same twice)
             churnT = 0f; OnRock = false; rockScrapeT = 0f; popHold = 0f; missClock = 0f; lastMiss = 0;
@@ -320,6 +327,7 @@ namespace Summit
             Vector3 p = rb.position, v = rb.linearVelocity;
             if (shove.sqrMagnitude > 0f) { if (!Crashed) v += shove; shove = Vector3.zero; }   // knocked aside off a rail's end (TryGrind)
             if (slowFor > 0f && !Crashed) { slowFor -= dt; v *= Mathf.Exp(-slowRate * dt); }
+            if (knockFor > 0f && !Crashed) { float d = Mathf.Min(dt, knockFor); knockFor -= d; v += knock * (d / KnockOver); }
             if (wobble > 0f && !Crashed)
             {
                 // knocked off balance by a sign: the board swings about under you for a moment, and steering

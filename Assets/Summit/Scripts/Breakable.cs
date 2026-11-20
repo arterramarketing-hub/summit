@@ -8,6 +8,8 @@ namespace Summit
     ///  - A flag goes down: a knock bends it over into the snow the way you were going; a hard one snaps the pole
     ///    just above the snow and throws the top.
     ///  - A sign breaks: its posts snap above the snow, its board splits into slabs, and it all tumbles away.
+    ///  - A SLOW banner tears where it was hit: the cloth comes off its stakes in two pieces that flap away, and a
+    ///    stake you went right by is knocked over.
     /// Its colliders are trigger boxes, not solid ones, so it never stops the board dead the way a tree does. The
     /// rider and the thrown body look for them each physics step (Probe) rather than waiting for trigger messages,
     /// which also makes them work in the test tools; what a hit costs the rider is decided by Breakables and
@@ -16,7 +18,7 @@ namespace Summit
     /// </summary>
     public class Breakable : MonoBehaviour
     {
-        public enum Kind { Flag, Sign, Fence }
+        public enum Kind { Flag, Sign, Fence, Banner }
         public Kind kind;
         public bool Down { get; private set; }
         /// <summary>How tall a flag stands above its base (its holder's origin, on the snow).</summary>
@@ -68,6 +70,55 @@ namespace Summit
             b.Box(Vector3.zero, size);
             b.Arm();
             return b;
+        }
+
+        // a SLOW banner: its cloth (the printed side, facing up the hill, and the side seen from below), and its stakes
+        Transform clothFront, clothBack;
+        float clothW, stakeLen;
+        readonly List<Transform> stakes = new List<Transform>();
+
+        /// <summary>
+        /// Make the holder (on the snow under the middle of the banner, facing down the hill) a SLOW banner. front and
+        /// back: the cloth's two sides (quads of w by h, the front facing up the hill); stakes: each pole, from a
+        /// transform at its foot, stakeLen tall; hem: how high the cloth's bottom edge hangs.
+        /// </summary>
+        public static Breakable Banner(Transform holder, Transform front, Transform back, Transform[] stakes, float w, float h, float hem, float stakeLen)
+        {
+            var b = holder.gameObject.AddComponent<Breakable>();
+            b.kind = Kind.Banner; b.clothFront = front; b.clothBack = back; b.clothW = w; b.height = h; b.stakeLen = stakeLen;
+            b.stakes.AddRange(stakes);
+            // stake to stake, from a hand above the snow to the top hem; as deep as a rider leaning into it
+            float lo = 0.25f, hi = hem + h + 0.1f;
+            b.Box(new Vector3(0f, (lo + hi) * 0.5f, 0f), new Vector3(w + 0.4f, hi - lo, 0.6f));
+            b.Arm();
+            return b;
+        }
+
+        /// <summary>
+        /// What a rider with their feet at `feet`, going at vel, struck, before it breaks: on a sign, a post ("Shoulder"), else the
+        /// board, by where it is on them ("Head", "Chest" or "Legs"); on a banner, a stake ("Shin"), else null (the
+        /// cloth). from: the post or stake, or the middle of the board, to be knocked away from.
+        /// </summary>
+        public string HitPart(Vector3 feet, Vector3 vel, out Vector3 from)
+        {
+            from = transform.position;
+            float best = float.MaxValue; Transform near = null;
+            Vector3 dir = new Vector3(vel.x, 0f, vel.z);
+            foreach (var p in kind == Kind.Banner ? stakes : posts)
+            {
+                // how far it is from the line you are on (the touch comes a little before you reach it)
+                Vector3 d = p.position - feet; d.y = 0f;
+                if (dir.sqrMagnitude > 0.01f) d = Vector3.ProjectOnPlane(d, dir.normalized);
+                if (d.magnitude < best) { best = d.magnitude; near = p; }
+            }
+            // (a post's box and the rider's own reach: brushed by its edge counts)
+            if (near != null && best < (kind == Kind.Banner ? 0.5f : 0.9f)) { from = near.position; return kind == Kind.Banner ? "Shin" : "Shoulder"; }
+            if (kind == Kind.Banner) return null;
+            if (backs.Count == 0) return "Chest";
+            var r = backs[0].GetComponent<Renderer>();
+            from = r.bounds.center;
+            float rel = r.bounds.min.y - feet.y;
+            return rel > 1.2f ? "Head" : rel > 0.5f ? "Chest" : "Legs";
         }
 
         /// <summary>Make the holder a sign; then name its posts and boards with Post and Board, and call Arm.</summary>
@@ -157,6 +208,7 @@ namespace Summit
             float speed = flat.magnitude;
             if (kind == Kind.Flag) return speed > SnapSpeed ? SnapFlag(dir, speed) : Bend(dir, speed);
             if (kind == Kind.Fence) return Splinter(at, vel, dir);
+            if (kind == Kind.Banner) return Tear(at, vel, dir, speed);
             return Shatter(at, vel, dir);
         }
 
@@ -165,14 +217,20 @@ namespace Summit
 
         Vector3 Bend(Vector3 dir, float speed)
         {
-            // whacked over at the foot: it swings down into the snow the way you were going, its foot dragged a little
+            Fell(transform, height, dir, speed);
+            return transform.position + Vector3.up * 0.4f;
+        }
+
+        // whacked over at the foot (t: at the foot of a pole `length` tall): it swings down into the snow the way you
+        // were going, its foot dragged a little
+        void Fell(Transform t, float length, Vector3 dir, float speed)
+        {
             moving.Add(new Moving
             {
-                owner = this, t = transform, topple = true, pivot = transform.position, origin = transform.position, rot0 = transform.rotation,
-                axis = Vector3.Cross(Vector3.up, dir).normalized, tip0 = transform.position + Vector3.up * height,
-                spin = Mathf.Clamp(speed * 0.3f, 2.5f, 8f), slide = dir * Mathf.Min(2f, speed * 0.08f), length = height
+                owner = this, t = t, topple = true, pivot = t.position, origin = t.position, rot0 = t.rotation,
+                axis = Vector3.Cross(Vector3.up, dir).normalized, tip0 = t.position + Vector3.up * length,
+                spin = Mathf.Clamp(speed * 0.3f, 2.5f, 8f), slide = dir * Mathf.Min(2f, speed * 0.08f), length = length
             });
-            return transform.position + Vector3.up * 0.4f;
         }
 
         Vector3 SnapFlag(Vector3 dir, float speed)
@@ -347,6 +405,55 @@ namespace Summit
             return transform.position;
         }
 
+        /// <summary>
+        /// A banner: the cloth rips where it was hit and both pieces are torn off their stakes and blown away,
+        /// flapping; a stake the rider went right by goes over, the other stays standing.
+        /// </summary>
+        Vector3 Tear(Vector3 at, Vector3 vel, Vector3 dir, float speed)
+        {
+            Vector3 mid = clothFront.position;
+            float u = Mathf.Clamp(clothFront.InverseTransformPoint(at).x + 0.5f, 0.2f, 0.8f);   // (the quad is a unit wide in its own space)
+            Cloth(0f, u, at, vel, dir);
+            Cloth(u, 1f, at, vel, dir);
+            clothFront.gameObject.SetActive(false);
+            if (clothBack != null) clothBack.gameObject.SetActive(false);
+            foreach (var s in stakes)
+            {
+                Vector3 d = s.position - at; d.y = 0f;
+                if (Vector3.ProjectOnPlane(d, dir).magnitude < 1.1f) Fell(s, stakeLen, dir, speed);
+            }
+            return mid;
+        }
+
+        /// <summary>The piece of the banner between fractions u0 and u1 of its width (both sides of it), thrown flapping.</summary>
+        void Cloth(float u0, float u1, Vector3 at, Vector3 vel, Vector3 dir)
+        {
+            float w = clothW * (u1 - u0), h = height;
+            var g = new GameObject("Cloth").transform;
+            g.SetParent(transform, false);
+            g.SetPositionAndRotation(clothFront.position + clothFront.right * ((u0 + u1) * 0.5f - 0.5f) * clothW, clothFront.rotation);
+            made.Add(g.gameObject);
+            for (int side = 0; side < 2; side++)
+            {
+                var src = side == 0 ? clothFront : clothBack;
+                if (src == null) continue;
+                var q = new GameObject("Print", typeof(MeshFilter), typeof(MeshRenderer));
+                q.transform.SetParent(g, false);
+                // the back is the same print seen through the cloth: turned round, so its strip runs the other way
+                q.transform.localRotation = side == 0 ? Quaternion.identity : Quaternion.Euler(0f, 180f, 0f);
+                q.transform.localPosition = new Vector3(0f, 0f, side == 0 ? 0f : 0.004f);
+                q.transform.localScale = new Vector3(w, h, 1f);
+                q.GetComponent<MeshFilter>().sharedMesh = side == 0 ? Strip(u0, u1) : Strip(1f - u1, 1f - u0);
+                var sr = src.GetComponent<MeshRenderer>(); var qr = q.GetComponent<MeshRenderer>();
+                qr.sharedMaterial = sr.sharedMaterial; qr.shadowCastingMode = sr.shadowCastingMode;
+            }
+            // off the way the rider was going, slower than them (cloth catches the air), and away from the rip
+            Vector3 away = clothFront.right * ((u0 + u1) * 0.5f < 0.5f ? -1f : 1f);
+            Vector3 v = vel * Random.Range(0.3f, 0.5f) + Vector3.up * Random.Range(1.5f, 3f) + away * Random.Range(1f, 2.5f);
+            Vector3 spin = Vector3.Cross(Vector3.up, dir) * Random.Range(2f, 5f) + Random.insideUnitSphere * 4f;
+            moving.Add(new Moving { owner = this, t = g, ext = new Vector3(w * 0.5f, h * 0.5f, 0.02f), vel = v, angVel = spin, cloth = true });
+        }
+
         /// <summary>Throw a broken piece: mostly the way the hit was going, harder the nearer it was to the hit.</summary>
         void Fling(Transform piece, Vector3 ext, Vector3 at, Vector3 vel, Vector3 dir)
         {
@@ -408,6 +515,7 @@ namespace Summit
             public bool topple; public Vector3 pivot, origin, axis, tip0, slide; public Quaternion rot0; public float angle, spin, length;
             // thrown free
             public Vector3 ext, vel, angVel; public bool grounded;
+            public bool cloth;   // a piece of a banner: it falls slowly, flapping, and the air slows it
             public float age;
         }
         static readonly List<Moving> moving = new List<Moving>();
@@ -456,7 +564,13 @@ namespace Summit
 
         static bool Tumble(Moving m, float dt)
         {
-            m.vel.y -= Rider.G * dt;
+            m.vel.y -= Rider.G * (m.cloth ? 0.35f : 1f) * dt;
+            if (m.cloth && !m.grounded)
+            {
+                // cloth in the air: dragged back to drifting, and turned this way and that as it flaps
+                m.vel *= Mathf.Exp(-dt * 1.6f);
+                m.angVel += Random.insideUnitSphere * (24f * dt);
+            }
             Vector3 p = m.t.position + m.vel * dt;
             Quaternion r = m.t.rotation;
             float w = m.angVel.magnitude;
