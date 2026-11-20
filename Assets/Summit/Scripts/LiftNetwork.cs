@@ -114,6 +114,8 @@ namespace Summit
                         if (TakenBy(laid, st.x + l.dir.x * i * StationHalfLen * 0.5f + l.across.x * StationAcross[a],
                                           st.z + l.dir.z * i * StationHalfLen * 0.5f + l.across.z * StationAcross[a], 8f)) return false;
             }
+            // nor over a jump station's run in or landing field: nothing hangs in the way of that flight
+            if (OverJump(l, laid)) return false;
             List<Lift> over = null;
             for (int q = 0; q < laid.Count; q++)
             {

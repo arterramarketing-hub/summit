@@ -47,6 +47,9 @@ public static class LiftHarness
             for (int i = 0; i < all.Length; i++) if (all[i].id != i) Bad(seed, all[i], "its id is not its place in Lifts");
             foreach (var l in all) Check(seed, l, verbose);
             foreach (var l in all) if (l.second) CheckSecond(seed, l, all, verbose);
+            jumpCycles += want - 1;
+            foreach (var l in all) if (l.jump != null) CheckJump(seed, l, all, verbose);
+            if (verbose) Console.Write(LiftLine.JumpReport());
             CheckPairs(seed, all, verbose);
             if (seconds > had) mountainsNetworked++;
             int before = ramps, beforeWant = rampsAtWant;
@@ -72,6 +75,14 @@ public static class LiftHarness
         Console.WriteLine("a pop alone (8 m/s across the slope, no ramp) tops out {0:0.0} m over the snow; a Super Jump {1:0.0} m; the lowest cable is {2:0.0} m up", 9.9f * 9.9f / 44f, 18.8f * 18.8f / 44f, minOff + LiftLine.ChairDrop);
         if (grinds > 0) Console.WriteLine("grinds from each ramp's meeting point: {0}; they last {1:0.0} s on average and reach {2:0} m/s at most; the hop clears the cable at the tower by {3:0.00} m at least; {4} ({5:0}%) come down on the next span if steered back (by {6:0.0} m on average)", grinds, sumGrindTime / grinds, maxGrindSpeed, minHopClear, relands, 100f * relands / grinds, relands > 0 ? sumSteer / relands : 0f);
         Console.WriteLine("ramps: nearest the piste's centre {0:0.0} m; tallest lip {1:0.00} m; least room between a lip and the chairs {2:0.00} m", minRampOff, maxLip, minHeadroom);
+        Console.WriteLine("jump stations: {0} of {1} cycles above the last ({2:0.0}%); {3} rides worked out, every one checked to land on open snow above the ridge stretch", jumps, jumpCycles, 100f * jumps / Mathf.Max(1, jumpCycles), jumpFlights);
+        if (jumps > 0)
+        {
+            foreach (var v in new[] { jAir, jDist, jPeak, jImpact, jLand, jDrop }) v.Sort();
+            Func<List<float>, string> R = v => string.Format("{0:0.0} / {1:0.0} / {2:0.0}", v[0], v[v.Count / 2], v[v.Count - 1]);
+            Console.WriteLine("jump stations, onto the lane at 26 m/s down its middle (least / median / most): {0} s of air; {1} m flown; {2} m over the snow at most; landing at {3} m/s, {4} m/s into the snow; the lip {5} m over the snow under it", R(jAir), R(jDist), R(jPeak), R(jLand), R(jImpact), R(jDrop));
+            Console.WriteLine("jump stations, 6 to 46 m/s: longest air {0:0.0} s; hardest landing {1:0.0} m/s into the snow (never both over {2:0} m/s and steeper than {3:0} deg); furthest into its cycle a flight comes down {4:0} m (the ridge stretch begins at {5:0}); nearest the piste's centre any of a station stands {6:0.0} m", jumpMaxAir, jumpMaxImpact, LiftLine.JumpSlam, LiftLine.JumpSlamAngle, jumpFarZ, Course.PipeAt, jumpMinOff);
+        }
         secondH.Sort();
         Console.WriteLine("second lines: {0} of {1} cycles with a first line ({2:0}%); mountains with at least one: {3} of {4} ({5:0.0}%); most lines tried for one: {6:0}", seconds, secondCycles, 100f * seconds / Mathf.Max(1, secondCycles), mountainsNetworked, hi - lo + 1, 100f * mountainsNetworked / (hi - lo + 1), maxSecondTries);
         if (seconds > 0)
@@ -82,6 +93,102 @@ public static class LiftHarness
     }
 
     /// <summary>A cycle's second line: across the piste, above the danger stretch, and standing clear of every other line.</summary>
+    // ---------------------------------------------------------------- stations with a lane through them (LiftJump.cs)
+    static int jumps, jumpCycles, jumpFlights; static float jumpFarZ, jumpMaxAir, jumpMaxImpact, jumpMinOff = 1e9f;
+    static readonly List<float> jAir = new List<float>(), jDist = new List<float>(), jPeak = new List<float>(), jImpact = new List<float>(), jDrop = new List<float>(), jLand = new List<float>();
+
+    /// <summary>
+    /// A jump station: its bigger footprint off the piste and off kept ground; the chairs nowhere over the lane; and
+    /// rides through it at 21 speeds from 6 to 46 m/s down nine lines across the lane, each flight clear of every
+    /// other line's cables and towers and coming down on open snow (LiftLine.JumpLandFault) above the ridge
+    /// stretch; nothing of any other lift standing in the ground it needs clear.
+    /// </summary>
+    static void CheckJump(int seed, LiftLine.Lift l, LiftLine.Lift[] all, bool verbose)
+    {
+        var j = l.jump; jumps++;
+        if (l.second) Bad(seed, l, "a second line with a jump station");
+        // the structure: from where the lane's top leaves the snow to the lip, from the terminal's far side to the lane's outer edge
+        for (float t = j.start - 2f; t <= j.end; t += 1f)
+            foreach (float c in new[] { -LiftLine.StationHalfWid, 0f, LiftLine.JumpLaneIn, LiftLine.JumpLaneMid, LiftLine.JumpLaneOut })
+            {
+                if (c < LiftLine.JumpLaneIn && t < -LiftLine.StationHalfLen) continue;
+                Vector3 p = l.At(l.plan + t, j.side * c, 0f);
+                float off = Mathf.Abs(p.x - Slope.Centre(p.z));
+                jumpMinOff = Mathf.Min(jumpMinOff, off);
+                if (off < Slope.PisteHalf + 2.9f) Bad(seed, l, $"its jump station is {off:0.0} m from the piste's centre at t={t:0}");
+                if (Course.Keep(p.x, p.z, 0.5f) || Ridge.InCanyons(p.z) || Cliffs.WallCut(p.x, p.z) < -0.01f) Bad(seed, l, $"its jump station stands on kept ground at t={t:0} c={c:0}");
+            }
+        // the lane's top: never under the snow, never under the deck's own level, and no step where it leaves the snow
+        foreach (float c in new[] { LiftLine.JumpLaneIn, LiftLine.JumpLaneMid, LiftLine.JumpLaneOut })
+        {
+            float last = LiftLine.JumpOver(l, j.start - 3f, j.side * c);
+            for (float t = j.start - 3f; t <= j.end; t += 0.25f)
+            {
+                float over = LiftLine.JumpOver(l, t, j.side * c);
+                if (over < -0.001f) Bad(seed, l, $"its lane's top is {-over:0.00} m under the snow at t={t:0.0}");
+                if (LiftLine.JumpTop(l, t, j.side * c) < LiftLine.JumpDeck(l, t) - 0.001f) Bad(seed, l, $"its lane's top is under the deck at t={t:0.0}");
+                if (over - last > 0.6f) Bad(seed, l, $"its lane's top steps up {over - last:0.00} m in a quarter of a metre at t={t:0.0}");
+                last = over;
+            }
+        }
+        // the chairs: their seats reach Half + 1.4 m out from the line's centre; the lane starts further out than that
+        if (LiftLine.Half + 1.4f > LiftLine.JumpLaneIn - 1f) Bad(seed, l, "the chairs pass within a metre of the lane");
+        // nothing of another lift in the ground it needs clear
+        foreach (var o in all)
+        {
+            if (o == l) continue;
+            foreach (var f in o.foot) if (LiftLine.InJumpField(l, f.x, f.z, 2f)) Bad(seed, l, $"lift {o.k}{(o.second ? "b" : "")} has a tower in its jump's ground");
+            if (LiftLine.InJumpField(l, o.top.x, o.top.z, 6f) || LiftLine.InJumpField(l, o.bottom.x, o.bottom.z, 6f)) Bad(seed, l, $"lift {o.k}{(o.second ? "b" : "")} has a station in its jump's ground");
+            if (o.ramp != null)
+            {
+                Vector3 rf = LiftLine.RampPoint(o, o.ramp, 0f);
+                if (LiftLine.InJumpField(l, rf.x, rf.z, 1f)) Bad(seed, l, $"lift {o.k}{(o.second ? "b" : "")} has its launch ramp in its jump's ground");
+            }
+        }
+        // (its own launch ramp stands under a cable, inside the lane's inner edge: not in the lane or the run in to it)
+        if (l.ramp != null && l.ramp.s0 + l.ramp.length > l.plan - LiftLine.JumpReach && Mathf.Abs(LiftLine.Half) + CableTune.RampHalfWidth > LiftLine.JumpLaneIn - 1f) Bad(seed, l, "its own launch ramp is in its lane");
+        // the rides
+        var path = new List<Vector3>();
+        float b = Course.First + l.k * Course.Cycle;
+        // (the speeds and lines the game itself works each jump out for, and others between them)
+        var speeds = new List<float>(LiftLine.JumpSpeeds); for (float v = 8f; v <= 44.01f; v += 4f) speeds.Add(v);
+        var lines = new List<float>(LiftLine.JumpLines); lines.Add(-2.8f); lines.Add(-0.9f); lines.Add(0.9f); lines.Add(2.8f);
+        foreach (float v0 in speeds)
+            foreach (float e in lines)
+            {
+                path.Clear();
+                var f = LiftLine.JumpFlight(l, v0, j.side * (LiftLine.JumpLaneMid + e), path);
+                jumpFlights++;
+                string fault = LiftLine.JumpLandFault(l, f);
+                if (fault != null) Bad(seed, l, $"a ride through its station at {v0:0} m/s, {e:+0.0;-0.0;0} m off the lane's middle, {fault} (z={f.land.z:0}, {f.air:0.0} s, {f.distance:0} m)");
+                jumpFarZ = Mathf.Max(jumpFarZ, f.land.z - b);
+                jumpMaxAir = Mathf.Max(jumpMaxAir, f.air); jumpMaxImpact = Mathf.Max(jumpMaxImpact, f.impact);
+                // the flight against every other line: its cables and what hangs from them, its towers
+                foreach (var o in all)
+                {
+                    if (o == l) continue;
+                    foreach (var q in path)
+                    {
+                        float s = (q.x - o.top.x) * o.dir.x + (q.z - o.top.z) * o.dir.z;
+                        if (s < -LiftLine.StationHalfLen - 4f || s > o.plan + LiftLine.StationHalfLen + 4f) continue;
+                        float c = Mathf.Abs((q.x - o.top.x) * o.across.x + (q.z - o.top.z) * o.across.z);
+                        if (c > LiftLine.Half + 3f) continue;
+                        int span = LiftLine.SpanAt(o, Mathf.Clamp(s, o.nodeS[0], o.nodeS[o.Spans]));
+                        float cable = o.CableY(span, Mathf.Clamp(s, o.nodeS[0], o.nodeS[o.Spans]));
+                        if (q.y < cable + 3f) { Bad(seed, l, $"a flight off its lip at {v0:0} m/s passes under or through lift {o.k}{(o.second ? "b" : "")}'s line"); break; }
+                    }
+                }
+                // and against its own: the flight starts past the bullwheel and goes on away from the line
+                foreach (var q in path)
+                {
+                    float s = (q.x - l.top.x) * l.dir.x + (q.z - l.top.z) * l.dir.z;
+                    if (s < l.plan + j.end - 0.5f) { Bad(seed, l, "a flight off its lip comes back over its own station"); break; }
+                }
+                if (v0 == 26f && e == 0f) { jAir.Add(f.air); jDist.Add(f.distance); jPeak.Add(f.peak); jImpact.Add(f.impact); jLand.Add(f.velocity.magnitude); jDrop.Add(j.drop); }
+            }
+        if (verbose) Console.WriteLine("   jump station: lane's top from {0:0.0} to {1:0.0} m past the station's middle, level {2:0.0} m under the terminal's deck", j.start, j.end, l.bottom.y - j.y0);
+    }
+
     static void CheckSecond(int seed, LiftLine.Lift l, LiftLine.Lift[] all, bool verbose)
     {
         seconds++;

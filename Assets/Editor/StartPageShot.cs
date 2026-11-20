@@ -90,6 +90,29 @@ public static class StartPageShot
         // the photo the mountain is modelled on, and the mountain from the side the photo was taken (down the valley)
         TimeOfDay.TestClock = 1.4f; dayNight.ApplyNow(); start.Far.Shade(-RenderSettings.sun.transform.forward, -1);
         PhotoMatch();
+        // the title's directions (TitleArt.Styles): each by day, by night, part way through its reveal, and close up
+        for (int k = 0; k < TitleArt.Styles.Length; k++)
+        {
+            var tw = System.Diagnostics.Stopwatch.StartNew();
+            start.SetTitleStyle(k, true);
+            Debug.Log($"STARTPAGE title {TitleArt.Styles[k].name}: built in {tw.ElapsedMilliseconds} ms ({TitleArt.Width}x{TitleArt.Height} RGBA, {TitleArt.Width * TitleArt.Height * 4 / 1024} KB)");
+            string nm = TitleArt.Styles[k].name.ToLowerInvariant();
+            foreach (var (when, clock) in new[] { ("day", 1.4f), ("night", 3.4f) })
+            {
+                TimeOfDay.TestClock = clock; dayNight.ApplyNow(); start.Far.Shade(-RenderSettings.sun.transform.forward, -1);
+                start.Clock = 6f; start.Preview(30f, false, 0);
+                Shoot($"title_{nm}_{when}.png", true);
+            }
+            TimeOfDay.TestClock = 1.4f; dayNight.ApplyNow(); start.Far.Shade(-RenderSettings.sun.transform.forward, -1);
+            foreach (float t in new[] { 1.1f, 2.6f })
+            {
+                start.Clock = 6f; start.Preview(2.6f + t, false, 0);
+                Shoot($"title_{nm}_reveal_{t * 10f:0}.png", true);
+            }
+            Sheet($"sheet_title_{nm}.png", $"title_{nm}_day.png", $"title_{nm}_night.png", $"title_{nm}_reveal_11.png", $"title_{nm}_reveal_26.png");
+            Crop($"title_{nm}_day.png", $"title_{nm}_day_close.png"); Crop($"title_{nm}_night.png", $"title_{nm}_night_close.png");
+        }
+        start.SetTitleStyle(TitleArt.DefaultStyle, true);
         // half-way up: the title in, the choices coming
         TimeOfDay.TestClock = 1.4f; dayNight.ApplyNow(); start.Far.Shade(-RenderSettings.sun.transform.forward, -1);
         start.Clock = 3.6f; start.Preview(3.6f, false, 0);
@@ -362,6 +385,21 @@ public static class StartPageShot
         }
         picture.SetPixels(a); picture.Apply();
         Object.DestroyImmediate(page);
+    }
+
+    /// <summary>The title's part of a picture, at twice the size.</summary>
+    static void Crop(string from, string to)
+    {
+        var t = new Texture2D(2, 2);
+        t.LoadImage(File.ReadAllBytes(Path.Combine(outDir, from)));
+        int y0 = Mathf.RoundToInt(H * 0.66f), hh = Mathf.RoundToInt(H * 0.3f);
+        var c = new Texture2D(W * 2, hh * 2, TextureFormat.RGB24, false);
+        for (int y = 0; y < hh * 2; y++)
+            for (int x = 0; x < W * 2; x++)
+                c.SetPixel(x, y, t.GetPixelBilinear((x + 0.5f) / (W * 2f), (y0 + (y + 0.5f) / 2f) / H));
+        c.Apply();
+        File.WriteAllBytes(Path.Combine(outDir, to), c.EncodeToPNG());
+        Object.DestroyImmediate(t); Object.DestroyImmediate(c);
     }
 
     /// <summary>Several pictures side by side, to look over at once.</summary>

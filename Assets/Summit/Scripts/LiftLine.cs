@@ -14,7 +14,8 @@ namespace Summit
     /// up as the open ground goes: below the foot of the canyons of the ridge above, or beside the start for the
     /// first. That is five lifts, 290 to 530 m long in plan (850 m where the ridge above was never built). Each
     /// cycle then gets a second, shorter line across the piste and over the first, where one will go
-    /// (LiftNetwork.cs): this file lays both kinds.
+    /// (LiftNetwork.cs): this file lays both kinds. Where the ground allows, a first line ends higher, at a
+    /// bottom station you ski through and jump off (LiftJump.cs: JumpAt, beside the top of the danger stretch).
     ///
     /// A lift is dead straight in plan, as real ones are, while the piste meanders beside it or under it:
     ///   - Each end is set 38 to 84 m to one side of the piste. Through the danger stretch the line keeps to the
@@ -101,6 +102,7 @@ namespace Summit
             public float[] nodeS, nodeY;          // what the cable hangs between: top portal, towers, bottom portal
             public int tries;
             public Ramp ramp;                     // its launch ramp, if a spot was found for one (LiftRamp.cs)
+            public Jump jump;                     // its bottom station's ski-through lane and jump, if it has one (LiftJump.cs)
             // the chairs' loop: its pieces in the order the chairs travel them, from leaving the bottom bullwheel
             public float[] cum;                   // loop distance at the start of each piece (and the whole length last)
             public float loop, spacing;
@@ -249,8 +251,9 @@ namespace Summit
             for (int i = 0; i < all.Count; i++)
             {
                 var l = all[i];
-                if (z < l.ZMin - 60f || z > l.ZMax + 60f) continue;
+                if (z < l.ZMin - 60f || z > l.ZMax + (l.jump != null ? JumpEndMax + JumpField + 20f : 60f)) continue;
                 if (l.ramp != null && InLane(l, x, z, margin)) return true;   // the way in to its launch ramp
+                if (l.jump != null && InJumpField(l, x, z, margin)) return true;   // its jump station's run in and landing field
                 float along = (x - l.top.x) * l.dir.x + (z - l.top.z) * l.dir.z;
                 if (along < -StationHalfLen - 6f - margin || along > l.plan + StationHalfLen + 6f + margin) continue;
                 float side = (x - l.top.x) * l.across.x + (z - l.top.z) * l.across.z;
@@ -275,6 +278,23 @@ namespace Summit
         static Lift Lay(int k)
         {
             if (!Range(k, out float zt, out float zb)) return null;
+            // with a station to ski through and jump off, if one will go: that ends the line higher up (LiftJump.cs)
+            if (Jumps && k < LastCycle)
+            {
+                // (where JumpAt will not take one, a little higher will often do)
+                foreach (float up in JumpHigher)
+                {
+                    float zj = Course.First + k * Course.Cycle + JumpAt - up;
+                    if (zj - zt < JumpMinPlan) break;
+                    var j = LayTo(k, zt, zj, true);
+                    if (j != null) return j;
+                }
+            }
+            return LayTo(k, zt, zb, false);
+        }
+
+        static Lift LayTo(int k, float zt, float zb, bool jump)
+        {
             // through the danger stretch, the side away from its deadly cliff
             float sb = k < LastCycle && Cliffs.WallOf(k, out var w) ? -w.side : Slope.Hash01(k, 1, 171) < 0.5f ? -1f : 1f;
             bool cross = Slope.Hash01(k, 2, 171) < 0.4f;
@@ -282,24 +302,28 @@ namespace Summit
             var pairs = new List<Vector2>();
             for (int pass = 0; pass < 2; pass++)
             {
-                bool same = cross ? pass == 1 : pass == 0;
+                bool same = cross && !jump ? pass == 1 : pass == 0;   // (to a station with a lane through it: beside the piste if it will go, so the lane runs near the fall line)
                 float st = same ? sb : -sb;
                 pairs.Clear();
                 foreach (float a in Offsets) foreach (float b in Offsets) pairs.Add(new Vector2(a, b));
                 // beside the piste: the nearest first. Across it: from 54 m out either side (nearer, the span over
                 // the piste would be too long), then further
-                if (same) pairs.Sort((p, q) => Compare(Mathf.Max(p.x, p.y), Mathf.Max(q.x, q.y), p.x + p.y, q.x + q.y, p.x, q.x));
+                // (to a station with a lane through it: the nearest the piste that station can stand, before all else)
+                // and the line as near the fall line as it can be
+                if (jump) pairs.Sort((p, q) => same ? Compare(p.y, q.y, Mathf.Abs(p.x - p.y), Mathf.Abs(q.x - q.y), p.x, q.x) : Compare(p.y, q.y, p.x < 54f ? 1f : 0f, q.x < 54f ? 1f : 0f, p.x, q.x));
+                else if (same) pairs.Sort((p, q) => Compare(Mathf.Max(p.x, p.y), Mathf.Max(q.x, q.y), p.x + p.y, q.x + q.y, p.x, q.x));
                 else pairs.Sort((p, q) =>
                 {
                     int np = Mathf.Min(p.x, p.y) < 54f ? 1 : 0, nq = Mathf.Min(q.x, q.y) < 54f ? 1 : 0;
                     return np != nq ? np.CompareTo(nq) : Compare(Mathf.Max(p.x, p.y), Mathf.Max(q.x, q.y), p.x + p.y, q.x + q.y, p.x, q.x);
                 });
-                int n = same ? pairs.Count : 10;
+                int n = same || jump ? pairs.Count : 10;
                 for (int i = 0; i < n; i++)
                 {
                     tries++;
-                    var l = Try(k, zt, zb, st * pairs[i].x, sb * pairs[i].y);
-                    if (l != null) { l.tries = tries; PlaceRamp(l); return l; }
+                    var l = Try(k, zt, zb, st * pairs[i].x, sb * pairs[i].y, null, jump);
+                    if (l == null) continue;
+                    l.tries = tries; PlaceRamp(l); return l;
                 }
             }
             return null;
@@ -345,7 +369,7 @@ namespace Summit
         }
 
         /// <summary>Lay lift k along the straight line from ot beside the piste at zt to ob beside it at zb. Null if it will not go.</summary>
-        static Lift Try(int k, float zt, float zb, float ot, float ob, IList<Lift> laid = null)
+        static Lift Try(int k, float zt, float zb, float ot, float ob, IList<Lift> laid = null, bool jump = false)
         {
             var l = new Lift { k = k, offTop = ot, offBottom = ob, second = laid != null };
             float xt = Slope.Centre(zt) + ot, xb = Slope.Centre(zb) + ob;
@@ -356,6 +380,8 @@ namespace Summit
             l.top = new Vector3(xt, 0f, zt); l.bottom = new Vector3(xb, 0f, zb);
             if (!StationAt(l, xt, zt, out float deckT) || !StationAt(l, xb, zb, out float deckB)) return null;
             l.top.y = deckT; l.bottom.y = deckB;
+            // a station to ski through: settled before the towers are (it asks only where the station stands)
+            if (jump) { PlaceJump(l); if (l.jump == null) return null; }
             if (Occupied != null)
                 for (float s = -StationHalfLen - 6f; s <= plan + StationHalfLen + 6f; s += 5f)
                     for (int side = -1; side <= 1; side++)

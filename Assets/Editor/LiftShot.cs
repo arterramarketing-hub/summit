@@ -26,7 +26,7 @@ public static class LiftShot
     static MethodInfo tUpd, fUpd, lUpd;
     static string tag, outDir;
 
-    class Pose { public string name; public Vector3 rider, eye, look; public float fov; public double clock; }
+    class Pose { public string name; public Vector3 rider, eye, look; public float fov; public double clock; public System.Action<Pose> then; }
 
     public static void Run()
     {
@@ -56,8 +56,11 @@ public static class LiftShot
         terrain.Rebuild(); props.Rebuild(); if (dress != null) dress.Rebuild();
         SkiLift.TestClock = 100.0;
         Log($"seed {seed}: {LiftLine.Lifts.Length} lifts\n" + LiftLine.Report() + LiftLine.RampReport());
-        var poses = posesIn != null && File.Exists(posesIn) ? Read(posesIn) : Find();
-        Write(Path.Combine(outDir, "LiftShot_poses.txt"), poses);
+        // SUMMIT_LIFT_SET=jump: the bottom station you ski through (LiftJump.cs), not the lines
+        bool jumpSet = System.Environment.GetEnvironmentVariable("SUMMIT_LIFT_SET") == "jump";
+        if (jumpSet) Log(LiftLine.JumpReport());
+        var poses = jumpSet ? FindJump() : posesIn != null && File.Exists(posesIn) ? Read(posesIn) : Find();
+        if (!jumpSet) Write(Path.Combine(outDir, "LiftShot_poses.txt"), poses);
         // One picture to an editor frame: what SkiLift asks the GPU to draw (Graphics.RenderMeshInstanced) stays
         // queued until the frame ends, so two pictures taken in one frame would show every chair twice.
         steps.Clear(); at = 0;
@@ -70,6 +73,7 @@ public static class LiftShot
                 {
                     TimeOfDay.TestClock = clock; dayNight.ApplyNow();
                     Stand(p);
+                    p.then?.Invoke(p);
                     Shoot(Path.Combine(outDir, $"{tag}-{p.name}-{when}.png"));
                     lift.Stats(out int draws, out long tris, out int inst);
                     Log($"{tag} {p.name} {when}: {draws} draw calls, {tris} triangles, {inst} instances (rider at {p.rider})");
@@ -152,6 +156,98 @@ public static class LiftShot
         Vector3 eye = new Vector3(xf, Slope.DrawnHeight(xf, zf) + 20f, zf);
         poses.Add(new Pose { name = "far", rider = new Vector3(xf, 0f, zf), eye = eye, look = over + new Vector3(0f, -14f, 50f), fov = 62f, clock = 100.0 });
         return poses;
+    }
+
+    // ---------------------------------------------------------------- the station you ski through
+
+    /// <summary>
+    /// The jump station of the mountain's second cycle (or the first it has): from up the hill as the rider comes to
+    /// it, at its mouth, from the piste's side, from below its lip, with the rider in the air off it and with the
+    /// rider on its deck coming to the lip (real rides through the lane at 26 m/s, stopped for the picture).
+    /// </summary>
+    static List<Pose> FindJump()
+    {
+        var poses = new List<Pose>();
+        LiftLine.Lift l = null;
+        int want = int.TryParse(System.Environment.GetEnvironmentVariable("SUMMIT_LIFT_CYCLE"), out int wc) ? wc : 1;
+        foreach (var c in LiftLine.Lifts) if (c.jump != null && (l == null || (c.k == want && l.k != want))) l = c;
+        if (l == null) { Log("no jump station on this mountain"); return poses; }
+        var j = l.jump;
+        Vector3 up = Vector3.up, toPiste = l.across * j.side;
+        System.Func<float, float, Vector3> G = (t, c) => { Vector3 q = l.At(l.plan + t, j.side * c, 0f); q.y = Slope.DrawnHeight(q.x, q.z); return q; };
+        float mid = LiftLine.JumpLaneMid;
+        // from up the hill: the rider 24 m above where the lane's top leaves the snow, the camera behind them as in the game
+        Vector3 r0 = G(j.start - 24f, mid);
+        poses.Add(new Pose { name = "jump-uphill", rider = r0, eye = G(j.start - 32f, mid) + up * 3.4f, look = l.At(l.plan + 2f, j.side * mid, j.y0 + 1f), fov = 74f, clock = 100.0 });
+        // nearer, at the mouth: what the lane looks like as you come onto it
+        Vector3 r1 = G(j.start - 5f, mid + 1f);
+        poses.Add(new Pose { name = "jump-mouth", rider = r1, eye = G(j.start - 12f, mid + 1.5f) + up * 3.0f, look = l.At(l.plan + j.end, j.side * mid, j.y0 + 1.5f), fov = 74f, clock = 100.0 });
+        // from the side: off the piste's side of it, level with its deck, all of it
+        Vector3 side = l.At(l.plan + 1f, j.side * (mid + 34f), 0f);
+        poses.Add(new Pose { name = "jump-side", rider = G(j.start - 60f, mid), eye = new Vector3(side.x, Mathf.Max(Slope.DrawnHeight(side.x, side.z) + 2f, j.y0 + 2.5f), side.z) + l.dir * 8f, look = l.At(l.plan + 1f, 0f, j.y0 - 1f), fov = 70f, clock = 100.0 });
+        // from below: under the lip, looking back up at it
+        Vector3 below = G(j.end + 30f, mid + 10f);
+        poses.Add(new Pose { name = "jump-below", rider = G(j.start - 60f, mid), eye = below + up * 2f, look = l.At(l.plan + j.end - 4f, j.side * (mid - 4f), j.y0 + 1f), fov = 70f, clock = 100.0 });
+        // in the air off it
+        poses.Add(new Pose
+        {
+            name = "jump-air", rider = G(j.start - 10f, mid), fov = 74f, clock = 100.0,
+            eye = Vector3.zero, look = Vector3.zero,
+            then = p =>
+            {
+                Fly(l, 26f, 1.05f);
+                Vector3 at = rider.Body.position;
+                // (from ahead of the rider and below, toward the piste: the rider against the sky, the station behind)
+                Vector3 eye = at + l.dir * 13f + toPiste * 9f - up * 5.5f;
+                eye.y = Mathf.Max(eye.y, Slope.DrawnHeight(eye.x, eye.z) + 1.5f);
+                cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(at + up * 0.6f - l.dir * 3f - eye));
+                Log($"{tag} jump-air: the rider {rider.AboveGround:0.0} m over the snow, {rider.AirTime:0.00} s off the lip, trick '{rider.TrickName}'");
+            },
+        });
+        // and as the game shows it, from behind the rider: on the deck, coming to the lip
+        poses.Add(new Pose
+        {
+            name = "jump-lip", rider = G(j.start - 10f, mid), fov = 74f, clock = 100.0, eye = Vector3.zero, look = Vector3.zero,
+            then = p =>
+            {
+                Fly(l, 26f, 0f, j.end - 9f);
+                Vector3 at = rider.Body.position;
+                Vector3 eye = at - l.dir * 7.5f + up * 3.1f;
+                cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(at + l.dir * 16f - up * 1.5f - eye));
+            },
+        });
+        return poses;
+    }
+
+    /// <summary>A real ride through the lane from where the rider stands, at v0, until `air` seconds after the lip.</summary>
+    static void Fly(LiftLine.Lift l, float v0, float air, float stopOnDeckAt = float.MaxValue)
+    {
+        const float dt = 1f / 120f;
+        Vector3 from = rider.Body.position;
+        rider.Begin();
+        rider.Heading = Mathf.Atan2(l.dir.x, l.dir.z);
+        rider.Body.linearVelocity = Vector3.ProjectOnPlane(l.dir, Slope.Normal(from.x, from.z)).normalized * v0;
+        // (the lift itself is left as Stand drew it: asked to draw again in this frame, its chairs would show twice)
+        bool on = false; float off = 0f;
+        for (int n = 0; n < 1200; n++)
+        {
+            rider.Steer = 0f;
+            rider.Tick(dt); body.PhysicsStep(); Physics.Simulate(dt);
+            if (n % 12 == 0) { terrain.Prewarm(); props.Prewarm(); }
+            if (n % 4 == 0) body.Apply(4 * dt);
+            bool deck = rider.Grinding && rider.GrindFeature.id == -3;
+            if (deck) on = true;
+            Vector3 q = rider.Body.position;
+            if (deck && (q.x - l.top.x) * l.dir.x + (q.z - l.top.z) * l.dir.z - l.plan >= stopOnDeckAt) break;
+            if (on && !deck) { off += dt; if (off >= air || !rider.Airborne) break; }
+        }
+        body.Apply(dt);
+        rider.Stop();
+        tUpd.Invoke(terrain, null); fUpd.Invoke(props, null);
+        // (a still has no use for the takeoff's puff of snow: batchmode leaves its particles hanging where they were born)
+        foreach (var ps in Object.FindObjectsByType<ParticleSystem>(FindObjectsSortMode.None)) ps.Clear(true);
+        var fx = Object.FindFirstObjectByType<SnowFX>();
+        if (fx != null) fx.Clear();
     }
 
     static string V(Vector3 v) => string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0:R} {1:R} {2:R}", v.x, v.y, v.z);

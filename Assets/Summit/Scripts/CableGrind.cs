@@ -27,18 +27,25 @@ namespace Summit
     ///   6. Chairs. On the cable the board skims over each chair's grip: a tick and a few points, never a crash.
     ///      (SkiLift asks ChairsHit; chairs stay solid for anyone who is not grinding or fresh off a ramp.)
     ///
+    ///   7. Stations. A bottom station with a lane through it (LiftJump.cs) is ridden the same way as a ramp, only
+    ///      wider: come onto the lane where its top leaves the snow and the board is carried along that top, level
+    ///      past the terminal and off the lip at the far end. Steering still moves the board across the lane. The
+    ///      chairs load on the other side of a railing and never come over the lane. Every ride takes it, tube
+    ///      and toboggan too: it is a deck to ride across, not a rope to balance on.
+    ///
     /// Rides: the snowboard and skis grind. The toboggan cannot balance on a rope any more than on a rail: it
     /// clatters off it, slowed and wobbling, for a few points. The snow tube takes neither ramp nor cable, as it
     /// takes no rail. A cable counts as a rail for the day's missions and plays the rail's sound.
     /// </summary>
     public static class CableGrind
     {
-        enum Mode { None, Ramp, Cable }
+        enum Mode { None, Ramp, Cable, Deck }
         static Mode mode;
         static LiftLine.Lift lift;
         static int span;                 // the span being ridden (or the ramp's)
         static float side;               // which cable, +1 or -1
-        static float along;              // where the board is: m along the line (cable), or down the ramp
+        static float along;              // where the board is: m along the line (cable), down the ramp, or past the station's middle (deck)
+        static float across;             // on a station's lane: m across from the line's centre
         static float speed, slid, landedAt;
         static Vector3 offset;           // from the line to where the board came on: eased away over a few frames
         static int chain;                // spans ridden in a row without touching snow
@@ -80,10 +87,10 @@ namespace Summit
         static int Key(LiftLine.Lift l, int i, float s) => l.id * 1000 + i * 2 + (s > 0f ? 1 : 0);
 
         /// <summary>The stand-in rail under the board: a metre of the line, which is all the pose and the sounds ask of it.</summary>
-        static Course.Feature Feature(Vector3 at, Vector3 dir, bool cable, float above) => new Course.Feature
+        static Course.Feature Feature(Vector3 at, Vector3 dir, bool cable, float above, int id = 0) => new Course.Feature
         {
-            kind = cable ? Course.Kind.Rail : Course.Kind.Box, a = at, b = at + dir, halfWidth = cable ? 0.04f : CableTune.RampHalfWidth,
-            height = above, id = cable ? -1 : -2,
+            kind = cable ? Course.Kind.Rail : Course.Kind.Box, a = at, b = at + dir, halfWidth = cable ? 0.04f : id == -3 ? LiftLine.JumpRideHalf : CableTune.RampHalfWidth,
+            height = above, id = id != 0 ? id : cable ? -1 : -2,
         };
 
         // ---------------------------------------------------------------- getting on
@@ -94,19 +101,53 @@ namespace Summit
         /// </summary>
         public static bool TryBoard(Rider r, Vector3 p, Vector3 v)
         {
-            if (r.Tube || !LiftLine.On) return false;
+            if (!LiftLine.On) return false;
             if (mode != Mode.None) mode = Mode.None;   // (left it some other way: a crash, a reset)
             var flat = new Vector2(v.x, v.z);
             float flatSpeed = flat.magnitude;
-            if (flatSpeed < CableTune.CatchMinSpeed) return false;
             foreach (var l in LiftLine.Lifts)
             {
-                if (p.z < l.ZMin - 5f || p.z > l.ZMax + 5f) continue;
+                if (p.z < l.ZMin - 5f || p.z > l.ZMax + LiftLine.JumpEndMax) continue;
                 float s = (p.x - l.top.x) * l.dir.x + (p.z - l.top.z) * l.dir.z;
                 float c = (p.x - l.top.x) * l.across.x + (p.z - l.top.z) * l.across.z;
-                if (Mathf.Abs(c) > LiftLine.Half + CableTune.CatchSide + 0.5f) continue;
                 float down = (v.x * l.dir.x + v.z * l.dir.z);
+
+                // its bottom station's lane: come onto where its top stands clear of the snow, from the snow or out
+                // of the air, and the board is on it
+                var jump = l.jump;
+                // (at any speed, and well off its line: whoever is on the lane and going down it at all is carried,
+                // so nobody ends up riding the snow in under its top)
+                if (jump != null && down > CableTune.DeckAlign * flatSpeed && down > 0.5f && s - l.plan > -LiftLine.JumpReach && s - l.plan < jump.end - 1f
+                    && c * jump.side > LiftLine.JumpLaneIn - CableTune.DeckCatch && c * jump.side < LiftLine.JumpLaneOut + CableTune.DeckCatch)
+                {
+                    float t = s - l.plan;
+                    // (a board a little outside a kerb is caught too, and eased in: nobody catches the lane's edge. Only
+                    // near the mouth, though, before the kerb has risen a step over the snow and its rail begun)
+                    float mid = jump.side * LiftLine.JumpLaneMid, room = LiftLine.JumpRideHalf - 0.2f;
+                    float cc = Mathf.Clamp(c, mid - room, mid + room);
+                    bool outside = Mathf.Abs(c - mid) > LiftLine.JumpRideHalf;
+                    float edge = mid + Mathf.Sign(c - mid) * LiftLine.JumpRideHalf;
+                    if (!outside || LiftLine.JumpOver(l, t, edge) < CableTune.DeckCatchOver)
+                    {
+                        float top = LiftLine.JumpTop(l, t, cc), bottom = p.y - Rider.R;
+                        Vector3 d = LiftLine.JumpDir(l, t, cc);
+                        // (in the air: only coming down onto it, not rising off it the step after a hop)
+                        float closing = v.y - d.y / Mathf.Max(0.2f, Mathf.Sqrt(1f - d.y * d.y)) * down;
+                        if (LiftLine.JumpOver(l, t, cc) > CableTune.DeckOver && bottom < top + CableTune.DeckAbove && bottom > top - CableTune.DeckBelow
+                            && (!r.Airborne || closing <= 0.5f))
+                        {
+                            mode = Mode.Deck; lift = l; along = t; across = cc;
+                            speed = Mathf.Max(Vector3.Dot(v, d), CableTune.MinSpeed); slid = 0f;
+                            Vector3 on = l.At(l.plan + t, cc, top + Rider.R);
+                            offset = p - on;
+                            r.CableBoard(Feature(on, d, false, top - Slope.DrawnHeight(on.x, on.z), -3), false);
+                            return true;
+                        }
+                    }
+                }
+                if (r.Tube || p.z > l.ZMax + 5f || flatSpeed < CableTune.CatchMinSpeed) continue;
                 if (down < CableTune.CatchAlign * flatSpeed) continue;   // across the line, or up it
+                if (Mathf.Abs(c) > LiftLine.Half + CableTune.CatchSide + 0.5f) continue;
 
                 // its ramp: ridden into at the foot, on the snow (or just off it), like a park box
                 var ramp = l.ramp;
@@ -183,6 +224,29 @@ namespace Summit
                 }
                 Vector3 at = LiftLine.RampPoint(lift, ramp, along) + Vector3.up * Rider.R;
                 r.CableRide(Feature(at, d, false, 0f), speed, at.y - Slope.DrawnHeight(at.x, at.z));
+                return (at + offset - p) / dt;
+            }
+
+            if (mode == Mode.Deck)
+            {
+                offset *= Mathf.Exp(-dt * 10f);   // (on the lane the board is eased in faster: off a kerb before its rail)
+                // a station's lane: along its top, a little steering across it, and off the lip
+                var jump = lift.jump;
+                if (jump == null) { mode = Mode.None; return r.CableLeave(p, v); }
+                Vector3 d = LiftLine.JumpDir(lift, along, across);
+                speed = Mathf.Max(CableTune.MinSpeed, speed + LiftLine.SlideAccel(speed, d.y) * dt);
+                along += speed * Mathf.Sqrt(Mathf.Max(0f, 1f - d.y * d.y)) * dt;
+                float mid = jump.side * LiftLine.JumpLaneMid, room = LiftLine.JumpRideHalf - 0.2f;
+                across = Mathf.Clamp(across + r.Steer * CableTune.DeckSteer * Mathf.Sign(lift.across.x) * dt, mid - room, mid + room);
+                if (along >= jump.end || pop)
+                {
+                    mode = Mode.None; offRamp = true;
+                    d = LiftLine.JumpDir(lift, Mathf.Min(along, jump.end), across);
+                    return r.CableLeave(p, d * speed + (pop ? Vector3.up * hop : Vector3.zero));
+                }
+                float top = LiftLine.JumpTop(lift, along, across);
+                Vector3 at = lift.At(lift.plan + along, across, top + Rider.R);
+                r.CableRide(Feature(at, d, false, 0f, -3), speed, at.y - Slope.DrawnHeight(at.x, at.z) - Rider.R);
                 return (at + offset - p) / dt;
             }
 

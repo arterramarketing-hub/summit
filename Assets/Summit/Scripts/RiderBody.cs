@@ -970,7 +970,7 @@ namespace Summit
                 if (ragdoll.Active)
                 {
                     // crashed again before the last one was tidied away: patch up, then throw again
-                    DetachLimbs(); ragdoll.End();   // (a limb lost stays lost: RiderBodyLimbs)
+                    DetachLimbs(); ragdoll.End(); MendLimbs();   // (a limb lost is patched back on, bandaged: RiderBodyLimbs)
                     foreach (var b in brokenThisCrash) Bandage(b);
                 }
                 ragdoll.Begin(lastVel);
@@ -1031,7 +1031,7 @@ namespace Summit
                 else
                 {
                     FallRested?.Invoke(ragdoll.Centre);   // a flag where you came to rest
-                    DetachLimbs(); ragdoll.End(); spray.Emit(30);   // back up on the board, patched up (a lost limb left on the snow: RiderBodyLimbs)
+                    DetachLimbs(); ragdoll.End(); MendLimbs(); spray.Emit(30);   // back up on the board, patched up (a lost limb left on the snow, the rider's bandaged: RiderBodyLimbs)
                     RagdollMoving = false; rider.HoldCrash = false;
                     RagdollBelowSnow = 0f;
                     foreach (var b in brokenThisCrash) Bandage(b);

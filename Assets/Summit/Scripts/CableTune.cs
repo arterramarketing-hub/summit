@@ -55,5 +55,14 @@ namespace Summit
         public const float RampOffPiste = 3f;       // m outside the groomed edge, at least
         public const float RampLane = 7f;           // m: half the width cleared of trees from the piste's edge to the ramp
         public const float RampLaneLength = 55f;    // m up the hill that lane starts
+
+        // ---- a bottom station's lane (CableGrind's Deck mode; LiftJump.cs lays it out and works out the flights)
+        public const float DeckOver = 0.03f;        // m the lane's top must stand over the snow before the board is on it, not on the snow
+        public const float DeckAbove = 1.2f;        // m: a board coming down out of the air is on it from this far above its top
+        public const float DeckBelow = 1.0f;        // m: or this far below (the hollow where the snow turns into the deck)
+        public const float DeckSteer = 3.5f;        // m/s across the lane at full steer
+        public const float DeckCatch = 1.5f;        // m outside either kerb that a board is still caught onto the lane
+        public const float DeckCatchOver = 0.35f;   // m: only where the kerb stands no higher than this over the snow
+        public const float DeckAlign = 0.3f;        // the board must be going down the lane within about 70 degrees of its line
     }
 }

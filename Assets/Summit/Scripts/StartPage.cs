@@ -344,6 +344,77 @@ namespace Summit
         Sprite fadeUp, chevron, sliders;
         RectTransform pressed; float pressT;
 
+        // ---------------------------------------------------------------- the title
+
+        const float TitleWidth = 900f, TitleY = 300f, TitleReveal = 2.4f, SweepAt = 1.9f, SweepTime = 1.5f;
+        RawImage titleImage;
+        Material titleMat;
+        Texture2D titleTex;
+        System.Threading.Tasks.Task<Color32[]> titleJob;
+        int titleStyle = -1, titleJobStyle;
+
+        /// <summary>Which of TitleArt.Styles the title is drawn in. `now`: build it at once (the test tools), else off the main thread.</summary>
+        public void SetTitleStyle(int style, bool now)
+        {
+            style = Mathf.Clamp(style, 0, TitleArt.Styles.Length - 1);
+            if (style == titleStyle && (titleTex != null || titleJob != null) && !now) return;
+            titleStyle = style;
+            var st = TitleArt.Styles[style];
+            if (titleMat != null)
+            {
+                titleMat.SetColor("_Top", st.top); titleMat.SetColor("_Bottom", st.bottom); titleMat.SetColor("_SnowCol", st.snowCol); titleMat.SetColor("_ShadowCol", st.shadowCol);
+                titleMat.SetFloat("_Spec", st.spec); titleMat.SetFloat("_Edge", st.edge); titleMat.SetFloat("_Frost", st.frost); titleMat.SetFloat("_ShadowA", st.shadow); titleMat.SetFloat("_Drift", st.drift);
+                titleMat.SetVector("_Word", new Vector4(TitleArt.WordV0, TitleArt.WordV1, 0, 0));
+                titleMat.SetFloat("_Spread", TitleArt.Spread); titleMat.SetVector("_TexSize", new Vector4(TitleArt.Width, TitleArt.Height, 0, 0));
+            }
+            if (now) { titleJob = null; UseTitle(TitleArt.Build(st)); return; }
+            titleJobStyle = style;
+            titleJob = System.Threading.Tasks.Task.Run(() => TitleArt.Build(st));
+        }
+
+        void UseTitle(Color32[] px)
+        {
+            if (titleTex != null) { if (Application.isPlaying) Destroy(titleTex); else DestroyImmediate(titleTex); }
+            titleTex = TitleArt.ToTexture(px, "Title");
+            titleImage.texture = titleTex;
+            titleImage.enabled = titleMat != null;
+        }
+
+        /// <summary>The title's reveal and its light, each frame the page is drawn.</summary>
+        void StepTitle()
+        {
+            if (titleJob != null && titleJob.IsCompleted)
+            {
+                var job = titleJob; titleJob = null;
+                if (job.Status == System.Threading.Tasks.TaskStatus.RanToCompletion && titleJobStyle == titleStyle) UseTitle(job.Result);
+            }
+            if (titleMat == null || titleTex == null) return;
+            // the reveal runs on the page's own clock from when the page comes up, so a preview of any moment shows that
+            // moment (the texture is ready long before: it takes a fraction of the view's time alone)
+            float ta = age - ViewAlone;
+            titleMat.SetFloat("_Reveal", Mathf.Clamp01(ta / TitleReveal));
+            titleMat.SetFloat("_Sweep", Mathf.Lerp(-0.4f, 1.4f, Mathf.Clamp01((ta - SweepAt) / SweepTime)));
+            // the light of the day, from where the sun or moon stands in the view
+            var sun = RenderSettings.sun;
+            Color lc = sun != null ? sun.color.linear * Mathf.Clamp(sun.intensity, 0.2f, 2f) : Color.white;
+            float lm = Mathf.Max(lc.r, Mathf.Max(lc.g, lc.b));
+            if (lm > 1.4f) lc *= 1.4f / lm;
+            Color amb = RenderSettings.ambientSkyColor.linear;
+            // (never so dark it can't be read: at night the moonlit ice keeps a floor)
+            float am = Mathf.Max(amb.r, Mathf.Max(amb.g, amb.b));
+            if (am < 0.4f) amb = Color.Lerp(amb, new Color(0.34f, 0.36f, 0.42f), 1f - am / 0.4f);   // (and greyer: moonlight shows little colour)
+            // by moonlight colour goes: the light and the sky's light both greyed (or the blue ice would go a saturated blue)
+            float dark = darkness != null ? Mathf.Clamp01(darkness()) : 0f;
+            Color Grey(Color c, float l) { float y = 0.3f * c.r + 0.59f * c.g + 0.11f * c.b; return Color.Lerp(c, new Color(y * 0.92f, y * 0.97f, y * 1.08f), l); }
+            amb = Grey(amb, dark * 0.75f);
+            lc = Grey(lc, dark * 0.75f) * (1f + 0.5f * dark);
+            titleMat.SetColor("_Light", new Color(lc.r, lc.g, lc.b, 0.85f));
+            titleMat.SetColor("_Ambient", amb * 0.8f);
+            Vector3 toSun = SunDir();
+            Vector2 ld = cam != null ? new Vector2(Vector3.Dot(toSun, cam.transform.right), Mathf.Max(0.25f, Vector3.Dot(toSun, cam.transform.up) + 0.35f)) : new Vector2(-0.5f, 0.8f);
+            titleMat.SetVector("_LightDir", ld.normalized);
+        }
+
         class Row
         {
             public int tab; public string label; public System.Func<string> value; public System.Action<int> step;
@@ -457,11 +528,18 @@ namespace Summit
 
             // the title, high in the sky
             titleRect = New("Title", safe);
-            Place(titleRect, new Vector2(0.5f, 1f), new Vector2(0f, -250f), new Vector2(900f, 200f), new Vector2(0.5f, 0.5f));
+            Place(titleRect, new Vector2(0.5f, 1f), new Vector2(0f, -TitleY), new Vector2(TitleWidth, 320f), new Vector2(0.5f, 0.5f));
             titleGroup = titleRect.gameObject.AddComponent<CanvasGroup>();
-            // (the mountain's name, as the camp's sign has it: one line, small and widely set, so it stays quiet)
-            var title = Label("Name", titleRect, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(960f, 120f), 62, TextAnchor.MiddleCenter, Ink);
-            title.text = Track("MOUNT VERTIGO", 62);
+            // the mountain's name, drawn (TitleArt: our own letterforms, ice and snow, made at start-up off the main
+            // thread) and lit by the day (TitleLetters.shader). Until its texture is ready nothing shows
+            titleImage = New("Lettering", titleRect).gameObject.AddComponent<RawImage>();
+            titleImage.raycastTarget = false;
+            Place(titleImage.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(TitleWidth, TitleWidth * TitleArt.Height / TitleArt.Width), new Vector2(0.5f, 0.5f));
+            var tsh = Resources.Load<Shader>("TitleLetters");
+            if (tsh != null && tsh.isSupported) titleMat = new Material(tsh) { name = "TitleLetters" };
+            titleImage.material = titleMat;
+            titleImage.enabled = false;
+            SetTitleStyle(TitleArt.DefaultStyle, false);
 
             // the two ways in, side by side, and under them the one control for everything else
             var choices = New("Choices", safe); Stretch(choices);
@@ -666,9 +744,10 @@ namespace Summit
         {
             float up = leaving != 0 ? 1f - Ease(leaveT * 3f) : 1f;
             float page01 = (1f - sheet) * up;
-            titleGroup.alpha = Ease((age - ViewAlone) / FadeIn) * page01;
+            titleGroup.alpha = Mathf.Clamp01((age - ViewAlone) / 0.3f) * page01;   // (the lettering reveals itself: StepTitle)
             choiceGroup.alpha = Ease((age - ViewAlone - 0.7f) / FadeIn) * page01;
-            titleRect.anchoredPosition = new Vector2(0f, -250f + 14f * (1f - Ease((age - ViewAlone) / (FadeIn * 1.3f))));
+            titleRect.anchoredPosition = new Vector2(0f, -TitleY + 10f * (1f - Ease((age - ViewAlone) / (FadeIn * 1.6f))));
+            StepTitle();
             topShade.color = new Color(0.02f, 0.04f, 0.09f, 0.34f * titleGroup.alpha);
             bottomShade.color = new Color(0.02f, 0.04f, 0.09f, 0.5f * Mathf.Max(choiceGroup.alpha, sheet * up));
             // the sheet rises as it comes

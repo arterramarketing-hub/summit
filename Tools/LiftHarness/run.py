@@ -15,7 +15,7 @@ OUT = os.path.join(tempfile.gettempdir(), "summit-lift-harness")
 os.makedirs(OUT, exist_ok=True)
 S = os.path.join(ROOT, "Assets/Summit/Scripts")
 src = glob.glob(os.path.join(HERE, "*.cs")) + [os.path.join(S, f + ".cs") for f in
-      ("Slope", "Course", "Ridge", "Cliffs", "Deadly", "LiftLine", "LiftNetwork", "LiftRamp", "CableTune")]
+      ("Slope", "Course", "Ridge", "Cliffs", "Deadly", "LiftLine", "LiftNetwork", "LiftRamp", "LiftJump", "CableTune")]
 refs = ["-r:" + f for f in glob.glob(os.path.join(FW, "System*.dll")) + [os.path.join(FW, "netstandard.dll"), os.path.join(FW, "mscorlib.dll")]]
 dll = os.path.join(OUT, "lift.dll")
 r = subprocess.run([DOTNET, os.path.join(SCRIPTING, "DotNetSdkRoslyn/csc.dll"), "-nologo", "-langversion:latest", "-optimize+",

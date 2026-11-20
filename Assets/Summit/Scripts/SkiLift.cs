@@ -30,8 +30,13 @@ namespace Summit
     ///     eight colours, skis on the footrest or a board hanging; hardly any coming down do. Who sits where is
     ///     drawn afresh each time a chair leaves the bottom station.
     ///
+    /// A first line's bottom station is, where the ground allows, the big one you ski through and jump off
+    /// (LiftJumpStation: laid out in LiftJump.cs, ridden by CableGrind, built here once as one mesh).
+    ///
     /// Solid: a tower's mast and pad, and each station, are colliders marked as obstacles, so riding into one off
-    /// the piste is a crash like a tree ("Lift tower", "Lift station"). A chair is solid too: a jump high enough to
+    /// the piste is a crash like a tree ("Lift tower", "Lift station"). A station is solid where it is drawn: its
+    /// deck and legs, not the air under its deck; a jump station's podium, walls, railings, posts and masts, not its
+    /// lane, which the rider is carried along. A chair is solid too: a jump high enough to
     /// reach one is a crash ("Chairlift!", or a shield spent), found by a simple test against the few nearest
     /// chairs. The cable never knocks anyone down: it is there to be ground (CableGrind.cs), from the launch ramp
     /// that stands under each lift (LiftRamp.cs), and while a rider is on it the chairs skim under the board and the
@@ -193,7 +198,7 @@ namespace Summit
             lamp.type = LightType.Point; lamp.color = new Color(1f, 0.9f, 0.74f); lamp.range = 34f; lamp.shadows = LightShadows.None;
             lamp.enabled = false;
             ready = true;
-            if (System.Environment.GetEnvironmentVariable("SUMMIT_LIFTCHECK") == "1") Debug.Log("SkiLift\n" + LiftLine.Report() + LiftLine.RampReport());
+            if (System.Environment.GetEnvironmentVariable("SUMMIT_LIFTCHECK") == "1") Debug.Log("SkiLift\n" + LiftLine.Report() + LiftLine.RampReport() + LiftLine.JumpReport());
         }
 
         // ---------------------------------------------------------------- what is built near the rider
@@ -204,6 +209,7 @@ namespace Summit
             public GameObject root;
             public GameObject[] span, tower;        // each span's cable; each tower's collider
             public GameObject stationTop, stationBottom;
+            public Mesh station;                    // a station with a lane through it: what is drawn of it
         }
         readonly List<Live> live = new List<Live>();
         float refreshClock;
@@ -243,6 +249,7 @@ namespace Summit
         {
             if (lv.root == null) return;
             foreach (var mf in lv.root.GetComponentsInChildren<MeshFilter>(true)) if (mf.sharedMesh != null && mf.sharedMesh.name.StartsWith("Lift")) Destroy(mf.sharedMesh);   // the cables' and the ramp's meshes are ours (the sign's are Unity's)
+            foreach (var mc in lv.root.GetComponentsInChildren<MeshCollider>(true)) if (mc.sharedMesh != null && mc.sharedMesh.name.StartsWith("LiftJump")) Destroy(mc.sharedMesh);
             Destroy(lv.root);
             lv.root = null;
         }
@@ -266,6 +273,7 @@ namespace Summit
                 var made = new Live { lift = l, root = root, span = new GameObject[l.Spans], tower = new GameObject[l.s.Length] };
                 live.Add(made);
                 Ramp(made);
+                JumpStation(made);
             }
 
             foreach (var part in parts) if (part != chair && part != chairLod && System.Array.IndexOf(riders, part) < 0 && System.Array.IndexOf(ridersLod, part) < 0) part.list.Clear();
@@ -325,7 +333,8 @@ namespace Summit
                 if (topIn) station.list.Add(Frame(l.top, l.across, Vector3.up, l.dir) * station.local);
                 if (bottomIn) station.list.Add(Frame(l.bottom, -l.across, Vector3.up, -l.dir) * station.local);
                 Stream(ref lv.stationTop, topIn && (l.top - p).sqrMagnitude < 240f * 240f, lv, l.top, l.dir);
-                Stream(ref lv.stationBottom, bottomIn && (l.bottom - p).sqrMagnitude < 240f * 240f, lv, l.bottom, -l.dir);
+                // (a station with a lane through it is solid from the moment its lift is in range: JumpStation)
+                Stream(ref lv.stationBottom, l.jump == null && bottomIn && (l.bottom - p).sqrMagnitude < 240f * 240f, lv, l.bottom, -l.dir);
             }
         }
 
@@ -527,6 +536,304 @@ namespace Summit
         Material rampMat, signMat;
         Shader litShader;
 
+        // ---------------------------------------------------------------- the station you ski through (LiftJump.cs)
+
+        /// <summary>A mesh built quad by quad: each one colour of the palette, each facing the way it is told to.</summary>
+        class Shape
+        {
+            public readonly List<Vector3> v = new List<Vector3>(); public readonly List<Vector2> uv = new List<Vector2>(); public readonly List<int> tri = new List<int>();
+            public Vector3 origin;
+            public void Quad(Vector3 a, Vector3 b, Vector3 c, Vector3 d, int cell, Vector3 outward)
+            {
+                if (Vector3.Dot(Vector3.Cross(b - a, c - a) + Vector3.Cross(c - a, d - a), outward) < 0f) { var s = b; b = d; d = s; }
+                int n = v.Count;
+                v.Add(a - origin); v.Add(b - origin); v.Add(c - origin); v.Add(d - origin);
+                var p = Paint(cell); uv.Add(p); uv.Add(p); uv.Add(p); uv.Add(p);
+                tri.Add(n); tri.Add(n + 1); tri.Add(n + 2); tri.Add(n); tri.Add(n + 2); tri.Add(n + 3);
+            }
+            /// <summary>A bar from a to b, w wide and h deep.</summary>
+            public void Bar(Vector3 a, Vector3 b, float w, float h, int cell, bool caps = true)
+            {
+                Vector3 d = (b - a).normalized;
+                Vector3 s = Vector3.Cross(Vector3.up, d); if (s.sqrMagnitude < 1e-4f) s = Vector3.right;
+                s = s.normalized * (w * 0.5f);
+                Vector3 u = Vector3.Cross(d, s).normalized * (h * 0.5f);
+                Quad(a - s + u, a + s + u, b + s + u, b - s + u, cell, u);
+                Quad(a - s - u, a + s - u, b + s - u, b - s - u, cell, -u);
+                Quad(a + s - u, a + s + u, b + s + u, b + s - u, cell, s);
+                Quad(a - s - u, a - s + u, b - s + u, b - s - u, cell, -s);
+                if (!caps) return;
+                Quad(a - s - u, a + s - u, a + s + u, a - s + u, cell, -d);
+                Quad(b - s - u, b + s - u, b + s + u, b - s + u, cell, d);
+            }
+            public Mesh Make(string name)
+            {
+                var mesh = new Mesh { name = name };
+                mesh.SetVertices(v); mesh.SetUVs(0, uv); mesh.SetTriangles(tri, 0);
+                mesh.RecalculateNormals(); mesh.RecalculateBounds();
+                return mesh;
+            }
+        }
+
+        /// <summary>
+        /// A bottom station with a lane through it and a jump off its far end: the terminal is the plain station's
+        /// (drawn with the others, standing on its deck), and round it this builds what makes it big and ridable.
+        /// The lane on the side toward the piste, its top leaving the snow up the hill, level past the terminal and
+        /// up into a lip; the deck carried on past the bullwheel as a railed plaza; the walls that close all of it
+        /// in down to the snow (a podium: nothing is open underneath, so what is solid is what is drawn); the
+        /// railings, a gantry over the lane with a jump sign and lamps, two light masts at the lip.
+        /// Solid: everything but the lane's top, which the rider is carried along (CableGrind) and only a thrown body
+        /// touches. Built once when the lift comes into range, in the lift's one material: one more draw call.
+        /// </summary>
+        void JumpStation(Live lv)
+        {
+            var l = lv.lift; var j = l.jump;
+            if (j == null) return;
+            const int Steel = 0, Dark = 1, Pad = 3, Accent = 6, Deck = 7, Lamp = 9, Beacon = 10, Snow = 19;
+            const float In = LiftLine.JumpLaneIn, Out = LiftLine.JumpLaneOut, Mid = LiftLine.JumpLaneMid;
+            const float SolidUnder = 0.4f;
+            const float Far = -LiftLine.StationHalfWid, Back = -LiftLine.StationHalfLen, Front = LiftLine.StationHalfLen, Edge = LiftLine.StationHalfWid;
+            float sd = j.side, yS = l.bottom.y, end = j.end;
+            Vector3 up = Vector3.up, dir = l.dir, toPiste = l.across * sd;
+            var draw = new Shape { origin = l.bottom }; var lane = new Shape { origin = l.bottom }; var solid = new Shape { origin = l.bottom };
+            System.Func<float, float, float, Vector3> P = (t, c, y) => l.At(l.plan + t, sd * c, y);
+            System.Func<float, float, float> SnowAt = (t, c) => { Vector3 q = l.At(l.plan + t, sd * c, 0f); return Slope.DrawnHeight(q.x, q.z); };
+            System.Func<float, float, float> Top = (t, c) => LiftLine.JumpTop(l, t, sd * c);
+
+            // ---- the lane's top, from the first row any of it stands clear of the snow
+            float t0 = end;
+            foreach (float c in new[] { In, Mid, Out }) t0 = Mathf.Min(t0, LiftLine.JumpStart(l, sd * c));
+            t0 = Mathf.Floor(t0) - 1f;
+            int rows = Mathf.CeilToInt(end - t0);
+            float[] cols = { In, In + 0.45f, In + 2.6f, Mid, Out - 2.6f, Out - 0.45f, Out };
+            var rowT = new float[rows + 1];
+            for (int r = 0; r <= rows; r++) rowT[r] = Mathf.Lerp(t0, end, r / (float)rows);
+            for (int r = 0; r < rows; r++)
+                for (int q = 0; q < cols.Length - 1; q++)
+                {
+                    float ta = rowT[r], tb = rowT[r + 1], ca = cols[q], cb = cols[q + 1];
+                    float h00 = Top(ta, ca), h01 = Top(ta, cb), h10 = Top(tb, ca), h11 = Top(tb, cb);
+                    float o00 = h00 - SnowAt(ta, ca), o01 = h01 - SnowAt(ta, cb), o10 = h10 - SnowAt(tb, ca), o11 = h11 - SnowAt(tb, cb);
+                    if (Mathf.Max(Mathf.Max(o00, o01), Mathf.Max(o10, o11)) < 0.02f) continue;   // (still the snow itself)
+                    // (where a corner is the snow it is tucked just under it, so the two never flicker)
+                    const float tuck = 0.1f;
+                    Vector3 a = P(ta, ca, h00 - (o00 < 0.02f ? tuck : 0f)), b = P(ta, cb, h01 - (o01 < 0.02f ? tuck : 0f));
+                    Vector3 c2 = P(tb, cb, h11 - (o11 < 0.02f ? tuck : 0f)), d = P(tb, ca, h10 - (o10 < 0.02f ? tuck : 0f));
+                    int cell = q == 0 || q == cols.Length - 2 ? Pad : tb > end - 0.95f ? Accent : Snow;   // orange kerbs, a red line on the lip
+                    draw.Quad(a, b, c2, d, cell, up); lane.Quad(a, b, c2, d, cell, up);
+                }
+
+            // ---- walls, from a top edge down into the snow: an orange rim, a dark line under it, galvanised steel
+            bool rib = true;   // (a post at this panel's first edge: not at every metre of the lane's sides)
+            System.Action<Vector3, Vector3, float, float, Vector3, bool> Wall = (a, b, ga, gb, outward, rim) =>
+            {
+                // a, b: the top edge's ends; ga, gb: the snow under them
+                if (a.y - ga < 0.02f && b.y - gb < 0.02f) return;
+                Vector3 a0 = new Vector3(a.x, Mathf.Min(a.y, ga) - 1f, a.z), b0 = new Vector3(b.x, Mathf.Min(b.y, gb) - 1f, b.z);
+                // (solid to a board's thickness under its top edge: the board is carried over the lip with its
+                // underside on that edge, and must not catch it)
+                if (a.y - ga > SolidUnder || b.y - gb > SolidUnder) solid.Quad(a + Vector3.down * SolidUnder, b + Vector3.down * SolidUnder, b0, a0, Steel, outward);
+                if (!rim) { draw.Quad(a, b, b0, a0, Deck, outward); return; }
+                Vector3 r1 = Vector3.down * 0.45f, r2 = Vector3.down * 0.6f;
+                draw.Quad(a, b, b + r1, a + r1, Pad, outward);
+                draw.Quad(a + r1, b + r1, b + r2, a + r2, Dark, outward);
+                // grey cladding between galvanised posts, a waler across it every few metres down: a steel frame, not a slab
+                draw.Quad(a + r2, b + r2, b0, a0, Deck, outward);
+                Vector3 proud = outward * 0.07f;
+                if (rib && a.y - ga > 1.2f) draw.Bar(a + r2 + proud, a0 + proud, 0.26f, 0.14f, Steel, false);
+                for (float down = 3.4f; down < Mathf.Max(a.y - ga, b.y - gb) - 0.6f; down += 3.2f)
+                {
+                    // (stopped where it would run into the snow)
+                    Vector3 wa = a + Vector3.down * down + proud, wb = b + Vector3.down * down + proud;
+                    if (wa.y < ga + 0.3f && wb.y < gb + 0.3f) break;
+                    if (wa.y < ga + 0.3f) wa = Vector3.Lerp(wb, wa, Mathf.InverseLerp(b.y - gb, a.y - ga, down + 0.3f));
+                    if (wb.y < gb + 0.3f) wb = Vector3.Lerp(wa, wb, Mathf.InverseLerp(a.y - ga, b.y - gb, down + 0.3f));
+                    draw.Bar(wa, wb, 0.1f, 0.2f, Steel, false);
+                }
+            };
+            // the lane's outer side, and its inner side above the terminal
+            for (int r = 0; r < rows; r++)
+            {
+                float ta = rowT[r], tb = rowT[r + 1];
+                rib = (rows - r) % 3 == 0;
+                Wall(P(ta, Out, Top(ta, Out)), P(tb, Out, Top(tb, Out)), SnowAt(ta, Out), SnowAt(tb, Out), toPiste, true);
+                if (tb <= Back + 0.01f) Wall(P(ta, In, Top(ta, In)), P(tb, In, Top(tb, In)), SnowAt(ta, In), SnowAt(tb, In), -toPiste, true);
+                else
+                {
+                    // beside the terminal and the plaza the lane and the deck share this wall: whichever stands higher shows its side
+                    float ha = Top(ta, In), hb = Top(tb, In);
+                    if (yS > ha + 0.02f || yS > hb + 0.02f) Wall(P(ta, In, yS), P(tb, In, yS), Mathf.Min(ha, yS), Mathf.Min(hb, yS), toPiste, true);
+                    if (ha > yS + 0.02f || hb > yS + 0.02f) Wall(P(ta, In, ha), P(tb, In, hb), Mathf.Min(ha, yS), Mathf.Min(hb, yS), -toPiste, true);
+                }
+            }
+            // the lane's front, under the lip
+            for (int q = 0; q < cols.Length - 1; q++, rib = q != 1)
+                Wall(P(end, cols[q], Top(end, cols[q])), P(end, cols[q + 1], Top(end, cols[q + 1])), SnowAt(end, cols[q]), SnowAt(end, cols[q + 1]), dir, true);
+            rib = true;
+            // the podium under the terminal and the plaza: its front, its far side, its uphill face
+            const int Seg = 4;
+            for (int q = 0; q < Seg; q++)
+            {
+                float ca = Mathf.Lerp(Far, In, q / (float)Seg), cb = Mathf.Lerp(Far, In, (q + 1f) / Seg);
+                Wall(P(end, ca, yS), P(end, cb, yS), SnowAt(end, ca), SnowAt(end, cb), dir, true);
+                Wall(P(Back, ca, yS), P(Back, cb, yS), SnowAt(Back, ca), SnowAt(Back, cb), -dir, false);
+            }
+            int along = Mathf.CeilToInt((end - Back) / 2.5f);
+            for (int q = 0; q < along; q++)
+            {
+                float ta = Mathf.Lerp(Back, end, q / (float)along), tb = Mathf.Lerp(Back, end, (q + 1f) / along);
+                Wall(P(ta, Far, yS), P(tb, Far, yS), SnowAt(ta, Far), SnowAt(tb, Far), -toPiste, true);
+            }
+
+            // ---- the deck: the plaza past the bullwheel, the strip between the terminal's own deck and the lane;
+            // and, for whatever comes down on it, the terminal's own deck (drawn with the terminal)
+            draw.Quad(P(Front, Far, yS), P(Front, Edge, yS), P(end, Edge, yS), P(end, Far, yS), Deck, up);
+            draw.Quad(P(Back, Edge, yS), P(Back, In, yS), P(end, In, yS), P(end, Edge, yS), Deck, up);
+            solid.Quad(P(Back, Far, yS), P(Back, In, yS), P(end, In, yS), P(end, Far, yS), Deck, up);
+
+            // ---- railings: posts, two rails, and for the board a thin wall the height of the rail
+            System.Action<float, float, float, float, System.Func<float, float>, bool> Rail = (ta, ca, tb, cb, yAt, padded) =>
+            {
+                float len = Mathf.Sqrt((tb - ta) * (tb - ta) + (cb - ca) * (cb - ca));
+                if (len < 0.4f) return;
+                int n = Mathf.Max(1, Mathf.CeilToInt(len / 2.5f));
+                Vector3 last = Vector3.zero;
+                for (int i = 0; i <= n; i++)
+                {
+                    float u = i / (float)n, t = Mathf.Lerp(ta, tb, u), c = Mathf.Lerp(ca, cb, u);
+                    Vector3 foot = P(t, c, yAt(u));
+                    if (i == 0 && padded) draw.Bar(foot - up * 0.3f, foot + up * 1.25f, 0.36f, 0.36f, Pad);   // its uphill end, padded like a tower's foot
+                    else draw.Bar(foot - up * 0.1f, foot + up * 1.1f, 0.08f, 0.08f, Steel, false);
+                    if (i > 0)
+                    {
+                        draw.Bar(last + up * 1.1f, foot + up * 1.1f, 0.07f, 0.07f, Steel, false);
+                        draw.Bar(last + up * 0.58f, foot + up * 0.58f, 0.05f, 0.05f, Steel, false);
+                        solid.Bar(last + up * 0.5f, foot + up * 0.5f, 0.12f, 1.3f, Steel);
+                    }
+                    last = foot;
+                }
+            };
+            // the lane's outer edge, from where its top stands a step over the snow; its inner edge above the terminal likewise
+            float railOut = end, railIn = Back;
+            for (int r = rows; r >= 0; r--) if (Top(rowT[r], Out) - SnowAt(rowT[r], Out) > 0.9f) railOut = rowT[r];
+            for (int r = rows; r >= 0; r--) if (rowT[r] < Back && Top(rowT[r], In) - SnowAt(rowT[r], In) > 0.9f) railIn = rowT[r];
+            float e0 = railOut, e1 = end - 0.25f;
+            Rail(e0, Out + 0.05f, e1, Out + 0.05f, u => Top(Mathf.Lerp(e0, e1, u), Out), true);
+            if (railIn < Back - 0.5f) { float i0 = railIn; Rail(i0, In - 0.05f, Back, In - 0.05f, u => Mathf.Lerp(Top(i0, In), Mathf.Max(yS, Top(Back, In)), u), true); }
+            // between the plaza and the lane, the plaza's far side and its front
+            Rail(Front, In - 0.05f, e1, In - 0.05f, u => Mathf.Max(yS, Top(Mathf.Lerp(Front, e1, u), In)), false);
+            Rail(Front, Far + 0.1f, end - 0.1f, Far + 0.1f, u => yS, false);
+            Rail(end - 0.1f, Far + 0.1f, end - 0.1f, In - 0.05f, u => yS, false);
+            // (the terminal's own railings, drawn with it: solid too)
+            foreach (float c in new[] { -(Edge - 0.1f), Edge - 0.1f })
+                solid.Bar(P(Back + 0.1f, c, yS + 0.55f), P(Front - 0.1f, c, yS + 0.55f), 0.12f, 1.1f, Steel);
+
+            // ---- the gantry over the lane's mouth: two posts and a beam, a banner with the jump sign, lamps
+            float tg = Mathf.Clamp(j.start * 0.5f, Back, -1.5f);
+            float gIn = Mathf.Max(Top(tg, In), tg >= Back ? yS : float.MinValue), gOut = Top(tg, Out);
+            float beam = Mathf.Max(gIn, Top(tg, Mid)) + 5.7f;
+            Vector3 pIn = P(tg, In - 0.05f, gIn), pOut = P(tg, Out + 0.05f, gOut);
+            Vector3 bIn = new Vector3(pIn.x, beam, pIn.z), bOut = new Vector3(pOut.x, beam, pOut.z);
+            foreach (var (foot, head) in new[] { (pIn, bIn), (pOut, bOut) })
+            {
+                draw.Bar(foot - up * 0.5f, head, 0.3f, 0.3f, Steel, false); solid.Bar(foot - up * 0.5f, head, 0.3f, 0.3f, Steel, false);
+                draw.Bar(foot - up * 0.5f, foot + up * 1.5f, 0.62f, 0.62f, Pad);   // padded, like a tower's foot
+                solid.Bar(foot - up * 0.5f, foot + up * 1.5f, 0.62f, 0.62f, Pad);
+            }
+            draw.Bar(bIn - toPiste * 0.3f, bOut + toPiste * 0.3f, 0.34f, 0.42f, Steel);
+            draw.Bar(bIn + up * -0.75f, bOut + up * -0.75f, 0.1f, 1.0f, Pad);              // the banner
+            for (int i = 0; i < 3; i++)
+            {
+                Vector3 at = Vector3.Lerp(bIn, bOut, 0.2f + 0.3f * i) + dir * 0.35f - up * 0.3f;
+                draw.Bar(at - toPiste * 0.35f, at + toPiste * 0.35f, 0.3f, 0.12f, Dark);
+                draw.Bar(at - toPiste * 0.3f - up * 0.07f, at + toPiste * 0.3f - up * 0.07f, 0.24f, 0.03f, Lamp);
+            }
+            // ---- a light mast either side of the lip, a red light on top
+            foreach (float c in new[] { In - 0.05f, Out + 0.05f })
+            {
+                float tm = end - 0.3f, y = c < Mid ? Mathf.Max(yS, Top(tm, In)) : Top(tm, Out);
+                Vector3 foot = P(tm, c, y), head = foot + up * 4.6f;
+                draw.Bar(foot, head, 0.16f, 0.16f, Steel, false); solid.Bar(foot, head, 0.16f, 0.16f, Steel, false);
+                draw.Bar(head - up * 0.25f + dir * 0.1f, head - up * 0.25f + dir * 0.55f, 0.5f, 0.16f, Dark);
+                draw.Bar(head - up * 0.34f + dir * 0.14f, head - up * 0.34f + dir * 0.51f, 0.42f, 0.03f, Lamp);
+                draw.Bar(head, head + up * 0.22f, 0.16f, 0.16f, Beacon);
+            }
+
+            var go = new GameObject("LiftJumpStation");
+            go.transform.SetParent(lv.root.transform, false);
+            go.transform.position = l.bottom;
+            lv.station = draw.Make("LiftJumpStation");
+            go.AddComponent<MeshFilter>().sharedMesh = lv.station;
+            go.AddComponent<MeshRenderer>().sharedMaterial = paint;
+            go.AddComponent<MeshCollider>().sharedMesh = solid.Make("LiftJumpSolid");
+            go.AddComponent<Obstacle>().label = "Lift station";
+            // the terminal overhead on its column, and the hut
+            var term = new GameObject("LiftTerminal");
+            term.transform.SetParent(go.transform, false);
+            term.transform.SetPositionAndRotation(l.bottom, Quaternion.LookRotation(-l.dir, Vector3.up));
+            var box = term.AddComponent<BoxCollider>();
+            box.center = new Vector3(0f, LiftLine.StationCable + 1.6f, -0.15f); box.size = new Vector3(LiftLine.Gauge + 2.3f, 3.1f, 11.6f);
+            box = term.AddComponent<BoxCollider>();
+            box.center = new Vector3(0f, 2.5f, -0.2f); box.size = new Vector3(0.9f, 5f, 1.1f);
+            box = term.AddComponent<BoxCollider>();
+            box.center = new Vector3(LiftLine.StationHalfWid - 0.85f, 1.3f, 3.2f); box.size = new Vector3(1.6f, 2.6f, 2.5f);
+            // and the podium is solid right through, not a shell: nothing gets inside it, and nobody gets up inside it
+            // after a fall (Rider.Recover looks for somewhere that is not inside anything solid). Blocks under the deck
+            // and under each few metres of the lane, their tops a board's thickness under the top that is drawn
+            var core = new GameObject("LiftPodium");
+            core.transform.SetParent(go.transform, false);
+            core.transform.SetPositionAndRotation(l.bottom, Quaternion.LookRotation(l.dir, Vector3.up));   // x: across, z: down the line
+            System.Action<float, float, float, float, float, float> Block = (ta, tb, ca, cb, yTop, yBottom) =>
+            {
+                if (yTop - yBottom < 0.3f) return;
+                var bc = core.AddComponent<BoxCollider>();
+                bc.center = new Vector3(sd * (ca + cb) * 0.5f, (yTop + yBottom) * 0.5f - l.bottom.y, (ta + tb) * 0.5f);
+                bc.size = new Vector3(Mathf.Abs(cb - ca), yTop - yBottom, tb - ta);
+            };
+            System.Func<float, float, float, float, float> Lowest = (ta, tb, ca, cb) =>
+                Mathf.Min(Mathf.Min(SnowAt(ta, ca), SnowAt(ta, cb)), Mathf.Min(SnowAt(tb, ca), SnowAt(tb, cb)));
+            Block(Back, end, Far, In, yS - SolidUnder, Lowest(Back, end, Far, In) - 1f);
+            for (int r = 0; r < rows; r += 3)
+            {
+                float ta = rowT[r], tb = rowT[Mathf.Min(r + 3, rows)];
+                float lowTop = float.MaxValue;
+                for (int k = r; k <= Mathf.Min(r + 3, rows); k++) foreach (float c in cols) lowTop = Mathf.Min(lowTop, Top(rowT[k], c));
+                Block(ta, tb, In, Out, lowTop - SolidUnder, Lowest(ta, tb, In, Out) - 1f);
+            }
+
+            // the lane's top: for a thrown body (the rider's own sphere is carried along it and never touches it)
+            // (not under the station's Obstacle: like a launch ramp, the lane is ridden, never hit)
+            var top = new GameObject("LiftJumpDeck") { layer = CourseDressing.IceLayer };
+            top.transform.SetParent(lv.root.transform, false);
+            top.transform.position = l.bottom;
+            top.AddComponent<MeshCollider>().sharedMesh = lane.Make("LiftJumpLane");
+
+            // the jump sign: on the gantry's banner, facing up the hill, and on a post at the piste's edge where the lane to it starts
+            if (signMat == null) signMat = CourseDressing.Sign(litShader, "Signs/SignJump");
+            var board = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            Destroy(board.GetComponent<Collider>());
+            board.name = "LiftJumpSign";
+            board.transform.SetParent(go.transform, false);
+            board.transform.SetPositionAndRotation((bIn + bOut) * 0.5f - up * 0.75f - dir * 0.08f, Quaternion.LookRotation(dir, Vector3.up));
+            board.transform.localScale = new Vector3(1.9f, 1.9f, 1f);
+            board.GetComponent<MeshRenderer>().sharedMaterial = signMat;
+            var post = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            Destroy(post.GetComponent<Collider>());
+            post.name = "LiftJumpSignPost";
+            post.transform.SetParent(go.transform, false);
+            post.transform.position = j.sign + Vector3.up * 1.2f;
+            post.transform.localScale = new Vector3(0.12f, 3.4f, 0.12f);
+            post.GetComponent<MeshRenderer>().sharedMaterial = postMat;
+            var edge = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            Destroy(edge.GetComponent<Collider>());
+            edge.name = "LiftJumpLaneSign";
+            edge.transform.SetParent(go.transform, false);
+            Vector3 way = P(j.start - 6f, Mid, 0f) - j.laneFrom; way.y = 0f;
+            edge.transform.SetPositionAndRotation(j.sign + Vector3.up * 2.4f - way.normalized * 0.08f, Quaternion.LookRotation(way.normalized, Vector3.up));
+            edge.transform.localScale = new Vector3(1.7f, 1.7f, 1f);
+            edge.GetComponent<MeshRenderer>().sharedMaterial = signMat;
+        }
+
         // ---------------------------------------------------------------- solid things
 
         GameObject TowerCollider(Live lv, int i, Vector3 axis, Vector3 fwd)
@@ -551,10 +858,19 @@ namespace Summit
                 go = new GameObject("LiftStation");
                 go.transform.SetParent(lv.root.transform, false);
                 go.transform.SetPositionAndRotation(deck, Quaternion.LookRotation(outward, Vector3.up));
-                // the deck and all that stands under it, down into the snow; the terminal overhead on its column; the hut
-                const float legs = 14f;
+                // solid where it is drawn: the deck with its frame (and a rider's height under it: whoever rides in under
+                // the deck where it is that low meets its edge), the six legs that stand under it, down into the snow
+                // (between them, where the deck stands high over falling ground, there is nothing and you can ride
+                // through); the terminal overhead on its column; the hut
+                const float legs = 14f, W = LiftLine.StationHalfWid, L = LiftLine.StationHalfLen;
                 var b = go.AddComponent<BoxCollider>();
-                b.center = new Vector3(0f, -legs * 0.5f, 0f); b.size = new Vector3(2f * LiftLine.StationHalfWid, legs, 2f * LiftLine.StationHalfLen);
+                b.center = new Vector3(0f, -0.7f, 0f); b.size = new Vector3(2f * W, 1.4f, 2f * L);
+                for (int sx = -1; sx <= 1; sx += 2)
+                    for (int sz = -1; sz <= 1; sz++)
+                    {
+                        b = go.AddComponent<BoxCollider>();
+                        b.center = new Vector3(sx * (W - 0.5f), -legs * 0.5f - 0.3f, sz * (L - 0.5f)); b.size = new Vector3(0.5f, legs, 0.5f);
+                    }
                 b = go.AddComponent<BoxCollider>();
                 b.center = new Vector3(0f, LiftLine.StationCable + 1.6f, -0.15f); b.size = new Vector3(LiftLine.Gauge + 2.3f, 3.1f, 11.6f);
                 b = go.AddComponent<BoxCollider>();
@@ -644,8 +960,12 @@ namespace Summit
                 draws += (part.list.Count + 999) / 1000; tris += (long)part.Tris * part.list.Count; instances += part.list.Count;
             }
             foreach (var lv in live)
+            {
                 foreach (var g in lv.span)
                     if (g != null) { draws++; tris += g.GetComponent<MeshFilter>().sharedMesh.GetIndexCount(0) / 3; }
+                // a station with a lane through it, and its two signs
+                if (lv.station != null) { draws += 3; tris += lv.station.GetIndexCount(0) / 3 + 4; }
+            }
         }
 
         // ---------------------------------------------------------------- dusk and night

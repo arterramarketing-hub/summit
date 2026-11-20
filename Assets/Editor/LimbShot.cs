@@ -80,6 +80,7 @@ public static class LimbShot
 
         if (!old && System.Environment.GetEnvironmentVariable("SUMMIT_TALLY") == "1") Tally();
         if (System.Environment.GetEnvironmentVariable("SUMMIT_MODE") == "rides") { RidesCheck(old); return; }
+        if (System.Environment.GetEnvironmentVariable("SUMMIT_MODE") == "phantom") { PhantomCheck(old); return; }
 
         // the moment it comes off: an arm into a tree, a leg in a big fall
         blood.SetOn(true);
@@ -228,6 +229,109 @@ public static class LimbShot
             Look(rig.Head.position + rider.Velocity.normalized * 1.6f + Vector3.up * 0.4f, rig.Head.position, 40f); Shoot("RidesPovAfter" + tagged, true);
         }
         body.SetRide(RideKind.Snowboard); rider.SetRide(body.Ride);
+    }
+
+    /// <summary>
+    /// SUMMIT_MODE=phantom: on every ride (board, skis, toboggan, tube), lose all four limbs over two falls in a row
+    /// (a forearm and a lower leg, with the other shin and the head broken; then the other arm and the broken leg
+    /// whole), getting up and riding on after each, then a third fall with nothing left to lose. After each get-up,
+    /// what's on the rider: stumps, cut meshes, parts left asleep, hands let go, bandages (soaked ones) and any not
+    /// on their bone; and shots from behind (the game's chase camera), the side, close, and in first person, by day
+    /// and by night. SUMMIT_TAG labels the files (Before / After).
+    /// </summary>
+    static void PhantomCheck(bool old)
+    {
+        string tg = System.Environment.GetEnvironmentVariable("SUMMIT_TAG") ?? "";
+        var dayNight = (DayNight)typeof(SummitGame).GetField("dayNight", NP).GetValue(game);
+        var brk = typeof(RiderBody).GetMethod("Break", NP);
+        void SetTime(bool night) { TimeOfDay.TestClock = night ? 3.4f : 1.4f; dayNight.ApplyNow(); }
+        foreach (string rn in old ? new[] { "Snowboard" } : new[] { "Snowboard", "Skis", "Toboggan", "Tube" })
+        {
+            bool tube = rn == "Tube";
+            body.SetRide(tube ? RideKind.Toboggan : (RideKind)System.Enum.Parse(typeof(RideKind), rn)); rider.SetRide(body.Ride);
+            rider.Tube = tube; body.SetTube(tube);
+            string name = "Phantom" + tg + rn;
+            blood.SetOn(true); SetTime(false);
+            for (int crash = 1; crash <= 3; crash++)
+            {
+                typeof(SummitGame).GetField("falls", NP).SetValue(game, 0);
+                typeof(SummitGame).GetField("wipeoutTimer", NP).SetValue(game, 0f);
+                Random.InitState(5 + crash);
+                if (crash == 1) SnowRun(17f, 1.5f, Course.First + 200f, 0.3f);   // (fresh: everything back on)
+                else { rider.DoCrash("test"); for (float t = 0f; t < 0.3f; t += Dt) Step(); }
+                if (crash == 1)
+                {
+                    Log($"{name}: crash 1: left forearm {body.Sever(rig.LowerL, false, Vector3.up)}, right lower leg {body.Sever(rig.ShinR, false, Vector3.up)}");
+                    foreach (var b in new[] { rig.ShinL, rig.Head }) brk.Invoke(body, new object[] { b, b.position });
+                }
+                else if (crash == 2) Log($"{name}: crash 2: right arm {body.Sever(rig.UpperR, true, Vector3.up)}, left leg (broken last time) {body.Sever(rig.ThighL, true, Vector3.up)}");
+                else Log($"{name}: crash 3: left arm again {body.Sever(rig.UpperL, true, Vector3.up)} (want False: lost already)");
+                Settle();
+                bool pov = !old && crash == 2;
+                if (pov) { chase.pov = true; povFirst = true; }
+                float up = GetUp();
+                if (rider.Crashed) { Log($"{name}: crash {crash}: NEVER GOT UP"); break; }
+                float most = 0f; string mostWhat = "";
+                for (float t = 0f; t < 2f; t += Dt) { rider.Steer = Mathf.Sin(t * 1.7f) * 0.6f; Step(); float b = Biggest(out var w); if (b > most) { most = b; mostWhat = w; } }
+                Log($"{name}: crash {crash}: up after {up:0.0} s, riding at {rider.Speed * 3.6f:0} km/h; biggest {most:0.00} m ({mostWhat})");
+                PhantomTally(name + $" crash {crash}");
+                if (pov)
+                {
+                    // first person, as the player sees it, day and night
+                    foreach (bool night in new[] { false, true }) { SetTime(night); chase.enabled = true; late.Invoke(chase, null); Shoot(name + "Pov" + (night ? "Night" : "Day"), true); }
+                    SetTime(false);
+                    povFirst = false; chase.pov = false; body.SetPovHead(false);
+                    for (int i = 0; i < 3; i++) Step();
+                }
+                if (crash >= 2)
+                {
+                    string c = "Crash" + crash;
+                    Vector3 mid = rig.Hips.position, f = rider.Velocity; f.y = 0f; f = f.sqrMagnitude > 0.1f ? f.normalized : Vector3.forward;
+                    Vector3 right = Vector3.Cross(Vector3.up, f);
+                    foreach (bool night in crash == 2 ? new[] { false, true } : new[] { false })
+                    {
+                        SetTime(night); string dn = night ? "Night" : "Day";
+                        chase.enabled = true; late.Invoke(chase, null); Shoot(name + c + "Chase" + dn, true);
+                        Look(mid + right * 3.6f + f * 1.0f + Vector3.up * 0.5f, mid, 50f); Shoot(name + c + "Side" + dn, true);
+                        Look(mid - f * 2.6f + right * 0.8f + Vector3.up * 1.0f, mid, 50f); Shoot(name + c + "Back" + dn, true);
+                    }
+                    SetTime(false);
+                    if (crash == 2) { Look(mid + right * 1.9f + f * 0.9f + Vector3.up * 0.3f, mid, 45f); Shoot(name + c + "Close", true); }
+                    if (crash == 3 && rn == "Snowboard")
+                    {
+                        // gore off: the same bandages, clean
+                        blood.SetOn(false); Step();
+                        Look(mid + right * 1.9f + f * 0.9f + Vector3.up * 0.3f, mid, 45f); Shoot(name + c + "CloseClean", true);
+                        blood.SetOn(true); Step();
+                    }
+                }
+            }
+            rider.Tube = false; body.SetTube(false);
+        }
+        TimeOfDay.TestClock = -1f;
+        body.SetRide(RideKind.Snowboard); rider.SetRide(body.Ride);
+    }
+
+    /// <summary>What the rider rides on with: anything missing, cut, asleep, let go, or not where it's drawn.</summary>
+    static void PhantomTally(string name)
+    {
+        int stumps = 0; foreach (var c in body.LimbCaps) if (c != null && c.transform.IsChildOf(body.transform)) stumps++;
+        int cut = 0; foreach (var smr in body.GetComponentsInChildren<SkinnedMeshRenderer>(true)) if (smr.enabled && smr.sharedMesh != null && smr.sharedMesh.name.EndsWith("(cut)")) cut++;
+        int asleep = 0; var rd = body.RagdollForTest;
+        foreach (var b in new[] { rig.UpperL, rig.LowerL, rig.HandL, rig.UpperR, rig.LowerR, rig.HandR, rig.ThighL, rig.ShinL, rig.ThighR, rig.ShinR }) if (rd != null && rd.Gone(b)) asleep++;
+        int joints = 0; if (rd != null) foreach (var rb in rd.Bodies) if (rb.GetComponent<CharacterJoint>() != null) joints++;
+        int pieces = 0; foreach (var _ in body.LostPieces) pieces++;
+        var per = new SortedDictionary<string, int>(); int heavy = 0, astray = 0; float far = 0f;
+        foreach (var r in body.GetComponentsInChildren<Renderer>())
+        {
+            if (!r.name.StartsWith("Bandage")) continue;
+            if (r.name.StartsWith("BandageHeavy")) { heavy++; string k = r.transform.parent.name; per[k] = per.TryGetValue(k, out var n) ? n + 1 : 1; }
+            float d = (r.bounds.center - r.transform.parent.position).magnitude;
+            far = Mathf.Max(far, d);
+            if (d > 0.6f || !r.enabled || !r.gameObject.activeInHierarchy) astray++;
+        }
+        var soakedOn = new List<string>(); foreach (var kv in per) soakedOn.Add($"{kv.Key} {kv.Value}");
+        Log($"{name}: lost {body.LimbsLost}, pieces on the snow {pieces}; on the rider: stumps {stumps}, cut meshes {cut}, parts asleep {asleep}, joints {joints} (want {CountParts() - 1}), hand gone L {body.HandGone(0)} R {body.HandGone(1)}; soaked wraps {heavy} [{string.Join(", ", soakedOn)}], bandages astray {astray} (farthest from its bone {far:0.00} m)");
     }
 
     static void ToRiding()
