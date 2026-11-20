@@ -43,7 +43,7 @@ public static class CliBuild
         SummitImport.EnsureSky();
         SummitImport.EnsureBackdrop();
         SummitImport.EnsureRealTrees();
-        PlayerSettings.productName = "Summit";
+        PlayerSettings.productName = "Vertigo";
         PlayerSettings.enableFrameTimingStats = true;   // GPU frame times for on-device benchmarks (TreeBench)
         PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.iOS, "com.paulartuso.summit");
         var icon = MakeIcon();
