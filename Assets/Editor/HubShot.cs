@@ -150,14 +150,14 @@ public static class HubShot
         Frames(60);
         Shoot("HubShot11_mezzview.png");
         // 12: running across the camp (stick pushed right out)
-        camp.Teleport(-2f, -84f, 180f);
+        camp.Teleport(-2f, -54f, 180f);
         Walk(new Vector2(0f, 1f), 1.6f);
         Shoot("HubShot12_run.png");
         Debug.Log("HUBSHOT steps running: " + camp.FootstepsState);
         Walk(new Vector2(0f, 1f), 0.17f);
         Shoot("HubShot12b_run.png");
         // footprints: walk a loop on open snow, then run; look back along them
-        camp.Teleport(-4f, -88f, 90f);
+        camp.Teleport(-4f, -58f, 90f);
         Walk(new Vector2(0f, 0.75f), 2.6f);
         Walk(new Vector2(-0.5f, 0.6f), 1.2f);
         Frames(30);
@@ -180,7 +180,7 @@ public static class HubShot
         Shoot("HubShot13b_night_inside.png");
         camp.SetNight(0f);
         // 8: the lookout
-        camp.Teleport(16f, -84.5f, 0f);
+        camp.Teleport(16f, -54.5f, 0f);
         Frames(120);
         Shoot("HubShot14_lookout.png");
         // 9: DROP IN, under the MT. VERTIGO banner above the start pad

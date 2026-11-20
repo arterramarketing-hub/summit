@@ -81,7 +81,7 @@ namespace Summit
         static readonly string[] CamName = { "CLOSEST", "CLOSE", "NORMAL", "FAR", "FARTHEST" };
         int camLevel = 2;
         // camera angle (height) and lens (field of view and barrel distortion), from the pause menu
-        static readonly float[] AngleHeight = { 0.55f, 0.8f, 1f, 1.5f, 2.2f };
+        static readonly float[] AngleHeight = { 0.62f, 0.9f, 1.1f, 1.55f, 2.2f };   // times ChaseCamera's Lift/Clear heights
         static readonly string[] AngleName = { "GROUND", "LOW", "NORMAL", "HIGH", "OVERHEAD" };
         static readonly float[] LensFov = { -14f, 0f, 8f, 18f };
         static readonly float[] LensWarp = { 0f, -0.28f, -0.42f, -0.6f };
@@ -1159,23 +1159,14 @@ namespace Summit
             var red = M(new Color(0.85f, 0.12f, 0.10f)); var white = M(new Color(0.95f, 0.95f, 0.97f)); var wood = M(new Color(0.45f, 0.30f, 0.18f));
             var root = new GameObject("StartGate").transform;
             gateRoot = root;
-            float cx = Slope.Centre(Slope.PadLip), gz = Slope.PadLip - 36f;   // well ahead of where you wait, so the whole banner is in view
-            float gy = Slope.DrawnHeight(cx, gz);
-            // the gate breaks as one: hit a post and it snaps, and the banner comes down with it
-            var gate = Holder("Gate", root, new Vector3(cx, gy, gz));
-            var gateBrk = Breakable.Sign(gate);
-            for (int sgn = -1; sgn <= 1; sgn += 2)
-                gateBrk.Post(Block(PrimitiveType.Cube, gate, new Vector3(cx + sgn * 4.2f, gy + 2.2f, gz), new Vector3(0.35f, 4.4f, 0.35f), red));
-            // the banner: a printed vinyl strip in a frame, hung between the posts
-            var frame = Block(PrimitiveType.Cube, gate, new Vector3(cx, gy + 4.3f, gz + 0.06f), new Vector3(8.6f, 1.2f, 0.08f), red);
-            var banner = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            Object.DestroyImmediate(banner.GetComponent<Collider>());
-            banner.transform.SetParent(gate, false);
-            banner.transform.SetPositionAndRotation(new Vector3(cx, gy + 4.3f, gz - 0.01f), Quaternion.identity);   // a quad shows its face to -Z: up the hill, at the rider
-            banner.transform.localScale = new Vector3(8.4f, 1.05f, 1f);
-            banner.GetComponent<MeshRenderer>().sharedMaterial = GateSign("Signs/BannerSummit");
-            gateBrk.Board(frame, banner.transform);
-            gateBrk.Arm();
+            float cx = Slope.Centre(Slope.PadLip);
+            // the gate, where every run starts (StartGate.cs)
+            StartGate.Build(root, cx, (c, smooth) =>
+            {
+                string k = "c" + c + smooth;
+                if (!gateMats.TryGetValue(k, out var m)) { m = new Material(sh); m.SetColor("_BaseColor", c); m.SetFloat("_Smoothness", smooth); gateMats[k] = m; }
+                return m;
+            });
             // flags lining the lip and a wooden kicker edge
             for (int i = 0; i < 6; i++)
                 for (int sgn = -1; sgn <= 1; sgn += 2)

@@ -176,14 +176,21 @@ namespace Summit
         // A groomed pad cut into the top of the run: you stand at the back, push off,
         // ride down a gentle in-run and launch off a lip into the steep face below.
         public const float PadBack = -70f, PadLip = 0f, PadHalf = 13f, PadDrop = 4.5f, LipRise = 0.8f, LipLen = 7f;
-        public static float StartZ => PadBack + 8f;
+        /// <summary>The start gate (StartGate.cs), 36 m above the lip, where the in-run steepens.</summary>
+        public const float GateZ = PadLip - 36f;
+        /// <summary>
+        /// Where a run starts: at the gate, ready to go, just far enough behind it that the waiting view has the whole
+        /// board across the top of a phone held upright. (It was at the back of the pad, 20 m further up, and that ride
+        /// was on the pad's near-flat back: seven seconds from GO to the first jump with nothing to do.)
+        /// </summary>
+        public static float StartZ => GateZ - 6f;
 
         static float Start(float x, float z, float y)
         {
             if (z > PadLip + 0.01f) return y;
             // the summit: a sunlit plateau above the face, with the in-run down its middle
             float cx = Centre(PadLip);
-            float back = PadLip - z;   // the in-run: 0.22 for the last 38 m, nearly flat behind where you wait
+            float back = PadLip - z;   // the in-run: 0.22 for the last 38 m (from just above the gate), nearly flat behind that
             float pad = BaseAt(cx, PadLip) + PadDrop + (back < 38f ? back * 0.22f : 38f * 0.22f + (back - 38f) * 0.07f);
             float u = (z - (PadLip - LipLen)) / LipLen;
             float d = Mathf.Abs(x - cx) - PadHalf;
@@ -214,16 +221,16 @@ namespace Summit
         // The shoulders roll over and steepen into rock in tiers, ribs standing out and gullies cut between them;
         // the cliff leans back from its rounded, snow-capped lip in steep bands between sloping ledges, steepest on its
         // buttresses and lying back in its gullies, and its foot spreads into fans of snow and rubble.
-        public const float SummitLeft = -30f, SummitRight = 24.8f, SummitBack = -140f;
+        public const float SummitLeft = -30f, SummitRight = 24.8f, SummitBack = -110f;
 
         static float Summit(float x, float z, float pad)
         {
-            float w = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-58f, -72f, z));   // none at the pad, all of it from the camp's front
+            float w = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-41f, -53f, z));   // none at the pad (from just behind where a run starts), all of it from the camp's front
             if (w <= 0f) return pad;
             float cx = Centre(PadLip), a = x - cx;
             float back = PadLip - z;
             float top = BaseAt(cx, PadLip) + PadDrop + 38f * 0.22f + Mathf.Max(0f, back - 38f) * 0.07f
-                      + 6f * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-66f, -92f, z))   // up from the gate to the camp
+                      + 6f * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-44f, -62f, z))   // up from the gate to the camp, a short bank (a walk, not a climb)
                       + (Noise(x * 0.07f, z * 0.07f) - 0.5f) * 0.8f;
             float y = top;
             // a snowy shoulder rolling over, steepening into rock further down
@@ -261,7 +268,7 @@ namespace Summit
                 drop = SmoothMin(drop, 430f, 30f);
                 drop += Mathf.Clamp01((e - 110f) / 60f) * (Ridged(x * 0.004f + 2.3f, z * 0.004f) - 0.4f) * 40f;   // the valley's own lumps
                 // toward the start the cliff gives way, over 50 m, to a spur falling away into the valley
-                y -= Mathf.Lerp(e * 0.9f, drop, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-64f, -114f, z)));
+                y -= Mathf.Lerp(e * 0.9f, drop, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-34f, -84f, z)));
             }
             return Mathf.Lerp(pad, y, w);
         }

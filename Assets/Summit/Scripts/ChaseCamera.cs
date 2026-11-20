@@ -82,6 +82,12 @@ namespace Summit
         /// <summary>First person: the line of travel along the snow ahead (the lens itself is tipped down from it).</summary>
         public Vector3 PovAhead => povAhead;
 
+        // The chase view's height (times the angle setting): over the rider, slow .. full speed; and the least it keeps
+        // over the snow directly under the lens, slow .. full speed (on steep pitches this is what holds it up).
+        public static float LiftSlow = 1.35f, LiftFast = 2.75f;
+        public static float ClearSlow = 2.0f, ClearFast = 3.2f;
+        public static float HeldUpAim = 0.25f, HeldUpAimMax = 1.8f;   // share of that hold-up the aim rises with, and its most (m)
+
         Camera cam;
         float speedCam = 5f, yaw, height, fov = 62f, focusVy, camDist = 6f, lookDrop, roll;
         Vector3 focus;
@@ -125,9 +131,17 @@ namespace Summit
             camDist = first ? dist : Mathf.Lerp(camDist, dist, 1f - Mathf.Exp(-dt * (dist < camDist ? 20f : 3f)));
             dist = camDist;
             Vector3 pos = focus - f * dist;
-            float wantH = focus.y + Mathf.Lerp(1.15f, 2.3f, Mathf.SmoothStep(0f, 1f, s01)) * heightScale * Mathf.Lerp(1f, distScale, 0.7f);
-            // never inside the hill behind you
-            wantH = Mathf.Max(wantH, Slope.Height(pos.x, pos.z) + 1.3f);
+            float hs = Mathf.SmoothStep(0f, 1f, s01);
+            float lift = Mathf.Lerp(LiftSlow, LiftFast, hs) * heightScale * Mathf.Lerp(1f, distScale, 0.7f);
+            float wantH = focus.y + lift;
+            // On a steep pitch at speed the camera is far enough back up the hill that the snow under it is higher than
+            // the rider-relative height above. It used to sit on a fixed floor there (1.3 m, or the 2.4 m debris floor),
+            // the same at every angle setting: pitched down with a wide lens, the bottom of the frame then looked almost
+            // straight down at snow three metres away, which perspective blew up and swung about (tracks and craters at
+            // the bottom bending away from the rest of the picture). Now it keeps a clear height over the snow under it,
+            // set by the angle setting and growing with speed, so the near snow stays well away from the lens.
+            float snowUnder = Slope.Height(pos.x, pos.z);
+            wantH = Mathf.Max(wantH, snowUnder + Mathf.Max(1.3f, Mathf.Lerp(ClearSlow, ClearFast, hs) * heightScale));
             // ...or inside the avalanche's debris: ride up over it
             if (floor != null) wantH = Mathf.Max(wantH, Slope.Height(pos.x, pos.z) + floor(pos.x, pos.z) + 2.4f);
             height = first ? wantH : Mathf.Lerp(height, wantH, 1f - Mathf.Exp(-dt * 7f));
@@ -143,7 +157,11 @@ namespace Summit
             Vector3 ahead = focus + f * 12f;
             float drop = Slope.Height(ahead.x, ahead.z) - Slope.Height(focus.x, focus.z);
             lookDrop = first ? drop : Mathf.Lerp(lookDrop, drop, 1f - Mathf.Exp(-dt * 3f));
-            Vector3 look = ahead + Vector3.up * (lookDrop * 0.55f - 0.6f);
+            // held up by the snow behind, it aims up by part of that, so the horizon sits where the angle setting puts it
+            // instead of the view tipping down at the slope under the lens
+            // (capped: off a lift-station lip the rider drops far below a camera still over the lip, and must stay in frame)
+            float aimUp = Mathf.Min(Mathf.Max(0f, height - (focus.y + lift)) * HeldUpAim, HeldUpAimMax);
+            Vector3 look = ahead + Vector3.up * (lookDrop * 0.55f - 0.6f + aimUp);
             if (peek > 0.001f)
             {
                 // the rider went into a crevasse: lean out over the edge and look straight down after them
@@ -151,7 +169,11 @@ namespace Summit
                 // from over the crevasse's middle line, backed off up it (from over a lip, its white top looked like a
                 // pillar standing straight down the ice wall)
                 Vector3 over = peekAt, back = f;
-                if (Course.CrevasseNear(peekAt.x, peekAt.z, 4f, out var cv)) { over = Course.CrevasseMiddle(cv, peekAt); back = Vector3.forward; }
+                if (Course.CrevasseNear(peekAt.x, peekAt.z, 4f, out var cv))
+                {
+                    over = Course.CrevasseMiddle(cv, peekAt);
+                    back = new Vector3(cv.dx, 0f, cv.dz) * (cv.dz < 0f ? -1f : 1f);   // along it, from its uphill end
+                }
                 Vector3 rim = new Vector3(over.x, Mathf.Max(focus.y, Slope.Height(over.x, over.z) + 1f), over.z);
                 pos = Vector3.Lerp(pos, rim - back * 1.8f + Vector3.up * 3.2f, k);
                 look = Vector3.Lerp(look, peekAt, k);

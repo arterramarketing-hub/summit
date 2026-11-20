@@ -224,7 +224,7 @@ public static class HeroShot
     {
         var aCam = typeof(Camp).GetMethod("CameraStep", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
         camp.SetNight(0f);
-        camp.Teleport(-4f, -88f, 90f);
+        camp.Teleport(-4f, -58f, 90f);
         for (int i = 0; i < 60; i++) CampStep(Vector2.zero);
         Shoot("CampStandGame", cam, 590, 1278);
         CampSide(); Shoot("CampStand", cam, 720, 900);

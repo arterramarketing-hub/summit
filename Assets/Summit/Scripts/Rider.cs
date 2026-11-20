@@ -347,8 +347,9 @@ namespace Summit
             if (!Crashed) Breakable.Probe(p, p + v * dt + Vector3.up * 1.2f, 0.45f, ownCol);
             // over a crevasse's opening there is nothing under the board: it carries on through the air on its own
             // line (fast enough across a narrow one, it comes down on the far lip). Only once it has dropped below the
-            // snow's level, into the slot, has it fallen in
-            if (!Crashed && !Grinding && Course.CrevasseCut(p.x, p.z) > 0.3f)
+            // snow's level, into the slot, has it fallen in. A snow bridge holds the board at speed; a slow one breaks
+            // through it (Course.Solid)
+            if (!Crashed && !Grinding && !Course.Solid(p.x, p.z, Speed))
             {
                 if (p.y - R < Slope.DrawnHeight(p.x, p.z) - FallInDepth)
                 {
@@ -652,7 +653,7 @@ namespace Summit
             // (the lock after a takeoff keeps a lip's facets from landing you straight back on it, but never holds you
             // up while the snow comes up through the board)
             // (and nothing to come down on over a crevasse's opening: Tick sees you fall in)
-            if (p.y + v.y * dt <= gy && Course.CrevasseCut(nx, nz) <= 0.3f)
+            if (p.y + v.y * dt <= gy && Course.Solid(nx, nz, Speed))
             {
                 // against a face too steep to stand on (rock or snow, a cliff or a crevasse's lip): no landing, the board
                 // goes on falling down it, sliding on its surface, until it reaches ground it can stand on. Landing on it

@@ -142,12 +142,10 @@ public static class RenderShot
         }
         // a fall into a crevasse: ride straight into one, let the body drop, then the camera looks down after it
         {
-            var cv = Course.CrevassesOf(0)[0];
-            float zm = (cv.z0 + cv.z1) * 0.5f;
-            Course.Opening(cv, zm, out float ccx);
-            rider.ResetAt(ccx, zm - 3f); body.ResetVisual(); rider.Begin(); rider.Body.linearVelocity = Vector3.forward * 8f;
+            Course.WidestCrack(out var cv, out var spot);
+            rider.ResetAt(spot.x, spot.z - cv.half - 1f); body.ResetVisual(); rider.Begin(); rider.Body.linearVelocity = Vector3.forward * 3f;
             terrain.Prewarm(); props.Prewarm(); dress.Prewarm();
-            Debug.Log($"SHOT crevstart cut={Course.CrevasseCut(rider.transform.position.x, rider.transform.position.z):0.0} open={Course.Opening(cv, zm, out _):0.0} at={rider.transform.position} sec={Course.At(zm)}");
+            Debug.Log($"SHOT crevstart {cv.kind} #{cv.id} half={cv.half:0.0} at={rider.transform.position}");
             for (int i = 0; i < 120 * 2.5f && body.RagdollBelowSnow < 9f; i++)
             {
                 rider.Steer = 0f; rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); if (i % 4 == 0) body.Apply(4 * Dt);
@@ -176,16 +174,15 @@ public static class RenderShot
         Shoot(cam, "RenderShotBack.png");
         // a crevasse, from beside its rim
         {
-            var cv = Course.CrevassesOf(0)[0];
-            float zm = (cv.z0 + cv.z1) * 0.5f;
-            float open = Course.Opening(cv, zm, out float ccx);
+            Course.WidestCrack(out var cv, out var spot);
+            float ccx = spot.x, zm = spot.z;
             rider.ResetAt(ccx + 12f, zm - 6f); terrain.Prewarm(); props.Prewarm(); dress.Prewarm();
             typeof(Forest).GetMethod("Draw", NP).Invoke(props, null);
-            var eye = new Vector3(ccx + open + 3.5f, Slope.Surface(ccx + open + 3.5f, zm - 7f) + 3.2f, zm - 7f);
+            var eye = new Vector3(ccx + 3.5f, Slope.Surface(ccx + 3.5f, zm - cv.half - 4f) + 3.2f, zm - cv.half - 4f);
             cam.fieldOfView = 60f;
-            cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(new Vector3(ccx, Slope.Surface(ccx, zm) - 5f, zm + 2f) - eye));
+            cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(new Vector3(ccx, Slope.Surface(ccx, zm) - 5f, zm) - eye));
             Shoot(cam, "RenderShotCrevasse.png");
-            eye = new Vector3(ccx + 1f, Slope.Surface(ccx, cv.z0 - 6f) + 6f, cv.z0 - 6f);
+            eye = new Vector3(ccx + 1f, Slope.Surface(ccx, zm - 20f) + 6f, zm - 20f);
             cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(new Vector3(ccx, Slope.Surface(ccx, zm) - 8f, zm) - eye));
             Shoot(cam, "RenderShotCrevasse2.png");
         }

@@ -344,5 +344,92 @@ namespace Summit
             t.Apply(false, true);
             return t;
         }
+
+        // ---------------------------------------------------------------- the start gate's board
+
+        /// <summary>
+        /// One line of lettering in a title style, for a board on the mountain (the start gate's MT. VERTIGO,
+        /// StartGate.cs): the title's letterforms, snow and bevel, packed the same way (r distance, g snow, ba bevel)
+        /// into `width` x `height`, caps `capFrac` of the height with their foot at `baseFrac`, centred. Adds a square
+        /// full stop and a narrow word space, which the title has no need of. Pure arithmetic: safe off the main thread.
+        /// </summary>
+        public static Color32[] BuildLine(Style st, string text, int width, int height, float capFrac, float baseFrac)
+        {
+            int w = width * SS, h = height * SS;
+            var mask = new bool[w * h];
+            var snow = new float[w * h];
+            float cap = height * capFrac * SS, baseY = height * baseFrac * SS;
+            var gs = new Glyph[text.Length];
+            float total = 0f;
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                if (c == '.') { float d = st.stem * 1.05f; gs[i] = new Glyph { w = d }; gs[i].ops.Add(new Op { p = Box(0, 0, d, d), add = true }); }
+                else if (c == ' ') gs[i] = new Glyph { w = 0.2f };
+                else gs[i] = Make(c, st.stem, st.bar, st.chamfer);
+                total += gs[i].w + (i > 0 ? st.gap : 0f);
+            }
+            // drawn as Word draws, glyph by glyph along the slant
+            float x0 = (w - (total + st.slant) * cap) * 0.5f, at = 0f;
+            foreach (var g in gs)
+            {
+                int qx0 = Mathf.Max(0, Mathf.FloorToInt(x0 + (at - 0.1f) * cap)), qx1 = Mathf.Min(w, Mathf.CeilToInt(x0 + (at + g.w + st.slant + 0.1f) * cap));
+                int py0 = Mathf.Max(0, Mathf.FloorToInt(baseY - 2)), py1 = Mathf.Min(h, Mathf.CeilToInt(baseY + cap * 1.05f + 2));
+                for (int py = py0; py < py1; py++)
+                {
+                    float yu = (py + 0.5f - baseY) / cap;
+                    for (int qx = qx0; qx < qx1; qx++)
+                    {
+                        float xu = (qx + 0.5f - x0) / cap - st.slant * yu - at;
+                        bool on = false;
+                        foreach (var op in g.ops) if (Inside(op.p, xu, yu)) on = op.add;
+                        if (on) mask[py * w + qx] = true;
+                    }
+                }
+                at += g.w + st.gap;
+            }
+            Snow(mask, snow, w, h, (int)baseY - 4, (int)(baseY + cap * 1.06f), cap, st.snow * cap, st.mound * cap, 31);
+
+            // packed exactly as Build packs the title, at this size
+            var toIn = Edt(mask, true, w, h); var toOut = Edt(mask, false, w, h);
+            var sd = new float[width * height]; var sn = new float[width * height];
+            for (int y = 0; y < height; y++)
+                for (int x = 0; x < width; x++)
+                {
+                    float acc = 0f, sa = 0f;
+                    for (int j = 0; j < SS; j++)
+                        for (int i = 0; i < SS; i++)
+                        {
+                            int q = (y * SS + j) * w + x * SS + i;
+                            acc += mask[q] ? -(Mathf.Sqrt(toOut[q]) - 0.5f) : Mathf.Sqrt(toIn[q]) - 0.5f;
+                            sa += snow[q];
+                        }
+                    sd[y * width + x] = acc / (SS * SS * SS);
+                    sn[y * width + x] = sa / (SS * SS);
+                }
+            float bw = Mathf.Max(2f, st.bevel * cap / SS);
+            var hgt = new float[width * height];
+            for (int i = 0; i < hgt.Length; i++) { float t = Mathf.Clamp01(-sd[i] / bw); hgt[i] = 1f - (1f - t) * (1f - t); }
+            var px = new Color32[width * height];
+            for (int y = 0; y < height; y++)
+                for (int x = 0; x < width; x++)
+                {
+                    int i = y * width + x;
+                    float gx = (hgt[y * width + Mathf.Min(x + 1, width - 1)] - hgt[y * width + Mathf.Max(x - 1, 0)]) * 0.5f * bw;
+                    float gy = (hgt[Mathf.Min(y + 1, height - 1) * width + x] - hgt[Mathf.Max(y - 1, 0) * width + x]) * 0.5f * bw;
+                    px[i] = new Color32((byte)(255f * Mathf.Clamp01(0.5f - sd[i] / (2f * Spread))), (byte)(255f * Mathf.Clamp01(sn[i])),
+                                        (byte)(255f * Mathf.Clamp01(0.5f + gx * 0.5f)), (byte)(255f * Mathf.Clamp01(0.5f + gy * 0.5f)));
+                }
+            return px;
+        }
+
+        /// <summary>A BuildLine texture (main thread only), mipmapped: the board is read from far up the camp too.</summary>
+        public static Texture2D ToTexture(Color32[] px, int width, int height, string name)
+        {
+            var t = new Texture2D(width, height, TextureFormat.RGBA32, true, true) { name = name, wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear, anisoLevel = 4 };
+            t.SetPixels32(px);
+            t.Apply(true, true);
+            return t;
+        }
     }
 }

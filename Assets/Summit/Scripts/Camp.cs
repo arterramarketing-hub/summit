@@ -20,12 +20,14 @@ namespace Summit
         public enum Station { None, Missions, Upgrades, Style, DropIn, Lookout }
 
         // where the camp sits: on the plateau behind the start pad (downhill is +Z), so the run is right
-        // in front of you and the view down the mountain is past the Drop In gate
-        public const float BackZ = -126f, HalfWidth = 23f;   // (the camp's extent, for keeping trees off it: you can walk anywhere)
+        // in front of you and the view down the mountain is past the Drop In gate. It stands close behind the gate:
+        // the chalet's steps are some 35 m from DROP IN (it was 30 m further back, on ground the start no longer
+        // uses now a run starts at the gate, and the walk down took over 20 seconds)
+        public const float BackZ = -96f, HalfWidth = 23f;   // (the camp's extent, for keeping trees off it: you can walk anywhere)
         static float Cx => Slope.Centre(Slope.PadLip);
         /// <summary>True inside the camp and its framing trees (the forest leaves this ground alone).</summary>
-        public static bool InCamp(float x, float z) => z < -68f && z > BackZ - 16f && Mathf.Abs(x - Cx) < HalfWidth + 10f
-            || z < -64f && z > -360f && x - Cx > Slope.SummitRight - 1f && x - Cx < 175f;   // (and no trees down the cliff's rock)
+        public static bool InCamp(float x, float z) => z < -38f && z > BackZ - 16f && Mathf.Abs(x - Cx) < HalfWidth + 10f
+            || z < -34f && z > -360f && x - Cx > Slope.SummitRight - 1f && x - Cx < 175f;   // (and no trees down the cliff's rock)
 
         public bool Active { get; private set; }
         public Station Near { get; private set; }
@@ -117,12 +119,12 @@ namespace Summit
             spots.Clear(); boxes.Clear(); lamps.Clear(); lampPower.Clear(); lampDay.Clear(); cameraWalls.Clear();
 
             tapRoots.Clear();
-            Chalet(Frame(-9f, -118.5f, 12f));
+            Chalet(Frame(-9f, -88.5f, 12f));
             StartBanner();
-            Lookout(Frame(16f, -84f, 0f));
+            Lookout(Frame(16f, -54f, 0f));
             Benches();
-            firePit = FirePit(Frame(0f, -101f, 0f)).gameObject;
-            snowman = Snowman(Frame(11.5f, -91f, 180f)).gameObject;
+            firePit = FirePit(Frame(0f, -71f, 0f)).gameObject;
+            snowman = Snowman(Frame(11.5f, -61f, 180f)).gameObject;
             flags = new GameObject("Flags"); flags.transform.SetParent(root, false);
             lights = new GameObject("Lights"); lights.transform.SetParent(root, false);
             Strings();
@@ -396,7 +398,7 @@ namespace Summit
         /// <summary>Tall bare birches round the lodge: white trunks, a few dark forks of branches.</summary>
         void Birches()
         {
-            var where = new[] { new Vector2(-22.5f, -108f), new Vector2(-22f, -116f), new Vector2(3f, -124f), new Vector2(-17.5f, -93f), new Vector2(-25.5f, -100f), new Vector2(6f, -121f) };
+            var where = new[] { new Vector2(-22.5f, -78f), new Vector2(-22f, -86f), new Vector2(3f, -94f), new Vector2(-17.5f, -63f), new Vector2(-25.5f, -70f), new Vector2(6f, -91f) };
             for (int i = 0; i < where.Length; i++)
             {
                 var t = Frame(where[i].x, where[i].y, i * 53f);
@@ -427,8 +429,8 @@ namespace Summit
             for (int i = 0; i < 26; i++)
             {
                 // along the left edge (the right is the cliff), and a few across the back
-                float dx = -(22f + 6f * Slope.Hash01(i, 1, 41)), z = Mathf.Lerp(-124f, -80f, Slope.Hash01(i, 2, 41));
-                if (i >= 20) { dx = Mathf.Lerp(-14f, 14f, Slope.Hash01(i, 3, 41)); z = -127f - 3f * Slope.Hash01(i, 4, 41); }
+                float dx = -(22f + 6f * Slope.Hash01(i, 1, 41)), z = Mathf.Lerp(-94f, -50f, Slope.Hash01(i, 2, 41));
+                if (i >= 20) { dx = Mathf.Lerp(-14f, 14f, Slope.Hash01(i, 3, 41)); z = -97f - 3f * Slope.Hash01(i, 4, 41); }
                 var p = Ground(dx, z);
                 float s = 1.4f + 2.2f * Slope.Hash01(i, 5, 41);
                 P(PrimitiveType.Sphere, t, p + Vector3.down * s * 0.22f, new Vector3(s * 1.4f, s * 0.6f, s), new Vector3(0f, i * 41f, 0f), snowCap);
@@ -438,7 +440,7 @@ namespace Summit
         /// <summary>A path trodden through the snow from the fire to the lodge's stairs, boot prints and all.</summary>
         void Footpath()
         {
-            var pts = new List<Vector3> { Ground(-1f, -97.5f), Ground(-4.5f, -100.5f), Ground(-7.5f, -104.5f), stairsFoot };
+            var pts = new List<Vector3> { Ground(-1f, -67.5f), Ground(-4.5f, -70.5f), Ground(-7.5f, -74.5f), stairsFoot };
             // sample a smooth curve through them, laid on the snow
             var line = new List<Vector3>();
             for (int i = 0; i < pts.Count - 1; i++)
@@ -558,24 +560,24 @@ namespace Summit
         void OnDisable() { if (dayKnown) SetNight(0f); CampShadows(false); }
 
         /// <summary>
-        /// DROP IN is at the run's own MT. VERTIGO banner (SummitGame.BuildStartGate, 36 m above the lip): walk down
-        /// to it from the camp and the button comes up. Its posts and the warning signs below it are solid.
+        /// DROP IN is at the run's own start gate (StartGate.cs, 36 m above the lip; a run starts just behind it): walk
+        /// down to it from the camp and the button comes up. Its posts and the warning signs below it are solid.
         /// </summary>
         void StartBanner()
         {
-            float gz = Slope.PadLip - 36f;
+            float gz = Slope.GateZ;
             var t = Frame(0f, gz, 0f);
             t.name = "DropInBanner";
             var tap = new GameObject("TAP_DropIn").transform;
-            tap.SetParent(t, false); tap.localPosition = new Vector3(0f, 2.6f, 0f);
+            tap.SetParent(t, false); tap.localPosition = new Vector3(0f, 3.2f, 0f);
             // a trigger: the tap ray sees triggers, and the run goes straight through under the banner (a solid box
             // here stops the rider dead at the start)
             var tapBox = tap.gameObject.AddComponent<BoxCollider>();
-            tapBox.size = new Vector3(9f, 5.4f, 1f); tapBox.isTrigger = true;
+            tapBox.size = new Vector3(2f * StartGate.PostX + 0.6f, 6.6f, 1f); tapBox.isTrigger = true;   // posts, board and beam
             spots.Add(new Spot { st = Station.DropIn, at = Ground(0f, gz - 2.6f), radius = 4.2f, root = tap });
             for (int s = -1; s <= 1; s += 2)
             {
-                Block(t, new Vector3(s * 4.2f, 0f, 0f), new Vector2(0.3f, 0.3f));
+                Block(t, new Vector3(s * StartGate.PostX, 0f, 0f), new Vector2(StartGate.PostHalf, StartGate.PostHalf));
                 // the safety signs on their posts either side of the in-run
                 foreach (var z in new[] { Slope.PadLip - 22f, Slope.PadLip - 11f }) Block(Frame(s * 6.5f, z, 0f), Vector3.zero, new Vector2(1.6f, 0.3f));
             }
@@ -623,7 +625,7 @@ namespace Summit
         void Benches()
         {
             // log seats round the fire: left, right and behind; the front stays open to the view
-            var t = Frame(0f, -101f, 0f);
+            var t = Frame(0f, -71f, 0f);
             t.name = "Benches";
             foreach (var c in new[] { new Vector3(-2.9f, 0f, 0f), new Vector3(2.9f, 0f, 0f), new Vector3(0f, 0f, -2.9f) })
             {
@@ -742,7 +744,7 @@ namespace Summit
 
         void Strings()
         {
-            Vector3 pa = Ground(5f, -112f), pb = Ground(6f, -90f);
+            Vector3 pa = Ground(5f, -82f), pb = Ground(6f, -60f);
             // two tall poles for the flags and lights to hang from
             var poles = new GameObject("Poles").transform; poles.SetParent(root, false);
             Log(poles, pa + Vector3.down * 0.3f, pa + Vector3.up * 6.6f, 0.16f, logs);
@@ -798,10 +800,10 @@ namespace Summit
             bool real = Forest.Realistic && RealFir.Load();   // the forest's own look
             var kinds = real ? new GameObject[0] : Resources.LoadAll<GameObject>("Trees");
             if (!real && kinds.Length == 0) return;
-            var where = new[] { new Vector2(-27f, -126f), new Vector2(-19f, -134f), new Vector2(-6f, -137f), new Vector2(7f, -135f), new Vector2(19f, -131f),
-                                new Vector2(21f, -134f), new Vector2(-30f, -112f), new Vector2(-29f, -97f), new Vector2(-26.5f, -122f), new Vector2(-27f, -104f),   // (none on the cliff side)
-                                new Vector2(-24f, -138f), new Vector2(13f, -140f), new Vector2(-31f, -84f),
-                                new Vector2(-20.5f, -111f), new Vector2(2.6f, -114.5f) };   // the last two: spruces beside the chalet
+            var where = new[] { new Vector2(-27f, -96f), new Vector2(-19f, -104f), new Vector2(-6f, -107f), new Vector2(7f, -105f), new Vector2(19f, -101f),
+                                new Vector2(21f, -104f), new Vector2(-30f, -82f), new Vector2(-29f, -67f), new Vector2(-26.5f, -92f), new Vector2(-27f, -74f),   // (none on the cliff side)
+                                new Vector2(-24f, -108f), new Vector2(13f, -110f), new Vector2(-31f, -54f),
+                                new Vector2(-20.5f, -81f), new Vector2(2.6f, -84.5f) };   // the last two: spruces beside the chalet
             for (int i = 0; i < where.Length; i++)
             {
                 if (real)
@@ -831,7 +833,7 @@ namespace Summit
         // at a summit lookout (square grey posts every 2.5 m on a concrete kerb, six taut steel cables), and three
         // tall flagpoles inside it with red-and-white flags streaming in the wind off the drop. The railing is one
         // mesh per material; the flags are small cloth grids moved on the CPU each frame (a few hundred vertices).
-        const float EdgeX = 24.1f, EdgeZ0 = -138f, EdgeZ1 = -71f;
+        const float EdgeX = 24.1f, EdgeZ0 = -108f, EdgeZ1 = -41f;
         Material railMetal, kerbMat, flagMat, mistMat;
         readonly List<Mesh> flagMeshes = new List<Mesh>();
         readonly List<Vector3> flagRoots = new List<Vector3>();
@@ -879,7 +881,7 @@ namespace Summit
             flagMeshes.Clear(); flagRoots.Clear(); flagRends.Clear();
             var poleM = M(new Color(0.88f, 0.89f, 0.9f), 0.6f); poleM.SetFloat("_Metallic", 0.5f);
             var gold = M(new Color(0.9f, 0.72f, 0.3f), 0.8f); gold.SetFloat("_Metallic", 0.9f);
-            foreach (var z in new[] { -104f, -97.5f, -91f })
+            foreach (var z in new[] { -74f, -67.5f, -61f })
             {
                 var g = Ground(EdgeX - 1.6f, z);
                 Log(t.parent, g + Vector3.down * 0.3f, g + Vector3.up * 6f, 0.11f, poleM);
@@ -895,7 +897,7 @@ namespace Summit
                 var mr = fo.GetComponent<MeshRenderer>(); mr.sharedMaterial = flagMat;
                 flagMeshes.Add(mesh); flagRends.Add(mr);
                 // the middle one has a lamp at its foot, lighting all three from below at night
-                if (z > -100f && z < -95f) Lamp(t.parent, g + Vector3.up * 1.2f + Vector3.left * 0.8f, 11f, 1.8f);
+                if (z > -70f && z < -65f) Lamp(t.parent, g + Vector3.up * 1.2f + Vector3.left * 0.8f, 11f, 1.8f);
             }
             WaveFlags(0f);
         }
@@ -993,9 +995,9 @@ namespace Summit
                 mistMat.SetColor("_BaseColor", new Color(1f, 1f, 1f, 0.75f));
             }
             if (mistMat == null) return;
-            float top = Ground(0f, -100f).y;
-            MistBank(new Vector3(Cx + 200f, top - 150f, -150f), new Vector3(300f, 220f, 420f), 26, 70f, 160f);   // over the drop
-            MistBank(new Vector3(Cx - 190f, top - 150f, -120f), new Vector3(200f, 120f, 320f), 12, 50f, 110f);   // below the left slopes
+            float top = Ground(0f, -70f).y;
+            MistBank(new Vector3(Cx + 200f, top - 150f, -120f), new Vector3(300f, 220f, 420f), 26, 70f, 160f);   // over the drop
+            MistBank(new Vector3(Cx - 190f, top - 150f, -90f), new Vector3(200f, 120f, 320f), 12, 50f, 110f);   // below the left slopes
         }
 
         void MistBank(Vector3 centre, Vector3 size, int count, float small, float big)
@@ -1310,7 +1312,7 @@ namespace Summit
             rider = r; body = b; cam = c;
             Active = true;
             // arrive on the path by the fire, looking up at the lodge
-            pos = Ground(-1.5f, -94f);
+            pos = Ground(-1.5f, -64f);
             var toLodge = lodgeApex - pos;
             yaw = Mathf.Atan2(toLodge.x, toLodge.z); camYaw = yaw; speed = 0f;
             snap = true;

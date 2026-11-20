@@ -22,7 +22,7 @@ namespace Summit
                 if (Ridge.CliffSide(z, a) && Mathf.Abs(a) > Ridge.HalfWidth(z) + Ridge.Shoulder) return true;
             }
             // the valley under the summit's cliff, beyond the camp's cable railing
-            if (z < -58f && x - Slope.Centre(Slope.PadLip) > Slope.SummitRight) return true;
+            if (z < -41f && x - Slope.Centre(Slope.PadLip) > Slope.SummitRight) return true;
             return false;
         }
 

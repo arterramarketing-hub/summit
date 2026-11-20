@@ -291,7 +291,7 @@ namespace Summit
             // where a crevasse opens, leave a hole: its walls and lips are their own meshes (CourseDressing)
             int[] use = tris;
             bool holes = false;
-            if (Course.At(z0) == Course.Section.Danger || Course.At(z0 + chunkSize) == Course.Section.Danger)
+            if (z0 < Course.GlacierBottom + 20f && z0 + chunkSize > Course.GlacierTop - 20f)   // (only the glacier has crevasses)
             {
                 if (holeMask == null || holeMask.Length != n * n) holeMask = new bool[n * n];
                 for (int j = 0; j < n; j++)

@@ -11,7 +11,8 @@ namespace Summit
     /// Both lens types draw one full-screen pass after post-processing (Resources/LensEdge.shader): at most six
     /// texture reads toward the edges, a single read in the middle. The LENS row sets how strong it all is.
     ///
-    /// SPHERICAL: URP's barrel warp (as the LENS row always had), plus colour fringing and softness that run
+    /// SPHERICAL: a barrel warp (as the LENS row always had; drawn here, round on the screen, since URP's own one
+    /// bowed the bottom of a tall frame far harder than its middle), plus colour fringing and softness that run
     /// outward from the centre and grow toward every edge of the screen. There is a little even at STANDARD,
     /// a clear fringe down both sides at the default WIDE, and the skate-video "death lens" at FISHEYE.
     ///
@@ -44,6 +45,9 @@ namespace Summit
         static readonly float[] AnaSmear = { 0.004f, 0.008f, 0.012f, 0.018f };
         // squeeze of the sides (and stretch of the middle); the verticals bow by half as much
         static readonly float[] AnaSqueeze = { 0.06f, 0.1f, 0.14f, 0.2f };
+
+        /// <summary>The spherical barrel per unit of the LENS row's warp (WIDE -0.28, WIDER -0.42, FISHEYE -0.6).</summary>
+        public static float Barrel = 0.4f;
 
         public static readonly string[] HalationName = { "OFF", "SUBTLE", "STRONG" };
         static readonly float[] HaloStrength = { 0f, 0.5f, 1.05f };
@@ -103,9 +107,10 @@ namespace Summit
             bool anamorphic = mode == 1;
             if (lens != null)
             {
+                // URP's warp stays off: the shader draws the barrel (see Barrel)
                 lensRef = lens;
-                warpBase = anamorphic ? 0f : warp;
-                scaleBase = anamorphic ? 1f : 1f + 0.12f * (level / 3f);
+                warpBase = 0f;
+                scaleBase = 1f;
                 shown = -1f;   // (set, at this strength, as the next frame is drawn)
                 lens.xMultiplier.Override(1f);
                 lens.yMultiplier.Override(1f);
@@ -119,7 +124,7 @@ namespace Summit
             else
             {
                 edge = new Vector4(SphFringe[level], SphSmear[level], 0f, 0f);
-                ana = Vector4.zero;
+                ana = new Vector4(0f, 0f, 0f, Mathf.Max(0f, -warp) * Barrel);
             }
         }
 
@@ -140,7 +145,7 @@ namespace Summit
             SetWarp();
             // the fringe and softness, and the anamorphic squeeze, scale with the strength; its vignette and bars don't
             mat.SetVector(EdgeId, new Vector4(edge.x * Strength, edge.y * Strength, edge.z, edge.w));
-            mat.SetVector(AnaId, new Vector4(ana.x * Strength, ana.y * Strength, ana.z, ana.w));
+            mat.SetVector(AnaId, new Vector4(ana.x * Strength, ana.y * Strength, ana.z, ana.w * Strength));
             mat.SetFloat(AspectId, c.aspect);
             mat.SetVector(BlurId, new Vector4(Mathf.Max(0f, Blur), BlurCentre.x, BlurUp < 0f ? 1f - BlurCentre.y : BlurCentre.y, BlurUp < 0f ? -1f : 1f));
             float dark = 0f;

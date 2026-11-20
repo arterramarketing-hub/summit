@@ -39,7 +39,8 @@ Shader "Hidden/Summit/LensEdge"
             #include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
 
             float4 _LensEdge;    // x: fringe, y: smear, z: bar height (0 = none), w: 1 = anamorphic
-            float4 _LensAna;     // x: squeeze of the sides, y: bow of the verticals, z: oval vignette
+            float4 _LensAna;     // x: squeeze of the sides, y: bow of the verticals, z: oval vignette;
+                                 // w: spherical barrel (0 = none)
             float _LensAspect;   // width / height: keeps spherical fringes the same length in x and y on screen
             float4 _Halo;        // rgb: tint times strength (0 = off)
             float4 _LensBlur;    // x: streak length at the frame edge, as a fraction of the screen (0 = off);
@@ -65,6 +66,14 @@ Shader "Hidden/Summit/LensEdge"
                 }
                 else
                 {
+                    // the barrel, round on the screen: the distance from the middle is measured in pixels, not in uv. (URP's
+                    // own LensDistortion works in uv, and on a tall phone the short width spans as much uv as the long
+                    // height, so horizontal lines near the top and bottom bowed about five times as hard as a round lens
+                    // bends them; with sky at the top, that showed as the bottom of the picture bending away on its own.)
+                    // Pinned at the corners, so nothing is read from outside the picture.
+                    float2 sc = float2(_LensAspect, 1.0) / max(_LensAspect, 1.0);
+                    float2 q = p * sc;
+                    p *= (1.0 + _LensAna.w * dot(q, q)) / (1.0 + _LensAna.w * dot(sc, sc));
                     r2 = dot(p, p) * 0.5 + 0.5 * max(p.x * p.x, p.y * p.y);
                     dir = float2(p.x, p.y * _LensAspect) * 0.5;
                 }

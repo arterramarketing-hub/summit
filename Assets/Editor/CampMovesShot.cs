@@ -148,7 +148,7 @@ public static class CampMovesShot
     static void Scripted(RenderTexture rt)
     {
         camp.SetNight(0f);
-        camp.Teleport(-4f, -88f, 90f);
+        camp.Teleport(-4f, -58f, 90f);
         var fingers = new List<CampInput.Touch>();
         Camp.TestTouches = fingers;
         for (int i = 0; i < 30; i++) Frame(rt, null);   // settle (the first frames come out half lit)
@@ -198,7 +198,7 @@ public static class CampMovesShot
         Check($"the footprints carried on ({camp.FootprintCount})", camp.FootprintCount > 4);
         // one thumb walks and turns: pushed to the side, the hero turns that way and the camera comes round behind
         // (no second finger anywhere near it)
-        camp.Teleport(-4f, -88f, 90f);
+        camp.Teleport(-4f, -58f, 90f);
         for (int i = 0; i < 20; i++) Frame(rt, null);
         float yawA = cam.transform.eulerAngles.y;
         for (float t = 0f; t < 3f; t += Dt)

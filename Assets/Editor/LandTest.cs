@@ -339,7 +339,7 @@ public static class LandTest
         {
             r.Steer = Steer(Slope.Centre(r.Z + 12f));
             Step(n);
-            if (r.Airborne && !set)
+            if (r.Airborne && !set && r.Z > j.Start)   // (off the cliff itself: on the way to it the board can fly a crevasse)
             {
                 // a trick committed (as a flick commits it: Rider.ForceTrick) that turns too slowly for this flight, as if
                 // it were meant for one over twice as long: half way round at the landing

@@ -150,7 +150,7 @@ namespace Summit
             for (int i = 0; i < 180 && T < max; i++)
             {
                 u.y -= G * h; q += u * h; T += h;
-                if (q.y <= Slope.DrawnHeight(q.x, q.z) + R && Course.CrevasseCut(q.x, q.z) <= 0.3f) break;
+                if (q.y <= Slope.DrawnHeight(q.x, q.z) + R && Course.Solid(q.x, q.z, new Vector2(u.x, u.z).magnitude)) break;
             }
             return T;
         }
