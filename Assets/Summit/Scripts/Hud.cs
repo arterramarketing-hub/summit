@@ -26,6 +26,7 @@ namespace Summit
         int[] lastTimer;
         int lastTenths = -2;
         Image slideFill, whiteout, hurt;
+        GameObject slideBar;   // the avalanche's bar: its dark track and the fill in it
         Image[] fallPips;
         Text fallsLabel;
         float hurtA;
@@ -75,6 +76,8 @@ namespace Summit
             slide = NewText("Slide", safe, new Vector2(1f, 1f), new Vector2(-40f, -40f), 44, TextAnchor.UpperRight);
 
             var barBg = NewImage("SlideBar", safe, new Color(0f, 0f, 0f, 0.35f));
+            slideBar = barBg.gameObject;
+            slideBar.SetActive(false);   // (shown only while the avalanche is on its way: SetRun)
             Place(barBg.rectTransform, new Vector2(1f, 1f), new Vector2(-40f, -104f), new Vector2(300f, 16f), new Vector2(1f, 1f));
             slideFill = NewImage("Fill", barBg.transform, new Color(1f, 1f, 1f, 0.95f));
             var fr = slideFill.rectTransform;
@@ -501,6 +504,10 @@ namespace Summit
             int s0 = showRun ? Mathf.Max(0, Mathf.RoundToInt(gap)) : -1;
             if (s0 != lastGap) { lastGap = s0; slide.text = showRun && s0 < 9999 ? "SLIDE " + s0 + " m" : ""; }   // 9999: not released yet
             slide.color = gap < 40f ? new Color(1f, 0.45f, 0.35f) : Color.white;
+            // the bar only while riding with the slide released, like its "SLIDE n m" (its dark track used to stay
+            // up always: on the start pad, the end screen, and every other screen the HUD sits under)
+            bool bar = showRun && s0 < 9999;
+            if (slideBar.activeSelf != bar) slideBar.SetActive(bar);
             float k = Mathf.Clamp01(gap / gapMax);
             slideFill.rectTransform.anchorMax = new Vector2(showRun ? k : 0f, 1f);
             slideFill.color = gap < 40f ? new Color(1f, 0.45f, 0.35f) : Color.white;

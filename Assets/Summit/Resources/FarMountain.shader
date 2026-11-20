@@ -1,5 +1,7 @@
-// The whole mountain seen from far away (FarMountain.cs: the start page's helicopter view). One cheap pass:
-// snow, rock and forest are decided per pixel from the height, the slope and one small noise texture, so the
+// The whole mountain seen from far away (FarMountain.cs: the start page's helicopter view), in the character of the
+// game's backdrop photograph of Mount Rainier: heavy snow and blue-white glacier ice broken by ribs and bands of warm
+// grey rock, crevasses across the ice where it steepens, a ragged snow line into dark forest. One cheap pass:
+// snow, ice, rock and forest are decided per pixel from the height, the slope and one small noise texture, so the
 // snow line and the tree line wander across the coarse triangles instead of following their edges. Lit by the
 // sun or moon and the sky's ambient like everything else (so it follows the time of day), with the mountain's
 // own shadow baked per vertex (colour alpha), and its own haze: a thin one everywhere and a thick one lying in
@@ -14,8 +16,8 @@ Shader "Summit/FarMountain"
         _TreeLine ("Tree line (0 floor .. 1 summit)", Float) = 0.4
         _Phase ("Piste phase (Slope.ph)", Float) = 0
         _FinishZ ("Finish (world z)", Float) = 4233
-        _Haze ("Haze: 1 / the distance at which the view is two thirds gone", Float) = 0.0000235
-        _Mist ("Valley mist per metre at the floor", Float) = 0.0003
+        _Haze ("Haze: 1 / the distance at which the view is two thirds gone", Float) = 0.0000125
+        _Mist ("Valley mist per metre at the floor", Float) = 0.00018
         _MistH ("Valley mist height", Float) = 320
         _Lights ("Valley lights (night)", Float) = 0
     }
@@ -70,7 +72,9 @@ Shader "Summit/FarMountain"
                 half3 Nd = normalize(N0 + half3(n2.b - 0.5, 0, n2.g - 0.5) * 0.45 + half3(n1.g - 0.5, 0, n1.b - 0.5) * 0.3);
 
                 // forest: below the tree line, where the ground can hold it, with clearings; thinning toward the line
-                half line0 = _TreeLine + (n2.r - 0.5) * 0.2 + (n1.a - 0.5) * 0.06;
+                // (the line lower in the glaciers' beds: tongues of ice reach down between the forested ribs)
+                half bed = saturate(0.86 - hollow);
+                half line0 = _TreeLine + (n2.r - 0.5) * 0.22 + (n1.a - 0.5) * 0.1 + (n3.r - 0.5) * 0.04 - bed * 0.5;
                 half below = line0 - h01;
                 half forest = smoothstep(-0.01, 0.03, below) * smoothstep(0.5, 0.62, Nd.y);
                 forest *= smoothstep(0.3, 0.44, n1.r + below * 6.0);
@@ -80,23 +84,32 @@ Shader "Summit/FarMountain"
                 forest *= 1.0 - piste;
 
                 // rock where it is too steep for snow: sooner on ribs, later in gullies, which hold their snow
-                half rockLine = 0.66 + (n2.r - 0.5) * 0.14 + (hollow - 0.82) * 0.55;
-                half rock = smoothstep(rockLine + 0.04, rockLine - 0.04, Nd.y) * (1.0 - piste);
+                // (heavily snowed: only the cleavers' crests, the cliff bands and the steepest faces are bare)
+                half rockLine = 0.8 + (n2.r - 0.5) * 0.42 + (n1.r - 0.5) * 0.12 + (hollow - 0.82) * 1.0 - h01 * 0.04;
+                half rock = smoothstep(rockLine + 0.035, rockLine - 0.035, Nd.y) * (1.0 - piste);
 
                 // relief the triangles are too coarse for: the noise's own slope bends the light's normal (most on rock)
                 half3 N = N0;
-                half bump = lerp(0.22, 1.0, rock) * (1.0 - 0.75 * forest);
+                half bump = lerp(0.4, 1.0, rock) * (1.0 - 0.75 * forest);
                 N.xz += ((n1.gb - 0.5) * 1.3 + (n2.bg - 0.5) * 0.7 + (n3.gb - 0.5) * 0.8) * bump;
                 N = normalize(N);
 
                 // rock: grey-brown in level bands, darker where it is wet, snow lying on its ledges
                 half strata = 0.5 + 0.5 * sin((P.y + n2.r * 380.0 + n1.a * 50.0) * 0.05);
-                half3 rockCol = lerp(half3(0.115, 0.112, 0.125), half3(0.285, 0.27, 0.255), saturate(n1.a * 0.55 + n2.a * 0.35 + strata * 0.22 - 0.08));
+                half3 rockCol = lerp(half3(0.16, 0.14, 0.14), half3(0.47, 0.44, 0.44), saturate(n1.a * 0.55 + n2.a * 0.35 + strata * 0.22 - 0.05) * smoothstep(0.25, 0.7, Nd.y + 0.15));
                 half ledge = smoothstep(0.5, 0.74, n3.a * 0.4 + n1.r * 0.6) * smoothstep(0.3, 0.62, N.y) * 0.5;
                 half3 snowCol = lerp(half3(0.80, 0.86, 0.97), half3(0.95, 0.96, 0.985), saturate(hollow * 1.15));   // hollows a little blue
+                // glacier ice in the beds: bluer, and crevassed across the flow where it steepens (lines along the
+                // contours, wandering; faded out where they would be finer than a pixel)
+                half ice = smoothstep(0.02, 0.2, bed) * (1.0 - smoothstep(-0.02, 0.05, below));
+                snowCol = lerp(snowCol, half3(0.74, 0.86, 0.98), ice * 0.5);
+                float cy = (P.y + (n1.r - 0.5) * 300.0 + (n3.r - 0.5) * 50.0) / 38.0;
+                half crev = smoothstep(0.1, 0.03, abs(frac(cy) - 0.5)) * saturate(1.0 - fwidth(cy) * 2.2);
+                crev *= smoothstep(0.05, 0.22, bed + (n2.a - 0.5) * 0.2) * smoothstep(0.97, 0.86, N0.y) * smoothstep(0.4, 0.6, n1.a + n3.a * 0.3);
+                snowCol = lerp(snowCol, half3(0.34, 0.48, 0.66), crev * 0.6);
                 rockCol = lerp(rockCol, snowCol * 0.9, ledge);
                 // forest: dark and close-grained, snow on its crowns toward the tree line
-                half3 forestCol = lerp(half3(0.022, 0.042, 0.034), half3(0.048, 0.076, 0.050), saturate(n3.r * 0.3 + n1.a * 0.4 + n2.a * 0.3));
+                half3 forestCol = lerp(half3(0.010, 0.020, 0.016), half3(0.024, 0.040, 0.025), saturate(n3.r * 0.3 + n1.a * 0.4 + n2.a * 0.3));
                 forestCol = lerp(forestCol, half3(0.5, 0.56, 0.64), (0.03 + 0.6 * smoothstep(0.12, 0.0, below)) * smoothstep(0.4, 0.85, n3.a * 0.6 + n1.r * 0.4));
                 half3 albedo = lerp(snowCol, rockCol, rock);
                 albedo = lerp(albedo, forestCol, forest);

@@ -234,8 +234,8 @@ namespace Summit
 
         struct Band { public Transform t; public float lag, lagUp; }
         Band[] bands;
-        /// <summary>The photo of the range beyond (null with the painted bands), and how far from the camera it hangs:
-        /// the start page pushes it out behind the whole mountain (StartPage.Show).</summary>
+        /// <summary>The photo of the range beyond (null with the painted bands), and how far from the camera it hangs.
+        /// The start page hides it: there the mountain being circled is the photo's own (StartPage.Show).</summary>
         public Transform PhotoBand { get; private set; }
         public const float PhotoRadius = 1500f;
         Vector3 bandAnchor;

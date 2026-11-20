@@ -5,12 +5,12 @@ using UnityEngine.UI;
 namespace Summit
 {
     /// <summary>
-    /// The first screen: a helicopter circling the whole of Mt. Vertigo from far off, the title, two ways in
+    /// The first screen: a helicopter circling the whole of Mount Vertigo from far off, its name, two ways in
     /// (the camp, or straight to the start gate) and one control that opens every setting.
     ///
     /// The view is drawn live, not played from a file: the game's own camera flies the circle and sees only the far
-    /// view's layer (FarMountain: this mountain's real run on a whole peak, the country round it, cloud banks, and
-    /// the photo backdrop pushed out behind), so it shows the mountain you are about to ride, in the light of the
+    /// view's layer (FarMountain: this mountain's real run on the whole mountain of the backdrop photograph, the
+    /// country round it and drifts of mist), so it shows the mountain you are about to ride, in the light of the
     /// time of day, through your own lens and filter, and adds nothing to the app's size. The flight is a pilot's,
     /// not a turntable's: the circle is wider where the mountain is, the height and distance wander, the aim floats
     /// and the horizon rolls a little; a rotor and the wind sit quietly under the music.
@@ -24,11 +24,11 @@ namespace Summit
     {
         // ---- the flight
         public const float Fov = 38f;              // degrees top to bottom: a long lens
-        public const float OrbitSeconds = 340f;    // once round
-        public const float StartAzimuth = 28f;     // degrees round from straight down the valley: the run's face, a little from its right
-        public const float Fill = 0.95f;           // how much of the frame's width the massif takes
-        public const float Altitude = 1500f;       // metres above the valley floor
-        public const float AimHeight = 2100f;      // the point looked at, above the floor
+        public const float OrbitSeconds = 380f;    // once round
+        public const float StartAzimuth = 12f;     // degrees round from straight down the valley: the run's face, a little from its right
+        public const float Fill = 1.18f;           // how much of the frame's width the massif takes
+        public const float Altitude = 1150f;       // metres above the valley floor
+        public const float AimHeight = 1480f;      // the point looked at, above the floor
         const float NearClip = 30f;
 
         // ---- the page
@@ -50,7 +50,7 @@ namespace Summit
         System.Func<float> lensFov;   // the player's LENS setting, as extra degrees (the view takes a share of it)
 
         int keptMask; float keptFov, keptNear, keptFar; bool kept;
-        Transform band; Vector3 bandScale; int bandLayer;
+        Transform band; bool bandWas;
 
         public void Build(Camera camera, Atmosphere atmosphere, Shader litShader, Material softParticle, System.Func<float> dark, System.Func<float> lens)
         {
@@ -78,15 +78,11 @@ namespace Summit
             cam.cullingMask = 1 << FarMountain.Layer;
             cam.nearClipPlane = NearClip;
             cam.farClipPlane = far.Reach + 20000f;
-            // the photo of the range beyond: out behind everything, and seen through the same haze
+            // the photo of the range beyond stays out of this view: the mountain being circled is that mountain, and
+            // it would stand on the horizon as its own twin (it is on another layer and is not drawn here; hidden
+            // as well, so that stays true whatever else changes)
             band = atmo != null ? atmo.PhotoBand : null;
-            if (band != null)
-            {
-                bandScale = band.localScale; bandLayer = band.gameObject.layer;
-                band.gameObject.layer = FarMountain.Layer;
-                band.localScale = Vector3.one * (far.Reach * 0.82f / Atmosphere.PhotoRadius);
-            }
-            Shader.SetGlobalFloat(BackdropHazeId, 0.5f);
+            if (band != null) { bandWas = band.gameObject.activeSelf; band.gameObject.SetActive(false); }
             Showing = true;
             age = first ? 0f : 1.4f;
             leaving = 0; leaveT = 0f; sheetOpen = false; sheet = 0f; pressed = null;
@@ -107,18 +103,13 @@ namespace Summit
                 cam.cullingMask = keptMask; cam.fieldOfView = keptFov; cam.nearClipPlane = keptNear; cam.farClipPlane = keptFar;
                 kept = false;
             }
-            if (band != null) { band.gameObject.layer = bandLayer; band.localScale = bandScale; band = null; }
-            Shader.SetGlobalFloat(BackdropHazeId, 0f);
+            if (band != null) { band.gameObject.SetActive(bandWas); band = null; }
             far.gameObject.SetActive(false);
             if (cloudRoot != null) cloudRoot.gameObject.SetActive(false);
             page.gameObject.SetActive(false);
             sheetRoot.gameObject.SetActive(false);
         }
-        static readonly int BackdropHazeId = Shader.PropertyToID("_BackdropHaze");
-
         static Vector3 SunDir() => RenderSettings.sun != null ? -RenderSettings.sun.transform.forward : new Vector3(-0.5f, 0.7f, -0.5f);
-
-        void OnDestroy() { Shader.SetGlobalFloat(BackdropHazeId, 0f); }
 
         // ---------------------------------------------------------------- the flight
 
@@ -232,9 +223,9 @@ namespace Summit
             Vector3 mid = FarMountain.Middle;
             for (int i = 0; i < clouds.Length; i++)
             {
-                float a = (i * 51f + 30f * Slope.Hash01(i, 3, 211)) * Mathf.Deg2Rad, d = 3000f + 3200f * Slope.Hash01(i, 4, 211);
-                cloudAt[i] = new Vector3(mid.x + Mathf.Sin(a) * d, FarMountain.FloorY + 500f + 900f * Slope.Hash01(i, 5, 211), mid.z + Mathf.Cos(a) * d);
-                float w = 1500f + 1500f * Slope.Hash01(i, 6, 211);
+                float a = (i * 51f + 30f * Slope.Hash01(i, 3, 211)) * Mathf.Deg2Rad, d = 5000f + 5000f * Slope.Hash01(i, 4, 211);
+                cloudAt[i] = new Vector3(mid.x + Mathf.Sin(a) * d, FarMountain.FloorY + 800f + 1100f * Slope.Hash01(i, 5, 211), mid.z + Mathf.Cos(a) * d);
+                float w = 2600f + 2600f * Slope.Hash01(i, 6, 211);
                 clouds[i].localScale = new Vector3(w * (Slope.Hash01(i, 8, 211) < 0.5f ? -1f : 1f), w * (0.34f + 0.12f * Slope.Hash01(i, 7, 211)), 1f);
             }
         }
@@ -468,10 +459,9 @@ namespace Summit
             titleRect = New("Title", safe);
             Place(titleRect, new Vector2(0.5f, 1f), new Vector2(0f, -250f), new Vector2(900f, 200f), new Vector2(0.5f, 0.5f));
             titleGroup = titleRect.gameObject.AddComponent<CanvasGroup>();
-            var title = Label("Name", titleRect, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(900f, 170f), 118, TextAnchor.MiddleCenter, Ink);
-            title.text = Track("SUMMIT", 150);
-            var rule = Img("Rule", titleRect, new Color(1f, 1f, 1f, 0.5f));
-            Place(rule.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, -104f), new Vector2(64f, 2f), new Vector2(0.5f, 0.5f));
+            // (the mountain's name, as the camp's sign has it: one line, small and widely set, so it stays quiet)
+            var title = Label("Name", titleRect, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(960f, 120f), 62, TextAnchor.MiddleCenter, Ink);
+            title.text = Track("MOUNT VERTIGO", 62);
 
             // the two ways in, side by side, and under them the one control for everything else
             var choices = New("Choices", safe); Stretch(choices);

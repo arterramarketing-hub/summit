@@ -4,69 +4,75 @@ using UnityEngine.Rendering;
 namespace Summit
 {
     /// <summary>
-    /// The whole of Mt. Vertigo as it is seen from kilometres away (the start page's helicopter, StartPage.cs): one
+    /// The whole of Mount Vertigo as it is seen from kilometres away (the start page's helicopter, StartPage.cs): one
     /// coarse mesh of the mountain and one of the country round it out to the haze, in place of the terrain the
     /// game streams (which is only ever a strip a few hundred metres wide round the rider).
     ///
-    /// The run is the real one: along the piste the heights are Slope.Height's, so the summit camp's plateau and
-    /// cliff, the start pad, the ridges, gorges and cliffs of this mountain's course are all where the game has
-    /// them, and a new mountain (a new seed) gives a new far view. Either side of that strip the game's height
-    /// function is only "open mountain going on for ever", so the rest of the peak is made here: a steep pyramid
-    /// whose front face is the fall line's own plane, its other faces rock, ribs and gullies running down them,
-    /// standing in a valley among forested ridges, with far ranges beyond.
+    /// The mountain is the one in the game's backdrop photograph (Tools/art/rainier-extended.jpg, Mount Rainier):
+    /// a broad glaciated volcano, far wider than it is tall. A rounded summit dome; flanks that start steep and
+    /// ease out into long shoulders (steeper and rockier on one side, a long snow shoulder on the other, as the
+    /// photo has them); cleavers of rock running down the fall line with glaciers lying between them, cliff
+    /// bands across them, a sharp lesser peak standing off one flank; and forest from the ragged snow line down.
     ///
-    /// Drawn on its own layer by Resources/FarMountain.shader (snow, rock and forest per pixel, the day's light,
-    /// its own haze). The mountain's shadow is worked out here, per vertex, for where the sun or moon stands,
-    /// a slice each frame when the light has moved, so a low sun throws the peak's shadow across the valley.
+    /// The run is the real one: along the piste the heights are Slope.Height's, so the summit camp's plateau, the
+    /// start pad, the ridges, gorges and cliffs of this mountain's course are all where the game has them, and a
+    /// new mountain (a new seed) gives a new far view. The run falls far more steeply than a volcano's flank
+    /// does, all the way down, so it lies in a great trough cut into the mountain's front: a valley whose head is
+    /// the summit and whose sides climb back to the shoulders.
+    ///
+    /// Drawn on its own layer by Resources/FarMountain.shader (snow, ice, rock and forest per pixel, the day's
+    /// light, its own haze). The mountain's shadow is worked out here, per vertex, for where the sun or moon
+    /// stands, a slice each frame when the light has moved, so a low sun throws its shadow across the valley.
     /// </summary>
     public class FarMountain : MonoBehaviour
     {
         public const int Layer = 29;
-        public const float Cell = 48f;
-        const int CellsX = 80, CellsBack = 52, CellsFront = 110;   // the fine grid: either side of the summit, behind it, down the run
-        const int RingSegs = 128, RingsNear = 68, Rings = 83;                        // the country round it: squares growing outward
+        public const float Cell = 64f;
+        const int CellsX = 90, CellsBack = 88, CellsFront = 104;   // the fine grid: either side of the summit, behind it, down the run
+        const int RingSegs = 128, RingsNear = 66, Rings = 78;       // the country round it: squares growing outward
         const float RingGrow = 0.026f, RingGrowFar = 0.1f;   // fine out to where the helicopter flies, then coarse to the haze
 
         // ---------------------------------------------------------------- the shape (a pure function of the mountain's seed)
 
-        struct Face { public float nx, nz, s; }
-        static Face[] faces;
+        // the flank's profile: Steep at the top, easing over EaseLength to Shoulder, under a dome DomeRadius across
+        const float Steep = 0.5f, Shoulder = 0.23f, EaseLength = 2000f, DomeRadius = 420f;
+        /// <summary>How far out the helicopter flies (StartPage): the country is kept low under its circle.</summary>
+        public const float FlownRadius = 19000f;
+
         static Vector2[] knob; static float[] knobH, knobR;
-        static float sx, sz, topY, floorY;
+        static float sx, sz, topY, floorY, lobeX, lobeZ;
         static int shapeSeed = int.MinValue;
 
         /// <summary>Where the summit is, and how low the valley floor lies.</summary>
         public static Vector3 SummitPoint { get { Setup(); return new Vector3(sx, topY, sz); } }
         public static float FloorY { get { Setup(); return floorY; } }
         /// <summary>The middle of the massif on the ground (what the helicopter circles).</summary>
-        public static Vector3 Middle { get { Setup(); return new Vector3(sx, floorY, sz + 1250f); } }
-        /// <summary>Half the massif's width across the hill and along it, for framing it.</summary>
-        public const float HalfAcross = 2250f, HalfAlong = 3050f;
+        public static Vector3 Middle { get { Setup(); return new Vector3(sx, floorY, sz + 500f); } }
+        /// <summary>Half the width of the mountain's snow and ice, for framing it (its forested shoulders run on far wider).</summary>
+        public const float HalfAcross = 3400f, HalfAlong = 3400f;
 
         static void Setup()
         {
-            if (shapeSeed == Slope.Seed && faces != null) return;
+            if (shapeSeed == Slope.Seed && knob != null) return;
             shapeSeed = Slope.Seed;
             sx = Slope.Centre(Slope.PadLip); sz = -100f;
             topY = Slope.Height(sx, sz);
             floorY = Slope.FallLine(Slope.FinishZ + 4000f);
             float J(int i) => Slope.Hash01(i, 5, 97) - 0.5f;
-            Face F(float deg, float s) { float a = deg * Mathf.Deg2Rad; return new Face { nx = Mathf.Sin(a), nz = Mathf.Cos(a), s = s }; }
-            // every face but the front (the run, which is the fall line's own plane): the flanks, and the back
-            faces = new[]
-            {
-                F(80f + 10f * J(1), 1.45f + 0.3f * J(2)), F(-77f + 10f * J(3), 1.35f + 0.3f * J(4)),
-                F(138f + 14f * J(5), 1.7f + 0.3f * J(6)), F(-142f + 14f * J(7), 1.55f + 0.3f * J(8)),
-                F(180f + 12f * J(9), 1.85f + 0.3f * J(10)),
-            };
-            // shoulders: lesser tops standing on the arêtes, so the skyline is not one point
+            // The long shoulder runs out to the rider's left (-x) and a little back, the steep rocky side is the
+            // camp's cliff side (+x): seen from down the valley, as the photo is, the steep skyline is on the left
+            // and the long snow shoulder on the right
+            float la = (-105f + 20f * J(1)) * Mathf.Deg2Rad;
+            lobeX = Mathf.Sin(la); lobeZ = Mathf.Cos(la);
+            // lesser tops: a sharp rock peak standing off the steep flank (the photo's, on its left), and two
+            // shoulders that bench the skyline
             knob = new Vector2[3]; knobH = new float[3]; knobR = new float[3];
-            float[] at = { 112f, -108f, 162f };
+            float[] at = { 62f, -128f, 168f }, far = { 4300f, 3000f, 2500f }, high = { 520f, 230f, 260f }, wide = { 520f, 900f, 800f };
             for (int i = 0; i < 3; i++)
             {
-                float a = (at[i] + 16f * J(20 + i)) * Mathf.Deg2Rad, d = 1150f + 700f * (J(30 + i) + 0.5f);
+                float a = (at[i] + 14f * J(20 + i)) * Mathf.Deg2Rad, d = far[i] * (1f + 0.25f * J(30 + i));
                 knob[i] = new Vector2(sx + Mathf.Sin(a) * d, sz + Mathf.Cos(a) * d);
-                knobH[i] = 260f + 240f * (J(40 + i) + 0.5f); knobR[i] = 300f + 160f * (J(50 + i) + 0.5f);
+                knobH[i] = high[i] * (1f + 0.4f * J(40 + i)); knobR[i] = wide[i] * (1f + 0.3f * J(50 + i));
             }
         }
 
@@ -78,55 +84,66 @@ namespace Summit
 
         static float S01(float a, float b, float v) => Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(a, b, v));
 
-        /// <summary>The peak itself, without the run's own strip.</summary>
+        /// <summary>The mountain itself, without the run's own strip.</summary>
         static float Massif(float x, float z)
         {
             float dx = x - sx, dz = z - sz;
-            float drop = topY + Slope.Fall * z;   // the front face
-            for (int i = 0; i < faces.Length; i++) drop = SMax(drop, faces[i].s * (dx * faces[i].nx + dz * faces[i].nz), 260f);
             float r = Mathf.Sqrt(dx * dx + dz * dz);
-            if (r > 9000f) return topY - drop;   // (far below the country round it out there)
-            float grow = Mathf.Clamp01(r / 900f), inv = 1f / Mathf.Max(r, 1f);
-            float ux = dx * inv, uz = dz * inv;
-            // ribs and gullies running down from the top (round the peak with no seam), cut deeper the further down
-            float ribs = Slope.Ridged(ux * 3.2f + 5f + r * 0.00022f, uz * 3.2f + 2f);
-            float fine = Slope.Ridged(ux * 9f + 1f, uz * 9f + 6f + r * 0.0007f);
-            drop += grow * ((0.42f - ribs) * (110f + r * 0.11f) + (0.4f - fine) * (30f + r * 0.03f));
-            drop += (Slope.Noise(x * 0.0011f + 3f, z * 0.0011f) - 0.5f) * 380f * grow;
+            if (r > 16000f) return floorY - 3000f;   // (far below the country round it out there)
+            float inv = 1f / Mathf.Max(r, 1f), ux = dx * inv, uz = dz * inv;
+            // never a cone: it reaches further one way than the other, and wanders round between
+            float reach = 1f + 0.24f * (ux * lobeX + uz * lobeZ) + 0.26f * (Slope.Noise(ux * 1.6f + 4f, uz * 1.6f + 9f) - 0.5f);
+            float re = r / reach;
+            float drop = (Steep * EaseLength * (1f - Mathf.Exp(-re / EaseLength)) + Shoulder * re) * (re * re / (re * re + DomeRadius * DomeRadius));
+            float grow = Mathf.Clamp01((r - 250f) / 1100f);
+            // cleavers and the glaciers' beds between them, running down from the dome (round the mountain with no
+            // seam), standing higher and cut deeper the further down
+            float ribs = Slope.Ridged(ux * 3.4f + 5f + r * 0.00012f, uz * 3.4f + 2f);
+            float fine = Slope.Ridged(ux * 9f + 1f, uz * 9f + 6f + r * 0.0004f);
+            drop += grow * ((0.4f - ribs) * (120f + r * 0.075f) + (0.4f - fine) * (45f + r * 0.02f));
+            // cliff bands across the fall line, every few hundred metres of height, where the lava's layers break
+            // through: here and there, never a ring right round
+            float layer = drop / 430f + 1.4f * Slope.Noise(x * 0.0005f + 2f, z * 0.0005f + 7f);
+            float lf = layer - Mathf.Floor(layer);
+            float band = S01(0.42f, 0.85f, Slope.Noise(x * 0.00035f + 8f, z * 0.00035f + 1f)) * grow;
+            drop += band * 430f * 0.24f * (Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.38f, 0.54f, lf)) - lf);
+            drop += (Slope.Noise(x * 0.0009f + 3f, z * 0.0009f) - 0.5f) * 300f * grow + (Slope.Noise(x * 0.0031f, z * 0.0031f + 4f) - 0.5f) * 70f * grow;
             for (int i = 0; i < knob.Length; i++)
             {
                 float kx = x - knob[i].x, kz = z - knob[i].y, q = (kx * kx + kz * kz) / (knobR[i] * knobR[i]);
-                if (q < 9f) drop -= knobH[i] * Mathf.Exp(-q);
+                if (q < 9f) drop -= knobH[i] * Mathf.Exp(-q * (i == 0 ? 1.6f : 1f));
+            }
+            // the run's trough: the fall line's own plane down the front, its sides climbing back to the shoulders
+            if (z > -300f)
+            {
+                float a = Mathf.Abs(x - Slope.Centre(Mathf.Clamp(z, Slope.PadLip, Slope.FinishZ)));
+                float side = a - (430f + 0.2f * Mathf.Max(0f, z));
+                float wall = side > 0f ? side * (0.55f + 0.25f * (Slope.Noise(z * 0.0012f + 5f, Mathf.Sign(x - sx) * 3f) - 0.5f)) : 0f;
+                float front = Mathf.Min(topY + Slope.Fall * z, topY - floorY) - wall;
+                drop = SMax(drop, front, 240f);
             }
             return topY - drop;
         }
 
-        /// <summary>The country round the mountain: a valley at its foot, forested ridges, and far ranges.</summary>
+        /// <summary>The country round the mountain: lowland at its foot, forested ridges, and far ranges.</summary>
         static float Around(float x, float z)
         {
-            float dx = x - sx, dz = z - (sz + 1250f);
+            float dx = x - sx, dz = z - (sz + 500f);
             float r = Mathf.Sqrt(dx * dx + dz * dz);
-            float y = floorY + (Slope.Noise(x * 0.0009f + 11f, z * 0.0009f) - 0.5f) * 70f * S01(2200f, 4200f, r);
-            float hills = S01(3400f, 9000f, r);
+            float y = floorY + (Slope.Noise(x * 0.0009f + 11f, z * 0.0009f) - 0.5f) * 70f * S01(8000f, 11000f, r);
+            float hills = S01(8500f, 12500f, r);
             if (hills > 0f)
             {
                 // (rounded: the mesh out here is too coarse to carry a sharp crest without sawing it)
                 float big = Slope.Noise(x * 0.00023f + 1.7f, z * 0.00023f), mid = Slope.Noise(x * 0.00062f + 4f, z * 0.00062f + 2f);
                 // and low where the helicopter flies its circle (StartPage), so nothing looms under it
-                float flown = 1f - 0.7f * S01(9500f, 12500f, r) * (1f - S01(21000f, 25000f, r));
-                y += hills * flown * (big * big * 900f + mid * mid * 260f + Slope.Noise(x * 0.0017f, z * 0.0017f + 5f) * 60f - 120f);
+                float flown = 1f - 0.6f * S01(FlownRadius - 4500f, FlownRadius - 2000f, r) * (1f - S01(FlownRadius + 4000f, FlownRadius + 8000f, r));
+                y += hills * flown * (big * big * 950f + mid * mid * 280f + Slope.Noise(x * 0.0017f, z * 0.0017f + 5f) * 60f - 120f);
             }
-            // far ranges, except down the valley, where the photographed range stands on the horizon (Atmosphere's
-            // backdrop, pushed out behind all this by the start page)
-            float far = S01(23000f, 40000f, r);
+            float far = S01(42000f, 62000f, r);
             if (far > 0f)
-            {
-                float az = Mathf.Atan2(dx, dz) * Mathf.Rad2Deg;
-                far *= 1f - S01(72f, 52f, Mathf.Abs(az - 8f));
-            }
-            if (far > 0f)
-                y += far * (Slope.Ridged(x * 0.00007f + 9f, z * 0.00007f + 3f) * 1900f + Slope.Ridged(x * 0.00021f, z * 0.00021f + 8f) * 900f
-                            + Slope.Ridged(x * 0.0006f + 2f, z * 0.0006f) * 260f);
+                y += far * (Slope.Ridged(x * 0.00006f + 9f, z * 0.00006f + 3f) * 1200f + Slope.Ridged(x * 0.00018f, z * 0.00018f + 8f) * 1000f
+                            + Slope.Ridged(x * 0.0005f + 2f, z * 0.0005f) * 260f);
             return y;
         }
 
@@ -134,11 +151,11 @@ namespace Summit
         static float StripWeight(float x, float z)
         {
             float a = Mathf.Abs(x - Slope.Centre(Mathf.Clamp(z, Slope.PadLip, Slope.FinishZ)));
-            if (a >= 540f || z <= -420f || z >= Slope.FinishZ + 520f) return 0f;
-            // (round the summit only the camp's own plateau and the top of its cliff: further out the game's summit falls
-            // away far faster than any mountain, and the two blended stood up as a tower)
+            if (a >= 540f || z <= -330f || z >= Slope.FinishZ + 520f) return 0f;
+            // (round the summit only the camp's own plateau: further out the game's summit falls away far faster than
+            // any mountain, and the two blended stood up as a tower on the dome)
             float top = S01(-40f, 260f, z);
-            return (1f - S01(Mathf.Lerp(60f, 190f, top), Mathf.Lerp(230f, 540f, top), a)) * (1f - S01(Slope.FinishZ + 120f, Slope.FinishZ + 520f, z)) * S01(-420f, -190f, z);
+            return (1f - S01(Mathf.Lerp(34f, 190f, top), Mathf.Lerp(130f, 540f, top), a)) * (1f - S01(Slope.FinishZ + 120f, Slope.FinishZ + 520f, z)) * S01(-330f, -170f, z);
         }
 
         /// <summary>The far view's ground at (x, z).</summary>
@@ -336,7 +353,7 @@ namespace Summit
 
         float ShadeAt(Vector3 p, Vector2 d, float rise, bool inCore)
         {
-            float res = 1f, t = Cell * 0.9f, end = 12500f;
+            float res = 1f, t = Cell * 0.9f, end = 17000f;
             if (!inCore)
             {
                 // the country round it is shaded only by the mountain: where the ray crosses the fine grid
@@ -358,7 +375,7 @@ namespace Summit
                 }
                 return Mathf.SmoothStep(0f, 1f, 0.5f + 0.5f * res);
             }
-            for (int k = 0; k < 30 && t < end; k++)
+            for (int k = 0; k < 32 && t < end; k++)
             {
                 float h = CoreAt(p.x + d.x * t, p.z + d.y * t);
                 if (float.IsNegativeInfinity(h)) break;

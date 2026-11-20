@@ -87,13 +87,9 @@ public static class StartPageShot
                 Shoot($"settings_{name}_{t}.png", true);
             }
         }
-        // from behind the summit, looking down the valley: the photographed range beyond
+        // the photo the mountain is modelled on, and the mountain from the side the photo was taken (down the valley)
         TimeOfDay.TestClock = 1.4f; dayNight.ApplyNow(); start.Far.Shade(-RenderSettings.sun.transform.forward, -1);
-        foreach (float az in new[] { 170f, 195f, 215f })
-        {
-            start.Clock = (az - StartPage.StartAzimuth) / 360f * lap; start.Preview(0f, false, 0);
-            Shoot($"fly_day_range_{az:0}.png", false);
-        }
+        PhotoMatch();
         // half-way up: the title in, the choices coming
         TimeOfDay.TestClock = 1.4f; dayNight.ApplyNow(); start.Far.Shade(-RenderSettings.sun.transform.forward, -1);
         start.Clock = 3.6f; start.Preview(3.6f, false, 0);
@@ -111,11 +107,11 @@ public static class StartPageShot
         Sheet("sheet_fly_day.png", "fly_day_0.png", "fly_day_1.png", "fly_day_2.png", "fly_day_3.png", "fly_day_4.png", "fly_day_5.png");
         Sheet("sheet_fly_night.png", "fly_night_0.png", "fly_night_1.png", "fly_night_2.png", "fly_night_3.png", "fly_night_4.png", "fly_night_5.png");
         Sheet("sheet_fly_dawn_dusk.png", "fly_morning_0.png", "fly_morning_1.png", "fly_morning_2.png", "fly_evening_0.png", "fly_evening_1.png", "fly_evening_2.png");
-        Sheet("sheet_fly_range.png", "fly_day_range_170.png", "fly_day_range_195.png", "fly_day_range_215.png");
         Sheet("sheet_page.png", "page_day.png", "settings_day_0.png", "settings_day_1.png", "settings_day_2.png", "settings_day_3.png", "page_night.png", "settings_night_1.png");
 
         Cost();
         Flow();
+        Leaks();
         // back to day before leaving: the night dims the Spray and Trail material assets, and nothing here restores them
         TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt; dayNight.ApplyNow();
         TimeOfDay.TestClock = -1f;
@@ -208,6 +204,99 @@ public static class StartPageShot
         for (int f = 0; f < 80; f++) start.Tick(dt);
         var camp = Object.FindFirstObjectByType<Camp>();
         Debug.Log($"STARTFLOW tap VISIT CAMP: go={g} state={St()} camp.Active={camp.Active} cloud={start.CoverAlpha:0.00} {Cam()}");
+    }
+
+    /// <summary>
+    /// Tools/art/rainier-extended.jpg (its mountain) above the far view from the matching side, framed the same way.
+    /// </summary>
+    static void PhotoMatch()
+    {
+        const int PW = 1400, PH = 520;
+        var sheet = new Texture2D(PW, PH * 2, TextureFormat.RGB24, false);
+        var photo = new Texture2D(2, 2);
+        photo.LoadImage(File.ReadAllBytes("Tools/art/rainier-extended.jpg"));
+        // the mountain's part of the photo: x 1500..5700 of 6516, y (from the top) 520..2080 of 2691
+        float u0 = 1500f / 6516f, u1 = 5700f / 6516f, v1 = 1f - 520f / 2691f, v0 = 1f - 2080f / 2691f;
+        var px = new Color[PW * PH];
+        for (int y = 0; y < PH; y++)
+            for (int x = 0; x < PW; x++)
+                px[y * PW + x] = photo.GetPixelBilinear(Mathf.Lerp(u0, u1, (x + 0.5f) / PW), Mathf.Lerp(v0, v1, (y + 0.5f) / PH));
+        sheet.SetPixels(0, PH, PW, PH, px);
+        Object.DestroyImmediate(photo);
+        // the far view from straight down the valley, through a lens that frames it as the photo is framed
+        start.Clock = (0f - StartPage.StartAzimuth) / 360f * StartPage.OrbitSeconds;
+        start.Preview(0f, false, 0);
+        start.Frame(0f); aLate.Invoke(atmo, null);
+        float keptFov = cam.fieldOfView; var keptRot = cam.transform.rotation;
+        var mid = FarMountain.Middle;
+        cam.transform.rotation = Quaternion.LookRotation(new Vector3(mid.x, FarMountain.FloorY + 1500f, mid.z) - cam.transform.position, Vector3.up);
+        cam.fieldOfView = 15.5f;
+        var rt = RenderTexture.GetTemporary(PW, PH, 24, RenderTextureFormat.ARGB32);
+        cam.targetTexture = rt; cam.aspect = PW / (float)PH;
+        cam.Render();
+        RenderTexture.active = rt;
+        var tex = new Texture2D(PW, PH, TextureFormat.RGB24, false);
+        tex.ReadPixels(new Rect(0, 0, PW, PH), 0, 0); tex.Apply();
+        sheet.SetPixels(0, 0, PW, PH, tex.GetPixels());
+        RenderTexture.active = null; cam.targetTexture = null; RenderTexture.ReleaseTemporary(rt);
+        cam.aspect = W / (float)H; cam.fieldOfView = keptFov; cam.transform.rotation = keptRot;
+        sheet.Apply();
+        File.WriteAllBytes(Path.Combine(outDir, "sheet_photo_match.png"), sheet.EncodeToPNG());
+        Object.DestroyImmediate(tex); Object.DestroyImmediate(sheet);
+        Debug.Log($"STARTPAGE sheet_photo_match.png: the photo above, the far view below, from {cam.transform.position}");
+    }
+
+    /// <summary>
+    /// Nothing of the run's or the camp's screens may show on the start page, and the avalanche's bar only while
+    /// riding with the slide on its way. Runs the game's own Update once in each state (that is what sets the HUD)
+    /// and lists every HUD and camp-menu graphic left showing. A render misses these: the page's pictures are taken
+    /// without the overlay canvases.
+    /// </summary>
+    static void Leaks()
+    {
+        var hud = (Hud)typeof(SummitGame).GetField("hud", NP).GetValue(game);
+        var meta = (MetaUi)typeof(SummitGame).GetField("meta", NP).GetValue(game);
+        var update = typeof(SummitGame).GetMethod("Update", NP);
+        var bar = hud.transform.Find("Safe/SlideBar");
+        string St() => typeof(SummitGame).GetField("state", NP).GetValue(game).ToString();
+        string Showing(Component root)
+        {
+            var sb = new System.Text.StringBuilder(); int n = 0;
+            foreach (var g in root.GetComponentsInChildren<UnityEngine.UI.Graphic>(false))
+            {
+                if (!g.enabled || !g.gameObject.activeInHierarchy) continue;
+                float a = g.color.a;
+                foreach (var cg in g.GetComponentsInParent<CanvasGroup>()) a *= cg.alpha;
+                if (a < 0.02f) continue;
+                if (g is UnityEngine.UI.Text t && string.IsNullOrEmpty(t.text)) continue;
+                n++; sb.Append(' ').Append(g.transform.parent.name).Append('/').Append(g.name);
+            }
+            return n + (n > 0 ? ":" + sb : "");
+        }
+        void Check(string where, bool barWanted, bool nothingWanted)
+        {
+            try { update.Invoke(game, null); }
+            catch (System.Exception e) { Debug.Log($"STARTLEAK {where}: Update threw {e.InnerException?.GetType().Name}: {e.InnerException?.Message}"); }
+            string h = Showing(hud), m = Showing(meta);
+            bool barOn = bar != null && bar.gameObject.activeInHierarchy;
+            bool ok = barOn == barWanted && (!nothingWanted || (h.StartsWith("0") && m.StartsWith("0")));
+            Debug.Log($"STARTLEAK {where}: state={St()} avalanche bar={(bar == null ? "NOT FOUND" : barOn ? "showing" : "hidden")} hud showing={h} | camp menus showing={m}   {(ok ? "OK" : "LEAK")}");
+        }
+        void Call(string mth, params object[] a)
+        {
+            var mi = a.Length == 1 ? typeof(SummitGame).GetMethod(mth, NP, null, new[] { typeof(bool) }, null) : typeof(SummitGame).GetMethod(mth, NP, null, System.Type.EmptyTypes, null);
+            mi.Invoke(game, a);
+        }
+        Call("ToTitle"); Check("start page", false, true);
+        start.Hide(); Call("ToReady", false); Check("ready, before the run", false, false);
+        Call("ToRiding"); Check("riding, the slide not yet released", false, false);
+        // the slide on its way: as the game shows it
+        hud.SetRun(40f, 100, 1f, 80f, 160f, true);
+        Debug.Log($"STARTLEAK riding, the slide 80 m behind: avalanche bar={(bar != null && bar.gameObject.activeInHierarchy ? "showing" : "hidden")}   {(bar != null && bar.gameObject.activeInHierarchy ? "OK" : "LEAK")}");
+        typeof(SummitGame).GetMethod("ToEnd", NP).Invoke(game, new object[] { "WIPED OUT", false, false });
+        Check("end screen", false, false);
+        Call("ToHub", false); Check("camp", false, false);
+        Call("ToTitle"); Check("start page again, after a run", false, true);
     }
 
     /// <summary>What the camera would draw: the renderers in its view on the layers it sees, and their triangles.</summary>
