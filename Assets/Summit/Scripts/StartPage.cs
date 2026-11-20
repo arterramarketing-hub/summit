@@ -5,7 +5,7 @@ using UnityEngine.UI;
 namespace Summit
 {
     /// <summary>
-    /// The first screen: a helicopter circling the whole of Mount Vertigo from far off, its name, two ways in
+    /// The first screen: a helicopter circling the whole of Mt. Vertigo from far off, the game's name, two ways in
     /// (the camp, or straight to the start gate) and one control that opens every setting.
     ///
     /// The view is drawn live, not played from a file: the game's own camera flies the circle and sees only the far
@@ -418,7 +418,9 @@ namespace Summit
 
         // ---------------------------------------------------------------- the title
 
-        const float TitleWidth = 900f, TitleY = 300f, TitleReveal = 2.4f, SweepAt = 1.9f, SweepTime = 1.5f;
+        // (the word alone: clear of the safe area either side even slanted, a little lower in the sky than it stood under
+        // MOUNT, and its reveal and sweep a touch quicker across one word)
+        const float TitleWidth = 880f, TitleY = 330f, TitleReveal = 2.1f, SweepAt = 1.7f, SweepTime = 1.3f;
         RawImage titleImage;
         Material titleMat;
         Texture2D titleTex;
@@ -600,7 +602,7 @@ namespace Summit
 
             // the title, high in the sky
             titleRect = New("Title", safe);
-            Place(titleRect, new Vector2(0.5f, 1f), new Vector2(0f, -TitleY), new Vector2(TitleWidth, 320f), new Vector2(0.5f, 0.5f));
+            Place(titleRect, new Vector2(0.5f, 1f), new Vector2(0f, -TitleY), new Vector2(TitleWidth, TitleWidth * TitleArt.Height / TitleArt.Width), new Vector2(0.5f, 0.5f));
             titleGroup = titleRect.gameObject.AddComponent<CanvasGroup>();
             // the mountain's name, drawn (TitleArt: our own letterforms, ice and snow, made at start-up off the main
             // thread) and lit by the day (TitleLetters.shader). Until its texture is ready nothing shows

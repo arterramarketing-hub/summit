@@ -4,7 +4,7 @@ using UnityEngine;
 namespace Summit
 {
     /// <summary>
-    /// The start page's title, MOUNT VERTIGO, drawn here rather than set in a font: our own letterforms, built from
+    /// The game's title, VERTIGO, drawn here rather than set in a font: our own letterforms, built from
     /// straight cuts (chamfered where a stock face would curve, so they read as carved ice and rock), with a peaked
     /// crossbar on the T and peaks on the M for the summit, and snow loaded on every upward face of every letter,
     /// heaped above it in cornices. Nothing is shipped: it is made at start-up, on a worker thread, into one small
@@ -12,11 +12,11 @@ namespace Summit
     ///   r  signed distance to the letters' edge (0.5 on it, more inside), so the edge stays sharp at any size;
     ///   g  how much snow lies there;
     ///   ba the slope of a bevel running in from the edge, so the letters catch the sun or moon from where it is.
-    /// VERTIGO is the word; MOUNT stands small above it (the hierarchy every strong title has: one dominant word).
+    /// One word, alone: the game is VERTIGO (the mountain in it is Mt. Vertigo, as its signs say).
     /// </summary>
     public static class TitleArt
     {
-        public const int Width = 1280, Height = 448;
+        public const int Width = 1280, Height = 320;
         public const float Spread = 20f;   // pixels of distance the r channel holds either side of the edge
         const int SS = 2;                  // drawn at twice the size, for a smooth edge
 
@@ -24,7 +24,7 @@ namespace Summit
         public class Style
         {
             public string name;
-            public float slant, stem, bar, chamfer, gap, snow, mound, bevel, mountTrack;
+            public float slant, stem, bar, chamfer, gap, snow, mound, bevel;
             public Color top, bottom, snowCol, shadowCol;
             public float spec, edge, frost, shadow, drift;
         }
@@ -34,21 +34,21 @@ namespace Summit
             // 1. CORNICE: heavy slanted ice with snow loaded on it, spindrift blowing off the tops
             new Style
             {
-                name = "CORNICE", slant = 0.2f, stem = 0.24f, bar = 0.2f, chamfer = 0.2f, gap = 0.1f, snow = 0.06f, mound = 0.075f, bevel = 0.085f, mountTrack = 0.55f,
+                name = "CORNICE", slant = 0.2f, stem = 0.24f, bar = 0.2f, chamfer = 0.2f, gap = 0.1f, snow = 0.06f, mound = 0.075f, bevel = 0.085f,
                 top = new Color(0.66f, 0.8f, 0.96f), bottom = new Color(0.26f, 0.41f, 0.66f), snowCol = new Color(0.97f, 0.985f, 1f), shadowCol = new Color(0.02f, 0.04f, 0.1f),
                 spec = 0.55f, edge = 0.8f, frost = 0.45f, shadow = 0.45f, drift = 1f,
             },
             // 2. GRANITE: upright, monumental, dark rock with frost on its edges and a little snow on the tops
             new Style
             {
-                name = "GRANITE", slant = 0f, stem = 0.27f, bar = 0.22f, chamfer = 0.14f, gap = 0.13f, snow = 0.045f, mound = 0.045f, bevel = 0.06f, mountTrack = 0.7f,
+                name = "GRANITE", slant = 0f, stem = 0.27f, bar = 0.22f, chamfer = 0.14f, gap = 0.13f, snow = 0.045f, mound = 0.045f, bevel = 0.06f,
                 top = new Color(0.4f, 0.385f, 0.38f), bottom = new Color(0.2f, 0.195f, 0.205f), snowCol = new Color(0.95f, 0.97f, 1f), shadowCol = new Color(0.02f, 0.03f, 0.06f),
                 spec = 0.25f, edge = 1.2f, frost = 0.08f, shadow = 0.3f, drift = 0.35f,
             },
             // 3. FROST: light, widely spaced letters of clear ice, a thin line of snow on their tops: the quiet one
             new Style
             {
-                name = "FROST", slant = 0.12f, stem = 0.135f, bar = 0.115f, chamfer = 0.12f, gap = 0.19f, snow = 0.05f, mound = 0.04f, bevel = 0.05f, mountTrack = 0.85f,
+                name = "FROST", slant = 0.12f, stem = 0.135f, bar = 0.115f, chamfer = 0.12f, gap = 0.19f, snow = 0.05f, mound = 0.04f, bevel = 0.05f,
                 top = new Color(0.9f, 0.95f, 1f), bottom = new Color(0.56f, 0.69f, 0.87f), snowCol = new Color(0.98f, 0.99f, 1f), shadowCol = new Color(0.02f, 0.04f, 0.1f),
                 spec = 0.45f, edge = 0.6f, frost = 0.35f, shadow = 0.45f, drift = 0.6f,
             },
@@ -58,8 +58,8 @@ namespace Summit
         public const int DefaultStyle = 0;
 
         /// <summary>Where VERTIGO lies in the texture (v from its foot to its cap height): the shader grades the ice down it.</summary>
-        public const float WordV0 = 70f / Height, WordV1 = 270f / Height;
-        const float CapV = 200f, BaseV = 70f, CapM = 54f, BaseM = 338f;
+        public const float WordV0 = BaseV / Height, WordV1 = (BaseV + CapV) / Height;
+        const float CapV = 200f, BaseV = 66f;   // (room below for the shadow, above for the snow heaped on the tops)
 
         // ---------------------------------------------------------------- the letters
 
@@ -298,11 +298,9 @@ namespace Summit
             int w = Width * SS, h = Height * SS;
             var mask = new bool[w * h];
             var snow = new float[w * h];
-            float cap = CapV * SS, capM = CapM * SS;
+            float cap = CapV * SS;
             Word(mask, w, h, "VERTIGO", cap, BaseV * SS, st.stem, st.bar, st.chamfer, st.gap, st.slant);
-            Word(mask, w, h, "MOUNT", capM, BaseM * SS, st.stem * 0.62f, st.bar * 0.62f, st.chamfer * 0.8f, st.mountTrack, st.slant);
             Snow(mask, snow, w, h, (int)(BaseV * SS) - 4, (int)((BaseV + CapV * 1.06f) * SS), cap, st.snow * cap, st.mound * cap, 11);
-            Snow(mask, snow, w, h, (int)(BaseM * SS) - 4, (int)((BaseM + CapM * 1.06f) * SS), capM, st.snow * capM * 0.7f, st.mound * capM * 0.6f, 23);
 
             var toIn = Edt(mask, true, w, h); var toOut = Edt(mask, false, w, h);
             // the signed distance, at the texture's own size (half the drawn), each pixel the mean of its four
