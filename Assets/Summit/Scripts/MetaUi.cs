@@ -67,6 +67,12 @@ namespace Summit
             Place(tb0.rectTransform, new Vector2(0f, 1f), new Vector2(408f, -38f), new Vector2(96f, 96f), new Vector2(0f, 1f));
             Place(Img("Peak", tb0.transform, new Color(1f, 1f, 1f, 0.9f), Peak(96)).rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(60f, 60f), new Vector2(0.5f, 0.5f));
             buttons.Add(new KeyValuePair<RectTransform, string>(tb0.rectTransform, "title"));
+            // the lodge's layout, for playtesting: a tap shows the next one (Camp.StepLodgeLayout; also a setting, LODGE)
+            var lc = Img("LodgeChip", hubRoot, new Color(0f, 0f, 0f, 0.45f), round);
+            Place(lc.rectTransform, new Vector2(0f, 1f), new Vector2(36f, -150f), new Vector2(560f, 84f), new Vector2(0f, 1f));
+            lodgeText = Label(lc.transform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(540f, 70f), 34, TextAnchor.MiddleCenter);
+            lodgeText.text = "LODGE (TEST)  " + Camp.LodgeLayoutName + "  >";
+            buttons.Add(new KeyValuePair<RectTransform, string>(lc.rectTransform, "lodge"));
             var cb = Img("Context", hubRoot, Blue, round);
             Place(cb.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 230f), new Vector2(660f, 140f), new Vector2(0.5f, 0f));
             contextBtn = cb.rectTransform;
@@ -161,6 +167,7 @@ namespace Summit
         public void Refresh()
         {
             pointsText.text = Progress.Points.ToString("N0");
+            SetLodge(Camp.LodgeLayoutName);
             missionsText.text = "MISSIONS  " + Missions.DoneCount + " / " + Missions.Today.Count;
         }
 
@@ -343,6 +350,11 @@ namespace Summit
 
         /// <summary>The camp's peak chip was touched: SummitGame takes it from here (back to the start page).</summary>
         public bool TitleAsked;
+        /// <summary>The LODGE chip was touched: the camp shows the next layout (Camp.LodgeSwitchStep).</summary>
+        public bool LodgeAsked;
+        Text lodgeText;
+        /// <summary>The LODGE chip's label: the layout showing.</summary>
+        public void SetLodge(string name) { if (lodgeText != null) lodgeText.text = "LODGE (TEST)  " + name + "  >"; }
 
         /// <summary>Do what a panel button says. Returns false if the id isn't a panel/menu action.</summary>
         public bool Act(string id)
@@ -350,6 +362,7 @@ namespace Summit
             if (id == "close") { ClosePanel(); return true; }
             if (id == "missions") { ShowMissions(); return true; }
             if (id == "title") { TitleAsked = true; Clicked?.Invoke(); return true; }
+            if (id == "lodge") { LodgeAsked = true; Clicked?.Invoke(); return true; }
             if (id == "tab0" || id == "tab1") { Clicked?.Invoke(); ShowShop(id == "tab0" ? 0 : 1); return true; }
             if (id.StartsWith("buy"))
             {

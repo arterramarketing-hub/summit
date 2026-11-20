@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using Unity.Collections;
+using Unity.Jobs;
 using UnityEngine;
 
 namespace Summit
@@ -6,7 +8,9 @@ namespace Summit
     /// <summary>
     /// Builds what you see of each course section near the rider: park boxes and rails,
     /// crevasse ice with marker poles, and a printed sign at the start of each section.
-    /// Rebuilt one cycle ahead; older cycles are thrown away.
+    /// The cycle you are in and the next are always there; the one after that is built a piece at a time over many
+    /// frames from halfway through this one (a whole cycle in one frame took 80-200 ms in the editor), with the crevasses'
+    /// ice colliders cooked on worker threads meanwhile. Older cycles are thrown away.
     /// </summary>
     public class CourseDressing : MonoBehaviour
     {
@@ -14,6 +18,30 @@ namespace Summit
         Material metal, boxSide, railMat, post, ice, lipBand, bridgeSnow, lipDark, lipMid, hairDark, poleOrange, poleBlack, signPark, signDanger, signPipe, signBack, snow, signRidge, signGorge, signLedge;
         readonly Dictionary<int, GameObject> built = new Dictionary<int, GameObject>();
         readonly List<int> drop = new List<int>();
+        /// <summary>The main thread's time each frame for building the cycle ahead (ms).</summary>
+        public float frameBudgetMs = 1f;
+        Cycle ahead;   // the cycle being built a piece at a time, if any
+
+        /// <summary>A cycle under construction: its root, its remaining pieces, and its ice colliders waiting to be cooked.</summary>
+        sealed class Cycle
+        {
+            public int k;
+            public GameObject root;
+            public IEnumerator<bool> steps;
+            public readonly List<GameObject> colliderHolders = new List<GameObject>();
+            public readonly List<Mesh> colliderMeshes = new List<Mesh>();
+            public NativeArray<int> ids;
+            public JobHandle cooking;
+        }
+
+        const MeshColliderCookingOptions IceCooking = MeshColliderCookingOptions.CookForFasterSimulation | MeshColliderCookingOptions.EnableMeshCleaning | MeshColliderCookingOptions.WeldColocatedVertices;
+
+        /// <summary>Cooks the ice colliders' meshes on worker threads, so attaching them later costs next to nothing.</summary>
+        struct CookJob : IJobParallelFor
+        {
+            [ReadOnly] public NativeArray<int> ids;
+            public void Execute(int i) => Physics.BakeMesh(ids[i], false, IceCooking);
+        }
 
         public void Build(Shader lit, Material snowSurface)
         {
@@ -72,9 +100,31 @@ namespace Summit
         void Update()
         {
             if (target == null || metal == null) return;
-            int c = Course.CycleOf(target.position.z);
+            float z = target.position.z;
+            int c = Course.CycleOf(z);
+            // the cycle you are in and the next must be there now: finished at once if they are not (a respawn, a new
+            // mountain, or riding faster than the one ahead could be built)
             for (int k = Mathf.Max(0, c); k <= c + 1; k++)
-                if (!built.ContainsKey(k)) { long t0 = PerfMarks.Now; built[k] = BuildCycle(k); PerfMarks.Mark("course cycle", t0); }
+                if (!built.ContainsKey(k))
+                {
+                    long t0 = PerfMarks.Now;
+                    if (ahead != null && ahead.k == k) { built[k] = Finish(ahead); ahead = null; }
+                    else built[k] = BuildCycle(k);
+                    PerfMarks.Mark("course cycle", t0);
+                }
+            // the one after that, a piece each frame while the budget lasts, from halfway through this one (on the
+            // start pad, above the first cycle, that is the second: it was built in one frame just past the start)
+            int next = c + 2;
+            if (ahead == null && !built.ContainsKey(next) && z > Course.First + c * Course.Cycle + Course.Cycle * 0.5f) ahead = Begin(next);
+            if (ahead != null)
+            {
+                long t0 = PerfMarks.Now;
+                long start = System.Diagnostics.Stopwatch.GetTimestamp(), limit = (long)(frameBudgetMs * 0.001 * System.Diagnostics.Stopwatch.Frequency);
+                bool more = true;
+                do more = ahead.steps.MoveNext(); while (more && System.Diagnostics.Stopwatch.GetTimestamp() - start < limit);
+                if (!more && ahead.cooking.IsCompleted) { built[ahead.k] = Finish(ahead); ahead = null; }
+                PerfMarks.MarkIfOver("course cycle ahead", t0);
+            }
             drop.Clear();
             foreach (var kv in built) if (kv.Key < c - 0 && target.position.z > Course.First + (kv.Key + 1) * Course.Cycle + 80f) drop.Add(kv.Key);
             foreach (int k in drop) { FreeMeshes(built[k]); Destroy(built[k]); built.Remove(k); }
@@ -82,10 +132,64 @@ namespace Summit
 
         public void Prewarm() { Update(); }
 
+        /// <summary>A whole cycle, now (the same pieces in the same order as the one built over many frames).</summary>
         GameObject BuildCycle(int k)
         {
-            var root = new GameObject("Course " + k);
-            root.transform.SetParent(transform, false);
+            var b = Begin(k);
+            while (b.steps.MoveNext()) { }
+            return Finish(b);
+        }
+
+        Cycle Begin(int k)
+        {
+            var b = new Cycle { k = k };
+            b.root = new GameObject("Course " + k);
+            b.root.transform.SetParent(transform, false);
+            b.steps = Pieces(b);
+            return b;
+        }
+
+        /// <summary>The cycle's ice colliders on (cooked by now, or cooked here if not), and its root.</summary>
+        GameObject Finish(Cycle b)
+        {
+            while (b.steps.MoveNext()) { }
+            if (b.ids.IsCreated) { b.cooking.Complete(); b.ids.Dispose(); }
+            for (int i = 0; i < b.colliderHolders.Count; i++)
+            {
+                var mc = b.colliderHolders[i].AddComponent<MeshCollider>();
+                mc.cookingOptions = IceCooking;   // (as cooked: the cooked data is used as it is)
+                mc.sharedMesh = b.colliderMeshes[i];
+                mc.sharedMaterial = iceFeel;
+            }
+            b.colliderHolders.Clear(); b.colliderMeshes.Clear();
+            return b.root;
+        }
+
+        /// <summary>Drop a cycle still under construction (a new mountain).</summary>
+        void Abandon(Cycle b)
+        {
+            if (b.ids.IsCreated) { b.cooking.Complete(); b.ids.Dispose(); }
+            foreach (var m in b.colliderMeshes) if (m != null) { if (Application.isPlaying) Destroy(m); else DestroyImmediate(m); }
+            b.colliderHolders.Clear(); b.colliderMeshes.Clear();
+            if (b.root != null) { FreeMeshes(b.root); if (Application.isPlaying) Destroy(b.root); else DestroyImmediate(b.root); }
+        }
+
+        /// <summary>Cook the cycle's ice colliders on worker threads (their meshes are not touched again until they are on).</summary>
+        void Cook(Cycle b)
+        {
+            if (b.colliderMeshes.Count == 0) return;
+            b.ids = new NativeArray<int>(b.colliderMeshes.Count, Allocator.Persistent);
+            for (int i = 0; i < b.colliderMeshes.Count; i++) b.ids[i] = b.colliderMeshes[i].GetInstanceID();
+            b.cooking = new CookJob { ids = b.ids }.Schedule(b.ids.Length, 1);
+            JobHandle.ScheduleBatchedJobs();
+        }
+
+        /// <summary>The cycle's pieces, one at a time: each park feature, each crevasse, each kind of dressing.</summary>
+        IEnumerator<bool> Pieces(Cycle b)
+        {
+            int k = b.k;
+            var root = b.root;
+            building = b;
             float zb = Course.First + k * Course.Cycle;
 
             // park: boxes and rails, in short straight pieces following the snow (see Course.FeaturePoint)
@@ -123,6 +227,7 @@ namespace Summit
                         }
                     }
                 }
+                building = null; yield return true; building = b;
             }
 
             // the glacier: the crevasses themselves (snow lips, ice walls into the dark), their snow bridges, wands
@@ -142,7 +247,10 @@ namespace Summit
                     float sz = top - 22f;
                     if (sz > Slope.PadLip + 12f && !Course.CrevasseNear(Slope.Centre(sz) - Slope.PisteHalf + 1f, sz, 3f)) SignAt(root.transform, sz, signDanger, -1f);
                 }
+                building = null; yield return true; building = b;
             }
+            // every ice collider of the cycle is made: cook them while the rest is built
+            Cook(b);
             // the rider's own sphere never touches the crevasse ice or the park features' colliders (it rides the snow's
             // height and grinds a feature by its line, see Rider): only the thrown body and the board do
             if (target != null && target.TryGetComponent<Collider>(out var own)) own.excludeLayers |= 1 << IceLayer;
@@ -156,11 +264,17 @@ namespace Summit
                 SignAt(root.transform, zb + Ridge.At - 30f, form == Ridge.Form.Ledge ? signLedge : form == Ridge.Form.Valley || form == Ridge.Form.ValleyOneSided ? signGorge : signRidge, -1f);
                 RidgeDressing.Build(root.transform, k, poleOrange, poleBlack);
             }
-            CliffDressing.Build(root.transform, k, post.shader, poleOrange, poleBlack, post, signBack, target != null ? target.GetComponent<Rider>() : null);
+            building = null; yield return true; building = b;
+            foreach (var _ in CliffDressing.Steps(root.transform, k, post.shader, poleOrange, poleBlack, post, signBack, target != null ? target.GetComponent<Rider>() : null))
+            { building = null; yield return true; building = b; }
             SlowZones.Build(root.transform, k, post.shader);   // SLOW banners, here and there (they tear when ridden into)
-            CliffSpires.Build(root.transform, k, post.shader);   // jagged rock along the cliffs' edges and faces
-            return root;
+            building = null; yield return true; building = b;
+            foreach (var _ in CliffSpires.Steps(root.transform, k, post.shader))   // jagged rock along the cliffs' edges and faces
+            { building = null; yield return true; building = b; }
+            building = null;
         }
+
+        Cycle building;   // the cycle whose piece is being built just now (its ice colliders are kept for cooking)
 
         /// <summary>The crevasse meshes are made here, so they are freed here (primitives share Unity's).</summary>
         static void FreeMeshes(GameObject g)
@@ -174,9 +288,15 @@ namespace Summit
         /// <summary>A rebuilt mountain: drop everything built for the old one.</summary>
         public void Rebuild()
         {
+            if (ahead != null) { Abandon(ahead); ahead = null; }
             foreach (var kv in built) if (kv.Value != null) { FreeMeshes(kv.Value); if (Application.isPlaying) Destroy(kv.Value); else DestroyImmediate(kv.Value); }
             built.Clear();
             Update();
+        }
+
+        void OnDestroy()
+        {
+            if (ahead != null && ahead.ids.IsCreated) { ahead.cooking.Complete(); ahead.ids.Dispose(); }
         }
 
         // ---------------------------------------------------------------- crevasses
@@ -528,7 +648,7 @@ namespace Summit
             }
         }
 
-        static void IceCollider(Transform root, List<Vector3> v, List<int> t)
+        void IceCollider(Transform root, List<Vector3> v, List<int> t)
         {
             if (iceFeel == null)
                 iceFeel = new PhysicsMaterial("CrevasseIce") { dynamicFriction = 0.35f, staticFriction = 0.6f, bounciness = 0.15f,
@@ -538,10 +658,8 @@ namespace Summit
             var mesh = new Mesh { name = "CrevasseIceCollider" };
             mesh.indexFormat = v.Count > 65000 ? UnityEngine.Rendering.IndexFormat.UInt32 : UnityEngine.Rendering.IndexFormat.UInt16;
             mesh.SetVertices(v); mesh.SetTriangles(t, 0); mesh.RecalculateBounds();
-            var mc = g.AddComponent<MeshCollider>();
-            mc.cookingOptions = MeshColliderCookingOptions.CookForFasterSimulation | MeshColliderCookingOptions.EnableMeshCleaning | MeshColliderCookingOptions.WeldColocatedVertices;
-            mc.sharedMesh = mesh;
-            mc.sharedMaterial = iceFeel;
+            // the collider goes on when the cycle is finished, cooked on worker threads meanwhile (Cook, Finish)
+            building.colliderHolders.Add(g); building.colliderMeshes.Add(mesh);
         }
 
         /// <summary>The lip band: shadowed blue-grey snow at the lip, out to the snow's own white.</summary>

@@ -6,10 +6,10 @@ using UnityEngine;
 using Summit;
 
 /// <summary>
-/// Hunts for a rider pulled uphill: on the ground (or carried on a lift station's lane), moving up the ground's own
+/// Hunts for a rider pulled uphill: on the ground (a roof or a lift station's deck included), moving up the ground's own
 /// slope and gaining speed doing it, over several steps, with nothing to explain it (no jump, no kicker's ramp, no
 /// boost). Rides many lines over several mountains: bots weaving down the piste, scripted lines across the width
-/// (into the valleys' walls, over rock and the ridges, through the trees), straight at each lift's bottom station and
+/// (into the valleys' walls, over rock and the ridges, through the trees), across each lift's bottom station deck and
 /// down its lane, across the park, slow starts on every kind of ground and getting up after crashes. Each stretch
 /// flagged is logged (UPHILL-FLAG) with where, on what, and which of the rider's code was at work, and counted.
 /// Run: Unity -batchmode -nographics -quit -projectPath . -executeMethod UphillTest.Run -logFile uphill.log
@@ -111,20 +111,16 @@ public static class UphillTest
                 float ph = (float)rng.NextDouble() * 6f;
                 Ride($"{where} slow {off:+0;-0}", x, z, 1.5f, 7f, t => 0.7f * Mathf.Sin(t * 0.9f + ph), zEnd);
             }
-        // at each lift's bottom station: down onto its lane, along it, and at it slowly
+        // across each lift's bottom station: down the line onto its deck beside the chairs, along it, off its end
         foreach (var l in LiftLine.Lifts)
-        {
-            var j = l.jump;
-            if (j == null) continue;
             foreach (float back in new[] { 25f, 12f })
-                foreach (float c in new[] { 0f, 2f, -2f, 4.5f })
+                foreach (float c in new[] { 4.7f, -4.7f })
                     foreach (float v0 in new[] { 3f, 10f, 22f })
                     {
-                        Vector3 at = l.At(l.plan - back, j.side * LiftLine.JumpLaneMid + c, 0f);
+                        Vector3 at = l.At(l.plan - back, c, 0f);
                         at.y = Slope.DrawnHeight(at.x, at.z);
-                        Ride($"lift lane {back:0} m up, {c:+0;-0;0} off, {v0:0} m/s", at.x, at.z, v0, 6f, t => 0f, zEnd, dir: l.dir);
+                        Ride($"lift deck {back:0} m up, {c:+0;-0;0} off, {v0:0} m/s", at.x, at.z, v0, 6f, t => 0f, zEnd, dir: l.dir);
                     }
-        }
         // the park's kickers, straight on, and the crashes: down hard into whatever is near, then up and away
         for (int c = 0; c < 3; c++)
             foreach (float kz in Course.ParkKickers)
@@ -170,7 +166,7 @@ public static class UphillTest
             var s = Now();
             win.Add(s);
             if (win.Count > 30) win.RemoveAt(0);
-            // a stretch: 0.25 s on the ground (or the lane), moving up the ground's slope throughout, faster at the end
+            // a stretch: 0.25 s on the ground, moving up the ground's slope throughout, faster at the end
             // than at the start, and more energy (speed and height) than it began with: nothing but the code put it there
             if (win.Count == 30 && !flagged && t - lastJump > 0.6f)
             {
@@ -211,8 +207,8 @@ public static class UphillTest
     {
         var s = new Sample();
         Vector3 p = r.Body.position, v = r.Velocity;
-        bool deck = r.Grinding && r.GrindFeature.id == -3;
-        s.ground = !r.Crashed && !r.Airborne && (!r.Grinding || deck);
+        bool deck = r.OnRoof != null && r.OnRoof.s == Roofs.Deck;
+        s.ground = !r.Crashed && !r.Airborne && !r.Grinding;
         Vector3 nrm = r.GroundNormal(p);
         Vector3 down = Vector3.ProjectOnPlane(Vector3.down, nrm);
         float steep = down.magnitude;
@@ -220,11 +216,11 @@ public static class UphillTest
         s.up = steep > 0.05f ? Vector3.Dot(new Vector3(v.x, 0f, v.z), -new Vector3(down.x, 0f, down.z).normalized) : 0f;
         s.speed = r.Speed; s.p = p; s.v = v;
         // (height on the smooth slope the board steers by, not the drawn mesh it is put on: the mesh's 1.5 m facets stand a
-        // few centimetres off it, worth 2 J/kg either way; on a roof or the lane, the board's own height)
+        // few centimetres off it, worth 2 J/kg either way; on a roof or a deck, the board's own height)
         float h = r.OnRoof != null || deck ? p.y - Rider.R : Slope.Height(p.x, p.z);
         s.e = 0.5f * r.Speed * r.Speed + Rider.G * h;
         var parts = new List<string>();
-        if (deck) parts.Add("lift lane (CableGrind deck)");
+        if (deck) parts.Add("lift deck");
         else if (r.Grinding) parts.Add("grind");
         if (r.BoostTime > 0f) parts.Add("boost");
         if (r.Speed < 3f) parts.Add("stalled push (speed < 3)");
@@ -235,7 +231,7 @@ public static class UphillTest
         if (TreeBreak.Instance != null && fBrushing != null && ((System.Collections.IDictionary)fBrushing.GetValue(TreeBreak.Instance)).Count > 0) parts.Add("TreeBreak brush");
         s.code = parts.Count == 0 ? "GroundStep (plain)" : string.Join(" + ", parts);
         string sec = Course.At(p.z).ToString();
-        string ground = r.OnRoof != null ? "a roof" : deck ? "lift lane" : r.OnRock ? "rock" : Course.InPipe(p.x, p.z) ? "pipe" : "snow";
+        string ground = r.OnRoof != null ? "a roof" : deck ? "lift deck" : r.OnRock ? "rock" : Course.InPipe(p.x, p.z) ? "pipe" : "snow";
         s.surface = $"{ground} ({sec}, slope {Mathf.Acos(Mathf.Clamp01(nrm.y)) * Mathf.Rad2Deg:0} deg)";
         return s;
     }

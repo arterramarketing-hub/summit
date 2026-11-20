@@ -18,6 +18,10 @@ namespace Summit
     /// board riding on the snow never touches it, and a board just past the edge, whose centre is not over the roof,
     /// falls by without catching it. The walls stop at the eaves; above them the gables and the roof's slab are solid
     /// up to just under the snow.
+    ///
+    /// A lift station's deck is ridden the same way (Deck, registered by SkiLift while the station is solid): level,
+    /// open at both ends, a bank of snow eased up to whichever end meets the snow (rampFront, rampBack), and off the
+    /// other end wherever the mountain has fallen away under it. SkiLift makes its parts solid as they are drawn.
     /// </summary>
     public static class Roofs
     {
@@ -33,7 +37,7 @@ namespace Summit
         public const float Slab = 0.5f;     // the solid's thickness under the overhang
         /// <summary>Ridge features (a box along the top) are numbered from here, clear of the course's own and of the
         /// lifts' cables (negative).</summary>
-        public const int IdBase = 1 << 20;
+        public const int IdBase = Course.RoofIdBase;
 
         /// <summary>One building's roof, in its own frame (from Tools/MakeCabins.py: keep in step with the models).</summary>
         public class Shape
@@ -45,6 +49,8 @@ namespace Summit
             public float wx, wz0, wz1, wallTop;   // the walls: |x| < wx, wz0 < z < wz1, up to wallTop
             public Vector4[] stacks;           // chimneys and flues through it: x, z, half width, top
             public float reach = Reach;        // how far past the roof's edge a board's middle still comes down on it (Reach)
+            public string label = "Rooftop";   // the combo link for getting up there (none if points is 0)
+            public int points = -1;            // its points (-1: Rider.RoofPoints)
             public float Top(float x, float z) => gable ? a - gx * Mathf.Max(Mathf.Abs(x), flat) : a + gx * x + gz * z;
             public Vector3 Normal(float x)
             {
@@ -122,6 +128,17 @@ namespace Summit
             public Shape s; public Vector3 o; public float c, sn, r2;
             public bool hasRidge; public Course.Feature ridge;
             public string name; public Transform t;
+            // snow banked against a level deck's ends (a lift station's: SkiLift), ridden up onto it: how far out each
+            // reaches past the end (z1, z0) at each RampStep across from x0; null where there is none
+            public float[] rampFront, rampBack;
+            public float RampLen(float[] ramp, float lx)
+            {
+                if (ramp == null) return 0f;
+                float f = Mathf.Clamp((lx - s.x0) / RampStep, 0f, ramp.Length - 1.001f);
+                int i = (int)f;
+                // (no ramp at either sample: none between them)
+                return ramp[i] <= 0f || ramp[i + 1] <= 0f ? 0f : Mathf.Lerp(ramp[i], ramp[i + 1], f - i);
+            }
             public Vector2 Local(float x, float z) { float dx = x - o.x, dz = z - o.z; return new Vector2(dx * c - dz * sn, dx * sn + dz * c); }
             public Vector3 World(float lx, float y, float lz) => new Vector3(o.x + lx * c + lz * sn, o.y + y, o.z - lx * sn + lz * c);
             public Vector3 WorldDir(Vector3 l) => new Vector3(l.x * c + l.z * sn, l.y, -l.x * sn + l.z * c);
@@ -138,7 +155,7 @@ namespace Summit
         {
             float yaw = t.eulerAngles.y * Mathf.Deg2Rad;
             var r = new Roof { s = s, o = t.position, c = Mathf.Cos(yaw), sn = Mathf.Sin(yaw), name = name, t = t };
-            float ex = Mathf.Max(-s.px0, s.px1) + 1f, ez = Mathf.Max(-s.pz0, s.pz1) + 1f;
+            float ex = Mathf.Max(-s.px0, s.px1) + 1f, ez = Mathf.Max(-s.pz0, s.pz1) + 1f + (s == Deck ? RampMax : 0f);
             r.r2 = ex * ex + ez * ez;
             if (s.gable)
             {
@@ -167,25 +184,53 @@ namespace Summit
                 if (dx * dx + dz * dz > r.r2) continue;
                 var l = r.Local(x, z);
                 var s = r.s;
-                if (l.x < s.px0 - s.reach || l.x > s.px1 + s.reach || l.y < s.pz0 - s.reach || l.y > s.pz1 + s.reach) continue;
-                float top = r.o.y + s.Top(Mathf.Clamp(l.x, s.x0, s.x1), Mathf.Clamp(l.y, s.z0, s.z1));
+                if (l.x < s.px0 - s.reach || l.x > s.px1 + s.reach) continue;
+                float top; Vector3 ln;
+                if (l.y >= s.pz0 - s.reach && l.y <= s.pz1 + s.reach)
+                {
+                    top = r.o.y + s.Top(Mathf.Clamp(l.x, s.x0, s.x1), Mathf.Clamp(l.y, s.z0, s.z1));
+                    ln = s.Normal(l.x);
+                }
+                else
+                {
+                    // on the snow banked against an end: down from the deck's level to the snow at RampSlope
+                    bool front = l.y > s.z1;
+                    float d = front ? l.y - s.z1 : s.z0 - l.y, len = r.RampLen(front ? r.rampFront : r.rampBack, l.x);
+                    if (len <= 0f || d > len) continue;
+                    top = r.o.y + s.Top(Mathf.Clamp(l.x, s.x0, s.x1), front ? s.z1 : s.z0) - RampSlope * d;
+                    ln = new Vector3(0f, 1f, front ? RampSlope : -RampSlope).normalized;
+                }
                 if (refY - Rider.R < top - Tol) continue;
                 if (roof != null && top < y) continue;   // (two roofs: the higher one)
-                y = top; n = r.WorldDir(s.Normal(l.x)); roof = r;
+                y = top; n = r.WorldDir(ln); roof = r;
             }
             return roof != null;
         }
 
-        /// <summary>The ridges near p, as boxes to slide along.</summary>
-        public static IEnumerable<Course.Feature> RidgesNear(Vector3 p)
+        public const float RampStep = 0.5f, RampSlope = 0.3f, RampMax = 4f;
+
+        /// <summary>A lift station's deck (SkiLift): level, its top at the transform, x across (railings along both
+        /// sides), z along the line (both ends open). No points of its own: the air off it is what scores.</summary>
+        public static readonly Shape Deck = new Shape
         {
+            gable = false, a = 0f,
+            x0 = -LiftLine.StationHalfWid, x1 = LiftLine.StationHalfWid, z0 = -LiftLine.StationHalfLen, z1 = LiftLine.StationHalfLen,
+            px0 = -LiftLine.StationHalfWid, px1 = LiftLine.StationHalfWid, pz0 = -LiftLine.StationHalfLen, pz1 = LiftLine.StationHalfLen,
+            wx = LiftLine.StationHalfWid, wz0 = -LiftLine.StationHalfLen, wz1 = LiftLine.StationHalfLen, wallTop = 0f,
+            stacks = new Vector4[0], label = "Lift deck", points = 0,
+        };
+
+        /// <summary>The ridges near p, as boxes to slide along, into `into` (cleared first: no garbage each physics step).</summary>
+        public static void RidgesNear(Vector3 p, List<Course.Feature> into)
+        {
+            into.Clear();
             for (int i = 0; i < live.Count; i++)
             {
                 var r = live[i];
                 if (!r.hasRidge) continue;
                 float dx = p.x - r.o.x, dz = p.z - r.o.z;
                 if (dx * dx + dz * dz > r.r2 + 9f) continue;
-                yield return r.ridge;
+                into.Add(r.ridge);
             }
         }
 

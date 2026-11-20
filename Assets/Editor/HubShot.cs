@@ -89,32 +89,34 @@ public static class HubShot
         camp.TeleportTo(from, Toward(from, C(0f, 0f, 0f)));
         Frames(40);
         Shoot("HubShot0b_chalet.png");
-        // 1, 2: up the terrace steps and in through the French doors
-        camp.TeleportTo(C(0f, 0f, 13f), cy + 180f);
+        // (the lodge, CampLodge.cs, or the old chalet: where each view stands)
+        bool lodge = Camp.UseLodge;
+        // 1, 2: up the terrace steps and in through the doors
+        camp.TeleportTo(lodge ? C(4.5f, 0f, 16f) : C(0f, 0f, 13f), cy + 180f);
         Walk(new Vector2(0f, 0.8f), 1.9f);
         Shoot("HubShot1_walkin.png");
         Debug.Log("HUBSHOT steps walking outside: " + camp.FootstepsState);
         Walk(new Vector2(0f, 0.8f), 1.7f); Frames(20);
         Shoot("HubShot2_inside.png");
         Debug.Log("HUBSHOT steps inside, stopped: " + camp.FootstepsState);
-        // 3: the great room: sunken lounge, the hanging fireplace, the pendants
-        camp.TeleportTo(C(-3f, 0f, 4.8f), cy + 118f);
+        // 3: the great room (the chalet's sunken lounge; the lodge's hall toward its tall glass and the wing)
+        camp.TeleportTo(lodge ? C(6.5f, 0f, 2.5f) : C(-3f, 0f, 4.8f), lodge ? cy - 80f : cy + 118f);
         Frames(60);
         Shoot("HubShot3_greatroom.png");
-        // 4: from the lounge back to the kitchen island under the mezzanine
-        camp.TeleportTo(C(3.6f, -0.4f, 3.4f), cy + 200f);
+        // 4: from the lounge back to the kitchen island under the mezzanine (the lodge: the hall, the wing beyond)
+        camp.TeleportTo(lodge ? C(-6f, 0f, 3f) : C(3.6f, -0.4f, 3.4f), lodge ? cy - 70f : cy + 200f);
         Frames(60);
         Shoot("HubShot4_kitchen.png");
         // 5, 6: the mission board and its panel
-        camp.TeleportTo(C(5.4f, 0f, -3f), cy + 90f);
+        if (lodge) camp.TeleportTo(camp.StationPoint(Camp.Station.Missions), cy + 180f); else camp.TeleportTo(C(5.4f, 0f, -3f), cy + 90f);
         Frames(40);
         meta.SetContext(camp.Near);
         Shoot("HubShot5_board.png");
         meta.ShowMissions(); meta.SetContext(camp.Near);
         Shoot("HubShot6_missions.png");
         meta.ClosePanel(false);
-        // 7: up the floating stairs
-        camp.TeleportTo(C(-7.1f, 0f, 4.4f), cy + 180f);
+        // 7: up the floating stairs (the lodge has none: across the hall into the wing)
+        camp.TeleportTo(lodge ? C(-6f, 0f, 0.5f) : C(-7.1f, 0f, 4.4f), lodge ? cy - 90f : cy + 180f);
         Walk(new Vector2(0f, 0.8f), 2.0f);
         Shoot("HubShot7_stairs.png");
         Debug.Log("HUBSHOT steps on the stairs: " + camp.FootstepsState);
@@ -126,7 +128,7 @@ public static class HubShot
         }
         Debug.Log($"HUBSHOT after stairs: walker y={rider.transform.position.y - camp.ChaletPoint(0, 0, 0).y:0.00} (mezzanine 3.6)");
         // 8, 9: the tune-up bench on the mezzanine and the upgrades shop
-        camp.TeleportTo(C(4.6f, 3.6f, -3.0f), cy + 180f);
+        if (lodge) camp.TeleportTo(camp.StationPoint(Camp.Station.Upgrades), cy + 180f); else camp.TeleportTo(C(4.6f, 3.6f, -3.0f), cy + 180f);
         Frames(40);
         meta.SetContext(camp.Near);
         Shoot("HubShot8_bench.png");
@@ -135,7 +137,7 @@ public static class HubShot
         Shoot("HubShot9_upgrades.png");
         meta.ClosePanel(false);
         // 10: the wardrobe, from the board wall (the closet lays itself out as it opens: at the phone's shape)
-        camp.TeleportTo(C(-3.3f, 3.6f, -3.4f), cy);
+        if (lodge) camp.TeleportTo(camp.StationPoint(Camp.Station.Style), cy + 180f); else camp.TeleportTo(C(-3.3f, 3.6f, -3.4f), cy);
         Frames(10);
         meta.SetContext(camp.Near);
         Debug.Log($"HUBSHOT at the board wall: near={camp.Near}");
@@ -145,8 +147,8 @@ public static class HubShot
         for (int i = 0; i < 40; i++) { meta.Stage.Pose(dt); Step(Vector2.zero); }
         Shoot("HubShot10_outfits.png");
         meta.ClosePanel(false);
-        // 11: from the mezzanine over the great room and out through the glass
-        camp.TeleportTo(C(1.5f, 3.6f, -1.3f), cy);
+        // 11: from the mezzanine over the great room and out through the glass (the lodge: from the back of the hall)
+        camp.TeleportTo(lodge ? C(-2f, 0f, -3f) : C(1.5f, 3.6f, -1.3f), lodge ? cy + 10f : cy);
         Frames(60);
         Shoot("HubShot11_mezzview.png");
         // 12: running across the camp (stick pushed right out)
@@ -175,7 +177,7 @@ public static class HubShot
         camp.TeleportTo(from, Toward(from, C(0f, 0f, 0f)));
         Frames(40);
         Shoot("HubShot13_night.png");
-        camp.TeleportTo(C(-3f, 0f, 4.8f), cy + 118f);
+        camp.TeleportTo(lodge ? C(-4f, 0f, -2f) : C(-3f, 0f, 4.8f), lodge ? cy - 20f : cy + 118f);
         Frames(60);
         Shoot("HubShot13b_night_inside.png");
         camp.SetNight(0f);

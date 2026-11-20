@@ -35,7 +35,7 @@ namespace Summit
             if (roof == null) { roofScored = null; return; }
             if (roof == roofScored) return;
             roofScored = roof;
-            Score("Rooftop", RoofPoints, LinkKind.Bonus);
+            if (roof.s.points != 0) Score(roof.s.label, roof.s.points < 0 ? RoofPoints : roof.s.points, LinkKind.Bonus);
         }
 
         void RoofReset() { roofUnder = null; roofScored = null; }

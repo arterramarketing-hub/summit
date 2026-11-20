@@ -359,6 +359,7 @@ public static class ScoreTest
         var totals = new Dictionary<int, List<int>>();
         try
         {
+            var near = new List<Course.Feature>();
             foreach (int seed in new[] { 1000, 1077, 1154, 1231, 1308 })
                 for (int bot = 0; bot < 4; bot++)
                 {
@@ -382,7 +383,8 @@ public static class ScoreTest
                         {
                             float aimX = Slope.Centre(r.Z + 12f);
                             if (Slope.NextKicker(r.Z, out Vector3 kk) && kk.z - r.Z < 70f) aimX = kk.x;
-                            foreach (var f in Course.FeaturesNear(r.Z))
+                            Course.FeaturesNear(r.Z, near);
+                            foreach (var f in near)
                                 if (f.a.z > r.Z - 2f && f.a.z - r.Z < 60f && Mathf.Abs(f.a.x - p.x) < 12f) { aimX = f.a.x; break; }
                             r.Steer = Bot.Steer(r, aimX, t);
                             if (bot >= 2 && !r.Airborne && !r.Crashed && !r.Grinding)

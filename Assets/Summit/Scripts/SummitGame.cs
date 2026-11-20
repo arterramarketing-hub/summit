@@ -198,6 +198,7 @@ namespace Summit
             start.AddRow(look, "FILTER", () => LookGrade.Names[filterLevel], StepFilter);
             start.AddRow(look, "FILTER STRENGTH", () => filterStrength * 10 + "%", StepStrength);
             start.AddRow(look, "HALATION", () => LensFX.HalationName[halation], StepHalation);
+            start.AddRow(look, "LODGE (PLAYTEST)", () => Camp.LodgeLayoutShort, d => camp.StepLodgeLayout(d));   // (a playtest switch: the camp's lodge, three ways inside)
             start.AddRow(game, "STEERING", () => input.useTilt ? "TILT" : "DRAG", d => ToggleSteer(), true);
             start.AddRow(game, "JUMP", () => JumpName, StepJump);
             start.AddRow(game, "INVERT TILT", () => OnOff(input.invertTilt), d => ToggleInvert(), true, () => input.useTilt);
@@ -227,6 +228,7 @@ namespace Summit
         void OnApplicationPause(bool away)
         {
             if (!away) return;
+            PerfMarks.Flush();
             if (state == State.Riding && !paused) SetPaused(true);   // a call or the home swipe mid-run: come back paused
             Missions.Flush();
             PlayerPrefs.Save();
@@ -319,6 +321,9 @@ namespace Summit
             QualitySettings.vSyncCount = 0;
             Application.targetFrameRate = 60;
             Time.fixedDeltaTime = 1f / 120f;   // physics in small steps; the rider is interpolated between them
+            // after a long frame, catch up at most 50 ms of physics (6 steps), not a third of a second's worth, which only
+            // made the next frame long too (set here: the batch tools leave TimeManager.asset changed)
+            Time.maximumDeltaTime = 0.05f;
             Physics.simulationMode = SimulationMode.FixedUpdate;   // never left on manual by a test tool
             Screen.sleepTimeout = SleepTimeout.NeverSleep;
             Screen.orientation = ScreenOrientation.Portrait;
@@ -843,8 +848,8 @@ namespace Summit
             float r = Time.unscaledDeltaTime;
             diagFrames++; diagSum += r; if (r > diagMax) diagMax = r; diagT += r;
             if (r > 0.034f && (showDiag || autoplay))   // logging every hitch on the phone makes the hitch worse
-                Debug.Log("SUMMIT HITCH " + (r * 1000f).ToString("0") + " ms  state=" + state + "  air=" + rider.Airborne +
-                          "  speed=" + rider.Speed.ToString("0.0") + "  gc=" + System.GC.CollectionCount(0));
+                Debug.LogFormat(LogType.Log, LogOption.NoStacktrace, null, "{0}", "SUMMIT HITCH " + (r * 1000f).ToString("0") + " ms  state=" + state + "  air=" + rider.Airborne +
+                          "  speed=" + rider.Speed.ToString("0.0") + "  gc=" + System.GC.CollectionCount(0));   // (no stack trace: measuring must not cost)
             if (diagT >= 0.5f)
             {
                 if (showDiag) hud.SetDiag((diagFrames / diagSum).ToString("0") + " fps  worst " + (diagMax * 1000f).ToString("0") +
@@ -856,6 +861,9 @@ namespace Summit
         void Update()
         {
             Diagnostics();
+            // the device checks' markers (PerfMarks), written out only at a quiet moment: not in the first 16 s of the
+            // ride, where the frame rate is logged
+            PerfMarks.Tick(!(state == State.Riding && traceT < 16f));
             float dt = Time.deltaTime;
             stateTimer += dt;
             WatchScream(dt);
@@ -873,7 +881,7 @@ namespace Summit
                     {
                         // device testing: a look at the camp, then on to the run
                         float before = readyT; readyT += Time.unscaledDeltaTime;
-                        if (before < 2.5f && readyT >= 2.5f) ScreenCapture.CaptureScreenshot("auto-hub.png");
+                        if (before < 2.5f && readyT >= 2.5f) AutoShot("auto-hub.png");
                         if (readyT >= 3.5f) { readyT = 0f; ToReady(false); }
                     }
                     else if (camp.Step(dt, meta)) { audioFx.Play(Sfx.Play); ToReady(false); input.SwallowCurrentPress(); }
@@ -896,7 +904,7 @@ namespace Summit
                 case State.Ready:
                     traceT = 0f;
                     if (autoplay && (readyT += dt) > 3f) { readyT = 0f; ToRiding(); }
-                    else if (autoplay && readyT > 2f && readyT - dt <= 2f) ScreenCapture.CaptureScreenshot("auto-ready.png");
+                    else if (autoplay && readyT > 2f && readyT - dt <= 2f) AutoShot("auto-ready.png");
                     else if (input.AnyPress() && ModeTapped()) { }
                     else if (input.AnyPress() && RiderTapped()) { }
                     else if (input.AnyPress() && meta.Hit(RiderInput.PointerPosition()) == "camp") { audioFx.Play(Sfx.Click); ToHub(false); }
@@ -990,15 +998,15 @@ namespace Summit
                 traceT += udt; traceNext -= udt;
                 // a look at the pause menu as it is on the phone
                 if (before < 4.5f && traceT >= 4.5f) SetPaused(true);
-                if (before < 5.0f && traceT >= 5.0f) ScreenCapture.CaptureScreenshot("auto-pause.png");
+                if (before < 5.0f && traceT >= 5.0f) AutoShot("auto-pause.png");
                 if (before < 5.5f && traceT >= 5.5f) SetPaused(false);
-                foreach (float at in new[] { 3f, 7.6f, 8.4f, 10f, 14f })
-                    if (before < at && traceT >= at) ScreenCapture.CaptureScreenshot("auto-" + at.ToString("0.0") + ".png");
+                foreach (float at in AutoShotsAt)
+                    if (before < at && traceT >= at) AutoShot("auto-" + at.ToString("0.0") + ".png");
                 if (traceNext <= 0f)
                 {
                     traceNext = 0.25f;
                     var rp = rider.Body.position; var tp = rider.transform.position;
-                    Debug.Log($"SUMMIT TRACE t={traceT:0.00} body={rp} tf={tp} ground={Slope.DrawnHeight(rp.x, rp.z):0.00} v={rider.Body.linearVelocity} " +
+                    Debug.LogFormat(LogType.Log, LogOption.NoStacktrace, null, "{0}", $"SUMMIT TRACE t={traceT:0.00} body={rp} tf={tp} ground={Slope.DrawnHeight(rp.x, rp.z):0.00} v={rider.Body.linearVelocity} " +
                               $"air={rider.Airborne} crash={rider.Crashed} kin={rider.Body.isKinematic} run={rider.Running} cam={chase.transform.position} fps={1f / Mathf.Max(1e-4f, Time.smoothDeltaTime):0}");
                 }
             }
@@ -1041,6 +1049,18 @@ namespace Summit
                 grind = riding && rider.Grinding ? (rider.GrindFeature.kind == Course.Kind.Rail ? 1 : 2) : 0,
             });
             AirSounds(riding);
+        }
+
+        // device testing: the autoplay's screenshots. Each costs the phone a frame of about 50 ms (the picture read back
+        // and saved), which shows as a dip in the fps logged next: they are marked in the log ("SUMMIT PERF autoplay
+        // screenshot"), and SUMMIT_NOSHOTS=1 leaves them out for runs that measure the frame rate
+        static readonly float[] AutoShotsAt = { 3f, 7.6f, 8.4f, 10f, 14f };
+        static readonly bool noShots = System.Environment.GetEnvironmentVariable("SUMMIT_NOSHOTS") == "1";
+        static void AutoShot(string file)
+        {
+            if (noShots) return;
+            PerfMarks.Note("autoplay screenshot " + file);
+            ScreenCapture.CaptureScreenshot(file);
         }
 
         bool ModeTapped()

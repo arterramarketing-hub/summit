@@ -277,10 +277,10 @@ namespace Summit
         static Color Mul(Color a, Color b) => new Color(a.r * b.r, a.g * b.g, a.b * b.b, 1f);
 
         /// <summary>
-        /// Keep the reflection cubemap showing the sky as it is now (128 a face: the snow's sheen is rough, it needs no
+        /// Keep the reflection cubemap showing the sky as it is now (64 a face: the snow's sheen is rough, it needs no
         /// more). It is drawn again only when the sky's look has changed (a blend between phases moving on, the evening
         /// going pink, the start page turning the sky, the weather's cloud: SkyVersion), never while a phase holds,
-        /// at most twice a second, and then one face a frame into a second cube that takes over once all six are
+        /// at most every 3 seconds, and then one face a frame into a second cube that takes over once all six are
         /// drawn, so no frame carries more than one face of it. A time jump (ApplyNow) draws all six at once.
         /// False where it can't.
         /// </summary>
@@ -313,14 +313,15 @@ namespace Summit
             if (face < 0)
             {
                 bool changed = capturedVersion != SkyVersion || Mathf.Abs(look.x - capturedLook.x) > 0.01f ||
-                               Mathf.Abs(look.y - capturedLook.y) > 0.012f || Mathf.Abs(look.z - capturedLook.z) > 0.015f ||
-                               Mathf.Abs(Mathf.DeltaAngle(look.w, capturedLook.w)) > 1.5f;
+                               Mathf.Abs(look.y - capturedLook.y) > 0.03f || Mathf.Abs(look.z - capturedLook.z) > 0.04f ||
+                               Mathf.Abs(Mathf.DeltaAngle(look.w, capturedLook.w)) > 4f;
                 if (!changed || Time.realtimeSinceStartup < nextCapture) return true;
-                face = 0; pendingLook = look; pendingVersion = SkyVersion; nextCapture = Time.realtimeSinceStartup + 0.5f;
+                face = 0; pendingLook = look; pendingVersion = SkyVersion; nextCapture = Time.realtimeSinceStartup + CaptureEvery;
             }
             long f0 = PerfMarks.Now;
             if (!reflCam.RenderToCubemap(reflBack, 1 << face)) { reflFailed = true; return false; }
-            PerfMarks.Mark("reflections face", f0, PerfMarks.On ? FaceName[face] : null);
+            FacesDrawn++;
+            PerfMarks.MarkIfOver("reflections face", f0, 0.5, FaceName[face]);
             if (++face == 6)
             {
                 // all six drawn: it takes over
@@ -333,10 +334,14 @@ namespace Summit
         }
 
         static readonly string[] FaceName = { "1/6", "2/6", "3/6", "4/6", "5/6", "6/6" };
+        /// <summary>Seconds at least between starting one redraw of the reflections and the next.</summary>
+        const float CaptureEvery = 3f;
+        /// <summary>Faces drawn into the reflections so far (the test tools count them).</summary>
+        public static int FacesDrawn;
 
         static RenderTexture Cube(string name)
         {
-            var rt = new RenderTexture(128, 128, 16, RenderTextureFormat.ARGBHalf)
+            var rt = new RenderTexture(64, 64, 16, RenderTextureFormat.ARGBHalf)
                 { dimension = TextureDimension.Cube, useMipMap = true, autoGenerateMips = false, name = name };
             rt.Create();
             return rt;

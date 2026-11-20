@@ -121,12 +121,20 @@ namespace Summit
         }
 
         /// <summary>An original tree placed on its own (the camp, the start tape): its materials swapped for swaying copies.</summary>
-        public static void SwayAll(GameObject tree)
+        /// <param name="cache">Optional: the swaying copies already made, by the material they copy (shared by every tree
+        /// placed with it, so they draw instanced and none are made twice: the camp's, kept across its rebuilds).</param>
+        public static void SwayAll(GameObject tree, System.Collections.Generic.Dictionary<Material, Material> cache = null)
         {
             foreach (var r in tree.GetComponentsInChildren<MeshRenderer>())
             {
                 var ms = r.sharedMaterials;
-                for (int i = 0; i < ms.Length; i++) if (ms[i] != null) ms[i] = Swaying(ms[i]);
+                for (int i = 0; i < ms.Length; i++)
+                {
+                    if (ms[i] == null) continue;
+                    if (cache == null) { ms[i] = Swaying(ms[i]); continue; }
+                    if (!cache.TryGetValue(ms[i], out var m) || m == null) cache[ms[i]] = m = Swaying(ms[i]);
+                    ms[i] = m;
+                }
                 r.sharedMaterials = ms;
             }
         }

@@ -95,7 +95,7 @@ namespace Summit
         // Every crack is a straight line in plan (bowed and wandering a little), with its own along (u) and across
         // (w) axes; Opening gives its half-width and the line of its middle at a point along it.
 
-        public static void ResetCaches() { crevFor = int.MinValue; featCache.Clear(); }
+        public static void ResetCaches() { Slope.BeforeChange(); crevFor = int.MinValue; featCache.Clear(); }
 
         public enum CrevasseKind { Transverse, Chevron, Bergschrund, Splay }
 
@@ -440,12 +440,15 @@ namespace Summit
         /// The top of a feature, t of the way along it (0..1). Straight in plan, it follows the snow at its height
         /// over it: a straight top 45 m long stood up to 5 m off a rolling slope, or buried itself in a bulge.
         /// </summary>
+        /// <summary>A roof's ridge (Roofs) is a feature numbered from here: clear of the course's own and the lifts' cables (negative).</summary>
+        public const int RoofIdBase = 1 << 20;
+
         public static Vector3 FeaturePoint(Feature f, float t)
         {
             t = Mathf.Clamp01(t);
             float x = Mathf.Lerp(f.a.x, f.b.x, t), z = Mathf.Lerp(f.a.z, f.b.z, t);
             // (a roof's ridge is straight and stands where it was built: Roofs)
-            if (f.id >= Roofs.IdBase) return new Vector3(x, Mathf.Lerp(f.a.y, f.b.y, t) + f.height, z);
+            if (f.id >= RoofIdBase) return new Vector3(x, Mathf.Lerp(f.a.y, f.b.y, t) + f.height, z);
             return new Vector3(x, BaseHeight(x, z) + f.height, z);
         }
 
@@ -458,16 +461,23 @@ namespace Summit
 
         static float BaseHeight(float x, float z) => Slope.Height(x, z);
 
-        public static IEnumerable<Feature> FeaturesNear(float z)
+        /// <summary>
+        /// The park features within 60 m of z, into `into` (cleared first). A list the caller keeps, not an iterator:
+        /// the rider asks every physics step through the park, and an iterator was a new object each time.
+        /// </summary>
+        public static void FeaturesNear(float z, List<Feature> into)
         {
+            into.Clear();
             int c = CycleOf(z);
             for (int k = c - 1; k <= c + 1; k++)
             {
                 if (k < 0) continue;
                 foreach (var f in FeaturesOf(k))
-                    if (z > f.a.z - 60f && z < f.b.z + 60f) yield return f;
+                    if (Near(f, z)) into.Add(f);
             }
         }
+
+        static bool Near(Feature f, float z) => z > f.a.z - 60f && z < f.b.z + 60f;
 
         /// <summary>True where trees, rocks, pickups or kickers must stay away.</summary>
         public static bool Keep(float x, float z, float margin)
@@ -483,12 +493,18 @@ namespace Summit
         public static bool NearFeature(float x, float z, float margin)
         {
             if (At(z) != Section.Park && At(z + 20f) != Section.Park) return false;
-            foreach (var f in FeaturesNear(z))
+            int c = CycleOf(z);
+            for (int k = c - 1; k <= c + 1; k++)
             {
-                if (z < f.a.z - 12f - margin || z > f.b.z + 6f + margin) continue;
-                float t = Mathf.Clamp01((z - f.a.z) / (f.b.z - f.a.z));
-                float fx = Mathf.Lerp(f.a.x, f.b.x, t);
-                if (Mathf.Abs(x - fx) < 2.5f + f.halfWidth + margin) return true;
+                if (k < 0) continue;
+                foreach (var f in FeaturesOf(k))
+                {
+                    if (!Near(f, z)) continue;
+                    if (z < f.a.z - 12f - margin || z > f.b.z + 6f + margin) continue;
+                    float t = Mathf.Clamp01((z - f.a.z) / (f.b.z - f.a.z));
+                    float fx = Mathf.Lerp(f.a.x, f.b.x, t);
+                    if (Mathf.Abs(x - fx) < 2.5f + f.halfWidth + margin) return true;
+                }
             }
             return false;
         }

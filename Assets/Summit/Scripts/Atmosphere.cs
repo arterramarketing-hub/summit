@@ -81,16 +81,16 @@ namespace Summit
             var main = ps.main;
             main.loop = true;
             main.duration = 5f;
-            main.startLifetime = new ParticleSystem.MinMaxCurve(3.5f, 5.5f);
+            main.startLifetime = new ParticleSystem.MinMaxCurve(1.6f, 2.4f);   // (short: a flake the camera has passed is gone soon)
             main.startSpeed = 0f;
             main.startSize = new ParticleSystem.MinMaxCurve(0.06f, 0.17f);
             main.startColor = new Color(1f, 1f, 1f, 0.9f);
             main.simulationSpace = ParticleSystemSimulationSpace.World;   // flakes stay put in the world, so speed shows as rush
-            main.maxParticles = 14000;
+            main.maxParticles = 3500;   // (it was 14,000: at speed most of them were already behind the camera)
             main.playOnAwake = false;
             var shape = ps.shape;
             shape.shapeType = ParticleSystemShapeType.Box;
-            shape.scale = new Vector3(56f, 22f, 70f);
+            shape.scale = new Vector3(34f, 16f, 40f);   // a box round what the lens sees close by
             var vel = ps.velocityOverLifetime;
             vel.enabled = true;
             vel.space = ParticleSystemSimulationSpace.World;
@@ -99,6 +99,7 @@ namespace Summit
             vel.z = new ParticleSystem.MinMaxCurve(-0.3f, 0.3f);
             var noise = ps.noise;
             noise.enabled = true;
+            noise.quality = ParticleSystemNoiseQuality.Low;   // (the drift's wobble needs no more)
             noise.strength = 0.8f;
             noise.frequency = 0.35f;
             noise.scrollSpeed = 0.25f;
@@ -109,7 +110,7 @@ namespace Summit
                       new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(0.9f, 0.12f), new GradientAlphaKey(0.9f, 0.85f), new GradientAlphaKey(0f, 1f) });
             col.color = g;
             snowEm = ps.emission;
-            snowEm.rateOverTime = 2300f;
+            snowEm.rateOverTime = 1300f;
             var pr = go.GetComponent<ParticleSystemRenderer>();
             pr.material = mat;
             pr.shadowCastingMode = ShadowCastingMode.Off;
@@ -160,7 +161,7 @@ namespace Summit
             pr.shadowCastingMode = ShadowCastingMode.Off;
             pr.receiveShadows = false;
             pr.renderMode = ParticleSystemRenderMode.Billboard;
-            pr.maxParticleSize = 3f;
+            pr.maxParticleSize = 0.6f;   // (a billboard close to the lens no longer fills the screen with see-through layers)
             ps.Play();
             ps.Simulate(10f, true, false);
             ps.Play();
@@ -493,7 +494,7 @@ namespace Summit
             Vector3 fwd = cam.transform.forward; fwd.y = 0f;
             if (fwd.sqrMagnitude < 1e-4f) fwd = Vector3.forward;
             fwd.Normalize();
-            snow.transform.position = cp + fwd * 22f + Vector3.up * 6f;
+            snow.transform.position = cp + fwd * 16f + Vector3.up * 4f;
             // banks of mist sit low on the slope ahead and drift across it
             mist.transform.position = cp + fwd * 70f + Vector3.down * 18f;
 
@@ -513,7 +514,9 @@ namespace Summit
             streaksAimed = pov;
             wind.transform.SetPositionAndRotation(cp + along * 9f + Vector3.down * 0.5f, Quaternion.LookRotation(fwd));
             windEm.rateOverTime = speed01 * 650f;
-            snowEm.rateOverTime = (2300f + 900f * speed01) * SnowAmount;
+            // (the same density close to the lens as before, in a smaller box with shorter lives: more at speed, as more
+            // of the box is ridden through)
+            snowEm.rateOverTime = (1300f + 700f * speed01) * SnowAmount;
             if (vignette != null) vignette.intensity.value = baseVignette + 0.17f * speed01;
         }
     }

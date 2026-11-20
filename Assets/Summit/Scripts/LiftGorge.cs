@@ -13,8 +13,8 @@ namespace Summit
     /// usual 70 m), between a tall tower on the rim above the ridge stretch and one standing up from the canyon
     /// floor where the canyon has nearly filled in again (no more than GorgeFloor deep there; towers up to
     /// HMaxGorge). Its top station is above the ridge stretch, beside the previous cycle's danger stretch, on the
-    /// cliff side and away from that stretch's deadly wall. Its bottom station is the cycle's own (its jump station
-    /// where it has one). All of it is laid by LiftLine.Try with the same rules as any first line, these apart:
+    /// cliff side and away from that stretch's deadly wall. Its bottom station is the cycle's own, or one at the
+    /// bottom of the danger stretch, or one above it (HighAt). All of it is laid by LiftLine.Try with the same rules as any first line, these apart:
     ///   - its towers may stand in the canyons where the ground is not the cliff, its far wall, or deep floor;
     ///   - one span, the one that crosses the deep canyon, may be up to GorgeSpanMax long;
     ///   - along the crest, and where the canyons are still deep past its end, it keeps to the cliff side, at least
@@ -22,7 +22,7 @@ namespace Summit
     ///   - somewhere under that span the chairs are at least GorgeDrop over the canyon floor: a fall off the cable
     ///     there is a fall past Rider.DeathFall, judged like any other drop.
     /// It is laid after the lines above it and keeps clear of them (LiftNetwork.Crowds, Meets): no other line
-    /// beside it, no station near another's, nothing over another's jump. Its launch ramp, where it gets one, is on
+    /// beside it, no station near another's. Its launch ramp, where it gets one, is on
     /// the span before the gorge, so the grind leads over the rim tower onto the gorge span (CableGrind throws the
     /// rider straight on over that tower, not out to the side). Where no such line will go the cycle's first line is
     /// laid as before. Tools/LiftHarness checks every gorge line, and rides its cable across.
@@ -35,6 +35,9 @@ namespace Summit
         public const float GorgeFloor = 55f;          // the deepest canyon floor a tower may stand up from
         public const float GorgeDrop = 110f;          // the least drop from the chairs to the ground somewhere on the gorge span
         public const float GorgeOffCrest = 8f;
+        // a bottom station above the danger stretch, metres into its cycle (or this much higher, where the ground there will not take one)
+        const float HighAt = 365f;
+        static readonly float[] HighUp = { 0f, 30f, 60f };
         public const float GorgeDeep = 0.5f;          // (of a canyon's full depth: where, past the crest's end, the line must still be on the cliff side)       // through the ridge stretch, at least this far out past the crest's edge
         // where the top station goes, metres into the cycle above (beside its danger stretch, which begins at 380)
         static readonly float[] GorgeTops = { 445f, 470f, 425f, 495f };
@@ -45,7 +48,7 @@ namespace Summit
         /// <summary>
         /// Lay cycle k's first line over the gorge of the ridge above it, if one will go; null if not. `plain` is the
         /// line Lay found for it the ordinary way (or null): a gorge line ends at the same bottom station where it can,
-        /// its jump station and all, and the lines nearest to it in direction are tried first.
+        /// and the lines nearest to it in direction are tried first.
         /// </summary>
         static Lift LayGorge(int k, IList<Lift> laid, Lift plain)
         {
@@ -56,28 +59,21 @@ namespace Summit
             float wall = Cliffs.WallOf(g, out var w) ? w.side : 0f;
             // through cycle k's own danger stretch, the side away from its deadly cliff (as LayTo)
             float sb = k < LastCycle && Cliffs.WallOf(k, out var wk) ? -wk.side : Slope.Hash01(k, 1, 171) < 0.5f ? -1f : 1f;
-            var cands = new List<(float zt, float ot, float zb, float ob, bool jump, float cs, float key)>();
+            var cands = new List<(float zt, float ot, float zb, float ob, float cs, float key)>();
             for (int e = 0; e < 2; e++)
             {
                 float cs = (Slope.Hash01(g, 12, 171) < 0.5f) == (e == 0) ? -1f : 1f;
                 if (!Ridge.CliffSide(b + Ridge.At + 100f, cs) || cs == wall) continue;
-                // the bottoms: the ordinary line's own; a jump station on either side (it stands above the danger
-                // stretch, so it can be on the cliff's side, which keeps the line there over the gorge); a plain one at
-                // the bottom of the danger stretch, on the side away from its wall
-                var bottoms = new List<(float z, float o, bool jump, float pref)>();
-                if (plain != null) bottoms.Add((plain.bottom.z, plain.offBottom, plain.jump != null, 0f));
-                if (Jumps && k < LastCycle)
-                    foreach (float up in JumpHigher)
+                // the bottoms: the ordinary line's own; one at the bottom of the danger stretch, on the side away from its
+                // wall; or one above the danger stretch, either side (there it can be on the cliff's side, which keeps
+                // the line there over the gorge)
+                var bottoms = new List<(float z, float o, float pref)>();
+                if (plain != null) bottoms.Add((plain.bottom.z, plain.offBottom, 0f));
+                foreach (float ob in Offsets) bottoms.Add((zb0, sb * ob, gorgeAny ? -1f : 3f));
+                if (k < LastCycle)
+                    foreach (float up in HighUp)
                         foreach (float side in new[] { cs, -cs })
-                            foreach (float ob in Offsets) bottoms.Add((bk + JumpAt - up, side * ob, true, 1f + up * 0.01f));
-                // (and, on the second pass only, plain ones: the cycle gives up its jump for the gorge; at the bottom of the
-                // danger stretch, or where a jump station would be, either side)
-                bool plainOk = gorgeAny || plain == null || plain.jump == null || k == LastCycle;
-                if (plainOk) foreach (float ob in Offsets) bottoms.Add((zb0, sb * ob, false, gorgeAny ? -1f : 3f));
-                if (plainOk && k < LastCycle)
-                    foreach (float up in JumpHigher)
-                        foreach (float side in new[] { cs, -cs })
-                            foreach (float ob in Offsets) bottoms.Add((bk + JumpAt - up, side * ob, false, gorgeAny ? -0.5f + up * 0.01f : 4f));
+                            foreach (float ob in Offsets) bottoms.Add((bk + HighAt - up, side * ob, gorgeAny ? -0.5f + up * 0.01f : 1f + up * 0.01f));
                 foreach (var bt in bottoms)
                     foreach (float u in GorgeTops)
                         foreach (float ot in GorgeOffsets)
@@ -85,10 +81,10 @@ namespace Summit
                             // (a straight line between the two stations must be on the cliff's side over the deep canyon,
                             // whichever way the piste wanders meanwhile: looked at before the line is tried)
                             if (!SideFits(b + u, cs * ot, bt.z, bt.o, cs)) continue;
-                            // nearest the ordinary line's direction first (its jump station then fits as it did)
+                            // nearest the ordinary line's direction first
                             float xt = Slope.Centre(b + u) + cs * ot, xb = Slope.Centre(bt.z) + bt.o;
                             float turn = plain != null ? Mathf.Abs(Mathf.Atan2(xb - xt, bt.z - b - u) - Mathf.Atan2(plain.dir.x, plain.dir.z)) : 0f;
-                            cands.Add((b + u, cs * ot, bt.z, bt.o, bt.jump, cs, bt.pref + turn * 4f));
+                            cands.Add((b + u, cs * ot, bt.z, bt.o, cs, bt.pref + turn * 4f));
                         }
             }
             cands.Sort((p, q) => p.key.CompareTo(q.key));
@@ -99,7 +95,7 @@ namespace Summit
                 // (nor is it worth trying where the ground under it has no room for a tower for longer than a span)
                 if (!Bridgeable(c.zt, c.ot, c.zb, c.ob, c.cs)) continue;
                 if (++tries > (gorgeAny ? GorgeTryCapAny : GorgeTryCap)) break;
-                var l = Try(k, c.zt, c.zb, c.ot, c.ob, laid, c.jump, c.cs);
+                var l = Try(k, c.zt, c.zb, c.ot, c.ob, laid, c.cs);
                 if (l == null) continue;
                 l.tries = tries;
                 PlaceRamp(l, laid);

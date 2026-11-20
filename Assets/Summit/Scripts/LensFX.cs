@@ -139,10 +139,24 @@ namespace Summit
         /// <summary>Halation: 0 OFF, 1 SUBTLE, 2 STRONG.</summary>
         public void SetHalation(int level) { halation = Mathf.Clamp(level, 0, HalationName.Length - 1); }
 
+        /// <summary>
+        /// Would the pass change the picture this frame? Not when the lens is turned all the way down (and there are no
+        /// anamorphic bars or vignette), with no edge streaks and no halation: then it is not added at all, and neither
+        /// is the intermediate texture it needs to read the frame from.
+        /// </summary>
+        bool Needed()
+        {
+            bool anamorphic = edge.w > 0.5f;
+            bool lens = Strength > 0.001f && (edge.x > 0f || edge.y > 0f || (anamorphic ? ana.x > 0f || ana.y > 0f : ana.w > 0f));
+            bool frame = anamorphic && (ana.z > 0f || edge.z > 0f);
+            return lens || frame || Blur > 0f || halation > 0;
+        }
+
         void OnBeginCamera(ScriptableRenderContext ctx, Camera c)
         {
             if (c != cam || pass == null) return;
             SetWarp();
+            if (!Needed()) return;
             // the fringe and softness, and the anamorphic squeeze, scale with the strength; its vignette and bars don't
             mat.SetVector(EdgeId, new Vector4(edge.x * Strength, edge.y * Strength, edge.z, edge.w));
             mat.SetVector(AnaId, new Vector4(ana.x * Strength, ana.y * Strength, ana.z, ana.w * Strength));
@@ -160,7 +174,11 @@ namespace Summit
             if (data != null && data.scriptableRenderer != null) data.scriptableRenderer.EnqueuePass(pass);
         }
 
-        /// <summary>Copies the finished frame through the edge shader into a new colour target, which becomes the camera colour.</summary>
+        /// <summary>
+        /// Copies the finished frame through the edge shader into a new colour target, which becomes the camera colour.
+        /// (It must read the frame, so it asks for an intermediate texture; on the phone the 0.8 render scale has one
+        /// anyway, for the final upscale, so that costs no extra copy there.)
+        /// </summary>
         class EdgePass : ScriptableRenderPass
         {
             readonly Material mat;

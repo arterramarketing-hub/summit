@@ -326,7 +326,18 @@ namespace Summit
         // ---------------------------------------------------------------- her round
 
         void Update() { if (Application.isPlaying) Step(Time.deltaTime); }
-        void OnDestroy() { mm?.Destroy(); }
+        void OnDestroy() { Release(); }
+
+        /// <summary>
+        /// What she made for herself, gone with her: her marshmallow (and its material) and her phone's screen. The camp
+        /// calls it before it is rebuilt (every run start; a change of the lodge's layout), as the editor's tools get no
+        /// OnDestroy.
+        /// </summary>
+        public void Release()
+        {
+            mm?.Destroy(); mm = null;
+            Marshmallow.Kill(screenMat); screenMat = null;
+        }
 
         /// <summary>How many times she's been moved on (test tools: still while you're out on the mountain).</summary>
         public static int Steps;

@@ -145,6 +145,11 @@ namespace Summit
         // ---------------------------------------------------------------- each frame
 
         static readonly List<Rider> nearList = new List<Rider>();
+        sealed class ByDistance : IComparer<Rider>
+        {
+            public static readonly ByDistance Instance = new ByDistance();
+            public int Compare(Rider a, Rider b) => a.d2.CompareTo(b.d2);
+        }
         public static int NearShown { get; private set; }
         public static int MidShown { get; private set; }
         public static int FarShown { get; private set; }
@@ -160,7 +165,7 @@ namespace Summit
             // who comes close enough to be a real person: the nearest few
             nearList.Clear();
             foreach (var r in now) if (r.d2 < NearRange * NearRange) nearList.Add(r);
-            nearList.Sort((a, b) => a.d2.CompareTo(b.d2));
+            nearList.Sort(ByDistance.Instance);   // (a comparer kept, not one made from a lambda each frame)
             if (nearList.Count > NearCap) nearList.RemoveRange(NearCap, nearList.Count - NearCap);
             // let go of those who left (gone, or no longer among the nearest)
             foreach (var r in riders.Values) if (r.near != null && (r.seen != clock || !nearList.Contains(r))) Release(r);

@@ -200,6 +200,7 @@ namespace Summit
         float groundVy, airLock, crashTimer, popHold, missClock, leanVel;
         bool popPending;
         int lastMiss, lastGrind = -1;
+        readonly System.Collections.Generic.List<Course.Feature> grindNear = new System.Collections.Generic.List<Course.Feature>();   // (TryGrind's, reused)
         string crashCause = "";
         readonly Collider[] near = new Collider[16];
 
@@ -776,7 +777,8 @@ namespace Summit
             // the park's boxes and rails, or a chalet's ridge (a box along the top of the roof: Roofs)
             bool park = Course.At(p.z) == Course.Section.Park || Course.At(p.z + 10f) == Course.Section.Park;
             if (!park && !Roofs.Near(p, 2f)) return false;
-            foreach (var feat in park ? Course.FeaturesNear(p.z) : Roofs.RidgesNear(p))
+            if (park) Course.FeaturesNear(p.z, grindNear); else Roofs.RidgesNear(p, grindNear);
+            foreach (var feat in grindNear)
             {
                 if (feat.id == lastGrind) continue;
                 if (feat.id >= Roofs.IdBase && RidgeSlam(v)) continue;   // (a ridge is landed on like the roof: RiderRoofs)

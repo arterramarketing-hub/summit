@@ -55,8 +55,8 @@ powder.wav: kastar snöklumpar 1.wav (by Ryding, id 94368) - Freesound - Creativ
 pop.wav: snöklump i snö 2.wav (by Ryding, id 94354) - Freesound - Creative Commons 0 - https://freesound.org/people/Ryding/sounds/94354/
 whoosh.wav: Woosh (by florianreichelt, id 683096) - Freesound - Creative Commons 0 - https://freesound.org/people/florianreichelt/sounds/683096/
 land_1.wav: snöklump i snö 2.wav (by Ryding, id 94354) - Freesound - Creative Commons 0 - https://freesound.org/people/Ryding/sounds/94354/
-land_2.wav: snöklump i snö 2.wav (by Ryding, id 94354) - Freesound - Creative Commons 0 - https://freesound.org/people/Ryding/sounds/94354/
-land_3.wav: snöklump i snö 2.wav (by Ryding, id 94354) - Freesound - Creative Commons 0 - https://freesound.org/people/Ryding/sounds/94354/
+land_2.wav: kastar snöklumpar 1.wav (by Ryding, id 94368) - Freesound - Creative Commons 0 - https://freesound.org/people/Ryding/sounds/94368/
+land_3.wav: kastar snöklumpar 1.wav (by Ryding, id 94368) - Freesound - Creative Commons 0 - https://freesound.org/people/Ryding/sounds/94368/
 crash.wav: Ski_skiing_downhill_fall_falling_03.wav - Sonniss GDC bundle - Sonniss GDC Bundle licence: royalty-free, commercial use, no attribution; AI/ML training prohibited (https://sonniss.com/gdc-bundle-license/) - https://sonniss.com/gameaudiogdc
 thump_1.wav: brottas i snö 2.wav (by Ryding, id 94366) - Freesound - Creative Commons 0 - https://freesound.org/people/Ryding/sounds/94366/
 thump_2.wav: brottas i snö 2.wav (by Ryding, id 94366) - Freesound - Creative Commons 0 - https://freesound.org/people/Ryding/sounds/94366/

@@ -86,15 +86,21 @@ namespace Summit
 
         public static void Build(Transform root, int cycle, Shader lit)
         {
-            if (!On || cycle < 0) return;
+            foreach (var _ in Steps(root, cycle, lit)) { }
+        }
+
+        /// <summary>Build, a piece at a time (each cliff's rock laid out, each group of it baked), for a cycle built over several frames.</summary>
+        public static IEnumerable<bool> Steps(Transform root, int cycle, Shader lit)
+        {
+            if (!On || cycle < 0) yield break;
             Init(lit);
             // drifts wear the ground's own snow (same grooves and sparkle, same mapping), so they run on into it
             if (driftMat == null) { var t = Object.FindFirstObjectByType<SlopeStreamer>(); if (t != null) driftMat = t.snowMaterial; }
             var g = new Groups();
-            if (Ridge.Built(cycle)) RidgeRock(g, cycle);
-            if (Cliffs.WallOf(cycle, out var w)) WallRock(g, w);
-            for (int k = 0; k < 2; k++) if (Cliffs.JumpOf(cycle, k, out var j)) JumpRock(g, j);
-            foreach (var kv in g.map) Bake(root, kv.Value);
+            if (Ridge.Built(cycle)) { RidgeRock(g, cycle); yield return true; }
+            if (Cliffs.WallOf(cycle, out var w)) { WallRock(g, w); yield return true; }
+            for (int k = 0; k < 2; k++) if (Cliffs.JumpOf(cycle, k, out var j)) { JumpRock(g, j); yield return true; }
+            foreach (var kv in g.map) { Bake(root, kv.Value); yield return true; }
         }
 
         /// <summary>Queue this frame's instanced talus now (the test renders call it before a camera renders by hand).</summary>

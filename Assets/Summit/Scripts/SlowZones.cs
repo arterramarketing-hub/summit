@@ -89,7 +89,6 @@ namespace Summit
                 if (Mathf.Abs(p.x - Slope.Centre(p.z)) > Slope.PisteHalf - 1f) return false;
                 if (Course.Keep(p.x, p.z, 3f) || Slope.Kicker(p.x, p.z) > 0f || Hamlets.Taken(p.x, p.z) || LiftLine.Taken(p.x, p.z, 3f)) return false;
                 if (Course.CrevasseNear(p.x, p.z, 8f)) return false;
-                foreach (var l in LiftLine.Lifts) if (l.jump != null && LiftLine.InJumpField(l, p.x, p.z, 4f)) return false;
             }
             return true;
         }

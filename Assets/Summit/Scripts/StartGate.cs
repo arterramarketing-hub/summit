@@ -6,8 +6,9 @@ namespace Summit
     /// The start gate, where every run begins (SummitGame.BuildStartGate; the camp's DROP IN is under it): the
     /// mountain's own landmark, built like a resort's start arch rather than a race banner. Two squared timber posts
     /// in steel shoes, a header beam on them with knee braces, and under it a board of dark planks carved with MT.
-    /// VERTIGO in the title's lettering (TitleArt.BuildLine, lit by Resources/GateBoard.shader): ice-blue letters with
-    /// snow loaded on them. Snow lies along the beam and the board's top edge and is drifted round the posts' feet,
+    /// VERTIGO routed into it in a slab serif and painted cream, as a ski area's sign is made (SignArt.cs, lit by
+    /// Resources/GateBoard.shader), ELEV. 10,000 FT under it between two little routed mountains, snow caught in the
+    /// cuts. Snow lies along the beam and the board's top edge and is drifted round the posts' feet,
     /// and two lamps hang off the beam over the board, lighting it at night.
     /// The posts are solid, as a tree is (ride into one and you fall); everything above them is out of reach, so
     /// the posts are its only colliders. The board faces up the hill, at the camp and at the rider waiting below it.
@@ -20,8 +21,6 @@ namespace Summit
         public const float PostX = 4.3f, PostHalf = 0.28f;
         // the timber's section, the beam's height, and the board (4:1, its foot well above a rider's head)
         const float Post = 0.42f, Beam = 6.1f, BoardW = 7f, BoardH = 1.75f, BoardFoot = 3.7f;
-        const int TexW = 1024, TexH = 256;
-        const float CapFrac = 0.45f, BaseFrac = 0.25f;   // the letters' caps and foot on the board
 
         // the lettering is built once, off the main thread (as the start page builds its title); the board shows bare
         // timber for the moment it takes, then the letters come up on it
@@ -121,13 +120,9 @@ namespace Summit
             if (board != null) return board;
             var sh = Resources.Load<Shader>("GateBoard");
             board = new Material(sh != null ? sh : Shader.Find("Universal Render Pipeline/Lit")) { name = "GateBoard" };
-            var st = TitleArt.Styles[0];   // CORNICE: the title's heavy slanted ice with the snow loaded on it
-            board.SetVector("_Word", new Vector4(BaseFrac, BaseFrac + CapFrac, 0f, 0f));
             board.SetVector("_Size", new Vector4(BoardW, BoardH, 0f, 0f));
-            board.SetFloat("_Spread", TitleArt.Spread);
-            board.SetColor("_Top", Color.Lerp(st.top, Color.white, 0.15f)); board.SetColor("_Bottom", st.bottom); board.SetColor("_SnowCol", st.snowCol);
             if (letters != null) board.SetTexture("_MainTex", letters);
-            else if (job == null) job = System.Threading.Tasks.Task.Run(() => TitleArt.BuildLine(st, "MT. VERTIGO", TexW, TexH, CapFrac, BaseFrac));
+            else if (job == null) job = System.Threading.Tasks.Task.Run(() => SignArt.Build());   // (routed resort lettering, SignArt.cs)
             return board;
         }
 
@@ -147,7 +142,7 @@ namespace Summit
             if (wait) job.Wait();
             if (!job.IsCompleted) return false;
             if (job.IsFaulted) { Debug.LogException(job.Exception); job = null; return false; }
-            letters = TitleArt.ToTexture(job.Result, TexW, TexH, "GateLetters");
+            letters = SignArt.ToTexture(job.Result, "GateLetters");
             job = null;
             if (board != null) board.SetTexture("_MainTex", letters);
             return true;

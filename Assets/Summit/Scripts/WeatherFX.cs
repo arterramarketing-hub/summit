@@ -120,7 +120,9 @@ namespace Summit
             }
             Deck(l, cp, page);
             FarWeather(l, dt, page);
-            if (!warmed && !page) { warmed = true; Warm(); }
+            // (not in the frame the game loads in: that one runs seconds long, and the warm-up's particles would be gone
+            // before anything was drawn)
+            if (!warmed && !page && dt > 0f && dt < 0.1f) { warmed = true; Warm(); }
             else if (warmFrames > 0 && --warmFrames == 0 && warmQuad != null) warmQuad.gameObject.SetActive(false);
         }
 
@@ -321,7 +323,7 @@ namespace Summit
                 deck.position = new Vector3(deckNextAt.x, deckNextY, deckNextAt.y);
                 deckAt = deckNextAt; deckY = deckNextY; deckRow = -1;
             }
-            PerfMarks.Mark("weather deck rows", t0);
+            PerfMarks.MarkIfOver("weather deck rows", t0, 0.5);
         }
 
         // ---------------------------------------------------------------- shaders ready before they are needed
@@ -338,7 +340,7 @@ namespace Summit
             var t = cam.transform;
             var ep = new ParticleSystem.EmitParams
             {
-                position = t.position + t.forward * 3f, velocity = Vector3.zero, startSize = 0.05f, startLifetime = 0.2f,
+                position = t.position + t.forward * 3f, velocity = Vector3.zero, startSize = 0.05f, startLifetime = 1f,
                 startColor = new Color32(255, 255, 255, 0), applyShapeToPosition = false,
             };
             foreach (var ps in new[] { near, drift, dust, snowfall }) if (ps != null) ps.Emit(ep, 1);
@@ -348,7 +350,7 @@ namespace Summit
                 warmQuad.SetPositionAndRotation(t.position + t.forward * 5f, Quaternion.LookRotation(t.forward));
                 warmQuad.gameObject.SetActive(true);
             }
-            warmFrames = 2;
+            warmFrames = 3;
             PerfMarks.Mark("weather warm-up", t0);
         }
         bool warmed; int warmFrames;

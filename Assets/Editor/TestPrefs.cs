@@ -28,7 +28,7 @@ public static class TestPrefs
             "summit_filterstrength", "summit_halation", "summit_blood", ChaseCamera.PovPref, "summit_tube",
             "summit_voicelines", "summit_flashlight", "summit_timelock", "summit_points", "summit_points_life",
             "summit_ride", Forest.TreesPref, "summit_invert", "summit_tilt", RiderBody.OldHeroPref,
-            "summit_jacket", "summit_jackets", "summit_boardcol", "summit_boards", "summit_weather",
+            "summit_jacket", "summit_jackets", "summit_boardcol", "summit_boards", "summit_weather", Camp.LodgePref,
             // (no longer read on main, still written by other branches)
             "summit_rider", "summit_body", "summit_outfit" })
             keys[k] = Kind.Int;

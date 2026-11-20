@@ -253,7 +253,8 @@ public static class WeatherShot
                 Vector3 p = local ? ps.transform.TransformPoint(buf[i].position) : buf[i].position;
                 Vector3 v = cam.transform.InverseTransformPoint(p);
                 if (v.z < cam.nearClipPlane) continue;
-                float px = buf[i].GetCurrentSize(ps) / (2f * v.z * tan) * H;
+                // (the renderer clamps a particle to maxParticleSize of the view)
+                float px = Mathf.Min(buf[i].GetCurrentSize(ps) / (2f * v.z * tan) * H, pr.maxParticleSize * W);
                 if (Mathf.Abs(v.x) > v.z * tan * cam.aspect + buf[i].GetCurrentSize(ps) || Mathf.Abs(v.y) > v.z * tan + buf[i].GetCurrentSize(ps)) continue;
                 float len = px;
                 if (pr.renderMode == ParticleSystemRenderMode.Stretch)

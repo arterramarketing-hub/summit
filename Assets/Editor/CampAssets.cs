@@ -9,10 +9,28 @@ using UnityEngine;
 public static class CampAssets
 {
     const string GlassPath = "Assets/Summit/Resources/Camp/GlassBase.mat";
+    // the lodge's glass glows from inside at dusk: transparent with emission, its own variant (CampLodge.LodgeGlass)
+    const string GlowPath = "Assets/Summit/Resources/Camp/GlassGlow.mat";
 
     public static void Ensure()
     {
+        if (AssetDatabase.LoadAssetAtPath<Material>(GlowPath) == null)
+        {
+            var g = Transparent();
+            g.EnableKeyword("_EMISSION");
+            g.SetColor("_EmissionColor", new Color(0.15f, 0.09f, 0.05f));
+            g.globalIlluminationFlags = MaterialGlobalIlluminationFlags.None;
+            AssetDatabase.CreateAsset(g, GlowPath);
+            AssetDatabase.SaveAssets();
+        }
         if (AssetDatabase.LoadAssetAtPath<Material>(GlassPath) != null) return;
+        var m = Transparent();
+        AssetDatabase.CreateAsset(m, GlassPath);
+        AssetDatabase.SaveAssets();
+    }
+
+    static Material Transparent()
+    {
         var m = new Material(Shader.Find("Universal Render Pipeline/Lit"));
         m.SetFloat("_Surface", 1f);
         m.SetFloat("_Blend", 0f);
@@ -24,7 +42,6 @@ public static class CampAssets
         m.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
         m.SetColor("_BaseColor", new Color(0.62f, 0.74f, 0.82f, 0.22f));
         m.SetFloat("_Smoothness", 0.95f);
-        AssetDatabase.CreateAsset(m, GlassPath);
-        AssetDatabase.SaveAssets();
+        return m;
     }
 }

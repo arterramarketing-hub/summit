@@ -18,8 +18,16 @@ namespace Summit
         public static int Seed { get; private set; }
         static float ph, ox, oz;
 
+        /// <summary>
+        /// Just before the mountain changes (a new seed, or Course's caches reset): whatever is reading it on another
+        /// thread (SlopeStreamer's workers) finishes first.
+        /// </summary>
+        public static event System.Action Changing;
+        public static void BeforeChange() => Changing?.Invoke();
+
         public static void Init(int seed)
         {
+            BeforeChange();
             Seed = seed;
             ph = (seed % 628) / 100f;
             // small offsets only: large ones would lose float precision and step the terrain
@@ -232,6 +240,9 @@ namespace Summit
             float top = BaseAt(cx, PadLip) + PadDrop + 38f * 0.22f + Mathf.Max(0f, back - 38f) * 0.07f
                       + 6f * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-44f, -62f, z))   // up from the gate to the camp, a short bank (a walk, not a climb)
                       + (Noise(x * 0.07f, z * 0.07f) - 0.5f) * 0.8f;
+            // the lodge's level pad (Camp.LodgePad): level under it, the ground in front of its terrace a metre lower
+            float lp = Camp.LodgePad(a, z, out float lower);
+            if (lp > 0f) top = Mathf.Lerp(top, BaseAt(cx, PadLip) + PadDrop + 38f * 0.22f + (PadLip - Camp.LodgeZ - 38f) * 0.07f + 6f - lower, lp);
             float y = top;
             // a snowy shoulder rolling over, steepening into rock further down
             if (a < SummitLeft) y -= FallAway(SummitLeft - a, z, 0.5f, 0.0065f, 1.3f);

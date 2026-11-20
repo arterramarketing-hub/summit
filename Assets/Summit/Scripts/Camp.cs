@@ -88,6 +88,23 @@ namespace Summit
             SetNight(0f);   // daylight until the day/night cycle says otherwise
         }
 
+        // ---- what each build makes for itself (its materials, meshes, textures): gone with the camp it was made for.
+        // Camp.Rebuild runs at every run start (and when the LODGE setting changes layout); destroying only the root
+        // GameObject left these behind (with no scene loads, UnloadUnusedAssets never comes for them).
+        readonly List<Object> made = new List<Object>();
+        bool building;
+        /// <summary>The original trees' swaying copies of their materials, by the material copied: made once, kept.</summary>
+        readonly Dictionary<Material, Material> swayed = new Dictionary<Material, Material>();
+        /// <summary>Something this build made: destroyed when the camp is next rebuilt (made outside a build, e.g. in Build(), it stays).</summary>
+        T Made<T>(T o) where T : Object { if (building && o != null) made.Add(o); return o; }
+        void Unmake()
+        {
+            foreach (var o in made) if (o != null) { if (Application.isPlaying) Destroy(o); else DestroyImmediate(o); }
+            made.Clear();
+        }
+        /// <summary>Test tools: how many things the current build made for itself.</summary>
+        public int MadeCount => made.Count;
+
         Material M(Color c, float smooth, Texture2D tex = null, Vector2 tile = default, Color emit = default)
         {
             var m = new Material(lit);
@@ -101,12 +118,12 @@ namespace Summit
                 m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.None;
             }
             m.enableInstancing = true;
-            return m;
+            return Made(m);
         }
 
         Material Sign(string path)
         {
-            var m = CourseDressing.Sign(lit, path);
+            var m = Made(CourseDressing.Sign(lit, path));
             m.SetFloat("_Smoothness", 0.15f);
             // (no self-light: lit by the camp's lamps and the sky like real carved boards; SignLit.shader)
             return m;
@@ -118,13 +135,17 @@ namespace Summit
         public void Rebuild()
         {
             if (lit == null) return;
+            if (alyssa != null) { alyssa.Release(); alyssa = null; }   // (what she made for herself: CampFire.cs; before she goes with the root)
             if (root != null) { if (Application.isPlaying) Destroy(root.gameObject); else DestroyImmediate(root.gameObject); }
+            Unmake();   // (the last build's materials and meshes with it)
+            building = true;
             root = new GameObject("Camp").transform;
             root.SetParent(transform, false);
             spots.Clear(); boxes.Clear(); lamps.Clear(); lampPower.Clear(); lampDay.Clear(); cameraWalls.Clear();
 
             tapRoots.Clear();
-            Chalet(Frame(-9f, -88.5f, 12f));
+            if (UseLodge) Lodge(Frame(LodgeDx, LodgeZ, LodgeYaw));   // (CampLodge.cs)
+            else Chalet(Frame(-9f, -88.5f, 12f));
             StartBanner();
             Lookout(Frame(16f, -54f, 0f));
             Benches();
@@ -145,6 +166,7 @@ namespace Summit
             Redress();
             SetNight(Night);   // the new lamps start at the evening's brightness
             if (Couple != null) Couple.Rebuilt();   // (their spots moved with the camp)
+            building = false;
             Built?.Invoke(root);   // (the camp's people: CampLife)
         }
 
@@ -389,7 +411,7 @@ namespace Summit
         Material Glass()
         {
             var b = Resources.Load<Material>("Camp/GlassBase");
-            var m = b != null ? new Material(b) : M(Color.white, 0.95f);
+            var m = b != null ? Made(new Material(b)) : M(Color.white, 0.95f);
             m.SetColor("_BaseColor", new Color(0.62f, 0.74f, 0.82f, 0.22f));
             m.SetFloat("_Smoothness", 0.95f);
             return m;
@@ -399,7 +421,7 @@ namespace Summit
         public Vector3 ChaletPoint(float x, float y, float z) => chalet != null ? chalet.TransformPoint(new Vector3(x, y, z)) : Vector3.zero;
         public float ChaletYaw => chalet != null ? chalet.eulerAngles.y : 0f;
         /// <summary>True inside the chalet's walls.</summary>
-        bool Indoors => chalet != null && InHouse(chalet.InverseTransformPoint(pos));
+        bool Indoors => chalet != null && (UseLodge ? LodgeInsideAt(chalet.InverseTransformPoint(pos)) : InHouse(chalet.InverseTransformPoint(pos)));
         static bool InHouse(Vector3 l) => Mathf.Abs(l.x) < ChaletHalfX - 0.2f && Mathf.Abs(l.z) < ChaletHalfZ - 0.2f;
 
         // ---------------------------------------------------------------- birches, lumpy snow, the trodden path
@@ -407,7 +429,7 @@ namespace Summit
         /// <summary>Tall bare birches round the lodge: white trunks, a few dark forks of branches.</summary>
         void Birches()
         {
-            var where = new[] { new Vector2(-22.5f, -78f), new Vector2(-22f, -86f), new Vector2(3f, -94f), new Vector2(-17.5f, -63f), new Vector2(-25.5f, -70f), new Vector2(6f, -91f) };
+            var where = UseLodge ? LodgeBirches : new[] { new Vector2(-22.5f, -78f), new Vector2(-22f, -86f), new Vector2(3f, -94f), new Vector2(-17.5f, -63f), new Vector2(-25.5f, -70f), new Vector2(6f, -91f) };
             for (int i = 0; i < where.Length; i++)
             {
                 var t = Frame(where[i].x, where[i].y, i * 53f);
@@ -442,6 +464,7 @@ namespace Summit
                 if (i >= 20) { dx = Mathf.Lerp(-14f, 14f, Slope.Hash01(i, 3, 41)); z = -97f - 3f * Slope.Hash01(i, 4, 41); }
                 var p = Ground(dx, z);
                 float s = 1.4f + 2.2f * Slope.Hash01(i, 5, 41);
+                if (UseLodge && !LodgeClear(p, s * 0.7f)) continue;   // (not into the lodge or onto its terrace)
                 P(PrimitiveType.Sphere, t, p + Vector3.down * s * 0.22f, new Vector3(s * 1.4f, s * 0.6f, s), new Vector3(0f, i * 41f, 0f), snowCap);
             }
         }
@@ -449,6 +472,7 @@ namespace Summit
         /// <summary>A path trodden through the snow from the fire to the lodge's stairs, boot prints and all.</summary>
         void Footpath()
         {
+            if (UseLodge) { LodgePath(); return; }   // (a paved path with lamp posts: CampLodge.cs)
             var pts = new List<Vector3> { Ground(-1f, -67.5f), Ground(-4.5f, -70.5f), Ground(-7.5f, -74.5f), stairsFoot };
             // sample a smooth curve through them, laid on the snow
             var line = new List<Vector3>();
@@ -476,7 +500,7 @@ namespace Summit
                 }
                 if (i > 0) { int k = v.Count - 4; tri.AddRange(new[] { k, k + 2, k + 1, k + 1, k + 2, k + 3 }); }
             }
-            var mesh = new Mesh { name = "Footpath" };
+            var mesh = Made(new Mesh { name = "Footpath" });
             mesh.SetVertices(v); mesh.SetUVs(0, uv); mesh.SetTriangles(tri, 0);
             mesh.RecalculateNormals(); mesh.RecalculateBounds();
             var go = new GameObject("Footpath", typeof(MeshFilter), typeof(MeshRenderer));
@@ -558,6 +582,7 @@ namespace Summit
             // the photo backdrop is unlit: its shader takes the evening tint from this. (Not a colour grade on
             // the post profile: a cool filter with lower exposure tipped every warm light to pure red.)
             Shader.SetGlobalFloat("_SummitNight", k);
+            LodgeNight(k);
             if (mistMat != null) mistMat.SetColor("_BaseColor", Color.Lerp(new Color(1f, 1f, 1f, 0.75f), new Color(0.26f, 0.31f, 0.44f, 0.6f), k));
             for (int i = 0; i < lamps.Count; i++)
                 if (lamps[i] != null) { float w = Mathf.Lerp(lampDay[i], 1f, k); lamps[i].intensity = lampPower[i] * w; lamps[i].enabled = w > 0.01f; }
@@ -746,14 +771,14 @@ namespace Summit
         void Soft(ParticleSystemRenderer r)
         {
             if (soft == null) return;
-            var m = new Material(soft);
+            var m = Made(new Material(soft));
             m.SetColor("_BaseColor", Color.white);
             r.sharedMaterial = m;
         }
 
         void Strings()
         {
-            Vector3 pa = Ground(5f, -82f), pb = Ground(6f, -60f);
+            Vector3 pa = UseLodge ? Ground(10.8f, -75f) : Ground(5f, -82f), pb = Ground(6f, -60f);
             // two tall poles for the flags and lights to hang from
             var poles = new GameObject("Poles").transform; poles.SetParent(root, false);
             Log(poles, pa + Vector3.down * 0.3f, pa + Vector3.up * 6.6f, 0.16f, logs);
@@ -809,7 +834,7 @@ namespace Summit
             bool real = Forest.Realistic && RealFir.Load();   // the forest's own look
             var kinds = real ? new GameObject[0] : Resources.LoadAll<GameObject>("Trees");
             if (!real && kinds.Length == 0) return;
-            var where = new[] { new Vector2(-27f, -96f), new Vector2(-19f, -104f), new Vector2(-6f, -107f), new Vector2(7f, -105f), new Vector2(19f, -101f),
+            var where = UseLodge ? LodgeTrees : new[] { new Vector2(-27f, -96f), new Vector2(-19f, -104f), new Vector2(-6f, -107f), new Vector2(7f, -105f), new Vector2(19f, -101f),
                                 new Vector2(21f, -104f), new Vector2(-30f, -82f), new Vector2(-29f, -67f), new Vector2(-26.5f, -92f), new Vector2(-27f, -74f),   // (none on the cliff side)
                                 new Vector2(-24f, -108f), new Vector2(13f, -110f), new Vector2(-31f, -54f),
                                 new Vector2(-20.5f, -81f), new Vector2(2.6f, -84.5f) };   // the last two: spruces beside the chalet
@@ -823,7 +848,7 @@ namespace Summit
                     continue;
                 }
                 var g = Instantiate(kinds[i % kinds.Length], root, false);
-                TreeWind.SwayAll(g);   // moves in the wind like the forest's
+                TreeWind.SwayAll(g, swayed);   // moves in the wind like the forest's (one swaying copy per material, kept)
                 foreach (var c in g.GetComponentsInChildren<Collider>()) DestroyImmediate(c);
                 var rs = g.GetComponentsInChildren<Renderer>();
                 if (rs.Length == 0) continue;
@@ -930,7 +955,7 @@ namespace Summit
                     tri.AddRange(new[] { a, c, b, b, c, d });
                     tri.AddRange(new[] { nv + a, nv + b, nv + c, nv + b, nv + d, nv + c });   // the other side
                 }
-            var m = new Mesh { name = "Flag" };
+            var m = Made(new Mesh { name = "Flag" });
             m.MarkDynamic();
             m.vertices = new Vector3[nv * 2]; m.uv = uv; m.SetTriangles(tri, 0);
             return m;
@@ -973,7 +998,7 @@ namespace Summit
         }
 
         /// <summary>Merge everything under t into one mesh per material (the railing's two hundred pieces: two draws).</summary>
-        static void Combine(Transform t)
+        void Combine(Transform t)
         {
             var byMat = new Dictionary<Material, List<CombineInstance>>();
             foreach (var mf in t.GetComponentsInChildren<MeshFilter>())
@@ -985,7 +1010,7 @@ namespace Summit
             for (int i = t.childCount - 1; i >= 0; i--) { var c = t.GetChild(i).gameObject; if (Application.isPlaying) Destroy(c); else DestroyImmediate(c); }
             foreach (var kv in byMat)
             {
-                var mesh = new Mesh { name = "Combined", indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
+                var mesh = Made(new Mesh { name = "Combined", indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 });
                 mesh.CombineMeshes(kv.Value.ToArray(), true, true);
                 var g = new GameObject("Part", typeof(MeshFilter), typeof(MeshRenderer));
                 g.transform.SetParent(t, false);
@@ -1812,6 +1837,7 @@ namespace Summit
         public bool Step(float dt, MetaUi ui)
         {
             fadeUi = ui;
+            if (LodgeSwitchStep(dt, ui)) return false;   // a change of the lodge's layout, behind a dip to black (CampLodge.cs)
             if (fadeIn) { fade = Mathf.MoveTowards(fade, 0f, dt / 0.6f); ui.SetFade(fade); fadeIn = fade > 0f; }
             if (falling) { FallStep(dt); ui.SetStick(false, Vector2.zero, Vector2.zero); ui.SetLookStick(false, Vector2.zero, Vector2.zero); ui.SetContext(Station.None); return false; }
             var touches = Touches();

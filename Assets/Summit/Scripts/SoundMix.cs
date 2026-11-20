@@ -30,8 +30,9 @@ namespace Summit
 
     /// <summary>
     /// The whole soundscape, from clips made by Tools/MakeAudio.swift (Resources/Audio):
-    /// a bed of mountain air; two layers of wind (a deep roar and a whistle past the ears) that rise
-    /// with speed; the board on the snow as separate layers that the ride crossfades between: a
+    /// a bed of mountain air; a quiet bed of moving air (wind_low) always there and barely rising with speed, and a
+    /// harsh rush of wind (wind_high) only in extreme weather (Weather.Howl: a storm, a windy day, a front arriving),
+    /// coming and going with the gusts; the board on the snow as separate layers that the ride crossfades between: a
     /// glide hiss, the edge biting in a carve, the chatter of a skid, the soft crush of powder; metal
     /// and plastic grinds; the avalanche rumbling up behind; the fizz of a boost. One-shots for
     /// everything that happens, some of them placed in the world (the bear, birds, crows), and a
@@ -254,6 +255,24 @@ namespace Summit
             l.src.pitch = l.pitch;
         }
 
+        /// <summary>
+        /// The wind's levels (AudioSource volume): wind_low's at rest in calm weather (it rises to about 2.7 times this at
+        /// most: speed, air, a gust, a storm), and wind_high's at the height of a storm's gust (0.45 of it between gusts).
+        /// Set for the cleaned recordings as Unity imports them (Force To Mono, no Normalize: wind_low -27.5 LUFS, a
+        /// rumble under 500 Hz; wind_high -15.8 LUFS, up to 8 kHz) so the wind is heard as loud as it was tuned before the
+        /// cleanup: wind_low about -41.5 LUFS at rest, near the ambience bed (-42); a storm's wind_high -33.9 LUFS
+        /// between gusts and -27.2 at a full gust, 7.6 and 14.3 LU over the calm bed.
+        /// </summary>
+        public static float WindLow = 0.2f, WindHigh = 0.27f;
+
+        /// <summary>
+        /// The wind's two volumes (x wind_low, y wind_high) for a speed (0..1 of 36 m/s), in the air or not, a gust
+        /// (0..1) and the weather's extreme wind (Weather.Howl, 0 calm .. 1 a storm). wind_high is the weather's alone.
+        /// </summary>
+        public static Vector2 WindLevels(float speed01, bool air, float gust, float howl) =>
+            new Vector2(WindLow * (1f + 0.5f * speed01 + (air ? 0.25f : 0f) + 0.375f * gust + 0.6f * howl),
+                        howl * WindHigh * (0.45f + 0.55f * gust));
+
         public void Set(RideSound r)
         {
             if (glide == null) return;
@@ -263,10 +282,14 @@ namespace Summit
 
             // air and wind
             Mix(ambience, 0.22f * (1f - 0.5f * s), 1f, 2f, 2f, dt);
-            // (a gust through the trees, TreeWind, lifts both: you hear it as you see the forest bend)
-            float gust = TreeWind.Here;
-            Mix(windLow, (0.05f + 0.55f * s * s + 0.16f * gust) * master, 0.8f + 0.4f * s - 0.08f * gust, 4f, 3f, dt);
-            Mix(windHigh, (0.02f + 0.42f * Mathf.Pow(s, 2.2f) + (r.air ? 0.12f + 0.15f * s : 0f) + 0.07f * gust) * master, 0.85f + 0.35f * s + 0.1f * gust, 4f, 3f, dt);
+            // the wind is ambience, kept low: the speed is heard in the board (glide, carve), not in a roar. wind_low is
+            // the everyday bed, a little more with speed, in the air, in a gust and in a storm; wind_high is only the
+            // weather's (Weather.Howl, 0 in calm weather, so never from speed), swelling with each gust as the trees bend
+            float gust = TreeWind.Strength > 0.01f ? Mathf.Clamp01(TreeWind.Here / TreeWind.Strength) : 0f;
+            float howl = Weather.Howl;
+            var wind = WindLevels(s, r.air, gust, howl);
+            Mix(windLow, wind.x * master, 0.93f + 0.1f * s + 0.04f * gust, 2f, 2f, dt);
+            Mix(windHigh, wind.y * master, 0.88f + 0.18f * gust, 1.5f, 1f, dt);
 
             // the board on the snow: snaps on when you land, cuts out the moment you leave the ground
             float snowUp = 30f, snowDown = 25f;

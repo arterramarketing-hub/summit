@@ -9,7 +9,8 @@ namespace Summit
     /// in height and width, with clods broken off along its crest and a frayed outer edge, never the
     /// same twice. Carving throws a tall berm to the outside of the turn and slices a narrow cut;
     /// skidding sweeps a wide smear and a long low ridge. Deeper and wider in powder.
-    /// Built as a chain of small meshes; only the newest one is rebuilt as you ride.
+    /// Built as a chain of small meshes; only the newest one is rebuilt as you ride, and in it only the newest row of
+    /// the track (and the normals of the row before it, which the new row's faces touch).
     /// </summary>
     public class SnowTrail
     {
@@ -28,7 +29,11 @@ namespace Summit
         bool wasOn;
         float travelled;
         Vector3[] v = new Vector3[(PerChunk + 1) * Across];
+        Vector3[] nrm = new Vector3[(PerChunk + 1) * Across];
         Vector2[] c = new Vector2[(PerChunk + 1) * Across];
+        int rowsBuilt;   // the rows of the current chunk already worked out (each depends only on its own point)
+        // one side's profile, centre outward: how far out, and how high (reused from row to row)
+        readonly float[] profOut = new float[7], profUp = new float[7];
         // across the track (left to right): frayed edge, outer slope, clod, crest, lip, wall, floor ... and back
         static readonly float[] U = { 0.0f, 0.12f, 0.22f, 0.27f, 0.33f, 0.38f, 0.43f, 0.5f, 0.57f, 0.62f, 0.67f, 0.73f, 0.78f, 0.88f, 1.0f };
         int[] tri;
@@ -119,6 +124,7 @@ namespace Summit
             currentMesh.Clear();
             pts.Clear();
             pts.Add(first);
+            rowsBuilt = 0;
         }
 
         void Break()
@@ -191,7 +197,7 @@ namespace Summit
         {
             int n = pts.Count;
             if (n < 2 || currentMesh == null) return;
-            for (int i = 0; i < n; i++)
+            for (int i = rowsBuilt; i < n; i++)
             {
                 var q = pts[i];
                 float a = Mathf.Abs(q.edge), sk = q.skid, s = q.s;
@@ -222,33 +228,60 @@ namespace Summit
                     float jag = (N(q.d, 0.22f, seed + 15) - 0.5f) * 0.25f;          // the crest wanders in and out
                     Vector3 r = q.r * side;
                     // centre outward: floor edge, inner wall, lip, crest, clod, outer slope, frayed edge
-                    var prof = new[]
-                    {
-                        (hw * 0.55f,                      0.008f + sh * 0.7f),
-                        (hw * 0.86f,                      bh * 0.35f + sh),
-                        (hw * 1.00f,                      bh * 0.80f + sh),
-                        (hw + bw * (0.22f + jag),         bh * (1.00f + 0.6f * clod)),
-                        (hw + bw * (0.42f + 0.2f * clod), bh * (0.70f + 0.9f * clod)),
-                        (hw + bw * (0.70f - jag),         bh * (0.30f + 0.25f * N(q.d, 0.3f, seed + 31))),
-                        (hw + bw * 1.05f + fray,          0.004f),
-                    };
-                    for (int j = 0; j < prof.Length; j++)
+                    profOut[0] = hw * 0.55f;                      profUp[0] = 0.008f + sh * 0.7f;
+                    profOut[1] = hw * 0.86f;                      profUp[1] = bh * 0.35f + sh;
+                    profOut[2] = hw * 1.00f;                      profUp[2] = bh * 0.80f + sh;
+                    profOut[3] = hw + bw * (0.22f + jag);         profUp[3] = bh * (1.00f + 0.6f * clod);
+                    profOut[4] = hw + bw * (0.42f + 0.2f * clod); profUp[4] = bh * (0.70f + 0.9f * clod);
+                    profOut[5] = hw + bw * (0.70f - jag);         profUp[5] = bh * (0.30f + 0.25f * N(q.d, 0.3f, seed + 31));
+                    profOut[6] = hw + bw * 1.05f + fray;          profUp[6] = 0.004f;
+                    for (int j = 0; j < profOut.Length; j++)
                     {
                         int col = side < 0 ? 6 - j : 8 + j;
-                        v[k + col] = o + r * prof[j].Item1 + q.n * prof[j].Item2;
+                        v[k + col] = o + r * profOut[j] + q.n * profUp[j];
                         // a little colour jitter along the crest and slope, so the snow is not one flat tone
                         float jit = j >= 3 ? (N(q.d, 0.35f, seed + 21 + j) - 0.5f) * 0.05f : 0f;
                         c[k + col] = new Vector2(Mathf.Clamp01(U[col] + jit * -side), row);
                     }
                 }
             }
+            // the normals of the new rows and of the row before them (the new faces touch it), as RecalculateNormals
+            // makes them: each corner's faces summed, the bigger ones counting for more
+            for (int i = Mathf.Max(0, rowsBuilt - 1); i < n; i++) RowNormals(i, n);
+            rowsBuilt = n;
             currentMesh.Clear();
             int vc = n * Across;
             currentMesh.SetVertices(v, 0, vc);
+            currentMesh.SetNormals(nrm, 0, vc);
             currentMesh.SetUVs(0, c, 0, vc);
             currentMesh.SetTriangles(tri, 0, (n - 1) * (Across - 1) * 6, 0);
-            currentMesh.RecalculateNormals();
             currentMesh.RecalculateBounds();
+        }
+
+        /// <summary>Row i's normals from the faces either side of it (n rows so far), wound as `tri` winds them.</summary>
+        void RowNormals(int i, int n)
+        {
+            int k = i * Across;
+            for (int j = 0; j < Across; j++) nrm[k + j] = Vector3.zero;
+            for (int strip = i - 1; strip <= i; strip++)
+            {
+                if (strip < 0 || strip >= n - 1) continue;
+                for (int j = 0; j < Across - 1; j++)
+                {
+                    int a = strip * Across + j, b = a + 1, d = a + Across, e = d + 1;
+                    Face(a, d, b, k); Face(b, d, e, k);
+                }
+            }
+            for (int j = 0; j < Across; j++) nrm[k + j] = nrm[k + j].normalized;
+        }
+
+        // a face's normal added to those of its corners that are on the row from k
+        void Face(int a, int b, int d, int k)
+        {
+            Vector3 f = Vector3.Cross(v[b] - v[a], v[d] - v[a]);
+            if (a >= k && a < k + Across) nrm[a] += f;
+            if (b >= k && b < k + Across) nrm[b] += f;
+            if (d >= k && d < k + Across) nrm[d] += f;
         }
     }
 }

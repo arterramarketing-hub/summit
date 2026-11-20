@@ -121,6 +121,53 @@ public static class WeatherPerf
             foreach (var kv in worst) sb.Append($"  {kv.Key}: worst {kv.Value:0.00} ms, mean {total[kv.Key] / frames:0.000} ms, frames over 2 ms {(over.TryGetValue(kv.Key, out var o) ? o : 0)}, {bytes[kv.Key] / frames} B/frame");
             Debug.Log($"WEATHERPERF ride {name} ({frames} frames, rider z {rider.Z:0}, cam {cam.transform.position.y - weather.SeaTop:0} m from the sea's top):" + sb);
         }
+        // ---- the audit's measures: a night storm at speed (the snowfall's particles, what simulating them costs), and a
+        // whole storm front (how many reflection faces it draws)
+        {
+            TimeOfDay.TestClock = 3.4f; Weather.TestChoice = 4; weather.Step(0f); dayNight.ApplyNow();
+            var systems = new List<ParticleSystem>(atmo.GetComponentsInChildren<ParticleSystem>());
+            systems.AddRange(weather.GetComponentsInChildren<ParticleSystem>(true));
+            systems.AddRange(cam.GetComponentsInChildren<ParticleSystem>());
+            var snowfall = atmo.transform.Find("Snowfall").GetComponent<ParticleSystem>();
+            double simWorst = 0, simSum = 0; long snowSum = 0; int snowMax = 0, all = 0, frames = 0;
+            for (float t = 0f; t < 20f; t += Dt, frames++)
+            {
+                for (int k = 0; k < 2; k++) { rider.Tick(Dt / 2f); body.PhysicsStep(); Physics.Simulate(Dt / 2f); }
+                tUpd.Invoke(terrain, null); fUpd.Invoke(props, null); dUpd.Invoke(dressing, null);
+                body.Apply(Dt); late.Invoke(chase, null); TreeWind.Advance(Dt, cam.transform.position);
+                weather.Step(Dt); aLate.Invoke(atmo, null); dnLate.Invoke(dayNight, null);
+                long t0 = Stopwatch.GetTimestamp();
+                foreach (var ps in systems) ps.Simulate(Dt, false, false, false);
+                double ms = (Stopwatch.GetTimestamp() - t0) * TickMs;
+                if (t > 6f) { simSum += ms; simWorst = System.Math.Max(simWorst, ms); snowSum += snowfall.particleCount; snowMax = Mathf.Max(snowMax, snowfall.particleCount); }
+                if (rider.Crashed) { rider.ResetAt(rider.transform.position.x, rider.Z + 5f); rider.Begin(); rider.Body.linearVelocity = new Vector3(0f, -0.58f, 0.81f) * 25f; }
+            }
+            foreach (var ps in systems) all += ps.particleCount;
+            int measured = frames - (int)(6f / Dt);
+            var mr = atmo.transform.Find("Mist").GetComponent<ParticleSystemRenderer>();
+            Debug.Log($"WEATHERPERF storm night at {rider.Speed * 3.6f:0} km/h: snowfall alive mean {snowSum / measured} max {snowMax} (cap {snowfall.main.maxParticles}, lifetime {snowfall.main.startLifetime.constantMin:0.0}-{snowfall.main.startLifetime.constantMax:0.0} s, noise {snowfall.noise.enabled}/{snowfall.noise.quality}); all particles at the end {all}; simulating them: mean {simSum / measured:0.00} ms, worst {simWorst:0.00} ms a frame (editor); mist maxParticleSize {mr.maxParticleSize}");
+            TimeOfDay.TestClock = 1.4f;
+            // a whole front: count the faces drawn into the reflections
+            var faces = typeof(DayNight).GetField("FacesDrawn", BindingFlags.Public | BindingFlags.Static);
+            int f0 = faces != null ? (int)faces.GetValue(null) : 0;
+            marks.Clear(); PerfMarks.On = faces == null;
+            if (PerfMarks.On) Application.logMessageReceived += Count;
+            Weather.TestChoice = 7; weather.Step(0f); dayNight.ApplyNow();
+            float r0 = Time.realtimeSinceStartup;
+            for (float t = 0f; t < 60f; t += Dt)
+            {
+                Weather.TestRunTime = t;
+                // (the reflections' own timer runs on real time: the front is played at its real pace)
+                while (Time.realtimeSinceStartup - r0 < t) { }
+                weather.Step(Dt); dnLate.Invoke(dayNight, null);
+            }
+            if (PerfMarks.On) Application.logMessageReceived -= Count;
+            PerfMarks.On = false;
+            int drawn = faces != null ? (int)faces.GetValue(null) - f0 : (marks.TryGetValue("reflections face", out var n) ? n : 0);
+            Debug.Log($"WEATHERPERF a storm front (60 s, at its real pace): {drawn} reflection faces drawn ({drawn / 6f:0.0} captures)");
+            Weather.TestRunTime = -1f;
+        }
+
         // the markers a device run writes, over ten seconds of the storm front coming in (counted from the log)
         PerfMarks.On = true;
         Weather.TestChoice = 7; weather.Step(0f);
@@ -134,6 +181,7 @@ public static class WeatherPerf
             typeof(Weather).GetMethod("LateUpdate", NP).Invoke(weather, null); aLate.Invoke(atmo, null); dnLate.Invoke(dayNight, null);
             if (rider.Crashed) { rider.ResetAt(rider.transform.position.x, rider.Z + 5f); rider.Begin(); }
         }
+        PerfMarks.Flush();   // (the marks are kept in memory until a quiet moment)
         Application.logMessageReceived -= Count;
         Weather.TestRunTime = -1f;
         var mk = new System.Text.StringBuilder();

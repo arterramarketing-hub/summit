@@ -145,7 +145,7 @@ public static class ClosetShot
             TapAt(new Vector2(0.2f, 0.046f));
             Settle(30);
             Debug.Log($"CLOSET after BACK: open={meta.ClosetOpen} tryOn={(meta.TryOn != null)} goggles worn={Progress.Worn(Wardrobe.Cat.Goggles)} camMask={cam.cullingMask}");
-            camp.TeleportTo(camp.ChaletPoint(-3.3f, 3.6f, -3.4f), camp.ChaletYaw + 180f);
+            camp.TeleportTo(Camp.UseLodge ? camp.StationPoint(Camp.Station.Style) : camp.ChaletPoint(-3.3f, 3.6f, -3.4f), camp.ChaletYaw + 180f);
             meta.UseCamera(cam);
             for (int i = 0; i < 60; i++) Frame();
             Shoot("Closet14_back_in_camp.png");

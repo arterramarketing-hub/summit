@@ -34,6 +34,8 @@ namespace Summit
         public static Weather Active { get; private set; }
         /// <summary>How much the weather hushes the world's sound (SoundMix low-passes by it): 0 none.</summary>
         public static float Hush { get; private set; }
+        /// <summary>How much extreme wind there is, 0 calm .. 1 a storm (SoundMix plays wind_high only by it).</summary>
+        public static float Howl { get; private set; }
 
         // ---------------------------------------------------------------- the looks
 
@@ -152,7 +154,6 @@ namespace Summit
         float baseFriction;
         Color baseSnowCol; float baseSmooth = -1f, baseBump = 1f;
         Volume gradeVol; ColorAdjustments gradeCa, mainCa;
-        AudioSource bed, howl;
         Texture2D cloudTex;
 
         /// <summary>The player's WEATHER row (PlayerPrefs; read on first use: not in a static initializer).</summary>
@@ -208,7 +209,6 @@ namespace Summit
             w.cloudTex = CloudNoise();
             w.wfx = new WeatherFX(w, r, camera, w.cloudTex, startPage);
             w.BuildGrade();
-            w.BuildSound(sound != null ? sound.gameObject : w.gameObject);
             Active = w;
             DayNight.Applied += w.OnDayNight;
             w.Step(0f);
@@ -219,7 +219,7 @@ namespace Summit
         {
             DayNight.Applied -= OnDayNight;
             if (Active == this) Active = null;
-            Hush = 0f;
+            Hush = 0f; Howl = 0f;
             Rider.Friction = baseFriction;
             TreeWind.Strength = 1f;
             DayNight.BeamGain = 1f;
@@ -390,7 +390,7 @@ namespace Summit
             Hush = l.hush;
             DayNight.BeamGain = 1f + 1.6f * Mathf.Clamp01(l.fog / 0.006f) + 0.8f * l.snow;   // the headlamp's beam lit up in the snow and fog
             Grade(l);
-            Sound(l, gust, dt);
+            Howl = l.howl;   // (SoundMix plays the wind: its harsh rush only as much as this)
             wfx.Step(l, dt, gust);
         }
 
@@ -490,7 +490,7 @@ namespace Summit
                 Vector3 s = dn.SunDirection;
                 mat.SetVector(SunWId, new Vector4(s.x, s.y, s.z, 0f));
                 // the snow's reflections are of the sky: draw them again as it changes
-                if (Mathf.Abs(cover - lastCover) > 0.02f || Mathf.Abs(l.halo - lastHalo) > 0.05f) { lastCover = cover; lastHalo = l.halo; DayNight.SkyVersion++; }
+                if (Mathf.Abs(cover - lastCover) > 0.1f || Mathf.Abs(l.halo - lastHalo) > 0.15f) { lastCover = cover; lastHalo = l.halo; DayNight.SkyVersion++; }
             }
 
             // the photo backdrop: haze, the summit in cloud, the sea of cloud, a cap and a plume on the summit
@@ -542,35 +542,6 @@ namespace Summit
             gradeCa.postExposure.Override(mainCa.postExposure.value);
             gradeCa.saturation.overrideState = gradeCa.contrast.overrideState = Mathf.Abs(l.sat) + Mathf.Abs(l.contrast) > 0.1f;
             gradeCa.postExposure.overrideState = false;
-        }
-
-        // ---------------------------------------------------------------- the sound
-
-        void BuildSound(GameObject on)
-        {
-            bed = Loop(on, "wind_low"); howl = Loop(on, "wind_high");
-        }
-
-        static AudioSource Loop(GameObject on, string clip)
-        {
-            var s = on.AddComponent<AudioSource>();
-            s.clip = Resources.Load<AudioClip>("Audio/" + clip);
-            s.loop = true; s.volume = 0f; s.spatialBlend = 0f; s.playOnAwake = false;
-            if (s.clip != null) { s.time = s.clip.length * Random.value * 0.9f; s.Play(); }
-            return s;
-        }
-
-        float bedVol, howlVol, howlPitch = 1f;
-        void Sound(Look l, float gust, float dt)
-        {
-            if (bed == null) return;
-            // a storm's wind: a deep roar under everything, and a howl that climbs with each gust
-            float k = 1f - Mathf.Exp(-Mathf.Max(dt, 0f) * 2f);
-            bedVol = Mathf.Lerp(bedVol, l.howl * (0.32f + 0.18f * gust), k);
-            howlVol = Mathf.Lerp(howlVol, l.howl * (0.06f + 0.3f * gust * gust), k);
-            howlPitch = Mathf.Lerp(howlPitch, 0.7f + 0.45f * gust, k);
-            bed.volume = bedVol; bed.pitch = 0.62f + 0.1f * gust;
-            howl.volume = howlVol; howl.pitch = howlPitch;
         }
 
         // ---------------------------------------------------------------- the cloud noise

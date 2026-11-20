@@ -58,7 +58,8 @@ namespace Summit
         void CocoaCorner()
         {
             if (chalet == null) return;
-            CocoaStation(chalet.TransformPoint(new Vector3(4.6f, 0f, -4.4f)), chalet.TransformDirection(Vector3.back));
+            // (in the lodge: its café in the wing, against the back wall under the menu, in every layout: CampLodge.cs)
+            CocoaStation(chalet.TransformPoint(UseLodge ? LodgeCocoaAt : new Vector3(4.6f, 0f, -4.4f)), chalet.TransformDirection(Vector3.back));
         }
 
         // the station's own frame: you stand at its origin on the floor facing +Z; its sideboard is in front of you
