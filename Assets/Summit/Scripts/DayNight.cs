@@ -331,7 +331,8 @@ namespace Summit
             if (photoSky)
             {
                 Sky sa = skies[a.sky], sb = skies[b.sky];
-                SunDirection = SunBetween(sa.sun, sb.sun, t);
+                // (the start page's time-lapse turns the whole sky, its sun or moon with it: SkyTurn)
+                SunDirection = Quaternion.Euler(0f, SkyTurn, 0f) * SunBetween(sa.sun, sb.sun, t);
 
                 skyMat.SetTexture("_CubeA", sa.cube);
                 skyMat.SetTexture("_CubeB", sb.cube);
@@ -339,6 +340,7 @@ namespace Summit
                 // the grade lives in the tint (exposure stays 1), so a blend between two grades is one colour
                 skyMat.SetColor("_Tint", Color.Lerp(gradeA, gradeB, t));
                 skyMat.SetFloat("_Exposure", 1f);
+                skyMat.SetFloat(RotationId, SkyTurn);
 
                 // ambient: each sky's own light, graded the same way, then blended (RenderSettings wants gamma colours)
                 Color ka = gradeA * a.ambient, kb = gradeB * b.ambient;
@@ -569,6 +571,13 @@ namespace Summit
         /// <summary>How far a sign still shines the lamp back (a reflector sends it home efficiently: further than the
         /// lamp lights the snow).</summary>
         const float SignReach = 110f;
+
+        /// <summary>
+        /// Degrees the whole sky is turned round the vertical, its sun or moon and clouds with it: the start page's
+        /// time-lapse turns it to race the clouds and swing the light round (0 everywhere else).
+        /// </summary>
+        public static float SkyTurn;
+        static readonly int RotationId = Shader.PropertyToID("_Rotation");
 
         /// <summary>The test tools switch the headlamp off to compare signs with and without it.</summary>
         public static bool HeadlampOff;

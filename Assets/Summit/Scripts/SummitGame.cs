@@ -165,6 +165,7 @@ namespace Summit
             start = new GameObject("StartPage").AddComponent<StartPage>();
             start.Build(chase.GetComponent<Camera>(), atmo, snow.shader, spray, () => dayNight != null ? dayNight.Darkness : 0f, () => LensFov[lensLevel]);
             start.Clicked = () => audioFx.Play(Sfx.Click);
+            start.TimeJumped = () => dayNight.ApplyNow();
             string OnOff(bool on) => on ? "ON" : "OFF";
             int view = start.AddTab("VIEW"), look = start.AddTab("LOOK"), game = start.AddTab("GAME"), sound = start.AddTab("SOUND");
             start.AddRow(view, "VIEW", () => pov ? "FIRST PERSON" : "CHASE CAMERA", d => SetPov(!pov), true);

@@ -20,6 +20,7 @@ Shader "Summit/FarMountain"
         _Mist ("Valley mist per metre at the floor", Float) = 0.00018
         _MistH ("Valley mist height", Float) = 320
         _Lights ("Valley lights (night)", Float) = 0
+        _ShadeBlend ("Shadow before (0) to the new one (1)", Float) = 1
     }
     SubShader
     {
@@ -27,7 +28,7 @@ Shader "Summit/FarMountain"
         HLSLINCLUDE
         #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
         CBUFFER_START(UnityPerMaterial)
-            float _FloorY, _TopY, _TreeLine, _Phase, _FinishZ, _Haze, _Mist, _MistH, _Lights;
+            float _FloorY, _TopY, _TreeLine, _Phase, _FinishZ, _Haze, _Mist, _MistH, _Lights, _ShadeBlend;
         CBUFFER_END
         ENDHLSL
 
@@ -119,7 +120,7 @@ Shader "Summit/FarMountain"
                 // snow scatters: a soft wrap; trees and rock take it straight
                 half snowy = (1.0 - rock) * (1.0 - forest);
                 half lit = lerp(saturate(ndl), saturate((ndl + 0.22) / 1.22), snowy);
-                half shade = i.color.a;
+                half shade = lerp(i.color.r, i.color.a, _ShadeBlend);   // (fading from the shadow before to the new one: FarMountain.Shade)
                 half3 ambient = SampleSH(N) * lerp(0.72, 1.0, saturate(hollow * 1.2));
                 half3 c = albedo * (sun.color * (lit * shade) + ambient);
                 // the low sun skimming the snow: a little sheen toward the light

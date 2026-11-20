@@ -84,12 +84,15 @@ namespace Summit
             band = atmo != null ? atmo.PhotoBand : null;
             if (band != null) { bandWas = band.gameObject.activeSelf; band.gameObject.SetActive(false); }
             Showing = true;
+            // the time-lapse picks up from the time the game is showing, so nothing jumps
+            lapseT = LapseTimeOf(TimeOfDay.Own); lapsing = true;
+            TimeOfDay.Shown = LapseClock(lapseT);
             age = first ? 0f : 1.4f;
             leaving = 0; leaveT = 0f; sheetOpen = false; sheet = 0f; pressed = null;
             page.gameObject.SetActive(true);
             ShowTab(0);
             Refresh();
-            far.Shade(SunDir(), -1);
+            far.Shade(SunDir(), 0f, -1f);
             Frame(0f);
         }
 
@@ -104,11 +107,79 @@ namespace Summit
                 kept = false;
             }
             if (band != null) { band.gameObject.SetActive(bandWas); band = null; }
+            // back to the game's own time, at once (the cloud is closed over the screen as this happens)
+            TimeOfDay.Shown = -1f; DayNight.SkyTurn = 0f;
+            TimeJumped?.Invoke();
             far.gameObject.SetActive(false);
             if (cloudRoot != null) cloudRoot.gameObject.SetActive(false);
             page.gameObject.SetActive(false);
             sheetRoot.gameObject.SetActive(false);
         }
+        void OnDestroy() { if (Showing) { TimeOfDay.Shown = -1f; DayNight.SkyTurn = 0f; } }
+
+        // ---------------------------------------------------------------- the time-lapse
+
+        /// <summary>Called when the time shown jumps back to the game's own (put the light on at once).</summary>
+        public System.Action TimeJumped;
+
+        // A day in 45 seconds, but not at one rate: TimeOfDay's clock holds each phase's look most of the phase and
+        // changes over the last fifth of it (DayNight), and the evening goes from gold to pink inside its own phase.
+        // So each stretch has its own seconds: long enough in the full day and the deep night to enjoy them, slower
+        // still through the sunset and the dawn, and quick across the stretches where nothing changes.
+        static readonly float[] LapseAt = { 0f, 0.8f, 1f, 1.8f, 2f, 2.8f, 3f, 3.8f, 4f };   // the clock: morning, day, evening, night
+        static readonly float[] LapseSec = { 4.5f, 4f, 6.5f, 4f, 9f, 4f, 7f, 6f };         // seconds over each stretch
+        /// <summary>Degrees a second the sky (and its sun or moon) turns while the time-lapse runs: the clouds race.</summary>
+        public const float SkyTurnRate = 4.5f;
+        public static float LapseSeconds { get { float t = 0f; foreach (float s in LapseSec) t += s; return t; } }
+
+        float lapseT;
+        bool lapsing;
+
+        /// <summary>The clock the time-lapse shows `t` seconds into it.</summary>
+        public static float LapseClock(float t)
+        {
+            t = Mathf.Repeat(t, LapseSeconds);
+            for (int k = 0; k < LapseSec.Length; k++)
+            {
+                if (t < LapseSec[k]) return Mathf.Lerp(LapseAt[k], LapseAt[k + 1], t / LapseSec[k]);
+                t -= LapseSec[k];
+            }
+            return 0f;
+        }
+
+        /// <summary>How far into the time-lapse it shows the clock `c`.</summary>
+        public static float LapseTimeOf(float c)
+        {
+            c = Mathf.Repeat(c, 4f);
+            float t = 0f;
+            for (int k = 0; k < LapseSec.Length; k++)
+            {
+                if (c < LapseAt[k + 1]) return t + LapseSec[k] * Mathf.InverseLerp(LapseAt[k], LapseAt[k + 1], c);
+                t += LapseSec[k];
+            }
+            return 0f;
+        }
+
+        /// <summary>The time-lapse's own clock, seconds (the test tools set it to show any moment of it).</summary>
+        public float LapseTime { get => lapseT; set { lapseT = value; if (lapsing) TimeOfDay.Shown = LapseClock(lapseT); } }
+
+        /// <summary>
+        /// One frame of the time-lapse. With the settings open it stops and the game's own time is shown (so a change
+        /// to TIME OF DAY shows, DayNight running the day round to it), and it carries on from there when they close.
+        /// </summary>
+        void StepLapse(float dt)
+        {
+            if (sheetOpen)
+            {
+                if (lapsing) { lapsing = false; TimeOfDay.Shown = -1f; }
+                return;
+            }
+            if (!lapsing) { lapsing = true; lapseT = LapseTimeOf(TimeOfDay.Own); }
+            lapseT += dt;
+            TimeOfDay.Shown = LapseClock(lapseT);
+            DayNight.SkyTurn = Mathf.Repeat(DayNight.SkyTurn + SkyTurnRate * dt, 360f);
+        }
+
         static Vector3 SunDir() => RenderSettings.sun != null ? -RenderSettings.sun.transform.forward : new Vector3(-0.5f, 0.7f, -0.5f);
 
         // ---------------------------------------------------------------- the flight
@@ -168,8 +239,9 @@ namespace Summit
             Pose(Clock, out Vector3 pos, out Quaternion rot, out float fov);
             cam.transform.SetPositionAndRotation(pos, rot);
             cam.fieldOfView = fov;
+            StepLapse(dt);
             far.SetNight(darkness != null ? darkness() : 0f);
-            far.Shade(SunDir());
+            far.Shade(SunDir(), dt);   // (at most a millisecond a frame: FarMountain.Shade)
             StepClouds(dt);
         }
 
@@ -235,7 +307,7 @@ namespace Summit
             if (clouds == null || cloudRoot == null || !cloudRoot.gameObject.activeSelf) return;
             for (int i = 0; i < clouds.Length; i++)
             {
-                cloudAt[i] += new Vector3(7f, 0f, 3f) * dt;   // the wind
+                cloudAt[i] += new Vector3(7f, 0f, 3f) * (dt * (lapsing ? 14f : 1f));   // the wind (racing in the time-lapse)
                 clouds[i].SetPositionAndRotation(cloudAt[i], Quaternion.LookRotation(cloudAt[i] - cam.transform.position, Vector3.up));
             }
             // lit like the haze: the sky's light and a share of the sun's

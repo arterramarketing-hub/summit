@@ -12,6 +12,7 @@ Shader "Summit/SkyCycle"
         _Blend ("A to B", Range(0, 1)) = 0
         _Tint ("Tint", Color) = (1, 1, 1, 1)
         _Exposure ("Exposure", Float) = 1
+        _Rotation ("Turned round the vertical, degrees (the start page's time-lapse)", Float) = 0
     }
     SubShader
     {
@@ -26,7 +27,7 @@ Shader "Summit/SkyCycle"
             TEXTURECUBE(_CubeA); SAMPLER(sampler_CubeA);
             TEXTURECUBE(_CubeB); SAMPLER(sampler_CubeB);
             CBUFFER_START(UnityPerMaterial)
-                float _Blend, _Exposure;
+                float _Blend, _Exposure, _Rotation;
                 float4 _Tint;
             CBUFFER_END
             struct Attributes { float4 positionOS : POSITION; };
@@ -35,7 +36,10 @@ Shader "Summit/SkyCycle"
             {
                 Varyings o;
                 o.positionCS = TransformObjectToHClip(i.positionOS.xyz);
-                o.dir = i.positionOS.xyz;
+                // (turned by _Rotation: what was at direction s shows at s turned; so look up the view turned back)
+                float r = -_Rotation * 0.0174533, cs = cos(r), sn = sin(r);
+                float3 d = i.positionOS.xyz;
+                o.dir = float3(d.x * cs + d.z * sn, d.y, -d.x * sn + d.z * cs);
                 return o;
             }
             half3 Unsqueeze(half3 y) { y = min(y, 0.985); return y / (1.0 - y); }

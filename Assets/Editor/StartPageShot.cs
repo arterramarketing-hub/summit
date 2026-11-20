@@ -67,7 +67,7 @@ public static class StartPageShot
         {
             TimeOfDay.TestClock = clock;
             dayNight.ApplyNow();
-            start.Far.Shade(-RenderSettings.sun.transform.forward, -1);
+            start.Far.Shade(-RenderSettings.sun.transform.forward, 0f, -1f);
             bool main = name == "day" || name == "night";
             int views = main ? 6 : 3;
             for (int k = 0; k < views; k++)
@@ -88,7 +88,7 @@ public static class StartPageShot
             }
         }
         // the photo the mountain is modelled on, and the mountain from the side the photo was taken (down the valley)
-        TimeOfDay.TestClock = 1.4f; dayNight.ApplyNow(); start.Far.Shade(-RenderSettings.sun.transform.forward, -1);
+        TimeOfDay.TestClock = 1.4f; dayNight.ApplyNow(); start.Far.Shade(-RenderSettings.sun.transform.forward, 0f, -1f);
         PhotoMatch();
         // the title's directions (TitleArt.Styles): each by day, by night, part way through its reveal, and close up
         for (int k = 0; k < TitleArt.Styles.Length; k++)
@@ -99,11 +99,11 @@ public static class StartPageShot
             string nm = TitleArt.Styles[k].name.ToLowerInvariant();
             foreach (var (when, clock) in new[] { ("day", 1.4f), ("night", 3.4f) })
             {
-                TimeOfDay.TestClock = clock; dayNight.ApplyNow(); start.Far.Shade(-RenderSettings.sun.transform.forward, -1);
+                TimeOfDay.TestClock = clock; dayNight.ApplyNow(); start.Far.Shade(-RenderSettings.sun.transform.forward, 0f, -1f);
                 start.Clock = 6f; start.Preview(30f, false, 0);
                 Shoot($"title_{nm}_{when}.png", true);
             }
-            TimeOfDay.TestClock = 1.4f; dayNight.ApplyNow(); start.Far.Shade(-RenderSettings.sun.transform.forward, -1);
+            TimeOfDay.TestClock = 1.4f; dayNight.ApplyNow(); start.Far.Shade(-RenderSettings.sun.transform.forward, 0f, -1f);
             foreach (float t in new[] { 1.1f, 2.6f })
             {
                 start.Clock = 6f; start.Preview(2.6f + t, false, 0);
@@ -114,24 +114,31 @@ public static class StartPageShot
         }
         start.SetTitleStyle(TitleArt.DefaultStyle, true);
         // half-way up: the title in, the choices coming
-        TimeOfDay.TestClock = 1.4f; dayNight.ApplyNow(); start.Far.Shade(-RenderSettings.sun.transform.forward, -1);
+        TimeOfDay.TestClock = 1.4f; dayNight.ApplyNow(); start.Far.Shade(-RenderSettings.sun.transform.forward, 0f, -1f);
         start.Clock = 3.6f; start.Preview(3.6f, false, 0);
         Shoot("page_day_easing_in.png", true);
 
-        // the way in: the lens pushing in on the summit as the cloud closes
-        start.Clock = 6f;
-        foreach (float t in new[] { 0.3f, 0.6f, 0.8f })
+        // the way in, by day and by night: the lens pushing in on the summit as the cloud closes, and what is there
+        // when it clears (the game's own time: here the test clock's)
+        foreach (var (when, clock) in new[] { ("day", 1.4f), ("night", 3.4f) })
         {
-            start.PreviewLeaving(t, 2);
-            Shoot($"leaving_{t * 100f:0}.png", true);
+            TimeOfDay.TestClock = clock; dayNight.ApplyNow(); start.Far.Shade(-RenderSettings.sun.transform.forward, 0f, -1f);
+            start.Clock = 6f;
+            foreach (float t in new[] { 0.3f, 0.6f, 0.8f, 1f })
+            {
+                start.PreviewLeaving(t, 2);
+                Shoot($"leaving_{when}_{t * 100f:0}.png", true);
+            }
+            start.Preview(30f, false, 0); start.Tick(0f);
+            Sheet($"sheet_leaving_{when}.png", $"page_{when}.png", $"leaving_{when}_30.png", $"leaving_{when}_60.png", $"leaving_{when}_80.png", $"leaving_{when}_100.png");
         }
-        start.Preview(30f, false, 0); start.Tick(0f);
-        Sheet("sheet_leaving.png", "page_day.png", "leaving_30.png", "leaving_60.png", "leaving_80.png");
+        TimeOfDay.TestClock = 1.4f; dayNight.ApplyNow();
         Sheet("sheet_fly_day.png", "fly_day_0.png", "fly_day_1.png", "fly_day_2.png", "fly_day_3.png", "fly_day_4.png", "fly_day_5.png");
         Sheet("sheet_fly_night.png", "fly_night_0.png", "fly_night_1.png", "fly_night_2.png", "fly_night_3.png", "fly_night_4.png", "fly_night_5.png");
         Sheet("sheet_fly_dawn_dusk.png", "fly_morning_0.png", "fly_morning_1.png", "fly_morning_2.png", "fly_evening_0.png", "fly_evening_1.png", "fly_evening_2.png");
         Sheet("sheet_page.png", "page_day.png", "settings_day_0.png", "settings_day_1.png", "settings_day_2.png", "settings_day_3.png", "page_night.png", "settings_night_1.png");
 
+        Lapse();
         Cost();
         Flow();
         Leaks();
@@ -139,6 +146,86 @@ public static class StartPageShot
         TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt; dayNight.ApplyNow();
         TimeOfDay.TestClock = -1f;
         EditorApplication.Exit(0);
+    }
+
+    /// <summary>
+    /// The time-lapse: twelve moments evenly through one loop, the settings opened part way (the game's own time shown,
+    /// the time-lapse carrying on from it when they close), and what a frame of it costs on the CPU.
+    /// </summary>
+    static void Lapse()
+    {
+        TimeOfDay.TestClock = -1f;
+        var apply = typeof(DayNight).GetMethod("Apply", NP);
+        start.Preview(30f, false, 0);
+        float T = StartPage.LapseSeconds;
+        var names = new System.Collections.Generic.List<string>();
+        for (int k = 0; k < 12; k++)
+        {
+            float t = k * T / 12f;
+            start.LapseTime = t; DayNight.SkyTurn = StartPage.SkyTurnRate * t; start.Clock = 6f + t;
+            start.Frame(0f); dayNight.ApplyNow();
+            start.Far.Shade(-RenderSettings.sun.transform.forward, 0f, -1f);
+            string nm = $"lapse_{k:00}.png"; names.Add(nm);
+            Shoot(nm, true);
+            Debug.Log($"STARTLAPSE {nm}: {t:0.0} s of {T:0} s, clock {TimeOfDay.Clock:0.00} ({TimeOfDay.PhaseName[(int)TimeOfDay.Clock]}), sky turned {DayNight.SkyTurn:0}, darkness {dayNight.Darkness:0.00}");
+        }
+        Grid("sheet_lapse.png", 6, names.ToArray());
+        // the settings opened at night: the game's own time is shown; closed, the time-lapse carries on from it
+        start.LapseTime = StartPage.LapseTimeOf(3.4f); start.Frame(0f); dayNight.ApplyNow();
+        start.Far.Shade(-RenderSettings.sun.transform.forward, 0f, -1f);
+        Shoot("lapse_panel_before.png", true);
+        start.Preview(30f, true, 1); start.Frame(0f); dayNight.ApplyNow();
+        start.Far.Shade(-RenderSettings.sun.transform.forward, 0f, -1f);
+        Shoot("lapse_panel_open.png", true);
+        Debug.Log($"STARTLAPSE panel open: shown={TimeOfDay.Shown:0.00} (off), clock now {TimeOfDay.Clock:0.00} = the game's own {TimeOfDay.Own:0.00} ({TimeOfDay.LockLabel})");
+        start.Preview(30f, false, 0); start.Frame(0f);
+        Debug.Log($"STARTLAPSE panel closed: the time-lapse carries on from {TimeOfDay.Shown:0.00} (the game's own was {TimeOfDay.Own:0.00})");
+        Sheet("sheet_lapse_panel.png", "lapse_panel_before.png", "lapse_panel_open.png");
+
+        // the cost of a frame of it, played through at 60 frames a second: the flight, the time-lapse, the shadow's share
+        // and the day's light (DayNight.Apply; its sky reflection is captured four times a second at most and is left
+        // out here: batchmode's clock does not move, so it would never be due)
+        var sw = new System.Diagnostics.Stopwatch();
+        float worst = 0f, sum = 0f, shadeSum = 0f, shadeWorst = 0f, lightSum = 0f; int n = 900, r0 = start.Far.Rounds;
+        start.LapseTime = 0f;
+        for (int f = 0; f < n; f++)
+        {
+            sw.Restart();
+            start.Frame(1f / 60f);
+            float frame = (float)sw.Elapsed.TotalMilliseconds;
+            sw.Restart();
+            apply.Invoke(dayNight, new object[] { TimeOfDay.Clock });
+            float light = (float)sw.Elapsed.TotalMilliseconds;
+            sum += frame + light; worst = Mathf.Max(worst, frame + light); lightSum += light;
+            shadeSum += start.Far.LastMs; shadeWorst = Mathf.Max(shadeWorst, start.Far.LastMs);
+        }
+        int rounds = start.Far.Rounds - r0;
+        Debug.Log($"STARTLAPSE COST over {n} frames ({n / 60f:0} s of the time-lapse): CPU a frame mean {sum / n:0.00} ms, worst {worst:0.00} ms; of which the shadow mean {shadeSum / n:0.00} ms, worst {shadeWorst:0.00} ms (its budget 1 ms), the day's light {lightSum / n:0.00} ms; shadow rounds finished {rounds} (one every {n / 60f / Mathf.Max(1, rounds):0.00} s here)");
+        var full = System.Diagnostics.Stopwatch.StartNew();
+        start.Far.Shade(Quaternion.Euler(0f, 37f, 0f) * -RenderSettings.sun.transform.forward, 0f, -1f);
+        Debug.Log($"STARTLAPSE COST one whole round of the shadow at once: {full.Elapsed.TotalMilliseconds:0.0} ms for {start.Far.Vertices} vertices");
+        TimeOfDay.TestClock = 1.4f; DayNight.SkyTurn = 0f; dayNight.ApplyNow();
+    }
+
+    /// <summary>Pictures in a grid, `cols` across, at half size.</summary>
+    static void Grid(string file, int cols, params string[] names)
+    {
+        int w = W / 2, h = H / 2, rows = (names.Length + cols - 1) / cols;
+        var sheet = new Texture2D(w * cols, h * rows, TextureFormat.RGB24, false);
+        for (int k = 0; k < names.Length; k++)
+        {
+            var t = new Texture2D(2, 2);
+            t.LoadImage(File.ReadAllBytes(Path.Combine(outDir, names[k])));
+            var px = new Color[w * h];
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                    px[y * w + x] = t.GetPixelBilinear((x + 0.5f) / w, (y + 0.5f) / h);
+            sheet.SetPixels((k % cols) * w, (rows - 1 - k / cols) * h, w, h, px);
+            Object.DestroyImmediate(t);
+        }
+        sheet.Apply();
+        File.WriteAllBytes(Path.Combine(outDir, file), sheet.EncodeToPNG());
+        Object.DestroyImmediate(sheet);
     }
 
     /// <summary>What a frame of the far view costs to draw, beside a frame of a run from the start gate.</summary>

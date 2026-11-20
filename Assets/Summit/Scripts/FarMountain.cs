@@ -364,6 +364,7 @@ namespace Summit
                 if (Mathf.Abs(d.y) > 1e-5f) { float a = (za - p.z) / d.y, b = (zb - p.z) / d.y; t0 = Mathf.Max(t0, Mathf.Min(a, b)); t1 = Mathf.Min(t1, Mathf.Max(a, b)); }
                 else if (p.z < za || p.z > zb) return 1f;
                 if (t1 <= t0) return 1f;
+                if (p.y + 20f + rise * t0 > topY + 40f) return 1f;   // (already above the summit where it reaches the mountain)
                 float step = (t1 - t0) / 18f;
                 for (int k = 0; k < 18; k++)
                 {
@@ -380,43 +381,73 @@ namespace Summit
                 float h = CoreAt(p.x + d.x * t, p.z + d.y * t);
                 if (float.IsNegativeInfinity(h)) break;
                 res = Mathf.Min(res, (p.y + 9f + rise * t - h) / (t * Soft));
-                if (res < -1f) break;
+                if (res < -1f || p.y + rise * t > topY + 40f) break;
                 t *= 1.2f;
             }
             return Mathf.SmoothStep(0f, 1f, 0.5f + 0.5f * res);
         }
 
         /// <summary>
-        /// Keep the baked shadow up with the light: `toSun` points at the sun or moon. Works through `budget`
-        /// vertices a call and shows the new shadow when all are done; a negative budget does it all now.
+        /// Keep the baked shadow up with the light: `toSun` points at the sun or moon. Works through the vertices for at
+        /// most `budgetMs` milliseconds a call (so it costs the frame that and no more, however slow the phone), and when
+        /// it has been round them all fades from the shadow before to the new one, over about as long as the next
+        /// round will take: the shadow moves smoothly behind a light that moves all the time (the time-lapse). A
+        /// negative budget does it all now, with no fade.
         /// </summary>
-        public void Shade(Vector3 toSun, int budget = 2600)
+        public void Shade(Vector3 toSun, float dt = 0f, float budgetMs = 1f)
         {
             if (core == null || coreH == null) return;
             int total = coreC.Length + ringC.Length;
+            if (budgetMs > 0f && shadeBlend < 1f)
+            {
+                shadeBlend = Mathf.MoveTowards(shadeBlend, 1f, dt / Mathf.Max(0.1f, lastRound));
+                mat.SetFloat(BlendId, shadeBlend);
+            }
             if (bakeAt < 0)
             {
-                if (bakedSun != Vector3.zero && Vector3.Angle(bakedSun, toSun) < 1.2f) return;
-                bakingSun = toSun; bakeAt = 0;
+                if (bakedSun != Vector3.zero && Vector3.Angle(bakedSun, toSun) < 0.3f) return;
+                bakingSun = toSun; bakeAt = 0; roundTime = 0f;
                 if (shade == null || shade.Length != total) shade = new float[total];
             }
+            roundTime += dt;
             Vector2 d = new Vector2(bakingSun.x, bakingSun.z);
             float hl = d.magnitude;
             bool overhead = hl < 0.02f;
             float rise = overhead ? 0f : bakingSun.y / hl;
             if (!overhead) d /= hl;
-            int stop = budget < 0 ? total : Mathf.Min(total, bakeAt + budget);
-            for (; bakeAt < stop; bakeAt++)
+            watch.Restart();
+            long limit = budgetMs > 0f ? (long)(budgetMs * System.Diagnostics.Stopwatch.Frequency / 1000.0) : long.MaxValue;
+            while (bakeAt < total)
             {
-                if (overhead) { shade[bakeAt] = 1f; continue; }
-                shade[bakeAt] = bakeAt < coreC.Length ? ShadeAt(coreV[bakeAt], d, rise, true) : ShadeAt(ringV[bakeAt - coreC.Length], d, rise, false);
+                int stop = Mathf.Min(total, bakeAt + 48);
+                for (; bakeAt < stop; bakeAt++)
+                    shade[bakeAt] = overhead ? 1f : bakeAt < coreC.Length ? ShadeAt(coreV[bakeAt], d, rise, true) : ShadeAt(ringV[bakeAt - coreC.Length], d, rise, false);
+                if (watch.ElapsedTicks > limit) break;
             }
+            LastMs = (float)(watch.ElapsedTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
             if (bakeAt < total) return;
-            for (int i = 0; i < coreC.Length; i++) coreC[i].a = (byte)(255f * shade[i]);
-            for (int i = 0; i < ringC.Length; i++) ringC[i].a = (byte)(255f * shade[coreC.Length + i]);
+            // round done: what is showing now becomes the shadow faded from (r), the new one what it fades to (a)
+            bool fade = budgetMs > 0f;
+            for (int i = 0; i < total; i++)
+            {
+                ref Color32 c = ref (i < coreC.Length ? ref coreC[i] : ref ringC[i - coreC.Length]);
+                byte now = (byte)(255f * shade[i]);
+                c.r = fade ? (byte)Mathf.Lerp(c.r, c.a, shadeBlend) : now;
+                c.a = now;
+            }
             core.colors32 = coreC; ring.colors32 = ringC;
+            shadeBlend = fade ? 0f : 1f;
+            mat.SetFloat(BlendId, shadeBlend);
+            if (fade) lastRound = Mathf.Max(roundTime, 0.1f);
+            Rounds++;
             bakedSun = bakingSun; bakeAt = -1;
         }
+        float shadeBlend = 1f, lastRound = 0.5f, roundTime;
+        readonly System.Diagnostics.Stopwatch watch = new System.Diagnostics.Stopwatch();
+        static readonly int BlendId = Shader.PropertyToID("_ShadeBlend");
+        /// <summary>Milliseconds the last call to Shade spent, and how many rounds of the shadow have been finished.</summary>
+        public float LastMs { get; private set; }
+        public int Rounds { get; private set; }
 
         /// <summary>How dark it is (0 day .. 1 night): the lights down in the valleys come on.</summary>
         public void SetNight(float darkness)
