@@ -15,6 +15,11 @@
 //     the strata's seams, which is what still reads from across a canyon when the face is in shade
 // Lit like everything else (the sun or moon with its shadows, the sky's light, the headlamp and other lamps, fog),
 // so it works at night too. Twelve texture samples a pixel, and near the camera the parallax steps on top.
+// The terrain's own rock (RockFace.TerrainMaterial: the keyword SUMMIT_ROCK_TERRAIN) is drawn over the snow wherever
+// any of it may show, and lets the snow through pixel by pixel: each corner says how bare the ground is there (its
+// colour's alpha: RockFace.Rockiness), and the rock's own patches and cracks move the line about, so the snow line
+// wanders through gullies and round blocks instead of following the mesh's triangles, with a fringe of patchy
+// dusting and a drift's lip along it.
 Shader "Summit/Rock"
 {
     Properties
@@ -28,6 +33,7 @@ Shader "Summit/Rock"
         _Strata ("Strata: band height (m), strength", Vector) = (6.5, 1, 0, 0)
         _Snow ("Snow on faces up from, to (normal.y)", Vector) = (0.48, 0.66, 0, 0)
         _SnowColor ("Snow", Color) = (0.86, 0.9, 0.96, 1)
+        _Line ("Terrain's snow line: how far the rock moves it, fringe width", Vector) = (2.6, 0.16, 0, 0)
     }
     SubShader
     {
@@ -44,6 +50,7 @@ Shader "Summit/Rock"
             float4 _Strata;
             float4 _Snow;
             half4 _SnowColor;
+            float4 _Line;
         CBUFFER_END
         ENDHLSL
         Pass
@@ -59,14 +66,26 @@ Shader "Summit/Rock"
             #pragma multi_compile_fragment _ _SHADOWS_SOFT
             #pragma multi_compile_fog
             #pragma multi_compile_fragment _ SUMMIT_ROCK_NO_PARALLAX
+            // (multi_compile, not shader_feature: the terrain's material is made at run time, so no saved material
+            // would keep the variant in a build)
+            #pragma multi_compile_local _ SUMMIT_ROCK_TERRAIN
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
             TEXTURE2D(_BaseMap); SAMPLER(sampler_BaseMap);
             TEXTURE2D(_ReliefMap); SAMPLER(sampler_ReliefMap);
 
-            struct Attributes { float4 positionOS : POSITION; float3 normalOS : NORMAL; };
+            struct Attributes
+            {
+                float4 positionOS : POSITION; float3 normalOS : NORMAL;
+                #if defined(SUMMIT_ROCK_TERRAIN)
+                half4 color : COLOR;
+                #endif
+            };
             struct Varyings
             {
                 float4 positionCS : SV_POSITION; float3 positionWS : TEXCOORD0; float3 normalWS : TEXCOORD1; half fog : TEXCOORD2;
+                #if defined(SUMMIT_ROCK_TERRAIN)
+                half2 bare : TEXCOORD3;   // how bare the ground is here, and the ground's own smooth normal.y
+                #endif
             };
             Varyings vert(Attributes i)
             {
@@ -75,6 +94,9 @@ Shader "Summit/Rock"
                 o.positionCS = p.positionCS; o.positionWS = p.positionWS;
                 o.normalWS = TransformObjectToWorldNormal(i.normalOS);
                 o.fog = ComputeFogFactor(p.positionCS.z);
+                #if defined(SUMMIT_ROCK_TERRAIN)
+                o.bare = half2(i.color.a, i.color.r);
+                #endif
                 return o;
             }
 
@@ -211,14 +233,41 @@ Shader "Summit/Rock"
 
                 // snow caught on whatever faces up enough to hold it, with a ragged edge
                 // (and by the relief: on the tops of blocks before their undersides)
-                half up = n.y + (farT.b - 0.38) * 0.6 + (nearT.g - 0.36) * 0.5 + (nb.y - n.y) * 0.5;
+                // (on the terrain, by the ground's smooth slope, not each facet's tilt, or the snow lies in triangles)
+                #if defined(SUMMIT_ROCK_TERRAIN)
+                half groundY = i.bare.y;
+                #else
+                half groundY = n.y;
+                #endif
+                half up = groundY + (farT.b - 0.38) * 0.6 + (nearT.g - 0.36) * 0.5 + (nb.y - n.y) * 0.5;
                 half snow = smoothstep(_Snow.x, _Snow.y, up);
                 // and along the bedding seams, where the strata leave a little shelf: broken lines of snow across
                 // even a sheer face (not under an overhang). In shade and haze, when the rock's own colours have all
                 // but gone, these are what still say "cliff" from across a canyon
-                half shelf = (1.0 - seam) * smoothstep(0.48, 0.66, farT.g * 1.7 + nearT.r * 0.7 - 0.3) * saturate(n.y * 2.0 + 0.9);
+                half shelf = (1.0 - seam) * smoothstep(0.48, 0.66, farT.g * 1.7 + nearT.r * 0.7 - 0.3) * saturate(groundY * 2.0 + 0.9);
                 snow = max(snow, shelf * 0.85);
+
+                #if defined(SUMMIT_ROCK_TERRAIN)
+                // the snow line, pixel by pixel: how bare the ground is here, pushed about by the rock itself - its
+                // broad patches (the far rock), its blocks standing proud and its cracks (the relief) - so snow lies
+                // on in the hollows and cracks and the blocks and ribs come through first; and less where the strata
+                // leave a shelf. Under the line the rock lets the snow below it show through
+                half bare = i.bare.x + _Line.x * ((farT.g - 0.38) * 0.7 + (nearT.r - 0.36) * 0.3 + (nearRelief.w - RELIEF_MEAN) * 0.35 - shelf * 0.12);
+                clip(bare - 0.5);
+                // just inside the line, the rock is still patchy with snow (thicker the nearer the line), and right
+                // at it a drift's lip, smooth, facing up and catching the light, over a thin shadowed crease where it
+                // leaves the rock
+                half inside = saturate((bare - 0.5) / _Line.y);
+                half dust = 1.0 - smoothstep(0.0, 1.0, inside);
+                half lip = 1.0 - smoothstep(0.0, 0.3, inside);
+                snow = max(snow, dust * dust * 0.95);
+                half crease = smoothstep(0.2, 0.42, inside) * (1.0 - smoothstep(0.42, 0.7, inside));
+                nb = normalize(lerp(nb, float3(0, 1, 0), lip * 0.5));
+                #endif
                 albedo = lerp(albedo, _SnowColor.rgb, snow);
+                #if defined(SUMMIT_ROCK_TERRAIN)
+                albedo *= 1.0 - crease * 0.35;
+                #endif
 
                 // the scene's light, as on any rough surface: sky light, the sun or moon, lamps (the headlamp at night).
                 // From here on the normal is the relief's; snow lies smoother than the rock under it

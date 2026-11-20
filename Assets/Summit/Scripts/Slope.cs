@@ -197,7 +197,8 @@ namespace Summit
             {
                 float far = Mathf.SmoothStep(0f, 1f, (d - 28f) / 14f);
                 float fall = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-15f, -55f, z));
-                float away = pad - (d - 28f) * 0.9f;
+                // (falling away in ribs and gullies and tiers of rock and snow, not one plane at the snow line's angle)
+                float away = pad - FallAway(d - 28f, z, 0.9f, 0f, Mathf.Sign(x - cx) * 3.9f);
                 float open = y - Mathf.Max(0f, FallLine(z) - FallLine(PadLip));   // the open mountain, not climbing on up behind the lip
                 pad = Mathf.Lerp(pad, Mathf.Lerp(open, away, fall), far);
             }
@@ -207,8 +208,12 @@ namespace Summit
         // ---------------------------------------------------------------- the summit
         // Behind the start, the camp's plateau is the mountain's top: a few metres above the start pad (the gate
         // leads down to it), nearly level, and falling away on every side but the front: steeply on the left and
-        // behind, and on the right a sheer cliff and rock buttresses some 430 m down to a valley (the cable-railed
+        // behind, and on the right a great cliff and rock buttresses some 430 m down to a valley (the cable-railed
         // edge of the camp; its far end closes in a steep wall before the start pad, so the run is untouched).
+        // Shaped after real north faces (the Eiger's, the Grandes Jorasses'): no face is one plane or one angle.
+        // The shoulders roll over and steepen into rock in tiers, ribs standing out and gullies cut between them;
+        // the cliff leans back from its rounded, snow-capped lip in steep bands between sloping ledges, steepest on its
+        // buttresses and lying back in its gullies, and its foot spreads into fans of snow and rubble.
         public const float SummitLeft = -30f, SummitRight = 24.8f, SummitBack = -140f;
 
         static float Summit(float x, float z, float pad)
@@ -222,23 +227,67 @@ namespace Summit
                       + (Noise(x * 0.07f, z * 0.07f) - 0.5f) * 0.8f;
             float y = top;
             // a snowy shoulder rolling over, steepening into rock further down
-            if (a < SummitLeft) { float e = SummitLeft - a; y -= e * 0.5f + e * e * 0.0065f; }
-            if (z < SummitBack) { float e = SummitBack - z; y -= e * 0.45f + e * e * 0.006f; }   // the far side of the peak
+            if (a < SummitLeft) y -= FallAway(SummitLeft - a, z, 0.5f, 0.0065f, 1.3f);
+            if (z < SummitBack) y -= FallAway(SummitBack - z, x, 0.45f, 0.006f, 4.7f);   // the far side of the peak
             // (the edge wanders out a little, never in past the railing)
             float edge = SummitRight + 0.5f * Noise(z * 0.09f + 4.1f, 2.7f);
             if (a > edge)
             {
-                // the cliff: a sheer face (170 to 260 m, varying along it) in the first three metres, then rock buttresses
-                // to the valley floor, spurs and gullies running down them
                 float e = a - edge;
+                // along the edge the face swings between buttresses, standing out and steepest, and gullies set back
+                // between them, lying back and holding snow: its average slope 66 to 80 degrees
+                float rib = Noise(z * 0.055f + 3.3f, 1.9f);
+                float lean = 2.2f + 2.4f * rib * rib + 0.6f * Noise(z * 0.16f, 4.4f);
+                // the lip: snow rounding over for a few metres before the rock (it never drops straight from the rail)
+                const float cap = 4f;
+                float face;
+                if (e < cap) face = lean * 0.5f * e * e / cap;
+                else
+                {
+                    // then the face in tiers: a steep band of rock, a sloping ledge holding snow, every 22 to 40 m of
+                    // height (wandering along the face, as strata do)
+                    float f = e - cap;
+                    float period = (22f + 18f * Noise(z * 0.03f + 7.7f, 2.2f)) / lean;
+                    float phase = 1.5f * Noise(z * 0.05f, 9.1f);
+                    face = lean * cap * 0.5f + lean * f
+                         - lean * 0.78f * period / (2f * Mathf.PI) * Mathf.Sin(2f * Mathf.PI * (f / period + phase)) * Mathf.Clamp01(f / 3f);
+                }
+                // the face drops 170 to 260 m (varying along it), then rock buttresses run on down to the valley floor,
+                // spurs and gullies down them, spreading at the foot in fans of snow and rubble
                 float sheer = 170f + 90f * Noise(z * 0.035f + 1.7f, 6.1f);
                 float spurs = 0.75f + 0.7f * Ridged(z * 0.03f + 0.4f, a * 0.012f);
-                float drop = sheer * Mathf.SmoothStep(0f, 1f, e / 3f) + Mathf.Min(430f - sheer, Mathf.Max(0f, e - 3f) * 1.8f * spurs);
+                float onFace = cap + (sheer - lean * cap * 0.5f) / lean;   // about where the face's tiers reach the buttresses
+                float drop = Mathf.Min(face, sheer + Mathf.Max(0f, e - onFace) * 1.8f * spurs);
+                drop = SmoothMin(drop, 430f, 30f);
                 drop += Mathf.Clamp01((e - 110f) / 60f) * (Ridged(x * 0.004f + 2.3f, z * 0.004f) - 0.4f) * 40f;   // the valley's own lumps
                 // toward the start the cliff gives way, over 50 m, to a spur falling away into the valley
                 y -= Mathf.Lerp(e * 0.9f, drop, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-64f, -114f, z)));
             }
             return Mathf.Lerp(pad, y, w);
+        }
+
+        /// <summary>
+        /// How far a summit shoulder has fallen e metres out from its edge (`along` runs along the edge): rolling
+        /// over and steepening as k1 * e + k2 * e^2, with ribs and gullies running down it (the gullies cut in deeper
+        /// the further down), and, once it is steep enough to be rock, stepping down in tiers, ledges of snow
+        /// between bands of rock, rather than one cone of a slope.
+        /// </summary>
+        static float FallAway(float e, float along, float k1, float k2, float s)
+        {
+            float d = e * k1 + e * e * k2;
+            float rib = Ridged(along * 0.022f + s, e * 0.006f + s * 2f);
+            d += (0.35f - rib) * Mathf.Clamp01(e / 25f) * (6f + e * 0.18f);
+            float slope = k1 + 2f * k2 * e;
+            float period = 7f + 5f * Noise(along * 0.02f + s, 5.5f);
+            float tiers = Mathf.Clamp01((slope - 0.7f) / 0.4f);
+            d -= tiers * slope * 0.7f * period / (2f * Mathf.PI) * Mathf.Sin(2f * Mathf.PI * (e / period + 1.5f * Noise(along * 0.04f, s)));
+            return d;
+        }
+
+        static float SmoothMin(float a, float b, float k)
+        {
+            float h = Mathf.Clamp01(0.5f + 0.5f * (b - a) / k);
+            return Mathf.Lerp(b, a, h) - k * h * (1f - h);
         }
 
         /// <summary>The slope without the start pad (where the pad's height is measured from).</summary>

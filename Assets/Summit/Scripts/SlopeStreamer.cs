@@ -99,7 +99,7 @@ namespace Summit
                 go.AddComponent<MeshFilter>().sharedMesh = mesh;
                 var mr = go.AddComponent<MeshRenderer>();
                 // snow, and bare rock on the faces too steep to hold it (the second submesh: see SplitRock)
-                mr.sharedMaterials = new[] { snowMaterial, RockFace.Material(snowMaterial.shader) };
+                mr.sharedMaterials = new[] { snowMaterial, RockFace.TerrainMaterial(snowMaterial.shader) };
                 mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
                 mr.receiveShadows = true;
             }
@@ -111,6 +111,7 @@ namespace Summit
         Vector3[] verts, norms;
         Vector2[] uvs;
         Color[] cols;
+        float[] rocky;   // how bare each corner is (RockFace.Rockiness)
         int[] tris;
         float[] grid;   // heights with a one-cell border, reused between chunks
         bool[] holeMask;
@@ -119,6 +120,7 @@ namespace Summit
         readonly List<Vector3> allV = new List<Vector3>(), allN = new List<Vector3>();
         readonly List<Vector2> allUV = new List<Vector2>();
         readonly List<Color> allC = new List<Color>();
+        readonly List<float> allR = new List<float>();
         readonly List<int> snowTris = new List<int>(), rockTris = new List<int>();
         const float Facet = 0.85f;   // how far a rock corner's normal leans from the smooth one to its own triangle's
         const float FacetTilt = 0.7f;   // how far each rock facet is tilted its own way
@@ -131,10 +133,14 @@ namespace Summit
         readonly List<Vector3> fineV = new List<Vector3>(), fineN = new List<Vector3>();
         readonly List<Vector2> fineUV = new List<Vector2>();
         readonly List<Color> fineC = new List<Color>();
+        readonly List<float> fineR = new List<float>();
         readonly List<int> cut = new List<int>();
 
         /// <summary>
-        /// Sorts the triangles into snow and rock. A rock triangle gets its own copies of its corners, with the
+        /// Sorts the triangles into snow and rock, by how bare each corner is: a triangle with any snow in it is
+        /// drawn as snow, and one with any rock in it is drawn again over that as rock, which lets the snow through
+        /// pixel by pixel (RockFace.TerrainMaterial), so the line between them wanders across the triangles rather
+        /// than following their edges. A rock triangle gets its own copies of its corners, with the
         /// texture mapped straight onto the face (across and down it), so a cliff's rock is never smeared out the
         /// way the snow's top-down mapping would smear it. Their normals lean most of the way to the triangle's own,
         /// so each facet takes the light its own way: fractured rock, like the rock models', rather than a smooth
@@ -142,20 +148,20 @@ namespace Summit
         /// </summary>
         void SplitRock(int[] use)
         {
-            allV.Clear(); allN.Clear(); allUV.Clear(); allC.Clear();
-            allV.AddRange(verts); allN.AddRange(norms); allUV.AddRange(uvs); allC.AddRange(cols);
-            allV.AddRange(fineV); allN.AddRange(fineN); allUV.AddRange(fineUV); allC.AddRange(fineC);
+            allV.Clear(); allN.Clear(); allUV.Clear(); allC.Clear(); allR.Clear();
+            allV.AddRange(verts); allN.AddRange(norms); allUV.AddRange(uvs); allC.AddRange(cols); allR.AddRange(rocky);
+            allV.AddRange(fineV); allN.AddRange(fineN); allUV.AddRange(fineUV); allC.AddRange(fineC); allR.AddRange(fineR);
             snowTris.Clear(); rockTris.Clear();
             for (int t = 0; t < use.Length; t += 3)
             {
                 int a = use[t], b = use[t + 1], c = use[t + 2];
+                float ra = allR[a], rb = allR[b], rc = allR[c];
+                // (the rock's own patches move the line up to about 0.4 either way: see RockLit.shader)
+                if (Mathf.Min(ra, Mathf.Min(rb, rc)) < 0.9f) { snowTris.Add(a); snowTris.Add(b); snowTris.Add(c); }
+                if (Mathf.Max(ra, Mathf.Max(rb, rc)) < 0.12f) continue;
                 Vector3 va = allV[a], vb = allV[b], vc = allV[c];
                 Vector3 fn = Vector3.Cross(vb - va, vc - va);
-                if (!RockFace.IsRock(fn, (va.x + vb.x + vc.x) / 3f, (va.z + vb.z + vc.z) / 3f))
-                {
-                    snowTris.Add(a); snowTris.Add(b); snowTris.Add(c);
-                    continue;
-                }
+                if (fn.sqrMagnitude < 1e-12f) continue;
                 Vector3 face = fn.normalized;
                 // and each facet tilted a little its own way (fixed by where it is, so a rebuilt chunk matches),
                 // so neighbours on a smooth face still break the light up like fractured granite
@@ -169,7 +175,7 @@ namespace Summit
                     int i = use[t + k];
                     Vector3 p = allV[i];
                     rockTris.Add(allV.Count);
-                    allV.Add(p); allN.Add(Vector3.Lerp(allN[i], face, Facet).normalized); allC.Add(Color.white);
+                    allV.Add(p); allN.Add(Vector3.Lerp(allN[i], face, Facet).normalized); allC.Add(new Color(allN[i].y, 1f, 1f, allR[i]));   // (the smooth slope, for the rock's snow: RockLit)
                     allUV.Add(acrossX ? new Vector2(p.z, p.y) / RockFace.Tile : new Vector2(p.x, p.y) / RockFace.Tile);
                 }
             }
@@ -184,7 +190,7 @@ namespace Summit
         /// </summary>
         bool Refine(Vector2Int key, int n)
         {
-            fineV.Clear(); fineN.Clear(); fineUV.Clear(); fineC.Clear();
+            fineV.Clear(); fineN.Clear(); fineUV.Clear(); fineC.Clear(); fineR.Clear();
             int i0 = key.x * quads, j0 = key.y * quads;
             float q = Slope.Quad;
             if (!Ridge.InCanyons((j0 - 1) * q) && !Ridge.InCanyons((j0 + quads + 1) * q)) return false;   // a ridge is far longer than a chunk
@@ -211,6 +217,7 @@ namespace Summit
                         fineN.Add(Vector3.Lerp(norms[va], norms[vb], t).normalized);
                         fineUV.Add(new Vector2(x / 9f, pa.z / 9f));
                         fineC.Add(Color.Lerp(cols[va], cols[vb], t));
+                        fineR.Add(Mathf.Lerp(rocky[va], rocky[vb], t));
                     }
                 }
             return true;
@@ -227,25 +234,25 @@ namespace Summit
 
         void Fill(Mesh mesh, Vector2Int key)
         {
-            int n = quads + 1, g = n + 2;
+            int n = quads + 1, g = n + 4;
             float q = Slope.Quad;
             float x0 = key.x * chunkSize, z0 = key.y * chunkSize;
-            // sample once, with a border, and take normals and shading from the samples:
+            // sample once, with a border two deep, and take normals and shading from the samples:
             // about a ninth of the height calls of sampling each one separately
             if (grid == null || grid.Length != g * g) grid = new float[g * g];
             for (int j = 0; j < g; j++)
                 for (int i = 0; i < g; i++)
-                    grid[j * g + i] = Slope.Height(x0 + (i - 1) * q, z0 + (j - 1) * q);
+                    grid[j * g + i] = Slope.Height(x0 + (i - 2) * q, z0 + (j - 2) * q);
 
             if (verts == null || verts.Length != n * n)
             {
                 verts = new Vector3[n * n]; norms = new Vector3[n * n];
-                uvs = new Vector2[n * n]; cols = new Color[n * n];
+                uvs = new Vector2[n * n]; cols = new Color[n * n]; rocky = new float[n * n];
             }
             for (int j = 0; j < n; j++)
                 for (int i = 0; i < n; i++)
                 {
-                    int c = (j + 1) * g + (i + 1);
+                    int c = (j + 2) * g + (i + 2);
                     float y = grid[c];
                     float hl = grid[c - 1], hr = grid[c + 1], hd = grid[c - g], hu = grid[c + g];
                     float x = x0 + i * q, z = z0 + j * q;
@@ -260,6 +267,13 @@ namespace Summit
                                       : Color.Lerp(Color.white, new Color(1f, 0.98f, 0.94f), -k * 0.4f);
                     // the powder either side is a touch bluer than the groomed piste, so the line reads at speed
                     cols[v] = Color.Lerp(c0, c0 * new Color(0.90f, 0.94f, 1.0f), Slope.Rough(x, z));
+                    // how bare the ground is at this corner (the rock and snow are drawn from it: see SplitRock), from
+                    // the lie of the ground over 6 m rather than 3: the snow line follows the slope's shape, not each
+                    // facet's, so it does not jump from one corner to the next (a jump cliff's short band excepted)
+                    float hl2 = grid[c - 2], hr2 = grid[c + 2], hd2 = grid[c - 2 * g], hu2 = grid[c + 2 * g];
+                    float wideY = new Vector3(-(hr2 - hl2) / (4f * q), 1f, -(hu2 - hd2) / (4f * q)).normalized.y;
+                    float ny = Cliffs.OnJumpFace(x, z) ? norms[v].y : Mathf.Lerp(wideY, norms[v].y, 0.3f);
+                    rocky[v] = RockFace.Rockiness(ny, x, z, (hl2 + hr2 + hd2 + hu2) * 0.25f - y);
                 }
             bool fine = Refine(key, n);
             if (tris == null)

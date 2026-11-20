@@ -59,20 +59,61 @@ namespace Summit
             return m;
         }
 
-        /// <summary>Is the triangle with this (unnormalised) face normal rock? The jitter frays the snow line.</summary>
+        /// <summary>Is the triangle with this (unnormalised) face normal rock? (The physics' coarse view of what the
+        /// terrain draws: the drawn line wanders across triangles, pixel by pixel, round the same 0.5 of Rockiness.)</summary>
         public static bool IsRock(Vector3 faceNormal, float x, float z)
         {
             float len = faceNormal.magnitude;
             if (len < 1e-6f) return false;
-            float ny = faceNormal.y / len;
-            // the groomed piste is always snow, even down the steep face of a roll-over; on a ridge, only the crest is
-            if (Cliffs.OnJumpLanding(x, z) || Ridge.SnowAt(x, z)) return false;   // a jump cliff's landing, a ridge's snow side, a wall's apron
+            return Rockiness(faceNormal.y / len, x, z) > 0.5f;
+        }
+
+        // how wide the snow line is, in normal.y: from all snow to all rock over about twenty degrees of slope, so it
+        // changes slowly across the terrain's triangles and the rock's own patches decide where it really falls
+        const float Band = 0.28f;
+
+        /// <summary>
+        /// How bare the ground is, 0 (snow) to 1 (rock), for a surface whose normal points ny up, at (x, z). Snow holds
+        /// on anything gentler than about 46 degrees and thins over a few degrees either side of that, wandering with
+        /// the ground; it lies on longer in hollows and gullies and blows off ribs and crests sooner (`hollow`: how
+        /// far the ground here sits below its neighbours, in metres). The terrain draws the line pixel by pixel from
+        /// this, per corner, and the rock's own cracks and ledges (RockLit.shader, SUMMIT_ROCK_TERRAIN).
+        /// Never rock on the groomed piste or a jump cliff's landing, a ridge's crest or snow side, or a gorge's apron
+        /// (each faded in over a few metres, so no line is ever ruled straight); always able to be on a cliff's band.
+        /// </summary>
+        public static float Rockiness(float ny, float x, float z, float hollow = 0f)
+        {
+            if (Cliffs.OnJumpLanding(x, z) || Ridge.SnowAt(x, z)) return 0f;   // a jump cliff's landing, a ridge's snow side, a wall's apron
+            float allowed = 1f;
             if (Cliffs.OnJumpFace(x, z) || Cliffs.OnWallFace(x, z)) { }   // a cliff's rock band shows, piste or not
             // beside a ridge (and the spine below it), only its top: the canyon walls are rock right up to the edge
-            else if (Ridge.Depth(z) > 0.05f) { if (Mathf.Abs(x - Slope.Centre(z)) < Ridge.HalfWidth(z) + Ridge.Shoulder * 0.5f) return false; }
-            else if (Slope.Rough(x, z) < 0.5f) return false;
-            return ny < SteepY + (Slope.Noise(x * 0.21f + 7f, z * 0.21f) - 0.5f) * 0.12f;
+            else if (Ridge.Depth(z) > 0.05f)
+                allowed = Mathf.Clamp01((Mathf.Abs(x - Slope.Centre(z)) - Ridge.HalfWidth(z) - Ridge.Shoulder * 0.25f) / (Ridge.Shoulder * 0.5f));
+            // the groomed piste is always snow, even down the steep face of a roll-over: faded in across its edge
+            else allowed = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.3f, 0.7f, Slope.Rough(x, z)));
+            if (allowed <= 0f) return 0f;
+            float line = SteepY + (Slope.Noise(x * 0.09f + 7f, z * 0.09f) - 0.5f) * 0.14f - Mathf.Clamp(hollow, -1.5f, 1.5f) * 0.04f;
+            float bare = Mathf.Clamp01((line - ny) / Band + 0.5f) * allowed;
+            // a deadly wall's face is rock all the way down, even where its waves ease off (only dusted with snow there):
+            // a patch of snow part way down would catch a falling body and start its fall again from there, and it lives
+            if (Cliffs.OnWallFace(x, z)) bare = Mathf.Max(bare, 0.8f);
+            return bare;
         }
+
+        /// <summary>
+        /// The terrain's own rock: the same rock, drawn over the snow (one step later in the queue) wherever any of it
+        /// may show, and kept or let go pixel by pixel (SUMMIT_ROCK_TERRAIN in RockLit.shader; the terrain puts each
+        /// corner's Rockiness in its colour's alpha).
+        /// </summary>
+        public static Material TerrainMaterial(Shader lit)
+        {
+            if (terrain != null) return terrain;
+            terrain = new Material(Material(lit)) { name = "TerrainRock" };
+            terrain.EnableKeyword("SUMMIT_ROCK_TERRAIN");
+            terrain.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Geometry + 1;
+            return terrain;
+        }
+        static Material terrain;
 
         static Texture2D Texture()
         {

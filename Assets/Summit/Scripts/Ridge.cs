@@ -300,6 +300,15 @@ namespace Summit
             if (cliff) ridge += Rough(x, z, e, side);
             // the canyon floor: the open mountain, lowered, with its far wall climbing back up to it
             float depth = (cliff ? CliffDepth : SafeDepth) * Scale(owner) * wd * far;
+            // a cliff's foot spreads into fans of rubble and avalanche snow, about 35 degrees, banked against the
+            // face for 5 to 15% of its height (more under its gullies), so the face rises out of the canyon floor
+            // the way real ones do and not out of a crease
+            if (cliff && depth > 10f)
+            {
+                float fan = depth * (0.05f + 0.1f * Slope.Noise(z * 0.045f + side * 6.1f, 4.2f));
+                float foot = (top - y + depth) / steep + Shoulder * 0.5f - fan / steep;   // where the face is fan metres above the floor
+                ridge = Mathf.Max(ridge, y - depth + Mathf.Clamp(fan - (e - foot) * 0.7f, 0f, fan));
+            }
             // (a shallow canyon gets a tighter foot: SmoothMax of two equal heights would raise them a quarter of k;
             // the snow side's foot is a long runout onto the canyon floor, ridden out at speed, not a crease)
             return SmoothMax(ridge, y - depth, Mathf.Min(kind == Side.Snow ? 14f : 3f, 0.3f * depth + 0.01f));

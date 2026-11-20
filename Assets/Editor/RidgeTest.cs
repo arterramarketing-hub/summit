@@ -490,6 +490,76 @@ public static class RidgeTest
         EditorApplication.Exit(0);
     }
 
+    /// <summary>
+    /// Where the snow meets the rock, and the shapes of the big faces, by day and by night: the summit's shoulders
+    /// seen from below them (left, behind, and beside the start, where the first lift tops out), the camp's cliff
+    /// from the valley under it, a deadly cliff from its foot, and the whole top of the mountain from down the run.
+    /// Unity -batchmode -projectPath . -executeMethod RidgeTest.SnowLineShots (writes SnowLine*.png to $RIDGE_SHOTS)
+    /// </summary>
+    public static void SnowLineShots()
+    {
+        SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
+        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
+        var game = Object.FindFirstObjectByType<SummitGame>();
+        TestBoot.Boot(game);
+        Physics.simulationMode = SimulationMode.Script;
+        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
+        var rider = Get<Rider>("rider"); var body = Get<RiderBody>("body");
+        var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props"); var dayNight = Get<DayNight>("dayNight");
+        var dress = Object.FindFirstObjectByType<CourseDressing>();
+        var atmo = Object.FindFirstObjectByType<Atmosphere>();
+        var draw = typeof(Forest).GetMethod("Draw", NP);
+        rider.input = null;
+        var cam = Camera.main;
+        cam.GetComponent<ChaseCamera>().enabled = false;
+        string outDir = System.Environment.GetEnvironmentVariable("RIDGE_SHOTS");
+        if (string.IsNullOrEmpty(outDir)) outDir = ".";
+        void View(string file, Vector3 eye, Vector3 at, float fov, bool night)
+        {
+            TimeOfDay.TestClock = night ? 3.4f : 1.4f; dayNight.ApplyNow();
+            Vector3 flat = at - eye; flat.y = 0f;
+            float rz = eye.z - flat.normalized.z * 2.5f, rx = eye.x - flat.normalized.x * 2.5f;
+            rider.ResetAt(rx, rz); body.ResetVisual();
+            rider.Heading = Mathf.Clamp(Mathf.Atan2(flat.x, flat.z), -1.4f, 1.4f);
+            for (int k = 0; k < 5; k++) { terrain.Prewarm(); props.Prewarm(); dress.Prewarm(); }
+            body.Apply(Dt);
+            typeof(Atmosphere).GetMethod("LateUpdate", NP).Invoke(atmo, null);
+            draw.Invoke(props, null);
+            dayNight.ApplyNow();
+            cam.fieldOfView = fov;
+            cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(at - eye));
+            Shoot(cam, Path.Combine(outDir, file));
+        }
+        int seed = 1;
+        for (int sd = 1; sd < 400; sd++) { Slope.Init(sd); if (Cliffs.WallOf(0, out _)) { seed = sd; break; } }
+        Slope.Init(seed);
+        terrain.Rebuild(); props.Rebuild(); dress.Rebuild();
+        float cx = Slope.Centre(Slope.PadLip);
+        float top = Slope.Height(cx, -100f);
+        Vector3 G(float a, float z, float up) { float x = cx + a; return new Vector3(x, Slope.Height(x, z) + up, z); }
+        Cliffs.WallOf(0, out var w);
+        float zw = w.z1 + 18f, hw = Cliffs.WallHeight(w, zw);
+        float cw = Slope.Centre(zw);
+        foreach (bool night in new[] { false, true })
+        {
+            string when = night ? "Night" : "Day";
+            // (the shoulders' views are from the air: the slopes under them are forest)
+            View($"SnowLineLeft{when}.png", new Vector3(cx - 190f, top - 20f, -40f), new Vector3(cx - 45f, top - 30f, -110f), 60f, night);
+            View($"SnowLineStart{when}.png", G(-95f, -10f, 1.7f), new Vector3(cx - 35f, top - 4f, -45f), 62f, night);
+            View($"SnowLineBack{when}.png", new Vector3(cx - 120f, top + 10f, -300f), new Vector3(cx, top - 50f, -170f), 60f, night);
+            View($"SnowLineCampCliff{when}.png", new Vector3(cx + 330f, top - 140f, -260f), new Vector3(cx + 40f, top - 150f, -130f), 60f, night);
+            float fx = cw + w.side * (w.edge + hw * 0.7f + 22f);
+            View($"SnowLineWallFoot{when}.png", new Vector3(fx, Slope.Height(fx, zw - 30f) + 2.5f, zw - 30f),
+                 new Vector3(Slope.Centre(zw + 25f) + w.side * (w.edge + hw * 0.3f), Slope.Height(Slope.Centre(zw + 25f), zw + 25f) - hw * 0.45f, zw + 25f), 66f, night);
+            View($"SnowLineFar{when}.png", new Vector3(cx + 420f, top + 60f, 160f), new Vector3(cx, top - 60f, -100f), 45f, night);
+        }
+        var tm = RockFace.TerrainMaterial(Shader.Find("Universal Render Pipeline/Lit"));
+        Debug.Log($"SNOWLINE seed {seed} wall z {zw} height {hw} side {w.side}; terrain rock {tm.shader.name} keyword {tm.IsKeywordEnabled("SUMMIT_ROCK_TERRAIN")} queue {tm.renderQueue}");
+        TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt;
+        Physics.simulationMode = SimulationMode.FixedUpdate;
+        EditorApplication.Exit(0);
+    }
+
     /// <summary>The ground along the piste's centre line from $LINE_Z0 to $LINE_Z1 on mountain $LINE_SEED, term by term.</summary>
     public static void Line()
     {

@@ -196,12 +196,32 @@ namespace Summit
             float a = (x - Slope.Centre(z)) * w.side;   // + toward the cliff's side
             float hgt = WallHeight(w, z);
             if (hgt <= 0f || a <= w.edge) return 0f;
-            // a rock face of about 70 degrees, rounding off at its lip; then the terrace below, the mountain lowered,
-            // until a long slope climbs back up to it well out to the side (so the drawn terrain never ends on a step)
-            float face = hgt * 0.55f;
-            float s = Mathf.Clamp01((a - w.edge) / face);
-            float far = Mathf.Clamp01((a - w.edge - face - WallTerrace) / WallFar);
-            return -hgt * s * s * (3f - 2f * s) * (1f - far * far * (3f - 2f * far));
+            // a rock face rounding off at its lip, leaning back further in some places than others (56 to 77 degrees
+            // at its steepest), in three steeper and less steep bands down it, so it is never one plane; but never
+            // a ledge flat enough to hold snow: a fall down it must not stop part way. Then the terrace below, the
+            // mountain lowered, until a long slope climbs back up to it well out to the side (so the drawn terrain
+            // never ends on a step)
+            Face(w, z, hgt, out float start, out float width);
+            float s = Mathf.Clamp01((a - start) / width);
+            float u = s + 0.28f * Mathf.Sin(6f * Mathf.PI * s) / (6f * Mathf.PI);
+            float depth = hgt * u * u * (3f - 2f * u);
+            // a fan of rubble and snow banked against the foot of a tall wall, about 35 degrees (still a fall
+            // that kills onto it: see Deadly)
+            float fan = hgt * (0.04f + 0.1f * Slope.Noise(z * 0.06f + w.cycle * 3.1f, 8.1f)) * Mathf.Clamp01((hgt - 30f) / 15f);
+            if (fan > 0.1f) depth = Mathf.Min(depth, hgt - fan * Mathf.Clamp01((start + width + fan * 0.7f - a) / (fan / 0.7f)));
+            float far = Mathf.Clamp01((a - start - width - WallTerrace) / WallFar);
+            return -depth * (1f - far * far * (3f - 2f * far));
+        }
+
+        /// <summary>
+        /// Where a deadly cliff's face starts at z (at its lip, or a little out from it, where the top of a buttress
+        /// stands back), and how far out it runs to its foot: wider where it leans back, narrower where it is
+        /// steepest, varying along the wall like buttresses and the gullies between them.
+        /// </summary>
+        static void Face(Wall w, float z, float hgt, out float start, out float width)
+        {
+            start = w.edge + 1.5f * Slope.Noise(z * 0.11f + w.cycle * 2.3f, 6.2f);
+            width = hgt * (0.45f + 0.22f * Slope.Noise(z * 0.045f + w.cycle * 1.7f, 3.9f));
         }
 
         /// <summary>On a deadly cliff's face (drawn as rock even near the piste).</summary>
@@ -211,7 +231,8 @@ namespace Summit
             float hgt = WallHeight(w, z);
             if (hgt < 3f) return false;
             float a = (x - Slope.Centre(z)) * w.side;
-            return a > w.edge + 0.6f && a < w.edge + hgt * 0.55f;
+            Face(w, z, hgt, out float start, out float width);
+            return a > start + 0.6f && a < start + width;
         }
 
         /// <summary>True on or round a cliff: no trees, rocks, pickups or kickers there.</summary>
@@ -227,7 +248,8 @@ namespace Summit
             {
                 float a = (x - Slope.Centre(z)) * w.side;
                 float hgt = Mathf.Max(WallHeight(w, z), WallHeight(w, z + 6f));
-                if (hgt > 1f && a > w.edge - 4f - margin && a < w.edge + hgt * 0.55f + 3f + margin) return true;
+                // (the widest the face gets: see Face)
+                if (hgt > 1f && a > w.edge - 4f - margin && a < w.edge + 1.5f + hgt * 0.67f + 3f + margin) return true;
             }
             return false;
         }
