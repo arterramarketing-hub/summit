@@ -68,6 +68,7 @@ public static class PeopleTest
         var chair = Matrix4x4.TRS(new Vector3(0f, 500f, 0f), Quaternion.identity, Vector3.one);
         var pos = new List<Vector3>(); var slot = new List<int>(); var tris = new List<int>();
         Person p = null;
+        foreach (bool female in new[] { false, true })
         foreach (float height in new[] { 0.88f, 0.97f, 1.07f })
             foreach (float build in new[] { 0.92f, 1.06f })
                 for (int pose = 0; pose < LiftRiders.Poses; pose++)
@@ -76,6 +77,7 @@ public static class PeopleTest
                         {
                             if (pose < 2 && foot == 1) continue;   // (skiers have no front foot)
                             var look = PersonLook.Random(77 + cases);
+                            look.female = female;   // (the summit kit cut for a man, Rider/Hero, or a woman, Rider/HeroF)
                             look.height = height; look.build = build; look.shoulders = build > 1f ? 1.03f : 0.88f;
                             look.pack = pack ? Wardrobe.Get(Wardrobe.Cat.Pack, 1) : null;
                             look.hairStyle = PersonHair.Ponytail; look.head = PersonHead.Helmet;
@@ -95,7 +97,7 @@ public static class PeopleTest
                                 for (int k = 0; k < 3; k++) p.Apply(0f);
                                 pos.Clear(); slot.Clear(); tris.Clear();
                                 PeopleKit.Gather(p, chair.inverse, pos, slot, tris);
-                                string name = $"h{height:0.00} b{build:0.00} {(LiftRiders.Pose)pose}{(pose >= 2 ? (foot == 0 ? " left-foot" : " right-foot") : "")}{(pack ? " pack" : "")} seat {seat}";
+                                string name = $"{(female ? "F" : "M")} h{height:0.00} b{build:0.00} {(LiftRiders.Pose)pose}{(pose >= 2 ? (foot == 0 ? " left-foot" : " right-foot") : "")}{(pack ? " pack" : "")} seat {seat}";
                                 bool caseBad = false;
                                 float nbMax = 0f;
                                 float sx = LiftRiders.SeatX[seat];
@@ -232,6 +234,7 @@ public static class PeopleTest
         int overlapPeople = 0, overlapHero = 0, inThings = 0, nearEdge = 0, frameCount = 0;
         float worstPeople = 0f, worstHero = 0f, worstThing = 0f, worstEdge = -99f;
         string worstPeopleWhat = "", worstThingWhat = "";
+        int overlapOthers = 0; float worstOthers = 0f; int othersSeen = 0;
         double stepMs = 0, stepMax = 0, applyMs = 0;
         int lod0 = 0, lod1 = 0, maxSkins = 0; long trisSum = 0, trisMax = 0;
         var slide = new Dictionary<CampLife.Agent, (Vector3 foot, int side)>();
@@ -274,6 +277,9 @@ public static class PeopleTest
             if (collapsed && f > collapseAt + 30 && f < collapseAt + 120)
                 foreach (var a in life.Agents) if (a.p.gameObject.activeSelf && a.doing != CampLife.Doing.Ride) reactLook.Add(Vector3.Angle(a.p.Facing, new Vector3(cx + 23.5f, 0f, -66f) - a.p.HeadPosition));
             // the checks
+            othersSeen = Mathf.Max(othersSeen, life.OthersNow.Count);
+            // (the couple and Paul live their own lives: CampCouple steps them as the game does)
+            if (camp.Couple != null) camp.Couple.Step(dt);
             int skins = 0; long tris = 0;
             var hero = (Vector3)fPos.GetValue(camp);
             foreach (var a in life.Agents)
@@ -287,6 +293,12 @@ public static class PeopleTest
                     if (o == a || !o.p.gameObject.activeSelf || o.doing == CampLife.Doing.Ride) continue;
                     float d = new Vector2(a.pos.x - o.pos.x, a.pos.z - o.pos.z).magnitude;
                     if (d < 0.5f) { overlapPeople++; if (0.5f - d > worstPeople) { worstPeople = 0.5f - d; worstPeopleWhat = $"{a.role}:{a.doing} and {o.role}:{o.doing} at {a.pos}"; } }
+                }
+                foreach (var o in life.OthersNow)
+                {
+                    if (a.doing == CampLife.Doing.Sit || a.doing == CampLife.Doing.Strap) continue;
+                    float d = new Vector2(a.pos.x - o.x, a.pos.z - o.z).magnitude;
+                    if (d < 0.5f) { overlapOthers++; worstOthers = Mathf.Max(worstOthers, 0.5f - d); }
                 }
                 float dh = new Vector2(a.pos.x - hero.x, a.pos.z - hero.z).magnitude;
                 if (dh < 0.45f) { overlapHero++; worstHero = Mathf.Max(worstHero, 0.45f - dh); }
@@ -333,6 +345,7 @@ public static class PeopleTest
         sb.AppendLine($"CAMP the added guest ended {life.Agents[life.Agents.Count - 2].doing} at ({guest.transform.position.x - cx:0.0}, {guest.transform.position.z:0.0}), walked {guestWalk:0} m");
         sb.AppendLine($"CAMP overlaps: people into people {overlapPeople} frames (deepest {worstPeople * 100f:0} cm), into the hero {overlapHero} (deepest {worstHero * 100f:0} cm), into the camp's things {inThings} (deepest {worstThing * 100f:0} cm)");
         sb.AppendLine($"CAMP   worst people overlap: {worstPeopleWhat}; worst in a thing: {worstThingWhat}");
+        sb.AppendLine($"CAMP into the camp's characters (Val, Breanna, Paul, Alyssa; up to {othersSeen} about at once): {overlapOthers} frames (deepest {worstOthers * 100f:0} cm)");
         sb.AppendLine($"CAMP stuck (no nearer their goal in 4 s, path found again): {life.StuckCount} (last: {life.LastStuck})");
         {
             var where = new Dictionary<Vector2Int, int>();
@@ -340,6 +353,7 @@ public static class PeopleTest
             var list = new List<KeyValuePair<Vector2Int, int>>(where); list.Sort((x, y) => y.Value.CompareTo(x.Value));
             var t = new StringBuilder(); for (int i = 0; i < Mathf.Min(4, list.Count); i++) t.Append($"({list[i].Key.x}, {list[i].Key.y}) x{list[i].Value}  ");
             sb.AppendLine("CAMP   held up most at: " + t);
+            if (System.Environment.GetEnvironmentVariable("SUMMIT_PEOPLE_LOG") == "1") foreach (var why in life.StuckWhy) sb.AppendLine("CAMP     " + why);
         }
         sb.AppendLine($"CAMP off the edge: {nearEdge} frames; furthest toward the cliff {worstEdge:0.0} m from the run's centre (the rail is at 24.1)");
         sb.AppendLine($"CAMP planted feet slid {slideDist * 100.0:0.0} cm over {walkDist:0} m walked ({(walkDist > 0 ? slideDist / walkDist * 100.0 : 0):0.00} cm per metre; worst {slideWorst * 100f:0} cm/s)");
@@ -353,7 +367,7 @@ public static class PeopleTest
         System.IO.File.WriteAllText("Logs/people-camp.txt", sb.ToString());
         ChaseCamera.TestDt = 0f;
         TestPrefs.Restore();
-        bool ok = overlapPeople == 0 && overlapHero < frameCount / 200 && nearEdge == 0 && (walkDist <= 0 || slideDist / walkDist < 0.02);
+        bool ok = overlapPeople == 0 && overlapOthers < frameCount / 200 && overlapHero < frameCount / 200 && inThings == 0 && nearEdge == 0 && (walkDist <= 0 || slideDist / walkDist < 0.02);
         EditorApplication.Exit(ok ? 0 : 1);
     }
     static string SlotName(int s) => s < 0 || s >= slotNames.Length ? "?" : slotNames[s];

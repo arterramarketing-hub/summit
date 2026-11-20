@@ -153,7 +153,41 @@ public static class ReceiptTest
         }
         Say($"   {"TOTAL",-40} {"$" + game.Bill.RunTotal.ToString("N0"),12}");
         Check();
+
+        // the closet: another rider in other clothes is a new body, so a new ragdoll; its hits must still reach the
+        // receipt (each Strike is one RiderBody.Injured, and each fall bills its diagnoses), then back as worn
+        var worn = Wardrobe.Worn();
+        foreach (int who in new[] { 2, Wardrobe.PaulRow })   // (Val, then Paul: each a new body)
+        {
+            var o = (int[])worn.Clone();
+            o[(int)Wardrobe.Cat.Rider] = who; o[(int)Wardrobe.Cat.Outfit] = Wardrobe.OwnOutfit(who);
+            Swap(o);
+            int heard = 0;
+            System.Action<Injury> count = _ => heard++;
+            body.Injured += count;
+            Fall($"after the closet: rider {who} in outfit {o[(int)Wardrobe.Cat.Outfit]}, skis", RideKind.Skis, "Tree", () =>
+            {
+                Strike(BodyPart.Head, snow, 5f, Vector3.up);       // the first real hit: it breaks (RiderBody)
+                Strike(BodyPart.Chest, tree, 13f, Vector3.up, side: -1);
+                Strike(BodyPart.ShinR, snow, 9f, Vector3.up);
+            });
+            body.Injured -= count;
+            int dx = 0;
+            foreach (var it in game.Bill.Lines) if (!it.service) dx++;
+            Say($"   (heard {heard} hits, {dx} diagnosis lines)");
+            if (heard < 3 || dx == 0) { fails++; Say("   !! the new body's hits never reached the receipt"); }
+        }
+        Swap(worn, false);
         return lines;
+    }
+
+    /// <summary>The closet's swap (SummitGame.ApplyOutfit's body.Wear): a new body and ragdoll when the look changes.</summary>
+    static void Swap(int[] o, bool check = true)
+    {
+        int built = body.Built;
+        body.Wear(o);
+        if (check && body.Built == built) { fails++; Say("   !! the swap built no new body"); }
+        snow = null;   // (a new body's old ragdoll took its snow slab with it: found again on the next Begin)
     }
 
     // ---------------------------------------------------------------- a fall

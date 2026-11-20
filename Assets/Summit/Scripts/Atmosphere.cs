@@ -39,7 +39,7 @@ namespace Summit
             if (snow == null) return;
             SnowAmount = amount * Mathf.Lerp(1f, 0.5f, flake);
             var want = new Vector4(flake, fall, streak, 0f);
-            if ((want - snowLook).sqrMagnitude < 1e-4f) return;
+            if ((want - snowLook).sqrMagnitude < 0.0016f && !(want.x == 0f && snowLook.x != 0f)) return;   // (in steps: a front comes in over ~25 changes, not one a frame)
             snowLook = want;
             var main = snow.main;
             main.startSize = new ParticleSystem.MinMaxCurve(Mathf.Lerp(0.04f, 0.13f, flake), Mathf.Lerp(0.11f, 0.3f, flake));

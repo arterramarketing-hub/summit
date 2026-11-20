@@ -388,7 +388,9 @@ namespace Summit
 
         void Update()
         {
+            long t0 = PerfMarks.Now;
             Refresh(false);
+            PerfMarks.MarkIfOver("forest cells", t0, 0.5);
             Draw();
         }
 

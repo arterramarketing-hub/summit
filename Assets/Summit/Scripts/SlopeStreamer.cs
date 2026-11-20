@@ -75,7 +75,9 @@ namespace Summit
             {
                 if (budget <= 0) { pending = true; break; }
                 if (live.ContainsKey(k)) continue;
+                long t0 = PerfMarks.Now;
                 live[k] = Build(k);
+                if (!all) PerfMarks.Mark("terrain chunk", t0);
                 budget--;
             }
         }

@@ -30,8 +30,8 @@ namespace Summit
         public Wardrobe.Item pack;          // null: no backpack
         public PersonGear gear = PersonGear.Snowboard;
 
-        /// <summary>The gear mesh this look needs (head, hair and pack change its shape; colours don't).</summary>
-        public int ShapeKey => (int)head | (hasPompom && head == PersonHead.Beanie ? 2 : 0) | ((int)hairStyle << 2) | (pack != null ? 16 : 0) | (faceShows ? 32 : 0);
+        /// <summary>The meshes this look needs (the cut, the head, hair, neck warmer and pack change their shape; colours don't).</summary>
+        public int ShapeKey => (int)head | (hasPompom && head == PersonHead.Beanie ? 2 : 0) | ((int)hairStyle << 2) | (pack != null ? 16 : 0) | (faceShows ? 32 : 0) | (female ? 64 : 0);
 
         // ---------------------------------------------------------------- the crowd
 

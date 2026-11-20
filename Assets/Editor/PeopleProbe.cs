@@ -9,7 +9,8 @@ public static class PeopleProbe
     public static void Run()
     {
         var sb = new StringBuilder();
-        var prefab = Resources.Load<GameObject>("Rider/Hero");
+        string which = System.Environment.GetEnvironmentVariable("SUMMIT_PROBE_MODEL") ?? "Hero";
+        var prefab = Resources.Load<GameObject>("Rider/" + which);
         var table = Resources.Load<TextAsset>("Rider/HeroAnim");
         var go = Object.Instantiate(prefab);
         sb.AppendLine($"root scale {go.transform.localScale} rot {go.transform.localRotation.eulerAngles}");
@@ -32,7 +33,7 @@ public static class PeopleProbe
         {
             var uv = smr.sharedMesh.uv;
             var cells = new System.Collections.Generic.Dictionary<int, int>();
-            foreach (var u in uv) { int c = Mathf.FloorToInt(u.x * 8f) + 8 * Mathf.FloorToInt(u.y * 3f); cells[c] = cells.TryGetValue(c, out var n) ? n + 1 : 1; }
+            foreach (var u in uv) { int c = Mathf.FloorToInt(u.x * 8f) + 8 * Mathf.FloorToInt(u.y * 8f); cells[c] = cells.TryGetValue(c, out var n) ? n + 1 : 1; }
             var s = new StringBuilder();
             foreach (var kv in cells) s.Append(kv.Key).Append(':').Append(kv.Value).Append(' ');
             var b = smr.sharedMesh.bounds;
@@ -49,36 +50,7 @@ public static class PeopleProbe
                 sb.AppendLine($"CLIP {clip} t{k / 4f:0.00} len {h.Length(id):0.00} root {P(h.Root).ToString("F3")} hips {P(h.Hips).ToString("F3")} head {P(h.Head).ToString("F3")} footL {P(h.Foot[0]).ToString("F3")} footR {P(h.Foot[1]).ToString("F3")} kneeL {P(h.LowerLeg[0]).ToString("F3")} handL {P(h.Hand[0]).ToString("F3")} handR {P(h.Hand[1]).ToString("F3")}");
             }
         }
-        // the back of the neck and hood: how far back the jacket reaches, by height
-        PeopleKit.Load();
-        var m2m = PeopleKit.MeshToModel;
-        foreach (var mesh in new[] { PeopleKit.Body, PeopleKit.TemplateGear.sharedMesh })
-        {
-            var vv = mesh.vertices; var uvv = mesh.uv;
-            for (float y = 1.20f; y < 1.62f; y += 0.03f)
-            {
-                float zb = -9f, zf = 9f, xw = 0f;
-                foreach (var v0 in vv)
-                {
-                    var q = m2m.MultiplyPoint3x4(v0);
-                    if (q.y < y || q.y >= y + 0.03f) continue;
-                    if (Mathf.Abs(q.x) < 0.05f) { zb = Mathf.Max(zb, q.z); zf = Mathf.Min(zf, q.z); }
-                    if (q.z > 0.05f) xw = Mathf.Max(xw, Mathf.Abs(q.x));
-                }
-                sb.AppendLine($"BACK {mesh.name} y {y:0.00}: back z {zb:0.000} front z {zf:0.000} widest behind {xw:0.000}");
-            }
-        }
-        // the face: skin vertices' front, by height
-        {
-            var vv = PeopleKit.TemplateGear.sharedMesh.vertices; var uvv = PeopleKit.TemplateGear.sharedMesh.uv;
-            for (int i = 0; i < vv.Length; i++)
-            {
-                int cell = Mathf.FloorToInt(uvv[i].x * 8f) + 8 * Mathf.FloorToInt(uvv[i].y * 3f);
-                var q = m2m.MultiplyPoint3x4(vv[i]);
-                if ((cell == 0 || cell == 21 || cell == 22) && Mathf.Abs(q.x) < 0.015f && q.z < 0f) sb.AppendLine($"FACE cell {cell} {q.ToString("F3")}");
-            }
-        }
-        System.IO.File.WriteAllText("Logs/people-probe.txt", sb.ToString());
+        System.IO.File.WriteAllText("Logs/people-probe-" + which + ".txt", sb.ToString());
         Debug.Log("PROBE written");
         EditorApplication.Exit(0);
     }

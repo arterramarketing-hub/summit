@@ -25,7 +25,8 @@ namespace Summit
         Material lensMat, dustMat, deckMat, farCloudMat;
         Material spray;   // the game's soft particle (Atmosphere's snowfall): DayNight tints it for the time of day
         Transform deck; Mesh deckMesh; Vector2 deckAt = new Vector2(1e9f, 0f); float deckY = float.NaN;
-        StartPage startPage; FarMountain far; Material farMat; float lookedForPage;
+        readonly System.Func<StartPage> getStartPage;   // (handed over by the game: never searched for)
+        StartPage startPage; FarMountain far; Material farMat;
         float farHaze0 = -1f, farMist0, farMistH0;
         ParticleSystem farCloud;
         float lensCarry, driftCarry, dustCarry, nearCarry;
@@ -37,12 +38,13 @@ namespace Summit
         /// <summary>0 below e0, 1 above e1, smooth between (Mathf.SmoothStep is an interpolation, not this).</summary>
         static float Edge(float e0, float e1, float x) { float t = Mathf.Clamp01((x - e0) / (e1 - e0)); return t * t * (3f - 2f * t); }
 
-        public WeatherFX(Weather w, Rider r, Camera c, Texture2D cloud)
+        public WeatherFX(Weather w, Rider r, Camera c, Texture2D cloud, System.Func<StartPage> startPageOf)
         {
-            weather = w; rider = r; cam = c; root = w.transform; cloudTex = cloud;
+            weather = w; rider = r; cam = c; root = w.transform; cloudTex = cloud; getStartPage = startPageOf;
             var atmo = Object.FindFirstObjectByType<Atmosphere>();
             var fall = atmo != null ? atmo.transform.Find("Snowfall") : null;
             spray = fall != null ? fall.GetComponent<ParticleSystemRenderer>().sharedMaterial : null;
+            snowfall = fall != null ? fall.GetComponent<ParticleSystem>() : null;
             var unlit = Shader.Find("Universal Render Pipeline/Particles/Unlit");
             if (unlit == null || cam == null) return;   // (never stop the game for weather)
             lensMat = Particle(unlit, Droplet(), false);
@@ -83,8 +85,7 @@ namespace Summit
         public void Step(Weather.Look l, float dt, float gust)
         {
             if (cam == null || lens == null) return;
-            lookedForPage -= Mathf.Max(dt, Time.unscaledDeltaTime);
-            if (startPage == null && lookedForPage <= 0f) { lookedForPage = 0.5f; startPage = Object.FindFirstObjectByType<StartPage>(); }
+            if (startPage == null && getStartPage != null) startPage = getStartPage();
             bool page = OnStartPage;
             // the cloud drifts with the wind (racing in the start page's time-lapse)
             weather.Drift(dt > 0f ? dt : Time.unscaledDeltaTime, (0.004f + 0.02f * l.wind) * (TimeOfDay.Shown >= 0f ? 14f : 1f));
@@ -119,6 +120,8 @@ namespace Summit
             }
             Deck(l, cp, page);
             FarWeather(l, dt, page);
+            if (!warmed && !page) { warmed = true; Warm(); }
+            else if (warmFrames > 0 && --warmFrames == 0 && warmQuad != null) warmQuad.gameObject.SetActive(false);
         }
 
         void LensFlakes(int n, Weather.Look l)
@@ -241,7 +244,7 @@ namespace Summit
             var v = new Vector3[DeckN * DeckN]; var c = new Color[v.Length]; var t = new int[(DeckN - 1) * (DeckN - 1) * 6];
             float half = (DeckN - 1) * DeckStep * 0.5f;
             for (int j = 0; j < DeckN; j++)
-                for (int i = 0; i < DeckN; i++) { v[j * DeckN + i] = new Vector3(i * DeckStep - half, 0f, j * DeckStep - half); c[j * DeckN + i] = Color.white; }
+                for (int i = 0; i < DeckN; i++) { v[j * DeckN + i] = new Vector3(i * DeckStep - half, 0f, j * DeckStep - half); c[j * DeckN + i] = Color.clear; }
             int q = 0;
             for (int j = 0; j < DeckN - 1; j++)
                 for (int i = 0; i < DeckN - 1; i++)
@@ -258,7 +261,26 @@ namespace Summit
             mr.sharedMaterial = deckMat; mr.shadowCastingMode = ShadowCastingMode.Off; mr.receiveShadows = false;
             deck = go.transform;
             go.SetActive(false);
+            // a small clear quad in the deck's material, drawn once to get its GPU state made (Warm)
+            var wq = new GameObject("CloudWarm");
+            wq.transform.SetParent(root, false);
+            var qm = new Mesh { name = "CloudWarmQuad" };
+            qm.vertices = new[] { new Vector3(-0.5f, -0.5f, 0f), new Vector3(0.5f, -0.5f, 0f), new Vector3(-0.5f, 0.5f, 0f), new Vector3(0.5f, 0.5f, 0f) };
+            qm.uv = new[] { Vector2.zero, Vector2.right, Vector2.up, Vector2.one };
+            qm.colors = new[] { Color.clear, Color.clear, Color.clear, Color.clear };
+            qm.triangles = new[] { 0, 2, 1, 1, 2, 3 };
+            wq.AddComponent<MeshFilter>().sharedMesh = qm;
+            var wr = wq.AddComponent<MeshRenderer>();
+            wr.sharedMaterial = deckMat; wr.shadowCastingMode = ShadowCastingMode.Off; wr.receiveShadows = false;
+            wq.SetActive(false);
+            warmQuad = wq.transform;
         }
+
+        /// <summary>Rows of the deck's grid worked out per frame when it moves (40 rows: done in 14 frames, about half
+        /// a millisecond each on the editor's CPU, where the whole grid at once took over 3).</summary>
+        const int DeckRowsPerFrame = 3;
+        Color[] deckCols, deckNext;
+        int deckRow = -1; Vector2 deckNextAt; float deckNextY;
 
         void Deck(Weather.Look l, Vector3 cp, bool page)
         {
@@ -268,25 +290,70 @@ namespace Summit
             if (deckMat != null) deckMat.SetFloat("_Fade", fade);
             bool on = l.deck * fade > 0.01f && !page;
             if (deck.gameObject.activeSelf != on) deck.gameObject.SetActive(on);
-            if (!on) return;
-            // a grid round the camera, moved in steps; where the mountain stands above the sea's top it thins to nothing
+            if (!on) { deckRow = -1; return; }
+            // a grid round the camera, moved in steps; where the mountain stands above the sea's top it thins to nothing.
+            // The new grid is worked out a few rows a frame and put in place whole once it is done
             var at = new Vector2(Mathf.Round(cp.x / DeckSnap) * DeckSnap, Mathf.Round(cp.z / DeckSnap) * DeckSnap);
             float y = weather.SeaTop;
-            if (at == deckAt && Mathf.Abs(y - deckY) < 0.5f) return;
-            deckAt = at; deckY = y;
-            deck.position = new Vector3(at.x, y, at.y);
-            var cols = new Color[DeckN * DeckN];
+            if (deckRow < 0)
+            {
+                if (at == deckAt && Mathf.Abs(y - deckY) < 0.5f) return;
+                deckRow = 0; deckNextAt = at; deckNextY = y;
+            }
+            long t0 = PerfMarks.Now;
+            if (deckNext == null) { deckNext = new Color[DeckN * DeckN]; deckCols = new Color[DeckN * DeckN]; }
             float half = (DeckN - 1) * DeckStep * 0.5f;
-            for (int j = 0; j < DeckN; j++)
+            int end = Mathf.Min(DeckN, deckRow + DeckRowsPerFrame);
+            for (int j = deckRow; j < end; j++)
                 for (int i = 0; i < DeckN; i++)
                 {
-                    float x = at.x + i * DeckStep - half, z = at.y + j * DeckStep - half;
-                    float below = y - Slope.Height(x, z);
-                    float r = Mathf.Sqrt((i * DeckStep - half) * (i * DeckStep - half) + (j * DeckStep - half) * (j * DeckStep - half)) / half;
-                    cols[j * DeckN + i] = new Color(1f, 1f, 1f, Edge(0f, 70f, below) * (1f - Edge(0.75f, 1f, r)));
+                    float x = deckNextAt.x + i * DeckStep - half, z = deckNextAt.y + j * DeckStep - half;
+                    float below = deckNextY - Slope.Height(x, z);
+                    float dx = i * DeckStep - half, dz = j * DeckStep - half;
+                    float r = Mathf.Sqrt(dx * dx + dz * dz) / half;
+                    deckNext[j * DeckN + i] = new Color(1f, 1f, 1f, Edge(0f, 70f, below) * (1f - Edge(0.75f, 1f, r)));
                 }
-            deckMesh.colors = cols;
+            deckRow = end;
+            if (deckRow >= DeckN)
+            {
+                (deckCols, deckNext) = (deckNext, deckCols);
+                deckMesh.colors = deckCols;
+                deck.position = new Vector3(deckNextAt.x, deckNextY, deckNextAt.y);
+                deckAt = deckNextAt; deckY = deckNextY; deckRow = -1;
+            }
+            PerfMarks.Mark("weather deck rows", t0);
         }
+
+        // ---------------------------------------------------------------- shaders ready before they are needed
+
+        /// <summary>
+        /// The first time a weather's particles or its deck are drawn the phone has to make their GPU state, a hitch
+        /// in the middle of a run (the first snow, the first cloud sea). So once, the first frame the game's own world
+        /// is drawn (the camp, or the run in device tests), each is drawn once, invisible: a particle with no alpha in
+        /// front of the lens in every system, and a clear quad in the deck's material.
+        /// </summary>
+        void Warm()
+        {
+            long t0 = PerfMarks.Now;
+            var t = cam.transform;
+            var ep = new ParticleSystem.EmitParams
+            {
+                position = t.position + t.forward * 3f, velocity = Vector3.zero, startSize = 0.05f, startLifetime = 0.2f,
+                startColor = new Color32(255, 255, 255, 0), applyShapeToPosition = false,
+            };
+            foreach (var ps in new[] { near, drift, dust, snowfall }) if (ps != null) ps.Emit(ep, 1);
+            if (lens != null) { ep.position = new Vector3(0f, 0f, 0.3f); lens.Emit(ep, 1); }
+            if (warmQuad != null)
+            {
+                warmQuad.SetPositionAndRotation(t.position + t.forward * 5f, Quaternion.LookRotation(t.forward));
+                warmQuad.gameObject.SetActive(true);
+            }
+            warmFrames = 2;
+            PerfMarks.Mark("weather warm-up", t0);
+        }
+        bool warmed; int warmFrames;
+        Transform warmQuad;
+        ParticleSystem snowfall;
 
         // ---------------------------------------------------------------- the start page
 
@@ -298,7 +365,7 @@ namespace Summit
                 if (farCloud != null && farCloud.particleCount > 0) farCloud.Clear();
                 return;
             }
-            if (far == null) far = Object.FindFirstObjectByType<FarMountain>();
+            if (far == null) far = startPage.Far;
             if (far != null && farMat == null)
                 foreach (var mr in far.GetComponentsInChildren<MeshRenderer>(true))
                     if (mr.sharedMaterial != null && mr.sharedMaterial.HasProperty("_Mist")) { farMat = mr.sharedMaterial; break; }

@@ -191,7 +191,7 @@ namespace Summit
         /// Made once the world is (SummitGame, after DayNight.Hook). Off in batchmode unless a test asks for a weather,
         /// so the harnesses see the game as it was.
         /// </summary>
-        public static Weather Build(Rider r, Camp c, Camera camera, Atmosphere a, SnowFX snowFx, Material snow, SoundMix sound)
+        public static Weather Build(Rider r, Camp c, Camera camera, Atmosphere a, SnowFX snowFx, Material snow, SoundMix sound, System.Func<StartPage> startPage = null)
         {
             bool asked = TestChoice >= 0 || !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("SUMMIT_WEATHER"));
             if (Application.isBatchMode && !asked) return null;
@@ -206,7 +206,7 @@ namespace Summit
                 w.baseBump = snow.HasProperty("_BumpScale") ? snow.GetFloat("_BumpScale") : 1f;
             }
             w.cloudTex = CloudNoise();
-            w.wfx = new WeatherFX(w, r, camera, w.cloudTex);
+            w.wfx = new WeatherFX(w, r, camera, w.cloudTex, startPage);
             w.BuildGrade();
             w.BuildSound(sound != null ? sound.gameObject : w.gameObject);
             Active = w;
@@ -276,9 +276,12 @@ namespace Summit
             SeaThick = Mathf.Lerp(130f, 240f, R());
             fogPatch = R() * 100f;
             snapped = false;
-            Debug.Log($"WEATHER {Base}{(Windy ? " windy" : "")}{(FrontAt >= 0f ? $", {FrontTo} rolling in at {FrontAt:0}s" : "")} ({ChoiceName[choice]}, {TimeOfDay.PhaseName[phase]})");
+            // (no stack trace: a new mountain is busy enough)
+            Debug.LogFormat(LogType.Log, LogOption.NoStacktrace, null, "WEATHER {0}{1}{2} ({3}, {4})", Base, Windy ? " windy" : "",
+                            FrontAt >= 0f ? $", {FrontTo} rolling in at {FrontAt:0}s" : "", ChoiceName[choice], TimeOfDay.PhaseName[phase]);
+            PerfMarks.Note("weather rolled " + Base);
         }
-        int rolls;
+        int rolls, frontNoted, seaZone = -1;
 
         static Look Preset(Kind k, bool windy) =>
             k == Kind.Snow ? SnowLook : k == Kind.Storm ? StormLook : k == Kind.Fog ? FogLook : windy ? WindyLook : ClearLook;
@@ -305,17 +308,22 @@ namespace Summit
                 above.seaV = Mathf.Clamp((Mathf.Atan2(-Mathf.Max(h, 1f), 3000f) + 0.95f) / 1.16f, 0.25f, 0.8f);
                 Look inside = FogLook; inside.seaV = above.seaV;
                 Look below = BelowLook;
+                int zone = h > 0f ? 0 : h > -SeaThick ? 1 : 2;
+                if (zone != seaZone) { if (seaZone >= 0) PerfMarks.Note(zone == 1 ? "weather into the cloud sea" : zone == 2 ? "weather below the cloud sea" : "weather above the cloud sea"); seaZone = zone; }
                 if (h > 0f) l = Look.Lerp(above, inside, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(40f, -10f, h)));
                 else if (h > -SeaThick) l = Look.Lerp(inside, below, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-SeaThick + 60f, -SeaThick - 20f, h)));
                 else l = below;
             }
             // a front: foreshadowed from the start by a veil of cirrus and a halo, then the sky greys from upwind, the
             // wind rises, and the snow comes in last
+            if (FrontAt >= 0f && runT <= 0f && TestRunTime < 0f) frontNoted = 0;
             FrontProgress = 0f;
             if (FrontAt >= 0f)
             {
                 float t = TestRunTime >= 0f ? TestRunTime : runT;
                 float f = Mathf.Clamp01((t - FrontAt) / FrontSeconds);
+                if (f > 0f && FrontProgress <= 0f && frontNoted < 1) { frontNoted = 1; PerfMarks.Note("weather front coming in"); }
+                if (f >= 1f && frontNoted < 2) { frontNoted = 2; PerfMarks.Note("weather front arrived"); }
                 FrontProgress = f;
                 if (FrontTo == Kind.Storm)
                 {
@@ -343,7 +351,12 @@ namespace Summit
 
         // ---------------------------------------------------------------- per frame
 
-        void LateUpdate() { Step(Time.deltaTime); }
+        void LateUpdate()
+        {
+            long t0 = PerfMarks.Now;
+            Step(Time.deltaTime);
+            PerfMarks.MarkIfOver("weather step", t0, 1.0);
+        }
 
         /// <summary>Run the weather on by dt (the test tools call it: batchmode runs no LateUpdate).</summary>
         public void Step(float dt)
@@ -387,7 +400,7 @@ namespace Summit
             // (the snow material is a project asset: in the editor it is only changed in play mode, which always ends in
             // OnDestroy putting it back; a test tool exiting with the weather still on would save it changed)
             if (Application.isEditor && !Application.isPlaying) return;
-            if (snowMat == null || (Mathf.Abs(l.powder - lastPowder) < 0.01f && Mathf.Abs(l.crust - lastSmooth) < 0.01f)) return;
+            if (snowMat == null || (Mathf.Abs(l.powder - lastPowder) < 0.03f && Mathf.Abs(l.crust - lastSmooth) < 0.03f)) return;
             lastPowder = l.powder; lastSmooth = l.crust;
             // fresh powder: whiter and matte, its grain softer; wind crust: polished (a sheen) and its ripples sharper
             if (snowMat.HasProperty("_BaseColor")) snowMat.SetColor("_BaseColor", Color.Lerp(baseSnowCol, new Color(0.95f, 0.96f, 0.98f, baseSnowCol.a), l.powder * 0.6f));

@@ -228,6 +228,9 @@ namespace Summit
         /// list from then on (call it again after the camp is rebuilt, as the building is). Names: see Points.
         /// </summary>
         public void Repoint(string name, Vector3 world) { moved[name] = world; spotsMade = false; }
+
+        /// <summary>Where one of them is going (or staying), if anywhere: 1 Val, 2 Breanna, 3 Paul (for CampLife's spots).</summary>
+        public Vector3? GoingTo(int who) { var p = Who(who); return p != null && p.shown && p.at != null && spots.TryGetValue(p.at, out var s) ? s.at : (Vector3?)null; }
         readonly Dictionary<string, Vector3> moved = new Dictionary<string, Vector3>();
 
         Vector3 Point(string name)
@@ -397,6 +400,8 @@ namespace Summit
             // off somewhere else: out of where they are, then the way in to the next (Paul, somewhere the couple isn't)
             string next = p == paul ? (paulForced ?? Pick(p.at, false)) : Pick(p.at);
             if (p == paul) { if (paulForced != null) paulForced = null; else if (bri != null && bri.shown && next == bri.at) next = Pick(next, false); }
+            // (somewhere free: not where the camp's people are, nor where Paul or the couple is going; CampLife)
+            if (CampLife.Current != null && spots.TryGetValue(next, out var sp) && CampLife.Current.Taken(sp.at, p.who)) next = Pick(next, false);
             p.path.Clear();
             if (p.at != null) p.path.AddRange(Exit(p.at));
             p.path.AddRange(spots[next].via);
@@ -426,6 +431,8 @@ namespace Summit
                 var h = Flat(want - camp.WalkerPosition); float m = h.magnitude;
                 if (m < 0.75f && m > 1e-4f) want += h / m * (0.75f - m);
             }
+            // and round the camp's people, Alyssa, and each other (Paul and the couple; CampLife)
+            if (CampLife.Current != null) want = CampLife.Current.Around(p.who, p.pos, want);
             var was = p.pos;
             var to = camp.StepTo(p.pos, want, 0.3f);
             p.pos = new Vector3(to.x, p.pos.y, to.z);

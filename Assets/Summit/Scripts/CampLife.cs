@@ -168,7 +168,8 @@ namespace Summit
         {
             void D(string n, Vector3 at, float yaw) { if (!setByOthers.Contains(n)) Put(n, at, yaw); }
             float cy = camp.ChaletYaw;
-            var door = camp.ChaletPoint(0f, 0f, 11.9f); door.y = Slope.DrawnHeight(door.x, door.z);
+            // (beside the foot of the steps, off Val and Breanna's way up them: CampCouple's ChaletSteps)
+            var door = camp.ChaletPoint(2.4f, 0f, 12.2f); door.y = Slope.DrawnHeight(door.x, door.z);
             D("door", door, cy);
             // the lookout's deck (16, -54): two places at the front rail, looking down the mountain
             D("lookout.1", Ground(14.6f, -52.6f) + Vector3.up * 0.45f, 0f);
@@ -177,7 +178,7 @@ namespace Summit
             D("rail.1", Ground(21.2f, -70.8f), 90f);
             D("rail.2", Ground(21.2f, -64.2f), 85f);
             // open snow for standing about
-            D("chat.1", Ground(6.2f, -66.5f), 0f);
+            D("chat.1", Ground(8.6f, -69.2f), 0f);   // (clear of the couple's Stroll at (6, -66))
             D("chat.2", Ground(-7.5f, -58.5f), 0f);
             D("chat.3", Ground(3.5f, -55f), 0f);
             // the bench by the drop, looking down the start (the points are where you stand to sit down, just in front)
@@ -196,8 +197,7 @@ namespace Summit
             keep.Add(new KeepOut { name = "dropin", c = Ground(0f, Slope.GateZ - 2.6f), r = 4.5f, walk = true });
         }
 
-        Material wood, logs, steel;
-        Mesh standBoard;
+        Material wood, logs, steel, standBoard, standGear;   // (made once: the camp is rebuilt for every mountain)
 
         /// <summary>The camp's people's own things: a log bench by the drop, a waxing stand beside the lodge.</summary>
         void BuildProps()
@@ -258,8 +258,8 @@ namespace Summit
                     var m = Matrix4x4.TRS(new Vector3(0f, 0.79f, 0f), Quaternion.Euler(0f, 0f, 180f), Vector3.one) * PeopleKit.BoardLocal;
                     g.transform.localPosition = m.GetColumn(3); g.transform.localRotation = m.rotation; g.transform.localScale = PeopleKit.BoardLocal.lossyScale;
                     g.GetComponent<MeshFilter>().sharedMesh = PeopleKit.BoardMesh;
-                    var bm = M(new Color(0.55f, 0.92f, 0.78f), 0.7f);
-                    var gm = M(new Color(0.08f, 0.08f, 0.09f), 0.4f);
+                    if (standBoard == null) { standBoard = M(new Color(0.55f, 0.92f, 0.78f), 0.7f); standGear = M(new Color(0.08f, 0.08f, 0.09f), 0.4f); }
+                    var bm = standBoard; var gm = standGear;
                     var mats = new Material[PeopleKit.BoardSrcMats.Length];
                     for (int i = 0; i < mats.Length; i++) mats[i] = PeopleKit.BoardSrcMats[i] != null && PeopleKit.BoardSrcMats[i].name.StartsWith("Board") ? bm : gm;
                     g.GetComponent<MeshRenderer>().sharedMaterials = mats;
@@ -342,6 +342,11 @@ namespace Summit
             {
                 if (o == me || o.doing == Doing.Walk || o.doing == Doing.Ride || o.doing == Doing.Inside || !o.p.gameObject.activeSelf) continue;
                 if (!Cell(o.pos, out int ci, out int cj)) continue;
+                for (int dj = -1; dj <= 1; dj++) for (int di = -1; di <= 1; di++) { int ni = ci + di, nj = cj + dj; if (ni >= 0 && nj >= 0 && ni < gw && nj < gh) people.Add(nj * gw + ni); }
+            }
+            foreach (var o in others)
+            {
+                if (!Cell(o, out int ci, out int cj)) continue;
                 for (int dj = -1; dj <= 1; dj++) for (int di = -1; di <= 1; di++) { int ni = ci + di, nj = cj + dj; if (ni >= 0 && nj >= 0 && ni < gw && nj < gh) people.Add(nj * gw + ni); }
             }
             if (Cell(from, out int fi, out int fj)) people.Remove(fj * gw + fi);
@@ -547,15 +552,21 @@ namespace Summit
         /// <summary>The first of these points nobody is using (or the first, shared, if all are taken).</summary>
         string Free(params string[] names)
         {
-            foreach (var n in names) { var p = P(n); if (p != null && p.holder == null) return n; }
+            foreach (var n in names) { var p = P(n); if (p != null && p.holder == null && !NearOther(p.at, 1.4f)) return n; }
             // all taken: somewhere else to stand and look
-            foreach (var n in new[] { "snowman", "chat.3", "chat.2", "rail.2", "rail.1", "chat.1" }) { var p = P(n); if (p != null && p.holder == null) return n; }
+            foreach (var n in new[] { "snowman", "chat.3", "chat.2", "rail.2", "rail.1", "chat.1" }) { var p = P(n); if (p != null && p.holder == null && !NearOther(p.at, 1.4f)) return n; }
             return names[0];
         }
 
         void Go(Agent a, string point, Doing then, float stay)
         {
             var sp = P(point);
+            // (one of the camp's characters standing there: the nearest free point of the same kind instead)
+            if (sp != null && then != Doing.Inside && NearOther(sp.at, 1.4f))
+            {
+                string kind = point.Split('.')[0];
+                foreach (var q in points.Values) if (q.name.StartsWith(kind) && q.holder == null && !NearOther(q.at, 1.4f)) { sp = q; break; }
+            }
             if (sp == null) { a.doing = Doing.Stand; a.t = 0f; a.until = stay; return; }
             if (a.spot != null && a.spot.holder == a) a.spot.holder = null;
             a.spot = sp; if (sp.holder == null) sp.holder = a;
@@ -593,6 +604,8 @@ namespace Summit
             if (a != lead) { a.partner = lead; a.doing = Doing.Stand; a.t = 0f; a.until = 3f; return; }   // (waits for the lead)
             a.partner = other;
             var spots = new List<string> { "chat.1", "chat.3", "chat.2" };
+            spots.RemoveAll(n => P(n) == null || NearOther(P(n).at, 2.2f));   // (not where the camp's characters are standing)
+            if (spots.Count == 0) spots.Add("chat.3");
             var b1 = P("bench.1"); var b2 = P("bench.2");
             if (b1 != null && b2 != null && b1.holder == null && b2.holder == null) spots.Add("bench.1");
             string to = spots[Mathf.FloorToInt(Hash(a, 3) * spots.Count) % spots.Count];
@@ -675,14 +688,19 @@ namespace Summit
         public float LastStepMs { get; private set; }
 
         /// <summary>One frame of camp life (public for the test tools, which have no frame time).</summary>
+        static readonly System.Diagnostics.Stopwatch sw = new System.Diagnostics.Stopwatch();
+        sealed class ByDistance : IComparer<Agent> { public Vector3 eye; public int Compare(Agent x, Agent y) => (x.pos - eye).sqrMagnitude.CompareTo((y.pos - eye).sqrMagnitude); }
+        readonly ByDistance byEye = new ByDistance();
+
         public void Step(float dt, Vector3 eye)
         {
-            var sw = System.Diagnostics.Stopwatch.StartNew();
+            sw.Restart();
             if (gridDirty) BuildGrid();
             PeopleLod.BuildPending();
             clock += dt;
             heroHere = camp.Active && !camp.Falling;
             hero = camp.WalkerPosition; heroSpeed = camp.WalkerSpeed;
+            Others();
             if (!camp.Active)
                 foreach (var a in agents) if (a.own && a.doing == Doing.Ride) { a.p.gameObject.SetActive(false); a.gear = false; a.doing = Doing.Inside; a.t = 0f; a.until = 20f; a.pos = P("door").at; }
             foreach (var a in agents)
@@ -721,10 +739,25 @@ namespace Summit
                     if (Walkable(np) || (!Walkable(a.pos) && Clear(np))) { np.y = camp.FloorHeight(np, a.pos.y); a.pos = np; }
                 }
             }
+            foreach (var a in agents)
+            {
+                if (a.held || a.doing == Doing.Ride || a.doing == Doing.Inside || a.doing == Doing.Sit || a.doing == Doing.Strap || !a.p.gameObject.activeSelf) continue;
+                foreach (var o in others)
+                {
+                    Vector3 d = a.pos - o; d.y = 0f;
+                    float m = d.magnitude;
+                    const float gap = 0.62f;
+                    if (m >= gap) continue;
+                    Vector3 dir = m > 1e-4f ? d / m : Vector3.right;
+                    var np = a.pos + dir * (gap - m);
+                    if (Walkable(np) || (!Walkable(a.pos) && Clear(np))) { np.y = camp.FloorHeight(np, a.pos.y); a.pos = np; }
+                }
+            }
             // levels of detail: the full model for the nearest few
             byDistance.Clear();
             foreach (var a in agents) if (a.p != null && a.p.gameObject.activeSelf) byDistance.Add(a);
-            byDistance.Sort((x, y) => (x.pos - eye).sqrMagnitude.CompareTo((y.pos - eye).sqrMagnitude));
+            byEye.eye = eye;
+            byDistance.Sort(byEye);
             for (int i = 0; i < byDistance.Count; i++)
             {
                 var a = byDistance[i];
@@ -741,6 +774,77 @@ namespace Summit
 
         bool Reacting(Agent a) => reactT > 0f && !a.goer && (a.pos - reactAt).sqrMagnitude < 50f * 50f;
 
+        // the camp's named characters, who live by their own rules (CampCouple: Val, Breanna and Paul; Alyssa at the
+        // fire): the camp's people walk round them, give them their spots, and step aside when one comes through
+        readonly List<Vector3> others = new List<Vector3>(), othersGoing = new List<Vector3>();
+        public IReadOnlyList<Vector3> OthersNow => others;
+        void Others()
+        {
+            others.Clear(); othersGoing.Clear();
+            var cpl = camp.Couple;
+            if (cpl != null)
+                for (int who = 1; who <= 3; who++)
+                {
+                    var t = cpl.Of(who); if (t != null && t.gameObject.activeInHierarchy) others.Add(t.position);
+                    var g = cpl.GoingTo(who); if (g.HasValue) othersGoing.Add(g.Value);
+                }
+            var al = camp.Alyssa;
+            if (al != null && al.isActiveAndEnabled) others.Add(al.Seat);
+        }
+        /// <summary>One of the camp's characters is there, or on the way there.</summary>
+        bool NearOther(Vector3 p, float r)
+        {
+            foreach (var o in others) { float dx = o.x - p.x, dz = o.z - p.z; if (dx * dx + dz * dz < r * r) return true; }
+            foreach (var o in othersGoing) { float dx = o.x - p.x, dz = o.z - p.z; if (dx * dx + dz * dz < r * r) return true; }
+            return false;
+        }
+        static bool Near(Vector3 a, Vector3 b, float r) { float dx = a.x - b.x, dz = a.z - b.z; return dx * dx + dz * dz < r * r; }
+
+        // ---- one way for everyone in the camp to keep out of each other: the camp's people, CampCouple's Val, Breanna
+        // and Paul (who: 1, 2, 3), and Alyssa at the fire (a fixed place)
+
+        /// <summary>
+        /// A step one of CampCouple's characters wants to take (who: 1 Val, 2 Breanna, 3 Paul), moved out of everyone
+        /// else's way: the camp's people, Alyssa, and Paul and the couple out of each other's (Val and Breanna walk hand
+        /// in hand, so not out of each other's).
+        /// </summary>
+        public Vector3 Around(int who, Vector3 from, Vector3 want)
+        {
+            const float gap = 0.62f;
+            Vector3 Push(Vector3 w, Vector3 o) { var d = w - o; d.y = 0f; float m = d.magnitude; if (m < gap && m > 1e-4f) w += d / m * (gap - m); return w; }
+            foreach (var a in agents) if (a.p != null && a.p.gameObject.activeSelf && a.doing != Doing.Inside && a.doing != Doing.Ride) want = Push(want, a.pos);
+            var al = camp.Alyssa; if (al != null && al.isActiveAndEnabled) want = Push(want, al.Seat);
+            var c = camp.Couple;
+            if (c != null)
+                for (int k = 1; k <= 3; k++)
+                {
+                    if (k == who || (who != 3 && k != 3)) continue;   // (Paul round the couple, the couple round Paul)
+                    var t = c.Of(k); if (t != null) want = Push(want, t.position);
+                }
+            return want;
+        }
+
+        /// <summary>
+        /// Is a spot taken (who: CampCouple's 1 Val, 2 Breanna, 3 Paul)? By any of the camp's people standing there or on
+        /// their way there, and for Paul by where the couple is going (and for the couple by where Paul is).
+        /// </summary>
+        public bool Taken(Vector3 at, int who, float r = 1.6f)
+        {
+            foreach (var a in agents)
+            {
+                if (a.p == null || !a.p.gameObject.activeSelf || a.doing == Doing.Inside || a.doing == Doing.Ride) continue;
+                if (Near(a.pos, at, r) || (a.spot != null && a.spot.holder == a && Near(a.spot.at, at, r))) return true;
+            }
+            var c = camp.Couple;
+            if (c != null)
+                for (int k = 1; k <= 3; k++)
+                {
+                    if (k == who || (who != 3 && k != 3)) continue;
+                    var g = c.GoingTo(k); if (g.HasValue && Near(g.Value, at, r)) return true;
+                }
+            return false;
+        }
+
         void Walk(Agent a, float dt)
         {
             if (Reacting(a)) { a.speed = Mathf.MoveTowards(a.speed, 0f, dt * 4f); return; }   // (stopped dead, looking)
@@ -749,7 +853,13 @@ namespace Summit
             Vector3 to = goal - a.pos; to.y = 0f;
             float dist = to.magnitude;
             bool last = a.pathAt == a.path.Count - 1;
-            if (dist < (last ? 0.15f : 0.5f)) { a.pathAt++; if (a.pathAt >= a.path.Count) { a.speed = 0f; a.arrived?.Invoke(); } return; }
+            if (dist < (last ? 0.15f : 0.5f))
+            {
+                a.pathAt++;
+                a.progress = float.MaxValue; a.progressT = 0f;   // (a new leg: progress is measured along it afresh)
+                if (a.pathAt >= a.path.Count) { a.speed = 0f; a.arrived?.Invoke(); }
+                return;
+            }
             Vector3 dir = to / dist;
             // step round the others and the hero
             Vector3 push = Vector3.zero;
@@ -759,6 +869,12 @@ namespace Summit
                 Vector3 d = a.pos - o.pos; d.y = 0f;
                 float m = d.magnitude;
                 if (m < 1.3f && m > 1e-3f) push += d / m * (1.3f - m) * (o.doing == Doing.Walk ? 1.2f : 2f);
+            }
+            foreach (var o in others)
+            {
+                Vector3 d = a.pos - o; d.y = 0f;
+                float m = d.magnitude;
+                if (m < 1.4f && m > 1e-3f) push += d / m * (1.4f - m) * 2f;
             }
             float heroGap = 99f;
             if (heroHere)
@@ -798,9 +914,21 @@ namespace Summit
             {
                 a.stuck++; a.progressT = 0f; a.progress = float.MaxValue;
                 StuckAt.Add(new Vector2(a.pos.x - Cx, a.pos.z));
+                {
+                    float no = 99f; foreach (var o in others) no = Mathf.Min(no, new Vector2(o.x - a.pos.x, o.z - a.pos.z).magnitude);
+                    float na = 99f; foreach (var o in agents) if (o != a && o.p.gameObject.activeSelf && o.doing != Doing.Inside) na = Mathf.Min(na, new Vector2(o.pos.x - a.pos.x, o.pos.z - a.pos.z).magnitude);
+                    float nh = heroHere ? new Vector2(hero.x - a.pos.x, hero.z - a.pos.z).magnitude : 99f;
+                    var nxt = a.path[Mathf.Min(a.pathAt, a.path.Count - 1)];
+                    StuckWhy.Add($"{a.role}:{(a.spot != null ? a.spot.name : "-")} at ({a.pos.x - Cx:0.0},{a.pos.z:0.0}) next ({nxt.x - Cx:0.0},{nxt.z:0.0}) walkable {Walkable(nxt)} pathAt {a.pathAt}/{a.path.Count} other {no:0.0} person {na:0.0} hero {nh:0.0} speed {a.speed:0.00}");
+                }
                 LastStuck = $"{a.role}:{(a.spot != null ? a.spot.name : "-")} at ({a.pos.x - Cx:0.0}, {a.pos.z:0.0}) heading for ({a.path[a.path.Count - 1].x - Cx:0.0}, {a.path[a.path.Count - 1].z:0.0})";
                 var end = a.path[a.path.Count - 1];
-                if (a.stuck % 3 == 0) { a.doing = Doing.Stand; a.t = 0f; a.until = 1f; }
+                // held up by one of the camp's characters (in the way, or standing where they were going): something
+                // else to do, unless it's the door they want (then they wait their turn)
+                bool byOther = NearOther(a.pos, 1.8f) || NearOther(end, 2f);
+                bool door = a.spot != null && a.spot.name == "door";
+                if (byOther && !door) { if (a.spot != null && a.spot.holder == a) a.spot.holder = null; a.spot = null; a.doing = Doing.Stand; a.t = 0f; a.until = 0.6f; a.gear = a.gear && a.role >= 5; }
+                else if (a.stuck % 3 == 0) { a.doing = Doing.Stand; a.t = 0f; a.until = 1f; }
                 else if (!FindPathRound(a, a.pos, end, a.path) && !FindPath(a.pos, end, a.path)) { a.path.Clear(); a.path.Add(a.pos); a.path.Add(end); }
                 a.pathAt = 1;
                 StuckCount++;
@@ -808,7 +936,8 @@ namespace Summit
         }
         public int StuckCount { get; private set; }
         public string LastStuck { get; private set; }
-        public readonly List<Vector2> StuckAt = new List<Vector2>();   // (for the tests: where people were held up, from the run's centre)
+        public readonly List<Vector2> StuckAt = new List<Vector2>();
+        public readonly List<string> StuckWhy = new List<string>();   // (for the tests: where people were held up, from the run's centre)
 
         void RideStep(Agent a, float dt)
         {

@@ -568,7 +568,7 @@ namespace Summit
             rider.Bounced += into => { if (state != State.Riding) return; body.TubeKick(into); audioFx.Play(Sfx.Thump, Mathf.Clamp01(into / 12f)); };
             BuildMeta();
             dayNight.Hook(rider, fx, camp, spray, trail);
-            weather = Weather.Build(rider, camp, cam, atmo, fx, snow, audioFx);   // the weather on top of the time of day (Weather.cs)
+            weather = Weather.Build(rider, camp, cam, atmo, fx, snow, audioFx, () => start);   // the weather on top of the time of day (Weather.cs)
             ToHub();
             // the game opens on the start page (StartPage.cs), over the camp it has just set up. Not for the
             // device-test autoplay, which carries straight on into a run, nor for the editor's test tools, which

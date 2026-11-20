@@ -74,7 +74,7 @@ namespace Summit
             if (target == null || metal == null) return;
             int c = Course.CycleOf(target.position.z);
             for (int k = Mathf.Max(0, c); k <= c + 1; k++)
-                if (!built.ContainsKey(k)) built[k] = BuildCycle(k);
+                if (!built.ContainsKey(k)) { long t0 = PerfMarks.Now; built[k] = BuildCycle(k); PerfMarks.Mark("course cycle", t0); }
             drop.Clear();
             foreach (var kv in built) if (kv.Key < c - 0 && target.position.z > Course.First + (kv.Key + 1) * Course.Cycle + 80f) drop.Add(kv.Key);
             foreach (int k in drop) { FreeMeshes(built[k]); Destroy(built[k]); built.Remove(k); }

@@ -104,12 +104,14 @@ namespace Summit
             int key = l.ShapeKey;
             if (skinned.TryGetValue(key, out var have) && have != null) return have;
             var pos = new List<Vector3>(); var slot = new List<int>(); var tris = new List<int>(); var w = new List<BoneWeight>();
-            var gearBones = PeopleKit.TemplateGear.bones;
+            var cut = PeopleKit.CutOf(l);
+            var gearBones = cut.gear.bones;
             var index = new Dictionary<string, int>();
             for (int i = 0; i < gearBones.Length; i++) if (gearBones[i] != null) index[gearBones[i].name] = i;
             void Add(Mesh m, Transform[] bones, System.Func<int, Vector2, int> slotOf)
             {
-                var toModel = PeopleKit.MeshToModel;
+                if (m == null) return;
+                var toModel = cut.meshToModel;
                 var v = m.vertices; var uv = m.uv; var bw = m.boneWeights; var t = m.triangles;
                 // the source's bone indices, as the gear's
                 var remap = new int[bones.Length];
@@ -125,14 +127,15 @@ namespace Summit
                 }
                 foreach (var k in t) tris.Add(o + k);
             }
-            var rest = new List<Vector3>(); PeopleKit.Body.GetUVs(2, rest);
-            Add(PeopleKit.Body, PeopleKit.TemplateBody.bones, (i, uv) => rest.Count > i && rest[i].y < 1.3f ? PeopleKit.SJacket2 : PeopleKit.SJacket);
-            Add(PeopleKit.Legs, PeopleKit.TemplateLegs.bones, (i, uv) => PeopleKit.SPants);
+            var rest = new List<Vector3>(); cut.Body.GetUVs(2, rest);
+            Add(cut.Body, cut.body.bones, (i, uv) => rest.Count > i && rest[i].y < 1.3f ? PeopleKit.SJacket2 : PeopleKit.SJacket);
+            Add(cut.Legs, cut.legs.bones, (i, uv) => PeopleKit.SPants);
             var gear = PeopleKit.Gear(l);
-            Add(gear, gearBones, (i, uv) => PeopleKit.SlotOfCell(Mathf.Clamp(Mathf.FloorToInt(uv.x * 8f), 0, 7) + 8 * Mathf.Clamp(Mathf.FloorToInt(uv.y * 3f), 0, 2)));
-            var mesh = PeopleKit.Simplify(pos, slot, tris, SkinnedCell, "PersonSimple" + key, w, PeopleKit.MeshToModel.inverse);
+            Add(gear, gearBones, (i, uv) => PeopleKit.SlotOfCell(PeopleKit.CellAt(uv)));
+            if (cut.head != null) Add(PeopleKit.Head(l), cut.head.bones, (i, uv) => PeopleKit.SlotOfCell(PeopleKit.CellAt(uv)));
+            var mesh = PeopleKit.Simplify(pos, slot, tris, SkinnedCell, "PersonSimple" + key, w, cut.modelToMesh);
             mesh.bindposes = gear.bindposes;
-            if (System.Environment.GetEnvironmentVariable("SUMMIT_PEOPLE_LOG") == "1") Debug.Log($"People: simplified body {key}: {mesh.vertexCount} vertices, {mesh.triangles.Length / 3} triangles (full: {(PeopleKit.Body.triangles.Length + PeopleKit.Legs.triangles.Length + gear.triangles.Length) / 3})");
+            if (System.Environment.GetEnvironmentVariable("SUMMIT_PEOPLE_LOG") == "1") Debug.Log($"People: simplified body {key}: {mesh.vertexCount} vertices, {mesh.triangles.Length / 3} triangles");
             skinned[key] = mesh;
             return mesh;
         }

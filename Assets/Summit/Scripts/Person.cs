@@ -26,8 +26,8 @@ namespace Summit
         public PersonLook Look { get; private set; }
         public HeroRig Rig { get; private set; }
         public Transform Model { get; private set; }
-        public SkinnedMeshRenderer BodySkin, LegsSkin, GearSkin, LodSkin;
-        readonly SkinnedMeshRenderer[] skins = new SkinnedMeshRenderer[3];
+        public SkinnedMeshRenderer BodySkin, LegsSkin, GearSkin, HeadSkin, HandsSkin, LodSkin;
+        readonly SkinnedMeshRenderer[] skins = new SkinnedMeshRenderer[4];
         public SkinnedMeshRenderer[] Skins => skins;
         public readonly List<MeshRenderer> Rigid = new List<MeshRenderer>();
         public MeshRenderer Board, Phone;
@@ -108,15 +108,19 @@ namespace Summit
             foreach (var c in go.GetComponentsInChildren<Collider>()) DestroyImmediate(c);
             Rig = new HeroRig(Model, PeopleKit.Clips);
             if (!Rig.Ok) return false;
-            foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>())
+            foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>(true))
             {
-                if (smr.name.Contains("Body")) BodySkin = smr; else if (smr.name.Contains("Legs")) LegsSkin = smr; else if (smr.name.Contains("Gear")) GearSkin = smr;
+                string n = smr.name;
+                if (n.StartsWith("HeroBody")) BodySkin = smr; else if (n.StartsWith("HeroLegs")) LegsSkin = smr;
+                else if (n.StartsWith("HeroGear")) GearSkin = smr; else if (n.StartsWith("HeroHead")) HeadSkin = smr;
+                else if (n.StartsWith("HeroHands")) HandsSkin = smr;
                 smr.updateWhenOffscreen = false;
                 smr.quality = SkinQuality.Bone4;
                 smr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
             }
             if (BodySkin == null || LegsSkin == null || GearSkin == null) return false;
-            skins[0] = BodySkin; skins[1] = LegsSkin; skins[2] = GearSkin;
+            if (HandsSkin != null) HandsSkin.gameObject.SetActive(false);   // (the summit kit has gloves: the bare hands stay unseen)
+            skins[0] = BodySkin; skins[1] = LegsSkin; skins[2] = GearSkin; skins[3] = HeadSkin;
             foreach (var mr in go.GetComponentsInChildren<MeshRenderer>(true))
                 if (mr.name == "Snowboard") { Board = mr; boardPos0 = mr.transform.localPosition; boardRot0 = mr.transform.localRotation; boardScale0 = mr.transform.localScale; }
             idStand = Rig.Id("Stand"); idWalk = Rig.Id("Walk"); idRun = Rig.Id("Run");
@@ -180,7 +184,10 @@ namespace Summit
             if (Rig.Hips != null) Rig.Hips.localScale = new Vector3(look.build, 1f, 1f);
             if (chest != null) chest.localScale = new Vector3(look.shoulders, 1f, 1f);
             if (Rig.Neck != null) Rig.Neck.localScale = new Vector3(1f / (look.build * look.shoulders), 1f, 1f);
-            BodySkin.sharedMesh = PeopleKit.Body; LegsSkin.sharedMesh = PeopleKit.Legs; GearSkin.sharedMesh = PeopleKit.Gear(look);
+            // the summit kit as cut for them (a man's or a woman's: one skeleton, so either fits these bones)
+            var cut = PeopleKit.CutOf(look);
+            BodySkin.sharedMesh = cut.Body; LegsSkin.sharedMesh = cut.Legs; GearSkin.sharedMesh = PeopleKit.Gear(look);
+            if (HeadSkin != null) HeadSkin.sharedMesh = PeopleKit.Head(look);
             if (jacketM == null)
             {
                 // the clothes: the closet's cloth (its patterns drawn on the rest pose), with no snow on them
@@ -207,6 +214,7 @@ namespace Summit
             boardM.SetFloat("_Smoothness", b.smooth >= 0f ? b.smooth : 0.6f);
             boardM.SetFloat("_Metallic", b.metal);
             BodySkin.sharedMaterial = jacketM; LegsSkin.sharedMaterial = pantsM; GearSkin.sharedMaterial = gearM;
+            if (HeadSkin != null) HeadSkin.sharedMaterial = gearM;
             if (Board != null) Board.sharedMaterials = Mats(PeopleKit.BoardSrcMats);
             for (int i = 0; i < 2; i++)
             {

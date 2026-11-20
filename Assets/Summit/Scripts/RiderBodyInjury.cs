@@ -15,12 +15,15 @@ namespace Summit
         /// <summary>A hit the thrown body took (Receipt.Hit).</summary>
         public System.Action<Injury> Injured;
         int breaksTold;
-        bool injuryHooks;
+        /// <summary>The ragdoll OnInjury listens to. Another rider or set of clothes (SetCharacter) is a new body with
+        /// a new ragdoll, hooked afresh when it is built: a flag set once would leave every later one unheard.</summary>
+        Ragdoll injuryHooked;
 
         void HookInjuries()
         {
-            if (injuryHooks || ragdoll == null) return;
-            injuryHooks = true;
+            if (ragdoll == null || injuryHooked == ragdoll) return;
+            if (injuryHooked != null) injuryHooked.Struck -= OnInjury;   // (the old body's, thrown away)
+            injuryHooked = ragdoll;
             ragdoll.Struck += OnInjury;
         }
 

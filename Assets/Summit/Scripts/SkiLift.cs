@@ -226,7 +226,9 @@ namespace Summit
             if (refreshClock <= 0f || (p - refreshedAt).sqrMagnitude > 12f * 12f)
             {
                 refreshClock = 0.25f; refreshedAt = p;
+                long t0 = PerfMarks.Now;
                 Refresh(p);
+                PerfMarks.MarkIfOver("lifts", t0, 0.5);
             }
             Chairs(p);
             Bend();

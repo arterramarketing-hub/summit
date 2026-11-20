@@ -395,6 +395,7 @@ namespace Summit
                 for (int k = 0; k <= LastCycle; k++) Of(k);
             }
             Vector3 p = target.position;
+            long t0 = PerfMarks.Now;
             int c = Course.CycleOf(p.z);
             for (int k = Mathf.Max(0, c - 1); k <= c + 1; k++)
             {
@@ -403,6 +404,7 @@ namespace Summit
                 if (want && !built.ContainsKey(k)) built[k] = Begin(h);
             }
             foreach (var b in built.Values) if (b.next <= b.plan.sites.Length) Step(b);
+            PerfMarks.MarkIfOver("hamlets", t0, 0.5);
             drop.Clear();
             foreach (var kv in built)
                 if (p.z < kv.Value.plan.z0 - StreamAhead - 40f || p.z > kv.Value.plan.z1 + StreamBehind) drop.Add(kv.Key);
