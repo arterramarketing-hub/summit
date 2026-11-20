@@ -20,6 +20,7 @@ public static class GlitchTest
     {
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
         var game = Object.FindFirstObjectByType<SummitGame>();
+        TestPrefs.Pin();
         TestBoot.Boot(game);
         Physics.simulationMode = SimulationMode.Script;
         var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
@@ -43,8 +44,7 @@ public static class GlitchTest
         {
             for (int seed = 0; seed < 4; seed++)
             {
-                Slope.Init(1000 + seed * 77);
-                terrain.Rebuild(); props.Rebuild();
+                TestBoot.NewMountain(game, 1000 + seed * 77, terrain, props);
                 // the halfpipe: weave wall to wall at different speeds
                 foreach (float v0 in new[] { 14f, 22f, 30f })
                     Ride($"seed{seed} pipe v{v0}", rider, body, terrain, props, Course.First + Course.PipeAt + 40f, 0f, v0, 7f,
@@ -110,6 +110,7 @@ public static class GlitchTest
         catch (System.Exception e) { Debug.LogError("GLITCH exception " + e); issues++; }
         Debug.Log($"GLITCH done: {issues} issue(s)");
         Physics.simulationMode = SimulationMode.FixedUpdate;
+        TestPrefs.Restore();
         EditorApplication.Exit(0);
     }
 
@@ -118,6 +119,7 @@ public static class GlitchTest
     {
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
         var game = Object.FindFirstObjectByType<SummitGame>();
+        TestPrefs.Pin();
         TestBoot.Boot(game);
         Physics.simulationMode = SimulationMode.Script;
         var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
@@ -126,8 +128,7 @@ public static class GlitchTest
         var props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
         rider.input = null;
         string E(string k, string d) => System.Environment.GetEnvironmentVariable(k) ?? d;
-        Slope.Init(int.Parse(E("TRACE_SEED", "1154")));
-        terrain.Rebuild(); props.Rebuild();
+        TestBoot.NewMountain(game, int.Parse(E("TRACE_SEED", "1154")), terrain, props);
         Cliffs.JumpOf(int.Parse(E("TRACE_C", "1")), int.Parse(E("TRACE_K", "1")), out var j);
         float v0 = float.Parse(E("TRACE_V", "10"));
         int n = 0;
@@ -142,6 +143,7 @@ public static class GlitchTest
                          Debug.Log($"TRACE near: {c.name} ({c.GetType().Name}) at {c.bounds.center} trigger={c.isTrigger} parent={(c.transform.parent != null ? c.transform.parent.name : "-")}");
                  if (n++ % 3 == 0) Debug.Log($"TRACE t={t:0.000} z={p.z:0.00} x-c={p.x - Slope.Centre(p.z):0.00} y-ground={p.y - Slope.DrawnHeight(p.x, p.z) - Rider.R:0.00} v=({v.x:0.0},{v.y:0.0},{v.z:0.0}) air={rr.Airborne} n.y={Slope.Normal(p.x, p.z).y:0.00} fine={Ridge.Fine(Mathf.FloorToInt(p.x / Slope.Quad), Mathf.FloorToInt(p.z / Slope.Quad))}");
              }, true);
+        TestPrefs.Restore();
         EditorApplication.Exit(0);
     }
 

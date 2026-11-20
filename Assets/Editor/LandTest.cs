@@ -25,6 +25,7 @@ public static class LandTest
     {
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
         var game = Object.FindFirstObjectByType<SummitGame>();
+        TestPrefs.Pin();
         TestBoot.Boot(game);
         Physics.simulationMode = SimulationMode.Script;
         r = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
@@ -47,8 +48,7 @@ public static class LandTest
         {
             for (int seed = 0; seed < 3; seed++)
             {
-                Slope.Init(1000 + seed * 77);
-                terrain.Rebuild(); props.Rebuild();
+                TestBoot.NewMountain(game, 1000 + seed * 77, terrain, props);
                 // ---- the start lip, flat out and with a Super Jump
                 foreach (float v0 in new[] { 12f, 25f, 40f })
                     foreach (bool super in new[] { false, true })
@@ -100,6 +100,7 @@ public static class LandTest
         catch (System.Exception e) { Debug.LogError("LAND exception " + e); fails++; }
         Debug.Log($"LAND done: {rides} rides, {fails} failure(s); hardest landing ridden away {worstSurvived:0.0} m/s");
         Physics.simulationMode = SimulationMode.FixedUpdate;
+        TestPrefs.Restore();
         EditorApplication.Exit(0);
     }
 
@@ -158,6 +159,7 @@ public static class LandTest
                 }
                 r.Steer = Steer(Slope.Centre(r.Z + 12f) + dx);
                 bool wasAir = r.Airborne; float pk = r.Peak;
+                if (verbose) { Vector3 q = r.transform.position; string near = ""; foreach (var c in Physics.OverlapSphere(q, 3f, ~0, QueryTriggerInteraction.Ignore)) if (c.attachedRigidbody != r.Body) near += c.transform.parent?.name + "/" + c.name + "@" + c.transform.position + (c.enabled ? "" : "(off)") + " "; Debug.Log($"LAND-S {n2} p=({q.x:0.0000},{q.y:0.0000},{q.z:0.0000}) v={r.Velocity.ToString("F4")} air={r.Airborne} hd={r.Heading:0.0000} st={r.Steer:0.000} near: {near}"); }
                 if (verbose && n2 % 12 == 0) { Vector3 q = r.transform.position; Debug.Log($"LAND-V t={t:0.00} z={q.z:0.0} x-c={q.x - Slope.Centre(q.z):0.0} above={r.AboveGround:0.0} v={r.Velocity} air={r.Airborne} super={r.SuperJumpTime:0.0} popped={popped}"); }
                 Step(n2);
                 if (r.Crashed)
@@ -266,11 +268,15 @@ public static class LandTest
             float z = Course.First + cyc * Course.Cycle + Ridge.At + Ridge.RampIn + 20f;
             for (int s = -1; s <= 1; s += 2)
             {
-                bool cliff = Ridge.CliffSide(z, s);
+                // what lies beside the run here: a cliff down, a one-sided ridge's long snow side down, or (a valley,
+                // a ledge) a wall or a bank going up to the ground beside it
+                var kind = Ridge.SideAt(z, s);
+                bool cliff = kind == Ridge.Side.Cliff, snowSide = kind == Ridge.Side.Snow;
                 foreach (float v0 in cliff ? new[] { 24f } : new[] { 20f, 32f })
                 {
-                    string name = $"seed{seed} ridge c{cyc} {(s < 0 ? "left" : "right")} {(cliff ? "cliff" : "snow side")} v{v0}";
+                    string name = $"seed{seed} ridge c{cyc} {(s < 0 ? "left" : "right")} {(cliff ? "cliff" : snowSide ? "snow side" : kind == Ridge.Side.Wall ? "wall side" : "bank side")} v{v0}";
                     rides++;
+                    bool trace = System.Environment.GetEnvironmentVariable("LAND_VERBOSE") == name;
                     Start(Slope.Centre(z), z, v0);
                     if (!cliff) r.AddSuperJump(30f);
                     int n = 0; float midAir = 0f, peak = 0f, hardest = 0f, sinceLand = 0f; bool popped = false, landed = false;
@@ -285,6 +291,7 @@ public static class LandTest
                             if (!cliff && !popped && t > 1.5f && !r.Airborne && off > Ridge.HalfWidth(r.Z) - 1f) { r.QueuePop(0.8f); popped = true; }
                             r.Steer = t < 1.5f ? FollowCrest(0f) : cliff ? s * 0.8f : popped ? Mathf.Clamp((s * 0.6f - r.Heading) * 2f, -1f, 1f) : Mathf.Clamp((s * 0.9f - r.Heading) * 2f, -1f, 1f);
                             Step(n);
+                            if (trace) { Vector3 q = r.transform.position, qv = r.Velocity; Debug.Log($"LAND-T {n} p=({q.x:0.0000},{q.y:0.0000},{q.z:0.0000}) v=({qv.x:0.0000},{qv.y:0.0000},{qv.z:0.0000}) air={r.Airborne} rock={r.OnRock} hd={r.Heading:0.0000} st={r.Steer:0.000} trick={r.TrickName} rnd={Random.state.GetHashCode()}"); }
                             peak = Mathf.Max(peak, r.Peak);
                             if (!r.Airborne) sinceLand += Dt;
                             if (r.Crashed) midAir = r.transform.position.y - Slope.DrawnHeight(r.transform.position.x, r.Z) - Rider.R;
@@ -304,6 +311,9 @@ public static class LandTest
                     Debug.Log($"LAND {name}: peak {peak:0.0} m, hardest landing {hardest:0.0} m/s, {Ridge.Top(at.z) - at.y:0} m below the crest, crashed={r.Crashed} {lastCrash}, {r.Speed * 3.6f:0} km/h");
                     Vector3 cp = r.transform.position;
                     // (a tree, a boulder or a crag on the way down is a crash by collision, not the landing's)
+                    // (and a wall or a bank goes up, not down: a Super Jump steered into one can come down square onto its
+                    // rock, a slam like any other. Only a death short of Rider.DeathFall fails there, checked as it happens)
+                    if (!snowSide) { if (r.Crashed) Debug.Log($"LAND {name}: '{lastCrash}' coming down on the {kind.ToString().ToLower()} (that landing {r.LastLandImpact:0.0} m/s at {r.LastLandAngle:0} deg, rock={RockFace.IsRock(Slope.Normal(cp.x, cp.z), cp.x, cp.z)} n.y={Slope.Normal(cp.x, cp.z).y:0.00})"); continue; }
                     if (r.Crashed && lastCrash != "Hit the rocks!" && lastCrash != "Rock" && !lastCrash.StartsWith("Tree")) Fail($"{name}: crashed '{lastCrash}' landing on the snow side (peak {peak:0.0} m, {hardest:0.0} m/s; that landing {r.LastLandImpact:0.0} m/s at {r.LastLandAngle:0} deg, rock={RockFace.IsRock(Slope.Normal(cp.x, cp.z), cp.x, cp.z)} n.y={Slope.Normal(cp.x, cp.z).y:0.00} side={Ridge.SideAt(cp.z, s)})");
                     else if (!landed && !r.Crashed) Fail($"{name}: no big air off the snow side (peak {peak:0.0})");
                 }

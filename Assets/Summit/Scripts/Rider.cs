@@ -254,6 +254,9 @@ namespace Summit
             Flow = 0f; Shields = 0; BoostTime = 0f; invulnerable = 0f; SuperJumpTime = 0f; InvincibleTime = 0f; superAir = false;
             Undercut = 0f; Lift = 0f; fixVy = 0f;
             wobble = 0f; slowFor = 0f; shove = Vector3.zero;
+            // (and the clocks behind the wobble and the churn: carried over, the same landing swung the board a
+            // different way depending on every wobble before it, so a ride never came out the same twice)
+            churnT = 0f; OnRock = false; rockScrapeT = 0f; popHold = 0f; missClock = 0f; lastMiss = 0;
         }
 
         public void Begin()
@@ -640,7 +643,9 @@ namespace Summit
             }
             if (T < 0.6f || Tube) return;   // tubes just fly (airs still score on landing)
             TrickTime = T; trickPlanT = T;
-            int pick = (int)(Mathf.Abs(Mathf.Sin(Time.realtimeSinceStartup * 7.13f + p.z)) * 1000f);
+            // which trick: drawn from where you took off (on this mountain), not from the clock or Unity's shared
+            // random numbers, so the same flight always plans the same trick
+            int pick = (int)(Slope.Hash01(Mathf.RoundToInt(p.x * 8f), Mathf.RoundToInt(p.z * 8f), 97) * 4000f);
             var grabs = feel.Grabs;   // each ride has its own grabs (Ride.cs)
             string grab = grabs[pick % grabs.Length];
             int pts;
@@ -666,7 +671,7 @@ namespace Summit
                 else if (pick % 3 == 1) { TrickSpin = Mathf.PI * 4f; TrickGrab = 1 + pick % grabs.Length; TrickName = "720 " + grab; pts = 1000; }
                 else { TrickFlip = Mathf.PI * 2f; TrickGrab = 1 + pick % grabs.Length; TrickName = "Frontflip " + grab; pts = 900; }
             }
-            if (Random.value < 0.5f) TrickSpin = -TrickSpin;
+            if ((pick / 1000) % 2 == 1) TrickSpin = -TrickSpin;
             trickPoints = pts;
             if (TrickGrab > 0 && feel.GrabCountsAs != null && TrickGrab <= feel.GrabCountsAs.Length) TrickAlias = feel.GrabCountsAs[TrickGrab - 1];
         }

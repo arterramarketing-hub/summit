@@ -42,6 +42,7 @@ public static class StressTest
     {
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
         game = Object.FindFirstObjectByType<SummitGame>();
+        TestPrefs.Pin();
         TestBoot.Boot(game);
         Physics.simulationMode = SimulationMode.Script;
         r = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
@@ -62,8 +63,7 @@ public static class StressTest
         {
             for (int seed = 0; seed < seeds; seed++)
             {
-                Slope.Init(2000 + seed * 131);
-                terrain.Rebuild(); props.Rebuild();
+                TestBoot.NewMountain(game, 2000 + seed * 131, terrain, props);
                 var dress = Object.FindFirstObjectByType<CourseDressing>();
                 if (dress != null) { r.ResetAt(Slope.Centre(Course.First), Course.First); dress.Rebuild(); }
                 Crashes(seed);
@@ -78,6 +78,7 @@ public static class StressTest
                   $"{rides} rides, {stopped} stopped dead, {reversed} thrown back up the hill, {launchedRides} launched; crevasses: {crossed} carried across, {fellIn} fell in; lift ramps: {onCable} onto the cable; by kind: {sb}");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         Time.timeScale = 1f; Time.fixedDeltaTime = 1f / 120f;
+        TestPrefs.Restore();
         EditorApplication.Exit(0);
     }
 

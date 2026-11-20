@@ -15,6 +15,7 @@ public static class SimTest
     {
         UnityEditor.SceneManagement.EditorSceneManager.NewScene(UnityEditor.SceneManagement.NewSceneSetup.EmptyScene);
         Physics.simulationMode = SimulationMode.Script;
+        TestPrefs.Pin();   // (the forest's look is a saved setting)
         Slope.Init(1234);
         var rg = new GameObject("Rider");
         var r = rg.AddComponent<Rider>();
@@ -128,6 +129,7 @@ public static class SimTest
             Debug.Log($"SIM style={(amp == 0f ? "straight" : "carving")} avg={sum / cnt:0} km/h max={mx:0} km/h");
         }
         Physics.simulationMode = SimulationMode.FixedUpdate;   // do not leave the project on manual physics
+        TestPrefs.Restore();
         EditorApplication.Exit(0);
     }
 }
