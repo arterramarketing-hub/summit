@@ -17,6 +17,8 @@ public static class LandTest
     const float Dt = 1f / 120f;
     static int fails, rides;
     static string lastCrash = "";
+    static float lastKilled = -1f;
+    static bool diedOnRock;
     static Rider r; static RiderBody body; static SlopeStreamer terrain; static Forest props;
 
     public static void Run()
@@ -31,6 +33,13 @@ public static class LandTest
         props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
         r.input = null;
         r.Crash += why => lastCrash = why;
+        body.Killed += fell =>
+        {
+            lastKilled = fell;
+            if (fell < Rider.DeathFall) Fail($"killed by a fall of only {fell:0} m (the rule is {Rider.DeathFall:0} m)");
+            Vector3 c = body.RagdollCentre;
+            diedOnRock = RockFace.IsRock(Slope.Normal(c.x, c.z), c.x, c.z);   // (killed on rock: nothing to bury it in, by design)
+        };
         var dressing = Object.FindFirstObjectByType<CourseDressing>();
         if (dressing != null) { var tgt = dressing.target; dressing.target = null; dressing.Rebuild(); dressing.target = tgt; }
         float worstSurvived = 0f;
@@ -193,10 +202,14 @@ public static class LandTest
         return hardest;
     }
 
-    /// <summary>Hit by any route, the bottom of a deadly cliff kills, and the body ends up buried.</summary>
-    static void Expect(string name, int n, float midAir)
+    /// <summary>
+    /// Play a fall off a cliff out. One rule: a fall of Rider.DeathFall or more kills and buries ("Cliffed!" always does),
+    /// anything shorter is lived through; either way the body comes to rest on the ground, never hung in the air.
+    /// </summary>
+    static void Expect(string name, int n, float midAir, bool mustDie)
     {
         string why = lastCrash;
+        lastKilled = -1f;
         float tDead = -1f, rest = 0f;
         for (float t = 0f; t < 25f; t += Dt, n++)
         {
@@ -206,10 +219,15 @@ public static class LandTest
         }
         Vector3 c = body.RagdollCentre;
         Debug.Log($"LAND {name}: '{why}' {midAir:0.0} m off the ground, dead={body.Dead} after {tDead:0.0}s, lies {body.RagdollBelowSnow:0.00} m under the snow at x-c={c.x - Slope.Centre(c.z):0} z={c.z:0} rock={RockFace.IsRock(Slope.Normal(c.x, c.z), c.x, c.z)} below a deadly cliff={Deadly.Below(c.x, c.z)}");
-        if (!body.Dead && why != "Crevasse!") Fail($"{name}: survived the deadly cliff ('{why}')");   // (a glacier gap at the foot takes you too)
-        else if (body.RagdollBelowSnow < 0.6f) Fail($"{name}: dead but not buried ({body.RagdollBelowSnow:0.00} m)");
+        float up = c.y - Slope.DrawnHeight(c.x, c.z);
+        bool onRock = RockFace.IsRock(Slope.Normal(c.x, c.z), c.x, c.z);
+        if ((mustDie || why == "Cliffed!") && !body.Dead && why != "Crevasse!") Fail($"{name}: survived '{why}' off a cliff past the death height");   // (a glacier gap at the foot takes you too)
+        else if (!mustDie && body.Dead && why != "Cliffed!") Fail($"{name}: killed ('{why}') by a fall short of the death height");
+        else if (body.Dead && body.RagdollBelowSnow < 0.6f && !onRock && !diedOnRock) Fail($"{name}: dead but not buried ({body.RagdollBelowSnow:0.00} m)");
+        if (up > 1.5f && !body.RagdollMoving) Fail($"{name}: the body is left hanging {up:0.0} m over the ground");
     }
 
+    /// <summary>Over the edge of one of the walls in the danger stretch (25-55 m: short of Rider.DeathFall).</summary>
     static void Die(string name, Cliffs.Wall w, float v0)
     {
         rides++;
@@ -222,8 +240,14 @@ public static class LandTest
             Step(n);
             if (r.Crashed) midAir = r.transform.position.y - Slope.DrawnHeight(r.transform.position.x, r.Z) - Rider.R;
         }
-        if (!r.Crashed) { Fail($"{name}: rode on without going over (x-c={r.transform.position.x - Slope.Centre(r.Z):0.0})"); return; }
-        Expect(name, n, midAir);
+        float offW = (r.transform.position.x - Slope.Centre(r.Z)) * w.side;
+        if (!r.Crashed)
+        {
+            if (offW < w.edge) Fail($"{name}: rode on without going over (x-c={r.transform.position.x - Slope.Centre(r.Z):0.0})");
+            else Debug.Log($"LAND {name}: over the {w.height:0} m wall and rode it out, {r.Speed * 3.6f:0} km/h");
+            return;
+        }
+        Expect(name, n, midAir, w.height >= Rider.DeathFall);
     }
 
     static float FollowCrest(float dx)
@@ -270,13 +294,17 @@ public static class LandTest
                     finally { r.Landed -= onLand; }
                     if (cliff)
                     {
-                        if (!r.Crashed) { Fail($"{name}: rode off the edge without a fall"); continue; }
-                        Expect(name, n, midAir);
+                        // (rock is ridden now: a ledge on the way down can break the fall, so only "Cliffed!" or a fall
+                        // past the death height has to kill)
+                        if (!r.Crashed) { Debug.Log($"LAND {name}: rode off the edge and down without a fall, {Ridge.Top(r.Z) - r.transform.position.y:0} m below the crest"); continue; }
+                        Expect(name, n, midAir, false);
                         continue;
                     }
                     Vector3 at = r.transform.position;
                     Debug.Log($"LAND {name}: peak {peak:0.0} m, hardest landing {hardest:0.0} m/s, {Ridge.Top(at.z) - at.y:0} m below the crest, crashed={r.Crashed} {lastCrash}, {r.Speed * 3.6f:0} km/h");
-                    if (r.Crashed && lastCrash != "Hit the rocks!") Fail($"{name}: crashed '{lastCrash}' landing on the snow side (peak {peak:0.0} m, {hardest:0.0} m/s)");
+                    Vector3 cp = r.transform.position;
+                    // (a tree, a boulder or a crag on the way down is a crash by collision, not the landing's)
+                    if (r.Crashed && lastCrash != "Hit the rocks!" && lastCrash != "Rock" && !lastCrash.StartsWith("Tree")) Fail($"{name}: crashed '{lastCrash}' landing on the snow side (peak {peak:0.0} m, {hardest:0.0} m/s; that landing {r.LastLandImpact:0.0} m/s at {r.LastLandAngle:0} deg, rock={RockFace.IsRock(Slope.Normal(cp.x, cp.z), cp.x, cp.z)} n.y={Slope.Normal(cp.x, cp.z).y:0.00} side={Ridge.SideAt(cp.z, s)})");
                     else if (!landed && !r.Crashed) Fail($"{name}: no big air off the snow side (peak {peak:0.0})");
                 }
             }
@@ -290,10 +318,18 @@ public static class LandTest
         tp.GetProperty("TrickSpin").SetValue(r, spin);
         tp.GetProperty("TrickFlip").SetValue(r, flip);
         tp.GetProperty("TrickTime").SetValue(r, time);
+        tp.GetField("trickPlanT", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(r, time);
     }
 
     /// <summary>Off a jump cliff with a trick that cannot come round in time: the board comes down upside down or sideways.</summary>
     static void Bad(string name, Cliffs.Jump j, float v0, bool flip)
+    {
+        float rate0 = Rider.TrickMaxRate;
+        Rider.TrickMaxRate = 0f;   // (a trick that cannot hurry: it comes down part way round, as a misjudged one would)
+        try { BadRide(name, j, v0, flip); } finally { Rider.TrickMaxRate = rate0; }
+    }
+
+    static void BadRide(string name, Cliffs.Jump j, float v0, bool flip)
     {
         rides++;
         float x = Slope.Centre(j.Start - 25f);

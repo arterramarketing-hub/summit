@@ -278,9 +278,24 @@ namespace Summit
             float rib = Ridged(along * 0.022f + s, e * 0.006f + s * 2f);
             d += (0.35f - rib) * Mathf.Clamp01(e / 25f) * (6f + e * 0.18f);
             float slope = k1 + 2f * k2 * e;
-            float period = 7f + 5f * Noise(along * 0.02f + s, 5.5f);
             float tiers = Mathf.Clamp01((slope - 0.7f) / 0.4f);
-            d -= tiers * slope * 0.7f * period / (2f * Mathf.PI) * Mathf.Sin(2f * Mathf.PI * (e / period + 1.5f * Noise(along * 0.04f, s)));
+            if (tiers <= 0f) return d;
+            // The tiers: no two alike, or they read as contour lines. Their spacing wanders down the face (t runs
+            // unevenly with e) and along it; each tier has its own riser, steep or broken, and its own ledge, wide or
+            // a mere step (both from a noise keyed by the tier, so they change slowly along it); and they pinch out
+            // here and there, and die away across the ribs, leaving the rock there unbroken
+            float period = 6f + 9f * Noise(along * 0.017f + s, 5.5f);
+            float t = e / period + 1.3f * Noise(e * 0.035f + s, along * 0.021f) + 1.2f * Noise(along * 0.03f, s);
+            float tier = Mathf.Floor(t), f = t - tier;
+            float riser = 0.22f + 0.45f * Noise(tier * 3.1f + s, along * 0.025f);   // how much of the tier is the step
+            float at = Mathf.Lerp(riser * 0.5f, 1f - riser * 0.5f, Noise(tier * 2.3f + 11f + s, along * 0.02f));
+            float step = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((f - at) / riser + 0.5f));
+            float held = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.22f, 0.62f, Noise(along * 0.013f + s * 1.7f, e * 0.017f)))
+                       * (1f - 0.8f * Mathf.SmoothStep(0.45f, 0.85f, rib))
+                       // (and each tier its own way: one runs on along the face, its neighbour fades out within a few
+                       // tens of metres, so the ledges come and go rather than ring the shoulder like contour lines)
+                       * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.28f, 0.58f, Noise(tier * 1.9f + 5f + s, along * 0.03f)));
+            d += tiers * held * slope * period * (step - f) * 0.85f;
             return d;
         }
 

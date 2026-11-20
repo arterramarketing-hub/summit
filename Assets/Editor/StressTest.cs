@@ -67,7 +67,7 @@ public static class StressTest
                 var dress = Object.FindFirstObjectByType<CourseDressing>();
                 if (dress != null) { r.ResetAt(Slope.Centre(Course.First), Course.First); dress.Rebuild(); }
                 Crashes(seed);
-                if (crashOnly == null) Rides(seed);
+                if (crashOnly == null) { Rides(seed); RockRides(seed); CrevasseRides(seed); LiftRides(seed); }
             }
         }
         catch (System.Exception e) { Debug.LogError("STRESS exception " + e); }
@@ -75,7 +75,7 @@ public static class StressTest
         var sb = new System.Text.StringBuilder();
         foreach (var kv in kinds) sb.Append($"{kv.Key}={kv.Value} ");
         Debug.Log($"STRESS summary ({r.Ride}, hit-stop {(hitStop ? "on" : "off")}): {crashes} crashes, {launched} launched (>30 m up at the end), {fast} fast (>80 m/s after 2 s); " +
-                  $"{rides} rides, {stopped} stopped dead, {reversed} thrown back up the hill, {launchedRides} launched; by kind: {sb}");
+                  $"{rides} rides, {stopped} stopped dead, {reversed} thrown back up the hill, {launchedRides} launched; crevasses: {crossed} carried across, {fellIn} fell in; lift ramps: {onCable} onto the cable; by kind: {sb}");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         Time.timeScale = 1f; Time.fixedDeltaTime = 1f / 120f;
         EditorApplication.Exit(0);
@@ -98,7 +98,11 @@ public static class StressTest
             {
                 if (c.attachedRigidbody == r.Body) continue;
                 var ob = c.GetComponentInParent<Obstacle>();
-                if (ob != null && r.InvincibleTime <= 0f) { r.DoCrash(ob.label); break; }
+                // (as Rider.OnCollisionEnter: not while invincible or just up again, and only into it faster than 6 m/s)
+                if (ob == null || r.InvincibleTime > 0f || r.Invulnerable) continue;
+                Vector3 to = c.ClosestPoint(p) - p;
+                float into = to.sqrMagnitude > 1e-6f ? Vector3.Dot(v, to.normalized) : v.magnitude;
+                if (into > 6f || ob.always) { r.DoCrash(ob.label); break; }
             }
         }
         r.Tick(dt); body.PhysicsStep(); Physics.Simulate(dt);
@@ -315,6 +319,164 @@ public static class StressTest
         if (endUp > 30f) { launched++; Count("launched"); Debug.Log($"STRESS-FLAG {name}: launched, ends {endUp:0} m above the snow"); }
         if (maxV > 80f) { fast++; Count("fast"); Debug.Log($"STRESS-FLAG {name}: body at {maxV:0} m/s at t={maxVAt:0.0}"); }
         if (maxRiderV > 200f) { Count("sphere>200m/s"); Debug.Log($"STRESS-FLAG {name}: the board's sphere at {maxRiderV:0} m/s at t={maxRiderAt:0.00}"); }
+        // hung in the air: at rest, but well off the ground (caught on something, or held up by nothing)
+        if (endUp > 1.5f && !down && body.RagdollSpeed < 1f)
+        {
+            string under = "";
+            foreach (var hit in Physics.OverlapSphere(c, 1.2f, ~0, QueryTriggerInteraction.Ignore)) if (hit.attachedRigidbody == null || hit.attachedRigidbody.isKinematic) under += hit.name + " ";
+            Count("hung"); Debug.Log($"STRESS-FLAG {name}: body at rest {endUp:0.0} m over the ground at x-c={c.x - Slope.Centre(c.z):0} z={c.z:0}, on: {under}");
+        }
+        if (body.Dead || down) return;
+        // and up again: tap as soon as the game allows, then ride two seconds from where it puts you
+        float waited = 0f;
+        Vector3 upAt = Vector3.zero;
+        for (; waited < 8f && r.Crashed; waited += RealStep) { if (r.CanGetUp) r.RequestUp = true; Step(); if (!r.Crashed) upAt = r.Body.position; }
+        // (kept down by the game itself, StayDown: the run's last fall, or the avalanche's: not a glitch)
+        if (r.Crashed && !r.StayDown) { Count("can't get up"); Debug.Log($"STRESS-FLAG {name}: still down after 8 s more (hold={r.HoldCrash} body {body.RagdollSpeed:0.0} m/s)"); return; }
+        if (r.Crashed) { Debug.Log($"STRESS-INFO {name}: kept down by the game (falls={typeof(SummitGame).GetField("falls", NP).GetValue(game)})"); return; }
+        float airT = 0f;
+        for (float t = 0f; t < 2f && !r.Crashed; t += RealStep) { r.Steer = 0f; Step(); if (r.Airborne) airT += RealStep; }
+        // (riding on into the forest's trees after that is the forest: only a fall from the spot itself is a glitch)
+        bool obstacle = lastCrash == "Tree" || lastCrash == "Rock" || lastCrash.StartsWith("Tree") || lastCrash == "Signpost!" || lastCrash == "Bear!";
+        if (r.Crashed && !obstacle) { Count("down again"); Debug.Log($"STRESS-FLAG {name}: got up at x-c={upAt.x - Slope.Centre(upAt.z):0} n.y={Slope.Normal(upAt.x, upAt.z).y:0.00} and went straight down again ('{lastCrash}')"); }
+        else if (airT > 1.2f && (r.transform.position - upAt).magnitude < 6f) { Count("hovering"); Debug.Log($"STRESS-FLAG {name}: got up at x-c={upAt.x - Slope.Centre(upAt.z):0} n.y={Slope.Normal(upAt.x, upAt.z).y:0.00} and hopped in the air on the spot"); }
+    }
+
+    // ---------------------------------------------------------------- rock and crevasses
+
+    /// <summary>Across rock terraces off the piste: rock is ridden (slower, scraping), never a fall by itself.</summary>
+    static void RockRides(int seed)
+    {
+        var spots = new List<Vector3>();
+        for (float z = 150f; z < Course.First + 2f * Course.Cycle && spots.Count < 14; z += 23f)
+            for (float a = 24f; a < 110f; a += 3f)
+                foreach (float sd in new[] { -1f, 1f })
+                {
+                    float x = Slope.Centre(z) + sd * a;
+                    Vector3 nn = Slope.Normal(x, z);
+                    if (nn.y < 0.66f || !RockFace.IsRock(nn, x, z) || Course.CrevasseNear(x, z, 3f)) continue;
+                    bool far = true; foreach (var q in spots) if ((q - new Vector3(x, 0f, z)).sqrMagnitude < 50f * 50f) far = false;
+                    if (far) spots.Add(new Vector3(x, 0f, z));
+                }
+        foreach (var at in spots)
+            foreach (float v0 in new[] { 8f, 16f, 26f })
+                foreach (float h in new[] { -0.6f, 0f, 0.6f })
+                {
+                    string name = $"seed{seed} rock z{at.z:0} x-c{at.x - Slope.Centre(at.z):0} v{v0} h{h}";
+                    if (only != null && !name.StartsWith(only)) continue;
+                    rides++;
+                    Vector3 from = at - new Vector3(Mathf.Sin(h), 0f, Mathf.Cos(h)) * 12f;
+                    StartAt(from, h, v0);
+                    int scrapes = 0, rockSteps = 0; float hop = 0f; Vector3 last = r.transform.position; float still = 0f;
+                    System.Action<float> sc = _ => scrapes++;
+                    r.Scraped += sc;
+                    try
+                    {
+                        for (float t = 0f; t < 4f && !r.Crashed; t += RealStep)
+                        {
+                            r.Steer = Mathf.Clamp((h - r.Heading) * 1.5f, -1f, 1f);
+                            Step();
+                            if (r.OnRock) rockSteps++;
+                            if (r.Airborne && r.AboveGround < 1f && r.Speed < 4f) hop += RealStep;
+                            still = (r.transform.position - last).magnitude < 0.02f ? still + RealStep : 0f;
+                            last = r.transform.position;
+                        }
+                    }
+                    finally { r.Scraped -= sc; }
+                    Debug.Log($"STRESS-ROCK {name}: {rockSteps / 120f:0.0}s on rock, {scrapes} scrapes, crashed={r.Crashed} '{(r.Crashed ? lastCrash : "")}', {r.Speed * 3.6f:0} km/h at the end");
+                    if (r.Crashed && lastCrash == "Hit the rocks!") { Count("rock crash"); Debug.Log($"STRESS-FLAG {name}: crashed for touching rock"); }
+                    if (r.Crashed && lastCrash != "Hit the rocks!") PlayOut(name);   // (a boulder or a crag: a crash by collision, and up again)
+                    if (hop > 1f) { Count("hovering"); Debug.Log($"STRESS-FLAG {name}: hopping in the air on the spot for {hop:0.0}s"); }
+                    if (still > 1f && !r.Crashed) { Count("stuck"); Debug.Log($"STRESS-FLAG {name}: stuck, not moving for {still:0.0}s"); }
+                }
+    }
+
+    /// <summary>Across crevasses at a range of speeds and angles (and along one): you fall in only below the snow's level.</summary>
+    static void CrevasseRides(int seed)
+    {
+        for (int cyc = 0; cyc < 2; cyc++)
+        {
+            var cvs = Course.CrevassesOf(cyc);
+            for (int k = 0; k < Mathf.Min(3, cvs.Length); k++)
+            {
+                var cv = cvs[k];
+                float z = (cv.z0 + cv.z1) * 0.5f;
+                Course.Opening(cv, z, out float cx);
+                foreach (float sd in new[] { -1f, 1f })
+                    foreach (float v0 in new[] { 8f, 16f, 24f, 32f })
+                        foreach (bool pop in new[] { false, true })
+                            Gap($"seed{seed} crevasse c{cyc}k{k} across{(sd < 0 ? "L" : "R")} v{v0}{(pop ? " pop" : "")}", new Vector3(cx - sd * (cv.half + 10f), 0f, z - 6f), sd * 1.25f, v0, pop, cx, cv.half);
+                Gap($"seed{seed} crevasse c{cyc}k{k} along v15", new Vector3(cx, 0f, cv.z0 - 15f), 0f, 15f, false, cx, cv.half);
+            }
+        }
+    }
+
+    static int crossed, fellIn, onCable;
+
+    /// <summary>Up each lift's launch ramp and onto its cable, lined up, at and above the speed it needs.</summary>
+    static void LiftRides(int seed)
+    {
+        foreach (var l in LiftLine.Lifts)
+        {
+            var rp = l.ramp;
+            if (rp == null) continue;
+            Vector3 foot = LiftLine.RampPoint(l, rp, 0f), d = LiftLine.RampDir(l, rp, 0f);
+            Vector3 flat = new Vector3(d.x, 0f, d.z).normalized;
+            float head = Mathf.Atan2(flat.x, flat.z);
+            foreach (float v0 in new[] { rp.needSpeed, rp.needSpeed + 4f, 30f })
+            {
+                string name = $"seed{seed} lift k{l.k} ramp v{v0:0}";
+                if (only != null && !name.StartsWith(only)) continue;
+                rides++;
+                StartAt(foot - flat * 10f, head, v0);
+                bool cable = false, ramp = false;
+                for (float t = 0f; t < 6f && !r.Crashed; t += RealStep)
+                {
+                    // aim at the ramp's foot (and on along the line once past it), lined up as a park box is ridden into
+                    Vector3 p = r.transform.position;
+                    float ahead = Vector3.Dot(foot - p, flat);
+                    Vector3 aim = ahead > 2f ? foot + flat * 2f : p + flat * 10f;
+                    float want = Mathf.Atan2(aim.x - p.x, aim.z - p.z);
+                    r.Steer = r.Grinding ? 0f : Mathf.Clamp((want - r.Heading) * 3f - r.YawRate * 0.2f, -1f, 1f);
+                    Step();
+                    ramp |= r.Grinding; cable |= r.OnCable && r.AboveGround > 5f;
+                }
+                if (cable) onCable++;
+                Debug.Log($"STRESS-LIFT {name}: needs {rp.needSpeed:0} m/s, {(cable ? "onto the cable" : ramp ? "up the ramp, not onto the cable" : "never boarded the ramp")}, crashed={r.Crashed} '{(r.Crashed ? lastCrash : "")}', {r.Speed * 3.6f:0} km/h");
+                if (r.Crashed) PlayOut(name);
+            }
+        }
+    }
+    static void Gap(string name, Vector3 from, float heading, float v0, bool pop, float cx, float half)
+    {
+        if (only != null && !name.StartsWith(only)) return;
+        rides++;
+        StartAt(from, heading, v0);
+        bool popped = false, wasOver = false, early = false; float rimGap = 0f;
+        System.Action<string> atCrash = why =>
+        {
+            if (why != "Crevasse!") return;
+            Vector3 q = r.Body.position;
+            rimGap = (q.y - Rider.R) - Slope.DrawnHeight(q.x, q.z);
+            early = rimGap > -Rider.FallInDepth + 0.05f;
+        };
+        r.Crash += atCrash;
+        for (float t = 0f; t < 4f && !r.Crashed; t += RealStep)
+        {
+            r.Steer = Mathf.Clamp((heading - r.Heading) * 1.5f, -1f, 1f);
+            Vector3 p = r.transform.position;
+            if (pop && !popped && !r.Airborne && Mathf.Abs(p.x - cx) < half + 1.5f) { r.QueuePop(0.8f); popped = true; }
+            Step();
+            p = r.transform.position;
+            bool over = Course.CrevasseCut(p.x, p.z) > 0.3f;
+            wasOver |= over;
+        }
+        r.Crash -= atCrash;
+        bool fell = r.Crashed && lastCrash == "Crevasse!";
+        if (fell) fellIn++; else if (wasOver) crossed++;
+        Debug.Log($"STRESS-GAP {name}: {(fell ? "fell in" : wasOver ? "carried across" : "never over it")}{(r.Crashed && !fell ? $", crashed '{lastCrash}'" : "")}, {r.Speed * 3.6f:0} km/h");
+        if (early) { Count("crevasse early"); Debug.Log($"STRESS-FLAG {name}: fell in while still {rimGap:0.00} m from the snow's level"); }
+        if (r.Crashed && !fell) PlayOut(name);
     }
 
     // ---------------------------------------------------------------- rides

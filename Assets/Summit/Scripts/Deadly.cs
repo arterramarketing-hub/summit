@@ -3,9 +3,9 @@ using UnityEngine;
 namespace Summit
 {
     /// <summary>
-    /// Where a fall kills: the ground at the foot of the cliffs the mountain marks as ones to keep off. Anywhere else
-    /// a big air landed on the board, down a snow slope, is ridden away from however tall it was (see Rider.Land);
-    /// going over one of these and reaching the ground below is the end of the run (Rider.Land, RiderBody.FallStep).
+    /// Where the mountain's marked cliffs drop away: the ground at the foot of the walls in the danger stretch, a
+    /// ridge's cliff-side canyon, the valley under the summit. Only geography now (where nothing is built, where a
+    /// buddy's voice echoes): what kills is the height of a fall, wherever it is (Rider.DeathFall).
     /// </summary>
     public static class Deadly
     {

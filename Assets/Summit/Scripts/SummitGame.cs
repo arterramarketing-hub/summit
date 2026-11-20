@@ -1215,7 +1215,7 @@ namespace Summit
             float ground = Slope.DrawnHeight(c.x, c.z);
             float toFall = d.y - ground - Slope.Fall * Mathf.Max(0f, c.z - d.z);
             float falling = rider.Crashed ? -1f : rider.Body.linearVelocity.y;
-            if (toFall > Rider.DeadlyDrop && c.y - ground > 3f && falling < -1f) { cliffNooo = true; audioFx.StopScreaming(true); audioFx.NoooFor(1.5f); }
+            if (toFall > Rider.DeathFall && c.y - ground > 3f && falling < -1f) { cliffNooo = true; audioFx.StopScreaming(true); audioFx.NoooFor(1.5f); }
         }
 
         void StartScreaming()

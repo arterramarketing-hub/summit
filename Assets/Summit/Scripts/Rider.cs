@@ -31,7 +31,17 @@ namespace Summit
         public static float TurnDrag = 0.12f;                        // speed lost per radian of turning
         public static float TakeoffClearance = 0.22f;
         public static float FallLinePull = 2.2f;                     // 1/s: how fast a flat board swings back down the hill
-        public static float DeadlyDrop = 18f;                        // m fallen beyond the mountain's own line onto the foot of a deadly cliff (Deadly): fatal
+        /// <summary>
+        /// The one fall that kills: this far (m) below the mountain's own line from where you last stood on rideable
+        /// snow, wherever you come down. Past it the body hits the snow like a bomb and that is the end of the run;
+        /// short of it any fall is only a landing (or a crash) by the ordinary rules. 100 m is four and a half seconds of
+        /// free fall: nothing ridden ever comes close (the biggest airs, Super Jumps off the start and the jump cliffs,
+        /// are under 15 m), the 25-55 m walls in the danger stretch are a hard crash you can get up from, and the ridges'
+        /// 165 m cliffs and the summit's 170-430 m one are the drops that end it.
+        /// </summary>
+        public static float DeathFall = 100f;
+        /// <summary>Rock under the board: slower and skittish, never a fall by itself (see GroundStep).</summary>
+        public static float RockFriction = 0.22f, RockGrip = 0.55f, RockSlam = 0.8f;
         public static float SlamImpact = 28f;                        // m/s into the snow, square on: a landing nobody rides away from
         public static float MaxLandAngle = 65f;                      // deg between the flight and the snow: shallower than this (even onto the flat), any height is a landing
         public static float BadFlip = 70f, BadSpin = 55f;            // deg a bailed trick may be off upright / off the line and still be ridden out
@@ -57,6 +67,8 @@ namespace Summit
         public string TrickAlias { get; private set; }
 
         public const float R = 0.3f;              // the collision sphere around the feet
+        /// <summary>How far below the snow's level, over a crevasse's opening, the board has fallen in (m).</summary>
+        public const float FallInDepth = 0.6f;
         const float MaxHeading = 1.45f;           // about 83 degrees off the fall line
 
         public RiderInput input;
@@ -99,15 +111,13 @@ namespace Summit
         public int TrickGrab { get; private set; }       // 0 none, 1.. which grab
         public float TrickTime { get; private set; }     // predicted airtime
         /// <summary>0..1 through the trick's rotation, eased so it finishes before the landing.</summary>
-        public float TrickProgress
-        {
-            get
-            {
-                if (TrickTime <= 0f) return 0f;
-                float t = Mathf.Clamp01((AirTime - 0.08f * TrickTime) / (0.72f * TrickTime));
-                return t * t * (3f - 2f * t);
-            }
-        }
+        public float TrickProgress { get { float t = trickLin; return t * t * (3f - 2f * t); } }
+        /// <summary>The trick has come all the way round.</summary>
+        public bool TrickDone => trickLin >= 0.999f;
+        // how far round the trick is (0..1, before easing), and when the air is next looked at again (see TrickStep)
+        float trickLin, trickLook, trickPlanT;
+        /// <summary>The fastest a trick may turn to come round before a landing that comes sooner than planned (rad/s).</summary>
+        public static float TrickMaxRate = 20f;
 
         // ---- grinding
         public bool Grinding { get; private set; }
@@ -120,6 +130,9 @@ namespace Summit
         public System.Action<string> RoughLanding;
         public System.Action Jumped;
         public System.Action<float> Scraped;
+        /// <summary>Riding over rock right now (the scraping, the grit, the wobble: see GroundStep).</summary>
+        public bool OnRock { get; private set; }
+        float rockScrapeT;
         public System.Action ShieldHit;
         public System.Action<Course.Feature> GrindStart;
         public System.Action<Obstacle, Vector3, float> HitObstacle;
@@ -320,14 +333,24 @@ namespace Summit
             else if (!Crashed && TreeBreak.Instance != null) TreeBreak.Instance.RiderAhead(this, p, v, dt);
             // a sign or a flag where you are about to be, board to shoulders (see Breakables)
             if (!Crashed) Breakable.Probe(p, p + v * dt + Vector3.up * 1.2f, 0.45f, ownCol);
-            // over a crevasse with nothing under you (riding in, or coming down from the air): you fall in. Still
-            // rising off the snow (an ollie at the lip), you are clearing it
-            if (!Crashed && !Grinding && Course.CrevasseCut(p.x, p.z) > 1.2f
-                && (!Airborne || (Vector3.Dot(v, Slope.Normal(p.x, p.z)) < 0f && p.y - Slope.DrawnHeight(p.x, p.z) < 0.8f)))
+            // over a crevasse's opening there is nothing under the board: it carries on through the air on its own
+            // line (fast enough across a narrow one, it comes down on the far lip). Only once it has dropped below the
+            // snow's level, into the slot, has it fallen in
+            if (!Crashed && !Grinding && Course.CrevasseCut(p.x, p.z) > 0.3f)
             {
-                Airborne = false;
-                DoCrash("Crevasse!");
-                v = new Vector3(v.x * 0.4f, Mathf.Min(v.y, -2f), v.z * 0.4f);
+                if (p.y - R < Slope.DrawnHeight(p.x, p.z) - FallInDepth)
+                {
+                    Airborne = false;
+                    DoCrash("Crevasse!");
+                    v = new Vector3(v.x * 0.4f, Mathf.Min(v.y, -2f), v.z * 0.4f);
+                }
+                else if (!Airborne)
+                {
+                    // off the near lip: flying (no takeoff, no trick: you are not jumping, the snow just stopped)
+                    Airborne = true; airLock = 0f; AirTime = 0f; Peak = 0f; Carve = 0f; Skid = 0f;
+                    v -= Vector3.up * fixVy; fixVy = 0f;
+                    ClearTrick();
+                }
             }
             if (Crashed) v = CrashStep(dt, p, v);
             else if (Grinding) v = OnCable ? CableGrind.Step(this, dt, p, v) : GrindStep(dt, p, v);
@@ -363,6 +386,9 @@ namespace Summit
         {
             Vector3 n = Slope.Normal(p.x, p.z);
             Vector3 vIn = v - Vector3.up * fixVy;   // the board's own motion, without last step's correction onto the snow
+            // rock under the board: rideable, but it drags, the edge holds half as well, and the board chatters and
+            // scrapes (sound and grit, see Scraped); a ledge or a boulder on it is a crash like anywhere else
+            OnRock = !Tube && RockFace.IsRock(n, p.x, p.z);
             Vector3 vt = Vector3.ProjectOnPlane(vIn, n);
             float sp = vt.magnitude;
 
@@ -408,18 +434,19 @@ namespace Summit
                 else if (sp < 12f) Flow = Mathf.Max(0f, Flow - dt / 3f);
                 // (momentum carries you up to about 170 km/h; past that the air takes over again, so it never runs away)
                 float flowK = Mathf.Lerp(1f, FlowDrag, Flow * Mathf.Clamp01((52f - sp) / 8f));
-                float drag = (Tube ? DragOpen * 1.15f : Mathf.Lerp(DragOpen, DragTuck, Tuck)) * feel.Drag * (BoostTime > 0f ? 0.6f : 1f) * flowK * sp * sp + (Tube ? Friction * 1.3f : Friction) * G * n.y;
+                float drag = (Tube ? DragOpen * 1.15f : Mathf.Lerp(DragOpen, DragTuck, Tuck)) * feel.Drag * (BoostTime > 0f ? 0.6f : 1f) * flowK * sp * sp + (Tube ? Friction * 1.3f : Friction + (OnRock ? RockFriction : 0f)) * G * n.y;
                 vt -= vt / sp * Mathf.Min(sp, drag * dt);
             }
             // 4. the edge swings the velocity round to where the board points. It holds as long as the
             //    sideways pull is within its grip; beyond that the board skids
             float lost = 0f, demand = sp * Mathf.Abs(yaw);
-            float hold = Mathf.Min(1f, GripLimit * feel.Grip / Mathf.Max(demand, 1e-3f));
+            float rockGrip = OnRock ? RockGrip : 1f;
+            float hold = Mathf.Min(1f, GripLimit * feel.Grip * rockGrip / Mathf.Max(demand, 1e-3f));
             sp = vt.magnitude;
             if (sp > 0.05f)
             {
                 float beta = Mathf.Clamp(Mathf.Atan2(Vector3.Dot(vt, r), Vector3.Dot(vt, f)), -1.5f, 1.5f);
-                float beta2 = beta * Mathf.Exp(-(Tube ? 2.5f : Grip * feel.Grip * hold * (1f - 0.85f * Undercut)) * dt);   // a tube has no edge: it slides
+                float beta2 = beta * Mathf.Exp(-(Tube ? 2.5f : Grip * feel.Grip * rockGrip * hold * (1f - 0.85f * Undercut)) * dt);   // a tube has no edge: it slides
                 float scrub = Mathf.Abs(beta - beta2);
                 lost = scrub * sp;
                 sp *= 1f - 0.18f * scrub;
@@ -431,6 +458,12 @@ namespace Summit
             if (brake > 0f && sp > 3f) { float k = Mathf.Max(0f, sp - brake) / sp; vt *= k; sp *= k; }
             if (BoostTime > 0f) { vt += f * (BoostAccel * dt); sp = vt.magnitude; }
             if (sp < 3f) { vt += f * (6f * dt); sp = vt.magnitude; }
+            if (OnRock && sp > 3f)
+            {
+                wobble = Mathf.Max(wobble, 0.3f);
+                rockScrapeT -= dt;
+                if (rockScrapeT <= 0f) { rockScrapeT = 0.18f; Scraped?.Invoke(Mathf.Clamp(sp * 0.25f, 1f, 8f)); }
+            }
             Carve = Mathf.Lerp(Carve, Mathf.Clamp01(Mathf.Abs(Lean) / MaxLean * 0.8f + lost / dt / 20f) * Mathf.Clamp01(sp / 8f),
                                1f - Mathf.Exp(-dt * 12f));
             Speed = sp;
@@ -475,11 +508,12 @@ namespace Summit
             {
                 // off the edge of a drop: the face falls away from the way you are going, so you leave it on your own
                 // line (laid onto that face, the speed into the air would be taken away, or turned back up the hill)
-                if (!inPipe && Vector3.Dot(vIn, n) >= 0f) return TakeOff(p, vIn, 0.05f);
+                // (the fall counts from where you last stood on rideable snow, not from each touch on the way down)
+                if (!inPipe && Vector3.Dot(vIn, n) >= 0f) return TakeOff(p, vIn, 0.05f, false);
                 // running into a wall that rises in front must not turn the speed into a launch straight up, so the
                 // climb is capped at the ground's own rate
                 if (!inPipe) vt.y = Mathf.Min(vt.y, Mathf.Max(groundVy, 0f) + 1.5f);
-                return TakeOff(p, inPipe ? PipeAir(p, vt) : vt, 0.05f);
+                return TakeOff(p, inPipe ? PipeAir(p, vt) : vt, 0.05f, inPipe);
             }
             // the snow falls away faster than gravity can follow (a kicker's lip, a crest, a pipe's coping): fly
             // (leave with the slope's own vertical speed, never the mesh-following one, which can spike on coarse facets)
@@ -532,10 +566,11 @@ namespace Summit
             return false;
         }
 
-        Vector3 TakeOff(Vector3 p, Vector3 v, float lockTime)
+        Vector3 TakeOff(Vector3 p, Vector3 v, float lockTime, bool fromHere = true)
         {
             Airborne = true;
-            DropFrom = p;
+            if (fromHere) DropFrom = p;
+            OnRock = false;
             // leaving a pipe wall or its deck by any route: the air arcs back over the pipe
             float off = Mathf.Abs(p.x - Slope.Centre(p.z));
             if (Course.PipeWeight(p.z) > 0.5f && off > Course.PipeFlat + 1f && off < Course.PipeHalfWidth + Course.PipeDeck) pipeAir = true;
@@ -544,13 +579,53 @@ namespace Summit
             AirTime = 0f; Peak = 0f;
             Carve = 0f; Skid = 0f;
             superAir = false;
-            PlanTrick(p, v);
+            // (off a face too steep to stand on you are falling, not jumping: no trick, or every touch on the way down a
+            // rock face would plan one, and the next touch, a moment later, come down on it half way round)
+            if (fromHere) PlanTrick(p, v); else ClearTrick();
             return v;
         }
 
         // ---------------------------------------------------------------- tricks
 
-        void ClearTrick() { TrickAlias = null; TrickName = null; TrickSpin = 0f; TrickFlip = 0f; TrickGrab = 0; TrickTime = 0f; }
+        void ClearTrick() { TrickAlias = null; TrickName = null; TrickSpin = 0f; TrickFlip = 0f; TrickGrab = 0; TrickTime = 0f; trickLin = 0f; trickLook = 0f; }
+
+        /// <summary>How long until a flight from p at v comes down on the snow (up to max seconds).</summary>
+        static float AirLeft(Vector3 p, Vector3 v, float max)
+        {
+            float T = 0f; const float h = 1f / 30f;
+            Vector3 q = p, u = v;
+            for (int i = 0; i < 150 && T < max; i++)
+            {
+                u.y -= G * h; q += u * h; T += h;
+                if (q.y <= Slope.DrawnHeight(q.x, q.z) + R && Course.CrevasseCut(q.x, q.z) <= 0.3f) break;
+            }
+            return T;
+        }
+
+        /// <summary>
+        /// Turn the trick: round at a steady rate so it is done by 80% of the planned airtime. The planned airtime is
+        /// looked at again as the flight goes, and if the snow is coming sooner than it was (steering in the air, a
+        /// slope that rises to meet you) the trick hurries to come round in time, as fast as TrickMaxRate allows: an
+        /// automatic trick only comes down upside down or sideways when even that is not fast enough.
+        /// </summary>
+        void TrickStep(float dt, Vector3 p, Vector3 v)
+        {
+            if (TrickTime <= 0f || trickLin >= 1f) return;
+            trickLook -= dt;
+            if (trickLook <= 0f)
+            {
+                trickLook = 0.05f;
+                float landAt = AirTime + AirLeft(p, v, TrickTime);
+                if (landAt < TrickTime) TrickTime = landAt;
+            }
+            if (AirTime < 0.08f * TrickTime) return;
+            float left = Mathf.Max(0.8f * TrickTime - AirTime, dt);
+            float step = (1f - trickLin) * dt / left;
+            float turn = Mathf.Abs(TrickSpin) + Mathf.Abs(TrickFlip);
+            // (never slower than the pace it was planned at, never faster than TrickMaxRate to make up for a short flight)
+            if (turn > 0.01f) step = Mathf.Min(step, Mathf.Max(TrickMaxRate * dt / turn, dt / (0.72f * Mathf.Max(trickPlanT, 0.1f))));
+            trickLin = Mathf.Min(1f, trickLin + step);
+        }
 
         /// <summary>Predict the airtime, and pick a trick that can be finished before the landing.</summary>
         void PlanTrick(Vector3 p, Vector3 v)
@@ -564,7 +639,7 @@ namespace Summit
                 if (i > 2 && q.y <= Slope.DrawnHeight(q.x, q.z) + R) break;
             }
             if (T < 0.6f || Tube) return;   // tubes just fly (airs still score on landing)
-            TrickTime = T;
+            TrickTime = T; trickPlanT = T;
             int pick = (int)(Mathf.Abs(Mathf.Sin(Time.realtimeSinceStartup * 7.13f + p.z)) * 1000f);
             var grabs = feel.Grabs;   // each ride has its own grabs (Ride.cs)
             string grab = grabs[pick % grabs.Length];
@@ -603,6 +678,9 @@ namespace Summit
         {
             AirTime += dt;
             airLock -= dt;
+            v -= Vector3.up * fixVy;   // (last step's correction back onto a face, see below: not the board's own motion)
+            fixVy = 0f;
+            TrickStep(dt, p, v);
             v.y -= G * dt;
             float sp = v.magnitude;
             v -= v * Mathf.Min(1f, 0.0025f * sp * dt);
@@ -619,7 +697,7 @@ namespace Summit
             float flat = v.x * v.x + v.z * v.z;
             // (once a trick's rotation is done it lines up too: in a long super-jump flight, steering during the
             // trick would otherwise leave the board well off its line and snap it round at the landing)
-            if (flat > 4f && (TrickName == null || AirTime > 0.8f * TrickTime))
+            if (flat > 4f && (TrickName == null || TrickDone))
             {
                 float travel = Mathf.Clamp(Mathf.Atan2(v.x, v.z), -MaxHeading, MaxHeading);
                 Heading = Mathf.MoveTowardsAngle(Heading * Mathf.Rad2Deg, travel * Mathf.Rad2Deg, 220f * dt) * Mathf.Deg2Rad;
@@ -639,12 +717,29 @@ namespace Summit
 
             float nx = p.x + v.x * dt, nz = p.z + v.z * dt;
             float gy = Slope.DrawnHeight(nx, nz) + R + Lift;   // (come down on the avalanche's debris, if it is under you)
-            fixVy = 0f;
             AboveGround = Mathf.Max(0f, p.y - (Slope.DrawnHeight(p.x, p.z) + R));
             Peak = Mathf.Max(Peak, AboveGround);
             // (the lock after a takeoff keeps a lip's facets from landing you straight back on it, but never holds you
             // up while the snow comes up through the board)
-            if (p.y + v.y * dt <= gy && (airLock <= 0f || p.y + v.y * dt < gy - 0.1f)) return Land(dt, p, v, gy);
+            // (and nothing to come down on over a crevasse's opening: Tick sees you fall in)
+            if (p.y + v.y * dt <= gy && Course.CrevasseCut(nx, nz) <= 0.3f)
+            {
+                // against a face too steep to stand on (rock or snow, a cliff or a crevasse's lip): no landing, the board
+                // goes on falling down it, sliding on its surface, until it reaches ground it can stand on. Landing on it
+                // threw the board straight back off again, a step or two later, over and over: hopping in the air on the
+                // spot at a crawl, juddering down a cliff at speed
+                Vector3 fn = Slope.Normal(nx, nz);
+                if (fn.y < 0.62f && !Course.InPipe(nx, nz) && !pipeAir)
+                {
+                    float into = Vector3.Dot(v, fn);
+                    if (into < 0f) v -= fn * into;
+                    float fix = (gy - (p.y + v.y * dt)) / dt;   // back onto the face, kept apart (fixVy)
+                    if (fix > 0f) { fixVy = fix; v.y += fix; }
+                    OnRock = RockFace.IsRock(fn, nx, nz);
+                    return v;
+                }
+                if (airLock <= 0f || p.y + v.y * dt < gy - 0.1f) return Land(dt, p, v, gy);
+            }
             return v;
         }
 
@@ -661,10 +756,10 @@ namespace Summit
             float along = Vector3.ProjectOnPlane(v, n).magnitude;
             LastLandAngle = Mathf.Atan2(impact, along) * Mathf.Rad2Deg;
             LastLandImpact = impact;
-            if (RockFace.IsRock(n, p.x, p.z)) { DoCrash("Hit the rocks!"); return v; }
-            // off one of the cliffs the mountain marks to keep away from, down to the ground below it: nobody rides
-            // away from that (anywhere else, a long way down is only a big air: see the slam below)
-            if (fell > DeadlyDrop && Deadly.Over(DropFrom, p)) { DoCrash("Cliffed!"); return v; }
+            // a fall past DeathFall, wherever it comes down: nobody rides away from that, and the body hitting the snow
+            // ends it (RiderBody.FallStep). Anything shorter is a landing, on snow or on rock
+            if (fell >= DeathFall) { DoCrash("Cliffed!"); return v; }
+            bool rock = RockFace.IsRock(n, p.x, p.z);
             // a trick that had not come round: the board meets the snow upside down or across the way you are going
             string bad = BadLanding();
             if (bad != null) { DoCrash(bad); return v; }
@@ -686,7 +781,8 @@ namespace Summit
             superAir = false;
             // a slam is hard AND square on: landed down a slope at a glancing angle the legs soak it, however big the
             // air, and the board rides away (slowed, and wobbling as you find your feet)
-            if (impact > SlamImpact && LastLandAngle > MaxLandAngle) { DoCrash("Slammed!"); return v; }
+            // (onto rock a little sooner: it gives nothing)
+            if (impact > SlamImpact * (rock ? RockSlam : 1f) && LastLandAngle > MaxLandAngle - (rock ? 10f : 0f)) { DoCrash("Slammed!"); return v; }
             bool hard = impact > 18f;
             float keep = Mathf.Max(0.5f, 1f - Mathf.Clamp01((impact - 8f) * 0.012f));
             if (hard)
@@ -703,7 +799,7 @@ namespace Summit
             groundVy = (gyNext - hereY) / dt; fixVy = vy - vt.y;
             if (TrickName != null)
             {
-                if (AirTime >= 0.8f * TrickTime) Trick?.Invoke(TrickName, trickPoints);
+                if (TrickDone) Trick?.Invoke(TrickName, trickPoints);
                 // a skip of a fraction of a second (bouncing off a steep face just after a big landing) was never a
                 // jump you meant: no trick to bail
                 else if (AirTime > 0.3f) RoughLanding?.Invoke("Bailed the " + TrickName);
@@ -728,7 +824,7 @@ namespace Summit
         /// </summary>
         string BadLanding()
         {
-            if (TrickName == null || AirTime >= 0.8f * TrickTime || AirTime <= 0.3f) return null;
+            if (TrickName == null || TrickDone || AirTime <= 0.3f) return null;
             float k = TrickProgress;
             float flip = Mathf.Abs(Mathf.DeltaAngle(0f, TrickFlip * k * Mathf.Rad2Deg));        // off upright
             float spin = Mathf.Abs(Mathf.DeltaAngle(0f, TrickSpin * k * Mathf.Rad2Deg));
@@ -1029,15 +1125,37 @@ namespace Summit
             if (Course.CrevasseNear(p.x, p.z, 0.5f, out var cv)) p = Course.CrevasseRim(cv, p, 1.6f);
             // stopped on a ridge's cliff: get up on the snow below it, not on the rock
             p.x = Ridge.SafeX(p.x, p.z);
-            // step clear of whatever stopped you, toward the piste
+            // step clear of whatever stopped you, toward the piste, onto snow you can ride away on: never up on a face
+            // too steep to stand on (where the board only falls off again, hopping in the air on the spot) or over a
+            // crevasse's opening
+            // (the nearest such spot, either way across the slope or a little further down it: toward the piste first,
+            // but never up a cliff's face to get there)
             float toward = Mathf.Sign(Slope.Centre(p.z) - p.x + 0.01f);
-            for (int i = 0; i < 6 && Blocked(p); i++) p.x += toward * 1.5f;
+            if (Blocked(p) || !Rideable(p.x, p.z))
+            {
+                Vector3 best = p; bool found = false;
+                for (int i = 1; i <= 40 && !found; i++)
+                    foreach (float side in new[] { toward, -toward })
+                    {
+                        foreach (float dz in new[] { 0f, 3f, 6f })
+                        {
+                            var q = new Vector3(p.x + side * 1.5f * i, p.y, p.z + dz);
+                            if (Rideable(q.x, q.z) && !Blocked(q)) { best = q; found = true; break; }
+                        }
+                        if (found) break;
+                    }
+                p = best;
+            }
             p.y = Slope.DrawnHeight(p.x, p.z) + R;
             rb.position = p;
             DropFrom = p;
             groundVy = 0f; fixVy = 0f;
             return new Vector3(0f, 0f, 3f);
         }
+
+        /// <summary>Somewhere to get up and ride away from: not too steep to stand on, and solid snow (no crevasse).</summary>
+        static bool Rideable(float x, float z) => Slope.Normal(x, z).y > 0.75f && Course.CrevasseCut(x, z) <= 0f
+            && !Course.CrevasseNear(x, z, 1.5f) && !Course.CrevasseNear(x, z + 5f, 1.5f) && !Course.CrevasseNear(x, z + 10f, 1.5f);   // (nor just above one's top)
 
         bool Blocked(Vector3 p)
         {

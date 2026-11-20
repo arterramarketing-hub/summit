@@ -14,6 +14,7 @@ public static class GlitchTest
     const float Dt = 1f / 120f;
     static int issues;
     static string lastCrash = "";
+    static bool diedOnRock;
 
     public static void Run()
     {
@@ -27,6 +28,13 @@ public static class GlitchTest
         var props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
         rider.input = null;
         rider.Crash += why => lastCrash = why;
+        // every death must be a fall of Rider.DeathFall or more (one rule, wherever it happens)
+        body.Killed += fell =>
+        {
+            if (fell < Rider.DeathFall) Report($"killed by a fall of only {fell:0} m (the rule is {Rider.DeathFall:0} m)");
+            Vector3 c = body.RagdollCentre;
+            diedOnRock = RockFace.IsRock(Slope.Normal(c.x, c.z), c.x, c.z);   // (killed on rock: nothing to bury it in, by design)
+        };
         // no course dressing in the rides (signs and flags can now be hit): it was built for the boot mountain, not
         // for the seeds ridden here; BreakableRides builds it for its own rides
         var dressing = Object.FindFirstObjectByType<CourseDressing>();
@@ -236,14 +244,21 @@ public static class GlitchTest
                     Step(r, body, terrain, props, n);
                     if (r.Crashed) midAir = r.transform.position.y - Slope.DrawnHeight(r.transform.position.x, r.Z) - Rider.R;
                 }
-                if (!r.Crashed) { Report($"{name}: rode on without going over (z={r.Z:0} off={r.transform.position.x - Slope.Centre(r.Z):0.0})"); continue; }
+                // (a wall shorter than Rider.DeathFall is a hard landing or a crash you get up from: it may be ridden out)
+                if (!r.Crashed)
+                {
+                    float offW = (r.transform.position.x - Slope.Centre(r.Z)) * w.side;
+                    if (offW < w.edge) Report($"{name}: rode on without going over (z={r.Z:0} off={offW:0.0})");
+                    else Debug.Log($"GLITCH-INFO {name}: went over the {w.height:0} m wall and rode on (off={offW:0.0})");
+                    continue;
+                }
                 string why = lastCrash;
                 float buried = PlayOut(name, r, body, terrain, props, ref n, 16f, out float tDead, out float sank);
                 Debug.Log($"GLITCH-INFO {name}: '{why}' {midAir:0.00} m off the ground, dead={body.Dead} after {tDead:0.0}s, lies {buried:0.00} m under the snow");
                 if (midAir > 1.2f) Report($"{name}: fell off the board in mid-air ({midAir:0.0} m up)");
-                if (!body.Dead) Report($"{name}: survived going over a {w.height:0} m cliff ('{why}')");
+                if (!body.Dead && w.height >= Rider.DeathFall + 5f) Report($"{name}: survived going over a {w.height:0} m cliff ('{why}')");
                 // (dead on the rocks at the wall's foot is a death too: only on snow does the body go under)
-                else if (buried < 0.6f && !RockFace.IsRock(Slope.Normal(body.RagdollCentre.x, body.RagdollCentre.z), body.RagdollCentre.x, body.RagdollCentre.z)) Report($"{name}: dead but not buried ({buried:0.00} m)");
+                else if (body.Dead && buried < 0.6f && !RockFace.IsRock(Slope.Normal(body.RagdollCentre.x, body.RagdollCentre.z), body.RagdollCentre.x, body.RagdollCentre.z)) Report($"{name}: dead but not buried ({buried:0.00} m)");
                 if (sank > 0.6f) Report($"{name}: ragdoll sank {sank:0.00} m into the rock");
             }
         }
@@ -450,8 +465,9 @@ public static class GlitchTest
         }
         if (kind == Ridge.Side.Wall)
         {
-            // into the wall: rock, a tumble back down to the floor, and up again there
-            if (!r.Crashed) { Report($"{name}: rode into the valley wall without a fall (10 s) at off={off:0.0}"); return; }
+            // into the wall: rock is ridden now (no fall for touching it); if it does throw you, a tumble back down to the
+            // floor, and up again there
+            if (!r.Crashed) { Debug.Log($"GLITCH-INFO {name} (wall side): rode into the valley wall without a fall, at off={off:0.0}"); return; }
             string hit = lastCrash;
             float tc = 0f;
             for (; tc < 20f && r.Crashed; tc += Dt, n++)
@@ -462,14 +478,15 @@ public static class GlitchTest
             Vector3 up = r.transform.position;
             float upOff = up.x - Slope.Centre(up.z);
             Debug.Log($"GLITCH-INFO {name} (wall side): '{hit}' {midAir:0.00} m off the ground, dead={body.Dead}, up after {tc:0.0}s at off={upOff:0.0} (floor half {Ridge.HalfWidth(up.z):0.0})");
-            if (hit != "Hit the rocks!") Report($"{name}: fell for '{hit}', not onto the wall's rock");
             if (midAir > 1.2f) Report($"{name}: fell off the board in mid-air ({midAir:0.0} m up)");
             if (body.Dead) Report($"{name}: killed riding into the valley wall");
             else if (r.Crashed) Report($"{name}: never got up (20 s)");
             else if (Mathf.Abs(upOff) > Ridge.HalfWidth(up.z) + 1f) Report($"{name}: got up on the wall at off={upOff:0.0}, not on the floor");
             return;
         }
-        if (!r.Crashed) { Report($"{name}: rode off the edge without a fall (14 s) at z={r.Z:0} off={off:0.0} {below:0} m below the crest air={r.Airborne} above={r.AboveGround:0.0} n.y={Slope.Normal(at.x, at.z).y:0.00} rock={RockFace.IsRock(Slope.Normal(at.x, at.z), at.x, at.z)}"); return; }
+        // (rock is rideable: a ledge part way down can stop the fall, and the rest of the cliff be ridden down; the rule
+        // that matters is that a fall of Rider.DeathFall kills, checked by Killed above)
+        if (!r.Crashed) { Debug.Log($"GLITCH-INFO {name}: rode off the edge without a fall (14 s) at z={r.Z:0} off={off:0.0} {below:0} m below the crest air={r.Airborne} above={r.AboveGround:0.0} n.y={Slope.Normal(at.x, at.z).y:0.00}"); return; }
         string why = lastCrash;
         float buried = PlayOut(name, r, body, terrain, props, ref n, 30f, out float tDead, out float sank);
         Vector3 c = body.RagdollCentre;
@@ -477,8 +494,8 @@ public static class GlitchTest
                   $"lies {Ridge.Top(c.z) - c.y:0} m below the crest and {buried:0.00} m under the snow");
         if (!Fell(why)) Report($"{name}: fell for '{why}', not onto the rock (or the canyon floor)");
         if (midAir > 1.2f) Report($"{name}: fell off the board in mid-air ({midAir:0.0} m up)");
-        if (!body.Dead) Report($"{name}: survived {Ridge.Top(c.z) - c.y:0} m down the cliff");
-        else if (buried < 0.6f) Report($"{name}: dead but not buried ({buried:0.00} m)");
+        if (!body.Dead && why == "Cliffed!") Report($"{name}: fell {Ridge.Top(c.z) - c.y:0} m for 'Cliffed!' and lived");
+        else if (body.Dead && buried < 0.6f && !diedOnRock) Report($"{name}: dead but not buried ({buried:0.00} m)");
         if (sank > 0.6f) Report($"{name}: ragdoll sank {sank:0.00} m into the rock");
     }
 

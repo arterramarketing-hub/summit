@@ -133,6 +133,29 @@ Shader "Summit/Rock"
 
             #define RELIEF_MEAN 0.567   // the height map's average (Tools/MakeRockScan.py prints it)
 
+            #if defined(SUMMIT_ROCK_TERRAIN)
+            // A noise that never repeats, for where the snow line wanders across the terrain's rock. The rock textures
+            // repeat (every 5 and 41 m), and a line keyed to them comes back at the same spacing all the way across a
+            // face: from afar, bands like contour lines. (A hash without sine, which loses precision far from the
+            // origin on phone GPUs)
+            float Hash3(float3 c)
+            {
+                c = frac(c * 0.1031);
+                c += dot(c, c.zyx + 31.32);
+                return frac((c.x + c.y) * c.z);
+            }
+            float ValueNoise(float3 p)
+            {
+                float3 i = floor(p), f = frac(p);
+                f = f * f * (3.0 - 2.0 * f);
+                float a = lerp(Hash3(i), Hash3(i + float3(1, 0, 0)), f.x);
+                float b = lerp(Hash3(i + float3(0, 1, 0)), Hash3(i + float3(1, 1, 0)), f.x);
+                float c = lerp(Hash3(i + float3(0, 0, 1)), Hash3(i + float3(1, 0, 1)), f.x);
+                float d = lerp(Hash3(i + float3(0, 1, 1)), Hash3(i + float3(1, 1, 1)), f.x);
+                return lerp(lerp(a, b, f.y), lerp(c, d, f.y), f.z);
+            }
+            #endif
+
             #if !defined(SUMMIT_ROCK_NO_PARALLAX)
             #define RELIEF_STEPS 6
             // the near rock's height alone, at a mip level given by hand (it is sampled inside a branch and a loop,
@@ -200,6 +223,11 @@ Shader "Summit/Rock"
                 // across a whole wall (gentler), which is what a low sun still picks out from across a canyon
                 half4 nearRelief = TriRelief(q, w, _Scales.x, dpx, dpy);
                 half4 farRelief = TriRelief(p + 17.3, w, _Scales.y, dpx, dpy);
+                // past a hundred metres or so the near rock's 5 m repeat shows as a lattice of blobs and cracks across a
+                // whole face (and every mark keyed to it, snow too, lines up with it): there it gives way to the far rock
+                half nearFade = saturate((dist - 60.0) / 120.0);
+                nearRock = lerp(nearRock, farRock, nearFade);
+                nearRelief = lerp(nearRelief, half4(0, 0, 0, RELIEF_MEAN), nearFade);
                 float3 nb = normalize(n + (nearRelief.xyz + farRelief.xyz * 0.6) * _Relief.w);
                 // (the texture is sRGB, so its colours arrive linear: for the masks and tints below, its tones as
                 // painted, about 0.36 on average)
@@ -239,20 +267,30 @@ Shader "Summit/Rock"
                 #else
                 half groundY = n.y;
                 #endif
-                half up = groundY + (farT.b - 0.38) * 0.6 + (nearT.g - 0.36) * 0.5 + (nb.y - n.y) * 0.5;
+                #if defined(SUMMIT_ROCK_TERRAIN)
+                // (on the terrain the broad patches come from a noise that never repeats, not the far rock: see ValueNoise)
+                half broad = (half)(ValueNoise(p * (1.0 / 26.0) + 3.7) * 0.65 + ValueNoise(p * (1.0 / 11.0) - 8.1) * 0.35) - 0.5;
+                #else
+                half broad = (farT.b - 0.38) * 1.4;
+                #endif
+                half up = groundY + broad * 0.43 + (nearT.g - 0.36) * 0.5 + (nb.y - n.y) * 0.5;
                 half snow = smoothstep(_Snow.x, _Snow.y, up);
                 // and along the bedding seams, where the strata leave a little shelf: broken lines of snow across
                 // even a sheer face (not under an overhang). In shade and haze, when the rock's own colours have all
                 // but gone, these are what still say "cliff" from across a canyon
                 half shelf = (1.0 - seam) * smoothstep(0.48, 0.66, farT.g * 1.7 + nearT.r * 0.7 - 0.3) * saturate(groundY * 2.0 + 0.9);
+                shelf *= 1.0 - _Strata.z;   // (z: none at all, for tests)
                 snow = max(snow, shelf * 0.85);
 
                 #if defined(SUMMIT_ROCK_TERRAIN)
                 // the snow line, pixel by pixel: how bare the ground is here, pushed about by the rock itself - its
-                // broad patches (the far rock), its blocks standing proud and its cracks (the relief) - so snow lies
+                // broad patches (a noise that never repeats), its blocks standing proud and its cracks (the relief) - so snow lies
                 // on in the hollows and cracks and the blocks and ribs come through first; and less where the strata
                 // leave a shelf. Under the line the rock lets the snow below it show through
-                half bare = i.bare.x + _Line.x * ((farT.g - 0.38) * 0.7 + (nearT.r - 0.36) * 0.3 + (nearRelief.w - RELIEF_MEAN) * 0.35 - shelf * 0.12);
+                // Only near the line, though: where the ground is plainly bare (a cliff), no crack in the rock lets snow
+                // through, or the cracks' own repeat shows as a lattice of white ticks across the whole face
+                half push = broad * 0.5 + (nearT.r - 0.36) * 0.3 + (nearRelief.w - RELIEF_MEAN) * 0.35 - shelf * 0.12;
+                half bare = i.bare.x + _Line.x * push * (1.0 - smoothstep(0.75, 0.97, i.bare.x));
                 clip(bare - 0.5);
                 // just inside the line, the rock is still patchy with snow (thicker the nearer the line), and right
                 // at it a drift's lip, smooth, facing up and catching the light, over a thin shadowed crease where it
