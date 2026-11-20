@@ -38,6 +38,7 @@ Shader "Summit/Backdrop"
             half _BackdropSat;                // colour kept (1 day; less by moonlight, which shows little colour)
             half2 _BackdropGlow;              // the band of height (v) up which the snow comes into the low sun:
                                               // below it the snow is in the shade, as the lower slopes are at dusk
+            half _BackdropHaze;               // 0 in the game; the start page's far view sees the range through haze
             struct Attributes { float4 positionOS : POSITION; float2 uv : TEXCOORD0; };
             struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; };
             Varyings vert(Attributes i)
@@ -66,8 +67,11 @@ Shader "Summit/Backdrop"
                 half3 hz = half3(0.604, 0.708, 0.871);
                 hz = lerp(dot(hz, half3(0.3, 0.59, 0.11)).xxx, hz, _BackdropSat) * tint;
                 graded += haze * (unity_FogColor.rgb - hz);
-                c.rgb = graded;
-                c.a *= 1 - SAMPLE_TEXTURE2D(_SkyMask, sampler_SkyMask, i.uv).r * _BackdropKey;
+                // (from the helicopter the range stands beyond tens of kilometres of air: more of it toward its foot)
+                c.rgb = lerp(graded, unity_FogColor.rgb, saturate(_BackdropHaze * (1.0 + 1.3 * smoothstep(0.93, 0.8, i.uv.y))));
+                half sky = SAMPLE_TEXTURE2D(_SkyMask, sampler_SkyMask, i.uv).r;
+                c.a *= 1 - sky * _BackdropKey;
+                c.a *= 1 - saturate(sky * 4.0) * step(0.001, _BackdropHaze);   // (hazed, any of the photo's own sky left in would show as a veil)
                 return c;
             }
             ENDHLSL

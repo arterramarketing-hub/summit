@@ -234,6 +234,10 @@ namespace Summit
 
         struct Band { public Transform t; public float lag, lagUp; }
         Band[] bands;
+        /// <summary>The photo of the range beyond (null with the painted bands), and how far from the camera it hangs:
+        /// the start page pushes it out behind the whole mountain (StartPage.Show).</summary>
+        public Transform PhotoBand { get; private set; }
+        public const float PhotoRadius = 1500f;
         Vector3 bandAnchor;
         const float E0 = -0.07f, E1 = 0.33f;   // the elevations the band textures cover (Tools/MakeSky.swift)
 
@@ -248,7 +252,8 @@ namespace Summit
                 // the texture is the player's extended picture (Tools/art/rainier-extended.jpg: its top 664 rows, spanning
                 // -0.775..0.21 rad, the summit a few degrees above the horizon and real forest well below it), with a
                 // short fade into valley haze below that, down to -0.95 rad (Tools/MakePhotoBand.swift)
-                go.AddComponent<MeshFilter>().sharedMesh = Arc(1500f, 1.483f, -0.95f, 0.21f);
+                go.AddComponent<MeshFilter>().sharedMesh = Arc(PhotoRadius, 1.483f, -0.95f, 0.21f);
+                PhotoBand = go.transform;
                 var r = go.AddComponent<MeshRenderer>();
                 r.sharedMaterial = photo;
                 r.shadowCastingMode = ShadowCastingMode.Off; r.receiveShadows = false;

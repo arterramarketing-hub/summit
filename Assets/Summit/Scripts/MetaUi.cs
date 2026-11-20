@@ -62,6 +62,11 @@ namespace Summit
             Place(mc.rectTransform, new Vector2(1f, 1f), new Vector2(-36f, -36f), new Vector2(400f, 100f), new Vector2(1f, 1f));
             missionsText = Label(mc.transform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(380f, 80f), 40, TextAnchor.MiddleCenter);
             buttons.Add(new KeyValuePair<RectTransform, string>(mc.rectTransform, "missions"));
+            // the way back to the start page: a small peak between the two chips
+            var tb0 = Img("TitleChip", hubRoot, new Color(0f, 0f, 0f, 0.45f), disc);
+            Place(tb0.rectTransform, new Vector2(0f, 1f), new Vector2(408f, -38f), new Vector2(96f, 96f), new Vector2(0f, 1f));
+            Place(Img("Peak", tb0.transform, new Color(1f, 1f, 1f, 0.9f), Peak(96)).rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(60f, 60f), new Vector2(0.5f, 0.5f));
+            buttons.Add(new KeyValuePair<RectTransform, string>(tb0.rectTransform, "title"));
             var cb = Img("Context", hubRoot, Blue, round);
             Place(cb.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 230f), new Vector2(660f, 140f), new Vector2(0.5f, 0f));
             contextBtn = cb.rectTransform;
@@ -329,11 +334,15 @@ namespace Summit
             }
         }
 
+        /// <summary>The camp's peak chip was touched: SummitGame takes it from here (back to the start page).</summary>
+        public bool TitleAsked;
+
         /// <summary>Do what a panel button says. Returns false if the id isn't a panel/menu action.</summary>
         public bool Act(string id)
         {
             if (id == "close") { ClosePanel(); return true; }
             if (id == "missions") { ShowMissions(); return true; }
+            if (id == "title") { TitleAsked = true; Clicked?.Invoke(); return true; }
             if (id == "tab0" || id == "tab1") { Clicked?.Invoke(); ShowShop(id == "tab0" ? 0 : 1); return true; }
             if (id.StartsWith("buy"))
             {
@@ -481,6 +490,27 @@ namespace Summit
                     float a = Mathf.Clamp01(c - d);
                     if (hollow) a *= Mathf.Clamp01(d - (c - 10f));
                     t.SetPixel(x, y, new Color(1f, 1f, 1f, a));
+                }
+            t.Apply();
+            return Sprite.Create(t, new Rect(0, 0, px, px), new Vector2(0.5f, 0.5f), 100f);
+        }
+
+        /// <summary>A mountain in two strokes: a peak and the shoulder beside it.</summary>
+        static Sprite Peak(int px)
+        {
+            var t = new Texture2D(px, px, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+            Vector2[] pts = { new Vector2(0.12f, 0.26f), new Vector2(0.44f, 0.78f), new Vector2(0.60f, 0.52f), new Vector2(0.70f, 0.62f), new Vector2(0.90f, 0.26f) };
+            for (int y = 0; y < px; y++)
+                for (int x = 0; x < px; x++)
+                {
+                    var p = new Vector2((x + 0.5f) / px, (y + 0.5f) / px);
+                    float d = 9f;
+                    for (int i = 0; i < pts.Length - 1; i++)
+                    {
+                        Vector2 ab = pts[i + 1] - pts[i]; float h = Mathf.Clamp01(Vector2.Dot(p - pts[i], ab) / ab.sqrMagnitude);
+                        d = Mathf.Min(d, (p - pts[i] - ab * h).magnitude);
+                    }
+                    t.SetPixel(x, y, new Color(1f, 1f, 1f, Mathf.Clamp01((0.04f - d) * px + 0.5f)));
                 }
             t.Apply();
             return Sprite.Create(t, new Rect(0, 0, px, px), new Vector2(0.5f, 0.5f), 100f);
