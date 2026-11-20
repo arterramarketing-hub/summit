@@ -140,7 +140,7 @@ namespace Summit
                         {
                             float k = Mathf.Clamp01(trunk / Forest.ThinGirth);
                             float keep = (h > t.solid ? 0.93f : 0.9f) - 0.12f * k;
-                            v += new Vector3(away.x, 0f, away.z) * -0.5f;   // you plough on through where it stood, a little thrown
+                            v = Turn(v, new Vector3(away.x, 0f, away.z) * -0.5f);   // you plough on through where it stood, a little thrown
                             // the speed goes over a fifth of a second as the board ploughs through (as a sign's does)
                             rider.Breakthrough(keep, 0.35f + 0.4f * k, 0f, float.MaxValue, "Tree");
                         }
@@ -188,6 +188,17 @@ namespace Summit
             return v;
         }
 
+        /// <summary>A shove off your line (in the snow's plane): it turns the board, it never adds to its speed. Added as
+        /// it was, a shove away from a trunk on the uphill side pushed the rider up the hill, faster than they came.</summary>
+        static Vector3 Turn(Vector3 v, Vector3 shove)
+        {
+            float was = new Vector2(v.x, v.z).magnitude;
+            var flat = new Vector3(v.x + shove.x, 0f, v.z + shove.z);
+            float now = flat.magnitude;
+            if (now > was && now > 1e-4f) flat *= was / now;
+            return new Vector3(flat.x, v.y, flat.z);
+        }
+
         /// <summary>One step in a tree's branches, `depth` in (0 the tips .. 1 the trunk): the first touch and every
         /// push deeper tear branches out (a gap left in the tree, needles, snow, sprigs flying, the event the game
         /// sounds and shakes on); on through them, they drag.</summary>
@@ -221,7 +232,7 @@ namespace Summit
                     v *= 1f - nick;
                     float shove = 0.35f + 1.6f * depth;
                     float before = Mathf.Atan2(v.x, v.z);
-                    v += side * shove;
+                    v = Turn(v, side * shove);
                     float turned = Mathf.DeltaAngle(before * Mathf.Rad2Deg, Mathf.Atan2(v.x, v.z) * Mathf.Rad2Deg) * Mathf.Deg2Rad;
                     if (!rider.Airborne) rider.Heading += Mathf.Clamp(turned, -0.15f, 0.15f);
                     rider.Breakthrough(1f, 0.12f + 0.5f * depth, 0f, float.MaxValue, "Tree");

@@ -248,10 +248,11 @@ namespace Summit
             popPending = false; airLock = 0f; lastGrind = -1;
             Flow = 0f; Shields = 0; BoostTime = 0f; invulnerable = 0f; SuperJumpTime = 0f; InvincibleTime = 0f; superAir = false;
             Undercut = 0f; Lift = 0f; fixVy = 0f;
-            wobble = 0f; slowFor = 0f; shove = Vector3.zero; knockFor = 0f;
+            wobble = 0f; slowFor = 0f; shove = Vector3.zero; knockFor = 0f; EndUnpin();
             // (and the clocks behind the wobble and the churn: carried over, the same landing swung the board a
             // different way depending on every wobble before it, so a ride never came out the same twice)
             churnT = 0f; OnRock = false; rockScrapeT = 0f; popHold = 0f; missClock = 0f; lastMiss = 0;
+            RoofReset();
         }
 
         public void Begin()
@@ -324,6 +325,7 @@ namespace Summit
                 Heading = Mathf.Lerp(Heading, Mathf.Clamp(Heading, -0.5f, 0.5f), Undercut);   // swung about, but carried on down the hill
             }
             Vector3 p = rb.position, v = rb.linearVelocity;
+            if (UnpinStep(dt, p, ref v)) { rb.linearVelocity = v; lastV = v; return; }   // pinned against something: eased free (RiderGetUp)
             if (shove.sqrMagnitude > 0f) { if (!Crashed) v += shove; shove = Vector3.zero; }   // knocked aside off a rail's end (TryGrind)
             if (slowFor > 0f && !Crashed) { slowFor -= dt; v *= Mathf.Exp(-slowRate * dt); }
             if (knockFor > 0f && !Crashed) { float d = Mathf.Min(dt, knockFor); knockFor -= d; v += knock * (d / KnockOver); }
@@ -396,11 +398,12 @@ namespace Summit
 
         Vector3 GroundStep(float dt, Vector3 p, Vector3 v)
         {
-            Vector3 n = Slope.Normal(p.x, p.z);
+            // (the ground under the board: a cabin's roof where it is on one, the mountain's snow everywhere else: RiderRoofs)
+            float groundHere = GroundAt(p.x, p.z, p.y, out Vector3 n, out var roofHere);
             Vector3 vIn = v - Vector3.up * fixVy;   // the board's own motion, without last step's correction onto the snow
             // rock under the board: rideable, but it drags, the edge holds half as well, and the board chatters and
             // scrapes (sound and grit, see Scraped); a ledge or a boulder on it is a crash like anywhere else
-            OnRock = !Tube && RockFace.IsRock(n, p.x, p.z);
+            OnRock = !Tube && roofHere == null && RockFace.IsRock(n, p.x, p.z);
             Vector3 vt = Vector3.ProjectOnPlane(vIn, n);
             float sp = vt.magnitude;
 
@@ -428,7 +431,12 @@ namespace Summit
             }
             YawRate = yaw;
             Heading += yaw * dt;
-            if (sp < 3f) Heading = Mathf.MoveTowards(Heading, 0f, dt * 1.4f * (1f - sp / 3f));   // stalled: swing back downhill
+            // stalled: swing back downhill, down this ground's own fall line (on a valley's wall or a ridge's flank that is
+            // across the mountain, not down it), as near as the board's nose may point
+            Vector3 downS = Vector3.ProjectOnPlane(Vector3.down, n);
+            float slopeS = downS.magnitude;   // (the sine of the ground's slope)
+            float fallHeading = slopeS > 0.07f ? Mathf.Clamp(Mathf.Atan2(downS.x, downS.z), -MaxHeading, MaxHeading) : 0f;
+            if (sp < 3f) Heading = Mathf.MoveTowards(Heading, fallHeading, dt * 1.4f * (1f - sp / 3f));
             Heading = Mathf.Clamp(Heading, -MaxHeading, MaxHeading);
 
             var dir = new Vector3(Mathf.Sin(Heading), 0f, Mathf.Cos(Heading));
@@ -469,7 +477,18 @@ namespace Summit
             float brake = (Tube ? 0f : TurnDrag) * Mathf.Abs(yaw) * sp * dt;
             if (brake > 0f && sp > 3f) { float k = Mathf.Max(0f, sp - brake) / sp; vt *= k; sp *= k; }
             if (BoostTime > 0f) { vt += f * (BoostAccel * dt); sp = vt.magnitude; }
-            if (sp < 3f) { vt += f * (6f * dt); sp = vt.magnitude; }
+            if (sp < 3f)
+            {
+                // a stalled board is nudged on along its nose, never up the ground's own slope: the nose is held within 83
+                // degrees of the mountain's fall line, so on a face falling away to the side it can point up the face, and
+                // the nudge (stronger than gravity on anything under 16 degrees, and topping the board up to 3 m/s on
+                // anything steeper) carried the rider up it: gravity pulling the wrong way
+                // (nor across it with the nose turned up it: the edge would carry that speed round up the slope too)
+                Vector3 push = f;
+                // (on anything steeper than a degree: the nudge is three times gravity's pull on a 4-degree slope)
+                if (slopeS > 0.02f && Vector3.Dot(f, -downS / slopeS) > 0.05f) push = Vector3.zero;
+                vt += push * (6f * dt); sp = vt.magnitude;
+            }
             if (OnRock && sp > 3f)
             {
                 wobble = Mathf.Max(wobble, 0.3f);
@@ -485,8 +504,8 @@ namespace Summit
             // (fixVy). The mesh's own rise or fall under the path (surfVy) is what tells a lip from a slope
             float nx = p.x + vt.x * dt, nz = p.z + vt.z * dt;
             float churn = Lift + Undercut * (0.3f + 0.08f * Mathf.Sin(churnT * 9f));   // lifted on the churning snow
-            float hereY = Slope.DrawnHeight(p.x, p.z) + R + churn;
-            float wantY = Slope.DrawnHeight(nx, nz) + R + churn;
+            float hereY = groundHere + R + churn;
+            float wantY = GroundAt(nx, nz, p.y, out _, out var roofNext) + R + churn;
             float surfVy = (wantY - hereY) / dt;
             float vy = (wantY - p.y) / dt;
             float fix = vy - vt.y;
@@ -513,6 +532,10 @@ namespace Summit
                 superAir = super;
                 return leave;
             }
+            // off a roof's edge (the eave, the gable's end), or onto a roof lower down: into the air, as off any lip
+            if ((roofHere != null || roofNext != null) && wantY < hereY - 0.4f) { RoofStep(null); return TakeOff(p, vt, 0.08f); }
+            // (or already past the edge: down on its very edge, the step carried the board off it)
+            if (roofHere == null && roofUnder != null && p.y > hereY + 0.4f) { RoofStep(null); return TakeOff(p, vIn, 0.08f); }
             // a face too steep to ride: you are falling, not riding (pipe walls are ridden almost to vertical)
             bool inPipe = Course.InPipe(p.x, p.z);
             float steep = inPipe ? 0.22f : 0.62f;
@@ -538,6 +561,7 @@ namespace Summit
 
             groundVy = surfVy; fixVy = fix;
             DropFrom = p;
+            RoofStep(roofHere);
             return new Vector3(vt.x, vy, vt.z);
         }
 
@@ -571,7 +595,7 @@ namespace Summit
             {
                 float t = T * i / N;
                 float by = p.y + v.y * t - 0.5f * G * t * t;
-                float gy = Slope.DrawnHeight(p.x + v.x * t, p.z + v.z * t) + R;
+                float gy = GroundAt(p.x + v.x * t, p.z + v.z * t, p.y) + R;
                 if (i < N && by < gy - 0.02f) return false;
                 if (i == N) return by - gy > TakeoffClearance;
             }
@@ -646,8 +670,11 @@ namespace Summit
             Speed = new Vector2(v.x, v.z).magnitude;
 
             float nx = p.x + v.x * dt, nz = p.z + v.z * dt;
-            float gy = Slope.DrawnHeight(nx, nz) + R + Lift;   // (come down on the avalanche's debris, if it is under you)
-            AboveGround = Mathf.Max(0f, p.y - (Slope.DrawnHeight(p.x, p.z) + R));
+            // (come down on the avalanche's debris, if it is under you, or on a cabin's roof: RiderRoofs)
+            float gy = GroundAt(nx, nz, p.y, out Vector3 fn, out var roofNext) + R + Lift;
+            AboveGround = Mathf.Max(0f, p.y - (GroundAt(p.x, p.z, p.y) + R));
+            // coming down on a roof's very edge, the step's end already past it: down on the edge, not on past it
+            RoofEdge(p, ref gy, ref fn, ref roofNext);
             Peak = Mathf.Max(Peak, AboveGround);
             // (the lock after a takeoff keeps a lip's facets from landing you straight back on it, but never holds you
             // up while the snow comes up through the board)
@@ -658,7 +685,6 @@ namespace Summit
                 // goes on falling down it, sliding on its surface, until it reaches ground it can stand on. Landing on it
                 // threw the board straight back off again, a step or two later, over and over: hopping in the air on the
                 // spot at a crawl, juddering down a cliff at speed
-                Vector3 fn = Slope.Normal(nx, nz);
                 if (fn.y < 0.62f && !Course.InPipe(nx, nz) && !pipeAir)
                 {
                     float into = Vector3.Dot(v, fn);
@@ -668,14 +694,15 @@ namespace Summit
                     OnRock = RockFace.IsRock(fn, nx, nz);
                     return v;
                 }
-                if (airLock <= 0f || p.y + v.y * dt < gy - 0.1f) return Land(dt, p, v, gy);
+                if (airLock <= 0f || p.y + v.y * dt < gy - 0.1f) return Land(dt, p, v, gy, roofNext, fn);
             }
             return v;
         }
 
-        Vector3 Land(float dt, Vector3 p, Vector3 v, float gyNext)
+        Vector3 Land(float dt, Vector3 p, Vector3 v, float gyNext, Roofs.Roof roof = null, Vector3 roofN = default)
         {
-            Vector3 n = Slope.Normal(p.x, p.z);
+            // (onto a roof: its pitch where the board comes down on it)
+            Vector3 n = roof != null ? roofN : Slope.Normal(p.x, p.z);
             float impact = Mathf.Max(0f, -Vector3.Dot(v, n));
             // you never fall off a cliff in mid-air, only when you hit something: rock can't be ridden (a fair,
             // violent tumble), and the foot of a deadly cliff far below where you left it is the end (the thrown body
@@ -689,7 +716,7 @@ namespace Summit
             // a fall past DeathFall, wherever it comes down: nobody rides away from that, and the body hitting the snow
             // ends it (RiderBody.FallStep). Anything shorter is a landing, on snow or on rock
             if (fell >= DeathFall) { DoCrash("Cliffed!"); return v; }
-            bool rock = RockFace.IsRock(n, p.x, p.z);
+            bool rock = roof == null && RockFace.IsRock(n, p.x, p.z);
             // a trick that had not come round: the board meets the snow upside down or across the way you are going
             string bad = BadLanding();
             if (bad != null) { DoCrash(bad); return v; }
@@ -724,12 +751,13 @@ namespace Summit
             Landed?.Invoke(impact);
             // onto the snow's own line from here, and back up out of it if the board had come down into it (kept apart:
             // see fixVy)
-            float hereY = Slope.DrawnHeight(p.x, p.z) + R + Lift;
+            float hereY = roof != null ? gyNext : Slope.DrawnHeight(p.x, p.z) + R + Lift;
             float vy = (gyNext - p.y) / dt;
             groundVy = (gyNext - hereY) / dt; fixVy = vy - vt.y;
             LandTrick();   // the trick as it was actually landed, and the air itself (RiderTricks)
             if (hard) RoughLanding?.Invoke("Hard landing");
             ClearTrick();
+            RoofStep(roof);   // (down on a roof: the points for getting up there, after the trick's: RiderRoofs)
             // a ride with no legs under it (the toboggan) comes down flat and skips back up off the snow, a
             // smaller hop each time until it settles
             if (feel.Bounce > 0f && impact > 4.5f && Undercut <= 0f)
@@ -745,10 +773,13 @@ namespace Summit
         bool TryGrind(Vector3 p, Vector3 v)
         {
             if (Tube) return false;
-            if (Course.At(p.z) != Course.Section.Park && Course.At(p.z + 10f) != Course.Section.Park) return false;
-            foreach (var feat in Course.FeaturesNear(p.z))
+            // the park's boxes and rails, or a chalet's ridge (a box along the top of the roof: Roofs)
+            bool park = Course.At(p.z) == Course.Section.Park || Course.At(p.z + 10f) == Course.Section.Park;
+            if (!park && !Roofs.Near(p, 2f)) return false;
+            foreach (var feat in park ? Course.FeaturesNear(p.z) : Roofs.RidgesNear(p))
             {
                 if (feat.id == lastGrind) continue;
+                if (feat.id >= Roofs.IdBase && RidgeSlam(v)) continue;   // (a ridge is landed on like the roof: RiderRoofs)
                 Vector3 d = feat.b - feat.a;
                 float len = d.magnitude;
                 Vector3 dir = d / len;
@@ -968,7 +999,7 @@ namespace Summit
             {
                 if (near[i].attachedRigidbody == rb) continue;
                 var o = near[i].GetComponentInParent<Obstacle>();
-                if (o == null) continue;
+                if (o == null || o.roof) continue;   // (a roof under the board is ridden, not missed)
                 int id = o.GetInstanceID();
                 if (id == lastMiss) continue;
                 lastMiss = id;
@@ -1040,27 +1071,10 @@ namespace Summit
             if (Course.CrevasseNear(p.x, p.z, 0.5f, out var cv)) p = Course.CrevasseRim(cv, p, 1.6f);
             // stopped on a ridge's cliff: get up on the snow below it, not on the rock
             p.x = Ridge.SafeX(p.x, p.z);
-            // step clear of whatever stopped you, toward the piste, onto snow you can ride away on: never up on a face
-            // too steep to stand on (where the board only falls off again, hopping in the air on the spot) or over a
-            // crevasse's opening
-            // (the nearest such spot, either way across the slope or a little further down it: toward the piste first,
-            // but never up a cliff's face to get there)
-            float toward = Mathf.Sign(Slope.Centre(p.z) - p.x + 0.01f);
-            if (Blocked(p) || !Rideable(p.x, p.z))
-            {
-                Vector3 best = p; bool found = false;
-                for (int i = 1; i <= 40 && !found; i++)
-                    foreach (float side in new[] { toward, -toward })
-                    {
-                        foreach (float dz in new[] { 0f, 3f, 6f })
-                        {
-                            var q = new Vector3(p.x + side * 1.5f * i, p.y, p.z + dz);
-                            if (Rideable(q.x, q.z) && !Blocked(q)) { best = q; found = true; break; }
-                        }
-                        if (found) break;
-                    }
-                p = best;
-            }
+            // step clear of whatever stopped you, toward the piste, onto snow you can ride away on: room to stand, clear
+            // of anything solid, an open lane down the hill ahead, never up on a face too steep to stand on (where the
+            // board only falls off again, hopping in the air on the spot) or over a crevasse's opening (RiderGetUp)
+            p = GetUpSpot(p);
             p.y = Slope.DrawnHeight(p.x, p.z) + R;
             rb.position = p;
             DropFrom = p;
@@ -1072,12 +1086,5 @@ namespace Summit
         static bool Rideable(float x, float z) => Slope.Normal(x, z).y > 0.75f && Course.CrevasseCut(x, z) <= 0f
             && !Course.CrevasseNear(x, z, 1.5f) && !Course.CrevasseNear(x, z + 5f, 1.5f) && !Course.CrevasseNear(x, z + 10f, 1.5f);   // (nor just above one's top)
 
-        bool Blocked(Vector3 p)
-        {
-            int k = Physics.OverlapSphereNonAlloc(p, 1.4f, near, ~0, QueryTriggerInteraction.Ignore);
-            for (int i = 0; i < k; i++)
-                if (near[i].attachedRigidbody != rb && near[i].GetComponentInParent<Obstacle>() != null) return true;
-            return false;
-        }
     }
 }

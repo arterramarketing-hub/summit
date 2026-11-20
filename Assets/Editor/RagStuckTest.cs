@@ -30,8 +30,27 @@ public static class RagStuckTest
     /// <summary>A thing found in the census: streamed things come and go, so it is found again, by place, when thrown at.</summary>
     struct Spot { public Vector3 at; public string name; }
     static readonly List<Result> results = new List<Result>();
-    static System.Action<float> stepHook;   // each step of a throw (Shot draws the frames)
+    static System.Action<float> stepHook, rideHook;   // (rideHook: each step of riding away after getting up)   // each step of a throw (Shot draws the frames)
     static int traceLeft = 2;
+
+    /// <summary>
+    /// The same throws, then up again: where the rider is put back on the snow after each (Rider.Recover), how far it
+    /// is from anything solid, and whether it can ride away (five seconds, hands off: it must get going and never sit
+    /// pinned against something). Run: -executeMethod RagStuckTest.GetUp (SUMMIT_PREFS="summit_ride=1" for skis).
+    /// </summary>
+    public static void GetUp()
+    {
+        getUpMode = true;
+        Rider.SafeGetUp = System.Environment.GetEnvironmentVariable("RAG_SAFEUP") != "0";   // 0: getting up as it was, for the before numbers
+        Run();
+        Rider.SafeGetUp = true;
+    }
+    static bool getUpMode;
+    static string lastWhy = "";
+    static Vector3 lastRest;   // where the body lay when the rider got up
+    class Up { public string kind, way, where, near; public float clear, moved, stuck, shift; public bool crashed, never; public int unpinned; }
+    static readonly List<Up> ups = new List<Up>();
+    public const float Margin = 1.0f;   // m from the rider's middle to anything solid: closer is a bad place to be put
 
     public static void Run()
     {
@@ -43,6 +62,7 @@ public static class RagStuckTest
         r = F<Rider>("rider"); body = F<RiderBody>("body"); terrain = F<SlopeStreamer>("terrain"); props = F<Forest>("props");
         typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
         r.input = null;
+        r.Crash += why => lastWhy = why;
         hamlets = Object.FindFirstObjectByType<Hamlets>(); lifts = Object.FindFirstObjectByType<SkiLift>();
         hamUpd = typeof(Hamlets).GetMethod("Update", NP); liftUpd = typeof(SkiLift).GetMethod("Update", NP);
         int seeds = int.TryParse(System.Environment.GetEnvironmentVariable("RAG_SEEDS"), out int sv) ? sv : 3;
@@ -159,7 +179,7 @@ public static class RagStuckTest
         if (c.attachedRigidbody != null && (c.attachedRigidbody == r.Body || !c.attachedRigidbody.isKinematic)) return false;
         if (Ragdoll.Of(c) != null) return false;
         string nm = c.gameObject.name;
-        if (nm.StartsWith("RagdollGround") || nm.StartsWith("BoardGround") || nm.Contains("Slab")) return false;
+        if (nm.StartsWith("RagdollGround") || nm.StartsWith("BoardGround") || nm.StartsWith("LimbGround") || nm.Contains("Slab")) return false;
         return true;
     }
 
@@ -403,8 +423,62 @@ public static class RagStuckTest
         if (res.penEnd > 0.15f) Debug.Log($"RAGSTUCK-PEN {kind} | {way}: last deepest {deepNote}; dead={body.Dead}");
         Debug.Log($"RAGSTUCK {kind} | {way} v{v:0}: up {Fmt(res.up)} end {Fmt(res.end)} jitter {res.jitter:0.0}s pen {res.pen:0.00}m (end {res.penEnd:0.00}) unwedged {res.unwedged} (at the throw {res.beginShift:0.00} m, later {res.shift:0.00} m) frozen {res.frozen} dead {res.dead} speed-at-stop {res.restSpeed:0.0} m/s late pelvis {res.latePelvis:0.0} board {res.lateBoard:0.0}{(res.stuck ? "  STUCK" : "")}  {res.where}");
         // put the body away before the next throw
+        lastRest = body.RagdollCentre;
         r.RequestUp = true; r.StayDown = false; r.HoldCrash = false;
         for (int i = 0; i < 400 && r.Crashed; i++) { r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt); r.RequestUp = true; r.HoldCrash = false; }
+        if (getUpMode) GetUpCheck(kind, way, seed);
+    }
+
+    /// <summary>Just got up: how clear is it, and can it ride away?</summary>
+    static void GetUpCheck(string kind, string way, int seed)
+    {
+        var u = new Up { kind = kind, way = way };
+        if (r.Crashed) { u.never = true; ups.Add(u); Debug.Log($"RAGUP {kind} | {way}: never got up"); return; }
+        body.Apply(Dt);   // (the thrown body is put away on the frame you get up)
+        Physics.SyncTransforms();
+        Vector3 p = r.Body.position;
+        u.clear = Clearance(p, out u.near);
+        u.shift = new Vector2(p.x - lastRest.x, p.z - lastRest.z).magnitude;
+        u.where = $"seed{seed} at ({p.x:0.0},{p.z:0.0}) x-c={p.x - Slope.Centre(p.z):0.0}";
+        // hands off for five seconds: it must get going (batchmode fires no collision callbacks, so a wall it rides into
+        // stops it without a crash: exactly the pinned rider)
+        float t = 0f; int n = 0, unpinned0 = Rider.Unpinned;
+        for (; t < 5f; t += Dt, n++)
+        {
+            r.Steer = 0f;
+            r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+            if (n % 4 == 0) body.Apply(4 * Dt);
+            if (n % 24 == 0) Stream(1);
+            rideHook?.Invoke(t);
+            if (r.Crashed) { u.crashed = true; break; }
+            if (t > 0.8f && r.Speed < 1f) u.stuck += Dt;
+        }
+        u.unpinned = Rider.Unpinned - unpinned0;
+        Vector3 q = r.Body.position;
+        u.moved = new Vector2(q.x - p.x, q.z - p.z).magnitude;
+        ups.Add(u);
+        bool bad = u.clear < Margin || u.stuck > 1f || (u.moved < 6f && !u.crashed);
+        Debug.Log($"RAGUP {kind} | {way}: up {u.shift:0.0} m from the body, clear {u.clear:0.00} m of {u.near}, then {u.moved:0.0} m in {t:0.0} s, stuck {u.stuck:0.0} s, eased free {u.unpinned}x{(u.crashed ? " crashed (" + lastWhy + ")" : "")}{(bad ? "  BAD" : "")}  {u.where}");
+        if (r.Crashed) { r.RequestUp = true; for (int i = 0; i < 2400 && r.Crashed; i++) { r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt); r.RequestUp = true; r.HoldCrash = false; } }
+    }
+
+    /// <summary>How close the standing rider (snow to head height) is to anything solid, and what that is.</summary>
+    static float Clearance(Vector3 p, out string what)
+    {
+        what = "nothing";
+        float g = Slope.DrawnHeight(p.x, p.z), best = 9f;
+        foreach (float h in new[] { 0.2f, 0.9f, 1.6f })
+        {
+            var s = new Vector3(p.x, g + h, p.z);
+            foreach (var c in Physics.OverlapSphere(s, 4f, ~0, QueryTriggerInteraction.Ignore))
+            {
+                if (!Solid(c) || c.gameObject.layer == CourseDressing.IceLayer) continue;
+                if (c is MeshCollider mc && !mc.convex) continue;
+                float d = (c.ClosestPoint(s) - s).magnitude;
+                if (d < best) { best = d; what = c.name + (c.transform.parent != null ? " (" + c.transform.parent.name + ")" : ""); }
+            }
+        }
+        return best;
     }
 
     /// <summary>
@@ -484,6 +558,89 @@ public static class RagStuckTest
         EditorApplication.Exit(0);
     }
 
+    /// <summary>
+    /// The user's get-up screenshot, before and after: crashes into hamlet cabins (and the lamp posts among them), up
+    /// again with the old look round (Rider.SafeGetUp off) until one leaves the rider pinned against a wall, then the
+    /// same throw with the fix. The game's chase camera, three seconds into riding away. Needs the GPU. For skis, as in
+    /// the screenshot: SUMMIT_PREFS="summit_ride=1". Writes GetUp{Before,After}{n}.png in the project folder.
+    /// </summary>
+    public static void GetUpShot()
+    {
+        SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
+        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
+        game = Object.FindFirstObjectByType<SummitGame>();
+        TestPrefs.Pin();
+        TestBoot.Boot(game);
+        Physics.simulationMode = SimulationMode.Script;
+        r = F<Rider>("rider"); body = F<RiderBody>("body"); terrain = F<SlopeStreamer>("terrain"); props = F<Forest>("props");
+        typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
+        r.input = null;
+        r.Crash += why => lastWhy = why;
+        hamlets = Object.FindFirstObjectByType<Hamlets>(); lifts = Object.FindFirstObjectByType<SkiLift>();
+        hamUpd = typeof(Hamlets).GetMethod("Update", NP); liftUpd = typeof(SkiLift).GetMethod("Update", NP);
+        var cam = Camera.main; var chase = cam.GetComponent<ChaseCamera>();
+        var late = typeof(ChaseCamera).GetMethod("LateUpdate", NP);
+        var atmo = Object.FindFirstObjectByType<Atmosphere>();
+        var tUpd = typeof(SlopeStreamer).GetMethod("Update", NP); var fUpd = typeof(Forest).GetMethod("Update", NP);
+        ChaseCamera.TestDt = Dt;
+        getUpMode = true;
+        System.Action frame = () =>
+        {
+            tUpd.Invoke(terrain, null); fUpd.Invoke(props, null);
+            if (hamlets != null) hamUpd.Invoke(hamlets, null);
+            if (lifts != null) liftUpd.Invoke(lifts, null);
+            chase.enabled = true; late.Invoke(chase, null);
+            typeof(Atmosphere).GetMethod("LateUpdate", NP).Invoke(atmo, null);
+        };
+        int found = 0;
+        try
+        {
+            NewMountain(0);
+            var census = Census(0);
+            foreach (var kind in new[] { "lamp post", "cabin stair", "cabin body", "cabin deck" })
+            {
+                if (found >= 2 || !census.TryGetValue(kind, out var spots)) continue;
+                var rng = new System.Random(0 * 31 + kind.Length);   // (Run's picks)
+                for (int i = 0; i < 2 && found < 2; i++)
+                {
+                    var spot = spots[rng.Next(spots.Count)];
+                    float side = rng.Next(2) == 0 ? 1f : -1f;
+                    foreach (var (way, yaw, v) in new[] { ("contact glancing", 35f * side, 24f), ("contact head-on", 0f, 18f) })
+                    {
+                        if (found >= 2) break;
+                        string tag = "";
+                        bool shot = false;
+                        stepHook = t => frame();
+                        rideHook = t =>
+                        {
+                            frame();
+                            if (!shot && t >= 3f) { shot = true; Shoot(cam, $"GetUp{tag}{found}.png"); }
+                        };
+                        Rider.SafeGetUp = false; tag = "Before";
+                        var col = Find(kind, spot);
+                        if (col == null) continue;
+                        Throw(kind, way, col, yaw, v, 0);
+                        var before = ups[ups.Count - 1];
+                        if (before.stuck < 1f) continue;   // not one that pins: try the next
+                        Rider.SafeGetUp = true; tag = "After"; shot = false;
+                        col = Find(kind, spot);
+                        Throw(kind, way, col, yaw, v, 0);
+                        var after = ups[ups.Count - 1];
+                        Debug.Log($"RAGSHOT get-up {found}: {kind} {way}: before stuck {before.stuck:0.0} s, moved {before.moved:0.0} m; after stuck {after.stuck:0.0} s, moved {after.moved:0.0} m, eased free {after.unpinned}x");
+                        found++;
+                    }
+                }
+            }
+        }
+        catch (System.Exception e) { Debug.LogError("RAGSHOT exception " + e); }
+        stepHook = null; rideHook = null; getUpMode = false;
+        Rider.SafeGetUp = true;
+        ChaseCamera.TestDt = 0f;
+        Physics.simulationMode = SimulationMode.FixedUpdate;
+        TestPrefs.Restore();
+        EditorApplication.Exit(0);
+    }
+
     static void Shoot(Camera cam, string file)
     {
         DynamicGI.UpdateEnvironment();
@@ -516,6 +673,33 @@ public static class RagStuckTest
 
     static void Summary()
     {
+        if (getUpMode)
+        {
+            var upKinds = new SortedDictionary<string, List<Up>>();
+            foreach (var x in ups) { if (!upKinds.TryGetValue(x.kind, out var l)) upKinds[x.kind] = l = new List<Up>(); l.Add(x); }
+            int close = 0, pinned = 0, never = 0, crashed = 0, eased = 0;
+            foreach (var x in ups) if (x.unpinned > 0) eased++;
+            Debug.Log($"RAGUP-SUM kind | get-ups | put within {Margin} m of something | could not ride away | crashed riding away | never got up | closest");
+            foreach (var kv in upKinds)
+            {
+                int c = 0, pn = 0, nv = 0, cr = 0; float closest = 9f;
+                foreach (var x in kv.Value)
+                {
+                    if (x.never) { nv++; continue; }
+                    if (x.clear < Margin) c++;
+                    if (x.stuck > 1f || (x.moved < 6f && !x.crashed)) pn++;
+                    if (x.crashed) cr++;
+                    closest = Mathf.Min(closest, x.clear);
+                }
+                close += c; pinned += pn; never += nv; crashed += cr;
+                Debug.Log($"RAGUP-SUM {kv.Key} | {kv.Value.Count} | {c} | {pn} | {cr} | {nv} | {closest:0.00} m");
+            }
+            var shifts = new List<float>();
+            foreach (var x in ups) if (!x.never) shifts.Add(x.shift);
+            shifts.Sort();
+            if (shifts.Count > 0) Debug.Log($"RAGUP got up from the body: median {shifts[shifts.Count / 2]:0.0} m, 90% {shifts[(int)(shifts.Count * 0.9f)]:0.0} m, most {shifts[shifts.Count - 1]:0.0} m");
+            Debug.Log($"RAGUP done: {ups.Count} get-ups, {close} put within {Margin} m of something, {pinned} could not ride away, {crashed} crashed riding away, {never} never got up, {eased} eased free of something");
+        }
         var kinds = new SortedDictionary<string, List<Result>>();
         foreach (var x in results) { if (!kinds.TryGetValue(x.kind, out var l)) kinds[x.kind] = l = new List<Result>(); l.Add(x); }
         int stuck = 0, jit = 0, sunk = 0, froze = 0, unw = 0;

@@ -319,6 +319,7 @@ namespace Summit
             public readonly List<ParticleSystem> smoke = new List<ParticleSystem>();
             public readonly List<BoxCollider> solid = new List<BoxCollider>();
             public readonly List<Mesh> meshes = new List<Mesh>();
+            public readonly List<Roofs.Roof> roofs = new List<Roofs.Roof>();
             public Renderer[] fence; public bool fenceShown = true, smoking = true;
             public int next, porches;      // the next building to set down (one a frame), and the porch lamps lit so far
         }
@@ -477,8 +478,12 @@ namespace Summit
             built.Clear();
         }
 
+        void OnDestroy() => Clear();   // (its roofs are ground: none left standing in the air)
+
         void Free(Built b)
         {
+            foreach (var r in b.roofs) Roofs.Remove(r);
+            b.roofs.Clear();
             foreach (var m in b.meshes) Kill(m);
             if (b.root != null) Kill(b.root);
         }
@@ -579,7 +584,52 @@ namespace Summit
             }
             house.near = near.ToArray();
             b.houses.Add(house);
+            // a roof to ride: its snow is ground (Roofs), its gables and slab solid just under that snow
+            var roof = Roofs.Of(kind.name);
+            if (roof != null) { RoofSolid(t, kind, roof); b.roofs.Add(Roofs.Add(roof, t, kind.name)); }
             return true;
+        }
+
+        // the roofs' solid blocks, one set of meshes per kind of building (they are the same for every one of its kind)
+        static readonly Dictionary<string, Mesh[]> roofMeshes = new Dictionary<string, Mesh[]>();
+        static readonly List<Vector3[]> blocks = new List<Vector3[]>();
+        static readonly List<Bounds> stacks = new List<Bounds>();
+        static readonly int[] HexTris = { 0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7 };
+
+        /// <summary>
+        /// What is solid of a roof (see Roofs.Solids): the gables over the walls and the slab out to the eaves, a little
+        /// under the drawn snow, so a board riding on it never touches them, and the chimney through it. Coming at them
+        /// from the side or from below is a crash, as into the walls.
+        /// </summary>
+        void RoofSolid(Transform t, Kind kind, Roofs.Shape roof)
+        {
+            blocks.Clear(); stacks.Clear();
+            Roofs.Solids(roof, blocks, stacks);
+            if (!roofMeshes.TryGetValue(kind.name, out var ms))
+            {
+                ms = new Mesh[blocks.Count];
+                for (int i = 0; i < blocks.Count; i++)
+                {
+                    ms[i] = new Mesh { name = kind.name + " roof " + i, vertices = blocks[i], triangles = HexTris };
+                    ms[i].RecalculateBounds();
+                }
+                roofMeshes[kind.name] = ms;
+            }
+            for (int i = 0; i < ms.Length; i++)
+            {
+                var g = new GameObject("COL_roof" + i);
+                g.transform.SetParent(t, false);
+                var mc = g.AddComponent<MeshCollider>();
+                mc.convex = true; mc.sharedMesh = ms[i];
+                var ob = g.AddComponent<Obstacle>(); ob.label = kind.label; ob.roof = true;
+            }
+            foreach (var st in stacks)
+            {
+                var g = new GameObject("COL_chimney");
+                g.transform.SetParent(t, false); g.transform.localPosition = st.center;
+                g.AddComponent<BoxCollider>().size = st.size;
+                g.AddComponent<Obstacle>().label = "Chimney!";
+            }
         }
 
         static Transform Find(Transform t, string prefix)
@@ -591,6 +641,16 @@ namespace Summit
         /// <summary>What one of a model's helper boxes means (see Tools/MakeCabins.py).</summary>
         void Helper(Built b, Transform t, Kind kind, string name, Vector3 lo, Vector3 hi, bool lamp)
         {
+            // a roof to ride (Roofs) is solid only under its snow: the model's box over the roof goes, and the walls' box
+            // stops at the eaves (RoofSolid puts up the gables and the slab)
+            var roof = Roofs.Of(kind.name);
+            if (roof != null && name.StartsWith("COL_roof")) return;
+            if (roof != null && name.StartsWith("COL_body")) hi.y = Mathf.Min(hi.y, roof.wallTop);
+            // what is drawn is what is solid: the way in along a side wall is a stone landing at the floor with a rail
+            // round it a metre high (Tools/MakeCabins.py, stoop), not a block 2.5 m up; the lodge's outside stair climbs
+            // from the hill to the first balcony, its rail a metre over the steps, not a block as high as the top
+            if (name.StartsWith("COL_terrace") || name.StartsWith("COL_landing")) hi.y = Mathf.Min(hi.y, StoopTop);
+            if (name.StartsWith("COL_stair")) { Stair(t, kind, lo, hi); return; }
             Vector3 c = (lo + hi) * 0.5f, size = hi - lo;
             if (name.StartsWith("COL_"))
             {
@@ -613,6 +673,35 @@ namespace Summit
                 l.type = LightType.Point; l.color = new Color(1f, 0.8f, 0.6f); l.range = 13f; l.intensity = 0f; l.shadows = LightShadows.None;
                 l.enabled = false;
                 b.lamps.Add(l);
+            }
+        }
+
+        const float StoopTop = 1.15f;   // a landing's rail, and the snow on it
+
+        /// <summary>The lodge's stair (its helper box, lo..hi): a ramp up the steps' rail to the balcony, and the balcony's end.</summary>
+        void Stair(Transform t, Kind kind, Vector3 lo, Vector3 hi)
+        {
+            float zTop = hi.z - 1.4f;   // where the steps reach the balcony (the box runs on along it)
+            Vector3[] Block(float za, float zb, float ya, float yb) => new[]
+            {
+                new Vector3(lo.x, lo.y, za), new Vector3(hi.x, lo.y, za), new Vector3(hi.x, lo.y, zb), new Vector3(lo.x, lo.y, zb),
+                new Vector3(lo.x, ya, za), new Vector3(hi.x, ya, za), new Vector3(hi.x, yb, zb), new Vector3(lo.x, yb, zb),
+            };
+            var parts = new[] { Block(lo.z, zTop, StoopTop, hi.y), Block(zTop, hi.z, hi.y, hi.y) };
+            for (int i = 0; i < parts.Length; i++)
+            {
+                string key = kind.name + " stair " + i;
+                if (!roofMeshes.TryGetValue(key, out var ms))
+                {
+                    ms = new[] { new Mesh { name = key, vertices = parts[i], triangles = HexTris } };
+                    ms[0].RecalculateBounds();
+                    roofMeshes[key] = ms;
+                }
+                var g = new GameObject("COL_stair" + i);
+                g.transform.SetParent(t, false);
+                var mc = g.AddComponent<MeshCollider>();
+                mc.convex = true; mc.sharedMesh = ms[0];
+                g.AddComponent<Obstacle>().label = kind.label;
             }
         }
 

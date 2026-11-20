@@ -444,6 +444,8 @@ namespace Summit
         {
             t = Mathf.Clamp01(t);
             float x = Mathf.Lerp(f.a.x, f.b.x, t), z = Mathf.Lerp(f.a.z, f.b.z, t);
+            // (a roof's ridge is straight and stands where it was built: Roofs)
+            if (f.id >= Roofs.IdBase) return new Vector3(x, Mathf.Lerp(f.a.y, f.b.y, t) + f.height, z);
             return new Vector3(x, BaseHeight(x, z) + f.height, z);
         }
 

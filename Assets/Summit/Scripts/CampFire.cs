@@ -66,6 +66,8 @@ namespace Summit
             heroSeat = Stump(1f);
             heroFace = Vector3.left;
             alyssa = Alyssa.Create(root, fireAt, hers, Vector3.right);
+            alyssa.enabled = Active;
+            alyssa.Hero = rider != null ? rider.transform : null;   // (she gets you in her selfies, when you're close)   // (built for a new mountain before a run, too: still until you're back in the camp)
             // her and her legs are solid; tapping her (standing still) talks
             Block(t, t.InverseTransformPoint(hers + Vector3.right * 0.3f), new Vector2(0.45f, 0.4f));
             var tapA = new GameObject("TAP_Talk").transform;
@@ -142,9 +144,13 @@ namespace Summit
 
         // ---------------------------------------------------------------- talking
 
+        /// <summary>An activity starts: whatever jump or roll was under way ends where you stand.</summary>
+        void ClearMove() { moveKind = 0; moveT = 0f; jumpY = 0f; jumpV = 0f; airborne = false; }
+
         void StartTalk(MetaUi ui)
         {
             if (alyssa == null) return;
+            ClearMove();
             act = Act.Talk;
             alyssa.TalkingTo = rider.transform;
             Vector3 at = alyssa.TalkSpot; at.y = FloorAt(at, pos.y);
@@ -165,7 +171,10 @@ namespace Summit
 
         void StartRoast()
         {
+            ClearMove();
             act = Act.Roast; rp = Roast.Sit; rpT = 0f; closeK = 0.15f; blowT = 0f; sitW = 0f;
+            // two hands for this (the stick, then the s'more): a mug in hand goes down on the snow by the stump
+            if (mug != null) ParkMug(heroSeat - Vector3.Cross(Vector3.up, heroFace) * 0.5f);
             if (heroMallow == null) heroMallow = new Marshmallow(root, stickMat);
             heroMallow.Fresh(); heroMallow.SetStickVisible(true);
             pos = roastStand; pos.y = FloorAt(pos, pos.y);
@@ -221,7 +230,7 @@ namespace Summit
                     break;
                 case Roast.Up:
                     sitW = 1f - Mathf.Clamp01(rpT / RoastLen[5]);
-                    if (rpT >= RoastLen[5]) { heroMallow.Destroy(); heroMallow = null; act = Act.None; ui.ContextLabel = null; }
+                    if (rpT >= RoastLen[5]) { heroMallow.Destroy(); heroMallow = null; act = Act.None; ui.ContextLabel = null; UnparkMug(); }
                     break;
             }
             if (heroMallow != null) heroMallow.Refresh(dt);

@@ -7,6 +7,8 @@ namespace Summit
     {
         public string label = "Tree";
         public bool always;   // knocks you down however lightly it touches (animals)
+        /// <summary>A roof's solid, under the snow that is ridden (Roofs): riding past it on top is no close call.</summary>
+        public bool roof;
         /// <summary>What the invincible rider smashes through: trees, rocks and animals. Everything else (cabins, cars,
         /// fences, lamp posts, lift towers and stations) stays solid.</summary>
         public bool Smashable => always || label == "Tree" || label == "Rock";

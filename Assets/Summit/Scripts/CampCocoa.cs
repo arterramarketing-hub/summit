@@ -23,7 +23,27 @@ namespace Summit
         // the making, in seconds: step up, pour, stir, marshmallows on, pick it up
         const float PourAt = 0.6f, StirAt = 2.4f, TopAt = 4.4f, LiftAt = 5.4f, MadeAt = 6.2f;
 
-        public bool HoldingMug => mug != null && act != Act.Cocoa;
+        public bool HoldingMug => mug != null && act != Act.Cocoa && !mugParked;
+        bool mugParked;
+        /// <summary>The mug set down on the snow (test tools).</summary>
+        public bool MugParked => mug != null && mugParked;
+
+        /// <summary>Set the mug down, standing, at a spot on the ground (roasting needs both hands).</summary>
+        void ParkMug(Vector3 at)
+        {
+            if (mug == null) return;
+            mugParked = true; sipT = -1f;
+            mug.SetParent(root, true);
+            mug.SetPositionAndRotation(new Vector3(at.x, Slope.DrawnHeight(at.x, at.z), at.z), Quaternion.Euler(0f, 20f, 0f));
+        }
+
+        /// <summary>And pick it up again.</summary>
+        void UnparkMug()
+        {
+            if (mug == null || !mugParked) return;
+            mugParked = false;
+            mug.SetParent(rider.transform, true);
+        }
         bool CocoaMaking => act == Act.Cocoa;
         /// <summary>Sips left in the mug in your hand (test tools).</summary>
         public int SipsLeft => mug != null ? sipsLeft : 0;
@@ -150,7 +170,9 @@ namespace Summit
                       new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(0.35f, 0.2f), new GradientAlphaKey(0f, 1f) });
             col.color = g;
             var sz = ps.sizeOverLifetime; sz.enabled = true; sz.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 0.6f, 1f, 2.4f));
-            Soft(go.GetComponent<ParticleSystemRenderer>());
+            // one steam material for all of them (not a new one per pot and mug each time the camp is built)
+            if (steamMat == null && soft != null) { steamMat = new Material(soft) { name = "Steam" }; steamMat.SetColor("_BaseColor", Color.white); }
+            if (steamMat != null) go.GetComponent<ParticleSystemRenderer>().sharedMaterial = steamMat;
             ps.Play();
             return go.transform;
         }
@@ -161,6 +183,8 @@ namespace Summit
         {
             if (cocoaCorner == null) return;
             if (mug != null) { Destroy(mug.gameObject); mug = null; }   // (a fresh one: the old mug goes)
+            mugParked = false;
+            ClearMove();
             act = Act.Cocoa; cocoaT = 0f;
             pos = cocoaStand; pos.y = FloorAt(pos, pos.y);
             yaw = Mathf.Atan2(cocoaFace.x, cocoaFace.z);
@@ -274,7 +298,7 @@ namespace Summit
             if (spoon != null) Destroy(spoon.gameObject);
             if (pot != null) { pot.localPosition = PotHome; pot.localRotation = Quaternion.identity; }
             if (mug != null) { Destroy(mug.gameObject); mug = null; }
-            mugSteam = null; sipT = -1f; finishT = -1f;
+            mugSteam = null; sipT = -1f; finishT = -1f; mugParked = false;
         }
 
         /// <summary>The hands at the stove, or the mug in the right hand (lifted to the mouth for a sip).</summary>

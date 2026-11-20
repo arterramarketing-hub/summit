@@ -1018,7 +1018,7 @@ namespace Summit
             pivot.localPosition = Vector3.down * Rider.R;
 
             // tilt with the snow, blending to level as you leave it
-            Vector3 n = Vector3.Slerp(Slope.Normal(p.x, p.z), Vector3.up, Mathf.Clamp01(rider.AboveGround / 1.5f));
+            Vector3 n = Vector3.Slerp(rider.GroundNormal(p), Vector3.up, Mathf.Clamp01(rider.AboveGround / 1.5f));   // (a roof's pitch, on a roof)
             normal = dt <= 0f ? n : Vector3.Slerp(normal, n, 1f - Mathf.Exp(-dt * 14f));
 
             if (!rider.Crashed) lastVel = rider.Velocity;

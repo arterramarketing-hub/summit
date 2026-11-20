@@ -15,7 +15,7 @@ namespace Summit
     /// Her pose is the hero's standing idle with the legs folded onto the stump and the arms placed by IK (HeroRig.ArmTo),
     /// so no new clips are needed. Kept in her own file so the camp's shared people builder can take her over later.
     /// </summary>
-    public class Alyssa : MonoBehaviour
+    public partial class Alyssa : MonoBehaviour   // (her selfies: AlyssaSelfie.cs)
     {
         public const string Name = "Alyssa";
         public const float Cycle = 32f;
@@ -72,6 +72,8 @@ namespace Summit
             model.localScale *= Size;   // (on top of the file's own import scale)
             // no board, no pack (she isn't riding today): the snowboard hidden, the pack folded away into its bone
             foreach (var tr in go.GetComponentsInChildren<Transform>(true)) if (tr.name == "Snowboard") tr.gameObject.SetActive(false);
+            // she's in gloves: the model's bare hands stay hidden under them (as the hero's do in the summit kit)
+            foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>(true)) if (smr.name.StartsWith("HeroHands")) smr.gameObject.SetActive(false);
             if (h.Pack != null) h.Pack.localScale *= 0.01f;
             Dress(go);
             // at rest, facing her way: then the hair and pom-pom go on where the head is
@@ -79,8 +81,8 @@ namespace Summit
             Place();
             h.CaptureRest(face, Vector3.up);
             Hair();
-            var stickMat = Marshmallow.Plain(new Color(0.55f, 0.47f, 0.33f), 0.15f);
-            mm = new Marshmallow(transform, stickMat);
+            mm = new Marshmallow(transform, Marshmallow.Plain(new Color(0.55f, 0.47f, 0.33f), 0.15f));
+            BuildPhone();
             cracker = Marshmallow.Plain(new Color(0.78f, 0.56f, 0.32f), 0.1f);
             chocolate = Marshmallow.Plain(new Color(0.25f, 0.13f, 0.07f), 0.45f);
             t = 4f;   // somewhere in the middle of a roast, for whoever walks up first
@@ -94,7 +96,7 @@ namespace Summit
         // 6 boot, 7 sole, 8 strap, 11 helmet vent, 12 nose, 16..18 the pack, 19 seam, 20 zip, 21 neck gaiter,
         // 22 its band, 23 chin strap
         static readonly Color Skin = new Color(0.88f, 0.60f, 0.47f);     // fair and warm (linear, as the palette holds it)
-        static Vector2 SwatchUv(int cell) => new Vector2((cell % 8 + 0.5f) / 8f, (cell / 8 + 0.5f) / 3f);
+        static Vector2 SwatchUv(int cell) => new Vector2((cell % RiderBody.PaletteCols + 0.5f) / RiderBody.PaletteCols, (cell / RiderBody.PaletteCols + 0.5f) / RiderBody.PaletteRows);
 
         /// <summary>
         /// Dressed as she is in her photos: an oversized light-grey hoodie (plain: no lettering), black insulated snow
@@ -105,7 +107,28 @@ namespace Summit
         {
             var jacket = Marshmallow.Plain(new Color(0.80f, 0.79f, 0.77f), 0.08f);   // light grey fleece, matt
             var pants = Marshmallow.Plain(new Color(0.07f, 0.07f, 0.08f), 0.38f);    // black nylon, a little sheen
-            var gear = new Material(Marshmallow.Lit());
+            var gear = Gear();
+            foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>())
+            {
+                var mats = smr.sharedMaterials;
+                for (int i = 0; i < mats.Length; i++)
+                {
+                    string n = mats[i] != null ? mats[i].name : "";
+                    mats[i] = n.StartsWith("Jacket") ? jacket : n.StartsWith("Pants") ? pants : gear;
+                }
+                smr.sharedMaterials = mats;
+                smr.updateWhenOffscreen = false;   // (her bounds follow her bones; nothing to skin while she's out of view)
+                smr.quality = SkinQuality.Bone4;
+            }
+        }
+
+        // her gear's material and her own copy of the palette: made once for the game (the camp is rebuilt for every
+        // new mountain, and a new Alyssa with it)
+        static Material gearCache;
+        static Material Gear()
+        {
+            if (gearCache != null) return gearCache;
+            var gear = new Material(Marshmallow.Lit()) { name = "AlyssaGear" };
             var pal = Resources.Load<Texture2D>("Rider/HeroPalette");
             Texture2D mine = null;
             if (pal != null)
@@ -116,7 +139,8 @@ namespace Summit
                     int w = pal.width, hgt = pal.height;
                     void Cell(int cell, Color c, float smooth)
                     {
-                        int x = Mathf.FloorToInt((cell % 8 + 0.5f) / 8f * w), y = Mathf.FloorToInt((cell / 8 + 0.5f) / 3f * hgt);
+                        Vector2 uv = SwatchUv(cell);
+                        int x = Mathf.FloorToInt(uv.x * w), y = Mathf.FloorToInt(uv.y * hgt);
                         if (x < w && y < hgt) px[y * w + x] = new Color(c.r, c.g, c.b, smooth);
                     }
                     Color L(float r, float g, float b) => new Color(r, g, b).gamma;   // (the palette holds the linear values, stored as sRGB)
@@ -137,18 +161,8 @@ namespace Summit
             gear.SetFloat("_Smoothness", 1f);
             gear.SetFloat("_SmoothnessTextureChannel", 1f);
             gear.EnableKeyword("_SMOOTHNESS_TEXTURE_ALBEDO_CHANNEL_A");
-            foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>())
-            {
-                var mats = smr.sharedMaterials;
-                for (int i = 0; i < mats.Length; i++)
-                {
-                    string n = mats[i] != null ? mats[i].name : "";
-                    mats[i] = n.StartsWith("Jacket") ? jacket : n.StartsWith("Pants") ? pants : gear;
-                }
-                smr.sharedMaterials = mats;
-                smr.updateWhenOffscreen = false;   // (her bounds follow her bones; nothing to skin while she's out of view)
-                smr.quality = SkinQuality.Bone4;
-            }
+            gearCache = gear;
+            return gear;
         }
 
         /// <summary>
@@ -206,14 +220,22 @@ namespace Summit
                     if (cell >= 0 || head) { mid += v[i]; n++; }
                 }
                 if (hit.Count == 0 || n == 0) continue;
+                FaceUncovered = true;
                 mid /= n;
-                var m = Instantiate(src); m.name = src.name + " (Alyssa)";
-                foreach (int i in hit) v[i] = Vector3.Lerp(v[i], mid, 0.8f);
-                m.vertices = v; m.RecalculateBounds();
+                if (!folded.TryGetValue(src, out var m) || m == null)
+                {
+                    m = Instantiate(src); m.name = src.name + " (Alyssa)";
+                    foreach (int i in hit) v[i] = Vector3.Lerp(v[i], mid, 0.8f);
+                    m.vertices = v; m.RecalculateBounds();
+                    folded[src] = m;
+                }
                 smr.sharedMesh = m;
             }
         }
 
+        /// <summary>The hero's goggles and gaiter were found on the mesh and folded away (test tools).</summary>
+        public bool FaceUncovered { get; private set; }
+        static readonly System.Collections.Generic.Dictionary<Mesh, Mesh> folded = new System.Collections.Generic.Dictionary<Mesh, Mesh>();   // (made once each)
         Transform faceObj;
         /// <summary>The way her face looks (test tools).</summary>
         public Vector3 FaceDir => faceObj != null ? faceObj.forward : face;
@@ -262,16 +284,16 @@ namespace Summit
             for (int sd = -1; sd <= 1; sd += 2)
             {
                 Vector3 e = Surf(sd * 0.026f * s, 0.022f * s, -0.002f);
-                Prim(PrimitiveType.Sphere, head, e, facing, new Vector3(0.017f, 0.013f, 0.008f) * s, eyeM);
-                Prim(PrimitiveType.Cube, head, Surf(sd * 0.027f * s, 0.043f * s, -0.001f), facing * Quaternion.Euler(0f, sd * 18f, -sd * 9f), new Vector3(0.024f, 0.0045f, 0.005f) * s, browM);
+                Prim(PrimitiveType.Sphere, head, e, facing, new Vector3(0.02f, 0.016f, 0.009f) * s, eyeM);   // (a touch bold, so they carry at the camp camera's distance)
+                Prim(PrimitiveType.Cube, head, Surf(sd * 0.027f * s, 0.043f * s, -0.001f), facing * Quaternion.Euler(0f, sd * 18f, -sd * 9f), new Vector3(0.026f, 0.006f, 0.006f) * s, browM);
                 Prim(PrimitiveType.Sphere, head, Surf(sd * 0.04f * s, -0.012f * s, -0.004f), facing, new Vector3(0.024f, 0.014f, 0.006f) * s, cheekM);
             }
             Prim(PrimitiveType.Sphere, head, Surf(0f, 0.002f * s, 0.006f * s), facing, new Vector3(0.018f, 0.026f, 0.02f) * s, skinM);   // her nose
             // the smile: a wide curve, the corners up
             Vector3 mouth = Surf(0f, -0.04f * s, -0.002f);
-            Prim(PrimitiveType.Capsule, head, mouth, facing * Quaternion.Euler(0f, 0f, 90f), new Vector3(0.008f, 0.017f, 0.005f) * s, lipM);
+            Prim(PrimitiveType.Capsule, head, mouth, facing * Quaternion.Euler(0f, 0f, 90f), new Vector3(0.01f, 0.016f, 0.006f) * s, lipM);
             for (int sd = -1; sd <= 1; sd += 2)
-                Prim(PrimitiveType.Capsule, head, Surf(sd * 0.019f * s, -0.035f * s, -0.003f), facing * Quaternion.Euler(0f, sd * 20f, 90f + sd * 38f), new Vector3(0.006f, 0.008f, 0.005f) * s, lipM);
+                Prim(PrimitiveType.Capsule, head, Surf(sd * 0.021f * s, -0.034f * s, -0.002f), facing * Quaternion.Euler(0f, sd * 20f, 90f + sd * 40f), new Vector3(0.008f, 0.01f, 0.006f) * s, lipM);
             // the goggles pushed up on the beanie: a white frame curving round its front, a smoked lens, a black strap round the back
             Vector3 gog = new Vector3(cap.x, rim + 0.06f * s, cap.z) + f * (capFront - 0.012f);
             Quaternion tilt = facing * Quaternion.Euler(-22f, 0f, 0f);
@@ -304,6 +326,10 @@ namespace Summit
         // ---------------------------------------------------------------- her round
 
         void Update() { if (Application.isPlaying) Step(Time.deltaTime); }
+        void OnDestroy() { mm?.Destroy(); }
+
+        /// <summary>How many times she's been moved on (test tools: still while you're out on the mountain).</summary>
+        public static int Steps;
 
         static float Sm(float a, float b, float x) { float k = Mathf.Clamp01((x - a) / (b - a)); return k * k * (3f - 2f * k); }
         static float Window(float t, float a, float b, float ease = 0.5f) => Sm(a, a + ease, t) * (1f - Sm(b - ease, b, t));
@@ -312,6 +338,7 @@ namespace Summit
         public void Step(float dt)
         {
             if (!built) return;
+            Steps++;
             lastT = t;
             t += dt;
             if (t >= Cycle) { t -= Cycle; lastT = -1f; }
@@ -339,7 +366,8 @@ namespace Summit
             if (Passed(14.5f)) mm.SetStickVisible(false);
             if (mm.Smore != null) mm.Bite(t < 16f ? 1f : t < 18f ? 0.62f : t < 20f ? 0.3f : 0f);
 
-            Pose(dt, roast, check, blow, build, eat, warm, k);
+            SelfieStep(dt, talking);
+            Pose(dt, roast, check, blow, build, eat, warm * (1f - SelfieWeight), k);
             mm.Refresh(0f);
         }
 
@@ -355,6 +383,7 @@ namespace Summit
             // she watches her marshmallow, or the fire, or whoever she's talking to
             Vector3 eye = h.Head.position;
             d.look = TalkingTo != null ? TalkingTo.position + Vector3.up * 1.5f - eye : eat > 0.5f ? face - Vector3.up * 0.3f : roast > 0.3f || check > 0.3f || blow > 0.3f ? lastTip - eye : fire - eye;
+            d.look = SelfieLook(eye, d.look);   // (her head to the phone, taking a selfie)
             d.lookWeight = 0.85f;
             d.lean = 14f + 10f * roast + 10f * blow;   // hunched toward the warmth; leaning in to blow
             h.Layer(d, dt);
@@ -382,6 +411,7 @@ namespace Summit
             Vector3 over = fire + Vector3.up * Mathf.Lerp(0.85f, 0.42f, k) - face * Mathf.Lerp(0.3f, 0.1f, k);
             Vector3 aim = Vector3.Slerp(CampPoses.StickRest(h), CampPoses.StickAim(h, over, lift, blow, s), stickOut);
             lastTip = CampPoses.HoldStick(h, mm, aim, t * 70f);
+            PoseSelfie(s);   // the phone and the peace sign, over the rest
             if (mm.Smore != null) { mm.Smore.position = h.Hand[0].position + face * 0.06f * s + Vector3.up * 0.03f; mm.Smore.rotation = Quaternion.LookRotation(face, Vector3.up); }
         }
 

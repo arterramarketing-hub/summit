@@ -185,7 +185,7 @@ namespace Summit
 
         // MakeHero.py writes the palette 8 swatches wide and 8 rows high (a size the importer leaves as it is: scaled,
         // each row bled into the next), and the gear's uvs sit in the middle of each swatch
-        const int PaletteCols = 8, PaletteRows = 8;
+        public const int PaletteCols = 8, PaletteRows = 8;   // (Alyssa reads them too)
         int PalettePixel(int cell)
         {
             if (gearPalette == null) return -1;

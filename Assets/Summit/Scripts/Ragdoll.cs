@@ -239,10 +239,15 @@ namespace Summit
             boardGroundBody = Slab("BoardGround");
         }
 
+        static readonly HashSet<Collider> slabs = new HashSet<Collider>();
+        /// <summary>Is this one of the slabs of snow laid under a thrown body, its board or a lost limb?</summary>
+        public static bool IsSlab(Collider c) => c != null && slabs.Contains(c);
+
         Rigidbody Slab(string name)
         {
             var g = new GameObject(name);
             var c = g.AddComponent<BoxCollider>();
+            slabs.Add(c);
             // deep, so whatever is inside it is always pushed out of its top: the slab is teleported under the body every
             // step, and on a steep face (the surface under it moving a metre a step) a part could end up more than half way
             // into a 2 m slab, be pushed out of its bottom, and fall on through the mountain for good

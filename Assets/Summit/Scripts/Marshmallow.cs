@@ -20,6 +20,7 @@ namespace Summit
         readonly Material mat;
         readonly ParticleSystem flame;
         Transform crackerTop, crackerBottom, choc;
+        readonly Transform[] parts = new Transform[3];   // (the s'more's layers, for Bite: no new array each frame)
         float alightFor;
 
         // the colours it goes through, and where (by Toast)
@@ -150,7 +151,8 @@ namespace Summit
             left = Mathf.Clamp01(left);
             Smore.gameObject.SetActive(left > 0.02f);
             // (a bite off the side away from the hand: the stack narrows toward it)
-            foreach (var t in new[] { crackerBottom, crackerTop, choc })
+            parts[0] = crackerBottom; parts[1] = crackerTop; parts[2] = choc;
+            foreach (var t in parts)
             {
                 var s = t.localScale; float full = t == choc ? 0.05f : 0.075f;
                 t.localScale = new Vector3(s.x, s.y, full * left);
@@ -162,10 +164,12 @@ namespace Summit
 
         public void SetStickVisible(bool on) { Stick.gameObject.SetActive(on); }
 
+        /// <summary>Gone: the stick, the s'more, and its own material (its colour is its toast, so it isn't shared).</summary>
         public void Destroy()
         {
-            if (Smore != null) Object.Destroy(Smore.gameObject);
-            if (Stick != null) Object.Destroy(Stick.gameObject);
+            if (Smore != null) Kill(Smore.gameObject);
+            if (Stick != null) Kill(Stick.gameObject);
+            Kill(mat);
         }
 
         // ---------------------------------------------------------------- bits
@@ -173,10 +177,22 @@ namespace Summit
         static Shader lit;
         public static Shader Lit() { if (lit == null) lit = Shader.Find("Universal Render Pipeline/Lit"); return lit; }
 
+        /// <summary>
+        /// A plain lit colour, shared: one material per colour and sheen for the whole game, however often the camp is
+        /// rebuilt (so nothing piles up). Never change one of these: make your own for anything that changes.
+        /// </summary>
         public static Material Plain(Color c, float smooth)
         {
-            var m = new Material(Lit()); m.SetColor("_BaseColor", c); m.SetFloat("_Smoothness", smooth); return m;
+            var key = (c, smooth);
+            if (plain.TryGetValue(key, out var m) && m != null) return m;
+            m = new Material(Lit()) { name = "Plain" }; m.SetColor("_BaseColor", c); m.SetFloat("_Smoothness", smooth);
+            plain[key] = m;
+            return m;
         }
+        static readonly System.Collections.Generic.Dictionary<(Color, float), Material> plain = new System.Collections.Generic.Dictionary<(Color, float), Material>();
+
+        /// <summary>Destroy a thing made at runtime, in play or in the editor's test tools.</summary>
+        public static void Kill(Object o) { if (o == null) return; if (Application.isPlaying) Object.Destroy(o); else Object.DestroyImmediate(o); }
 
         /// <summary>The game's soft particle material (Camp hands it over), for the little flames and the steam.</summary>
         public static Material Soft;

@@ -81,6 +81,54 @@ public static class CampfireShot
             Log($"Alyssa at {al.RoundTime:0.0} s: marshmallow {Marshmallow.Grade(al.Mallow.Toast)} ({al.Mallow.Toast:0.00}){(al.Mallow.Alight ? " alight" : "")}");
         }
 
+        // ---- a selfie: held up in front, the peace sign, the flash; then with you standing close, turned to get you in
+        {
+            Vector3 near = seat + new Vector3(0.9f, 0f, -1.3f); near.y = Slope.DrawnHeight(near.x, near.z);
+            camp.TeleportTo(near, Mathf.Atan2(seat.x - near.x, seat.z - near.z) * Mathf.Rad2Deg); Frames(10);
+            int before = al.Selfies;
+            al.TestSelfie(0);
+            for (int i = 0; i < 139; i++) al.Step(dt);   // to the flash (2.3 s in)
+            // from in front of her, on her left: her face turned to the phone up on her right, the peace sign by her cheek
+            cam.transform.position = seat + new Vector3(1.55f, 1.0f, 1.25f);
+            cam.transform.LookAt(seat + new Vector3(0.1f, 0.78f, -0.1f));
+            Times("Fire30_selfie");
+            // and as the phone sees her: from just behind it
+            {
+                Vector3 hd = al.HeadBone.position + Vector3.up * 0.12f, ph = al.Phone.position;
+                // in front of her on the phone's side: her face turned to it (and so toward you), the peace sign by her cheek
+                Vector3 fw = Vector3.right, rt = Vector3.Cross(Vector3.up, fw);   // (she faces +X across the fire)
+                cam.transform.position = hd + fw * 1.35f + rt * 0.15f - Vector3.up * 0.08f;
+                cam.transform.LookAt(hd + rt * 0.16f + Vector3.up * 0.02f);
+                float fov = cam.fieldOfView; cam.fieldOfView = 70f;   // (a phone's wide front lens)
+                Times("Fire30c_selfie_phone_view");
+                cam.fieldOfView = fov;
+            }
+            Check(al.TakingSelfie && al.Selfies == before + 1, $"she takes a selfie (the flash went: {al.Selfies - before})");
+            for (int i = 0; i < 70; i++) al.Step(dt);
+            Times("Fire30b_selfie_checks_photo");
+            for (int i = 0; i < 120; i++) al.Step(dt);
+            Check(!al.TakingSelfie, "and puts the phone away");
+            // you, standing beside her (on her right, a step behind): where a friend stands to get in a selfie
+            Vector3 beside = seat + new Vector3(-0.15f, 0f, -0.95f); beside.y = Slope.DrawnHeight(beside.x, beside.z);
+            camp.TeleportTo(beside, 90f); Frames(10);
+            al.TestSelfie(2);
+            for (int i = 0; i < 132; i++) al.Step(dt);
+            {
+                Vector3 hd = al.HeadBone.position + Vector3.up * 0.12f, ph = al.Phone.position;
+                // the two of you from in front: her phone up, you beside her in its shot
+                Vector3 mid = (hd + rider.transform.position + Vector3.up * 1.4f) * 0.5f;
+                cam.transform.position = mid + Vector3.right * 2.5f + Vector3.up * 0.1f;
+                cam.transform.LookAt(mid);
+            }
+            { float fov = cam.fieldOfView; cam.fieldOfView = 70f; Times("Fire31_selfie_with_you"); cam.fieldOfView = fov; }
+            for (int i = 0; i < 200; i++) al.Step(dt);
+            // never mid-conversation: talking to her puts it away
+            al.TestSelfie(0); for (int i = 0; i < 80; i++) al.Step(dt);
+            al.TalkingTo = rider.transform; for (int i = 0; i < 60; i++) al.Step(dt);
+            Check(!al.TakingSelfie, "talking to her, the phone goes away");
+            al.TalkingTo = null;
+        }
+
         // ---- TALK: walk up to her, the prompt, open it with the button, tap through, pick a reply
         var talkSpot = al.TalkSpot; talkSpot.y = Slope.DrawnHeight(talkSpot.x, talkSpot.z);
         camp.TeleportTo(talkSpot + new Vector3(0f, 0f, -0.3f), Mathf.Atan2(seat.x - talkSpot.x, seat.z - talkSpot.z) * Mathf.Rad2Deg);
@@ -97,6 +145,26 @@ public static class CampfireShot
             cam.transform.position = hb.position + toHero * 0.75f + Vector3.up * 0.12f + Vector3.Cross(Vector3.up, toHero) * 0.12f;
             cam.transform.LookAt(hb.position + Vector3.up * 0.1f);
             Times("Fire9b_alyssa_face");
+            Check(al.FaceUncovered, "the hero's goggles and gaiter are folded off her face (the palette's swatches found)");
+            // and at the camp's own distance: you, standing across the fire from her, the camp camera behind you
+            meta.EndTalk(); al.TalkingTo = null;
+            typeof(Camp).GetField("act", NP).SetValue(camp, System.Enum.ToObject(typeof(Camp).GetField("act", NP).FieldType, 0));
+            Vector3 across = seat + Vector3.right * 4.0f + Vector3.forward * 2.2f; across.y = Slope.DrawnHeight(across.x, across.z);
+            camp.TeleportTo(across, Mathf.Atan2(seat.x - across.x, seat.z - across.z) * Mathf.Rad2Deg);
+            al.RoundTime = 23.5f; Frames(40);   // (warming her hands, face up to the fire)
+            Times("Fire29_alyssa_face_camp");
+            Open(Camp.Station.Talk); Frames(40);
+            bool bare = false;
+            foreach (var smr in al.GetComponentsInChildren<SkinnedMeshRenderer>(false)) if (smr.name.StartsWith("HeroHands")) bare = true;
+            Check(!bare, "no bare hands under her gloves");
+            var hand = al.GetComponentsInChildren<Transform>(true);
+            Transform rh = null; foreach (var tr in hand) if (tr.name == "RightHand") rh = tr;
+            if (rh != null)
+            {
+                cam.transform.position = rh.position + toHero * 0.55f + Vector3.up * 0.18f;
+                cam.transform.LookAt(rh.position);
+                Times("Fire9c_alyssa_hands");
+            }
         }
         // taps: the first finishes typing (or goes on), never a jump
         for (int i = 0; i < 6 && meta.TalkOpen && meta.TalkRepliesShown == 0; i++) { Tap(); Frames(50); }
@@ -168,6 +236,20 @@ public static class CampfireShot
         camp.TestTakeOut(); Frames(400);
         Log($"second one came out {camp.LastRoast}");
 
+        // ---- TALK started in the middle of a jump: the jump ends where you stand
+        {
+            camp.TeleportTo(talkSpot + new Vector3(0f, 0f, -0.3f), Mathf.Atan2(seat.x - talkSpot.x, seat.z - talkSpot.z) * Mathf.Rad2Deg);
+            Frames(10);
+            camp.Jump(); Frames(30, false);
+            float up = (float)typeof(Camp).GetField("jumpY", NP).GetValue(camp);
+            Log($"mid-jump: {up:0.00} m up, move {(int)fMove.GetValue(camp)}");
+            Open(Camp.Station.Talk); Frames(2);
+            Check((int)fMove.GetValue(camp) == 0 && (float)typeof(Camp).GetField("jumpY", NP).GetValue(camp) == 0f, $"TALK from mid-jump ({up:0.00} m up): the jump ends, feet on the snow");
+            Frames(30);
+            Times("Fire28_talk_midjump");
+            meta.EndTalk(); Frames(5);
+        }
+
         // ---- HOT CHOCOLATE: in the kitchen, at the stove
         var cs = (Vector3)typeof(Camp).GetField("cocoaStand", NP).GetValue(camp);
         var cf = (Vector3)typeof(Camp).GetField("cocoaFace", NP).GetValue(camp);
@@ -204,6 +286,18 @@ public static class CampfireShot
         camp.TeleportTo(cs - cf * 0.3f, Mathf.Atan2(cf.x, cf.z) * Mathf.Rad2Deg); Frames(10);
         Open(Camp.Station.Cocoa); Frames(400);
         Check(camp.HoldingMug, "a second mug");
+        // roasting with it in hand: it's set down by the stump, and picked up again after
+        {
+            Vector3 rs = seat + Vector3.right * 4.1f; rs.y = Slope.DrawnHeight(rs.x, rs.z);
+            camp.TeleportTo(rs, -90f); Frames(10);
+            Open(Camp.Station.Roast); Frames(90);
+            Check(camp.MugParked && !camp.HoldingMug, "roasting, the mug is down on the snow by the stump");
+            var m = (Transform)typeof(Camp).GetField("mug", NP).GetValue(camp);
+            Check(m != null && m.position.y - Slope.DrawnHeight(m.position.x, m.position.z) < 0.05f, $"standing on the snow ({(m != null ? m.position.y - Slope.DrawnHeight(m.position.x, m.position.z) : -1f):0.00} m up)");
+            Times("Fire27_roast_with_mug");
+            camp.TestTakeOut(); Frames(420);
+            Check(camp.HoldingMug, "and back in hand after the s'more");
+        }
         float cx = Slope.Centre(Slope.PadLip);
         camp.TeleportTo(new Vector3(cx, Slope.DrawnHeight(cx, Slope.GateZ - 2.6f), Slope.GateZ - 2.6f), 0f); Frames(20);
         Check(camp.Near == Camp.Station.DropIn, $"DROP IN at the gate with a mug (near={camp.Near})");
@@ -213,6 +307,20 @@ public static class CampfireShot
         Times("Fire26_mug_on_post");
 
         Check(jumps == 0, $"no tap or swipe jumped or rolled while talking, roasting or holding a mug ({jumps} frames moving)");
+
+        // ---- RESTART (the end screen's RIDE AGAIN, the pause menu's RESTART): a new mountain, the camp rebuilt, a run.
+        // The new Alyssa is built but kept still: her pose, IK and marshmallow don't run while you ride
+        typeof(SummitGame).GetMethod("ToReady", NP, null, System.Type.EmptyTypes, null).Invoke(game, null);
+        var al2 = camp.Alyssa;
+        Check(al2 != null && al2 != al, "a new Alyssa for the new mountain");
+        Check(al2 != null && !al2.isActiveAndEnabled, $"after RESTART she's still: no Update for her during the run (enabled={(al2 != null && al2.enabled)})");
+        typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
+        int steps0 = Alyssa.Steps;
+        Physics.simulationMode = SimulationMode.Script;
+        for (int i = 0; i < 240; i++) { rider.Tick(dt); body.PhysicsStep(); Physics.Simulate(dt); }
+        Physics.simulationMode = SimulationMode.FixedUpdate;
+        Check(Alyssa.Steps == steps0, $"four seconds of the run: she was moved on {Alyssa.Steps - steps0} times");
+        Log($"riding at z={rider.Z:0} after the restart");
         Done();
     }
 
