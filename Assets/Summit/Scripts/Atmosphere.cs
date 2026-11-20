@@ -26,6 +26,30 @@ namespace Summit
         float baseVignette = 0.2f, speed01;
         /// <summary>The vignette at rest, set by the colour filter (LookGrade); speed widens it from here.</summary>
         public float BaseVignette { get => baseVignette; set => baseVignette = value; }
+        /// <summary>How much snow falls, against the light flurry the game always had (Weather sets it; 1 without it).</summary>
+        public float SnowAmount = 1f;
+        Vector4 snowLook = new Vector4(-1f, 0f, 0f, 0f);
+
+        /// <summary>
+        /// The weather's snowfall (Weather.cs): amount 0..1, flake 0 fine .. 1 big, fall speed (m/s), streak 0..1 (driven
+        /// snow drawn stretched along its flight). Big flakes come fewer; only changes are passed on to the particles.
+        /// </summary>
+        public void Weather(float amount, float flake, float fall, float streak)
+        {
+            if (snow == null) return;
+            SnowAmount = amount * Mathf.Lerp(1f, 0.5f, flake);
+            var want = new Vector4(flake, fall, streak, 0f);
+            if ((want - snowLook).sqrMagnitude < 1e-4f) return;
+            snowLook = want;
+            var main = snow.main;
+            main.startSize = new ParticleSystem.MinMaxCurve(Mathf.Lerp(0.04f, 0.13f, flake), Mathf.Lerp(0.11f, 0.3f, flake));
+            var vel = snow.velocityOverLifetime;
+            vel.y = new ParticleSystem.MinMaxCurve(-fall * 1.4f, -fall * 0.7f);
+            var pr = snow.GetComponent<ParticleSystemRenderer>();
+            var mode = streak > 0.4f ? ParticleSystemRenderMode.Stretch : ParticleSystemRenderMode.Billboard;
+            if (pr.renderMode != mode) pr.renderMode = mode;
+            pr.velocityScale = 0.03f * streak; pr.lengthScale = 1f; pr.cameraVelocityScale = 0.02f * streak;
+        }
 
         public void Build(Camera camera, Rider r, Material flake)
         {
@@ -489,7 +513,7 @@ namespace Summit
             streaksAimed = pov;
             wind.transform.SetPositionAndRotation(cp + along * 9f + Vector3.down * 0.5f, Quaternion.LookRotation(fwd));
             windEm.rateOverTime = speed01 * 650f;
-            snowEm.rateOverTime = 2300f + 900f * speed01;
+            snowEm.rateOverTime = (2300f + 900f * speed01) * SnowAmount;
             if (vignette != null) vignette.intensity.value = baseVignette + 0.17f * speed01;
         }
     }

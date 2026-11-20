@@ -296,10 +296,10 @@ namespace Summit
                 var data = go.AddComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>();
                 data.renderPostProcessing = false; data.renderShadows = false;
             }
-            if (Mathf.Abs(clock - capturedAt) < 0.003f && capturedAt >= 0f) return true;
+            if (Mathf.Abs(clock - capturedAt) < 0.003f && capturedAt >= 0f && capturedVersion == SkyVersion) return true;
             if (Time.unscaledTime < nextCapture && capturedAt >= 0f) return true;
             if (!reflCam.RenderToCubemap(reflRT)) { reflFailed = true; return false; }
-            capturedAt = clock; nextCapture = Time.unscaledTime + 0.25f;
+            capturedAt = clock; capturedVersion = SkyVersion; nextCapture = Time.unscaledTime + 0.25f;
             if (probe.customBakedTexture != reflRT) probe.customBakedTexture = reflRT;
             return true;
         }
@@ -307,6 +307,13 @@ namespace Summit
         Camera reflCam;
         bool reflFailed;
         float capturedAt = -1f, nextCapture;
+        int capturedVersion = -1;
+        /// <summary>Bumped by whatever else changes the sky (Weather's cloud): the reflections are drawn again.</summary>
+        public static int SkyVersion;
+        /// <summary>Called at the end of each lighting pass (every frame, and on ApplyNow): Weather turns this light into its own.</summary>
+        public static event System.Action<DayNight> Applied;
+        /// <summary>How strongly the headlamp's beam shows in the air (Weather: more in falling snow and fog).</summary>
+        public static float BeamGain = 1f;
 
         void Apply(float clock)
         {
@@ -400,6 +407,7 @@ namespace Summit
             Headlamp(Mathf.Lerp(a.headlamp, b.headlamp, t));
             PlaceTorch(headlamp != null && headlamp.enabled);
             if (glowFx != null) glowFx.Step(0f);
+            Applied?.Invoke(this);
         }
 
         /// <summary>
@@ -453,7 +461,7 @@ namespace Summit
                 // beam only as it swings across the view
                 float along = cam != null ? Vector3.Dot(cam.transform.forward, headlamp.transform.forward) : 1f;
                 float side = 1f - Mathf.SmoothStep(0.78f, 0.96f, along);
-                beamMat.SetColor("_BaseColor", new Color(headlamp.color.r, headlamp.color.g, headlamp.color.b, 0.22f * k * side));
+                beamMat.SetColor("_BaseColor", new Color(headlamp.color.r, headlamp.color.g, headlamp.color.b, Mathf.Min(0.6f, 0.22f * k * side * BeamGain)));
             }
             Shader.SetGlobalVector("_LampPos", new Vector4(lp.x, lp.y, lp.z, 1f));
             Shader.SetGlobalVector("_LampDir", headlamp.transform.forward);

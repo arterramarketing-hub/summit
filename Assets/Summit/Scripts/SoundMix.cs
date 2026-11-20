@@ -283,7 +283,8 @@ namespace Summit
             Mix(boost, r.boost ? 0.45f : 0f, 1f + 0.2f * s, 10f, 4f, dt);
 
             muffle = Mathf.Lerp(muffle, r.muffle, 1f - Mathf.Exp(-dt * 5f));
-            muffler.cutoffFrequency = Mathf.Lerp(22000f, 700f, Mathf.Sqrt(muffle));
+            // (falling snow hushes the world too, gently: Weather.Hush, 0..1, down to about 4.5 kHz at most)
+            muffler.cutoffFrequency = Mathf.Min(Mathf.Lerp(22000f, 700f, Mathf.Sqrt(muffle)), Mathf.Lerp(22000f, 4500f, Weather.Hush));
             music.Set(r, dt);
 
             TickScream(Time.unscaledDeltaTime);

@@ -107,6 +107,7 @@ namespace Summit
         int halation;   // the film glow round highlights (LensFX): OFF, SUBTLE, STRONG
         LensFX lensFx;
         DayNight dayNight;   // the time of day's light (TimeOfDay, DayNight.cs), and the pause menu's TIME row
+        Weather weather;     // rolled for each new mountain (Weather.cs); null in the test tools unless they ask for one
         UnityEngine.Rendering.VolumeProfile post;
 
         void ApplyCamera()
@@ -193,6 +194,7 @@ namespace Summit
             start.AddRow(view, "LENS", () => LensName[lensLevel], StepLens);
             start.AddRow(view, "LENS TYPE", () => LensFX.ModeName[lensMode], d => StepLensType(), true);
             start.AddRow(look, "TIME OF DAY", () => TimeOfDay.LockLabel, StepTime);
+            start.AddRow(look, "WEATHER", () => Weather.ChoiceLabel, Weather.StepChoice);
             start.AddRow(look, "FILTER", () => LookGrade.Names[filterLevel], StepFilter);
             start.AddRow(look, "FILTER STRENGTH", () => filterStrength * 10 + "%", StepStrength);
             start.AddRow(look, "HALATION", () => LensFX.HalationName[halation], StepHalation);
@@ -566,6 +568,7 @@ namespace Summit
             rider.Bounced += into => { if (state != State.Riding) return; body.TubeKick(into); audioFx.Play(Sfx.Thump, Mathf.Clamp01(into / 12f)); };
             BuildMeta();
             dayNight.Hook(rider, fx, camp, spray, trail);
+            weather = Weather.Build(rider, camp, cam, atmo, fx, snow, audioFx);   // the weather on top of the time of day (Weather.cs)
             ToHub();
             // the game opens on the start page (StartPage.cs), over the camp it has just set up. Not for the
             // device-test autoplay, which carries straight on into a run, nor for the editor's test tools, which
