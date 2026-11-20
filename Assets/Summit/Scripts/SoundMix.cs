@@ -13,7 +13,9 @@ namespace Summit
         SlideCrack,   // the slope letting go behind you: a crack, and the rumble building
         BoneLeg, BoneBack, BoneNeck, BoneArm,  // the harsh breaks: a big bone, the spine, the neck, an arm
         BuddyWoah, BuddyClose, BuddyCheer, BuddyOuch,  // the player's own voice lines (Resources/Audio/Buddy/<group>)
-        BuddyWarn, BuddyDeep                            // "lookout" (something in the way), "don't go down there" (a deadly drop or crevasse)
+        BuddyWarn, BuddyDeep,                           // "lookout" (something in the way), "don't go down there" (a deadly drop or crevasse)
+        PointTick, Bank, ComboLost, BillTick,           // the points running up (a note that climbs), a combo banked (by its size, 0..4), one lost; the bill running up
+        Branches      // riding through a tree's branches: needles swishing past and twigs cracking (made here: BranchClips)
     }
 
     /// <summary>What the ride sounds like this frame (all 0..1 unless noted).</summary>
@@ -70,6 +72,55 @@ namespace Summit
         float chirpClock = 3f;
 
         static AudioClip C(string n) => Resources.Load<AudioClip>("Audio/" + n);
+
+        AudioClip[] branches;
+
+        /// <summary>
+        /// Riding through branches, made rather than recorded (no clip in Resources/Audio has it): a swish of needles
+        /// (noise, shaped like a brush past: a fast rise and a half-second fall, band-limited to the hiss of
+        /// needles), with twigs cracking in it (sharp clicks, each a few milliseconds of bright noise with a short
+        /// woody ring). Three takes, different cracks.
+        /// </summary>
+        static AudioClip[] BranchClips()
+        {
+            const int rate = 44100; int n = (int)(rate * 0.55f);
+            var takes = new AudioClip[3];
+            var rs = Random.state;
+            for (int k = 0; k < takes.Length; k++)
+            {
+                Random.InitState(5021 + k * 97);
+                var d = new float[n];
+                float lp1 = 0f, lp2 = 0f;
+                for (int i = 0; i < n; i++)
+                {
+                    float t = i / (float)rate;
+                    float env = Mathf.Min(1f, t / 0.02f) * Mathf.Exp(-t / 0.13f);
+                    float w = Random.value * 2f - 1f;
+                    lp1 += (w - lp1) * 0.55f; lp2 += (lp1 - lp2) * 0.08f;   // keep 1-6 kHz or so: needles, not wind
+                    d[i] = (lp1 - lp2) * env * 0.9f;
+                }
+                int cracks = 4 + k;
+                for (int c = 0; c < cracks; c++)
+                {
+                    int at = (int)(rate * Random.Range(0.005f, 0.3f));
+                    float ring = Random.Range(1700f, 3400f), amp = Random.Range(0.45f, 1f) * (c == 0 ? 1f : 0.7f);
+                    int len = (int)(rate * 0.03f);
+                    for (int i = 0; i < len && at + i < n; i++)
+                    {
+                        float t = i / (float)rate;
+                        float click = (Random.value * 2f - 1f) * Mathf.Exp(-t / 0.0025f);
+                        float body = Mathf.Sin(t * ring * 2f * Mathf.PI) * Mathf.Exp(-t / 0.009f) * 0.6f;
+                        d[at + i] += (click + body) * amp;
+                    }
+                }
+                float peak = 0.01f; foreach (var x in d) peak = Mathf.Max(peak, Mathf.Abs(x));
+                for (int i = 0; i < n; i++) d[i] *= 0.9f / peak;
+                takes[k] = AudioClip.Create("Branches" + k, n, 1, rate, false);
+                takes[k].SetData(d, 0);
+            }
+            Random.state = rs;
+            return takes;
+        }
 
         public void Build()
         {
@@ -427,6 +478,13 @@ namespace Summit
                 case Sfx.Trick: c = chime; vol = 0.55f; pitch = Mathf.Pow(2f, Scale[Mathf.Clamp((int)amount, 0, Scale.Length - 1)] / 36f); break;   // a chain lifts it a little
                 case Sfx.TrickBig: c = trickBig; vol = 0.65f; pitch = Mathf.Pow(2f, Scale[Mathf.Clamp((int)amount, 0, Scale.Length - 1)] / 36f); break;
                 case Sfx.CloseCall: c = closeCall; vol = 0.5f; break;
+                case Sfx.PointTick: c = chime; vol = 0.14f; pitch = 1.5f * Mathf.Pow(2f, Scale[Mathf.Clamp((int)amount, 0, Scale.Length - 1)] / 36f); break;
+                case Sfx.Bank:
+                    if (amount < 2f) { c = chime; vol = 0.6f; pitch = 1.26f; }
+                    else { c = trickBig; vol = 0.75f; pitch = 1f + 0.06f * Mathf.Clamp(amount, 0f, 4f); }
+                    break;
+                case Sfx.ComboLost: c = thumps[0]; vol = 0.6f; pitch = 0.55f; break;
+                case Sfx.BillTick: c = click; vol = 0.28f; pitch = Random.Range(1.25f, 1.4f); break;
                 case Sfx.Soda: c = soda; vol = 0.75f; pitch = 1f; break;
                 case Sfx.ShieldGet: c = shieldGet; vol = 0.5f; pitch = Mathf.Pow(2f, (amount - 1f) * 2f / 12f); break;
                 case Sfx.ShieldFull: c = powerShort; vol = 0.5f; pitch = 1.15f; break;
@@ -446,6 +504,9 @@ namespace Summit
                 case Sfx.PowerStar: c = powerStar; vol = 0.65f; pitch = 1f; break;
                 case Sfx.SlideHit: c = slideHit; vol = 1f; pitch = 1f; break;
                 case Sfx.SlideCrack: c = slideCrack; vol = 1f; pitch = 1f; break;
+                case Sfx.Branches:
+                    if (branches == null) branches = BranchClips();
+                    c = branches[Random.Range(0, branches.Length)]; vol = 0.35f + 0.6f * Mathf.Clamp01(amount); pitch = Random.Range(0.9f, 1.12f); break;
             }
             if (kind == Sfx.Nooo)
             {

@@ -107,9 +107,10 @@ namespace Summit
             rideBtn = rb.rectTransform;
             buttons.Add(new KeyValuePair<RectTransform, string>(rideBtn, "ride"));
 
-            // ---- mission-complete toast, below the score
+            // ---- mission-complete toast: below the score, as ever, except during a run, where the combo and the medical
+            //      bill run up there now (HudPoints): then it comes up at the bottom, over the pause button (see Update)
             toastRoot = New("Toast", safe);
-            Place(toastRoot, new Vector2(0.5f, 1f), new Vector2(0f, -300f), new Vector2(860f, 170f), new Vector2(0.5f, 1f));
+            Place(toastRoot, new Vector2(0.5f, 0f), new Vector2(0f, ToastY), new Vector2(860f, 170f), new Vector2(0.5f, 0f));
             toastGroup = toastRoot.gameObject.AddComponent<CanvasGroup>();
             var tb = Img("ToastCard", toastRoot, new Color(0.08f, 0.10f, 0.18f, 0.9f), round); Stretch(tb.rectTransform);
             var tl = Img("ToastEdge", toastRoot, Gold, null);
@@ -359,7 +360,8 @@ namespace Summit
 
         readonly Queue<Missions.Mission> toasts = new Queue<Missions.Mission>();
         float toastT = -1f;
-        const float ToastIn = 0.3f, ToastHold = 2.6f, ToastOut = 0.45f;
+        const float ToastIn = 0.3f, ToastHold = 2.6f, ToastOut = 0.45f, ToastY = 165f;
+        bool toastLow;
 
         public void Toast(Missions.Mission m) { toasts.Enqueue(m); }
 
@@ -389,13 +391,16 @@ namespace Summit
                 toastTitle.text = Missions.TitleFor(m); toastReward.text = "+" + m.reward;
                 toastRoot.gameObject.SetActive(true);
                 toastT = 0f;
+                toastLow = Current == Mode.Riding;
+                toastRoot.anchorMin = toastRoot.anchorMax = toastRoot.pivot = new Vector2(0.5f, toastLow ? 0f : 1f);
             }
             if (toastT >= 0f)
             {
                 toastT += dt;
                 float a = toastT < ToastIn ? toastT / ToastIn : toastT < ToastIn + ToastHold ? 1f : 1f - (toastT - ToastIn - ToastHold) / ToastOut;
                 toastGroup.alpha = Mathf.Clamp01(a);
-                toastRoot.anchoredPosition = new Vector2(0f, -300f + 40f * (1f - Mathf.Clamp01(toastT / ToastIn)));
+                float slide = 40f * (1f - Mathf.Clamp01(toastT / ToastIn));
+                toastRoot.anchoredPosition = toastLow ? new Vector2(0f, ToastY - slide) : new Vector2(0f, -300f + slide);
                 if (toastT > ToastIn + ToastHold + ToastOut) { toastT = -1f; toastRoot.gameObject.SetActive(false); }
             }
         }

@@ -205,7 +205,7 @@ namespace Summit
                     float k = rider.TrickProgress;
                     bool flip = Mathf.Abs(rider.TrickFlip) > 0f;
                     float spin = rider.TrickSpin;
-                    float grab = rider.TrickGrab > 0 ? Sm(0.08f, 0.22f, k) * (1f - Sm(0.8f, 0.95f, k)) : 0f;
+                    float grab = rider.TrickGrab > 0 ? rider.GrabPose : 0f;
                     float fl = flip ? Sm(0.04f, 0.18f, k) * (1f - Sm(0.85f, 0.97f, k)) : 0f;
                     float sp = Mathf.Abs(spin) > 0.3f ? 1f : 0f;
                     float wind = sp * (1f - Sm(0f, 0.14f, k));

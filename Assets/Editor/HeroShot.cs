@@ -138,13 +138,12 @@ public static class HeroShot
                 Step();
                 if (rider.Airborne && !wasAir)
                 {
-                    // a straight air with this grab (the game picks one at random)
-                    var tp = typeof(Rider);
-                    tp.GetProperty("TrickSpin").SetValue(rider, 0f); tp.GetProperty("TrickFlip").SetValue(rider, 0f);
-                    tp.GetProperty("TrickGrab").SetValue(rider, gi + 1); tp.GetProperty("TrickName").SetValue(rider, grabs[gi]);
+                    // a straight air with this grab, held (the player taps for it now: Rider.ForceGrab is the tap, for the tools)
+                    rider.ForceGrab(gi);
                     Log($"takeoff: {grabs[gi]} planned air {rider.TrickTime:0.00}s");
                 }
-                if (rider.Airborne && !shotPeak && rider.TrickProgress > 0.45f)
+                if (rider.Airborne) rider.GrabHeld = rider.AirTime < 0.75f * rider.TrickTime;
+                if (rider.Airborne && !shotPeak && rider.AirTime > 0.45f * rider.TrickTime)
                 {
                     shotPeak = true;
                     Side(gi % 2 == 0 ? 1 : -1, 4.2f); Shoot("Grab" + grabs[gi], cam, 720, 900);
@@ -170,9 +169,8 @@ public static class HeroShot
                 rider.Steer = 0f; Step();
                 if (rider.Airborne && !wasAir)
                 {
-                    var tp = typeof(Rider);
-                    tp.GetProperty("TrickSpin").SetValue(rider, spin); tp.GetProperty("TrickFlip").SetValue(rider, flip);
-                    tp.GetProperty("TrickGrab").SetValue(rider, 0); tp.GetProperty("TrickName").SetValue(rider, name);
+                    // (committed as the player's flicks would: Rider.ForceTrick, in half turns and whole flips)
+                    rider.ForceTrick(Mathf.RoundToInt(spin / Mathf.PI), Mathf.RoundToInt(flip / (Mathf.PI * 2f)));
                 }
                 wasAir = rider.Airborne;
                 if (rider.Airborne && rider.TrickProgress > 0.06f && rider.TrickProgress < 0.08f) { Side(1, 4.5f); Shoot(name + "Early", cam, 720, 900); }

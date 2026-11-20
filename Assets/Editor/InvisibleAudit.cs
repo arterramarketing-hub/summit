@@ -417,6 +417,18 @@ public static class InvisibleAudit
                 var mesh = (Mesh)pt.GetField("mesh").GetValue(part); int sub = (int)pt.GetField("sub").GetValue(part);
                 foreach (var m in kv.Value) AddInstanced(mesh, sub, m, "forest");
             }
+        // trees with damage (branches torn, a top clipped), drawn one by one out of the instanced batches (Forest.DrawDamaged)
+        var damaged = (List<Vector2Int>)typeof(Forest).GetField("damagedL", NP)?.GetValue(props);
+        if (damaged != null)
+            foreach (var cell in damaged)
+            {
+                var pl = typeof(Forest).GetMethod("Get", NP).Invoke(props, new object[] { cell.x, cell.y });
+                int idx = (int)pl.GetType().GetField("idx").GetValue(pl);
+                var m = (Matrix4x4)pl.GetType().GetField("m").GetValue(pl);
+                var parts = (System.Collections.IList)partsOf.Invoke(props, new object[] { idx * 16 });
+                var part = parts[0]; var pt = part.GetType();
+                AddInstanced((Mesh)pt.GetField("mesh").GetValue(part), (int)pt.GetField("sub").GetValue(part), m, "forest (damaged)");
+            }
         // the stumps of snapped trees
         var stumps = (List<Matrix4x4>)typeof(Forest).GetField("stumpL", NP)?.GetValue(props);
         var stumpMesh = (Mesh)typeof(TreeBreak).GetField("StumpMesh", NS)?.GetValue(null);
@@ -561,7 +573,11 @@ public static class InvisibleAudit
     static void Step()
     {
         float dt = Time.fixedDeltaTime;
-        hitBy = null;
+        // as the game's FixedUpdate: the rider's own step first (in it TreeBreak snaps a thin trunk before the board
+        // meets its post), then what the physics step's move runs into (Rider.OnCollisionEnter, never called in batchmode)
+        var was = hitBy;
+        r.Tick(dt);
+        hitBy = r.Crashed ? was : null;
         if (!r.Crashed && r.Running)
         {
             Vector3 p = r.Body.position, v = r.Velocity;
@@ -572,8 +588,6 @@ public static class InvisibleAudit
                 if (ob != null && r.InvincibleTime <= 0f) { hitBy = c; r.DoCrash(ob.label); break; }
             }
         }
-        if (!r.Crashed) r.Tick(dt);
-        else { var cr = hitBy; r.Tick(dt); hitBy = cr; }
         Physics.Simulate(dt);
         if (n % 24 == 0) Stream(false);
         n++;

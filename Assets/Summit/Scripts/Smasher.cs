@@ -34,7 +34,7 @@ namespace Summit
         {
             fx = snow; forest = trees; wild = animals;
             // splinters: thin streaks of pale broken wood and dark bark
-            splinters = System("Splinters", soft, 300);
+            splinters = System("Splinters", soft, 500);   // (and the twigs and needles torn out of branches: Twigs)
             var sm = splinters.main;
             sm.startLifetime = new ParticleSystem.MinMaxCurve(0.7f, 1.4f);
             sm.startSize = new ParticleSystem.MinMaxCurve(0.08f, 0.17f);
@@ -125,6 +125,22 @@ namespace Summit
             }
             fx?.Impact(centre, 14f, flat * 0.3f);
             Burst(grit, centre, dir, 90, flat.magnitude);
+        }
+
+        /// <summary>Twigs and needles torn out of a tree's branches (TreeBreak): dark green and brown, thrown along with you.</summary>
+        public void Twigs(Vector3 at, Vector3 dir, int n, float speed)
+        {
+            if (splinters == null) return;
+            var ep = new ParticleSystem.EmitParams();
+            for (int i = 0; i < n; i++)
+            {
+                ep.position = at + Random.insideUnitSphere * 0.5f;
+                ep.velocity = (Random.insideUnitSphere * 1.2f + Vector3.up * 0.6f + dir * 0.5f).normalized * Random.Range(1.5f, 5f) + dir * speed * Random.Range(0.15f, 0.45f);
+                float r = Random.value;
+                ep.startColor = r < 0.55f ? new Color(0.11f, 0.17f, 0.11f) : r < 0.85f ? new Color(0.20f, 0.27f, 0.15f) : new Color(0.30f, 0.21f, 0.14f);
+                ep.startSize = Random.Range(0.05f, 0.12f);
+                splinters.Emit(ep, 1);
+            }
         }
 
         /// <summary>Splinters of broken wood (a sign ridden through).</summary>

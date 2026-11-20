@@ -538,8 +538,8 @@ namespace Summit
             compV += (-comp * 140f - compV * 16f) * dt;
             comp = Mathf.Clamp(comp + compV * dt, -0.15f, 0.6f);
             bool idle = !rider.Running, crashed = rider.Crashed, air = rider.Airborne;
-            bool grab = air && rider.TrickGrab > 0 && rider.TrickProgress > 0.1f && rider.TrickProgress < 0.95f;
-            bool flip = air && Mathf.Abs(rider.TrickFlip) > 0f;
+            bool grab = air && rider.GrabPose > 0.5f;
+            bool flip = air && Mathf.Abs(rider.TrickFlip) > 0f && rider.TrickProgress < 0.97f;
             float toe = Mathf.Clamp(rider.Lean / Rider.MaxLean, -1f, 1f);
             float chatterV = idle || air ? 0f : (Mathf.PerlinNoise(t * 9f, 1.3f) - 0.5f) * 0.1f * Mathf.Clamp01(rider.Speed / 30f);
             float crouch = idle ? 0.15f + 0.04f * Mathf.Sin(t * 2.1f) : 0.45f + 0.35f * rider.Tuck + comp + Mathf.Abs(toe) * 0.2f + chatterV;
@@ -647,8 +647,8 @@ namespace Summit
 
             float tuck = rider.Tuck, carve = rider.Carve, steer = rider.Steer, speed01 = Mathf.Clamp01(rider.Speed / 30f);
             bool idle = !rider.Running, crashed = rider.Crashed, air = rider.Airborne;
-            bool grab = air && rider.TrickGrab > 0 && rider.TrickProgress > 0.1f && rider.TrickProgress < 0.95f;
-            bool flip = air && Mathf.Abs(rider.TrickFlip) > 0f;
+            bool grab = air && rider.GrabPose > 0.5f;
+            bool flip = air && Mathf.Abs(rider.TrickFlip) > 0f && rider.TrickProgress < 0.97f;
             // the board chatters a little at speed: tiny fast flex in the knees
             chatter = idle || air ? 0f : (Mathf.PerlinNoise(t * 9f, 1.3f) - 0.5f) * 0.08f * speed01;
             float toe = Mathf.Clamp(steer, -1f, 1f);   // + = toe-side (right) turn, - = heel-side
@@ -690,6 +690,7 @@ namespace Summit
                 W(mArmFL, Mathf.Sin(t * 7f) * 0.8f); W(mArmFR, Mathf.Sin(t * 6f + 2f) * 0.8f);
                 W(mKneeL, Mathf.Sin(t * 5f) * 0.6f); W(mKneeR, Mathf.Sin(t * 6f + 1f) * 0.6f);
             }
+            if (!crashed) FlinchMuscles(dt);
             if (Walking) WalkMuscles(t);
             // ease every muscle toward its target, so nothing snaps
             float k = dt <= 0f ? 1f : 1f - Mathf.Exp(-dt * (crashed ? 20f : 11f));
@@ -711,6 +712,34 @@ namespace Summit
         }
 
         void W(int i, float v) { if (i >= 0 && i < want.Length) want[i] = Mathf.Clamp(v, -1f, 1f); }
+
+        // ---- a flinch: branches whipping past, an arm thrown up on that side, the head turned away
+        float flinchT, flinchK; bool flinchLeft;
+
+        /// <summary>Something whipped past at `from` (branches ridden through): the arm on that side comes up over the
+        /// face and the head turns away, for a moment, `amount` 0..1 how hard.</summary>
+        public void Flinch(Vector3 from, float amount)
+        {
+            if (anim == null || rider == null || rider.Crashed) return;
+            var l = anim.GetBoneTransform(HumanBodyBones.LeftUpperArm); var r = anim.GetBoneTransform(HumanBodyBones.RightUpperArm);
+            if (l == null || r == null) return;
+            flinchLeft = (from - l.position).sqrMagnitude < (from - r.position).sqrMagnitude;
+            flinchK = Mathf.Max(flinchT > 0f ? flinchK : 0f, Mathf.Clamp01(0.45f + 0.55f * amount));
+            flinchT = 0.25f + 0.3f * amount;
+        }
+
+        void FlinchMuscles(float dt)
+        {
+            if (flinchT <= 0f) return;
+            flinchT -= dt;
+            float k = flinchK * Mathf.Clamp01(flinchT / 0.15f);
+            int arm = flinchLeft ? mArmL : mArmR, front = flinchLeft ? mArmFL : mArmFR, elbow = flinchLeft ? mElbowL : mElbowR;
+            float side = flinchLeft ? 1f : -1f;
+            float G(int i) => i >= 0 && i < want.Length ? want[i] : 0f;
+            W(arm, Mathf.Lerp(G(arm), 1f, k)); W(front, Mathf.Lerp(G(front), 1f, k)); W(elbow, Mathf.Lerp(G(elbow), -0.9f, k));
+            W(mHead, Mathf.Lerp(G(mHead), 0.65f - side * 0.6f, k)); W(mNeck, Mathf.Lerp(G(mNeck), 0.55f - side * 0.3f, k));
+            W(mChest, G(mChest) + 0.25f * k);   // ducking in
+        }
 
         /// <summary>How far the target is beyond the leg's full stretch (negative when reachable).</summary>
         static float Reach(Transform hip, Transform knee, Transform foot, Vector3 target)
@@ -1030,27 +1059,38 @@ namespace Summit
                 {
                     // 50-50 along a box; across the rail for a boardslide
                     var fd = rider.GrindFeature.Dir;
-                    yaw = Mathf.Atan2(fd.x, fd.z) + (rider.GrindFeature.kind == Course.Kind.Rail ? Mathf.PI * 0.5f : 0f);
+                    // (and whatever it has been switched to since: Rider.GrindYaw; a lift's launch ramp is ridden straight)
+                    yaw = Mathf.Atan2(fd.x, fd.z) + (rider.GrindLive ? rider.GrindYaw : 0f);
                     up = Vector3.up;
                 }
                 var f = new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw));
                 Vector3 fp = Vector3.ProjectOnPlane(f, up);
                 Quaternion baseRot = fp.sqrMagnitude > 1e-4f ? Quaternion.LookRotation(fp.normalized, up) : pivot.rotation;
-                // an automatic trick: spin about the body's up axis and flip about the board, round the middle of the body
+                // the trick being turned: spin about the body's up axis and flip about the board, round the middle of the body
                 Quaternion rot = baseRot;
+                Vector3 flipAxis = RidingGear ? Vector3.right : Vector3.forward;   // (a skier faces the way they go: a flip is head over heels along the line)
                 if (rider.Airborne && rider.TrickName != null)
                 {
-                    float k = rider.TrickProgress;
-                    rot = baseRot * Quaternion.AngleAxis(rider.TrickSpin * k * Mathf.Rad2Deg, Vector3.up)
-                                  * Quaternion.AngleAxis(rider.TrickFlip * k * Mathf.Rad2Deg, RidingGear ? Vector3.right : Vector3.forward);   // (a skier faces the way they go: a flip is head over heels along the line)
+                    float tw = rider.GrabTweak;   // a tweaked grab: the board poked out and across
+                    rot = baseRot * Quaternion.AngleAxis(rider.SpinNow * Mathf.Rad2Deg, Vector3.up)
+                                  * Quaternion.AngleAxis(rider.FlipNow * Mathf.Rad2Deg, flipAxis)
+                                  * Quaternion.Euler(9f * tw, 24f * tw, 0f);
                 }
+                // just landed short of the line (a half turn lands switch): the board swings round under the rider
+                else if (!rider.Airborne && !rider.Grinding && (rider.LandSpin != 0f || rider.LandFlip != 0f))
+                    rot = baseRot * Quaternion.AngleAxis(rider.LandSpin * Mathf.Rad2Deg, Vector3.up) * Quaternion.AngleAxis(rider.LandFlip * Mathf.Rad2Deg, flipAxis);
+                // a press on a rail: the nose (or the tail) down, the other end up
+                else if (rider.GrindLive && rider.GrindPress != 0f)
+                    rot = baseRot * Quaternion.AngleAxis(rider.GrindPress * 11f, Vector3.right);
                 if (Tube)
                 {
                     // the rider faces down the line (the model faces the board's +X), and the tube turns slowly
                     // after a bounce
                     tubeSpinRate *= Mathf.Exp(-dt * 0.8f);
                     tubeSpin += tubeSpinRate * dt;
-                    rot = baseRot * Quaternion.Euler(0f, -90f + tubeSpin * Mathf.Rad2Deg, 0f);
+                    // (and spun in the air by the stick: Rider.SpinNow, with what a landing leaves of it swinging out)
+                    float spun = rider.Airborne ? rider.SpinNow : rider.LandSpin;
+                    rot = baseRot * Quaternion.Euler(0f, -90f + (tubeSpin + spun) * Mathf.Rad2Deg, 0f);
                 }
                 Vector3 mid = new Vector3(0f, 0.9f, 0f);
                 pivot.rotation = rot;

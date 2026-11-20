@@ -21,8 +21,9 @@ namespace Summit
     ///      the sag, slower up toward the tower. The cable dips under the rider and bounces when landed on.
     ///   4. Leaving. Just before the tower the rider is thrown up and a little outward, clear of the crossarm
     ///      and the sheaves. A pop hops off anywhere (higher with a Super Jump).
-    ///   5. The chain. Land on the next span, or the other cable, before touching snow, and each span in a row
-    ///      is worth more: "Cable Grind", "Cable Grind x2", up to x5. Touching the snow, or a crash, ends it.
+    ///   5. The chain. A span pays as it is slid (CableTune.SpanPoints on, PointsPerMetre after: Rider.GrindTick);
+    ///      land on the next span, or the other cable, and the game's combo carries on (Combo.cs), with whatever
+    ///      was spun or grabbed on the way between them.
     ///   6. Chairs. On the cable the board skims over each chair's grip: a tick and a few points, never a crash.
     ///      (SkiLift asks ChairsHit; chairs stay solid for anyone who is not grinding or fresh off a ramp.)
     ///
@@ -141,7 +142,7 @@ namespace Summit
                         if (key == bonkKey) continue;
                         bonkKey = key;
                         r.Breakthrough(CableTune.BonkKeep, 0.5f, 0f, 99f, "");
-                        r.Score("Cable Bonk", CableTune.BonkPoints);
+                        r.Score("Cable Bonk", CableTune.BonkPoints, LinkKind.Bonk);
                         graceUntil = Time.time + CableTune.ChairGrace;
                         continue;
                     }
@@ -194,14 +195,14 @@ namespace Summit
             along += step / Mathf.Sqrt(1f + slope * slope);
             // each chair's grip the board skims over: a tick and a few points
             int behind = ChairsBehind();
-            if (behind != chairs) { chairs = behind; r.Score("Chair Hop", CableTune.ChairPoints); ChairTick?.Invoke(p); }
+            if (behind != chairs) { chairs = behind; r.Score("Chair Hop", CableTune.ChairPoints, LinkKind.Chair); ChairTick?.Invoke(p); }
             float end = lift.nodeS[span + 1];
             bool tower = along >= end - speed * CableTune.HopLead / Mathf.Sqrt(1f + slope * slope);
             if (tower || pop)
             {
+                // (the span is paid by the rider as it is slid, metre by metre, and each span in a row is another link in
+                // the game's combo: Rider.GrindTick, Combo. The old "x2 .. x5" on the span's own points is gone)
                 chain++;
-                int times = Mathf.Min(chain, CableTune.ChainMax);
-                r.Score(times > 1 ? "Cable Grind x" + times : "Cable Grind", Mathf.RoundToInt((CableTune.SpanPoints + CableTune.PointsPerMetre * slid) * times));
                 mode = Mode.None;
                 graceUntil = Time.time + CableTune.ChairGrace;
                 // thrown up over the tower's head, and a little outward: the next span has to be steered back onto

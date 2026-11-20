@@ -279,6 +279,37 @@ namespace Summit
             groundPlane.SetPositionAndRotation(new Vector3(at.x, g, at.z), Quaternion.FromToRotation(Vector3.up, Slope.Normal(at.x, at.z)));
         }
 
+        /// <summary>
+        /// Branches ridden through: their snow comes down on that side of the tree, from where they were met up through
+        /// the boughs above (clumps and slabs, carried a little along with you), and a puff of powder hangs there.
+        /// at: where the branches were met; side: out of the tree toward the rider; carry: the rider's velocity;
+        /// reach: how far the branches stand out there (m); above: how much crown is over it (m); depth: 0 the tips ..
+        /// 1 right in by the trunk.
+        /// </summary>
+        public void BranchShower(Vector3 at, Vector3 side, Vector3 carry, float reach, float above, float depth)
+        {
+            Ground(at);
+            var ep = new ParticleSystem.EmitParams();
+            int n = Mathf.RoundToInt(Mathf.Lerp(18f, 70f, depth) * Mathf.Clamp(above / 2.5f, 0.5f, 1.4f));
+            Vector3 across = Vector3.Cross(Vector3.up, side);
+            for (int i = 0; i < n; i++)
+            {
+                float up = Random.Range(-0.3f, Mathf.Max(0.5f, above)) * Random.value;   // most of it low, near where you hit
+                ep.position = at + Vector3.up * up + across * Random.Range(-1f, 1f) * reach * 0.6f + side * Random.Range(-0.4f, 0.6f) * reach;
+                ep.velocity = carry * Random.Range(0.08f, 0.3f) + side * Random.Range(0.2f, 1.4f) + Vector3.up * Random.Range(-1.2f, 0.5f);
+                bool slab = Random.value < 0.15f + 0.15f * depth;
+                ep.startSize = slab ? Random.Range(0.35f, 0.8f) : Random.Range(0.1f, 0.32f);
+                clumps.Emit(ep, 1);
+            }
+            for (int i = 0; i < 3 + Mathf.RoundToInt(9f * depth); i++)
+            {
+                ep.position = at + Vector3.up * Random.Range(0f, Mathf.Max(0.5f, above) * 0.6f) + across * Random.Range(-0.8f, 0.8f) + side * Random.Range(0f, 0.6f);
+                ep.velocity = carry * 0.12f + side * Random.Range(0.3f, 1f) + Vector3.down * Random.Range(0.2f, 0.7f);
+                ep.startSize = Random.Range(0.9f, 1.8f);
+                mist.Emit(ep, 1);
+            }
+        }
+
         /// <summary>The snow shaken off a tree by a knock (the older call: a tree of the forest's usual size).</summary>
         public void TreeShake(Vector3 trunk, float force) { TreeDump(trunk, 7.5f, 2.2f, force); }
 

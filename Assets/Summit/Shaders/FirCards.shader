@@ -6,7 +6,8 @@
 // over the near band (the plain tree). The camp's and the start tape's own trees leave both off.
 // _Bake is for RealFir.BakeImpostors only: 1 writes the plain colour, 2 the normal, for the far pictures.
 // Every pass moves the vertices with the wind (TreeWind.hlsl); _Sway 0 holds a felled piece still, and _Snow below 1
-// shows boughs that have lost their snow (a snapped or smashed tree's top).
+// shows boughs that have lost their snow (a snapped or smashed tree's top). _CutTop, _Gap0 and _Gap1 are a tree's
+// damage: its top clipped off, branches torn out where a rider went through them (Forest.cs).
 Shader "Summit/FirCards"
 {
     Properties
@@ -21,6 +22,9 @@ Shader "Summit/FirCards"
         _CutY ("Nothing drawn below this height (model space): a felled tree's buried part", Float) = -10000
         _Sway ("Moves in the wind (0: a felled piece lying still)", Float) = 1
         _Snow ("Snow left on the boughs (1 all of it; less: shaken off, bare and darker)", Range(0, 1)) = 1
+        _CutTop ("Nothing drawn above this height (model space): a tree whose top has been clipped off", Float) = 1000000
+        _Gap0 ("Branches torn out round here (model space xyz, radius w; 0 none)", Vector) = (0, 0, 0, 0)
+        _Gap1 ("And here", Vector) = (0, 0, 0, 0)
     }
     SubShader
     {
@@ -41,7 +45,35 @@ Shader "Summit/FirCards"
             half4 _NeedleTint;
             half _Sway;
             half _Snow;
+            float _CutTop;
+            float4 _Gap0;
+            float4 _Gap1;
         CBUFFER_END
+
+        // a tree's damage (Forest.TearBranches, ClipTop): below 0 is torn away. A gap's edge is ragged: its reach
+        // varies from branch to branch (a hash of where, in half-metre cells)
+        float GapEdge(float3 p, float4 g)
+        {
+            if (g.w <= 0.0) return 1e4;
+            float3 cell = floor(p * 2.0);
+            float n = frac(sin(dot(cell, float3(12.9898, 78.233, 37.719))) * 43758.5453);
+            return length(p - g.xyz) - g.w * (0.7 + 0.55 * n);
+        }
+        // (a gap takes the branches, not the trunk: bark - the bottom row of both atlases, left of the flat greens -
+        // stays)
+        float Torn(float3 p, float2 uv)
+        {
+            float gap = (uv.y < 0.25 && uv.x < 0.935) ? 1e4 : min(GapEdge(p, _Gap0), GapEdge(p, _Gap1));
+            return min(gap, _CutTop - p.y);
+        }
+        // how bare of snow the boughs are round a gap: shaken off out to half as far again
+        half Bared(float3 p)
+        {
+            half b = 0.0h;
+            if (_Gap0.w > 0.0) b = max(b, saturate(1.0 - (length(p - _Gap0.xyz) - _Gap0.w) / (_Gap0.w * 0.8)));
+            if (_Gap1.w > 0.0) b = max(b, saturate(1.0 - (length(p - _Gap1.xyz) - _Gap1.w) / (_Gap1.w * 0.8)));
+            return b;
+        }
 
         // the atlas's greens graded darker and bluer; the snow (pale, unsaturated) is left white
         half3 Needles(half3 c)
@@ -92,7 +124,7 @@ Shader "Summit/FirCards"
                 half3 normalWS : TEXCOORD2;
                 half4 fadeFogLift : TEXCOORD3;   // x dissolved away, y fog, z night lift share, w appeared
                 half3 vertexLight : TEXCOORD4;
-                float objY : TEXCOORD5;
+                float3 objPos : TEXCOORD5;
                 half shade : TEXCOORD6;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
@@ -109,7 +141,7 @@ Shader "Summit/FirCards"
                 o.uv = TRANSFORM_TEX(i.uv, _BaseMap);
                 half2 fades = Fades(origin);
                 o.fadeFogLift = half4(fades.x, ComputeFogFactor(o.positionCS.z), FirLiftShare(origin), fades.y);
-                o.objY = i.positionOS.y;
+                o.objPos = i.positionOS.xyz;
                 o.shade = i.color.r;
                 if (fades.x >= 1.0h || fades.y <= 0.0h) o.positionCS = FirGone();   // all of it is the other level of detail's
             #if defined(_ADDITIONAL_LIGHTS_VERTEX)
@@ -123,14 +155,16 @@ Shader "Summit/FirCards"
                 UNITY_SETUP_INSTANCE_ID(i);
                 half4 c = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, i.uv) * _BaseColor;
                 clip(c.a - _Cutoff);
-                clip(i.objY - _CutY);
+                clip(i.objPos.y - _CutY);
+                clip(Torn(i.objPos, i.uv));
                 // what is snow in the atlas: pale, and not needle green (white, or blue-white in shade); read before
                 // the needles are graded
                 half greener = c.g - max(c.r, c.b);
                 half snowy = saturate((dot(c.rgb, half3(0.3h, 0.59h, 0.11h)) - 0.33h) * 5.0h) * saturate(1.0h - greener * 15.0h);
                 c.rgb = Needles(c.rgb);
                 // the snow has let go: there the bare bough under it shows, dark needles
-                if (_Snow < 0.999h) c.rgb = lerp(c.rgb, half3(0.045h, 0.07h, 0.055h), snowy * (1.0h - _Snow));
+                half snowLeft = min(_Snow, 1.0h - Bared(i.objPos));
+                if (snowLeft < 0.999h) c.rgb = lerp(c.rgb, half3(0.045h, 0.07h, 0.055h), snowy * (1.0h - snowLeft));
                 // a branch card lying flat, seen from underneath: its snow is on top, so here it is shaded needles
                 // (what is pale in the picture - the snow - becomes needle green first, then all of it goes dark)
                 float3 ng = normalize(cross(ddx(i.positionWS), ddy(i.positionWS)));
@@ -171,12 +205,12 @@ Shader "Summit/FirCards"
             float3 _LightDirection;
             float3 _LightPosition;
             struct Attributes { float4 positionOS : POSITION; float3 normalOS : NORMAL; float2 uv : TEXCOORD0; UNITY_VERTEX_INPUT_INSTANCE_ID };
-            struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; float objY : TEXCOORD1; };
+            struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; float3 objPos : TEXCOORD1; };
             Varyings vert(Attributes i)
             {
                 UNITY_SETUP_INSTANCE_ID(i);
                 Varyings o;
-                o.objY = i.positionOS.y;
+                o.objPos = i.positionOS.xyz;
                 float3 pos = TreeSway(TransformObjectToWorld(i.positionOS.xyz), TransformObjectToWorld(float3(0, 0, 0)), 1.0, _Sway);
                 float3 nrm = TransformObjectToWorldNormal(i.normalOS);
             #if _CASTING_PUNCTUAL_LIGHT_SHADOW
@@ -191,7 +225,8 @@ Shader "Summit/FirCards"
             half4 frag(Varyings i) : SV_Target
             {
                 clip(SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, i.uv).a * _BaseColor.a - _Cutoff);
-                clip(i.objY - _CutY);
+                clip(i.objPos.y - _CutY);
+                clip(Torn(i.objPos, i.uv));
                 return 0;
             }
             ENDHLSL
@@ -220,7 +255,7 @@ Shader "Summit/FirCards"
             }
 
             struct Attributes { float4 positionOS : POSITION; float2 uv : TEXCOORD0; UNITY_VERTEX_INPUT_INSTANCE_ID };
-            struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; half2 fades : TEXCOORD1; };
+            struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; half2 fades : TEXCOORD1; float3 objPos : TEXCOORD2; };
             Varyings vert(Attributes i)
             {
                 UNITY_SETUP_INSTANCE_ID(i);
@@ -229,12 +264,15 @@ Shader "Summit/FirCards"
                 o.positionCS = TransformWorldToHClip(TreeSway(TransformObjectToWorld(i.positionOS.xyz), origin, 1.0, _Sway));
                 o.uv = TRANSFORM_TEX(i.uv, _BaseMap);
                 o.fades = Fades(origin);
+                o.objPos = i.positionOS.xyz;
                 if (o.fades.x >= 1.0h || o.fades.y <= 0.0h) o.positionCS = FirGone();
                 return o;
             }
             half frag(Varyings i) : SV_Target
             {
                 clip(SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, i.uv).a * _BaseColor.a - _Cutoff);
+                clip(i.objPos.y - _CutY);
+                clip(Torn(i.objPos, i.uv));
                 half dither = FirDither(i.positionCS);
                 clip(dither - i.fades.x);
                 clip(i.fades.y - dither);

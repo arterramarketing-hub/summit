@@ -52,6 +52,10 @@ namespace Summit
         /// <summary>The forest's materials for this kind: up close (dissolves away past the near band) and in the
         /// middle distance (dissolves in over the near band, and out into the far picture).</summary>
         public static Material RichOf(int variant) => richMats[atlas[variant]];
+        /// <summary>Which atlas a kind is drawn from (0 the firs', 1 the pines' and snags').</summary>
+        public static int AtlasOf(int variant) => atlas[variant];
+        /// <summary>The never-fading material for an atlas (0 the firs', 1 the pines'): torn-off branches (TreeBreak).</summary>
+        public static Material StandaloneOfAtlas(int a) => standaloneMats != null ? standaloneMats[Mathf.Clamp(a, 0, 1)] : null;
         public static Material PlainOf(int variant) => IsSapling(variant) ? decoMats[atlas[variant]] : plainMats[atlas[variant]];
 
         /// <summary>A dead snag: dry and brittle, it snaps easily (TreeBreak). Kind 6 is the fir whose top has gone.</summary>

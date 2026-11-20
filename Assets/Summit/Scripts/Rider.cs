@@ -15,7 +15,7 @@ namespace Summit
     ///
     /// Heading 0 is straight down the fall line (+Z); positive turns right (+X).
     /// </summary>
-    public class Rider : MonoBehaviour
+    public partial class Rider : MonoBehaviour
     {
         // ---- tuning (static so the test harness can sweep them)
         public static float G = 22f;                                 // gravity, stronger than real for punch
@@ -104,20 +104,8 @@ namespace Summit
             get { var v = Velocity; return v.x * v.x + v.z * v.z > 0.25f ? Mathf.Atan2(v.x, v.z) : Heading; }
         }
 
-        // ---- tricks (chosen automatically when there is enough air)
-        public string TrickName { get; private set; }
-        public float TrickSpin { get; private set; }     // total yaw to turn (rad)
-        public float TrickFlip { get; private set; }     // total flip (rad, about the board's long axis)
-        public int TrickGrab { get; private set; }       // 0 none, 1.. which grab
-        public float TrickTime { get; private set; }     // predicted airtime
-        /// <summary>0..1 through the trick's rotation, eased so it finishes before the landing.</summary>
-        public float TrickProgress { get { float t = trickLin; return t * t * (3f - 2f * t); } }
-        /// <summary>The trick has come all the way round.</summary>
-        public bool TrickDone => trickLin >= 0.999f;
-        // how far round the trick is (0..1, before easing), and when the air is next looked at again (see TrickStep)
-        float trickLin, trickLook, trickPlanT;
-        /// <summary>The fastest a trick may turn to come round before a landing that comes sooner than planned (rad/s).</summary>
-        public static float TrickMaxRate = 20f;
+        // ---- tricks: the player's own, built in the air (RiderTricks.cs: TrickName, TrickSpin, TrickFlip, TrickGrab,
+        //      TrickProgress, TrickDone, SpinNow, FlipNow and the rest)
 
         // ---- grinding
         public bool Grinding { get; private set; }
@@ -249,7 +237,7 @@ namespace Summit
             HasCrashFollow = false; rb.detectCollisions = true; StayDown = false; HoldCrash = false;
             AirTime = 0f; Tuck = 0f; Carve = 0f; Skid = 0f; Peak = 0f; AboveGround = 0f;
             Lean = 0f; leanVel = 0f; YawRate = 0f;
-            ClearTrick();
+            ClearTrick(); grindScoring = false; LandSpin = 0f; LandFlip = 0f; GrindYaw = 0f; GrindPress = 0f; TrickX = TrickY = 0f; GrabHeld = false;
             popPending = false; airLock = 0f; lastGrind = -1;
             Flow = 0f; Shields = 0; BoostTime = 0f; invulnerable = 0f; SuperJumpTime = 0f; InvincibleTime = 0f; superAir = false;
             Undercut = 0f; Lift = 0f; fixVy = 0f;
@@ -275,7 +263,17 @@ namespace Summit
         void Update()
         {
             // a jump is a quick tap (of the second finger); input is read per frame, physics runs on its own clock
-            if (Running && Time.timeScale > 0f && input != null && input.Jump)   // (pause-menu taps are not jumps)
+            if (!Running || Time.timeScale <= 0f || input == null) return;   // (pause-menu taps are not jumps)
+            // in an air long enough to trick the tap is the grab's, the moment the finger lands (RiderTricks); on a
+            // rail or a cable it is the pop off it, at once; anywhere else it is a jump, when the finger lifts
+            bool trick = Airborne && trickAir && !Crashed;
+            input.TrickMode = trick || (Grinding && !Crashed);
+            if (input.TrickTap)
+            {
+                if (Grinding) { popPending = true; popHold = TapPop; }
+                else if (trick) tapQueue++;
+            }
+            if (input.Jump && !trick && !Grinding)
             {
                 popPending = true;
                 popHold = TapPop;
@@ -305,6 +303,7 @@ namespace Summit
                 Steer = input.Steer;
                 Tuck = Mathf.MoveTowards(Tuck, input.Hold && !Airborne ? 1f : 0f, dt * 5f);
             }
+            TrickInput(dt);   // (the trick inputs, before the wobble and the churn get into the steering)
             BoostTime = Mathf.Max(0f, BoostTime - dt);
             SuperJumpTime = Mathf.Max(0f, SuperJumpTime - dt);
             InvincibleTime = Mathf.Max(0f, InvincibleTime - dt);
@@ -332,8 +331,10 @@ namespace Summit
                 Heading += k * 0.8f * Mathf.Sin(churnT * 8.5f + 1f) * dt;
             }
             if (InvincibleTime > 0f && !Crashed) v = SmashAhead(dt, p, v);
-            // a young tree or a dead snag hit fast enough snaps: you go down, but on through where it stood (TreeBreak)
-            else if (!Crashed && TreeBreak.Instance != null) TreeBreak.Instance.RiderAhead(this, p, v, dt);
+            // the trees, from what is drawn (TreeBreak): branches are brushed through and thin trunks (small trees,
+            // treetops) snap, both ridden on through; a young tree or a dead snag hit fast enough snaps, and you go
+            // down, but on through where it stood. Invincible, the trunks are smashed above and the branches still break
+            if (!Crashed && TreeBreak.Instance != null) v = TreeBreak.Instance.RiderAhead(this, p, v, dt);
             // a sign or a flag where you are about to be, board to shoulders (see Breakables)
             if (!Crashed) Breakable.Probe(p, p + v * dt + Vector3.up * 1.2f, 0.45f, ownCol);
             // over a crevasse's opening there is nothing under the board: it carries on through the air on its own
@@ -590,92 +591,8 @@ namespace Summit
 
         // ---------------------------------------------------------------- tricks
 
-        void ClearTrick() { TrickAlias = null; TrickName = null; TrickSpin = 0f; TrickFlip = 0f; TrickGrab = 0; TrickTime = 0f; trickLin = 0f; trickLook = 0f; }
-
-        /// <summary>How long until a flight from p at v comes down on the snow (up to max seconds).</summary>
-        static float AirLeft(Vector3 p, Vector3 v, float max)
-        {
-            float T = 0f; const float h = 1f / 30f;
-            Vector3 q = p, u = v;
-            for (int i = 0; i < 150 && T < max; i++)
-            {
-                u.y -= G * h; q += u * h; T += h;
-                if (q.y <= Slope.DrawnHeight(q.x, q.z) + R && Course.CrevasseCut(q.x, q.z) <= 0.3f) break;
-            }
-            return T;
-        }
-
-        /// <summary>
-        /// Turn the trick: round at a steady rate so it is done by 80% of the planned airtime. The planned airtime is
-        /// looked at again as the flight goes, and if the snow is coming sooner than it was (steering in the air, a
-        /// slope that rises to meet you) the trick hurries to come round in time, as fast as TrickMaxRate allows: an
-        /// automatic trick only comes down upside down or sideways when even that is not fast enough.
-        /// </summary>
-        void TrickStep(float dt, Vector3 p, Vector3 v)
-        {
-            if (TrickTime <= 0f || trickLin >= 1f) return;
-            trickLook -= dt;
-            if (trickLook <= 0f)
-            {
-                trickLook = 0.05f;
-                float landAt = AirTime + AirLeft(p, v, TrickTime);
-                if (landAt < TrickTime) TrickTime = landAt;
-            }
-            if (AirTime < 0.08f * TrickTime) return;
-            float left = Mathf.Max(0.8f * TrickTime - AirTime, dt);
-            float step = (1f - trickLin) * dt / left;
-            float turn = Mathf.Abs(TrickSpin) + Mathf.Abs(TrickFlip);
-            // (never slower than the pace it was planned at, never faster than TrickMaxRate to make up for a short flight)
-            if (turn > 0.01f) step = Mathf.Min(step, Mathf.Max(TrickMaxRate * dt / turn, dt / (0.72f * Mathf.Max(trickPlanT, 0.1f))));
-            trickLin = Mathf.Min(1f, trickLin + step);
-        }
-
-        /// <summary>Predict the airtime, and pick a trick that can be finished before the landing.</summary>
-        void PlanTrick(Vector3 p, Vector3 v)
-        {
-            ClearTrick();
-            float T = 0f; const float h = 1f / 30f;
-            Vector3 q = p, u = v;
-            for (int i = 0; i < 150; i++)
-            {
-                u.y -= G * h; q += u * h; T += h;
-                if (i > 2 && q.y <= Slope.DrawnHeight(q.x, q.z) + R) break;
-            }
-            if (T < 0.6f || Tube) return;   // tubes just fly (airs still score on landing)
-            TrickTime = T; trickPlanT = T;
-            // which trick: drawn from where you took off (on this mountain), not from the clock or Unity's shared
-            // random numbers, so the same flight always plans the same trick
-            int pick = (int)(Slope.Hash01(Mathf.RoundToInt(p.x * 8f), Mathf.RoundToInt(p.z * 8f), 97) * 4000f);
-            var grabs = feel.Grabs;   // each ride has its own grabs (Ride.cs)
-            string grab = grabs[pick % grabs.Length];
-            int pts;
-            bool pipe = Course.InPipe(p.x, p.z);
-            if (T < 0.85f) { TrickGrab = 1 + pick % grabs.Length; TrickName = grab; pts = 150; }
-            // whole turns only: a half turn (180, 540) would leave the board backwards and snap it at landing
-            else if (T < 1.15f) { TrickSpin = Mathf.PI * 2f; TrickGrab = 1 + pick % grabs.Length; TrickName = "360 " + grab; pts = pipe ? 500 : 450; }
-            else if (T < 1.5f)
-            {
-                if (pick % 2 == 0) { TrickSpin = Mathf.PI * 2f; TrickGrab = 1 + pick % grabs.Length; TrickName = "Stalled 360 " + grab; pts = 650; }
-                else { TrickFlip = -Mathf.PI * 2f; TrickName = "Backflip"; pts = 800; }
-            }
-            else if (T >= 2.0f)
-            {
-                // super-jump air: room for the big ones (rotations stay under about 9 rad/s, so they still read)
-                if (pick % 3 == 0) { TrickSpin = Mathf.PI * 6f; TrickGrab = 1 + pick % grabs.Length; TrickName = "1080 " + grab; pts = 2000; }
-                else if (pick % 3 == 1) { TrickFlip = -Mathf.PI * 4f; TrickName = "Double Backflip"; pts = 2200; }
-                else { TrickSpin = Mathf.PI * 4f; TrickFlip = -Mathf.PI * 4f; TrickGrab = 1 + pick % grabs.Length; TrickName = "Double Cork 1440 " + grab; pts = 2600; }
-            }
-            else
-            {
-                if (pick % 3 == 0) { TrickSpin = Mathf.PI * 2f; TrickFlip = -Mathf.PI * 2f; TrickGrab = 1 + pick % grabs.Length; TrickName = "Cork 720 " + grab; pts = 1400; }
-                else if (pick % 3 == 1) { TrickSpin = Mathf.PI * 4f; TrickGrab = 1 + pick % grabs.Length; TrickName = "720 " + grab; pts = 1000; }
-                else { TrickFlip = Mathf.PI * 2f; TrickGrab = 1 + pick % grabs.Length; TrickName = "Frontflip " + grab; pts = 900; }
-            }
-            if ((pick / 1000) % 2 == 1) TrickSpin = -TrickSpin;
-            trickPoints = pts;
-            if (TrickGrab > 0 && feel.GrabCountsAs != null && TrickGrab <= feel.GrabCountsAs.Length) TrickAlias = feel.GrabCountsAs[TrickGrab - 1];
-        }
-        int trickPoints;
+        // (ClearTrick, PlanTrick, TrickStep, BadLanding and LandTrick are in RiderTricks.cs: nothing is chosen for the
+        // player any more; an air long enough is theirs to spin, flip and grab in)
 
         // ---------------------------------------------------------------- in the air
 
@@ -802,14 +719,7 @@ namespace Summit
             float hereY = Slope.DrawnHeight(p.x, p.z) + R + Lift;
             float vy = (gyNext - p.y) / dt;
             groundVy = (gyNext - hereY) / dt; fixVy = vy - vt.y;
-            if (TrickName != null)
-            {
-                if (TrickDone) Trick?.Invoke(TrickName, trickPoints);
-                // a skip of a fraction of a second (bouncing off a steep face just after a big landing) was never a
-                // jump you meant: no trick to bail
-                else if (AirTime > 0.3f) RoughLanding?.Invoke("Bailed the " + TrickName);
-            }
-            else if (Peak > 0.8f && AirTime > 0.45f) Trick?.Invoke("Air " + AirTime.ToString("0.0") + "s", Mathf.RoundToInt(AirTime * 120f));
+            LandTrick();   // the trick as it was actually landed, and the air itself (RiderTricks)
             if (hard) RoughLanding?.Invoke("Hard landing");
             ClearTrick();
             // a ride with no legs under it (the toboggan) comes down flat and skips back up off the snow, a
@@ -820,23 +730,6 @@ namespace Summit
                 return TakeOff(p, vt + n * (impact * feel.Bounce), 0.05f);
             }
             return new Vector3(vt.x, vy, vt.z);
-        }
-
-        /// <summary>
-        /// Landing in the middle of a trick that had not finished turning: the board as it is drawn (see RiderBody)
-        /// is upside down, or across the line of travel (backwards is fine: that is riding switch). Null if it is
-        /// near enough upright and lined up to ride out (the ordinary "Bailed" rough landing).
-        /// </summary>
-        string BadLanding()
-        {
-            if (TrickName == null || TrickDone || AirTime <= 0.3f) return null;
-            float k = TrickProgress;
-            float flip = Mathf.Abs(Mathf.DeltaAngle(0f, TrickFlip * k * Mathf.Rad2Deg));        // off upright
-            float spin = Mathf.Abs(Mathf.DeltaAngle(0f, TrickSpin * k * Mathf.Rad2Deg));
-            spin = Mathf.Min(spin, 180f - spin);                                                  // off the line, either way round
-            if (flip > BadFlip) return "Landed upside down!";
-            if (spin > BadSpin) return "Landed sideways!";
-            return null;
         }
 
         // ---------------------------------------------------------------- boxes and rails
@@ -878,7 +771,7 @@ namespace Summit
                     wobble = Mathf.Max(wobble, 0.5f);
                     GrindStart?.Invoke(feat);
                     Bounced?.Invoke(8f);
-                    Trick?.Invoke(feel.RailTrick, 60);
+                    Emit(feel.RailTrick, 60, LinkKind.Bonk);
                     continue;
                 }
                 // on it: ride-on features are boarded automatically
@@ -889,9 +782,11 @@ namespace Summit
                 grindSpeed = along;
                 // ease onto the line over a few frames instead of snapping onto it
                 grindOff = p - (onLine + Vector3.up * R);
+                if (Airborne) LandTrick(true);   // a trick come round as the board met the rail still counts
                 Airborne = false;
                 ClearTrick();
                 Lean = 0f; leanVel = 0f;
+                GrindBegin(feat.kind == Course.Kind.Rail, false);
                 GrindStart?.Invoke(feat);
                 return true;
             }
@@ -907,16 +802,21 @@ namespace Summit
             grindSpeed += (G * -dir.y - 0.06f * G) * dt;
             grindSpeed = Mathf.Max(grindSpeed, 3f);
             grindS += grindSpeed * dt;
+            GrindTick(dt, grindSpeed * dt);   // paid by the metre, and a flick is a switch-up (RiderTricks)
             Speed = grindSpeed;
             Heading = Mathf.Clamp(Mathf.Atan2(dir.x, dir.z), -MaxHeading, MaxHeading);
             Carve = 0f; Skid = 0f; AboveGround = feat.height;
-            if (grindS >= len)
+            bool pop = popPending;
+            if (grindS >= len || pop)
             {
-                // off the end with a little pop
+                // off the end with a little pop; a tap pops off anywhere along it, higher (and higher still with a Super Jump)
                 Grinding = false;
-                string name = feat.kind == Course.Kind.Box ? feel.BoxTrick : feel.RailTrick;
-                Trick?.Invoke(name, 150 + Mathf.RoundToInt(len * 25f));
-                return TakeOff(p, dir * grindSpeed + Vector3.up * 3.5f, 0.1f);
+                GrindEnd();
+                bool super = pop && SuperJumpTime > 0f;
+                if (pop) { popPending = false; Jumped?.Invoke(); }
+                var leave = TakeOff(p, dir * grindSpeed + Vector3.up * (pop ? 5.5f * (super ? Mathf.Sqrt(SuperJumpLift) : 1f) : 3.5f), 0.1f);
+                superAir = super;
+                return leave;
             }
             grindOff *= Mathf.Exp(-dt * 12f);
             Vector3 target = Course.FeaturePoint(feat, grindS / len) + Vector3.up * R + grindOff;
@@ -933,19 +833,22 @@ namespace Summit
         /// <summary>Put the rider on a cable (announced, like boarding a rail) or a ramp (not).</summary>
         public void CableBoard(Course.Feature f, bool announce)
         {
+            if (Airborne && announce) LandTrick(true);   // a trick come round as the board met the cable still counts
             Grinding = true; GrindFeature = f; Airborne = false; pipeAir = false; fixVy = 0f;
             ClearTrick(); Lean = 0f; leanVel = 0f;
-            if (announce) GrindStart?.Invoke(f);
+            if (announce) { GrindBegin(true, true); GrindStart?.Invoke(f); }
+            else grindScoring = false;   // (a launch ramp is only the way up)
         }
         /// <summary>Where the grind has got to this step: the line under the board, its speed, its height over the snow.</summary>
         public void CableRide(Course.Feature f, float speed, float above)
         {
             GrindFeature = f; Speed = speed; Carve = 0f; Skid = 0f; AboveGround = above;
+            GrindTick(tickDt, speed * tickDt);   // paid by the metre, switch-ups and presses (RiderTricks)
             Vector3 d = f.Dir;
             Heading = Mathf.Clamp(Mathf.Atan2(d.x, d.z), -MaxHeading, MaxHeading);
         }
         /// <summary>Off the cable or the ramp's lip, into the air with this velocity.</summary>
-        public Vector3 CableLeave(Vector3 p, Vector3 v) { Grinding = false; return TakeOff(p, v, 0.1f); }
+        public Vector3 CableLeave(Vector3 p, Vector3 v) { Grinding = false; GrindEnd(); return TakeOff(p, v, 0.1f); }
         /// <summary>A pop asked for since the last step, taken (so it is not also a jump off the snow later).</summary>
         public bool TakePop(out bool super)
         {
@@ -954,8 +857,7 @@ namespace Summit
             if (pop) Jumped?.Invoke();
             return pop;
         }
-        /// <summary>Points for something done on a cable, into the same feed as every other trick.</summary>
-        public void Score(string name, int points) => Trick?.Invoke(name, points);
+        // (Score, for points from anywhere into the same feed as every trick, is in RiderTricks.cs)
 
         // ---------------------------------------------------------------- trees, rocks, animals
 
@@ -1062,7 +964,7 @@ namespace Summit
                 int id = o.GetInstanceID();
                 if (id == lastMiss) continue;
                 lastMiss = id;
-                Trick?.Invoke("Close call", 50);
+                Emit("Close call", 50, LinkKind.CloseCall);
                 return;
             }
         }
@@ -1079,7 +981,7 @@ namespace Summit
             rb.detectCollisions = false;
             Carve = 0f; Skid = 0f; Lean = 0f; leanVel = 0f;
             crashCause = why;
-            ClearTrick();
+            ClearTrick(); grindScoring = false;
             Crash?.Invoke(why);
         }
 

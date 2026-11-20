@@ -321,22 +321,12 @@ public static class LandTest
         }
     }
 
-    static void SetTrick(string trick, float spin, float flip, float time)
-    {
-        var tp = typeof(Rider);
-        tp.GetProperty("TrickName").SetValue(r, trick);
-        tp.GetProperty("TrickSpin").SetValue(r, spin);
-        tp.GetProperty("TrickFlip").SetValue(r, flip);
-        tp.GetProperty("TrickTime").SetValue(r, time);
-        tp.GetField("trickPlanT", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(r, time);
-    }
-
     /// <summary>Off a jump cliff with a trick that cannot come round in time: the board comes down upside down or sideways.</summary>
     static void Bad(string name, Cliffs.Jump j, float v0, bool flip)
     {
-        float rate0 = Rider.TrickMaxRate;
-        Rider.TrickMaxRate = 0f;   // (a trick that cannot hurry: it comes down part way round, as a misjudged one would)
-        try { BadRide(name, j, v0, flip); } finally { Rider.TrickMaxRate = rate0; }
+        float spin0 = Rider.SpinRate, flip0 = Rider.FlipRate, hurry0 = Rider.TrickHurry;
+        Rider.TrickHurry = 1f;   // (a trick that cannot hurry: it comes down part way round, as a misjudged one would)
+        try { BadRide(name, j, v0, flip); } finally { Rider.SpinRate = spin0; Rider.FlipRate = flip0; Rider.TrickHurry = hurry0; }
     }
 
     static void BadRide(string name, Cliffs.Jump j, float v0, bool flip)
@@ -351,11 +341,12 @@ public static class LandTest
             Step(n);
             if (r.Airborne && !set)
             {
-                // a trick planned for a flight over twice as long as this one: half way round at the landing
+                // a trick committed (as a flick commits it: Rider.ForceTrick) that turns too slowly for this flight, as if
+                // it were meant for one over twice as long: half way round at the landing
                 set = true;
                 float T = Mathf.Max(r.TrickTime, 1f) * 2.2f;
-                if (flip) SetTrick("Backflip", 0f, -Mathf.PI * 2f, T);
-                else SetTrick("180 Indy", Mathf.PI, 0f, T);
+                if (flip) { Rider.FlipRate = Mathf.PI * 2f / T; r.ForceTrick(0, -1); }
+                else { Rider.SpinRate = Mathf.PI / T; r.ForceTrick(1, 0); }
             }
             if (r.Airborne) { air = r.AirTime; progress = r.TrickProgress; }
             if (set && !r.Airborne) break;

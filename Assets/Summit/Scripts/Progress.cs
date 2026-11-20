@@ -184,6 +184,7 @@ namespace Summit
 
         // ---------------------------------------------------------------- what a run earns
 
+        public const int ScoreKnee = 50000;
         public struct Reward { public int fromScore, fromDistance, fromTricks, fromFinish, fromMissions, tricks; public int Total => fromScore + fromDistance + fromTricks + fromFinish + fromMissions; }
 
         /// <summary>Points for a finished run. Mission rewards were paid as they completed; they are listed, not paid twice.</summary>
@@ -191,7 +192,9 @@ namespace Summit
         {
             var r = new Reward
             {
-                fromScore = Mathf.Max(0, score) / 50,
+                // (a fiftieth of the score, as ever, up to 50,000; a long combo can bank several times that in one go now, and
+                // past it the camp pays a 250th, so one jackpot run is a good day and not the whole shop)
+                fromScore = Mathf.Min(Mathf.Max(0, score), ScoreKnee) / 50 + Mathf.Max(0, score - ScoreKnee) / 250,
                 fromDistance = Mathf.FloorToInt(Mathf.Max(0f, metres) / 50f),
                 fromTricks = tricks * 4,
                 fromFinish = finished ? 150 : 0,

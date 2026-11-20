@@ -194,8 +194,10 @@ namespace Summit
         // foot: where it meets the snow; vis: how much of it shows above the snow (m); rad: its hit capsule;
         // cut: the snow line in the model's own height (what a felled tree leaves behind in the snow)
         // girth: the trunk's radius where it comes out of the snow (m); ys: the model's vertical scale (TreeBreak)
+        // full: how tall the whole tree is, buried part and all (m); k: the model's scale across
+        // solid: how far up from the snow its trunk stays thicker than ThinGirth (the solid part a rider crashes into)
         // deco: a sapling in an otherwise empty cell (kind None): drawn, but nothing to hit
-        struct Placed { public Kind kind; public int idx; public Matrix4x4 m; public float size; public Vector3 foot; public float vis, rad, cut, girth, ys; public bool deco; }
+        struct Placed { public Kind kind; public int idx; public Matrix4x4 m; public float size; public Vector3 foot; public float vis, rad, cut, girth, ys, full, k, solid; public bool deco; }
 
         // ---- realistic trees: how tall they grow, and how deep the snow buries them
 
@@ -337,6 +339,7 @@ namespace Summit
                 pl.rad = RealFir.HitRadius(pl.idx, full, sink);
                 pl.ys = k * yk;
                 pl.girth = RealFir.TrunkRadius(pl.idx, pl.cut) * k;
+                pl.full = full; pl.k = k;
             }
             else if (kind == Kind.Tree && real)
             {
@@ -354,6 +357,7 @@ namespace Summit
                 pl.rad = Mathf.Max(0.02f * full, 0.7f * RealFir.CrownRadius(pl.idx, sink / full) * full);
                 pl.ys = k * yk;
                 pl.girth = RealFir.TrunkRadius(pl.idx, pl.cut) * k;
+                pl.full = full; pl.k = k;
             }
             else if (kind != Kind.None)
             {
@@ -367,7 +371,9 @@ namespace Summit
                 pl.foot = pl.m.GetColumn(3);
                 pl.vis = tree ? 8.5f * s : 1.3f * s; pl.rad = 0.38f * s;
                 pl.ys = k; pl.girth = 0.25f * s;
+                pl.full = pl.vis; pl.k = k;
             }
+            if (kind == Kind.Tree) pl.solid = SolidHeight(pl);
             cache[key] = pl;
             return pl;
         }
@@ -430,10 +436,11 @@ namespace Summit
             cache.Clear();
             felled.Clear();
             stumps.Clear(); stumpL.Clear();
+            damage.Clear(); damagedL.Clear();
             foreach (var kv in live)
             {
                 var g = kv.Value; g.SetActive(false);
-                (g.GetComponent<CapsuleCollider>() != null ? spareTree : spareRock).Enqueue(g);
+                (IsTreeHit(g) ? spareTree : spareRock).Enqueue(g);
             }
             live.Clear();
             lastCell = new Vector2Int(int.MinValue, int.MinValue);
@@ -453,6 +460,7 @@ namespace Summit
             foreach (var l in farL.Values) l.Clear();
             foreach (var l in richL.Values) l.Clear();
             distL.Clear();
+            damagedL.Clear();
             if (impL != null) foreach (var l in impL) l.Clear();
             for (int z = c.y - behindCells; z <= c.y + farAhead; z++)
                 for (int x = c.x - farSide; x <= c.x + farSide; x++)
@@ -467,6 +475,11 @@ namespace Summit
                     {
                         // a sapling: its cards as far as the trees' reach (it fades out with them; no picture beyond)
                         if (d2 <= (FadeEnd + FadeSlack) * (FadeEnd + FadeSlack)) ListFor(nearL, Key(Kind.Tree, pl.idx, 0)).Add(pl.m);
+                        continue;
+                    }
+                    if (real && pl.kind == Kind.Tree && damage.Count > 0 && d2 < ShadowRange * ShadowRange && damage.ContainsKey(new Vector2Int(x, z)))
+                    {
+                        damagedL.Add(new Vector2Int(x, z));   // drawn on its own, with its damage (DrawDamaged)
                         continue;
                     }
                     if (real && pl.kind == Kind.Tree)
@@ -528,6 +541,7 @@ namespace Summit
             DrawSet(farL, UnityEngine.Rendering.ShadowCastingMode.Off);
             DrawSet(richL, UnityEngine.Rendering.ShadowCastingMode.Off);
             if (stumpL.Count > 0) TreeBreak.DrawStumps(stumpL, real, bark);
+            if (damagedL.Count > 0) DrawDamaged();
             if (real && impL != null)
             {
                 for (int v = 0; v < impL.Length; v++)
@@ -581,7 +595,7 @@ namespace Summit
             {
                 var g = live[k]; live.Remove(k);
                 g.SetActive(false);
-                (g.GetComponent<CapsuleCollider>() != null ? spareTree : spareRock).Enqueue(g);
+                (IsTreeHit(g) ? spareTree : spareRock).Enqueue(g);
             }
             for (int z = c.y - behindCells; z <= c.y + aheadCells; z++)
                 for (int x = c.x - sideCells; x <= c.x + sideCells; x++)
@@ -596,22 +610,62 @@ namespace Summit
                     g.SetActive(true);
                     g.GetComponent<Collider>().enabled = true;   // (an invincible rider switches off what it smashes)
                     g.transform.position = pl.foot;
-                    if (tree)
-                    {
-                        // from the snow up, as much of the tree as shows (a buried tree's crown, a whole one's trunk)
-                        // where the trunk comes out of the snow, leaning as the tree does. (A tree leans from its foot
-                        // under the snow: buried metres deep, a lean of a few degrees puts its trunk a metre or two
-                        // from the spot straight above that foot, where an upright capsule stood round nothing)
-                        Vector3 axis = ((Vector3)pl.m.GetColumn(1)).normalized, pivot = pl.m.GetColumn(3);
-                        Vector3 at = axis.y > 0.2f ? pivot + axis * ((pl.foot.y - pivot.y) / axis.y) : pl.foot;
-                        g.transform.SetPositionAndRotation(at, Quaternion.FromToRotation(Vector3.up, axis));
-                        var cap = g.GetComponent<CapsuleCollider>();
-                        float h = pl.vis;
-                        cap.radius = pl.rad; cap.height = Mathf.Max(h * 0.9f, pl.rad * 2f); cap.center = new Vector3(0f, cap.height * 0.5f, 0f);
-                    }
+                    if (tree) TrunkBox(g, pl);
                     else RockBox(g, pl);
                     live[key] = g;
                 }
+        }
+
+        /// <summary>
+        /// A tree's hit shape: its trunk as drawn, and only the trunk. A tapered eight-sided post from where the trunk
+        /// comes out of the snow (leaning as the tree does: it leans from its foot under the snow, so buried metres
+        /// deep the trunk comes out a metre or two from the spot straight above that foot) up to where it thins to
+        /// ThinGirth. The branches round it are no wall: riding into them is a brush (TreeBreak, from CrownAt), and
+        /// the thin top above the post, or a small tree's thin trunk, snaps when you hit it (TreeBreak). (It was a
+        /// capsule as wide as the crown at the snow, all the way up: riding into a fir's branches was riding into a
+        /// tree trunk.)
+        /// </summary>
+        void TrunkBox(GameObject g, Placed pl)
+        {
+            var mc = g.GetComponent<MeshCollider>();
+            Vector3 axis = ((Vector3)pl.m.GetColumn(1)).normalized, pivot = pl.m.GetColumn(3);
+            Vector3 at = axis.y > 0.2f ? pivot + axis * ((pl.foot.y - pivot.y) / axis.y) : pl.foot;
+            float h = Mathf.Max(0.6f, pl.solid);
+            float r0 = Mathf.Max(0.06f, pl.girth), r1 = Mathf.Clamp(Trunk(pl, h), 0.04f, r0);
+            mc.sharedMesh = TrunkHull(r1 / r0);
+            g.transform.SetPositionAndRotation(at, Quaternion.FromToRotation(Vector3.up, axis));
+            g.transform.localScale = new Vector3(r0, h, r0);
+        }
+
+        static bool IsTreeHit(GameObject g) => g.name == "TreeHit";
+
+        static readonly Mesh[] trunkHulls = new Mesh[11];
+
+        /// <summary>A trunk's post, radius 1 at the bottom (y 0) tapering to `taper` at the top (y 1), eight-sided,
+        /// with the corners just outside the round (so the flats sit on the drawn bark). One per tenth of taper.</summary>
+        static Mesh TrunkHull(float taper)
+        {
+            int i = Mathf.Clamp(Mathf.RoundToInt(taper * 10f), 1, 10);
+            if (trunkHulls[i] != null) return trunkHulls[i];
+            float t = i / 10f, c = 1f / Mathf.Cos(Mathf.PI / 8f);
+            var v = new List<Vector3>(); var tri = new List<int>();
+            for (int k = 0; k < 8; k++)
+            {
+                float a = (k + 0.5f) * Mathf.PI / 4f;
+                var d = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * c;
+                v.Add(d); v.Add(d * t + Vector3.up);
+            }
+            for (int k = 0; k < 8; k++)
+            {
+                int a0 = 2 * k, a1 = 2 * ((k + 1) % 8);
+                tri.Add(a0); tri.Add(a0 + 1); tri.Add(a1); tri.Add(a1); tri.Add(a0 + 1); tri.Add(a1 + 1);
+                if (k >= 1 && k < 7) { tri.Add(0); tri.Add(2 * k + 2); tri.Add(2 * k); tri.Add(1); tri.Add(2 * k + 1); tri.Add(2 * k + 3); }   // the ends
+            }
+            var m = new Mesh { name = "TrunkHull" + i };
+            m.SetVertices(v); m.SetTriangles(tri, 0);
+            m.RecalculateNormals(); m.RecalculateBounds();
+            trunkHulls[i] = m;
+            return m;
         }
 
         /// <summary>
@@ -654,7 +708,8 @@ namespace Summit
 
         /// <summary>One piece of a tree or rock as drawn: mesh, sub-mesh, material, and where in the world.</summary>
         /// <summary>A piece of a felled tree or rock; `cut` (model height) hides what was under the snow (0: nothing).</summary>
-        public struct Piece { public Mesh mesh; public int sub; public Material mat; public Matrix4x4 m; public float cut; }
+        /// <summary>... and `top` (model height, 0: none) hides what was above it (a tree whose top had already gone).</summary>
+        public struct Piece { public Mesh mesh; public int sub; public Material mat; public Matrix4x4 m; public float cut, top; }
         readonly HashSet<Vector2Int> felled = new HashSet<Vector2Int>();
 
         /// <summary>
@@ -671,13 +726,14 @@ namespace Summit
                 felled.Add(kv.Key);
                 live.Remove(kv.Key);
                 hit.SetActive(false);
-                (hit.GetComponent<CapsuleCollider>() != null ? spareTree : spareRock).Enqueue(hit);
+                (IsTreeHit(hit) ? spareTree : spareRock).Enqueue(hit);
                 if (pl.kind == Kind.None) return false;
                 // a tree goes over from where it meets the snow, as tall as it shows (Smasher: 8.5 m a size)
                 basePos = pl.foot; size = pl.kind == Kind.Tree ? pl.vis / 8.5f : pl.size;
-                if (real && pl.kind == Kind.Tree) into.Add(Whole(pl, pl.cut));
+                if (real && pl.kind == Kind.Tree) into.Add(Topped(Whole(pl, pl.cut), pl, kv.Key));
                 else foreach (var part in pl.kind == Kind.Tree ? treeParts[pl.idx] : rockParts[pl.idx])
                     into.Add(new Piece { mesh = part.mesh, sub = part.sub, mat = part.mat, m = pl.m * part.local, cut = pl.kind == Kind.Tree ? pl.cut : 0f });
+                damage.Remove(kv.Key);
                 // redraw without it
                 lastCell = new Vector2Int(int.MinValue, int.MinValue);
                 Refresh(false);
@@ -688,6 +744,13 @@ namespace Summit
 
         /// <summary>A realistic tree taken out of the forest to be knocked down: its rich mesh, in the material that
         /// never dissolves (it is seen from close by, and lies there as the rider leaves).</summary>
+        /// <summary>The piece without the top this tree has already lost.</summary>
+        Piece Topped(Piece p, in Placed pl, Vector2Int cell)
+        {
+            if (damage.TryGetValue(cell, out var dm) && dm.top < pl.vis) p.top = pl.cut + dm.top / pl.ys;
+            return p;
+        }
+
         static Piece Whole(Placed pl, float cut) =>
             new Piece { mesh = RealFir.Meshes[pl.idx], sub = 0, mat = RealFir.StandaloneOf(pl.idx), m = pl.m, cut = cut };
 
@@ -733,30 +796,243 @@ namespace Summit
         public bool Snap(GameObject hit, float at, List<Piece> into, out Snapped info)
         {
             info = default;
-            foreach (var kv in live)
+            foreach (var kv in live) if (kv.Value == hit) return Snap(kv.Key, at, into, out info);
+            return false;
+        }
+
+        /// <summary>The same, for the tree in this cell.</summary>
+        public bool Snap(Vector2Int cell, float at, List<Piece> into, out Snapped info)
+        {
+            info = default;
+            var pl = Get(cell.x, cell.y);
+            if (pl.kind != Kind.Tree) return false;
+            felled.Add(cell);
+            var whole = Topped(Whole(pl, pl.cut + at / pl.ys), pl, cell);
+            float stood = damage.TryGetValue(cell, out var was) ? was.top : float.MaxValue;
+            damage.Remove(cell);
+            if (live.TryGetValue(cell, out var hit))
             {
-                if (kv.Value != hit) continue;
-                var pl = Get(kv.Key.x, kv.Key.y);
-                if (pl.kind != Kind.Tree) return false;
-                felled.Add(kv.Key);
-                live.Remove(kv.Key);
+                live.Remove(cell);
                 hit.SetActive(false);
                 spareTree.Enqueue(hit);
-                if (!real) at = 0.25f;   // the classic firs' trunks are short stubs: they go at the foot
-                Vector3 up = ((Vector3)pl.m.GetColumn(1)).normalized;
-                info = new Snapped { foot = pl.foot, up = up, vis = pl.vis, girth = pl.girth, at = at };
-                if (real) into.Add(Whole(pl, pl.cut + at / pl.ys));
-                else foreach (var part in treeParts[pl.idx])
-                    into.Add(new Piece { mesh = part.mesh, sub = part.sub, mat = part.mat, m = pl.m * part.local, cut = 0f });
-                // the stump: from a little under the snow up to the break, as thick as the trunk there
-                float h = at + 0.35f;
-                stumps[kv.Key] = Matrix4x4.TRS(pl.foot - up * 0.35f, Quaternion.FromToRotation(Vector3.up, up) * Quaternion.Euler(0f, Slope.Hash01(kv.Key.x, kv.Key.y, 12) * 360f, 0f),
-                                               new Vector3(pl.girth * 1.05f, h / TreeBreak.StumpTop, pl.girth * 1.05f));
-                lastCell = new Vector2Int(int.MinValue, int.MinValue);
-                Refresh(false);
-                return true;
             }
+            if (!real) at = 0.25f;   // the classic firs' trunks are short stubs: they go at the foot
+            Vector3 up = ((Vector3)pl.m.GetColumn(1)).normalized;
+            float girth = real ? Mathf.Max(0.03f, Trunk(pl, at)) : pl.girth;
+            info = new Snapped { foot = pl.foot, up = up, vis = Mathf.Min(pl.vis, stood), girth = girth, at = at };
+            if (real) into.Add(whole);
+            else foreach (var part in treeParts[pl.idx])
+                into.Add(new Piece { mesh = part.mesh, sub = part.sub, mat = part.mat, m = pl.m * part.local, cut = 0f });
+            // the stump: from a little under the snow up to the break, as thick as the trunk there
+            float h = at + 0.35f;
+            stumps[cell] = Matrix4x4.TRS(pl.foot - up * 0.35f, Quaternion.FromToRotation(Vector3.up, up) * Quaternion.Euler(0f, Slope.Hash01(cell.x, cell.y, 12) * 360f, 0f),
+                                         new Vector3(Mathf.Max(pl.girth, girth) * 1.05f, h / TreeBreak.StumpTop, Mathf.Max(pl.girth, girth) * 1.05f));
+            if (real) { Unlist(cell, pl, false); stumpL.Add(stumps[cell]); }   // (a realistic tree is one instance in each list)
+            else { lastCell = new Vector2Int(int.MinValue, int.MinValue); Refresh(false); }
+            return true;
+        }
+
+        // ---- the shape of a tree as drawn, for what a rider meets in it (TreeBreak): the trunk is solid, the
+        // branches round it are not, and a trunk thinner than ThinGirth snaps
+
+        /// <summary>
+        /// The thickest trunk (radius where you meet it, m) that snaps and lets you ride on, with no crash: a small
+        /// tree's trunk at the snow, or the thin top of a tall one. Chosen from the forest's spread (BranchTest):
+        /// about the thinnest third of the trunks a rider meets at the snow. Thicker is a trunk you crash into
+        /// (unless a fast hit snaps a young one or a snag: SnapGirth).
+        /// </summary>
+        public const float ThinGirth = 0.15f;
+
+        /// <summary>A tree as drawn, for hits: where its trunk leaves the snow and the way it leans, how much of it
+        /// shows, and how much of that still stands (less once its top has been clipped off).</summary>
+        public struct Tree
+        {
+            public Vector2Int cell; public int idx; public bool realistic, snag;
+            public Vector3 at, up;
+            public float vis, top, girth, solid;
+            internal float cut, ys, k, full;
+        }
+
+        Tree View(Vector2Int cell, in Placed pl)
+        {
+            Vector3 axis = ((Vector3)pl.m.GetColumn(1)).normalized, pivot = pl.m.GetColumn(3);
+            Vector3 at = axis.y > 0.2f ? pivot + axis * ((pl.foot.y - pivot.y) / axis.y) : pl.foot;
+            float top = damage.TryGetValue(cell, out var dm) ? Mathf.Min(pl.vis, dm.top) : pl.vis;
+            return new Tree
+            {
+                cell = cell, idx = pl.idx, realistic = real, snag = real && RealFir.IsSnag(pl.idx), at = at, up = axis,
+                vis = pl.vis, top = top, girth = pl.girth, solid = Mathf.Max(0.6f, pl.solid), cut = pl.cut, ys = pl.ys, k = pl.k, full = pl.full
+            };
+        }
+
+        /// <summary>The trees with hit shapes in the cells round p (those near enough to the rider to have one).</summary>
+        public void TreesNear(Vector3 p, List<Tree> into)
+        {
+            into.Clear();
+            int cx = Mathf.FloorToInt(p.x / Cell), cz = Mathf.FloorToInt(p.z / Cell);
+            for (int z = cz - 1; z <= cz + 1; z++)
+                for (int x = cx - 1; x <= cx + 1; x++)
+                {
+                    var key = new Vector2Int(x, z);
+                    if (!live.ContainsKey(key)) continue;
+                    var pl = Get(x, z);
+                    if (pl.kind == Kind.Tree) into.Add(View(key, pl));
+                }
+        }
+
+        /// <summary>The tree in this cell as drawn (false if there is none standing).</summary>
+        public bool TreeIn(int x, int z, out Tree t)
+        {
+            var pl = Get(x, z);
+            t = pl.kind == Kind.Tree ? View(new Vector2Int(x, z), pl) : default;
+            return pl.kind == Kind.Tree;
+        }
+
+        /// <summary>The tree behind this hit shape (false if it is not one of ours).</summary>
+        public bool TreeOf(Collider c, out Tree t)
+        {
+            t = default;
+            if (c == null) return false;
+            foreach (var kv in live) if (kv.Value == c.gameObject) return TreeIn(kv.Key.x, kv.Key.y, out t);
             return false;
+        }
+
+        /// <summary>The trunk's radius (m) h metres up from where it leaves the snow.</summary>
+        public static float TrunkAt(in Tree t, float h) => t.realistic ? RealFir.TrunkRadius(t.idx, t.cut + Mathf.Max(0f, h) / t.ys) * t.k : t.girth;
+
+        /// <summary>How far its branches reach from the trunk (m) h metres up from the snow: 0 below its lowest branches
+        /// and above what still stands.</summary>
+        public static float CrownAt(in Tree t, float h)
+        {
+            if (h < 0f || h > t.top) return 0f;
+            if (!t.realistic)
+            {
+                // the classic low-poly firs: a cone of boughs from a sixth of the way up (Resources/Trees, FirMesh)
+                float f = h / Mathf.Max(0.5f, t.vis);
+                return f < 0.16f ? 0f : 0.3f * t.vis * (1f - f) / 0.84f;
+            }
+            float share = (t.cut + h / t.ys) / RealFir.Heights[t.idx];
+            return RealFir.CrownRadius(t.idx, share) * t.full;
+        }
+
+        float Trunk(in Placed pl, float h) => real ? RealFir.TrunkRadius(pl.idx, pl.cut + Mathf.Max(0f, h) / pl.ys) * pl.k : pl.girth;
+
+        /// <summary>How far up from the snow the trunk stays thicker than ThinGirth (to most of what shows, for a trunk
+        /// that never thins that much; for a small tree, thin from the snow up, as far as a rider stands: it is still
+        /// solid to a slow push).</summary>
+        float SolidHeight(in Placed pl)
+        {
+            if (!real) return pl.vis * 0.45f;   // the classic firs: a stub of trunk under a cone of boughs
+            float cap = pl.vis * 0.9f;
+            if (Trunk(pl, 0f) < ThinGirth) return Mathf.Min(cap, 1.8f);
+            float h = 0f;
+            while (h < cap && Trunk(pl, h + 0.5f) >= ThinGirth) h += 0.5f;
+            return Mathf.Min(cap, h);
+        }
+
+        // ---- damage a tree keeps for the rest of the run: a gap torn in its branches, its top clipped off
+
+        class Damage
+        {
+            public float top = float.MaxValue, snow = 1f;
+            public readonly Vector4[] gaps = new Vector4[2];   // model space: centre, radius (0: none)
+            public int next;
+            public readonly MaterialPropertyBlock props = new MaterialPropertyBlock();
+        }
+        readonly Dictionary<Vector2Int, Damage> damage = new Dictionary<Vector2Int, Damage>();
+        readonly List<Vector2Int> damagedL = new List<Vector2Int>();
+        static readonly int CutYId = Shader.PropertyToID("_CutY"), CutTopId = Shader.PropertyToID("_CutTop"),
+                            Gap0Id = Shader.PropertyToID("_Gap0"), Gap1Id = Shader.PropertyToID("_Gap1"), SnowId = Shader.PropertyToID("_Snow");
+
+        Damage DamageOf(Vector2Int cell)
+        {
+            if (!damage.TryGetValue(cell, out var dm)) damage[cell] = dm = new Damage();
+            return dm;
+        }
+
+        /// <summary>How many trees carry damage this run (for the test tools).</summary>
+        public int Damaged => damage.Count;
+
+        /// <summary>
+        /// Branches torn out where something went through them at `world` (a gap `radius` m across, its edges bared of
+        /// their snow): drawn so from now on (realistic trees; the classic ones only shed their snow). The two latest
+        /// gaps a tree has are kept.
+        /// </summary>
+        public void TearBranches(in Tree t, Vector3 world, float radius)
+        {
+            if (!real) return;
+            var pl = Get(t.cell.x, t.cell.y);
+            if (pl.kind != Kind.Tree) return;
+            var dm = DamageOf(t.cell);
+            Vector3 local = pl.m.inverse.MultiplyPoint3x4(world);
+            dm.gaps[dm.next] = new Vector4(local.x, local.y, local.z, radius / Mathf.Max(0.05f, pl.k));
+            dm.next = (dm.next + 1) % dm.gaps.Length;
+            dm.snow = Mathf.Max(0.55f, dm.snow - 0.1f);
+            Unlist(t.cell, pl);
+        }
+
+        /// <summary>
+        /// A tree just damaged: out of the instanced batches and onto the list drawn one by one (DrawDamaged), without
+        /// rebuilding every list (thousands of cells: Refresh) as a felled tree does. Its matrices are found in the
+        /// lists of its kind and swapped out.
+        /// </summary>
+        void Unlist(Vector2Int cell, in Placed pl, bool damaged = true)
+        {
+            if (damagedL.Remove(cell) && damaged) { damagedL.Add(cell); return; }
+            Drop(nearL, Key(Kind.Tree, pl.idx, 0), pl.m); Drop(farL, Key(Kind.Tree, pl.idx, 0), pl.m);
+            Drop(richL, Key(Kind.Tree, RealFir.Variants + pl.idx, 0), pl.m);
+            if (impL != null && pl.idx < impL.Length) DropFrom(impL[pl.idx], pl.m);
+            if (damaged) damagedL.Add(cell);
+        }
+
+        static void Drop(Dictionary<int, List<Matrix4x4>> set, int key, Matrix4x4 m) { if (set.TryGetValue(key, out var list)) DropFrom(list, m); }
+        static void DropFrom(List<Matrix4x4> list, Matrix4x4 m)
+        {
+            for (int i = list.Count - 1; i >= 0; i--)
+                if (list[i] == m) { list[i] = list[list.Count - 1]; list.RemoveAt(list.Count - 1); return; }
+        }
+
+        /// <summary>
+        /// The top of the tree in this cell comes away `at` metres above the snow; the rest stands, broken off there,
+        /// for the rest of the run. Hands back its pieces cut off below the break, for the top to fall (realistic trees;
+        /// a classic fir has no top to lose: it goes over whole from a stump, as Snap). False if there is none.
+        /// </summary>
+        public bool ClipTop(Vector2Int cell, float at, List<Piece> into, out Snapped info)
+        {
+            info = default;
+            if (!real) return Snap(cell, 0.25f, into, out info);
+            var pl = Get(cell.x, cell.y);
+            if (pl.kind != Kind.Tree) return false;
+            var dm = DamageOf(cell);
+            if (at >= dm.top - 0.5f) return false;   // nothing left up there to clip
+            dm.snow = Mathf.Min(dm.snow, 0.6f);   // the whole tree shook
+            Vector3 up = ((Vector3)pl.m.GetColumn(1)).normalized;
+            info = new Snapped { foot = pl.foot, up = up, vis = Mathf.Min(pl.vis, dm.top), girth = Mathf.Max(0.03f, Trunk(pl, at)), at = at };
+            into.Add(Topped(Whole(pl, pl.cut + at / pl.ys), pl, cell));
+            dm.top = at;
+            Unlist(cell, pl);
+            return true;
+        }
+
+        /// <summary>The damaged trees near enough to see it, each drawn on its own (its rich mesh, in the material
+        /// that never dissolves) with its gaps and missing top.</summary>
+        void DrawDamaged()
+        {
+            foreach (var cell in damagedL)
+            {
+                if (!damage.TryGetValue(cell, out var dm)) continue;
+                var pl = Get(cell.x, cell.y);
+                if (pl.kind != Kind.Tree) continue;
+                var p = dm.props;
+                p.SetFloat(CutYId, pl.cut);
+                p.SetFloat(CutTopId, dm.top < pl.vis ? pl.cut + dm.top / pl.ys : 1e6f);
+                p.SetVector(Gap0Id, dm.gaps[0]); p.SetVector(Gap1Id, dm.gaps[1]);
+                p.SetFloat(SnowId, dm.snow);
+                var rp = new RenderParams(RealFir.StandaloneOf(pl.idx)) { shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On, receiveShadows = true, matProps = p };
+                Graphics.RenderMesh(rp, RealFir.Meshes[pl.idx], 0, pl.m);
+                // (no collar of torn wood on the broken top: it would stand still while the tree sways and shudders round
+                // it. The cut leader and the shaken, bare boughs under it read as broken)
+            }
         }
 
         /// <summary>
@@ -846,8 +1122,7 @@ namespace Summit
         {
             var g = new GameObject(tree ? "TreeHit" : "RockHit");
             g.transform.SetParent(transform, false);
-            if (tree) { var cap = g.AddComponent<CapsuleCollider>(); cap.direction = 1; }
-            else g.AddComponent<MeshCollider>().convex = true;
+            g.AddComponent<MeshCollider>().convex = true;   // a tree's trunk post, a rock's hull
             var ob = g.AddComponent<Obstacle>();
             ob.label = tree ? "Tree" : "Rock";
             return g;

@@ -4,9 +4,9 @@ using UnityEngine.UI;
 namespace Summit
 {
     /// <summary>The heads-up display, built in code so there is nothing to wire up.</summary>
-    public class Hud : MonoBehaviour
+    public partial class Hud : MonoBehaviour
     {
-        int lastKmh = -2, lastPts = -2, lastMult = -1, lastGap = -2;
+        int lastKmh = -2, lastPts = -2, lastGap = -2;
         RectTransform canvasRect, stickRing, stickKnob;
         Canvas canvasRef;
         Text diag;
@@ -17,8 +17,7 @@ namespace Summit
         public bool OnRider(Vector2 p) => Inside(riderBtn, p);
         Text modeLabel;
         Text playLabel;
-        Text speed, score, chain, slide, big, small, hint, timer, altitude, medical, prompt;
-        int lastBill = -1;
+        Text speed, score, slide, big, small, hint, timer, altitude, medical, prompt;
         int lastAlt = -1;
         Image[] shieldPips;
         Image[] timerBg, timerFill;
@@ -64,8 +63,6 @@ namespace Summit
 
             speed = NewText("Speed", safe, new Vector2(0f, 1f), new Vector2(40f, -40f), 54, TextAnchor.UpperLeft);
             score = NewText("Score", safe, new Vector2(0.5f, 1f), new Vector2(0f, -34f), 84, TextAnchor.UpperCenter);
-            chain = NewText("Chain", safe, new Vector2(0.5f, 1f), new Vector2(0f, -132f), 44, TextAnchor.UpperCenter);
-            chain.color = new Color(1f, 0.82f, 0.35f);
             timer = NewText("Timer", safe, new Vector2(0f, 1f), new Vector2(40f, -104f), 46, TextAnchor.UpperLeft);
             timer.color = new Color(0.85f, 0.93f, 1f);
             medical = NewText("Medical", safe, new Vector2(1f, 1f), new Vector2(-40f, -232f), 40, TextAnchor.UpperRight);
@@ -160,6 +157,7 @@ namespace Summit
             Place(rbtn.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, -400f), new Vector2(620f, 100f), new Vector2(0.5f, 0.5f));
             riderBtn = rbtn.rectTransform;
             riderLabel = NewText("RiderLabel", rbtn.transform, new Vector2(0.5f, 0.5f), Vector2.zero, 40, TextAnchor.MiddleCenter);
+            BuildPoints();   // the combo and the medical bill as they run up (HudPoints.cs)
             SetButtons(false, false, "PLAY");
         }
 
@@ -471,10 +469,11 @@ namespace Summit
         {
             Rect a = Screen.safeArea;
             lastSafe = a;
-            if (Screen.width <= 0 || Screen.height <= 0) { Stretch(safe); return; }
+            if (Screen.width <= 0 || Screen.height <= 0) { Stretch(safe); if (pts != null) Stretch(pts); return; }
             safe.anchorMin = new Vector2(a.xMin / Screen.width, a.yMin / Screen.height);
             safe.anchorMax = new Vector2(a.xMax / Screen.width, a.yMax / Screen.height);
             safe.offsetMin = safe.offsetMax = Vector2.zero;
+            if (pts != null) { pts.anchorMin = safe.anchorMin; pts.anchorMax = safe.anchorMax; pts.offsetMin = pts.offsetMax = Vector2.zero; }   // (the points and the bill: HudPoints)
         }
 
         void Update()
@@ -497,10 +496,14 @@ namespace Summit
             // only touch the Text objects when the number changes: rebuilding them every frame causes hitches
             int k0 = showRun ? Mathf.RoundToInt(kmh) : -1;
             if (k0 != lastKmh) { lastKmh = k0; speed.text = showRun ? k0 + " km/h" : ""; }
-            int p0 = showRun ? points : -1;
-            if (p0 != lastPts) { lastPts = p0; score.text = showRun ? points.ToString("N0") : ""; }
-            int m0 = showRun && mult > 1.01f ? Mathf.RoundToInt(mult * 10f) : 0;
-            if (m0 != lastMult) { lastMult = m0; chain.text = m0 > 0 ? "x" + mult.ToString("0.#") + " chain" : ""; }
+            // the score: as it is, except that what a combo has just banked waits for its number to fly up, then counts
+            // up (HudPoints). The multiplier is the combo's own now, shown with it (the "x1.5 chain" line is gone)
+            if (!showRun) { scoreTarget = -1; scoreCounting = false; if (lastPts != -1) { lastPts = -1; score.text = ""; } }
+            else
+            {
+                scoreTarget = points;
+                if (!scoreCounting) { scoreShown = points - (chipT >= 0f && !chipBill ? chipAmount : 0); ShowScore(); }
+            }
             int s0 = showRun ? Mathf.Max(0, Mathf.RoundToInt(gap)) : -1;
             if (s0 != lastGap) { lastGap = s0; slide.text = showRun && s0 < 9999 ? "SLIDE " + s0 + " m" : ""; }   // 9999: not released yet
             slide.color = gap < 40f ? new Color(1f, 0.45f, 0.35f) : Color.white;
@@ -557,10 +560,12 @@ namespace Summit
         /// <summary>The run's medical bill so far (hidden until there is one).</summary>
         public void SetMedical(float dollars, bool show)
         {
-            int d = show ? Mathf.RoundToInt(dollars) : -1;
-            if (d == lastBill) return;
-            lastBill = d;
-            medical.text = show && d > 0 ? "MEDICAL  $" + d.ToString("N0") : "";
+            // (less the fall being paid for right now: that is the big figure, and lands here when the rider gets up: HudPoints)
+            medTotal = dollars; medShow = show;
+            if (!show) medCounting = false;
+            if (medCounting) return;
+            medShown = show ? dollars - (billOn ? billTarget : 0f) : 0f;
+            ShowMedical();
         }
 
         /// <summary>A pulsing instruction near the bottom (empty to hide).</summary>
@@ -604,6 +609,11 @@ namespace Summit
             big.text = line;
             small.text = sub;
             hint.text = bottom;
+            // (the hint is the one long line here: fitted to the screen, where it used to run off both sides)
+            // (a portrait phone is narrower than the 1080 the layout is drawn on: about 980 across)
+            float room = safe.rect.width > 200f ? safe.rect.width - 70f : 900f;
+            float hw = Wide(hint), hs = hw > room ? room / hw : 1f;
+            hint.rectTransform.localScale = new Vector3(hs, hs, 1f);
             flashT = 0f;
             big.color = Color.white;
             small.color = Color.white;

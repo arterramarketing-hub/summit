@@ -32,8 +32,15 @@ namespace Summit
         public bool Rails = true;
         /// <summary>What its grabs are called, and for each the snowboard grabs a daily mission would accept it as.</summary>
         public string[] Grabs, GrabCountsAs;
-        /// <summary>What sliding a box and a rail are called on it.</summary>
-        public string BoxTrick = "50-50 Box", RailTrick = "Boardslide";
+        /// <summary>What sliding a box and a rail are called on it (the stance it comes on in; the rest are in Rides.GrindName).</summary>
+        public string BoxTrick = "50-50", RailTrick = "Boardslide";
+        /// <summary>How fast it spins and flips in the air, against the snowboard (on Rider.SpinRate and Rider.FlipRate).</summary>
+        public float Spin = 1f, Flip = 1f;
+        /// <summary>What a grab stepped up once is called.</summary>
+        public string Tweak = "Tweaked";
+        /// <summary>Quarter turns a switch-up on a rail takes (a board goes round by quarters: along it, across it), and can it press?</summary>
+        public int SwitchStep = 1;
+        public bool Presses = true;
 
         /// <summary>The multiplier on air drag that gives TopSpeed.</summary>
         public float Drag => 1f / (TopSpeed * TopSpeed);
@@ -60,7 +67,7 @@ namespace Summit
                 TurnResponse = 1.25f, TurnRate = 0.92f, Grip = 1.08f, TopSpeed = 1.03f, Pop = 0.92f, AirControl = 1.15f,
                 Grabs = new[] { "Safety", "Mute", "Tail" },
                 GrabCountsAs = new[] { "Indy Stalefish", "Mute Melon", "Method Tail Grab" },
-                BoxTrick = "Box Slide", RailTrick = "Rail Slide",
+                BoxTrick = "Box Slide", RailTrick = "Rail Slide", Spin = 0.95f, SwitchStep = 2,
             },
             // The toboggan: a plank of wood with no edges and nobody's legs under it. It comes round slowly, and
             // what it is asked to turn it mostly slides (lean gently and it tracks; haul on it and it drifts wide,
@@ -74,11 +81,35 @@ namespace Summit
                 Bounce = 0.35f, Rails = false,
                 Grabs = new[] { "No-Hander" },
                 GrabCountsAs = new[] { "Indy Melon Mute Method Stalefish Tail Grab" },
-                BoxTrick = "Sled Slide", RailTrick = "Rail Bonk",
+                BoxTrick = "Sled Slide", RailTrick = "Rail Bonk", Spin = 0.7f, Flip = 0.7f, Tweak = "Wild", SwitchStep = 2, Presses = false,
             },
         };
 
         public static int Count => all.Length;
         public static RideFeel Of(RideKind k) => all[Mathf.Clamp((int)k, 0, all.Length - 1)];
+
+        /// <summary>
+        /// What a grind is called: on a rail (or a lift's cable) or a box, with the board a number of quarter turns
+        /// off the line (0 along it, 1 across it, 2 along it backwards, 3 across it the other way) and pressed on
+        /// its nose (+1) or tail (-1). The stance each feature is come onto in is the ride's own BoxTrick / RailTrick.
+        /// </summary>
+        public static string GrindName(RideKind ride, bool rail, bool cable, int quarter, int press)
+        {
+            var f = Of(ride);
+            string name;
+            if (ride == RideKind.Snowboard)
+            {
+                bool across = quarter == 1 || quarter == 3;
+                name = press > 0 ? (across ? "Noseslide" : "Nose Press") : press < 0 ? (across ? "Tailslide" : "Tail Press")
+                     : quarter == 0 ? "50-50" : quarter == 1 ? "Boardslide" : quarter == 2 ? "Switch 50-50" : "Lipslide";
+                if (cable) name = quarter == 1 && press == 0 ? "Cable Grind" : "Cable " + name;
+                return name;
+            }
+            // skis and the toboggan turn half way round: the stance come on in, or switch
+            bool sw = quarter != (rail ? 1 : 0);
+            name = cable ? "Cable Grind" : rail ? f.RailTrick : f.BoxTrick;
+            if (press != 0) name = (press > 0 ? "Tip Press" : "Tail Press") + (cable ? " Cable" : "");
+            return sw ? "Switch " + name : name;
+        }
     }
 }

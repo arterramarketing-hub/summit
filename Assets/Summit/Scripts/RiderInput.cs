@@ -11,6 +11,13 @@ namespace Summit
     /// not a jump). In tilt mode the one finger does both. In the editor: A/D or arrows steer, Space taps or
     /// holds. A controller: left stick steers, the bottom face button taps or holds.
     /// Works with either the new Input System or the old Input Manager.
+    ///
+    /// In the air and on a rail (TrickMode, which the rider sets) the same fingers do the tricks: the steering
+    /// finger's left/right is the spin and its up/down travel (Flip: counted from where it was as the board left
+    /// the snow; W/S; a controller's stick) is the flip; the jump finger landing is a TrickTap (the grab, or the
+    /// pop off a rail) and staying down is GrabHold. With tilt steering the one finger does it: a tap is the
+    /// TrickTap (on lifting, or once it has been down past a tap) and a swipe up or down is the flip.
+    /// A press that was part of a trick is never also a jump when it lifts.
     /// </summary>
     [DefaultExecutionOrder(-100)]   // read input before anything uses it this frame
     public class RiderInput : MonoBehaviour
@@ -27,6 +34,17 @@ namespace Summit
         public const float TapTime = 0.22f;
         float pressTime;
         public bool HasTilt { get; private set; }
+
+        /// <summary>Up/down for tricks, -1 (down: a backflip, a tail press) .. +1 (up: a frontflip, a nose press).</summary>
+        public float Flip { get; private set; }
+        /// <summary>The trick finger just landed (true for the one frame): a grab in the air, the pop off a rail.</summary>
+        public bool TrickTap { get; private set; }
+        /// <summary>The trick finger is down: the grab is being held.</summary>
+        public bool GrabHold { get; private set; }
+        /// <summary>Set by the rider: in an air long enough to trick, or on a rail. Out of it the fingers only steer, jump and tuck.</summary>
+        public bool TrickMode;
+        float flipOrigin;
+        bool fingerPrev, pressPrev, pressUsed, swiped;
 
         public float tiltRange = 0.36f;   // sin of the tilt that gives full lock (about 21 degrees)
         public float deadZone = 0.03f;
@@ -68,7 +86,7 @@ namespace Summit
             swallow = PointerDown();
             Hold = false;
             Released = false;
-            Jump = false;
+            Jump = false; TrickTap = false; GrabHold = false; pressUsed = false; swiped = false;
             HoldTime = 0f; pressTime = 0f;
         }
 
@@ -117,6 +135,27 @@ namespace Summit
             if (key != 0f) target = key;
             float pad = PadSteer();
             if (pad != 0f) target = pad;
+
+            // up/down, for tricks: how far the first finger has moved up or down the screen since the board left the
+            // snow (out of a trick its zero follows the finger, so the drift of a thumb that has been steering for a
+            // minute is never a flip), on the same throw as the steering; or W/S, or a controller's stick
+            float flip = 0f;
+            {
+                bool finger = fingers >= 1;
+                float radius = Mathf.Max(60f, Screen.width * stickRadiusFrac);
+                if (finger && (!fingerPrev || !TrickMode)) flipOrigin = fingerPos.y;
+                if (finger)
+                {
+                    float off = fingerPos.y - flipOrigin;
+                    if (off > radius) flipOrigin = fingerPos.y - radius; else if (off < -radius) flipOrigin = fingerPos.y + radius;
+                    float d = Mathf.Clamp((fingerPos.y - flipOrigin) / radius, -1f, 1f), a = Mathf.Abs(d);
+                    flip = a < 0.1f ? 0f : Mathf.Sign(d) * (a - 0.1f) / 0.9f;
+                }
+                fingerPrev = finger;
+                float kv = KeyVertical(); if (kv != 0f) flip = kv;
+                float pv = PadVertical(); if (pv != 0f) flip = pv;
+            }
+            Flip = TrickMode ? Mathf.Lerp(Flip, flip, 1f - Mathf.Exp(-Time.unscaledDeltaTime * 60f)) : 0f;
             // a short low-pass takes the jitter out of the finger or sensor without feeling laggy
             Steer = Mathf.Lerp(Steer, target, 1f - Mathf.Exp(-Time.unscaledDeltaTime * (useTilt ? 16f : 60f)));
 
@@ -126,7 +165,20 @@ namespace Summit
             // tap it is a tuck, and letting go of a tuck is just standing back up
             bool press = (useTilt ? PointerDown() : (twoTime > 0f || SpaceDown())) || PadButton();
             if (swallow) { if (!press) swallow = false; press = false; pressTime = 0f; }
+            float heldBefore = pressTime;
             bool down = TapOrTuck(press, Time.unscaledDeltaTime, ref pressTime, out bool jump);
+            // the same finger, for tricks. Drag: the second finger landing is the tap. Tilt: the one finger is tap and
+            // swipe both, so it is a tap when it lifts unmoved (or has stayed down past a tap), and a swipe is the flip
+            bool began = press && !pressPrev;
+            if (began) { pressUsed = false; swiped = false; }
+            bool oneFinger = useTilt && !SpaceDown() && !PadButton();
+            if (oneFinger && press && Mathf.Abs(flip) >= 0.5f) swiped = true;
+            bool tap = oneFinger ? !swiped && (jump || (press && pressTime >= TapTime && heldBefore < TapTime)) : began;
+            TrickTap = TrickMode && tap;
+            GrabHold = TrickMode && press && !swiped && (!oneFinger || pressTime >= TapTime);
+            if (TrickMode && (press || tap)) pressUsed = true;
+            if (pressUsed || swiped) jump = false;   // a press that was a trick's is not also a jump when it lifts
+            pressPrev = press;
             Jump = jump;
             Pressed = down && !wasDown;
             Released = !down && wasDown;
@@ -272,6 +324,34 @@ namespace Summit
             return v;
 #else
             return Input.GetAxisRaw("Horizontal");
+#endif
+        }
+
+        /// <summary>W/S or the up/down arrows: up is +1.</summary>
+        static float KeyVertical()
+        {
+#if ENABLE_INPUT_SYSTEM
+            var k = Keyboard.current;
+            if (k == null) return 0f;
+            float v = 0f;
+            if (k.wKey.isPressed || k.upArrowKey.isPressed) v += 1f;
+            if (k.sKey.isPressed || k.downArrowKey.isPressed) v -= 1f;
+            return v;
+#else
+            return Input.GetAxisRaw("Vertical");
+#endif
+        }
+
+        /// <summary>A controller's left stick, up and down (0 with none plugged in or inside its dead zone).</summary>
+        static float PadVertical()
+        {
+#if ENABLE_INPUT_SYSTEM
+            var g = Gamepad.current;
+            if (g == null) return 0f;
+            float y = g.leftStick.ReadValue().y, a = Mathf.Abs(y);
+            return a < 0.25f ? 0f : Mathf.Sign(y) * (a - 0.25f) / 0.75f;
+#else
+            return 0f;
 #endif
         }
 

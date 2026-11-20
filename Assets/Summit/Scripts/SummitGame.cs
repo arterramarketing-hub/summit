@@ -39,8 +39,16 @@ namespace Summit
         string endTitle = "WIPED OUT";
         bool crevasseWatch;   // went over a crevasse: lost only if the body actually drops in
 
-        // the medical bill: what this run's falls are costing you
+        // the medical bill: what this run's falls are costing you. Every cost goes through Bill, which also makes the
+        // figure on screen jump (HudPoints): the fall's own bill, racking up while the rider is down
         float medical;
+        bool downBefore;
+        void Bill(float cost)
+        {
+            if (cost <= 0f) return;
+            medical += cost;
+            hud.BillHit(cost);
+        }
         static int BoneCost(string limb) =>
             limb == "Head" ? 12500 : limb == "Ribs" ? 7800 : limb.EndsWith("leg") ? 9400 : limb.EndsWith("arm") ? 4600 : 3000;
 
@@ -216,7 +224,12 @@ namespace Summit
             lastShaken = c; lastShakeTime = Time.time;
             Vector3 foot = c.transform.position;
             float h = 7.5f, crown = 2.2f;
-            if (c is CapsuleCollider cap) { h = Mathf.Max(2f, cap.height * c.transform.lossyScale.y * 1.1f); crown = Mathf.Max(1.2f, Mathf.Max(cap.radius * 2.5f, h * 0.15f)); }
+            if (props.TreeOf(c, out var tree))
+            {
+                // the tree as drawn: as tall as it stands, as wide as its widest boughs
+                h = Mathf.Max(2f, tree.top); crown = 0.8f;
+                for (int i = 1; i <= 4; i++) crown = Mathf.Max(crown, Forest.CrownAt(tree, tree.top * i / 5f));
+            }
             fx.TreeDump(foot, h, crown, into * 0.65f);
             TreeWind.Shake(foot, knock, into);
         }
@@ -261,11 +274,16 @@ namespace Summit
         CourseDressing dressing;
         Wildlife wild;
         FallFlags flags;
-        int trickPoints, chainCount;
-        float chainTimer, stateTimer, best, runTime;
+        // the points: what has been banked (trickPoints), and the combo still in hand (Combo.cs), which is only
+        // worth anything once it banks
+        int trickPoints;
+        readonly Combo combo = new Combo();
+        int liveSteps;
+        float stateTimer, best, runTime;
 
         int Score => Mathf.RoundToInt(rider.Distance) + trickPoints;
-        float Mult => 1f + 0.5f * chainCount;
+        /// <summary>The run's combo (for the test tools).</summary>
+        public Combo Points => combo;
 
         float traceT, traceNext, readyT;
         float screamT, screamSlowT;   // how long this fall's screaming has gone on, and how long the body has been slow
@@ -293,7 +311,7 @@ namespace Summit
             _ = rider.Body;   // its physics body exists before the ragdoll is built (as on device; edit-mode tools skip Awake)
             body = rg.AddComponent<RiderBody>();
             body.Build(rider, jacket, pants, board, skin, dark, trail, spray);
-            rider.Trick += OnTrick;
+            rider.Link += OnLink;
             rider.Crash += OnCrash;
             rider.RoughLanding += OnRough;
             rider.Jumped += () => { if (state == State.Riding) { audioFx.Play(Sfx.Pop); popped = true; } };
@@ -312,8 +330,7 @@ namespace Summit
                 // a harsh crack for each kind of break: the neck, the spine, a big bone in the leg, an arm
                 audioFx.Play(limb == "Head" ? Sfx.BoneNeck : limb == "Ribs" ? Sfx.BoneBack : limb.EndsWith("leg") ? Sfx.BoneLeg : Sfx.BoneArm);
                 hud.Hurt(0.5f);
-                int cost = BoneCost(limb);
-                medical += cost;
+                Bill(BoneCost(limb));
                 hurtShake = 1f;
             };
             body.LimbLost += (limb, at, whole) =>
@@ -321,8 +338,7 @@ namespace Summit
                 // a limb torn off: it goes on the bill, and you get up and ride on without it (RiderBodyLimbs).
                 // (the crash it came off in has already counted as a fall)
                 if (state != State.Riding) return;
-                int cost = whole ? 186000 : 124000;
-                medical += cost;
+                Bill(whole ? 186000 : 124000);
                 hud.Hurt(1f); hurtShake = 1f;
                 audioFx.Play(Sfx.Bone); audioFx.Play(Sfx.Crash);
                 if (audioFx.Screaming) audioFx.ScreamHit();
@@ -338,7 +354,7 @@ namespace Summit
             {
                 if (!isBoard && v > 6f) hurtShake = Mathf.Max(hurtShake, Mathf.Clamp01((v - 6f) / 10f) * 0.8f);
                 if (v < 1.5f || Time.time < nextImpactSound) return;
-                if (!isBoard && v > 5f && state == State.Riding) medical += (v - 5f) * 45f;   // bruises, by how hard you hit
+                if (!isBoard && v > 5f && state == State.Riding) Bill((v - 5f) * 45f);   // bruises, by how hard you hit
                 // mid-tumble: a fresh scream on each big hit, above all against trees, rocks and signs
                 if (audioFx.Screaming && rider.Crashed && !isBoard && (v > 14f || (v > 7f && body.RagdollHitObject)))
                     audioFx.ScreamHit();
@@ -393,7 +409,7 @@ namespace Summit
                 if (state != State.Riding) return;
                 bool huge = fell > 80f;
                 int bill = huge ? 95000 : 68000;
-                rider.StayDown = true; wipeoutTimer = 2.6f; endTitle = "WIPED OUT"; medical += bill;
+                rider.StayDown = true; wipeoutTimer = 2.6f; endTitle = "WIPED OUT"; Bill(bill);
                 HitStop(1f);   // the body hitting the snow at the foot of the cliff
                 audioFx.Play(Sfx.BoneBack); audioFx.Play(Sfx.Crash);
             };
@@ -443,7 +459,7 @@ namespace Summit
                 audioFx.Play(ob.label == "Rock" ? Sfx.SmashRock : Sfx.SmashWood);
                 if (ob.always) audioFx.Play(Sfx.BearRoar);
                 hurtShake = Mathf.Max(hurtShake, 0.35f);
-                OnTrick(ob.always ? "BEAR BOWLED" : ob.label == "Rock" ? "ROCK SMASH" : "TIMBER!", ob.always ? 500 : 100);
+                Link(ob.always ? "BEAR BOWLED" : ob.label == "Rock" ? "ROCK SMASH" : "TIMBER!", ob.always ? 500 : 100, LinkKind.Smash);
             };
             // young trees and dead snags hit fast enough snap: the top falls, you go down but carry on (TreeBreak)
             treeBreak = new GameObject("TreeBreak").AddComponent<TreeBreak>();
@@ -453,6 +469,23 @@ namespace Summit
                 if (state != State.Riding) return;
                 audioFx.Play(Sfx.SmashWood, byRider ? 1f : 0.85f);
                 hurtShake = Mathf.Max(hurtShake, byRider ? 0.8f : 0.5f);
+            };
+            // a thin trunk ridden through (a small tree, a treetop) and branches brushed: you ride on. Heard, felt in the
+            // camera, the hero flinching from them (the rest - the snow, the needles, the pieces - is TreeBreak's)
+            treeBreak.Broke += (at, into, top) =>
+            {
+                if (state != State.Riding) return;
+                audioFx.Play(Sfx.Branches, 1f);
+                audioFx.Play(Sfx.SmashWood, top ? 0.55f : 0.65f);
+                hurtShake = Mathf.Max(hurtShake, top ? 0.4f : 0.5f);
+                if (!rider.Crashed) body.Flinch(at, 1f);
+            };
+            treeBreak.Brushed += (at, side, depth) =>
+            {
+                if (state != State.Riding) return;
+                audioFx.Play(Sfx.Branches, depth);
+                hurtShake = Mathf.Max(hurtShake, 0.2f + 0.3f * depth);
+                if (!rider.Crashed) body.Flinch(at, depth);
             };
             // signs and flags: ridden into (or tumbled into), signs break and flags go down (Breakables)
             breaks = new GameObject("Breakables").AddComponent<Breakables>();
@@ -466,7 +499,7 @@ namespace Summit
                 else audioFx.Play(Sfx.Clack, 0.7f);
                 if (!sign || thrown) return;
                 hurtShake = Mathf.Max(hurtShake, crashed ? 0.8f : 0.45f);
-                if (invincible) OnTrick("SIGN SMASH", 100);
+                if (invincible) Link("SIGN SMASH", 100, LinkKind.Smash);
             };
 
             atmo = new GameObject("Atmosphere").AddComponent<Atmosphere>();
@@ -483,6 +516,7 @@ namespace Summit
             audioFx = ag.AddComponent<SoundMix>();
             audioFx.Build();
             audioFx.Track(wild);
+            HookPoints();
 
             var vol = Object.FindFirstObjectByType<UnityEngine.Rendering.Volume>();
             post = vol != null ? vol.profile : null;
@@ -677,7 +711,7 @@ namespace Summit
             if (slideView != null) { slideView.gameObject.SetActive(true); slideView.Clear(); }
             Missions.RunEnd();   // a run abandoned from the pause menu still saves its mission progress
             chase.hold = 0f;
-            trickPoints = 0; chainCount = 0; chainTimer = 0f; runTime = 0f;
+            trickPoints = 0; combo.Reset(); liveSteps = 0; downBefore = false; hud.ClearPoints(); runTime = 0f;
             power.ResetRun();
             wild.ResetRun();
             smasher.Clear(); aura.Clear(); treeBreak.Clear();
@@ -697,8 +731,8 @@ namespace Summit
             if (fx != null) fx.Clear();
             if (blood != null) blood.Clear();
             hud.Show("", "Best " + Mathf.RoundToInt(best).ToString("N0"),
-                Application.isMobilePlatform ? "Drag a finger left / right to steer  ·  tap a second finger to jump  ·  hold it to tuck"
-                              : "A / D to steer  ·  tap Space to jump  ·  hold it to tuck");
+                Application.isMobilePlatform ? "Drag to steer  ·  second finger: tap to jump, hold to tuck\nIn the air: push a direction to spin or flip  ·  tap to grab"
+                              : "A / D to steer  ·  tap Space to jump, hold it to tuck\nIn the air: A / D spin  ·  W / S flip  ·  Space grabs");
             hud.SetButtons(true, false, "PLAY");
             hud.SetMode(input.useTilt);
             meta.SetMode(MetaUi.Mode.Ready);
@@ -724,6 +758,7 @@ namespace Summit
         void ToEnd(string title, bool buried, bool rollOn = false)
         {
             if (rider.Crashed) flags.Plant(body.RagdollCentre, falls);   // the fall that ended it gets its flag too
+            combo.Bank();   // (anything still in hand at the end counts: a crash has already taken what it takes)
             audioFx.StopCue();
             state = State.Buried;
             hud.SetPrompt("");
@@ -740,7 +775,8 @@ namespace Summit
             hud.Show(title, (title == "YOU SURVIVED" ? "MT. VERTIGO  ·  " : "") + "Score " + s.ToString("N0"),
                      (record ? "NEW BEST  " : "Best ") + Mathf.RoundToInt(best).ToString("N0") +
                      "   ·   " + Mathf.RoundToInt(rider.Distance) + " m   ·   " + Hud.FormatTime(runTime) +
-                     (medical > 0f ? "\nMEDICAL BILL  $" + Mathf.RoundToInt(medical).ToString("N0") : ""));
+                     (medical > 0f ? "\n " : ""));   // (the bill's own line: it carries over from the fall and counts up: HudPoints)
+            hud.BillEnd(medical);
             hud.SetButtons(true, false, "TO CAMP");
             // points for the run (mission rewards were paid as they happened); the score mission sees the final
             // score, finish bonus and all
@@ -861,12 +897,13 @@ namespace Summit
                     Missions.Step(dt, slide.Gap(rider), Score);
                     if (crevasseWatch)
                     {
-                        if (body.RagdollBelowSnow > 3f) { crevasseWatch = false; rider.StayDown = true; wipeoutTimer = 2.0f; endTitle = "WIPED OUT"; medical += 42000f; }
+                        if (body.RagdollBelowSnow > 3f) { crevasseWatch = false; rider.StayDown = true; wipeoutTimer = 2.0f; endTitle = "WIPED OUT"; Bill(42000f); }
                         else if (!rider.Crashed) crevasseWatch = false;   // caught the lip: you live
                     }
                     if (!rider.Crashed && !rider.Airborne && !slide.Caught && rider.Z > Slope.FinishZ + 30f)
                     {
                         // through the finish at the base: the whole mountain, done
+                        combo.Bank();
                         trickPoints += 5000;
                         Missions.Finished();
                         audioFx.Play(Sfx.TrickBig, 4);
@@ -874,11 +911,7 @@ namespace Summit
                         break;
                     }
                     if (wipeoutTimer > 0f && !slide.Caught) { if (!body.RagdollMoving) wipeoutTimer -= dt; if (wipeoutTimer <= 0f) { ToEnd(endTitle, false); break; } }
-                    if (chainCount > 0)
-                    {
-                        chainTimer -= dt;
-                        if (chainTimer <= 0f) chainCount = 0;
-                    }
+                    StepCombo(dt);
                     if (slide.Done) ToBuried();   // caught, carried off and buried, and the camera has held on the pile
                     break;
 
@@ -925,7 +958,9 @@ namespace Summit
 
             float gap = state == State.Ready || state == State.Hub || state == State.Title ? 120f : !slide.Released ? 9999f : Mathf.Max(0f, slide.Gap(rider));   // 9999: still holding, no slide to show
             float close = Mathf.Clamp01(1f - gap / 45f);
-            hud.SetRun(rider.Speed * 3.6f, Score, Mult, gap, 160f, state == State.Riding);
+            hud.SetRun(rider.Speed * 3.6f, Score, 1f, gap, 160f, state == State.Riding);
+            // the combo and the bill, as they run up (held while paused; real time, so a crash's slow motion does not slow them)
+            if (!paused) { hud.ComboShow(state == State.Riding ? combo : null); hud.StepPoints(Time.unscaledDeltaTime); }
             hud.SetPower(runTime, rider.Shields, state == State.Riding);
             hud.SetTimers(state == State.Riding, rider.BoostTime, ZoomSeconds, rider.SuperJumpTime, SuperJumpSeconds, rider.InvincibleTime, InvincibleSeconds);
             hud.SetAltitude(Slope.AltitudeFeet(rider.Z), state == State.Riding);
@@ -982,23 +1017,66 @@ namespace Summit
             if (state != State.Riding) return;
             // (a rough landing shows and sounds rough: no caption)
             if (why == "Hard landing") audioFx.Play(Sfx.BuddyOuch);
+            else if (why == "Sketchy landing") audioFx.Play(Sfx.Scrape, 3f);   // the board catching as it comes round late
         }
 
-        void OnTrick(string name, int pts)
+        // ---------------------------------------------------------------- points
+
+        /// <summary>The combo's events to the HUD and the sound (once, when the game is built).</summary>
+        void HookPoints()
+        {
+            combo.Added += (line, up) =>
+            {
+                hud.ComboAdded(line, up);
+                // a link being held or built (a grind begun, a trick growing in the air): a soft note, a step up each time it grows
+                if (line.live) { liveSteps++; audioFx.Play(Sfx.PointTick, combo.Mult - 1 + liveSteps); }
+                if (up && combo.Mult == 3) audioFx.Play(Sfx.BuddyCheer);   // a combo getting long
+            };
+            combo.BankedNow += (total, pot, mult) =>
+            {
+                trickPoints += total;
+                hud.ComboBanked(total);
+                if (total >= 200) audioFx.Play(Sfx.Bank, total < 500 ? 0 : total < 2000 ? 1 : total < 6000 ? 2 : total < 15000 ? 3 : 4);
+                if (total >= 4000) audioFx.Play(Sfx.BuddyCheer);
+            };
+            combo.Dropped += total => { hud.ComboDropped(total); if (total >= 300) audioFx.Play(Sfx.ComboLost); };
+            hud.PointTick = () => audioFx.Play(Sfx.PointTick, combo.Active ? combo.Mult - 1 : 3);
+            hud.BillTick = () => audioFx.Play(Sfx.BillTick);
+        }
+
+        /// <summary>
+        /// Anything that scores, from anywhere: a link into the run's combo. (The rider's own tricks, grinds and
+        /// close calls arrive through Rider.Link; Rider.Score is the same door from the rider's side.)
+        /// </summary>
+        public void Link(string name, int points, LinkKind kind) => OnLink(new TrickLink { name = name, points = points, kind = kind });
+
+        void OnLink(TrickLink l)
         {
             if (state != State.Riding) return;
-            int got = Mathf.RoundToInt(pts * Mult);
-            trickPoints += got;
-            chainCount = Mathf.Min(chainCount + 1, 8);
-            chainTimer = 4f;
-            hud.Flash(name, "+" + got);
-            if (name == "Close call") { audioFx.Play(Sfx.CloseCall); audioFx.Play(Sfx.BuddyClose); }
+            combo.Add(l);
+            liveSteps = 0;
+            if (l.kind == LinkKind.CloseCall) { audioFx.Play(Sfx.CloseCall); audioFx.Play(Sfx.BuddyClose); }
             else
             {
-                audioFx.Play(pts >= 700 ? Sfx.TrickBig : Sfx.Trick, chainCount - 1);
-                if (pts >= 600 || chainCount >= 3) audioFx.Play(Sfx.BuddyCheer);   // a big trick, or a long chain
+                audioFx.Play(l.points >= 700 ? Sfx.TrickBig : Sfx.Trick, combo.Mult - 1);   // the chime climbs with the multiplier
+                if (l.points >= 600 && !l.sketchy) audioFx.Play(Sfx.BuddyCheer);              // a big trick
             }
         }
+
+        /// <summary>One frame of the combo while riding: the link in progress, the window, and a fall's bill banked as the rider gets up.</summary>
+        void StepCombo(float dt)
+        {
+            if (state != State.Riding) return;
+            string live = rider.Crashed ? null : rider.LiveName;
+            if (live != null) combo.SetLive(live, rider.LivePoints, rider.LiveKind);
+            else if (combo.LiveName != null) { combo.SetLive(null, 0, LinkKind.Trick); liveSteps = 0; }
+            combo.Step(dt, rider.Airborne || rider.Grinding);
+            if (downBefore && !rider.Crashed) hud.BillBank();
+            downBefore = rider.Crashed;
+        }
+
+        /// <summary>For the test tools (batchmode never runs Update): a frame of the points, on their clock.</summary>
+        public void TestPoints(float dt) { StepCombo(dt); hud.ComboShow(state == State.Riding ? combo : null); hud.StepPoints(dt); }
 
         void OnPickup(PowerUps.Kind kind)
         {
@@ -1188,7 +1266,7 @@ namespace Summit
             wasAir = air;
             if (air && rider.TrickName != null)
             {
-                float turned = (Mathf.Abs(rider.TrickSpin) + Mathf.Abs(rider.TrickFlip)) * rider.TrickProgress;
+                float turned = Mathf.Abs(rider.SpinNow) + Mathf.Abs(rider.FlipNow);
                 if (turned > spinSounded + 0.35f) { audioFx.Play(Sfx.Spin); spinSounded += Mathf.PI; }
             }
         }
@@ -1332,7 +1410,7 @@ namespace Summit
             if (why == Avalanche.Cause)
             {
                 // the slide took the board out from under you: no fall counted, no getting up (see Avalanche)
-                chainCount = 0;
+                combo.Drop();
                 audioFx.Play(Sfx.SlideHit);
                 StartScreaming();
 #if UNITY_IOS || UNITY_ANDROID
@@ -1340,10 +1418,10 @@ namespace Summit
 #endif
                 return;
             }
-            chainCount = 0;
+            combo.Drop();   // whatever was in hand is gone
             falls++;
             int left = Progress.Falls(MaxFalls) - falls;   // a spare helmet from the camp adds one
-            medical += rider.Tube ? 400f : 850f;   // the trip to the clinic
+            Bill(rider.Tube ? 400f : 850f);   // the trip to the clinic
             // the impact, frozen for a heartbeat: into a tree, rock or sign, or the ground at the foot of a cliff
             // (not a crevasse, a slam on landing or the avalanche)
             if (why != "Slammed!" && !why.StartsWith("Crevasse")) HitStop((rider.Speed * 3.6f - 30f) / 110f);
