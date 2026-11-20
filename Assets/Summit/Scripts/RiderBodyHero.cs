@@ -15,6 +15,17 @@ namespace Summit
         public static bool UseHero = true;
         public const string OldHeroPref = "summit_oldhero";
 
+        /// <summary>Test tools: build this rider whatever is saved (-1: the saved one). 0 the summit rider, 1 the buddy.</summary>
+        public static int TestCharacter = -1;
+        int heroChar = -1, heroLook = -1; bool heroHooked;
+        int wantLook = -1;              // the look SetCharacter asked for (a closet try-on isn't what's saved)
+        int heroOutfit;                 // the set of clothes on: 0 the summit kit, 1 Val's pyjamas, 2 Brianna's
+        Material fleeceMain;            // the pyjama fleece the JACKETS rows dye (Val's blue half, all of Brianna's)
+        /// <summary>How many times the hero has been built: it goes up when a rider or outfit swap makes a new body.</summary>
+        public int Built { get; private set; }
+        // Val's face moves: a blink and a lift of the brows, shapes that come with his model (none on the summit rider)
+        SkinnedMeshRenderer faceSmr; int blinkShape = -1, browShape = -1; float nextBlink, blinkT = 1f, nextBrows, browsT = 9f;
+        int idStandVal = -1;
         HeroRig hero;
         /// <summary>The hero's rig, when the hero is the rider (for the test tools).</summary>
         public HeroRig Hero => hero;
@@ -32,14 +43,57 @@ namespace Summit
         HeroRig.Hold sitL, sitR;
         bool heroWasDown;
 
+        /// <summary>
+        /// Put another rider's clothes on this one. Every rider's model is the same skeleton with the person (head,
+        /// hands) and the outfit (jacket, trousers, boots and the rest) as separate meshes, so the outfit meshes of
+        /// the other model are moved over and told to follow this skeleton's bones, found by name.
+        /// </summary>
+        static void Dress(GameObject go, string wear)
+        {
+            var from = Resources.Load<GameObject>(wear);
+            if (from == null) return;
+            bool Outfit(string n) => n.StartsWith("HeroBody") || n.StartsWith("HeroLegs") || n.StartsWith("HeroGear");
+            var bones = new System.Collections.Generic.Dictionary<string, Transform>();
+            foreach (var t in go.GetComponentsInChildren<Transform>(true)) bones[t.name] = t;
+            Transform under = go.transform;
+            foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                if (Outfit(smr.name)) { under = smr.transform.parent; DestroyImmediate(smr.gameObject); }
+            var donor = Instantiate(from);
+            foreach (var smr in donor.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                if (!Outfit(smr.name)) continue;
+                var bs = smr.bones;
+                for (int i = 0; i < bs.Length; i++) bs[i] = bs[i] != null && bones.TryGetValue(bs[i].name, out var b) ? b : go.transform;
+                smr.bones = bs;
+                if (smr.rootBone != null && bones.TryGetValue(smr.rootBone.name, out var rb)) smr.rootBone = rb;
+                smr.transform.SetParent(under, false);
+            }
+            DestroyImmediate(donor);
+        }
+
         bool SetUpHero()
         {
             if (!UseHero || PlayerPrefs.GetInt(OldHeroPref, 0) == 1) return false;
-            var prefab = Resources.Load<GameObject>("Rider/Hero");
+            // who you ride as: both are built on one skeleton, so they share every clip
+            // (the look: who + 10 x what they wear + 100 x how the summit kit is cut, see Progress.RiderLook)
+            int look = TestCharacter >= 0 ? TestCharacter : wantLook >= 0 ? wantLook : Progress.RiderLook;
+            int who = look % 10, outfit = (look / 10) % 10, cut = (look / 100) % 10;
+            bool dyed = look >= 1000;   // pyjama trousers in a wardrobe colour: plain snowy cloth in place of their print
+            string[] people = { "Rider/Hero", "Rider/Buddy", "Rider/Brianna" };
+            if (who >= people.Length) who = 0;
+            var prefab = Resources.Load<GameObject>(people[who]);
+            if (prefab == null) { who = 0; prefab = Resources.Load<GameObject>("Rider/Hero"); }
             var table = Resources.Load<TextAsset>("Rider/HeroAnim");
             if (prefab == null || table == null) return false;
+            heroChar = who; heroLook = look; heroOutfit = outfit; Built++;
             var go = Instantiate(prefab, upper, false);
             go.name = "Hero";
+            // what they wear: the summit kit (cut for a man or a woman), Val's pyjamas or Brianna's. Another rider's
+            // clothes are hung on this one's bones (Dress). The summit kit has gloves, so the bare hands stay unseen.
+            string wear = outfit == 1 ? "Rider/Buddy" : outfit == 2 ? "Rider/Brianna" : cut == 1 ? "Rider/HeroF" : "Rider/Hero";
+            if (wear != people[who]) Dress(go, wear);
+            foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                if (smr.name.StartsWith("HeroHands")) smr.gameObject.SetActive(outfit != 0);
             var h = new HeroRig(go.transform, table);
             var r = new RiderRig(go.transform);
             if (!h.Ok || !r.Ok) { Debug.LogWarning($"Hero not usable (clips {h.Ok}, bones {r.Ok}): the previous rider instead"); DestroyImmediate(go); return false; }
@@ -82,19 +136,52 @@ namespace Summit
             gearM.SetFloat("_Smoothness", 1f);
             gearM.SetFloat("_SmoothnessTextureChannel", 1f);
             gearM.EnableKeyword("_SMOOTHNESS_TEXTURE_ALBEDO_CHANNEL_A");
+            Material fleeceBlue = null, fleeceWhite = null, printM = null, faceM = null;
+            faceSmr = null; blinkShape = browShape = -1;
+            Material Face(Shader lit)
+            {
+                // Val's painted face (cheeks, the beard's shadow, lids): plain lit skin with its picture
+                var m = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? lit);
+                var tex = Resources.Load<Texture2D>(who == 2 ? "Rider/BriannaFace" : "Rider/BuddyFace");
+                if (tex != null) { m.SetTexture("_BaseMap", tex); m.mainTexture = tex; }
+                m.SetColor("_BaseColor", Color.white); m.SetFloat("_Smoothness", 0.3f);
+                return m;
+            }
+            Material Fleece(Color c, float holds)
+            {
+                var m = Cloth(c, 0.12f, holds); m.SetFloat("_Fuzz", 1f);   // a soft pile on the fleece (SnowyCloth)
+                return m;
+            }
+            Material Print(Shader lit)
+            {
+                // the pyjama print: a plain lit cloth with its picture (it takes no snow: the snowy cloth has no picture)
+                var m = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? lit);
+                var tex = Resources.Load<Texture2D>(outfit == 2 ? "Rider/BriannaPants" : "Rider/BuddyPants");
+                if (tex != null) { m.SetTexture("_BaseMap", tex); m.mainTexture = tex; }
+                m.SetColor("_BaseColor", Color.white); m.SetFloat("_Smoothness", 0.12f);
+                return m;
+            }
             foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>())
             {
                 var mats = smr.sharedMaterials;
                 for (int i = 0; i < mats.Length; i++)
                 {
                     string n = mats[i] != null ? mats[i].name : "";
-                    mats[i] = n.StartsWith("Jacket") ? jacketM : n.StartsWith("Pants") ? pantsM : gearM;
+                    // (the buddy's fleece and printed bottoms; the summit rider's jacket and trousers; the rest is gear)
+                    mats[i] = n.StartsWith("FleeceBlue") ? (fleeceBlue ??= Fleece(new Color(0.08f, 0.24f, 0.72f), 1.3f))
+                            : n.StartsWith("FleeceWhite") ? (fleeceWhite ??= Fleece(new Color(0.93f, 0.90f, 0.82f), 1.5f))
+                            : n.StartsWith("PantsPrint") ? (dyed ? pantsM : (printM ??= Print(sh)))
+                            : n.StartsWith("FaceSkin") ? (faceM ??= Face(sh))
+                            : n.StartsWith("Jacket") ? jacketM : n.StartsWith("Pants") ? pantsM : gearM;
                 }
                 smr.sharedMaterials = mats;
+                int bs = smr.sharedMesh != null ? smr.sharedMesh.GetBlendShapeIndex("Blink") : -1;
+                if (bs >= 0) { faceSmr = smr; blinkShape = bs; browShape = smr.sharedMesh.GetBlendShapeIndex("Brows"); }
                 smr.updateWhenOffscreen = true;
                 smr.quality = SkinQuality.Bone4;   // the weights are painted for up to four bones
                 smr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
             }
+            fleeceMain = outfit == 1 ? fleeceBlue : outfit == 2 ? fleeceWhite : null;
             // the hero's own board and bindings take the place of the plain one (still the game's board object,
             // painted by the board rack and thrown in a crash)
             Transform deck = null;
@@ -122,16 +209,80 @@ namespace Summit
 
             idIdle = h.Id("Ride_Idle"); idRide = h.Id("Ride"); idToe = h.Id("Carve_Toe"); idHeel = h.Id("Carve_Heel"); idTuck = h.Id("Tuck");
             idPop = h.Id("Ollie_Pop"); idAir = h.Id("Air"); idLand = h.Id("Land"); idFlip = h.Id("Flip_Tuck"); idFlail = h.Id("Flail");
-            idSit = h.Id("Sit"); idStand = h.Id("Stand"); idWalk = h.Id("Walk"); idRun = h.Id("Run");
+            idSit = h.Id("Sit"); idStand = h.Id("Stand"); idStandVal = h.Id("Stand_Val"); idWalk = h.Id("Walk"); idRun = h.Id("Run");
             idCampJump = h.Id("CampJump"); idCampRoll = h.Id("CampRoll");
             idWindL = h.Id("Spin_WindL"); idWindR = h.Id("Spin_WindR"); idSpinL = h.Id("Spin_AirL"); idSpinR = h.Id("Spin_AirR");
             string[] g = { "Indy", "Melon", "Mute", "Method", "Stalefish", "TailGrab" };
             for (int i = 0; i < g.Length; i++) { idGrab[i] = h.Id("Grab_" + g[i]); grabHold[i] = h.CaptureHold(idGrab[i], grabHand[i]); }
             sitL = h.CaptureHold(idSit, 0); sitR = h.CaptureHold(idSit, 1);
             r.RestoreBind();
-            rider.Jumped += () => { popT = 0f; hero.Restart(idPop); };
-            rider.Landed += impact => { if (impact > 1.5f) { landT = 0f; landK = Mathf.Clamp01(impact / 7f); hero.Restart(idLand); } };
+            if (!heroHooked)
+            {
+                heroHooked = true;   // (once: these act on whichever rider is built now)
+                rider.Jumped += () => { popT = 0f; hero?.Restart(idPop); };
+                rider.Landed += impact => { if (impact > 1.5f && hero != null) { landT = 0f; landK = Mathf.Clamp01(impact / 7f); hero.Restart(idLand); } };
+            }
             return true;
+        }
+
+        /// <summary>
+        /// Swap the rider for another character (the camp's outfit rack): the model, its ragdoll, its snowy clothes and
+        /// its deck are rebuilt; where you are and what you're doing carry over. Nothing happens for the same one.
+        /// </summary>
+        public void SetCharacter(int who)
+        {
+            if (hero == null || who == heroLook || TestCharacter >= 0) return;   // (who: the whole look, Wardrobe.Look)
+            wantLook = who;
+            RestoreLimbs();   // (every limb back on before the old body goes: RiderBodyLimbs keeps its meshes)
+            if (ragdoll != null) { ragdoll.Dispose(); ragdoll = null; }
+            ragdollPending = false;
+            // the old body goes at once (not at the end of the frame: the new one is found by searching under the same parent)
+            for (int i = boardRoot.childCount - 1; i >= 0; i--) if (boardRoot.GetChild(i).name == "Snowboard") DestroyImmediate(boardRoot.GetChild(i).gameObject);
+            DestroyImmediate(model.gameObject);
+            cloth.Clear(); bandages.Clear(); bandaged.Clear(); brokenThisCrash.Clear();
+            // what the limbs code read from the old body's meshes, and its hooks on the old ragdoll
+            skins.Clear(); limbRadius.Clear(); limbHooks = false; Killed -= OnLimbFall;
+            hero = null; rig = null; snowy = null; model = null;
+            if (boardMat != null) boardPaint = boardMat;   // the deck keeps the colour the rack painted
+            var keepUpper = upper.localRotation; var keepRoll = roll.localRotation; var keepRollPos = roll.localPosition;
+            upper.localRotation = Quaternion.identity; roll.localRotation = Quaternion.identity; roll.localPosition = Vector3.zero;
+            var pivotRot = pivot.rotation; pivot.rotation = Quaternion.identity;   // built standing upright, as at the start
+            bool ok = SetUpHero();
+            pivot.rotation = pivotRot;
+            upper.localRotation = keepUpper; roll.localRotation = keepRoll; roll.localPosition = keepRollPos;
+            if (!ok) { Debug.LogWarning("Rider swap failed"); return; }
+            // the outfit colours find the new body's jacket (the game's own jacket material stays in the list)
+            var game = jacketMats.Count > 0 ? jacketMats[jacketMats.Count - 1] : null;
+            FindJacket(upper.gameObject);
+            if (game != null && !jacketMats.Contains(game)) { jacketMats.Add(game); jacketShade.Add(1f); }
+            ownMats = false;
+            bool walking = Walking;
+            SetTube(Tube);   // (builds the new ragdoll, and shows the board or the tube)
+            if (walking) boardRoot.gameObject.SetActive(false);
+            Apply(0f);
+        }
+
+        /// <summary>
+        /// Pyjamas and the closet. Their fleece is as it was made while the first JACKETS row is worn (Val's blue,
+        /// Brianna's cream Nordic knit); any other row dyes it, pattern and all. Val's cream lower half stays cream.
+        /// </summary>
+        void WearFleece(int[] o)
+        {
+            if (fleeceMain == null) return;
+            Cloth(fleeceMain, Wardrobe.Shown(Wardrobe.Cat.Jacket, o[(int)Wardrobe.Cat.Jacket], heroOutfit), 1f);
+        }
+
+        // where the pyjamas' own shoes sit in the palette (Tools/MakeHero.py's PAL): Val's sneakers, Brianna's slipper boots
+        static readonly int[] ShoeCell = { -1, 27, 41 };
+        /// <summary>The pyjamas' shoes take the colour of any BOOTS row but the first (theirs as made).</summary>
+        void WearShoes(int[] o)
+        {
+            int item = o[(int)Wardrobe.Cat.Boots];
+            if (heroOutfit <= 0 || heroOutfit >= ShoeCell.Length || item == 0) return;
+            int px = PalettePixel(ShoeCell[heroOutfit]);
+            if (px < 0) return;
+            var c = Wardrobe.Get(Wardrobe.Cat.Boots, item).a;
+            palNow[px] = new Color(c.r, c.g, c.b, palBase[px].a);
         }
 
         /// <summary>The board material the hero's deck wears (the game's own, so the board rack paints it).</summary>
@@ -144,6 +295,15 @@ namespace Summit
             var h = hero;
             h.Begin();
             float t = Time.time;
+            if (faceSmr != null)
+            {
+                // a blink every few seconds (a sixth of a second, shut in the middle), and now and then the brows go up for a moment
+                if (t >= nextBlink) { blinkT = 0f; nextBlink = t + Random.Range(2.2f, 5.5f); }
+                if (t >= nextBrows) { browsT = 0f; nextBrows = t + Random.Range(6f, 13f); }
+                blinkT += dt; browsT += dt;
+                faceSmr.SetBlendShapeWeight(blinkShape, 100f * Mathf.Clamp01(1f - Mathf.Abs(blinkT / 0.085f - 1f)));
+                if (browShape >= 0) faceSmr.SetBlendShapeWeight(browShape, 100f * Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(Mathf.Min(browsT / 0.2f, (1.1f - browsT) / 0.3f))));
+            }
             bool down = rider.Crashed;
             if (heroWasDown && !down) h.ResetSprings();   // back up after the ragdoll: no spring kick from the jump
             heroWasDown = down;
@@ -180,7 +340,8 @@ namespace Summit
                 }
                 else
                 {
-                    h.Want(idStand, 1f - walkAmp);
+                    // (Val has his own way of standing about: hands in his fleece pocket, rocking on his heels)
+                    h.Want(heroChar == 1 && idStandVal >= 0 ? idStandVal : idStand, 1f - walkAmp);
                     h.Want(idWalk, walkAmp * (1f - runAmp));
                     h.Want(idRun, walkAmp * runAmp);
                     float ph = walkPhase / (2f * Mathf.PI);   // the left heel strikes at a quarter, as in the clips

@@ -52,6 +52,16 @@ namespace Summit
         // boards keep the keys they had before the closet, so old saves carry over; the ride has its own key
         static readonly int[] worn = new int[Wardrobe.Count], owned = new int[Wardrobe.Count];
         static string WornKey(Wardrobe.Cat c) => c == Wardrobe.Cat.Jacket ? "summit_jacket" : c == Wardrobe.Cat.Board ? "summit_boardcol" : "summit_wear_" + c;
+        // Each set of clothes keeps its own colours: the jacket, trousers and boots picked for the summit kit stay with
+        // the kit, and pyjamas are as they were made until you dye them. What the sets not on now were last worn in:
+        static readonly Wardrobe.Cat[] Dyes = { Wardrobe.Cat.Jacket, Wardrobe.Cat.Pants, Wardrobe.Cat.Boots };
+        static readonly int[,] kept = new int[3, 3];   // [set of clothes, which of Dyes]
+        static string KeptKey(int set, int k) => "summit_set" + set + "_" + Dyes[k];
+        /// <summary>Test tools: every key the sets' own colours are saved under.</summary>
+        public static System.Collections.Generic.IEnumerable<string> SetKeys()
+        {
+            for (int o = 0; o < kept.GetLength(0); o++) for (int k = 0; k < Dyes.Length; k++) yield return KeptKey(o, k);
+        }
         static string OwnedKey(Wardrobe.Cat c) => c == Wardrobe.Cat.Jacket ? "summit_jackets" : c == Wardrobe.Cat.Board ? "summit_boards" : "summit_own_" + c;
 
         static void Load()
@@ -68,8 +78,14 @@ namespace Summit
                 if (cat == Wardrobe.Cat.Ride) continue;
                 owned[c] = PlayerPrefs.GetInt(OwnedKey(cat), 1) | 1;
                 int w = PlayerPrefs.GetInt(WornKey(cat), 0);
-                worn[c] = w >= 0 && w < Wardrobe.Items(cat).Length && (owned[c] & (1 << w)) != 0 ? w : 0;
+                worn[c] = w >= 0 && w < Wardrobe.Items(cat).Length && (Wardrobe.Free(cat) || (owned[c] & (1 << w)) != 0) ? w : 0;
             }
+            for (int o = 0; o < kept.GetLength(0); o++)
+                for (int k = 0; k < Dyes.Length; k++)
+                {
+                    int w = PlayerPrefs.GetInt(KeptKey(o, k), 0);
+                    kept[o, k] = w > 0 && w < Wardrobe.Items(Dyes[k]).Length && (owned[(int)Dyes[k]] & (1 << w)) != 0 ? w : 0;
+                }
         }
 
         static void Save()
@@ -85,6 +101,7 @@ namespace Summit
                 PlayerPrefs.SetInt(WornKey(cat), worn[c]);
                 PlayerPrefs.SetInt(OwnedKey(cat), owned[c]);
             }
+            for (int o = 0; o < kept.GetLength(0); o++) for (int k = 0; k < Dyes.Length; k++) PlayerPrefs.SetInt(KeptKey(o, k), kept[o, k]);
             PlayerPrefs.Save();
         }
 
@@ -133,11 +150,13 @@ namespace Summit
 
         /// <summary>The item worn in a closet category (the ride: what you ride).</summary>
         public static int Worn(Wardrobe.Cat c) { Load(); return c == Wardrobe.Cat.Ride ? ride : worn[(int)c]; }
+        /// <summary>Who is riding and in which clothes, as the one number the rider's model is built from (Wardrobe.Look).</summary>
+        public static int RiderLook => Wardrobe.Look(Wardrobe.Worn());
 
         public static bool Owns(Wardrobe.Cat c, int i)
         {
             Load();
-            if (c == Wardrobe.Cat.Ride || i == 0) return true;
+            if (Wardrobe.Free(c) || i == 0) return true;
             return i > 0 && i < 31 && (owned[(int)c] & (1 << i)) != 0;
         }
 
@@ -148,8 +167,30 @@ namespace Summit
             if (i < 0 || i >= Wardrobe.Items(c).Length) return false;
             if (c == Wardrobe.Cat.Ride) { PickRide((RideKind)i); return true; }
             if (!Owns(c, i)) { if (!Spend(Wardrobe.Items(c)[i].cost)) return false; owned[(int)c] |= 1 << i; }
-            worn[(int)c] = i; Save(); Changed?.Invoke();
+            // a rider arrives in their own clothes (the OUTFIT tab then puts them in anyone's), and a set of clothes
+            // comes in the colours it was last worn in
+            if (c == Wardrobe.Cat.Rider) PutOn(Wardrobe.OwnOutfit(i));
+            if (c == Wardrobe.Cat.Outfit) PutOn(i); else worn[(int)c] = i;
+            Save(); Changed?.Invoke();
             return true;
+        }
+
+        static void PutOn(int set)
+        {
+            int was = worn[(int)Wardrobe.Cat.Outfit];
+            if (set == was || set < 0 || set >= kept.GetLength(0)) return;
+            for (int k = 0; k < Dyes.Length; k++) { kept[was, k] = worn[(int)Dyes[k]]; worn[(int)Dyes[k]] = kept[set, k]; }
+            worn[(int)Wardrobe.Cat.Outfit] = set;
+        }
+
+        /// <summary>The closet's try-on: this set of clothes on an outfit, in the colours it was last worn in.</summary>
+        public static void TryOutfit(int[] o, int set)
+        {
+            Load();
+            if (o == null || set < 0 || set >= kept.GetLength(0)) return;
+            bool on = set == worn[(int)Wardrobe.Cat.Outfit];
+            for (int k = 0; k < Dyes.Length; k++) o[(int)Dyes[k]] = on ? worn[(int)Dyes[k]] : kept[set, k];
+            o[(int)Wardrobe.Cat.Outfit] = set;
         }
 
         /// <summary>What the rider rides. Every ride is free and there from the start: it is a way to play, not a prize.</summary>
@@ -213,6 +254,7 @@ namespace Summit
             for (int i = 0; i < levels.Length; i++) levels[i] = 0;
             ride = 0;
             for (int c = 0; c < Wardrobe.Count; c++) { worn[c] = 0; owned[c] = 1; }
+            System.Array.Clear(kept, 0, kept.Length);
             Save(); Changed?.Invoke();
         }
 

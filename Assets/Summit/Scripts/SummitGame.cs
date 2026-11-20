@@ -612,7 +612,10 @@ namespace Summit
         void ApplyOutfit()
         {
             // what's worn, or, while the closet is open, what's being tried on (Wardrobe; RiderBody.Wear)
+            int built = body.Built;
             body.Wear(meta != null && meta.TryOn != null ? meta.TryOn : Wardrobe.Worn());
+            // another rider or set of clothes is a new body: the closet's studio copies it afresh
+            if (body.Built != built && meta != null && meta.Stage != null) meta.Stage.Recopy();
             // what was picked at the rack (Progress.Ride): the rider's physics and what you see of them
             // (the physics follows what the body could actually put on: without the gear's files it stays a snowboard)
             if (rider.Ride != Progress.Ride) { body.SetRide(Progress.Ride); rider.SetRide(body.Ride); if (hud != null) ShowRider(); }

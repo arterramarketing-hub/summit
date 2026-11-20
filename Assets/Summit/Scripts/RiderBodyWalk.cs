@@ -145,11 +145,13 @@ namespace Summit
         public void Wear(int[] o)
         {
             if (o == null || o.Length < Wardrobe.Count) return;
+            SetCharacter(Wardrobe.Look(o));   // who is riding, in which clothes: a new body if that changed (RiderBodyHero)
             if (!ownMats) OwnMaterials();
             var j = Wardrobe.Get(Wardrobe.Cat.Jacket, o[(int)Wardrobe.Cat.Jacket]);
             if (gearJacket != null) Cloth(gearJacket, j, 1f);
             for (int i = 0; i < jacketMats.Count; i++) Cloth(jacketMats[i], j, i < jacketShade.Count ? jacketShade[i] : 1f);
             if (pantsMat != null) Cloth(pantsMat, Wardrobe.Get(Wardrobe.Cat.Pants, o[(int)Wardrobe.Cat.Pants]), 1f);
+            WearFleece(o);   // (pyjamas: the fleece as made, or dyed by the jacket's row, RiderBodyHero)
             var b = Wardrobe.Get(Wardrobe.Cat.Board, o[(int)Wardrobe.Cat.Board]);
             if (boardMat != null)
             {
@@ -174,14 +176,15 @@ namespace Summit
                         palNow[px] = new Color(col.r, col.g, col.b, smooth);
                     }
                 }
+                WearShoes(o);   // (pyjamas: their own shoes take the boots' colour, RiderBodyHero)
                 gearPalette.SetPixels(palNow);
                 gearPalette.Apply(false);
             }
         }
 
-        // MakeHero.py writes the palette 8 swatches wide and 3 rows high, and the gear's uvs sit in the middle of each;
-        // the importer scales it to a power of two (8 x 4), so a swatch is found where its uv lands, not by its index
-        const int PaletteCols = 8, PaletteRows = 3;
+        // MakeHero.py writes the palette 8 swatches wide and 8 rows high (a size the importer leaves as it is: scaled,
+        // each row bled into the next), and the gear's uvs sit in the middle of each swatch
+        const int PaletteCols = 8, PaletteRows = 8;
         int PalettePixel(int cell)
         {
             if (gearPalette == null) return -1;
@@ -214,6 +217,7 @@ namespace Summit
         {
             try
             {
+                if (gearPalette != null) { if (Application.isPlaying) Destroy(gearPalette); else DestroyImmediate(gearPalette); }   // (a rider swapped for another: the old body's copy goes)
                 palBase = pal.GetPixels();
                 palNow = (Color[])palBase.Clone();
                 gearPalette = new Texture2D(pal.width, pal.height, TextureFormat.RGBA32, false) { filterMode = pal.filterMode, wrapMode = TextureWrapMode.Clamp, name = "HeroPalette (own)" };

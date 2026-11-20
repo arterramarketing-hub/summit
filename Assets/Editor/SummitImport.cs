@@ -102,6 +102,19 @@ public class SummitImport : AssetPostprocessor
         var t = (TextureImporter)assetImporter;
         t.filterMode = FilterMode.Point;    // a flat-colour palette: keep the colours crisp
         t.mipmapEnabled = false;
+        t.npotScale = TextureImporterNPOTScale.None; t.textureCompression = TextureImporterCompression.Uncompressed;   // (and never blended or squeezed)
+        if (assetPath.EndsWith("Face.png"))
+        {
+            // a painted face, laid on the head once: smooth, with mip levels, and its edge colour carried outward
+            t.filterMode = FilterMode.Bilinear; t.mipmapEnabled = true; t.wrapMode = TextureWrapMode.Clamp;
+            return;
+        }
+        if (assetPath.EndsWith("Pants.png"))
+        {
+            // a printed cloth, tiled over the legs: smooth, with mip levels so it doesn't sparkle at a distance
+            t.filterMode = FilterMode.Bilinear; t.mipmapEnabled = true; t.wrapMode = TextureWrapMode.Repeat;
+            return;
+        }
         if (assetPath.EndsWith("HeroPalette.png"))
         {
             // 8 x 2 swatches with the smoothness in the alpha: block compression would smear them into each other

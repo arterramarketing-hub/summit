@@ -94,6 +94,19 @@ public static class ClosetShot
             Shoot("Closet10_ride_skis.png");
             Log("ride");
 
+            // who you ride as, and whose clothes: each try-on builds the rider anew and the studio copies them afresh
+            meta.ClosetTry(Wardrobe.Cat.Rider, 2); Settle(20); Shoot("Closet10b_rider_val.png");
+            meta.ClosetTry(Wardrobe.Cat.Rider, 3); Settle(20); Shoot("Closet10c_rider_brianna.png");
+            meta.ClosetTry(Wardrobe.Cat.Rider, 1); Settle(20); Shoot("Closet10d_rider_female.png");
+            meta.ClosetTry(Wardrobe.Cat.Outfit, 2); Settle(20); Shoot("Closet10e_outfit_brianna.png");
+            // Val's pyjamas worn: the first jacket row is the fleece as made, any other dyes it
+            meta.ClosetTry(Wardrobe.Cat.Outfit, 1); meta.ClosetBuy();
+            meta.ClosetTry(Wardrobe.Cat.Jacket, 0); Settle(20); Shoot("Closet10f_pyjamas_as_made.png");
+            meta.ClosetTry(Wardrobe.Cat.Jacket, 16); Settle(20); Shoot("Closet10g_pyjamas_dyed.png");
+            Debug.Log($"CLOSET riders: built {body.Built} bodies, outfit worn={Progress.Worn(Wardrobe.Cat.Outfit)} rider worn={Progress.Worn(Wardrobe.Cat.Rider)}");
+            meta.ClosetTry(Wardrobe.Cat.Outfit, 0); meta.ClosetBuy();
+            Settle(10);
+
             // drag the hero round to the side (through the closet's own touch handling), then let go
             meta.ClosetTry(Wardrobe.Cat.Jacket, 14);
             Drag(new Vector2(0.80f, 0.55f), new Vector2(0.62f, 0.55f), 20);
@@ -153,6 +166,7 @@ public static class ClosetShot
     static IEnumerable<string> AllKeys()
     {
         foreach (var k in Keys) yield return k;
+        foreach (var k in Progress.SetKeys()) yield return k;
         for (int c = 0; c < Wardrobe.Count; c++) { yield return "summit_wear_" + (Wardrobe.Cat)c; yield return "summit_own_" + (Wardrobe.Cat)c; }
     }
 

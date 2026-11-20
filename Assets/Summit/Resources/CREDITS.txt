@@ -39,3 +39,8 @@ Skies (Resources/Sky/SkyMorning, SkyDay, SkyEvening, SkyNight): CC0 HDRIs from P
   evening: "Belfast Sunset (Pure Sky)" by Greg Zaal, Dimitrios Savva and Jarod Guest - https://polyhaven.com/a/belfast_sunset_puresky
   night: "Kloppenheim 02 (Pure Sky)" by Greg Zaal and Jarod Guest - https://polyhaven.com/a/kloppenheim_02_puresky
   (turned to put each sun where the game's light is, the ground below the horizon replaced with haze, and stored as JPEG by Tools/MakeSkies.swift)
+
+Riders (Resources/Rider/Hero, HeroF, Buddy, Brianna, and their palette, face and pyjama-print pictures): made for Summit by
+  Tools/MakeHero.py (Blender), nothing downloaded. Pajama Buddy Val and Pajama Brianna are modelled from photos their
+  owner supplied. Val's hair follows the usual build of stylised game hair (layered locks over a cap), worked out from
+  looking at reference pictures online; no model or texture was taken from them.

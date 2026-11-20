@@ -64,7 +64,7 @@ namespace Summit
             ShopTab = 1;
             ClosetOpen = true;
             cats.Clear();
-            for (int c = 0; c < Wardrobe.Count; c++) if (Wardrobe.Shows((Wardrobe.Cat)c)) cats.Add((Wardrobe.Cat)c);
+            foreach (var c in Wardrobe.Order) if (Wardrobe.Shows(c)) cats.Add(c);   // (who you are and the set of clothes first)
             BuildCloset();
             if (Stage != null) { Stage.Show(Progress.Ride); }
             SelectCat(Wardrobe.Cat.Jacket, false);
@@ -186,7 +186,7 @@ namespace Summit
             for (int i = 0; i < items.Length; i++)
             {
                 if (!Wardrobe.Shows(cat, i)) continue;
-                var it = items[i];
+                var it = Shown(i);
                 var bg = Img("Row", listContent, Row, round);
                 var rt = bg.rectTransform;
                 rt.anchorMin = new Vector2(0f, 1f); rt.anchorMax = new Vector2(1f, 1f); rt.pivot = new Vector2(0.5f, 1f);
@@ -239,13 +239,22 @@ namespace Summit
             Highlight(hi, false);
         }
 
+        /// <summary>A row's item as it shows on the clothes tried on (on pyjamas the first jacket, trousers and boots are the pyjamas' own).</summary>
+        Wardrobe.Item Shown(int i) => Wardrobe.Shown(cat, i, TryOn != null ? TryOn[(int)Wardrobe.Cat.Outfit] : Progress.Worn(Wardrobe.Cat.Outfit));
+
         int RowOf(int item) { for (int r = 0; r < rows.Count; r++) if (rows[r].item == item) return r; return 0; }
 
         void Highlight(int item, bool click)
         {
             hi = item;
             if (cat == Wardrobe.Cat.Ride) { if (Stage != null) Stage.ShowRide((RideKind)item); }
-            else if (TryOn != null) TryOn[(int)cat] = item;
+            else if (TryOn != null)
+            {
+                TryOn[(int)cat] = item;
+                // a rider shows in their own clothes, and a set of clothes in the colours it was last worn in
+                if (cat == Wardrobe.Cat.Rider) Progress.TryOutfit(TryOn, Wardrobe.OwnOutfit(item));
+                if (cat == Wardrobe.Cat.Outfit) Progress.TryOutfit(TryOn, item);
+            }
             TriedOn?.Invoke();
             if (click) Clicked?.Invoke();
             Restyle();
@@ -276,7 +285,7 @@ namespace Summit
             int worn = Progress.Worn(cat);
             foreach (var r in rows)
             {
-                var it = items[r.item];
+                var it = Shown(r.item);
                 bool sel = r.item == hi, owns = Progress.Owns(cat, r.item), isWorn = r.item == worn;
                 bool afford = owns || pts >= it.cost;
                 r.bg.color = sel ? new Color(1f, 1f, 1f, 0.94f) : Row;
@@ -287,29 +296,33 @@ namespace Summit
                 bool price = !owns;
                 r.coin.gameObject.SetActive(price);
                 if (cat == Wardrobe.Cat.Ride) r.stat.text = isWorn ? "RIDING" : "FREE";
+                else if (cat == Wardrobe.Cat.Rider) r.stat.text = isWorn ? "YOU" : "FREE";
+                else if (cat == Wardrobe.Cat.Outfit) r.stat.text = isWorn ? "WORN" : "FREE";
                 else r.stat.text = isWorn ? "WORN" : owns ? "OWNED" : it.cost.ToString("N0");
                 r.stat.color = isWorn ? (sel ? WornDark : Worn) : owns ? (sel ? new Color(0.25f, 0.28f, 0.36f) : Dim)
                              : afford ? (sel ? GoldDark : Gold) : (sel ? new Color(0.4f, 0.4f, 0.45f) : new Color(1f, 1f, 1f, 0.42f));
                 r.coin.color = afford || sel ? Color.white : new Color(1f, 1f, 1f, 0.45f);
             }
             // the button
-            var cur = items[hi];
+            var cur = Shown(hi);
             bool own = Progress.Owns(cat, hi), on2 = hi == worn;
             buyCoin.gameObject.SetActive(!own);
-            if (on2) { buyText.text = cat == Wardrobe.Cat.Ride ? "RIDING" : "WORN"; buyImg.color = new Color(0.02f, 0.03f, 0.07f, 0.55f); buyText.color = new Color(1f, 1f, 1f, 0.55f); }
-            else if (own) { buyText.text = cat == Wardrobe.Cat.Ride ? "RIDE THIS" : "WEAR"; buyImg.color = Blue; buyText.color = Color.white; }
+            if (on2) { buyText.text = cat == Wardrobe.Cat.Ride ? "RIDING" : cat == Wardrobe.Cat.Rider ? "THIS IS YOU" : "WORN"; buyImg.color = new Color(0.02f, 0.03f, 0.07f, 0.55f); buyText.color = new Color(1f, 1f, 1f, 0.55f); }
+            else if (own) { buyText.text = cat == Wardrobe.Cat.Ride ? "RIDE THIS" : cat == Wardrobe.Cat.Rider ? "PLAY AS" : "WEAR"; buyImg.color = Blue; buyText.color = Color.white; }
             else
             {
                 buyText.text = "BUY  " + cur.cost.ToString("N0");
                 bool can = pts >= cur.cost;
                 buyImg.color = can ? Green : new Color(0.02f, 0.03f, 0.07f, 0.55f); buyText.color = can ? Color.white : new Color(1f, 1f, 1f, 0.6f);
             }
-            detailText.text = Detail(cat, cur);
+            detailText.text = hi == 0 && cur != items[0] ? "The pyjamas as they were made" : Detail(cat, cur);
         }
 
         static string Detail(Wardrobe.Cat c, Wardrobe.Item it)
         {
             if (c == Wardrobe.Cat.Ride) return "Free to swap: on your feet at the gate";
+            if (c == Wardrobe.Cat.Rider) return "Who you ride as: free to swap";
+            if (c == Wardrobe.Cat.Outfit) return "A whole set of clothes: anyone can wear it";
             string s;
             switch (it.pattern)
             {
@@ -317,6 +330,7 @@ namespace Summit
                 case Wardrobe.Pattern.Camo: s = "Camo"; break;
                 case Wardrobe.Pattern.Block: s = c == Wardrobe.Cat.Pants ? "Two-tone, from the knee" : "Two-tone, over the shoulders"; break;
                 case Wardrobe.Pattern.Plaid: s = "Plaid"; break;
+                case Wardrobe.Pattern.Nordic: s = "Nordic knit, tone on tone"; break;
                 default: s = c == Wardrobe.Cat.Board ? "Paints the board, skis or sled" : c >= Wardrobe.Cat.Helmet && it.b.a > 0f ? "With its own trim" : "Solid colour"; break;
             }
             if (it.metal > 0.5f) s += " · metal finish";
@@ -328,7 +342,7 @@ namespace Summit
 
         void BuyWear()
         {
-            var it = Wardrobe.Items(cat)[hi];
+            var it = Shown(hi);
             if (cat == Wardrobe.Cat.Ride)
             {
                 if (hi == Progress.Worn(cat)) return;
@@ -336,7 +350,7 @@ namespace Summit
                 Say(it.name + " at the gate", true);
             }
             else if (hi == Progress.Worn(cat)) return;
-            else if (Progress.Owns(cat, hi)) { Progress.Wear(cat, hi); Clicked?.Invoke(); Say("Wearing " + it.name, true); }
+            else if (Progress.Owns(cat, hi)) { Progress.Wear(cat, hi); Clicked?.Invoke(); Say((cat == Wardrobe.Cat.Rider ? "Riding as " : "Wearing ") + it.name, true); }
             else if (Progress.Wear(cat, hi)) { Bought?.Invoke(); Say(it.name + ": yours", true); }
             else { Denied?.Invoke(); Say("Need " + (it.cost - Progress.Points).ToString("N0") + " more points: ride to earn them", false); }
             for (int k = 0; k < tabs.Count; k++) tabs[k].text.text = Wardrobe.Title(tabs[k].c);   // (the board's tab follows the ride)

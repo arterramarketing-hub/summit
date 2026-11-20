@@ -29,12 +29,18 @@ public static class HeroShot
 
     public static void Run()
     {
+        TestPrefs.Pin();   // a fresh player (the outfit and the riders' colours as the game starts them), put back on exit
         old = System.Environment.GetEnvironmentVariable("HERO_OLD") == "1";
         pre = old ? "Old" : "";
         outDir = System.Environment.GetEnvironmentVariable("HERO_OUT") ?? "HeroShots";
         Directory.CreateDirectory(outDir);
         if (!old) HeroBake.Bake();
         RiderBody.UseHero = !old;
+        // HERO_CHAR=buddy: start as the summit rider, swap to the buddy at the camp's rack, then everything as him
+        string heroChar = System.Environment.GetEnvironmentVariable("HERO_CHAR") ?? "";
+        bool buddy = heroChar == "buddy" || heroChar == "brianna";
+        int pick = heroChar == "brianna" ? 3 : 2;   // (the closet's RIDER rows: 0 and 1 the summit rider, 2 Val, 3 Brianna)
+        Summit.Progress.Wear(Wardrobe.Cat.Rider, 0);
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop(); CampAssets.Ensure();
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
         game = Object.FindFirstObjectByType<SummitGame>();
@@ -47,6 +53,38 @@ public static class HeroShot
             atmo = Object.FindFirstObjectByType<Atmosphere>(); aLate = typeof(Atmosphere).GetMethod("LateUpdate", NP);
             tUpd = typeof(SlopeStreamer).GetMethod("Update", NP); fUpd = typeof(Forest).GetMethod("Update", NP);
             Stats();
+            if (buddy)
+            {
+                camp.SetNight(0f); camp.Teleport(-4f, -58f, 90f);   // (the camp moved 30 m closer)
+                for (int i = 0; i < 40; i++) CampStep(Vector2.zero);
+                campDir = Quaternion.Euler(0f, camp.WalkerYaw, 0f) * Vector3.forward;
+                CampFront(); Shoot("SwapBefore", cam, 720, 900);
+                // every rider in every set of clothes (the game hears each change and rebuilds the rider)
+                for (int who = 0; who < 4; who++)
+                    for (int wear = 0; wear < 3; wear++)
+                    {
+                        Summit.Progress.Wear(Wardrobe.Cat.Rider, who); Summit.Progress.Wear(Wardrobe.Cat.Outfit, wear);
+                        for (int i = 0; i < 6; i++) CampStep(Vector2.zero);
+                        CampFront(); Shoot($"Look_{who}{wear}", cam, 540, 760);
+                    }
+                // the closet's colours on each set of clothes, tried on as the closet does (nothing bought):
+                // a patterned jacket, patterned trousers, red boots; and the Nordic knit on the summit jacket
+                int[][] dye = { new[] { 2, 1, 16, 10, 4 }, new[] { 3, 2, 12, 9, 4 }, new[] { 0, 0, 18, 8, 3 }, new[] { 3, 0, 18, 10, 5 } };
+                foreach (var d in dye)
+                {
+                    var o = Wardrobe.Worn();
+                    o[(int)Wardrobe.Cat.Rider] = d[0]; o[(int)Wardrobe.Cat.Outfit] = d[1]; o[(int)Wardrobe.Cat.Jacket] = d[2];
+                    o[(int)Wardrobe.Cat.Pants] = d[3]; o[(int)Wardrobe.Cat.Boots] = d[4];
+                    body.Wear(o);
+                    for (int i = 0; i < 6; i++) CampStep(Vector2.zero);
+                    CampFront(); Shoot($"Dye_{d[0]}{d[1]}", cam, 540, 760);
+                }
+                Summit.Progress.Wear(Wardrobe.Cat.Rider, pick);
+                for (int i = 0; i < 20; i++) CampStep(Vector2.zero);
+                CampFront(); Shoot("SwapAfter", cam, 720, 900);
+                pre = pick == 2 ? "Brianna" : "Buddy";
+                Stats();
+            }
             Camp_();
             typeof(SummitGame).GetMethod("ToReady", NP, null, new[] { typeof(bool) }, null).Invoke(game, new object[] { true });
             camp.SetNight(0f);
@@ -63,6 +101,7 @@ public static class HeroShot
             Crash();
         }
         catch (System.Exception e) { Debug.LogError("HEROSHOT exception " + e); }
+        Summit.Progress.Wear(Wardrobe.Cat.Rider, 0);
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
         EditorApplication.Exit(0);
@@ -335,6 +374,14 @@ public static class HeroShot
         var p = camp.WalkerPosition; var d = p - lastWalker; d.y = 0f;
         if (d.sqrMagnitude > 1e-6f) campDir = Vector3.Slerp(campDir, d.normalized, 0.1f);
         lastWalker = p;
+    }
+
+    /// <summary>The camp camera in front of the walker, close (a portrait).</summary>
+    static void CampFront()
+    {
+        var p = camp.WalkerPosition;
+        var right = Vector3.Cross(Vector3.up, campDir).normalized;
+        Look(p + campDir * 3.0f + right * 1.0f + Vector3.up * 1.3f, p + Vector3.up * 0.95f, 34f);
     }
 
     static void CampSide()

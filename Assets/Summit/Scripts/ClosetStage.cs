@@ -88,10 +88,20 @@ namespace Summit
         /// (Shown only when it's what the closet is on: the board's colours or the ride; otherwise it'd crowd the hero.)
         public void ShowRide(RideKind k, bool shown = true)
         {
-            showRide = k;
+            showRide = k; rideShown = shown;
             for (int i = 0; i < gear.Length; i++) if (gear[i] != null) gear[i].gameObject.SetActive(shown && i == (int)k);
             // without the skis' or the toboggan's files there is only the board to show
             if (shown && (int)k < gear.Length && gear[(int)k] == null && gear[0] != null) gear[0].gameObject.SetActive(true);
+        }
+
+        bool rideShown = true;
+        /// <summary>The rider was rebuilt (another rider or set of clothes tried on): copy them afresh, as they stand now.</summary>
+        public void Recopy()
+        {
+            if (!Open) return;
+            CopyRider();
+            ShowRide(showRide, rideShown);
+            Pose(0f);
         }
 
         /// <summary>Turn the hero by a drag (degrees); let go and it carries on a little.</summary>

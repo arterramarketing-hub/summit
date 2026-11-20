@@ -697,6 +697,14 @@ namespace Summit
             rig.FootR.SetPositionAndRotation(rig.EndR.position, rig.ShinR.rotation * footRelR);
         }
 
+        /// <summary>Done with for good (the rider's model is being swapped for another): the snow slabs go too.</summary>
+        public void Dispose()
+        {
+            if (Active) End();
+            if (groundBody != null) Kill(groundBody.gameObject);
+            if (boardGroundBody != null) Kill(boardGroundBody.gameObject);
+        }
+
         // immediately, never deferred: a new crash can start in the very next physics step, and a deferred
         // Rigidbody would still be there (AddComponent would fail and the ragdoll would be half built)
         static void Kill(Object o) { if (o != null) Object.DestroyImmediate(o); }
