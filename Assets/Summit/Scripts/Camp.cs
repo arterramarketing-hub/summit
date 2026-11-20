@@ -79,6 +79,10 @@ namespace Summit
             noteMats = new Material[3];
             for (int i = 0; i < 3; i++) noteMats[i] = Sign("Camp/Note" + i);
             Progress.Changed += Redress;
+            // Val and Brianna, living here while they aren't the one being played (CampCouple)
+            Couple = new GameObject("Couple").AddComponent<CampCouple>();
+            Couple.transform.SetParent(transform, false);
+            Couple.Setup(this);
             CaptureDay();
             SetNight(0f);   // daylight until the day/night cycle says otherwise
         }
@@ -137,6 +141,7 @@ namespace Summit
             Physics.SyncTransforms();
             Redress();
             SetNight(Night);   // the new lamps start at the evening's brightness
+            if (Couple != null) Couple.Rebuilt();   // (their spots moved with the camp)
         }
 
         /// <summary>A building spot: on the snow at (dx from the run's centre, z), turned by yaw degrees.</summary>
@@ -1427,6 +1432,7 @@ namespace Summit
                     if (b.lo > feet + 1.7f || b.hi < feet + 0.1f) continue;   // above your head or under your feet
                     p2 = PushOut(b, p2, 0.38f);
                 }
+            if (Couple != null) p2 = Couple.PushOut(p2, 0.38f);   // (and round Val and Brianna, if they're about)
             pos = new Vector3(p2.x, feet, p2.y);
             Place();
             // the nearest station you're standing at
@@ -1444,6 +1450,34 @@ namespace Summit
             if (onSnow) EdgeCheck(f);
             body.CampMove = moveKind; body.CampMoveT = moveT;
             return false;
+        }
+
+        // ---- the camp's own people (CampCouple): where things are, and walking round what's in the way as the hero does
+
+        /// <summary>Val and Brianna (made in Build).</summary>
+        public CampCouple Couple { get; private set; }
+        /// <summary>A point on the snow at (dx from the run's centre, z).</summary>
+        public static Vector3 GroundAt(float dx, float z) => Ground(dx, z);
+        /// <summary>
+        /// A step from one place toward another for someone of radius r: round the trees and walls, onto the floors,
+        /// decks and steps, as the walker goes (the walker's own state is left as it was).
+        /// </summary>
+        public Vector3 StepTo(Vector3 from, Vector3 to, float r)
+        {
+            bool keep = onSnow;
+            var p2 = new Vector2(to.x, to.z);
+            var t = OffTrees(new Vector3(to.x, from.y, to.z)); p2 = new Vector2(t.x, t.z);
+            for (int it = 0; it < 2; it++)
+                foreach (var b in boxes)
+                {
+                    if (b.floor || (b.owner != null && !b.owner.activeInHierarchy)) continue;
+                    if (b.lo > from.y + 1.7f || b.hi < from.y + 0.1f) continue;
+                    p2 = PushOut(b, p2, r);
+                }
+            var q = new Vector3(p2.x, from.y, p2.y);
+            q.y = FloorAt(q, from.y);
+            onSnow = keep;
+            return q;
         }
 
         static Vector2 PushOut(Box b, Vector2 p, float r)

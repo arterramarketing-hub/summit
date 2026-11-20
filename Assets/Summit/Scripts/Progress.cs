@@ -183,6 +183,15 @@ namespace Summit
             worn[(int)Wardrobe.Cat.Outfit] = set;
         }
 
+        /// <summary>What a set of clothes is worn with (the jacket, trousers or boots row), now or when it was last worn.</summary>
+        public static int SetWorn(int set, Wardrobe.Cat c)
+        {
+            Load();
+            int k = System.Array.IndexOf(Dyes, c);
+            if (k < 0 || set < 0 || set >= kept.GetLength(0)) return 0;
+            return set == worn[(int)Wardrobe.Cat.Outfit] ? worn[(int)c] : kept[set, k];
+        }
+
         /// <summary>The closet's try-on: this set of clothes on an outfit, in the colours it was last worn in.</summary>
         public static void TryOutfit(int[] o, int set)
         {
