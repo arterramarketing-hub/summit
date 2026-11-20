@@ -11,8 +11,10 @@ namespace Summit
     /// cycle that has a first line gets a second where the ground allows one, laid by the same rules and the very
     /// same code (LiftLine.Try: stations on sound ground, towers 27 m or more off the piste's centre and never on
     /// kept ground, every chair clear of the snow by 5 m and of the piste by 9), with these differences:
-    ///   - It is short (160 to 380 m down the mountain) and goes from 62 to 104 m out on one side of the piste to as
-    ///     far out on the other, so it runs at 20 to 70 degrees to the first line and crosses the piste on one span.
+    ///   - It is short (130 to 260 m down the mountain) and goes from 62 to 118 m out on one side of the piste to as
+    ///     far out on the other, so it crosses the piste on one span, and the first line squarely: no two lifts are
+    ///     ever side by side (Crowds: none within CrowdAngle of another and within CrowdNear of it for CrowdRun,
+    ///     no station within StationApart of another's), as no resort would build them.
     ///   - It is over the piste only above the cycle's danger stretch (no cable over the crevasses), and if it runs
     ///     down beside that stretch it ends on the side the first line keeps to, away from the deadly cliff.
     ///   - Where it meets a line already laid it is carried over it: the lowest thing on its chairs clears the
@@ -33,12 +35,17 @@ namespace Summit
         public const float OverClear = 2f;            // and the room left between that and the chairs passing over
         public const float OverSide = 3.7f;           // either side of the lower line's cables: two chairs' half widths and their swing
         public const float CrossFromStation = 22f;    // no crossing nearer than this to the lower line's portals
-        static readonly float[] SecondLengths = { 280f, 230f, 330f, 190f, 380f, 160f };
+        // (short, and from well out on one side to well out on the other: so they cross at CrowdAngle or more)
+        static readonly float[] SecondLengths = { 170f, 150f, 200f, 130f, 230f, 260f };
         static readonly Vector2[] SecondOffsets =
         {
-            new Vector2(62f, 62f), new Vector2(76f, 62f), new Vector2(62f, 76f), new Vector2(76f, 76f), new Vector2(90f, 76f),
-            new Vector2(76f, 90f), new Vector2(90f, 90f), new Vector2(104f, 90f), new Vector2(90f, 104f),
+            new Vector2(76f, 76f), new Vector2(90f, 76f), new Vector2(76f, 90f), new Vector2(90f, 90f), new Vector2(104f, 90f),
+            new Vector2(90f, 104f), new Vector2(104f, 104f), new Vector2(118f, 104f), new Vector2(104f, 118f), new Vector2(118f, 118f),
+            new Vector2(62f, 76f), new Vector2(76f, 62f),
         };
+        // No two lifts side by side: lines within CrowdAngle of each other never come within CrowdNear of each other
+        // for CrowdRun or more; no two stations within StationApart (Crowds)
+        public const float CrowdAngle = 45f, CrowdNear = 120f, CrowdRun = 40f, StationApart = 60f;
 
         /// <summary>Lay cycle k's second line, across the piste and over the lines already laid. Null if none will go.</summary>
         static Lift LaySecond(int k, IList<Lift> laid)
@@ -105,6 +112,7 @@ namespace Summit
         /// </summary>
         static bool Meets(Lift l, IList<Lift> laid)
         {
+            if (Crowds(l, laid)) return false;
             // its stations: clear of every other line's swath and stations, and of the lanes to their ramps
             for (int end = 0; end < 2; end++)
             {
@@ -129,13 +137,8 @@ namespace Summit
                     if (along > -Swath && along < l.plan + Swath && Mathf.Abs(side) < Swath + StationHalfWid + 2f) return false;
                 }
                 float det = l.dir.x * o.dir.z - l.dir.z * o.dir.x;   // the sine of the angle between the two lines
-                if (Mathf.Abs(det) < 0.26f)
-                {
-                    // near enough parallel (within 15 degrees): then they must simply keep apart
-                    for (float s = 0f; s <= l.plan; s += 8f)
-                        if (InSwath(o, l.top.x + l.dir.x * s, l.top.z + l.dir.z * s, Swath)) return false;
-                    continue;
-                }
+                // (near enough parallel: Crowds has kept them well apart)
+                if (Mathf.Abs(det) < 0.26f) continue;
                 float dx = o.top.x - l.top.x, dz = o.top.z - l.top.z;
                 float sAt = (dx * o.dir.z - dz * o.dir.x) / det, tAt = (dx * l.dir.z - dz * l.dir.x) / det;   // where they meet, along each
                 float reach = 2f * Swath / Mathf.Abs(det);            // how far either side of that their swaths overlap
@@ -146,6 +149,53 @@ namespace Summit
             }
             l.under = over != null ? over.ToArray() : NoLifts;
             return true;
+        }
+
+        /// <summary>
+        /// Would this line stand beside one already laid? Two lines within CrowdAngle of each other that come within
+        /// CrowdNear of each other for CrowdRun or more run side by side, which no resort builds; and no station
+        /// stands within StationApart of another line's. (Lines that cross more squarely than that are carried
+        /// over one another: Meets.)
+        /// </summary>
+        public static bool Crowds(Lift l, IList<Lift> laid)
+        {
+            float cosMax = Mathf.Cos(CrowdAngle * Mathf.Deg2Rad);
+            for (int q = 0; q < laid.Count; q++)
+            {
+                var o = laid[q];
+                if (o == l) continue;
+                for (int e = 0; e < 2; e++)
+                    for (int f = 0; f < 2; f++)
+                    {
+                        Vector3 a = e == 0 ? l.top : l.bottom, b = f == 0 ? o.top : o.bottom;
+                        if ((a.x - b.x) * (a.x - b.x) + (a.z - b.z) * (a.z - b.z) < StationApart * StationApart) return true;
+                    }
+                if (o.ZMax < l.ZMin - CrowdNear || o.ZMin > l.ZMax + CrowdNear) continue;
+                if (Mathf.Abs(l.dir.x * o.dir.x + l.dir.z * o.dir.z) < cosMax) continue;
+                if (Alongside(l, o) >= CrowdRun || Alongside(o, l) >= CrowdRun) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// How many metres of a run beside b: alongside it (between b's stations, looking square across from b) and
+        /// within CrowdNear of it. (Two lines end to end are not side by side: their stations are kept apart.)
+        /// </summary>
+        public static float Alongside(Lift a, Lift b)
+        {
+            float run = 0f;
+            // (only the part of a that is abreast of b: where a's stations project onto b's line, clipped to b)
+            float ta = (a.top.x - b.top.x) * b.dir.x + (a.top.z - b.top.z) * b.dir.z, tb = (a.bottom.x - b.top.x) * b.dir.x + (a.bottom.z - b.top.z) * b.dir.z;
+            if (Mathf.Max(ta, tb) < 0f || Mathf.Min(ta, tb) > b.plan) return 0f;
+            for (float s = 0f; s <= a.plan; s += 4f)
+            {
+                Vector3 p = a.At(s, 0f, 0f);
+                float t = (p.x - b.top.x) * b.dir.x + (p.z - b.top.z) * b.dir.z;
+                if (t < 0f || t > b.plan) continue;
+                float dx = p.x - (b.top.x + b.dir.x * t), dz = p.z - (b.top.z + b.dir.z * t);
+                if (dx * dx + dz * dz < CrowdNear * CrowdNear) run += 4f;
+            }
+            return run;
         }
 
         /// <summary>Is (x, z) within `half` of line o's centre, between its bullwheels?</summary>

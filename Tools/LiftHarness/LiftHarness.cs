@@ -49,6 +49,20 @@ public static class LiftHarness
             foreach (var l in all) if (l.second) CheckSecond(seed, l, all, verbose);
             jumpCycles += want - 1;
             foreach (var l in all) if (l.jump != null) CheckJump(seed, l, all, verbose);
+            CheckCrowds(seed, all);
+            int gb = gorges;
+            foreach (var l in all) if (l.gorge >= 0) CheckGorge(seed, l, verbose);
+            if (gorges > gb) mountainsGorged++;
+            {
+                bool can = false; int last = Course.CycleOf(Slope.FinishZ);
+                for (int g = 0; g < last; g++)
+                {
+                    float ws = Cliffs.WallOf(g, out var w) ? w.side : 0f;
+                    foreach (float cs in new[] { -1f, 1f }) if (Ridge.Built(g) && Ridge.CliffSide(Course.First + g * Course.Cycle + Ridge.At + 100f, cs) && cs != ws) can = true;
+                }
+                if (can) { gorgeable++; if (gorges == gb) noGorge.Add(seed); }
+            }
+            if (verbose) Console.Write(LiftLine.GorgeReport());
             if (verbose) Console.Write(LiftLine.JumpReport());
             CheckPairs(seed, all, verbose);
             if (seconds > had) mountainsNetworked++;
@@ -82,6 +96,15 @@ public static class LiftHarness
             Func<List<float>, string> R = v => string.Format("{0:0.0} / {1:0.0} / {2:0.0}", v[0], v[v.Count / 2], v[v.Count - 1]);
             Console.WriteLine("jump stations, onto the lane at 26 m/s down its middle (least / median / most): {0} s of air; {1} m flown; {2} m over the snow at most; landing at {3} m/s, {4} m/s into the snow; the lip {5} m over the snow under it", R(jAir), R(jDist), R(jPeak), R(jLand), R(jImpact), R(jDrop));
             Console.WriteLine("jump stations, 6 to 46 m/s: longest air {0:0.0} s; hardest landing {1:0.0} m/s into the snow (never both over {2:0} m/s and steeper than {3:0} deg); furthest into its cycle a flight comes down {4:0} m (the ridge stretch begins at {5:0}); nearest the piste's centre any of a station stands {6:0.0} m", jumpMaxAir, jumpMaxImpact, LiftLine.JumpSlam, LiftLine.JumpSlamAngle, jumpFarZ, Course.PipeAt, jumpMinOff);
+        }
+        Console.WriteLine("side by side (within {0:0} deg and {1:0} m of each other for {2:0} m or more): {3} pairs; stations within {4:0} m of another's: {5}", LiftLine.CrowdAngle, LiftLine.CrowdNear, LiftLine.CrowdRun, crowdPairs, LiftLine.StationApart, crowdStations);
+        Console.WriteLine("gorge lines: {0} on {1} mountains; {2} mountains have a ridge with a cliff side clear of its danger stretch's deadly wall, {3} of them without a gorge line{4}", gorges, mountainsGorged, gorgeable, noGorge.Count, noGorge.Count > 0 && noGorge.Count <= 30 ? " (seeds " + string.Join(",", noGorge) + ")" : "");
+        if (gorges > 0)
+        {
+            foreach (var v in new[] { gSpan, gDrop, gSag, gFell, gTime, gTop }) v.Sort();
+            Func<List<float>, string> R = v => v.Count == 0 ? "-" : string.Format("{0:0} / {1:0} / {2:0}", v[0], v[v.Count / 2], v[v.Count - 1]);
+            Console.WriteLine("gorge lines (least / median / most): span over the gorge {0} m, its sag {1} m, chairs over the ground {2} m, tallest tower {3} m; {4} ({5:0}%) have a launch ramp leading onto the gorge", R(gSpan), R(gSag), R(gDrop), R(gTop), gorgeRamps, 100f * gorgeRamps / gorges);
+            Console.WriteLine("gorge grinds: {0} of {1} rides from the rim tower's hop at 8 to 40 m/s get across, in {2} s; pops off the gorge span: {3} of {4} ({5:0}%) are falls of 100 m or more (Rider.DeathFall), the fall {6} m", across, rides, R(gTime), popsDead, pops, 100f * popsDead / Mathf.Max(1, pops), R(gFell));
         }
         secondH.Sort();
         Console.WriteLine("second lines: {0} of {1} cycles with a first line ({2:0}%); mountains with at least one: {3} of {4} ({5:0.0}%); most lines tried for one: {6:0}", seconds, secondCycles, 100f * seconds / Mathf.Max(1, secondCycles), mountainsNetworked, hi - lo + 1, 100f * mountainsNetworked / (hi - lo + 1), maxSecondTries);
@@ -187,6 +210,132 @@ public static class LiftHarness
                 if (v0 == 26f && e == 0f) { jAir.Add(f.air); jDist.Add(f.distance); jPeak.Add(f.peak); jImpact.Add(f.impact); jLand.Add(f.velocity.magnitude); jDrop.Add(j.drop); }
             }
         if (verbose) Console.WriteLine("   jump station: lane's top from {0:0.0} to {1:0.0} m past the station's middle, level {2:0.0} m under the terminal's deck", j.start, j.end, l.bottom.y - j.y0);
+    }
+
+    // ---------------------------------------------------------------- no two lifts side by side (LiftNetwork.Crowds)
+    static int crowdPairs, crowdStations;
+
+    static void CheckCrowds(int seed, LiftLine.Lift[] all)
+    {
+        for (int i = 0; i < all.Length; i++)
+            for (int j = i + 1; j < all.Length; j++)
+            {
+                var a = all[i]; var b = all[j];
+                for (int e = 0; e < 2; e++)
+                    for (int f = 0; f < 2; f++)
+                    {
+                        Vector3 p = e == 0 ? a.top : a.bottom, q = f == 0 ? b.top : b.bottom;
+                        float d = new Vector2(p.x - q.x, p.z - q.z).magnitude;
+                        if (d < LiftLine.StationApart) { crowdStations++; Bad(seed, a, $"a station {d:0} m from lift {b.k}{(b.second ? "b" : "")}'s"); }
+                    }
+                float cos = Mathf.Abs(a.dir.x * b.dir.x + a.dir.z * b.dir.z);
+                if (cos < Mathf.Cos(LiftLine.CrowdAngle * Mathf.Deg2Rad)) continue;
+                float run = Mathf.Max(LiftLine.Alongside(a, b), LiftLine.Alongside(b, a));
+                if (run >= LiftLine.CrowdRun) { crowdPairs++; Bad(seed, a, $"side by side with lift {b.k}{(b.second ? "b" : "")} for {run:0} m"); }
+            }
+    }
+
+    // ---------------------------------------------------------------- the lift over the gorge (LiftGorge.cs)
+    static int gorges, mountainsGorged, gorgeable, gorgeRamps, rides, across, pops, popsDead; static float gorgeTall;
+    static readonly List<int> noGorge = new List<int>();
+    static readonly List<float> gSpan = new List<float>(), gDrop = new List<float>(), gSag = new List<float>(), gFell = new List<float>(), gTime = new List<float>(), gTop = new List<float>();
+
+    /// <summary>
+    /// A gorge line: its span over the canyon and the towers either end of it; grinding it across from the tower
+    /// hop at the rim (no nudge outward there) at speeds from 8 to 40 m/s, as CableGrind slides it; and popping off
+    /// it at points along it, flown down to standable ground as Rider.AirStep flies it (sliding down any face too
+    /// steep to stand on), which must be a fall of Rider.DeathFall or more where the canyon is deep.
+    /// </summary>
+    static void CheckGorge(int seed, LiftLine.Lift l, bool verbose)
+    {
+        gorges++;
+        int i = l.gorge;
+        float len = l.nodeS[i + 1] - l.nodeS[i];
+        gSpan.Add(len); gDrop.Add(l.gorgeDrop); gSag.Add(LiftLine.Sag(len));
+        if (l.gorgeDrop < LiftLine.GorgeDrop - 0.5f) Bad(seed, l, "its gorge span is only " + l.gorgeDrop + " m over the ground");
+        float top = 0f; foreach (float h in l.h) top = Mathf.Max(top, h); gTop.Add(top); gorgeTall = Mathf.Max(gorgeTall, top);
+        if (l.ramp != null && l.ramp.span < i) gorgeRamps++;
+        if (i < 1) Bad(seed, l, "its gorge span starts at the top station: no way onto it");
+        // across: caught just past the rim tower (as the hop from the span before puts the rider on it)
+        foreach (float v0 in new[] { 8f, 14f, 20f, 26f, 32f, 40f })
+        {
+            rides++;
+            if (HopOnto(l, i - 1, v0, out float along, out float speed)) { }
+            else { along = l.nodeS[i] + CableTune.ClearTower + 1f; speed = v0; }
+            float t = 0f; bool made = false;
+            for (int n = 0; n < 4000; n++)
+            {
+                float slope = LiftLine.CableSlope(l, i, along);
+                float dirY = slope / Mathf.Sqrt(1f + slope * slope);
+                speed = Mathf.Max(CableTune.MinSpeed, speed + LiftLine.SlideAccel(speed, dirY) * 0.02f);
+                along += speed * 0.02f / Mathf.Sqrt(1f + slope * slope); t += 0.02f;
+                if (along >= l.nodeS[i + 1] - speed * CableTune.HopLead / Mathf.Sqrt(1f + slope * slope)) { made = true; break; }
+            }
+            if (made) { across++; gTime.Add(t); }
+            else Bad(seed, l, $"a grind onto its gorge span at {v0:0} m/s never gets across");
+        }
+        // off it: popped off at points along the gorge span, at the speed a grind has there
+        for (float u = 0.1f; u < 0.95f; u += 0.1f)
+        {
+            pops++;
+            float s = Mathf.Lerp(l.nodeS[i], l.nodeS[i + 1], u);
+            float slope = LiftLine.CableSlope(l, i, s), k = 1f / Mathf.Sqrt(1f + slope * slope);
+            float sp = 30f;
+            Vector3 p = l.At(s, LiftLine.Half, l.CableY(i, s) + CableTune.BoardR), from = p;
+            Vector3 v = (l.dir * k + Vector3.up * slope * k) * sp + Vector3.up * CableTune.PopHop;
+            for (int n = 0; n < 3000; n++)
+            {
+                v.y -= CableTune.G * 0.02f;
+                v -= v * Mathf.Min(1f, 0.0025f * v.magnitude * 0.02f);
+                Vector3 q = p + v * 0.02f;
+                float g = Slope.Height(q.x, q.z) + CableTune.BoardR;
+                if (q.y <= g)
+                {
+                    Vector3 nrm = Slope.Normal(q.x, q.z);
+                    if (nrm.y >= 0.62f) { p = q; break; }
+                    // a face too steep to stand on: down it, as AirStep slides the board down one
+                    float into = Vector3.Dot(v, nrm); if (into < 0f) v -= nrm * into;
+                    q.y = g;
+                }
+                p = q;
+            }
+            float fell = from.y - p.y - Slope.Fall * Mathf.Max(0f, p.z - from.z);
+            gFell.Add(fell);
+            if (fell >= 100f) popsDead++;
+        }
+        if (verbose) Console.WriteLine($"   gorge span {i}: {len:0} m, sag {LiftLine.Sag(len):0.0} m, chairs up to {l.gorgeDrop:0} m over the ground; towers {(i > 0 ? l.h[i - 1] : 0):0.0} and {(i < l.h.Length ? l.h[i] : 0):0.0} m");
+    }
+
+    static bool OverDeep(LiftLine.Lift l, float sa, float sb)
+    {
+        for (float s = sa; s <= sb; s += 4f) if (Ridge.Depth(l.At(s, 0f, 0f).z) > 0.3f) return true;
+        return false;
+    }
+
+    /// <summary>The hop off span i at its tower (straight on, at a gorge's rim) onto span i + 1: where it is caught, at what speed.</summary>
+    static bool HopOnto(LiftLine.Lift l, int i, float v0, out float along, out float speed)
+    {
+        const float dt = 0.02f;
+        along = l.nodeS[i + 1] - 1f; speed = v0;
+        float slope = LiftLine.CableSlope(l, i, along), k0 = 1f / Mathf.Sqrt(1f + slope * slope);
+        float vp = v0 * k0, vy = v0 * slope * k0 + CableTune.TowerHop;
+        float y = l.CableY(i, along) + CableTune.BoardR;
+        for (int n = 0; n < 600; n++)
+        {
+            vy -= CableTune.G * dt;
+            float k = 1f - Mathf.Min(1f, 0.0025f * Mathf.Sqrt(vp * vp + vy * vy) * dt);
+            vp *= k; vy *= k;
+            along += vp * dt; y += vy * dt;
+            int at = LiftLine.SpanAt(l, along);
+            if (at == i + 1 && along > l.nodeS[i + 1] && LiftLine.InCatch(l, at, along, y - CableTune.BoardR, vp, vy))
+            {
+                float s2 = LiftLine.CableSlope(l, at, along);
+                speed = (vp + vy * s2) / Mathf.Sqrt(1f + s2 * s2);
+                return true;
+            }
+            if (along > l.nodeS[i + 2]) return false;
+        }
+        return false;
     }
 
     static void CheckSecond(int seed, LiftLine.Lift l, LiftLine.Lift[] all, bool verbose)
@@ -408,8 +557,13 @@ public static class LiftHarness
             heights.Add(l.h[i]); maxH = Mathf.Max(maxH, l.h[i]); if (l.h[i] > 15f) tallOver15++;
             if (off < LiftLine.TowerOff - 0.01f) Bad(seed, l, "tower " + i + " is " + off + " m from the piste's centre");
             if (Course.Keep(f.x, f.z, 2f)) Bad(seed, l, "tower " + i + " on kept ground");
-            if (Ridge.InCanyons(f.z)) Bad(seed, l, "tower " + i + " in a ridge stretch");
-            if (Deadly.Below(f.x, f.z)) Bad(seed, l, "tower " + i + " under a deadly cliff");
+            // (a gorge line's towers may stand in a ridge's canyons, on the floor where it is no deeper than GorgeFloor)
+            bool gorgeFoot = l.gorge >= 0 && Ridge.InCanyons(f.z);
+            if (gorgeFoot && Ridge.DepthHere(f.z, Mathf.Sign(f.x - Slope.Centre(f.z))) > LiftLine.GorgeFloor + 0.01f) Bad(seed, l, "tower " + i + " on a canyon floor deeper than " + LiftLine.GorgeFloor + " m");
+            if (Ridge.InCanyons(f.z) && !gorgeFoot) Bad(seed, l, "tower " + i + " in a ridge stretch");
+            if (Deadly.Below(f.x, f.z) && !gorgeFoot) Bad(seed, l, "tower " + i + " under a deadly cliff");
+            if (Cliffs.WallCut(f.x, f.z) < -0.01f) Bad(seed, l, "tower " + i + " on a deadly wall's terrace");
+            if (l.h[i] > (l.gorge >= 0 ? LiftLine.HMaxGorge : l.under.Length > 0 ? LiftLine.HMaxOver : LiftLine.HMax) + 0.5f) Bad(seed, l, "tower " + i + " is " + l.h[i] + " m tall");
             if (Mathf.Abs(Slope.Height(f.x, f.z) - f.y) > 0.01f) Bad(seed, l, "tower " + i + " not on the snow");
             if (Slope.Normal(f.x, f.z).y < 0.63f) Bad(seed, l, "tower " + i + " on ground steeper than 51 degrees");
             // the head is where the foot, the lean and the height put it
@@ -417,7 +571,7 @@ public static class LiftHarness
             if ((top - l.head[i]).magnitude > 0.02f) Bad(seed, l, "tower " + i + " head off its mast by " + (top - l.head[i]).magnitude);
             var sec = Course.At(f.z);
             if (sec == Course.Section.Danger) dangerTowers++;
-            if (sec == Course.Section.Ridge) Bad(seed, l, "tower " + i + " in a ridge section");
+            if (sec == Course.Section.Ridge && !gorgeFoot) Bad(seed, l, "tower " + i + " in a ridge section");
             if (verbose) Console.WriteLine("   tower {0}: foot x={1:0.0} z={2:0.0}, {3:0.0} m from the piste's centre, {4:0.0} m tall, {5}", i + 1, f.x, f.z, off, l.h[i], sec);
         }
         // stations
@@ -437,7 +591,9 @@ public static class LiftHarness
         for (int i = 0; i < l.Spans; i++)
         {
             float sa = l.nodeS[i], sb = l.nodeS[i + 1], len = sb - sa;
-            if (i > 0 && i < l.Spans - 1) { spans++; spanList.Add(len); maxSpan = Mathf.Max(maxSpan, len); minSpan = Mathf.Min(minSpan, len); if (len > 95f) longSpans++; }
+            if (i > 0 && i < l.Spans - 1 && i != l.gorge) { spans++; spanList.Add(len); maxSpan = Mathf.Max(maxSpan, len); minSpan = Mathf.Min(minSpan, len); if (len > 95f) longSpans++; }
+            if (len > 140.6f && !(l.gorge >= 0 && OverDeep(l, sa, sb))) Bad(seed, l, "span " + i + " is " + len + " m long and not over a gorge");
+            if (len > LiftLine.GorgeSpanMax) Bad(seed, l, "span " + i + " is " + len + " m long");
             bool overThis = false; float least = 1e9f;
             int m = Mathf.CeilToInt(len / 1.5f);
             for (int q = 0; q <= m; q++)
@@ -457,8 +613,9 @@ public static class LiftHarness
                     if (onPiste) { minPiste = Mathf.Min(minPiste, clear); overThis = true; }
                     else if (!byStation) minOff = Mathf.Min(minOff, clear);
                     least = Mathf.Min(least, clear);
-                    if (Ridge.InCanyons(p.z)) Bad(seed, l, "the line is over a ridge stretch at z=" + p.z);
-                    if (Deadly.Below(p.x, p.z)) Bad(seed, l, "the line is over a deadly cliff's foot at z=" + p.z);
+                    // (a gorge line is over the canyon on purpose; never over a deadly wall's terrace)
+                    if (Ridge.InCanyons(p.z) && l.gorge < 0) Bad(seed, l, "the line is over a ridge stretch at z=" + p.z);
+                    if (Deadly.Below(p.x, p.z) && !(l.gorge >= 0 && Ridge.InCanyons(p.z))) Bad(seed, l, "the line is over a deadly cliff's foot at z=" + p.z);
                     if (!LiftLine.Taken(p.x, p.z, 0f)) Bad(seed, l, "the swath does not cover the cable at z=" + p.z);
                 }
             }

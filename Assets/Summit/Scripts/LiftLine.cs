@@ -16,6 +16,9 @@ namespace Summit
     /// cycle then gets a second, shorter line across the piste and over the first, where one will go
     /// (LiftNetwork.cs): this file lays both kinds. Where the ground allows, a first line ends higher, at a
     /// bottom station you ski through and jump off (LiftJump.cs: JumpAt, beside the top of the danger stretch).
+    /// And where it can, a first line starts higher still, above the ridge stretch of the cycle above, and is
+    /// carried over that ridge's gorge on one long span (LiftGorge.cs); every mountain that has a gorge a line can
+    /// cross gets at least one.
     ///
     /// A lift is dead straight in plan, as real ones are, while the piste meanders beside it or under it:
     ///   - Each end is set 38 to 84 m to one side of the piste. Through the danger stretch the line keeps to the
@@ -68,7 +71,13 @@ namespace Summit
         public const float Speed = 5f;                            // m/s: a detachable's line speed
         public const float SpacingWanted = 18f;                   // between chairs (each loop rounds it to fit)
 
-        public static float Sag(float length) => length * length * SagK;
+        /// <summary>
+        /// How far a span's cable hangs below the straight line between its supports, at its middle: the square of its
+        /// length over 3,500 (5.6 m for a 140 m span); a longer one, only ever over a gorge (LiftGorge.cs), is hauled
+        /// tighter and sags only as much more again as its extra length (22 m for 350 m: 6%, an aerial lift's).
+        /// </summary>
+        public static float Sag(float length) => length <= SagBend ? length * length * SagK : SagBend * SagBend * SagK + 2f * SagBend * SagK * (length - SagBend);
+        const float SagBend = 141f;
 
         /// <summary>
         /// Whatever else is built beside the piste can say where it stands (set this once, before the mountain is
@@ -103,6 +112,8 @@ namespace Summit
             public int tries;
             public Ramp ramp;                     // its launch ramp, if a spot was found for one (LiftRamp.cs)
             public Jump jump;                     // its bottom station's ski-through lane and jump, if it has one (LiftJump.cs)
+            public int gorge = -1;                // the span that crosses a ridge's gorge, if it does (LiftGorge.cs)
+            public float gorgeDrop;               // and the most its chairs are over the ground there
             // the chairs' loop: its pieces in the order the chairs travel them, from leaving the bottom bullwheel
             public float[] cum;                   // loop distance at the start of each piece (and the whole length last)
             public float loop, spacing;
@@ -221,11 +232,35 @@ namespace Summit
                     lifts = new Lift[0];   // (so nothing that asks about the ground while they are laid sees the old ones)
                     var list = new List<Lift>();
                     if (On)
+                    {
+                        var plains = new Lift[LastCycle + 1];
+                        bool any = false;
                         for (int k = 0; k <= LastCycle; k++)
                         {
-                            var l = Lay(k);
-                            if (l != null) list.Add(l);
+                            var l = Lay(k, list, out plains[k]);
+                            if (l == null) continue;
+                            list.Add(l);
+                            if (l.gorge >= 0) any = true;
                         }
+                        // if no line has gone over a gorge, the first that can is given one ending at a plain station
+                        // instead of its jump station: every mountain with a gorge a line will cross gets one. (It is
+                        // laid clear of all the others; the rest are as they were, none of them laid against it)
+                        if (!any)
+                        {
+                            gorgeAny = true;
+                            for (int k = 1; k <= LastCycle && !any; k++)
+                            {
+                                var others = new List<Lift>();
+                                foreach (var o in list) if (o != plains[k]) others.Add(o);
+                                var gl = LayGorge(k, others, plains[k]);
+                                if (gl == null || gl.gorge < 0) continue;
+                                int at = plains[k] != null ? list.IndexOf(plains[k]) : -1;
+                                if (at >= 0) list[at] = gl; else list.Add(gl);
+                                any = true;
+                            }
+                            gorgeAny = false;
+                        }
+                    }
                     // then each cycle's second line, across the piste and over whatever the first lines put in its way
                     if (On && Network)
                         for (int k = 0; k <= LastCycle; k++)
@@ -275,7 +310,14 @@ namespace Summit
             return zb - zt >= 180f;
         }
 
-        static Lift Lay(int k)
+        static Lift Lay(int k, IList<Lift> laid, out Lift plain)
+        {
+            plain = LayPlain(k);
+            // on up over the gorge of the ridge above, if it will go (LiftGorge.cs)
+            return LayGorge(k, laid, plain) ?? plain;
+        }
+
+        static Lift LayPlain(int k)
         {
             if (!Range(k, out float zt, out float zb)) return null;
             // with a station to ski through and jump off, if one will go: that ends the line higher up (LiftJump.cs)
@@ -369,9 +411,10 @@ namespace Summit
         }
 
         /// <summary>Lay lift k along the straight line from ot beside the piste at zt to ob beside it at zb. Null if it will not go.</summary>
-        static Lift Try(int k, float zt, float zb, float ot, float ob, IList<Lift> laid = null, bool jump = false)
+        static Lift Try(int k, float zt, float zb, float ot, float ob, IList<Lift> laid = null, bool jump = false, float gorge = 0f)
         {
-            var l = new Lift { k = k, offTop = ot, offBottom = ob, second = laid != null };
+            // (a gorge line, gorge = the cliff's side, is a first line laid after others: it is kept clear of them too)
+            var l = new Lift { k = k, offTop = ot, offBottom = ob, second = laid != null && gorge == 0f };
             float xt = Slope.Centre(zt) + ot, xb = Slope.Centre(zb) + ob;
             float plan = Mathf.Sqrt((xb - xt) * (xb - xt) + (zb - zt) * (zb - zt));
             l.plan = plan;
@@ -380,8 +423,6 @@ namespace Summit
             l.top = new Vector3(xt, 0f, zt); l.bottom = new Vector3(xb, 0f, zb);
             if (!StationAt(l, xt, zt, out float deckT) || !StationAt(l, xb, zb, out float deckB)) return null;
             l.top.y = deckT; l.bottom.y = deckB;
-            // a station to ski through: settled before the towers are (it asks only where the station stands)
-            if (jump) { PlaceJump(l); if (l.jump == null) return null; }
             if (Occupied != null)
                 for (float s = -StationHalfLen - 6f; s <= plan + StationHalfLen + 6f; s += 5f)
                     for (int side = -1; side <= 1; side++)
@@ -391,11 +432,16 @@ namespace Summit
             // a second line: clear of the lines already laid (their stations, their ramps' lanes), and over them
             // only where it can be (LiftNetwork.cs)
             float hMax = HMax;
+            if (gorge != 0f && !GorgeSide(l, gorge)) return null;
             if (laid != null)
             {
                 if (!Meets(l, laid)) return null;
                 if (l.under.Length > 0) hMax = HMaxOver;
+                if (gorge != 0f && l.under.Length > 0) return null;   // (a gorge line is carried over nothing)
             }
+            if (gorge != 0f) hMax = HMaxGorge;
+            // a station to ski through: settled before the towers are (it asks only where the station stands)
+            if (jump) { PlaceJump(l); if (l.jump == null) return null; }
 
             // where a tower may stand: spots every Step along the line, between the stations' portals
             float s0 = StationHalfLen, s1 = plan - StationHalfLen;
@@ -403,21 +449,28 @@ namespace Summit
             if (n < 1) return null;
             float first = s0 + EndMin + ((s1 - s0 - 2f * EndMin) - (n - 1) * Step) * 0.5f;
             var spot = new float[n]; var ok = new bool[n]; var knoll = new float[n];
+            var deep = gorge != 0f ? new int[n + 1] : null;   // (how many spots up to each stand over the deep canyon: OverGorge, quickly)
             for (int i = 0; i < n; i++)
             {
                 float s = first + i * Step;
                 spot[i] = s;
                 // (wherever its height puts its foot: it leans, so its foot is up the line from its top)
-                ok[i] = GroundOk(xt + l.dir.x * s, zt + l.dir.z * s, TowerOff)
-                     && GroundOk(xt + l.dir.x * (s - HMin * sl), zt + l.dir.z * (s - HMin * sl), TowerOff)
-                     && GroundOk(xt + l.dir.x * (s - hMax * sl), zt + l.dir.z * (s - hMax * sl), TowerOff);
+                ok[i] = gorge != 0f
+                    ? GorgeGround(xt + l.dir.x * s, zt + l.dir.z * s, TowerOff, gorge)
+                      && GorgeGround(xt + l.dir.x * (s - HMin * sl), zt + l.dir.z * (s - HMin * sl), TowerOff, gorge)
+                      && GorgeGround(xt + l.dir.x * (s - hMax * sl), zt + l.dir.z * (s - hMax * sl), TowerOff, gorge)
+                    : GroundOk(xt + l.dir.x * s, zt + l.dir.z * s, TowerOff)
+                      && GroundOk(xt + l.dir.x * (s - HMin * sl), zt + l.dir.z * (s - HMin * sl), TowerOff)
+                      && GroundOk(xt + l.dir.x * (s - hMax * sl), zt + l.dir.z * (s - hMax * sl), TowerOff);
                 // (and no tower of a second line in another line's swath, under its chairs, or in the lane to its ramp)
                 // (its towers may be taller, so its foot may be further up the line: looked at every few metres of that)
                 if (ok[i] && laid != null)
-                    for (float back = 0f; back <= hMax + 0.01f && ok[i]; back += hMax * 0.125f)
-                        ok[i] = GroundOk(xt + l.dir.x * (s - back * sl), zt + l.dir.z * (s - back * sl), TowerOff)
+                    for (float back = 0f; back <= hMax + 0.01f && ok[i]; back += hMax * (gorge != 0f ? 0.25f : 0.125f))
+                        ok[i] = (gorge != 0f ? GorgeGround(xt + l.dir.x * (s - back * sl), zt + l.dir.z * (s - back * sl), TowerOff, gorge)
+                                             : GroundOk(xt + l.dir.x * (s - back * sl), zt + l.dir.z * (s - back * sl), TowerOff))
                              && !TakenBy(laid, xt + l.dir.x * (s - back * sl), zt + l.dir.z * (s - back * sl), 3f);
                 knoll[i] = ok[i] ? KnollAt(l, s) : 0f;
+                if (deep != null) deep[i + 1] = deep[i] + (Ridge.Depth(zt + l.dir.z * s) > 0.3f ? 1 : 0);
             }
 
             // the cheapest chain of spans from the top portal to the bottom one
@@ -432,8 +485,9 @@ namespace Summit
                 for (int j = i - 1; j >= 0; j--)
                 {
                     g = spot[i] - spot[j];
-                    if (g > SpanMax) break;
+                    if (g > (gorge != 0f ? GorgeSpanMax : SpanMax)) break;
                     if (g < SpanMin || cost[j] >= Inf) continue;
+                    if (g > SpanMax && (deep == null || deep[i] - deep[j + 1] <= 0)) continue;   // (only the span over the gorge is that long)
                     float c = cost[j] + SpanCost(g) - knoll[i];
                     if (c < cost[i]) { cost[i] = c; prev[i] = j; }
                 }
@@ -462,7 +516,7 @@ namespace Summit
                 done = true;
                 for (int i = 0; i < l.Spans; i++)
                 {
-                    float d = Deficit(l, i, 2f, 0.15f);
+                    float d = Deficit(l, i, i == 0 || i == l.Spans - 1 ? 1.5f : 2f, 0.15f);   // (by a station, as finely as the checks look)
                     if (d <= 0.01f) continue;
                     done = false;
                     d += 0.25f;
@@ -475,6 +529,12 @@ namespace Summit
             Nodes(l);
             // (and where each foot has ended up, the snow must not be too steep to stand a tower on: about 50 degrees)
             for (int i = 0; i < l.foot.Length; i++) if (Slope.Normal(l.foot[i].x, l.foot[i].z).y < 0.64f) return null;
+            // (a gorge line's feet, wherever their heights have put them, on ground that will hold them; and a real drop under it)
+            if (gorge != 0f)
+            {
+                for (int i = 0; i < l.foot.Length; i++) if (!GorgeGround(l.foot[i].x, l.foot[i].z, TowerOff, gorge)) return null;
+                if (!FindGorge(l)) return null;
+            }
             l.MakeLoop();
             return l;
         }

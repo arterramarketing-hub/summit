@@ -143,12 +143,13 @@ namespace Summit
         }
 
         /// <summary>Find a lift its ramp: the spot and the lip height from which the cable is reached at the least speed.</summary>
-        static void PlaceRamp(Lift l, IList<Lift> laid = null)
+        static void PlaceRamp(Lift l, IList<Lift> laid = null, bool anywhere = false)
         {
             Ramp best = null; float bestScore = float.MaxValue;
             for (int i = 0; i < l.Spans - 1; i++)
             {
                 if (Tangled(l, i, laid)) continue;   // (not where this line and another cross)
+                if (l.gorge >= 0 && i >= l.gorge && !anywhere) continue;   // (a gorge line's: before the gorge, so the grind leads over it)
                 float sa = l.nodeS[i] + (i == 0 ? 25f : CableTune.RampFromTower), sb = l.nodeS[i + 1] - 25f - CableTune.RampLength;
                 for (float s0 = sa; s0 <= sb; s0 += 6f)
                 {
@@ -170,6 +171,7 @@ namespace Summit
                         float slide = l.nodeS[r.catchSpan + 1] - r.catchAlong;
                         if (slide < CableTune.RampMinSlide) continue;
                         if (r.catchSpan != i && Tangled(l, r.catchSpan, laid)) continue;
+                        if (l.gorge >= 0 && !anywhere && r.catchSpan >= l.gorge) continue;
                         // the least speed first (any that 24 m/s reaches is as good as another), then the longest slide
                         // and the lowest lip, then the nearest the piste
                         float score = Mathf.Max(r.needSpeed, CableTune.RampWantSpeed) * 100f + h * 10f + off * 0.1f - Mathf.Min(slide, 60f) * 1.5f;

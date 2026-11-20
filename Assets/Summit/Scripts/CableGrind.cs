@@ -271,7 +271,9 @@ namespace Summit
                 graceUntil = Time.time + CableTune.ChairGrace;
                 // thrown up over the tower's head, and a little outward: the next span has to be steered back onto
                 Vector3 leave = dir * speed + Vector3.up * (tower ? CableTune.TowerHop : hop);
-                if (tower) leave += lift.across * (side * CableTune.TowerNudge);
+                // (but at the tower on a gorge's rim, straight on: the gorge span is there to be ridden, and it falls away
+                // so steeply that a rider nudged off its line would have no chance to steer back on before the drop)
+                if (tower && span + 1 != lift.gorge) leave += lift.across * (side * CableTune.TowerNudge);
                 return r.CableLeave(p, leave);
             }
             Riding(out _, out _, out _, out _, out float dip);

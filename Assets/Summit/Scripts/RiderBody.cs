@@ -979,6 +979,7 @@ namespace Summit
                 fx?.Thud(transform.position, Mathf.Max(6f, lastVel.magnitude * 0.6f), lastVel * 0.6f);   // the wipeout itself
                 brokenThisCrash.Clear();
                 crashClock = 0f;
+                ResetSettle();   // every fall ends (RiderBodySettle)
             }
             if (ragdoll != null && ragdoll.Active)
             {
@@ -993,6 +994,7 @@ namespace Summit
                 ragdoll.Steer = rider.Crashed && !rider.StayDown ? rider.Steer : 0f;   // steer the fall with the same thumb (not once it's over, or the slide has you)
                 ragdoll.PhysicsStep();
                 FallStep();
+                SettleStep();
                 SnowLayer.Instance?.PressBody(ragdoll);   // every part presses its own shape into the snow
                 rider.CrashFollow = ragdoll.Centre;
                 rider.HasCrashFollow = rider.Crashed;

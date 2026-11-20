@@ -88,8 +88,10 @@ namespace Summit
             }
         }
         public Vector3 Centre => Active && parts.Count > 0 ? parts[0].rb.position : Vector3.zero;
+        /// <summary>Where the board is while thrown (the body's middle if it has none).</summary>
+        public Vector3 BoardCentre => boardRb != null ? boardRb.position : Centre;
         /// <summary>How fast the body (and the board) are still moving: the faster of the two.</summary>
-        public float Speed => !Active || parts.Count == 0 ? 0f : Mathf.Max(parts[0].rb.linearVelocity.magnitude, boardRb != null ? boardRb.linearVelocity.magnitude * 0.5f : 0f);
+        public float Speed => !Active || parts.Count == 0 || Frozen ? 0f : Mathf.Max(parts[0].rb.linearVelocity.magnitude, boardRb != null ? boardRb.linearVelocity.magnitude * 0.5f : 0f);
         public Vector3 Velocity => Active && parts.Count > 0 ? parts[0].rb.linearVelocity : Vector3.zero;
 
         /// <summary>How many solid shapes the thrown body has, its parts and then the board (see Capsule).</summary>
@@ -329,6 +331,14 @@ namespace Summit
             boardRb.linearVelocity = velocity * 0.75f + Vector3.up * 3.5f + Random.insideUnitSphere * 2f;
             boardRb.angularVelocity = new Vector3(Random.Range(-9f, 9f), Random.Range(-4f, 4f), Random.Range(-9f, 9f));
             ThrowExtras(velocity, gCol, bgCol);   // the other ski and the poles, on skis
+            // never thrown from inside a corner: the board hit something, and the body above the board may already be in
+            // it. PhysX eases a part out of one thing by itself (a trunk, a post), so the body is only moved when it is
+            // in two at once (a chalet's wall and its landing) or deep in one
+            Physics.SyncTransforms();
+            Vector3 back = -flat;
+            if (back.sqrMagnitude < 0.01f) back = Vector3.back;
+            if (Cornered(false)) UnwedgeOne(back.normalized, true, false);
+            if (Cornered(true)) UnwedgeOne(back.normalized, true, true);   // (the board on its own: it is its own body)
         }
 
         /// <summary>
@@ -477,7 +487,7 @@ namespace Summit
         /// </summary>
         public bool Sever(Transform bone, Vector3 kick)
         {
-            if (!Active) return false;
+            if (!Active || Frozen) return false;
             var p = PartOf(bone);
             if (p == null || p.free || p.parentRb == null) return false;
             if (p.joint != null) Kill(p.joint);
@@ -538,6 +548,8 @@ namespace Summit
         public void Carry(Vector3 flow, float rate, float dt)
         {
             if (!Active) return;
+            CarriedFor = 0.5f;   // (an avalanche moves it: never settled, see Settle)
+            if (Frozen) Thaw();
             float k = 1f - Mathf.Exp(-rate * dt);
             foreach (var p in parts)
             {
@@ -553,6 +565,8 @@ namespace Summit
         public void PhysicsStep()
         {
             if (!Active) return;
+            CarriedFor -= Time.fixedDeltaTime;
+            if (Frozen) { LooseStep(); return; }   // laid to rest where it lay (Settle); the loose gear still keeps to the snow
             // tumbling into a sign or a flag breaks it / knocks it down (see Breakables)
             if (parts.Count > 0) Breakable.Probe(parts[0].rb.position, parts[0].rb.position, 0.9f, parts[0].col);
             // tumbling into a young tree or a snag fast enough snaps it, and the body carries on through (TreeBreak)
@@ -668,6 +682,7 @@ namespace Summit
         public void Bury(float depth, Vector3 vel)
         {
             if (!Active) return;
+            if (Frozen) Thaw();
             Buried = depth;
             Vector3 v = new Vector3(vel.x * 0.12f, -Mathf.Clamp(depth * 6f, 5f, 9f), vel.z * 0.12f);
             foreach (var p in parts) if (!p.gone) { p.rb.linearVelocity = v; p.rb.angularVelocity *= 0.3f; }
@@ -691,6 +706,7 @@ namespace Summit
         {
             if (!Active) return;
             Active = false;
+            Frozen = false; CarriedFor = 0f;
             var gc = groundBody.GetComponent<Collider>();
             foreach (var p in parts) if (p.free && p.col.enabled) Physics.IgnoreCollision(p.col, gc, false);   // (only while both are live)
             foreach (var p in parts) Sleep(p);   // back to posed: kept, not destroyed
@@ -706,6 +722,177 @@ namespace Summit
             board.localPosition = boardPos; board.localRotation = boardRot; board.localScale = boardScl;   // (as the loose gear: see EndExtras)
             rig.RestoreBind();
             Rejoin();   // any limb torn off is back on, its joint rebuilt at rest
+        }
+
+        // ---- never stuck. The body is thrown from where the board hit something, so the posed body above the board
+        // can start out partly inside it: the torso over a chalet's landing as the board hits its step, say. PhysX
+        // pushes a part out of each solid shape on its own, and where two of them overlap (a chalet's wall and its
+        // landing, deck, stair or terrace boxes) it pushed the part out of one into the other: the body locked there
+        // inside the wall, twitching at a metre or two a second, never asleep, and the fall never ended (the game
+        // waits for the body to read as still). So the body never starts inside anything (Begin), one found pinned
+        // later is lifted clear (Unwedge), and one that will not come to rest is laid down where it is (Settle).
+
+        static readonly Collider[] nearBuf = new Collider[48];
+
+        /// <summary>A collider the body can be stuck in: solid, standing still, and not the body, its gear or its snow.</summary>
+        bool Solid(Collider c)
+        {
+            if (c == null || c.isTrigger || c == riderCollider) return false;
+            var rb = c.attachedRigidbody;
+            if (rb != null && (!rb.isKinematic || rb == groundBody || rb == boardGroundBody || limbSlabs.Contains(rb))) return false;
+            return Of(c) == null;
+        }
+
+        /// <summary>How deep a collider would be inside solid things, moved by offset (and the way out of them, summed).</summary>
+        float Inside(Collider col, Vector3 pos, Quaternion rot, Vector3 offset, ref Vector3 outSum, HashSet<Collider> what = null)
+        {
+            var b = col.bounds;
+            int n = Physics.OverlapBoxNonAlloc(b.center + offset, b.extents + Vector3.one * 0.02f, nearBuf, Quaternion.identity, ~0, QueryTriggerInteraction.Ignore);
+            float deepest = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                var o = nearBuf[i];
+                if (!Solid(o)) continue;
+                if (Physics.ComputePenetration(col, pos + offset, rot, o, o.transform.position, o.transform.rotation, out var dir, out float d))
+                {
+                    deepest = Mathf.Max(deepest, d);
+                    outSum += dir * d;
+                    if (what != null && d > 0.05f) what.Add(o);
+                }
+            }
+            return deepest;
+        }
+
+        /// <summary>How deep the deepest part (or the board) is inside something solid right now, and the way out.</summary>
+        public float Embedded(out Vector3 way)
+        {
+            way = Vector3.zero;
+            if (!Active) return 0f;
+            float deepest = 0f;
+            foreach (var p in parts)
+                if (!p.gone && !p.free && p.col.enabled) deepest = Mathf.Max(deepest, Inside(p.col, p.rb.position, p.rb.rotation, Vector3.zero, ref way));
+            if (boardRb != null) deepest = Mathf.Max(deepest, Inside(boardCol, boardRb.position, boardRb.rotation, Vector3.zero, ref way));
+            return deepest;
+        }
+
+        static readonly HashSet<Collider> touched = new HashSet<Collider>();
+
+        /// <summary>Just thrown, and in two things at once or deep in one (the body, or the board)?</summary>
+        bool Cornered(bool theBoard)
+        {
+            touched.Clear();
+            return InsideAt(Vector3.zero, true, theBoard, touched) > 0.25f || touched.Count >= 2;
+        }
+
+        float InsideAt(Vector3 offset, bool posed, bool theBoard, HashSet<Collider> what = null)
+        {
+            Vector3 ignore = Vector3.zero;
+            float deepest = 0f;
+            foreach (var p in parts)
+            {
+                if (theBoard) break;
+                if (p.gone || p.free || !p.col.enabled) continue;
+                var t = p.rb.transform;
+                deepest = Mathf.Max(deepest, Inside(p.col, posed ? t.position : p.rb.position, posed ? t.rotation : p.rb.rotation, offset, ref ignore, what));
+            }
+            if (theBoard && boardRb != null)
+                deepest = Mathf.Max(deepest, Inside(boardCol, posed ? board.position : boardRb.position, posed ? board.rotation : boardRb.rotation, offset, ref ignore, what));
+            return deepest;
+        }
+
+        /// <summary>
+        /// Lift the body clear of anything solid it is inside, as one, and the board on its own: the nearest spot back
+        /// along `away` (and a little up, or to either side) where it is at most a touch into one thing. posed: the body has just been switched
+        /// on and its bones still say where it is. False if it was clear already, or nowhere near was.
+        /// </summary>
+        public bool Unwedge(Vector3 away, bool posed)
+        {
+            if (!Active || !Unstick) return false;
+            bool body = UnwedgeOne(away, posed, false);
+            return (boardRb != null && UnwedgeOne(away, posed, true)) || body;
+        }
+
+        /// <summary>The body, or the board on its own: moved the least that clears it.</summary>
+        bool UnwedgeOne(Vector3 away, bool posed, bool theBoard)
+        {
+            touched.Clear();
+            if (!Active || !Unstick || (InsideAt(Vector3.zero, posed, theBoard, touched) < 0.1f && touched.Count < 2)) return false;
+            if (tries.Count == 0)
+            {
+                // every move to try, the smallest first (back the way it came before sideways, at the same length)
+                foreach (float up in new[] { 0f, 0.3f, 0.6f, 1f })
+                    foreach (float b in new[] { 0f, 0.15f, 0.3f, 0.45f, 0.6f, 0.8f, 1f, 1.3f, 1.6f, 2f })
+                        for (int d = 0; d < 5; d++)
+                            if (up > 0f || b > 0f) tries.Add(new Vector3(d, b, up));
+                tries.Sort((x, y) => (x.y * x.y + x.z * x.z + x.x * 0.001f).CompareTo(y.y * y.y + y.z * y.z + y.x * 0.001f));
+            }
+            Vector3 side = Vector3.Cross(Vector3.up, away).normalized;
+            Vector3[] dirs = { away, (away + side).normalized, (away - side).normalized, side, -side };
+            foreach (var t in tries)
+            {
+                Vector3 o = dirs[(int)t.x] * t.y + Vector3.up * t.z;
+                // clear enough: at most a touch into one thing, which PhysX eases it out of by itself (the least move)
+                touched.Clear();
+                if (InsideAt(o, posed, theBoard, touched) >= 0.1f || touched.Count >= 2) continue;
+                Shift(o, posed, theBoard);
+                Unwedged++; LastUnwedge = o.magnitude;
+                return true;
+            }
+            return false;
+        }
+        static readonly List<Vector3> tries = new List<Vector3>();   // (which way, how far back, how far up)
+
+        void Shift(Vector3 o, bool posed, bool theBoard)
+        {
+            if (posed)
+            {
+                // the bones are the truth until the next step: move the model (every bone with it), or the board
+                if (theBoard) board.position += o; else rig.Root.position += o;
+                Physics.SyncTransforms();
+                return;
+            }
+            if (theBoard) boardRb.position += o;
+            else foreach (var p in parts) if (!p.gone && !p.free) p.rb.position += o;
+        }
+
+        /// <summary>Off only for the test tools' before-and-after numbers: no lifting clear, no settling.</summary>
+        public static bool Unstick = true;
+        /// <summary>How many times a body has been lifted clear of something it was inside (for the test tools).</summary>
+        public static int Unwedged;
+        /// <summary>How far the last one was moved (m).</summary>
+        public static float LastUnwedge;
+        /// <summary>Moved by an avalanche lately (s left): never settled while it is.</summary>
+        public float CarriedFor { get; private set; }
+        /// <summary>Laid to rest where it lay: no more physics until it is put away or the snow moves it.</summary>
+        public bool Frozen { get; private set; }
+
+        /// <summary>
+        /// A body that will not come to rest by itself: slow every part (and the board) hard this step, and once
+        /// `freeze` lay it down where it is, every part still. Nothing an avalanche is carrying is touched.
+        /// </summary>
+        public void Settle(float dt, bool freeze)
+        {
+            if (!Active || Frozen || CarriedFor > 0f) return;
+            float k = Mathf.Exp(-dt * 8f);
+            foreach (var p in parts)
+            {
+                if (p.gone || p.rb.isKinematic) continue;
+                p.rb.linearVelocity *= k; p.rb.angularVelocity *= k;
+                if (freeze) { p.rb.linearVelocity = Vector3.zero; p.rb.angularVelocity = Vector3.zero; p.rb.isKinematic = true; }
+            }
+            if (boardRb != null && !boardRb.isKinematic)
+            {
+                boardRb.linearVelocity *= k; boardRb.angularVelocity *= k;
+                if (freeze) { boardRb.linearVelocity = Vector3.zero; boardRb.angularVelocity = Vector3.zero; boardRb.isKinematic = true; }
+            }
+            Frozen = freeze;
+        }
+
+        void Thaw()
+        {
+            Frozen = false;
+            foreach (var p in parts) if (!p.gone) p.rb.isKinematic = false;
+            if (boardRb != null) boardRb.isKinematic = false;
         }
     }
 }
