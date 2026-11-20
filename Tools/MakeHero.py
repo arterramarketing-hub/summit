@@ -256,6 +256,8 @@ SIDE = {1: "Left", -1: "Right"}
 CAGES = []
 XTRA = []      # extra pieces built to their final shape (not subdivided, faces already turned the right way)
 SHAPES = {}    # face shapes the game can blend in (a blink, raised brows): name -> [(where a vertex is, where it goes)]
+GEAR_SHAPES = {}   # the same, on the outfit's gear (the balaclava pulled down)
+GOGGLES = None     # where the goggles are worn (Breanna's and Paul's): for the shape that pushes them up onto the beanie
 FACE_UV = (0.28, 0.30, 0.15)   # the painted face: how wide and tall a piece of the head it covers (m, head units), and how far below the middle it starts
 
 # ---- the jacket: torso, shoulders, sleeves, collar, one surface
@@ -1040,8 +1042,14 @@ def make_gear_buddy():
         G.cap(rings_[-1], HV(0, 0.012 + slouch, crown[-1][0] + 0.008), hd, swatch_uv(col))
         inner = [G.add(G.v[i] + (HV(0, 0.012, 0) + V(0, 0, G.v[i].z - HV(0, 0, 0).z) - G.v[i]) * 0.10 + V(0, 0, 0.006), hd, swatch_uv(col)) for i in rings_[0]]
         G.bridge(inner, rings_[0])       # the edge turned under, against the head
+        BEANIE.update(rx=rx * 1.03, ryf=ryf * 1.03, ryb=ryb * 1.03, crown=crown)
         return rx * 1.03, ryf * 1.03, ryb * 1.03
+    BEANIE = {}
     def goggles(zc, rx, ryf, ryb, cols, a0=1.15, h=0.044, lift=0.010):
+        # (worn over the eyes as modelled; in the camp the game blends in "GogglesUp", which pushes them up onto the
+        # beanie so the face shows: see the shape keys further down)
+        global GOGGLES
+        GOGGLES = dict(cols=cols, zc=zc, HC=HC.copy(), HS=HS, beanie=BEANIE, rx=rx, ryf=ryf, ryb=ryb)
         """Goggles round the head at height zc: a frame (rx, ryf, ryb: the head's or the cap's radii there), a mirrored
         lens in front of it, a strap round the back."""
         fcol, lcol, scol = cols
@@ -1076,7 +1084,7 @@ def make_gear_buddy():
         cap_hair([(0.110, 0.080), (0.074, 0.110), (0.038, 0.112), (0.0, 0.110), (-0.050, 0.102), (-0.094, 0.082)], 0.082, -0.090, sq=0.95)
         # the cream beanie, its cuff low on the forehead; his goggles pushed up on it (black frame, orange lens)
         crx, cry, crb = beanie("beanie", 0.046, 0.012, -0.044, 0.118, 0.106, 0.122, slouch=0.018)
-        goggles(0.046 + 0.034, crx, cry, crb, ("frame", "lens", "strap"), a0=1.10, h=0.092, lift=0.012)
+        goggles(0.010, 0.104, 0.094, 0.120, ("frame", "lens", "strap"), a0=1.18, h=0.090, lift=0.012)
         # outfit pieces that go with the head: the turtleneck's roll collar (outfit one), the balaclava (outfit two)
         def tring(C_, zf, zb, rx_, ry_, cy_, w_, uvn, n_=12):
             return [C_.add(V(rx_ * math.sin(a), cy_ - ry_ * math.cos(a), lerp(zf, zb, 0.5 - 0.5 * math.cos(a))), w_, swatch_uv(uvn)) for a in [2 * math.pi * k / n_ for k in range(n_)]]
@@ -1108,6 +1116,10 @@ def make_gear_buddy():
                         q = (hit if hit is not None else HV(sa * 0.10, 0.012 - ca * 0.10, zl)) + V(sa, -ca, 0) * (0.009 + (0.010 if ca > 0.85 and -0.06 < zl < 0.0 else 0.0))
                     w_ = {"UpperChest": 0.4, "Neck": 0.6} if zabs < 1.46 else {"Neck": 0.5, "Head": 0.5} if zabs < 1.51 else hd
                     row.append(XB.add(q, w_, swatch_uv("balaclava")))
+                    # pulled down: bunched round the neck below the chin, a roll at its top edge (lower in front)
+                    zt_ = lerp(1.452, 1.490, 0.5 - 0.5 * ca)
+                    rd = 0.074 + 0.012 * math.sin(math.pi * t) + 0.006 * t
+                    GEAR_SHAPES.setdefault("MaskDown", []).append((q.copy(), V(sa * rd, 0.015 - ca * rd, lerp(1.418, zt_, t))))
                 rows_b.append(row)
             for a_, b_ in zip(rows_b, rows_b[1:]): XB.bridge(a_, b_)
     if BRI:
@@ -1902,20 +1914,65 @@ for C, target in [(JD, "HeroBody"), (LD, "HeroLegs"), (GD, "HeroGear")] + XTRA:
     bpy.context.view_layer.objects.active = OBJS[target]
     bpy.ops.object.join()
 JS.bm.free(); LS.bm.free()
-if SHAPES:
-    # the face's moving parts become shape keys on the gear mesh; the game blends them in (RiderBodyHero)
+def shape_keys(ob, shapes):
+    """Shapes made of (where a vertex is, where it goes) pairs, as shape keys on an object (matched by position)."""
     from mathutils.kdtree import KDTree
-    gob = OBJS["HeroHead"]
-    kd = KDTree(len(gob.data.vertices))
-    for v in gob.data.vertices: kd.insert(v.co, v.index)
+    kd = KDTree(len(ob.data.vertices))
+    for v in ob.data.vertices: kd.insert(v.co, v.index)
     kd.balance()
-    gob.shape_key_add(name="Basis", from_mix=False)
-    for nm_, moves in SHAPES.items():
-        key = gob.shape_key_add(name=nm_, from_mix=False); n_ = 0
+    if ob.data.shape_keys is None: ob.shape_key_add(name="Basis", from_mix=False)
+    for nm_, moves in shapes.items():
+        key = ob.shape_key_add(name=nm_, from_mix=False); n_ = 0
         for at, to in moves:
             for co_, ix, dist in kd.find_range(at, 2e-5): key.data[ix].co = to; n_ += 1
-        key.value = 0.0   # at rest the face is as modelled
-        print("HERO shape %s: %d vertices" % (nm_, n_))
+        key.value = 0.0   # at rest as modelled
+        print("HERO shape %s on %s: %d vertices" % (nm_, ob.name, n_))
+# the face's moving parts become shape keys on the head mesh, the balaclava's on the gear; the game blends them in (RiderBodyHero)
+if SHAPES: shape_keys(OBJS["HeroHead"], SHAPES)
+if GEAR_SHAPES: shape_keys(OBJS["HeroGear"], GEAR_SHAPES)
+if GOGGLES:
+    # "GogglesUp": the goggles (every vertex in their swatches: they come through the smoothing whole) tipped up about
+    # a hinge at the back of the head onto the front of the beanie, and out just far enough to sit on its knit. In the
+    # camp the game shows them like this, so the face shows; on a run they come down over the eyes.
+    gob = OBJS["HeroHead"]; me = gob.data
+    cells = [swatch_uv(c) for c in GOGGLES["cols"]]
+    uvl = me.uv_layers.active
+    gv, strap_v = set(), set()
+    for li, lp in enumerate(me.loops):
+        u, v = uvl.data[li].uv
+        for ci, (cu, cv) in enumerate(cells):
+            if abs(u - cu) < 1e-3 and abs(v - cv) < 1e-3:
+                gv.add(lp.vertex_index)
+                if ci == 2: strap_v.add(lp.vertex_index)
+    HC_, HS_, bn = GOGGLES["HC"], GOGGLES["HS"], GOGGLES["beanie"]
+    pivot = HC_ + V(0, 0.118, GOGGLES["zc"]) * HS_
+    R_ = Matrix.Rotation(math.radians(-21), 3, 'X')
+    up = {i: pivot + R_ @ (me.vertices[i].co - pivot) for i in gv}
+    def k_at(z):   # how wide the beanie is at a height (head units), against its cuff
+        if z <= bn["crown"][0][0]: return 1.0
+        for (z0, k0), (z1, k1) in zip(bn["crown"], bn["crown"][1:]):
+            if z <= z1: return lerp(k0, k1, (z - z0) / (z1 - z0)) / 1.03
+        return bn["crown"][-1][1] / 1.03
+    # Up there they wrap the beanie, which is wider than the face they were fitted to: each point keeps how far it
+    # stood off the face (its depth in the goggles) but now stands that far off the knit, all round.
+    def ell(dx, dy, rx_, ryf_, ryb_):
+        dl = math.hypot(dx, dy)
+        return 1.0 / math.sqrt((dx / dl / rx_) ** 2 + (dy / dl / (ryf_ if dy < 0 else ryb_)) ** 2)
+    need = 0.0
+    for i, q in up.items():
+        r0 = (me.vertices[i].co - HC_) / HS_; d0x, d0y = r0.x, r0.y - 0.012
+        if math.hypot(d0x, d0y) < 1e-6: continue
+        off = math.hypot(d0x, d0y) - ell(d0x, d0y, GOGGLES["rx"], GOGGLES["ryf"], GOGGLES["ryb"])
+        r = (q - HC_) / HS_; dx, dy = r.x, r.y - 0.012; dl = math.hypot(dx, dy)
+        if dl < 1e-6: continue
+        nr = ell(dx, dy, bn["rx"], bn["ryf"], bn["ryb"]) * k_at(r.z) + max(off, 0.0) + 0.002
+        up[i] = HC_ + V(dx / dl * nr, 0.012 + dy / dl * nr, r.z) * HS_
+        need = max(need, nr - dl)
+    if gob.data.shape_keys is None: gob.shape_key_add(name="Basis", from_mix=False)
+    key = gob.shape_key_add(name="GogglesUp", from_mix=False)
+    for i, q in up.items(): key.data[i].co = q
+    key.value = 0.0
+    print("HERO shape GogglesUp: %d vertices, out %.1f mm to clear the beanie" % (len(up), need * HS_ * 1000))
 print("HERO rider triangles with details:", tri_total)
 
 # limit to 4 influences and normalise; the skinned meshes go on the skeleton

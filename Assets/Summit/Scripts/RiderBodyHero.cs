@@ -25,6 +25,10 @@ namespace Summit
         public int Built { get; private set; }
         // Val's face moves: a blink and a lift of the brows, shapes that come with his model (none on the summit rider)
         SkinnedMeshRenderer faceSmr; int blinkShape = -1, browShape = -1; float nextBlink, blinkT = 1f, nextBrows, browsT = 9f;
+        // In the camp the people from photos show their faces: goggles pushed up onto the beanie, the balaclava pulled
+        // down round the neck (shapes on their models). On a run they come back down and up again, eased over a moment.
+        readonly System.Collections.Generic.List<(SkinnedMeshRenderer smr, int shape)> campShapes = new System.Collections.Generic.List<(SkinnedMeshRenderer, int)>();
+        float campLook = 1f;
         int idStandVal = -1;
         HeroRig hero;
         /// <summary>The hero's rig, when the hero is the rider (for the test tools).</summary>
@@ -147,7 +151,7 @@ namespace Summit
             gearM.SetFloat("_SmoothnessTextureChannel", 1f);
             gearM.EnableKeyword("_SMOOTHNESS_TEXTURE_ALBEDO_CHANNEL_A");
             Material fleeceBlue = null, fleeceWhite = null, printM = null, faceM = null, knitM = null, hoodieM = null;
-            faceSmr = null; blinkShape = browShape = -1;
+            faceSmr = null; blinkShape = browShape = -1; campShapes.Clear();
             Material Face(Shader lit)
             {
                 // Val's painted face (cheeks, the beard's shadow, lids): plain lit skin with its picture
@@ -155,6 +159,7 @@ namespace Summit
                 var tex = Resources.Load<Texture2D>(who == 2 ? "Rider/BreannaFace" : who == 3 ? "Rider/PaulFace" : "Rider/BuddyFace");
                 if (tex != null) { m.SetTexture("_BaseMap", tex); m.mainTexture = tex; }
                 m.SetColor("_BaseColor", Color.white); m.SetFloat("_Smoothness", 0.3f);
+                FaceGlow(m, tex);
                 return m;
             }
             Material Fleece(Color c, float holds)
@@ -188,6 +193,11 @@ namespace Summit
                             : n.StartsWith("Jacket") ? jacketM : n.StartsWith("Pants") ? pantsM : gearM;
                 }
                 smr.sharedMaterials = mats;
+                foreach (var nm in new[] { "GogglesUp", "MaskDown" })
+                {
+                    int cs = smr.sharedMesh != null ? smr.sharedMesh.GetBlendShapeIndex(nm) : -1;
+                    if (cs >= 0) campShapes.Add((smr, cs));
+                }
                 int bs = smr.sharedMesh != null ? smr.sharedMesh.GetBlendShapeIndex("Blink") : -1;
                 if (bs >= 0) { faceSmr = smr; blinkShape = bs; browShape = smr.sharedMesh.GetBlendShapeIndex("Brows"); }
                 smr.updateWhenOffscreen = true;
@@ -213,6 +223,7 @@ namespace Summit
                 }
             }
 
+            CampLook(0f, true);   // (built in the camp: faces shown at once; built for a run: goggles already down)
             r.CaptureBind();
             snowy?.SetFrame(model, h.Hips);
             snowy?.BakeRigid(go.transform);
@@ -299,6 +310,29 @@ namespace Summit
             palNow[px] = new Color(c.r, c.g, c.b, palBase[px].a);
         }
 
+        /// <summary>
+        /// A face keeps a little light of its own (its own picture, faintly), so in the camp's shade and by night it still
+        /// reads as that person from the camp's camera, and isn't a dark oval under a cap.
+        /// </summary>
+        public static void FaceGlow(Material m, Texture tex)
+        {
+            if (tex == null) return;
+            m.EnableKeyword("_EMISSION");
+            m.SetTexture("_EmissionMap", tex);
+            m.SetColor("_EmissionColor", new Color(0.16f, 0.16f, 0.16f));
+            m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.None;
+        }
+
+        /// <summary>The camp look (faces shown) on foot, the run look on the board; eased between.</summary>
+        void CampLook(float dt, bool snap = false)
+        {
+            if (campShapes.Count == 0) return;
+            float want = Walking ? 1f : 0f;
+            campLook = snap ? want : Mathf.MoveTowards(campLook, want, dt * 1.1f);
+            float w = 100f * Mathf.SmoothStep(0f, 1f, campLook);
+            foreach (var (smr, shape) in campShapes) if (smr != null) smr.SetBlendShapeWeight(shape, w);
+        }
+
         /// <summary>The board material the hero's deck wears (the game's own, so the board rack paints it).</summary>
         Material boardPaint;
 
@@ -309,6 +343,7 @@ namespace Summit
             var h = hero;
             h.Begin();
             float t = Time.time;
+            CampLook(dt);
             if (faceSmr != null)
             {
                 // a blink every few seconds (a sixth of a second, shut in the middle), and now and then the brows go up for a moment

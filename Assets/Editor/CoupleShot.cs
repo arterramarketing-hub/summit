@@ -50,6 +50,10 @@ public static class CoupleShot
             Log($"start: {couple.State}");
             // (the first renders of a run come out wrong while the shaders compile)
             for (int i = 0; i < 3; i++) ShootPair("warmup", 4f, 0f, 1.2f);
+            // each of them, close and from as far as the camp's camera usually is: their faces show
+            Wait(1f);
+            ShootOne(1, "Face_Val", 1.4f, 15f, 1.55f); ShootOne(2, "Face_Breanna", 1.4f, -15f, 1.55f); ShootOne(3, "Face_Paul", 1.4f, 10f, 1.55f);
+            ShootOne(1, "Camp_Val", 7.5f, 25f, 2.4f, 1.0f); ShootOne(2, "Camp_Breanna", 7.5f, -25f, 2.4f, 1.0f); ShootOne(3, "Camp_Paul", 7.5f, 20f, 2.4f, 1.0f);
 
             // ---- together: off to the fire, hand in hand
             couple.Send("Fire");
@@ -243,12 +247,13 @@ public static class CoupleShot
         Shoot(name);
     }
 
-    static void ShootOne(int who, string name, float dist, float bearing)
+    static void ShootOne(int who, string name, float dist, float bearing, float height = 1.2f, float at = -1f)
     {
         var a = couple.Of(who);
         if (a == null) { Log($"{name}: not there ({couple.State})"); return; }
         var fwd = Quaternion.Euler(0f, bearing, 0f) * a.forward;
-        Look(a.position + fwd * dist + Vector3.up * 1.2f, a.position + Vector3.up * 1.0f, 34f);
+        float aim = at >= 0f ? at : height > 1.4f ? height - 0.05f : 1.0f;
+        Look(a.position + fwd * dist + Vector3.up * height, a.position + Vector3.up * aim, 34f);
         Shoot(name);
     }
 

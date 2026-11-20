@@ -82,6 +82,8 @@ public static class HeroShot
                     CampFront(); Shoot($"Dye_{d[0]}{d[1]}", cam, 540, 760);
                 }
                 Summit.Progress.Wear(Wardrobe.Cat.Rider, pick);
+                // HERO_OUTFIT=n: in that set of clothes (Paul's hoodie is 4)
+                if (int.TryParse(System.Environment.GetEnvironmentVariable("HERO_OUTFIT") ?? "", out int outfitN)) Summit.Progress.Wear(Wardrobe.Cat.Outfit, outfitN);
                 for (int i = 0; i < 20; i++) CampStep(Vector2.zero);
                 CampFront(); Shoot("SwapAfter", cam, 720, 900);
                 pre = pick == 3 ? "Breanna" : paul ? "Paul" : "Buddy";
@@ -281,6 +283,13 @@ public static class HeroShot
         for (int i = 0; i < 60; i++) CampStep(Vector2.zero);
         Shoot("CampStandGame", cam, 590, 1278);
         CampSide(); Shoot("CampStand", cam, 720, 900);
+        // the face, close (in the camp the goggles are up and any face cover down)
+        if (body.Hero != null && body.Hero.Head != null)
+        {
+            var hp = body.Hero.Head.position + Vector3.up * 0.08f; var fd = Quaternion.Euler(0f, camp.WalkerYaw, 0f) * Vector3.forward;
+            Look(hp + fd * 1.25f + Vector3.up * 0.06f, hp, 34f); Shoot("CampFace", cam, 720, 900);
+            Look(hp + Quaternion.Euler(0f, 35f, 0f) * fd * 7f + Vector3.up * 1.2f, hp - Vector3.up * 0.5f, 34f); Shoot("CampDistance", cam, 720, 900);
+        }
         var seq = Seq("camp");
         int f = 0;
         Vector3 prev = camp.WalkerPosition;

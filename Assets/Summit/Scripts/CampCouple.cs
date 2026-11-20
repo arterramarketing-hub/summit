@@ -61,7 +61,8 @@ namespace Summit
 
         void Update()
         {
-            if (Manual) return;
+            // (only while the hero is in the camp: on a run, at the gate or on the start page they wait where they are)
+            if (Manual || camp == null || !camp.Active) return;
             Step(Time.deltaTime);
         }
 
@@ -92,6 +93,7 @@ namespace Summit
             if (played != 1 && val == null) { val = Person.Make(this, 1); if (val != null && placed) ComeOut(val); }
             if (played != 2 && bri == null) { bri = Person.Make(this, 2); if (bri != null && placed) ComeOut(bri); }
             if (played != 3 && paul == null) { paul = Person.Make(this, 3); if (paul != null && placed) ComeOut(paul); }
+            all[0] = val; all[1] = bri; all[2] = paul;
             if (!placed) { Place(played); placed = true; }
             // the one being played isn't here (they're the hero); the one who has just stopped being played comes
             // out of the chalet
@@ -122,15 +124,15 @@ namespace Summit
             int every = 0;
             if (together && cam != null) every = Every(Mathf.Min(Vector3.Distance(cam.transform.position, val.pos), Vector3.Distance(cam.transform.position, bri.pos)));
             if (paul != null && paul.shown) Alone(paul, dt, null, false);
-            foreach (var p in new[] { val, bri }) if (p != null && p.shown) Pose(p, dt, every);
-            if (paul != null && paul.shown) Pose(paul, dt, 0);
+            for (int i = 0; i < all.Length; i++) if (all[i] != null && all[i].shown) Pose(all[i], dt, all[i] == paul ? 0 : every);
             if (together && val.posed && bri.posed) Hands(dt); else if (!together) holdW = 0f;
-            foreach (var p in new[] { val, bri, paul }) if (p != null && p.shown && p.posed) Extras(p, dt);
+            for (int i = 0; i < all.Length; i++) if (all[i] != null && all[i].shown && all[i].posed) Extras(all[i], dt);
             if (waver != null && !waver.shown) { waver = null; wave = 0f; }
             waveCool -= dt;
         }
         int tick;
         Person joiner;   // the one walking over to join the other
+        readonly Person[] all = new Person[3];   // Val, Breanna, Paul (kept, not made afresh each frame)
 
         static int Every(float dist) => dist < 30f ? 1 : dist < 70f ? 2 : 4;
 
@@ -694,6 +696,12 @@ namespace Summit
                 {
                     r.updateWhenOffscreen = false;
                     r.quality = SkinQuality.Bone4; r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+                    // in the camp their faces show: goggles up on the beanie, the balaclava down (RiderBodyHero.CampLook)
+                    foreach (var nm in CampShapes)
+                    {
+                        int cs = r.sharedMesh != null ? r.sharedMesh.GetBlendShapeIndex(nm) : -1;
+                        if (cs >= 0) r.SetBlendShapeWeight(cs, 100f);
+                    }
                     int bs = r.sharedMesh != null ? r.sharedMesh.GetBlendShapeIndex("Blink") : -1;
                     if (bs >= 0) { p.face = r; p.blink = bs; }
                 }
@@ -701,6 +709,8 @@ namespace Summit
                 p.shown = true;
                 return p;
             }
+
+            static readonly string[] CampShapes = { "GogglesUp", "MaskDown" };
 
             static float Stride(HeroRig h, int walk, Transform root)
             {
@@ -735,6 +745,7 @@ namespace Summit
                     var t = Resources.Load<Texture2D>(path);
                     if (t != null) { m.SetTexture("_BaseMap", t); m.mainTexture = t; }
                     m.SetColor("_BaseColor", Color.white); m.SetFloat("_Smoothness", smooth);
+                    if (path.EndsWith("Face")) RiderBody.FaceGlow(m, t);   // (as the hero's: readable in the shade)
                     return m;
                 }
                 int jacket = Progress.SetWorn(set, Wardrobe.Cat.Jacket), pants = Progress.SetWorn(set, Wardrobe.Cat.Pants), boots = Progress.SetWorn(set, Wardrobe.Cat.Boots);
@@ -841,8 +852,9 @@ namespace Summit
         /// <summary>Keep the walker out of them (Camp.Walk asks): they're solid, as a post would be.</summary>
         public Vector2 PushOut(Vector2 p, float r)
         {
-            foreach (var q in new[] { val, bri, paul })
+            for (int i = 0; i < all.Length; i++)
             {
+                var q = all[i];
                 if (q == null || !q.shown) continue;
                 var d = p - new Vector2(q.pos.x, q.pos.z);
                 float m = d.magnitude, min = r + 0.25f;

@@ -72,7 +72,7 @@ namespace Summit
         static readonly Item[] riders =
         {
             I("SUMMIT RIDER · MALE", 0, C(0.93f, 0.31f, 0.14f)), I("SUMMIT RIDER · FEMALE", 0, C(0.98f, 0.55f, 0.35f)),
-            I("PAJAMA BUDDY VAL", 0, C(0.10f, 0.25f, 0.80f)), I("PAJAMA " + Breanna, 0, C(0.93f, 0.90f, 0.82f)),
+            I("PAJAMA BUDDY VAL", 0, C(0.10f, 0.25f, 0.80f)), I(Breanna, 0, C(0.93f, 0.90f, 0.82f)),   // (she arrives in her fleece now, not her pyjamas; Val keeps the name he was given)
             I("PAUL", 0, C(0.06f, 0.06f, 0.07f)),
         };
         /// <summary>The RIDER row that is Paul (a skier: picking him puts him on skis).</summary>
