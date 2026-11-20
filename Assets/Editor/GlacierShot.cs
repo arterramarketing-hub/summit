@@ -258,7 +258,10 @@ public static class GlacierShot
     {
         bool shotFalling = false;
         float minY = 1e9f;
-        Ride(spot.x, spot.z - cv.half - 3f, 4f, 12f, t =>
+        // (from just above its lip at a crawl: from further up, the steep slope has the board going fast enough at the
+        // lip to fly most of the way across before it drops, and it goes in against the far wall)
+        float open0 = Course.Opening(cv, cv.Along(spot.x, spot.z), out _);
+        Ride(spot.x, spot.z - open0 - 0.6f, 2f, 12f, t =>
         {
             var c = body.RagdollCentre;
             if (rider.Crashed) minY = Mathf.Min(minY, c.y);

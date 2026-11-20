@@ -11,7 +11,7 @@ namespace Summit
     public class CourseDressing : MonoBehaviour
     {
         public Transform target;
-        Material metal, boxSide, railMat, post, ice, lipBand, bridgeSnow, poleOrange, poleBlack, signPark, signDanger, signPipe, signBack, snow, signRidge, signGorge, signLedge;
+        Material metal, boxSide, railMat, post, ice, lipBand, bridgeSnow, lipDark, lipMid, hairDark, poleOrange, poleBlack, signPark, signDanger, signPipe, signBack, snow, signRidge, signGorge, signLedge;
         readonly Dictionary<int, GameObject> built = new Dictionary<int, GameObject>();
         readonly List<int> drop = new List<int>();
 
@@ -32,6 +32,11 @@ namespace Summit
             ice = IceMaterial(lit);
             lipBand = LipMaterial(lit);
             bridgeSnow = BridgeMaterial(lit);
+            // the lip, and the hairline a crack runs out into: the snow's own material (its grain, its grooming lines
+            // carried on to the edge), only darker. A painted band fading to white read as a ring round a pool
+            lipDark = Shade(snowSurface, 0.56f, 0.64f, 0.78f);
+            lipMid = Shade(snowSurface, 0.80f, 0.85f, 0.93f);
+            hairDark = Shade(snowSurface, 0.36f, 0.43f, 0.57f);
             poleOrange = M(new Color(1f, 0.42f, 0.05f), 0.4f);
             poleBlack = M(new Color(0.08f, 0.08f, 0.09f), 0.3f);
             signBack = M(new Color(0.35f, 0.36f, 0.4f), 0.3f);
@@ -41,6 +46,14 @@ namespace Summit
             signRidge = Sign(lit, "Signs/SignRidge");
             signGorge = Sign(lit, "Signs/SignGorge");
             signLedge = Sign(lit, "Signs/SignLedge");
+        }
+
+        static Material Shade(Material snowSurface, float r, float g, float b)
+        {
+            var m = new Material(snowSurface);
+            var c = snowSurface.HasProperty("_BaseColor") ? snowSurface.GetColor("_BaseColor") : Color.white;
+            m.SetColor("_BaseColor", new Color(c.r * r, c.g * g, c.b * b, 1f));
+            return m;
         }
 
         public static Material Sign(Shader lit, string path)
@@ -218,8 +231,35 @@ namespace Summit
             return m;
         }
 
-        static float Jag(float z, int side, float open) =>
-            open <= 0f ? 0f : 0.3f * (Slope.Noise(z * 1.3f + side * 17.1f, 77.7f) - 0.5f) * 2f * Mathf.Min(1f, open);
+        /// <summary>
+        /// How far a drawn lip stands off the crack's true edge at u: ragged at two scales, and broken back in blocks
+        /// (the lip calves off in pieces a hand to a forearm deep). Only drawn: what you fall into is Course.Opening.
+        /// </summary>
+        static float Jag(Course.Crevasse cv, float u, int side, float open)
+        {
+            if (open <= 0f) return 0f;
+            float k = Mathf.Min(1f, open);
+            float n1 = (Slope.Noise(u * 1.3f + side * 17.1f + cv.phase, 77.7f) - 0.5f) * 2f;
+            float n2 = (Slope.Noise(u * 4.3f + side * 5.3f + cv.phase * 2f, 31.3f) - 0.5f) * 2f;
+            int block = Mathf.FloorToInt(u / (1.2f + 0.8f * Slope.Hash01(cv.id, side, 91)) + cv.phase);
+            float blockOff = (Slope.Hash01(block, side + cv.id * 3, 92) - 0.5f) * 2f;
+            return k * (0.2f * n1 + 0.08f * n2 + 0.1f * blockOff);
+        }
+
+        /// <summary>
+        /// The drawn crack's middle line steps sideways now and then (en echelon: a crack opens as a run of short offset
+        /// pieces); a few centimetres to a few tens, smoothed over half a metre. Only drawn, as Jag.
+        /// </summary>
+        static float Step(Course.Crevasse cv, float u, float open)
+        {
+            if (cv.kind == Course.CrevasseKind.Bergschrund) return 0f;
+            float seg = 4f + 3f * Slope.Hash01(cv.id, 0, 93);
+            float f = u / seg + cv.phase * 0.1f;
+            int i = Mathf.FloorToInt(f);
+            float a = (Slope.Hash01(i, cv.id, 94) - 0.5f) * 2f, b = (Slope.Hash01(i + 1, cv.id, 94) - 0.5f) * 2f;
+            float t = Mathf.Clamp01((f - i - 0.9f) / 0.1f);   // (each piece holds its offset, then steps across in its last tenth)
+            return Mathf.Min(1f, open) * 0.14f * Mathf.Lerp(a, b, t * t * (3f - 2f * t));
+        }
 
         /// <summary>The ice walls' layer: the thrown body and board hit them, the rider's own sphere does not.</summary>
         public const int IceLayer = 4;
@@ -235,13 +275,14 @@ namespace Summit
         {
             const float step = 0.4f;
             const float lipDrop = 0.75f, colStep = 1f;
-            float[] apron = { 0f, 0.25f, 0.7f, 1.4f, 2.7f };
-            float[] band = { 0f, 0.25f, 0.7f, 1.3f, 2.2f };
+            float[] apron = { 0f, 0.25f, 0.7f, 1.4f, 2.7f, 4.2f };
+            // the lip's darker snow: a narrow strip, darkest at the edge (lipDark) and a little lighter behind (lipMid)
+            float[] band = { 0f, 0.16f, 0.42f };
             const int Wall = 8, ColWall = 4;
-            float ua = -2.6f, ub = cv.len + 2.6f;
+            float ua = -4f, ub = cv.len + 4f;
             int rows = Mathf.CeilToInt((ub - ua) / step) + 1, crows = Mathf.CeilToInt((ub - ua) / colStep) + 1;
             var sv = new List<Vector3>(); var suv = new List<Vector2>(); var st = new List<int>();
-            var bv = new List<Vector3>(); var buv = new List<Vector2>(); var bt = new List<int>();
+            var bv = new List<Vector3>(); var buv = new List<Vector2>(); var bt = new List<int>(); var bt2 = new List<int>();
             var iv = new List<Vector3>(); var iuv = new List<Vector2>(); var it = new List<int>();
             // the ice's own mapping for its shader: (metres below the lip, 0 at the lip to 1 at the bottom), and where
             // on the wall in metres (along the crevasse, up), from the crevasse's start so the numbers stay small
@@ -257,32 +298,38 @@ namespace Summit
                 int sBase = sv.Count, bBase = bv.Count, iBase = iv.Count;
                 iBases[side < 0 ? 0 : 1] = iBase;
                 bool pos = side < 0;   // (w runs to the left of the crack's direction: the mirror of x)
+                // which side is up the hill: its lip stands a little proud (wind-packed, a touch overhanging), the
+                // lower one sags in
+                float upHill = (side * cv.dx) < 0f ? 1f : (side * cv.dx) > 0f ? 0f : 0.5f;   // (outward is side * (-dz, dx): its z is side * dx)
                 for (int r = 0; r < rows; r++)
                 {
                     float u = Mathf.Min(ua + r * step, ub);
                     float open = Course.Opening(cv, u, out float ctr);
-                    float e = Mathf.Max(0f, open + Jag(u, side, open));
+                    ctr += Step(cv, u, open);
+                    float e = Mathf.Max(0f, open + Jag(cv, u, side, open));
+                    float lift = Mathf.Min(1f, open / 0.5f) * Mathf.Lerp(-0.12f, 0.11f, upHill);
                     float depth = cv.depth * Mathf.Sqrt(Mathf.Max(0f, open) / cv.half) - 1.5f;
-                    // the snow either side, laid over the terrain's ragged hole; the lip rounds down a little
+                    // the snow either side, laid over the terrain's ragged hole: proud of the snow at the lip (raised up the
+                    // hill, sagging down it), and tucked under the drawn terrain further out, so it shows only where the
+                    // terrain has a hole (no seam, no ring)
                     for (int c = 0; c < apron.Length; c++)
                     {
                         float w = ctr + side * (e + apron[c]);
-                        var p = P(u, w, Surf(u, w) + (c == 0 ? -0.06f : c == 1 ? 0.0f : 0.025f));
+                        float dy = c == 0 ? lift - 0.04f : c == 1 ? lift * 0.5f : c == 2 ? -0.03f : c == 3 ? -0.06f : -0.09f;
+                        var p = P(u, w, Surf(u, w) + dy);
                         sv.Add(p); suv.Add(new Vector2(p.x / 9f, p.z / 9f));
                     }
-                    // a darker band of wind-scoured, shadowed snow along the lip, just over the snow: you see the
-                    // line of it from well up the hill (it fades out where the crevasse pinches shut)
-                    float fade = Mathf.Clamp01(open / 0.8f);
+                    // the lip's darker snow, just over the snow, narrowing to nothing where the crack runs out
+                    float fade = Mathf.Clamp01((open - 0.08f) / 0.45f);
                     for (int c = 0; c < band.Length; c++)
                     {
-                        float w = ctr + side * (e + band[c]);
-                        // (over whichever is higher, the true snow or the drawn terrain's facets, so it is never under them)
+                        float w = ctr + side * (e + band[c] * fade);
                         var q = cv.Point(u, w);
-                        float top = c == 0 ? Surf(u, w) - 0.04f : Mathf.Max(Surf(u, w), Slope.DrawnHeight(q.x, q.y)) + 0.04f;
-                        bv.Add(new Vector3(q.x, top, q.y)); buv.Add(new Vector2(0.5f, 1f - fade * (1f - c / (band.Length - 1f))));
+                        float top = c == 0 ? Surf(u, w) + lift - 0.03f : Mathf.Max(Surf(u, w), Slope.DrawnHeight(q.x, q.y)) + 0.03f + (c == 1 ? lift * 0.5f : 0f);
+                        bv.Add(new Vector3(q.x, top, q.y)); buv.Add(new Vector2(q.x / 9f, q.y / 9f));
                     }
                     // the snow face under the lip (overhanging a touch), then the ice down into the dark
-                    float w0 = ctr + side * e, y0 = Surf(u, w0) - 0.06f;
+                    float w0 = ctr + side * e, y0 = Surf(u, w0) + lift - 0.06f;
                     iv.Add(P(u, w0, y0)); iuv.Add(new Vector2(0f, 0f)); iflat.Add(new Vector2(u - ua, y0 - yRef));
                     iv.Add(P(u, w0 + side * 0.22f, y0 - lipDrop)); iuv.Add(new Vector2(lipDrop, 0.06f)); iflat.Add(new Vector2(u - ua, y0 - lipDrop - yRef));
                     for (int k = 1; k <= Wall; k++)
@@ -298,7 +345,8 @@ namespace Summit
                 for (int r = 0; r < rows - 1; r++)
                 {
                     Quads(st, sBase + r * sc, sc, pos);
-                    Quads(bt, bBase + r * bc, bc, pos);
+                    Quad(bt, bBase + r * bc, bc, pos);                // the dark edge
+                    Quad(bt2, bBase + r * bc + 1, bc, pos);           // the lighter snow behind it
                     // facing into the crevasse, so the walls light from the inside
                     Quads(it, iBase + r * ic, ic, !pos);
                 }
@@ -324,17 +372,20 @@ namespace Summit
                     {
                         int side = s == 0 ? -1 : 1;
                         float f = (s == 0 ? k : ColWall - k) / (float)ColWall;
-                        float e = Mathf.Max(0f, open + Jag(u, side, open));
-                        float w0 = ctr + side * e, y0 = Surf(u, w0) - 0.06f;
+                        float ctrS = ctr + Step(cv, u, open);
+                        float e = Mathf.Max(0f, open + Jag(cv, u, side, open));
+                        float w0 = ctrS + side * e, y0 = Surf(u, w0) - 0.06f;
                         // (a hand's width inside the drawn ice, so a body against the wall lies on it, not in it)
-                        float w = ctr + side * Mathf.Max(0f, Mathf.Lerp(e + 0.22f, open * 0.12f, Mathf.Pow(f, 0.75f)) - 0.1f);
+                        float w = ctrS + side * Mathf.Max(0f, Mathf.Lerp(e + 0.22f, open * 0.12f, Mathf.Pow(f, 0.75f)) - 0.1f);
                         float y = f == 0f ? y0 : y0 - lipDrop - Mathf.Max(0f, depth - lipDrop) * f;
                         cvv.Add(P(u, w, y));
                     }
             }
             for (int r = 0; r < crows - 1; r++) Quads(ct, r * cc, cc, false);
             MeshObject(root, "CrevasseSnow", sv, suv, st, snow, true);
-            MeshObject(root, "CrevasseLip", bv, buv, bt, lipBand, false);
+            MeshObject(root, "CrevasseLip", bv, buv, bt, lipDark, false);
+            MeshObject(root, "CrevasseLipSnow", bv, buv, bt2, lipMid, false);
+            Hairlines(root, cv);
             MeshObject(root, "CrevasseIce", iv, iuv, it, ice, false, iflat);
             IceCollider(root, cvv, ct);
         }
@@ -361,7 +412,7 @@ namespace Summit
                     float f = c / (Cols - 1f) * 2f - 1f;                  // -1 .. 1 across, lip to lip
                     var q = cv.Point(u, mid + f * reach);
                     float y = Slope.Surface(q.x, q.y) - sag * (1f - f * f) + 0.03f;
-                    v.Add(new Vector3(q.x, y, q.y)); uv.Add(new Vector2(0.5f, Mathf.Abs(f)));
+                    v.Add(new Vector3(q.x, y, q.y)); uv.Add(new Vector2(q.x / 9f, q.y / 9f));
                 }
             }
             for (int r = 0; r < rows - 1; r++) Quads(t, r * Cols, Cols, false);   // (facing up: w runs to the crack's left)
@@ -372,8 +423,8 @@ namespace Summit
                 for (int c = 0; c < Cols; c++)
                 {
                     var top = v[row * Cols + c];
-                    v.Add(top); uv.Add(new Vector2(0.5f, 0.9f));
-                    v.Add(top + Vector3.down * 0.9f); uv.Add(new Vector2(0.5f, 1f));
+                    v.Add(top); uv.Add(new Vector2(top.x / 9f, top.z / 9f));
+                    v.Add(top + Vector3.down * 0.9f); uv.Add(new Vector2(top.x / 9f, (top.z + 0.9f) / 9f));
                 }
                 for (int c = 0; c < Cols - 1; c++)
                 {
@@ -382,7 +433,22 @@ namespace Summit
                     else { t.Add(a); t.Add(a + 1); t.Add(a2); t.Add(a2); t.Add(a + 1); t.Add(a2 + 1); }
                 }
             }
-            MeshObject(root, "CrevasseBridge", v, uv, t, bridgeSnow, true);
+            MeshObject(root, "CrevasseBridge", v, uv, t, snow, true);
+            // the sag's line down the middle: a thin grey thread, the one sign of a crack the bridge hides
+            var lv = new List<Vector3>(); var luv = new List<Vector2>(); var lt = new List<int>();
+            for (int r = 0; r < rows; r++)
+            {
+                float u = Mathf.Lerp(u0, u1, r / (rows - 1f));
+                float open = Course.Opening(cv, u, out float mid);
+                float sag = 0.06f + 0.1f * Mathf.Min(1.5f, open), half = 0.03f + 0.03f * Mathf.Min(1f, open);
+                for (int sd = -1; sd <= 1; sd += 2)
+                {
+                    var q = cv.Point(u, mid + sd * half);
+                    lv.Add(new Vector3(q.x, Slope.Surface(q.x, q.y) - sag + 0.045f, q.y)); luv.Add(new Vector2(q.x / 9f, q.y / 9f));
+                }
+            }
+            for (int r = 0; r < rows - 1; r++) Quad(lt, r * 2, 2, false);
+            MeshObject(root, "CrevasseBridgeLine", lv, luv, lt, hairDark, false);
             if (u1 - u0 > cv.len - 4f) return;   // a hidden crack: nothing marks it but its sag
             foreach (float u in new[] { u0, u1 })
             {
@@ -412,6 +478,43 @@ namespace Summit
             m.SetFloat("_Smoothness", 0.3f);
             m.SetFloat("_Cull", 0f);
             return m;
+        }
+
+        /// <summary>One quad: points a and a + 1 of a row, and the same two of the next row (`stride` on).</summary>
+        static void Quad(List<int> t, int a, int stride, bool one)
+        {
+            int b = a + 1, d = a + stride, e = d + 1;
+            if (one) { t.Add(a); t.Add(d); t.Add(b); t.Add(b); t.Add(d); t.Add(e); }
+            else { t.Add(a); t.Add(b); t.Add(d); t.Add(b); t.Add(e); t.Add(d); }
+        }
+
+        /// <summary>
+        /// The hairline a crack runs out into past each end: a dark thread a few centimetres wide, wandering on 2-7 m
+        /// over the unbroken snow and fading to nothing (no hole: the snow is whole there).
+        /// </summary>
+        void Hairlines(Transform root, Course.Crevasse cv)
+        {
+            var v = new List<Vector3>(); var uv = new List<Vector2>(); var t = new List<int>();
+            for (int end = 0; end < 2; end++)
+            {
+                float reach = 2f + 5f * Slope.Hash01(cv.id, end, 95);
+                Course.Opening(cv, end == 0 ? 0f : cv.len, out float mid0);
+                int n = Mathf.Max(3, Mathf.CeilToInt(reach / 0.3f)), b = v.Count;
+                for (int i = 0; i <= n; i++)
+                {
+                    float f = i / (float)n, u = end == 0 ? -f * reach : cv.len + f * reach;
+                    float wob = 0.25f * Mathf.Sin(u * 0.9f + cv.phase) * f + 0.08f * (Slope.Noise(u * 3.1f + cv.phase, 12.3f) - 0.5f);
+                    float half = 0.045f * (1f - f) + 0.004f;
+                    for (int sd = -1; sd <= 1; sd += 2)
+                    {
+                        var q = cv.Point(u, mid0 + wob + sd * half);
+                        v.Add(new Vector3(q.x, Mathf.Max(Slope.Surface(q.x, q.y), Slope.DrawnHeight(q.x, q.y)) + 0.025f, q.y));
+                        uv.Add(new Vector2(q.x / 9f, q.y / 9f));
+                    }
+                }
+                for (int i = 0; i < n; i++) Quad(t, b + i * 2, 2, end == 0);
+            }
+            MeshObject(root, "CrevasseHair", v, uv, t, hairDark, false);
         }
 
         /// <summary>The quads between one row of a strip and the next (rows of n points, from `a`), facing one way or the other.</summary>

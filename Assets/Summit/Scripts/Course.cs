@@ -189,16 +189,18 @@ namespace Summit
         }
 
         /// <summary>
-        /// Half the crack's width at u along it (it pinches shut at both ends), and how far its middle line is to the
-        /// side of its straight line there.
+        /// Half the crack's width at u along it (it runs out to a point at both ends), and how far its middle line is
+        /// to the side of its straight line there.
         /// </summary>
         public static float Opening(Crevasse c, float u, out float mid)
         {
             float s = Mathf.Clamp01(u / c.len);
             mid = c.bow * Mathf.Sin(Mathf.PI * s) + 0.3f * Mathf.Min(1f, c.half) * Mathf.Sin(u * 0.29f + c.phase);
             if (u <= 0f || u >= c.len) return 0f;
-            float taper = Mathf.Min(6f, c.len * 0.3f);
-            float o = c.half * Mathf.Sqrt(Mathf.Clamp01(Mathf.Min(u, c.len - u) / taper));
+            // pointed at both ends, the way a crack runs out to nothing (a rounded end read as a pool from up the hill)
+            float taper = Mathf.Min(9f, c.len * 0.38f);
+            float t = Mathf.Clamp01(Mathf.Min(u, c.len - u) / taper);
+            float o = c.half * t * (2f - t);
             return o * (0.82f + 0.18f * Mathf.Sin(u * 0.17f + c.phase * 1.3f));
         }
 
@@ -221,6 +223,27 @@ namespace Summit
                 best = Mathf.Max(best, c.depth * (1f - d4 * d4) * Mathf.Sqrt(open / c.half));
             }
             return best;
+        }
+
+        /// <summary>
+        /// Within r of a crack's opening (its pointed ends too)? For the terrain's mesh, which leaves a hole for any quad
+        /// that touches one: testing only its corners left the narrow ends covered, and the cracks looked cut off square.
+        /// </summary>
+        public static bool NearOpening(float x, float z, float r)
+        {
+            var near = Near(z);
+            for (int i = 0; i < near.Length; i++)
+            {
+                ref var c = ref crevs[near[i]];
+                if (x < c.x0 - r || x > c.x1 + r || z < c.z0 - r || z > c.z1 + r) continue;
+                float u = c.Along(x, z);
+                if (u < -r || u > c.len + r) continue;
+                float uc = Mathf.Clamp(u, 0f, c.len);
+                float open = Opening(c, uc, out float mid);
+                float du = u - uc, dw = Mathf.Max(0f, Mathf.Abs(c.Across(x, z) - mid) - open);
+                if (du * du + dw * dw < r * r) return true;
+            }
+            return false;
         }
 
         /// <summary>The crevasse at or near a point (within margin of its full width, bridged or not), if any.</summary>
@@ -267,10 +290,34 @@ namespace Summit
         }
 
         /// <summary>
-        /// Is there snow to ride on at (x, z) at this speed? Everywhere but a crack's opening; over a snow bridge only
-        /// going fast enough (a slow board breaks through).
+        /// Is there snow to ride on at (x, z) at this speed? Everywhere but a crack's opening (one narrow enough for the
+        /// speed is skimmed: SkimTime); over a snow bridge only going fast enough (a slow board breaks through).
         /// </summary>
-        public static bool Solid(float x, float z, float speed) => CrevasseCut(x, z) <= 0.3f || (speed >= BridgeHolds && OnBridge(x, z));
+        public static bool Solid(float x, float z, float speed) =>
+            CrevasseCut(x, z) <= 0.3f || 2f * OpenAt(x, z) < speed * SkimTime || (speed >= BridgeHolds && OnBridge(x, z));
+
+        /// <summary>
+        /// A board crosses an opening it spans in less than this (s) without sinking into it more than a few
+        /// centimetres, so it skims it at the snow's level. (Flown, it sank a hand's width below the far lip and was
+        /// snapped back up onto it in one step: a jolt. Nothing it skims could have swallowed it: that takes 0.6 m.)
+        /// </summary>
+        public const float SkimTime = 0.14f;
+
+        /// <summary>The half-width of the opening at (x, z): 0 off every crack.</summary>
+        public static float OpenAt(float x, float z)
+        {
+            var near = Near(z);
+            float best = 0f;
+            for (int i = 0; i < near.Length; i++)
+            {
+                ref var c = ref crevs[near[i]];
+                if (x < c.x0 || x > c.x1 || z < c.z0 || z > c.z1) continue;
+                float u = c.Along(x, z);
+                float open = Opening(c, u, out float mid);
+                if (open > 0.01f && Mathf.Abs(c.Across(x, z) - mid) < open) best = Mathf.Max(best, open);
+            }
+            return best;
+        }
 
         /// <summary>
         /// How a body that rode into a crevasse goes in: a drop, not a throw. It keeps a little of its speed along

@@ -97,8 +97,9 @@ namespace Summit
             // getting you off the hill and in
             public const int PatrolFirstAid = 100, PatrolSled = 680, Ambulance = 2400, Helicopter = 36400;
             public const int MountainRescue = 12000, CrevasseRescue = 18000, AvalancheRescue = 9500;
-            // the door you came in by (facility + physician)
-            public const int Er3 = 1346, Er4 = 2339, Er5 = 4158, TraumaTeam = 8204;
+            // the door you came in by: the facility's charge for the ER visit, by level (the physicians' work is on each
+            // diagnosis line: Dx)
+            public const int Er3 = 1129, Er4 = 1928, Er5 = 3549, TraumaTeam = 8204;
             // pictures (facility + the radiologist's read)
             public const int XRay = 440, CtHead = 2377, CtTorso = 8279, CtBody = 13676, Mri = 1775;
             // holding it together
@@ -110,12 +111,50 @@ namespace Summit
                              ReplantArm = 136238, ReplantLeg = 164409, Implant = 4000;
             // the nights, and the blood
             public const int Ward = 3612, Icu = 7833, Unit = 689, Transfusion = 562;
-            // each injury's own care in the ER: the physician's evaluation by level, or the procedure for it
-            public const int Bruise = 217, Sprain = 411, Serious = 609, Reduction = 1951, ClosedFracture = 3673, NasalReduction = 911,
-                             OpenWound = 2579, Tooth = 521, Heels = 7346, Hypothermia = 6065, Frostbite = 3070, Asphyxia = 6944;
+            public const int Tooth = 521;
             // stitches: simple (to 2.5 cm), intermediate (to 7.5 cm), complex
             public const int StitchSmall = 794, StitchMid = 1940, StitchBig = 3204;
             public static int Stitches(int n) => n <= 5 ? StitchSmall : n <= 12 ? StitchMid : StitchBig;
+        }
+
+        /// <summary>
+        /// Each diagnosis line: the doctors' own work for that injury, at the bedside. That is the emergency
+        /// physician's evaluation at the level the injury needs, plus whatever is done for it there and then (a
+        /// reduction, a splint put on, sedation, a wound cleaned out), the specialist called in for it, and critical
+        /// care time when it threatens life. Everything else is its own line and is not counted here: the ER
+        /// facility, the scans, the casts and slings, the surgeries, the blood, the nights. Physician and procedure
+        /// fees from Vail Health Hospital's 2026 chargemaster (receipt.md).
+        /// </summary>
+        public static class Dx
+        {
+            // the pieces
+            const int E3 = 217, E4 = 411, E5 = 609;                 // ER physician, levels 3 / 4 / 5 (99283-5)
+            const int Consult = 767;                                // the specialist's first visit, high complexity (99223)
+            const int Crit = 1617, CritMore = 697;                  // critical care, first 30-74 min, each 30 min more (99291-2)
+            const int Intubate = 879, Sedate = 551;                 // emergency intubation; monitored sedation, first 30 min
+            const int NoseSet = 911, ShoulderSet = 1951, WristSet = 3673;   // closed reductions: nose; shoulder (ED+MD); distal radius (ED+MD)
+            const int ForearmSplint = 522, ArmSplint = 445, ShortLegSplint = 491, LongLegSplint = 515;
+            const int Debride = 1970, DebrideSkin = 1535;           // a wound cleaned out: to muscle; skin only (first 20 sq cm)
+
+            public const int Bruise = E3, Whiplash = E4, Concussion = E5;
+            public const int BrokenNose = E4 + NoseSet, SkullFracture = E5 + Consult, OrbitalFracture = E5 + Consult,
+                             DepressedSkull = E5 + Crit + Consult, BrokenJaw = E5 + Sedate + Consult,
+                             BrainBleed = Crit + CritMore + Intubate + Consult, SevereBrain = Crit + 2 * CritMore + Intubate + Consult;
+            public const int CrackedRib = E4, Ribs2 = E5, Ribs3 = E5 + Consult, CollapsedLung = E5 + Crit,
+                             Organ = Crit + CritMore + Consult, FlailChest = Crit + CritMore + Intubate + Consult;
+            public const int BruisedTailbone = E4, Tailbone = E5, CompressionL1 = E5 + Consult, Pelvis = Crit + Consult,
+                             PelvicRing = Crit + CritMore + Consult, BurstT12 = E5 + Crit + Consult, Heels = E5 + 2 * ShortLegSplint + Consult;
+            public const int DislocatedShoulder = E4 + ShoulderSet + Sedate, Collarbone = E5, Humerus = E5 + ArmSplint + Consult,
+                             CompoundHumerus = E5 + Debride + ArmSplint + Consult;
+            public const int SprainedWrist = E4 + ForearmSplint, SkiersThumb = E4, DistalRadius = WristSet, Scaphoid = E5,
+                             RadiusUlna = E5 + ForearmSplint + Consult, CompoundForearm = E5 + Debride + ForearmSplint + Consult;
+            public const int KneeLigament = E4, Acl = E4 + Consult, Kneecap = E5 + Consult, Femur = E5 + LongLegSplint + Sedate + Consult,
+                             CompoundFemur = E5 + Debride + LongLegSplint + Sedate + Consult;
+            public const int SprainedAnkle = E4, SnowboardersAnkle = E5, Ankle = E5 + Sedate, BootTop = E5 + Sedate + Consult,
+                             TibFib = E5 + LongLegSplint + Consult, Plateau = E5 + LongLegSplint + Consult,
+                             CompoundTibia = E5 + Debride + LongLegSplint + Consult;
+            public const int Amputation = Crit + Debride + Consult;
+            public const int Hypothermia = Crit + CritMore, Asphyxia = Crit + Intubate, Frostbite = 2 * DebrideSkin;
         }
 
         // ---------------------------------------------------------------- a fall
@@ -221,75 +260,75 @@ namespace Summit
                     faceHead = i.face;
                     if (i.face)
                     {
-                        if (g == 1) Print("Black eye", Price.Bruise, g);
-                        else if (g == 2) Print("Broken nose", Price.NasalReduction, g);
-                        else if (g == 3) Print("Orbital fracture", Price.Serious, g);
-                        else if (g == 4) Print("Broken jaw", Price.Serious, g);
-                        else if (g == 5) Print("Brain bleed", "Brain injury", Price.Serious, g, false);
-                        else Print("Severe brain injury", Price.Serious, g);
+                        if (g == 1) Print("Black eye", Dx.Bruise, g);
+                        else if (g == 2) Print("Broken nose", Dx.BrokenNose, g);
+                        else if (g == 3) Print("Orbital fracture", Dx.OrbitalFracture, g);
+                        else if (g == 4) Print("Broken jaw", Dx.BrokenJaw, g);
+                        else if (g == 5) Print("Brain bleed", "Brain injury", Dx.BrainBleed, g, false);
+                        else Print("Severe brain injury", Dx.SevereBrain, g);
                     }
                     else
                     {
-                        if (g == 1) Print(i.on == Surface.Snow ? "Whiplash" : "Head contusion", Price.Bruise, g);
-                        else if (g == 2) Print("Concussion", Price.Serious, g);
-                        else if (g == 3) Print("Skull fracture", Price.Serious, g);
-                        else if (g == 4) Print("Depressed skull fracture", Price.Serious, g);
-                        else if (g == 5) Print("Brain bleed", "Brain injury", Price.Serious, g, false);
-                        else Print("Severe brain injury", Price.Serious, g);
+                        if (g == 1) Print(i.on == Surface.Snow ? "Whiplash" : "Head contusion", i.on == Surface.Snow ? Dx.Whiplash : Dx.Bruise, g);
+                        else if (g == 2) Print("Concussion", Dx.Concussion, g);
+                        else if (g == 3) Print("Skull fracture", Dx.SkullFracture, g);
+                        else if (g == 4) Print("Depressed skull fracture", Dx.DepressedSkull, g);
+                        else if (g == 5) Print("Brain bleed", "Brain injury", Dx.BrainBleed, g, false);
+                        else Print("Severe brain injury", Dx.SevereBrain, g);
                     }
                     break;
                 case BodyPart.Chest:
-                    if (g == 1) Print("Chest contusion", Price.Bruise, g);
-                    else if (g == 2) Print("Cracked rib", Price.Sprain, g);
-                    else if (g == 3) Print("Fractured ribs (" + (e >= 12f ? 3 : 2) + ")", Price.Serious, g);
-                    else if (g == 4) Print("Collapsed lung", Price.Serious, g);
+                    if (g == 1) Print("Chest contusion", Dx.Bruise, g);
+                    else if (g == 2) Print("Cracked rib", Dx.CrackedRib, g);
+                    else if (g == 3) Print("Fractured ribs (" + (e >= 12f ? 3 : 2) + ")", e >= 12f ? Dx.Ribs3 : Dx.Ribs2, g);
+                    else if (g == 4) Print("Collapsed lung", Dx.CollapsedLung, g);
                     else if (g == 5)
                     {
-                        if (i.side < 0) Print("Ruptured spleen", "Spleen injury", Price.Serious, g, false);
-                        else if (i.side > 0) Print("Lacerated liver", "Liver injury", Price.Serious, g, false);
-                        else Print("Internal bleeding", "Internal injuries", Price.Serious, g, false);
+                        if (i.side < 0) Print("Ruptured spleen", "Spleen injury", Dx.Organ, g, false);
+                        else if (i.side > 0) Print("Lacerated liver", "Liver injury", Dx.Organ, g, false);
+                        else Print("Internal bleeding", "Internal injuries", Dx.Organ, g, false);
                     }
-                    else Print("Flail chest", Price.Serious, g);
+                    else Print("Flail chest", Dx.FlailChest, g);
                     break;
                 case BodyPart.Pelvis:
-                    if (g == 1) Print("Hip contusion", Price.Bruise, g);
-                    else if (g == 2) Print("Bruised tailbone", Price.Sprain, g);
-                    else if (g == 3) Print("Fractured tailbone", Price.Serious, g);
-                    else if (g == 4) Print("Compression fracture, L1", Price.Serious, g);
-                    else if (g == 5) Print("Fractured pelvis", Price.Serious, g);
-                    else Print("Pelvic ring fracture", Price.Serious, g);
+                    if (g == 1) Print("Hip contusion", Dx.Bruise, g);
+                    else if (g == 2) Print("Bruised tailbone", Dx.BruisedTailbone, g);
+                    else if (g == 3) Print("Fractured tailbone", Dx.Tailbone, g);
+                    else if (g == 4) Print("Compression fracture, L1", Dx.CompressionL1, g);
+                    else if (g == 5) Print("Fractured pelvis", Dx.Pelvis, g);
+                    else Print("Pelvic ring fracture", Dx.PelvicRing, g);
                     break;
                 case BodyPart.ArmL: case BodyPart.ArmR:
-                    if (g == 1) Print("Bruised " + a + " shoulder", Price.Bruise, g);
-                    else if (g == 2) Print("Dislocated " + a + " shoulder", Price.Reduction, g);
-                    else if (g == 3) Print("Fractured " + a + " collarbone", Price.ClosedFracture, g);
-                    else if (g == 4) Print("Fractured " + a + " humerus", Price.Serious, g);
-                    else Print("Compound fracture, " + a + " humerus", Price.OpenWound, g);
+                    if (g == 1) Print("Bruised " + a + " shoulder", Dx.Bruise, g);
+                    else if (g == 2) Print("Dislocated " + a + " shoulder", Dx.DislocatedShoulder, g);
+                    else if (g == 3) Print("Fractured " + a + " collarbone", Dx.Collarbone, g);
+                    else if (g == 4) Print("Fractured " + a + " humerus", Dx.Humerus, g);
+                    else Print("Compound fracture, " + a + " humerus", Dx.CompoundHumerus, g);
                     break;
                 case BodyPart.ForearmL: case BodyPart.ForearmR:
-                    if (g == 1) Print("Bruised " + a + " wrist", Price.Bruise, g);
-                    else if (g == 2) { if (skis) { Print("Skier's thumb, " + a, Price.Sprain, g); ligament[(int)part] = true; } else Print("Sprained " + a + " wrist", Price.Sprain, g); }
-                    else if (g == 3) Print(board ? "Snowboarder's wrist, " + a : skis ? "Fractured " + a + " scaphoid" : "Fractured " + a + " radius", Price.ClosedFracture, g);
-                    else if (g == 4) Print("Fractured " + a + " radius + ulna", Price.Serious, g);
-                    else Print("Compound fracture, " + a + " forearm", Price.OpenWound, g);
+                    if (g == 1) Print("Bruised " + a + " wrist", Dx.Bruise, g);
+                    else if (g == 2) { if (skis) { Print("Skier's thumb, " + a, Dx.SkiersThumb, g); ligament[(int)part] = true; } else Print("Sprained " + a + " wrist", Dx.SprainedWrist, g); }
+                    else if (g == 3) Print(board ? "Snowboarder's wrist, " + a : skis ? "Fractured " + a + " scaphoid" : "Fractured " + a + " radius", skis ? Dx.Scaphoid : Dx.DistalRadius, g);
+                    else if (g == 4) Print("Fractured " + a + " radius + ulna", Dx.RadiusUlna, g);
+                    else Print("Compound fracture, " + a + " forearm", Dx.CompoundForearm, g);
                     break;
                 case BodyPart.ThighL: case BodyPart.ThighR:
-                    if (g == 1) Print("Bruised " + a + " thigh", Price.Bruise, g);
-                    else if (g == 2) { Print(skis ? "Torn " + a + " MCL" : "Sprained " + a + " knee", Price.Sprain, g); ligament[(int)part] = true; }
+                    if (g == 1) Print("Bruised " + a + " thigh", Dx.Bruise, g);
+                    else if (g == 2) { Print(skis ? "Torn " + a + " MCL" : "Sprained " + a + " knee", Dx.KneeLigament, g); ligament[(int)part] = true; }
                     else if (g == 3)
                     {
-                        if (skis) { Print("Torn " + a + " ACL", Price.Serious, g); ligament[(int)part] = true; }
-                        else Print("Fractured " + a + " kneecap", Price.ClosedFracture, g);
+                        if (skis) { Print("Torn " + a + " ACL", Dx.Acl, g); ligament[(int)part] = true; }
+                        else Print("Fractured " + a + " kneecap", Dx.Kneecap, g);
                     }
-                    else if (g == 4) Print("Fractured " + a + " femur", Price.Serious, g);
-                    else Print("Compound fracture, " + a + " femur", Price.OpenWound, g);
+                    else if (g == 4) Print("Fractured " + a + " femur", Dx.Femur, g);
+                    else Print("Compound fracture, " + a + " femur", Dx.CompoundFemur, g);
                     break;
                 default:   // the shins
-                    if (g == 1) Print("Bruised " + a + " shin", Price.Bruise, g);
-                    else if (g == 2) Print("Sprained " + a + " ankle", Price.Sprain, g);
-                    else if (g == 3) Print(board ? "Snowboarder's ankle, " + a : skis ? "Boot-top fracture, " + a : "Fractured " + a + " ankle", Price.ClosedFracture, g);
-                    else if (g == 4) Print(skis ? "Tibial plateau fracture, " + a : "Fractured " + a + " tib-fib", Price.Serious, g);
-                    else Print("Compound fracture, " + a + " tibia", Price.OpenWound, g);
+                    if (g == 1) Print("Bruised " + a + " shin", Dx.Bruise, g);
+                    else if (g == 2) Print("Sprained " + a + " ankle", Dx.SprainedAnkle, g);
+                    else if (g == 3) Print(board ? "Snowboarder's ankle, " + a : skis ? "Boot-top fracture, " + a : "Fractured " + a + " ankle", board ? Dx.SnowboardersAnkle : skis ? Dx.BootTop : Dx.Ankle, g);
+                    else if (g == 4) Print(skis ? "Tibial plateau fracture, " + a : "Fractured " + a + " tib-fib", skis ? Dx.Plateau : Dx.TibFib, g);
+                    else Print("Compound fracture, " + a + " tibia", Dx.CompoundTibia, g);
                     break;
             }
         }
@@ -302,7 +341,7 @@ namespace Summit
             if (lost[p]) return;
             lost[p] = true; grade[p] = 6;
             string what = S(part) + " " + LimbWord(part);
-            Print("Traumatic amputation, " + what, "Detached " + what, Price.OpenWound, 6, false);
+            Print("Traumatic amputation, " + what, "Detached " + what, Dx.Amputation, 6, false);
             if (Served) Print("Reattachment, " + what, part <= BodyPart.ForearmR ? Price.ReplantArm : Price.ReplantLeg, 6, true);   // (after the rest of the bill: a fatal fall's)
         }
 
@@ -348,11 +387,11 @@ namespace Summit
             fatal = true; mountain = true;
             // what a fall from height does to whatever it didn't already: the spine, the pelvis, the heels, the
             // organs, the head on rock or from very high
-            Print("Burst fracture, T12", Price.Serious, 6);
-            if (grade[(int)BodyPart.Pelvis] < 6) { grade[(int)BodyPart.Pelvis] = 6; Print("Pelvic ring fracture", Price.Serious, 6); }
-            Print("Fractured heels (both)", Price.Heels, 5);
-            if (grade[(int)BodyPart.Chest] < 5) { grade[(int)BodyPart.Chest] = 5; Print("Internal bleeding", "Internal injuries", Price.Serious, 6, false); }
-            if ((onRock || fell > 160f) && grade[(int)BodyPart.Head] < 6) { grade[(int)BodyPart.Head] = 6; Print("Severe brain injury", Price.Serious, 6); }
+            Print("Burst fracture, T12", Dx.BurstT12, 6);
+            if (grade[(int)BodyPart.Pelvis] < 6) { grade[(int)BodyPart.Pelvis] = 6; Print("Pelvic ring fracture", Dx.PelvicRing, 6); }
+            Print("Fractured heels (both)", Dx.Heels, 5);
+            if (grade[(int)BodyPart.Chest] < 5) { grade[(int)BodyPart.Chest] = 5; Print("Internal bleeding", "Internal injuries", Dx.Organ, 6, false); }
+            if ((onRock || fell > 160f) && grade[(int)BodyPart.Head] < 6) { grade[(int)BodyPart.Head] = 6; Print("Severe brain injury", Dx.SevereBrain, 6); }
             Worst = 6;
             fellM = fell;
             Rest();
@@ -364,8 +403,8 @@ namespace Summit
         {
             if (!Open || crevasse || fatal) return;
             crevasse = true; fatal = true;
-            Print("Hypothermia", Price.Hypothermia, 5);
-            Print("Frostbite, both hands", Price.Frostbite, 5);
+            Print("Hypothermia", Dx.Hypothermia, 5);
+            Print("Frostbite, both hands", Dx.Frostbite, 5);
             Worst = Mathf.Max(Worst, 5);
             Rest();
         }
@@ -375,8 +414,8 @@ namespace Summit
         {
             if (!Open || avalanche) return;
             avalanche = true;
-            Print("Hypothermia", Price.Hypothermia, 5);
-            Print("Asphyxia", "Breathing support", Price.Asphyxia, 5, false);
+            Print("Hypothermia", Dx.Hypothermia, 5);
+            Print("Asphyxia", "Breathing support", Dx.Asphyxia, 5, false);
             Worst = Mathf.Max(Worst, 5);
         }
 

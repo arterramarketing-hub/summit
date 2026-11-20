@@ -297,7 +297,7 @@ namespace Summit
                 for (int j = 0; j < n; j++)
                     for (int i = 0; i < n; i++)
                     {
-                        bool h = Course.CrevasseCut(x0 + i * q, z0 + j * q) > 0.25f;
+                        bool h = Course.NearOpening(x0 + i * q, z0 + j * q, 0.8f * q);   // (any quad that touches an opening: see NearOpening)
                         holeMask[j * n + i] = h; holes |= h;
                     }
             }
