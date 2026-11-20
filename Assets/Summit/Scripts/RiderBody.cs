@@ -449,6 +449,7 @@ namespace Summit
             ragdoll.Struck += (c, at, n, into, bone) => RagdollStruck?.Invoke(c, at, into);
             ragdoll.Prebuild();
             HookLimbs();   // limbs torn off by the worst hits (RiderBodyLimbs)
+            HookInjuries();   // each hit, for the medical receipt (RiderBodyInjury)
         }
         float tubeSpin, tubeSpinRate;
         public bool Tube { get; private set; }
@@ -977,7 +978,7 @@ namespace Summit
                 FallBegin();   // how far it falls from here, and whether that kills (RiderBodyFall)
                 stillFor = 0f;
                 fx?.Thud(transform.position, Mathf.Max(6f, lastVel.magnitude * 0.6f), lastVel * 0.6f);   // the wipeout itself
-                brokenThisCrash.Clear();
+                brokenThisCrash.Clear(); breaksTold = 0;   // (breaksTold: the receipt's count, RiderBodyInjury)
                 crashClock = 0f;
                 ResetSettle();   // every fall ends (RiderBodySettle)
             }

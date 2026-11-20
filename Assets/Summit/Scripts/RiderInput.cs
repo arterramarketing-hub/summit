@@ -6,18 +6,21 @@ using UnityEngine.InputSystem;
 namespace Summit
 {
     /// <summary>
-    /// Drag one finger left and right to steer (or tilt the phone). With that finger still down, a quick tap of a
-    /// second finger jumps; pressing and holding the second finger tucks low for speed (letting go of a tuck is
-    /// not a jump). In tilt mode the one finger does both. In the editor: A/D or arrows steer, Space taps or
-    /// holds. A controller: left stick steers, the bottom face button taps or holds.
-    /// Works with either the new Input System or the old Input Manager.
+    /// Everything with one finger. Drag it left and right to steer (or tilt the phone). The jump is the JUMP
+    /// setting's gesture of that same finger (FingerGesture): a double tap (the default; it fires as the second
+    /// tap lands), a tap, or a flick up. A single tap on the snow does nothing with DOUBLE TAP, so a nervous
+    /// lift-and-retouch never jumps; lifted and put straight back down, the finger steers on from the same middle.
+    /// On a rail, a box or a cable the same double tap (a tap, with TAP) is the pop off it. In the air (TrickMode,
+    /// which the rider sets) the finger's left/right is the spin and its up/down travel (Flip: counted from where it
+    /// was as the board left the snow; W/S; a controller's stick) is the flip, and each tap is a grab, a bigger
+    /// one each time; a tap's moment off the glass lets go of neither the spin nor the flip. With tilt steering
+    /// the finger can do all of it anywhere on the screen. One gesture is only ever one thing: a tap that grabbed
+    /// starts no double tap, a double tap is never a grab or a switch-up.
     ///
-    /// In the air and on a rail (TrickMode, which the rider sets) the same fingers do the tricks: the steering
-    /// finger's left/right is the spin and its up/down travel (Flip: counted from where it was as the board left
-    /// the snow; W/S; a controller's stick) is the flip; the jump finger landing is a TrickTap (the grab, or the
-    /// pop off a rail) and staying down is GrabHold. With tilt steering the one finger does it: a tap is the
-    /// TrickTap (on lifting, or once it has been down past a tap) and a swipe up or down is the flip.
-    /// A press that was part of a trick is never also a jump when it lifts.
+    /// The old two-handed way still works alongside: a second finger's quick tap jumps, held it tucks; in the air
+    /// it lands a grab and keeping it down holds the grab; on a rail it pops. In the editor: A/D or arrows steer,
+    /// W/S flip, Space taps or holds. A controller: left stick, bottom face button.
+    /// Works with either the new Input System or the old Input Manager.
     /// </summary>
     [DefaultExecutionOrder(-100)]   // read input before anything uses it this frame
     public class RiderInput : MonoBehaviour
@@ -43,8 +46,26 @@ namespace Summit
         public bool GrabHold { get; private set; }
         /// <summary>Set by the rider: in an air long enough to trick, or on a rail. Out of it the fingers only steer, jump and tuck.</summary>
         public bool TrickMode;
-        float flipOrigin;
-        bool fingerPrev, pressPrev, pressUsed, swiped;
+        /// <summary>Set by the rider: on a rail, a box or a cable (TrickMode too).</summary>
+        public bool OnRail;
+        /// <summary>The pop off a rail, a box or a cable (true for the one frame).</summary>
+        public bool RailPop { get; private set; }
+        float flipOrigin, heldSteer, heldFlip;
+        bool fingerPrev, pressPrev, pressUsed, swallowFinger;
+
+        /// <summary>How the one finger jumps: the GAME tab's JUMP setting (PlayerPrefs "summit_jump").</summary>
+        public JumpStyle jumpStyle;
+        public static readonly string[] JumpNames = { "DOUBLE TAP", "TAP", "FLICK UP" };
+        readonly FingerGesture gesture = new FingerGesture();
+        /// <summary>The one finger's gestures (for the test tools).</summary>
+        public FingerGesture Gesture => gesture;
+        public void SetJumpStyle(JumpStyle s) { jumpStyle = s; PlayerPrefs.SetInt("summit_jump", (int)s); PlayerPrefs.Save(); }
+
+        // ---- the test tools drive it without a screen: fingers and where the first is, and the step's length
+        public static bool TestDrive; public static int TestFingers; public static Vector2 TestPos;
+        float testDt = -1f;
+        /// <summary>One frame of input, `dt` long, from TestFingers / TestPos (TestDrive on).</summary>
+        public void TestStep(float dt) { testDt = dt; Read(dt); testDt = -1f; }
 
         public float tiltRange = 0.36f;   // sin of the tilt that gives full lock (about 21 degrees)
         public float deadZone = 0.03f;
@@ -71,6 +92,7 @@ namespace Summit
 #endif
             invertTilt = PlayerPrefs.GetInt("summit_invert", 0) == 1;
             useTilt = PlayerPrefs.GetInt("summit_tilt", 0) == 1;
+            jumpStyle = (JumpStyle)Mathf.Clamp(PlayerPrefs.GetInt("summit_jump", 0), 0, 2);
         }
 
         /// <summary>Treat however the phone is held right now as straight.</summary>
@@ -83,25 +105,42 @@ namespace Summit
         /// <summary>Ignore the press in progress, so the tap that starts a run is not also a jump.</summary>
         public void SwallowCurrentPress()
         {
-            swallow = PointerDown();
+            swallow = SpaceDown() || PadButton() || twoTime > 0f;
+            swallowFinger = PointerDown();
+            gesture.Reset();
+            if (swallowFinger) gesture.Swallow();
             Hold = false;
             Released = false;
-            Jump = false; TrickTap = false; GrabHold = false; pressUsed = false; swiped = false;
+            Jump = false; TrickTap = false; GrabHold = false; RailPop = false; pressUsed = false;
             HoldTime = 0f; pressTime = 0f;
         }
 
-        void Update()
+        void Update() => Read(testDt >= 0f ? testDt : Time.unscaledDeltaTime);
+
+        void Read(float dt)
         {
+            Pointers(out int fingers, out Vector2 fingerPos);
+            bool finger = fingers >= 1;
+            Vector2 screen = new Vector2(Screen.width, Screen.height);
+            // the one finger: drag steering's own finger, or with tilt any finger. Its taps, double taps and flicks
+            // are read first: whether it has come straight back down decides where the stick's middle is
+            if (Time.timeScale <= 0f && testDt < 0f) gesture.Reset();   // (the pause menu's taps are nobody's)
+            gesture.Step(finger, fingerPos, dt, screen);
+            if (swallowFinger) { if (!finger) swallowFinger = false; else if (gesture.Began) gesture.Swallow(); }
+
             // steering
             float t = RawTilt();
             HasTilt = !float.IsNaN(t);
             float target = 0f;
-            Pointers(out int fingers, out Vector2 fingerPos);
+            bool holding = false;
             if (!useTilt)
             {
-                // one finger is a stick: the spot you first touch is neutral, drag sideways to steer
-                bool on = fingers >= 1;
-                if (on && !stickPrev) StickOrigin = fingerPos;
+                // one finger is a stick: the spot you first touch is neutral, drag sideways to steer. Lifted and put
+                // straight back down near the same spot (a tap, a double tap) it carries on from the same middle;
+                // in the air or on a rail it even holds what it was doing while it is up that moment, so a tap for a
+                // grab never lets a spin go, and a double tap to pop is never a switch-up
+                bool on = finger;
+                if (on && !stickPrev && !gesture.Resumed) StickOrigin = fingerPos;
                 stickPrev = on;
                 StickActive = on;
                 StickPos = fingerPos;
@@ -120,7 +159,9 @@ namespace Summit
                 // expo response: the first half of the throw is gentle fine carving (a fifth of the edge at
                 // half throw); only the outer part opens to a full edge
                 target = Mathf.Sign(d) * Curve(a);
-                twoTime = fingers >= 2 ? twoTime + Time.unscaledDeltaTime : 0f;
+                holding = !on && TrickMode && gesture.SinceUp <= FingerGesture.DoubleGap;
+                if (holding) target = heldSteer; else heldSteer = target;
+                twoTime = fingers >= 2 ? twoTime + dt : 0f;
             }
             else if (HasTilt)
             {
@@ -141,9 +182,8 @@ namespace Summit
             // minute is never a flip), on the same throw as the steering; or W/S, or a controller's stick
             float flip = 0f;
             {
-                bool finger = fingers >= 1;
                 float radius = Mathf.Max(60f, Screen.width * stickRadiusFrac);
-                if (finger && (!fingerPrev || !TrickMode)) flipOrigin = fingerPos.y;
+                if (finger && ((!fingerPrev && !gesture.Resumed) || !TrickMode)) flipOrigin = fingerPos.y;
                 if (finger)
                 {
                     float off = fingerPos.y - flipOrigin;
@@ -151,39 +191,55 @@ namespace Summit
                     float d = Mathf.Clamp((fingerPos.y - flipOrigin) / radius, -1f, 1f), a = Mathf.Abs(d);
                     flip = a < 0.1f ? 0f : Mathf.Sign(d) * (a - 0.1f) / 0.9f;
                 }
+                else if (holding) flip = heldFlip;
+                if (finger) heldFlip = flip;
                 fingerPrev = finger;
                 float kv = KeyVertical(); if (kv != 0f) flip = kv;
                 float pv = PadVertical(); if (pv != 0f) flip = pv;
             }
-            Flip = TrickMode ? Mathf.Lerp(Flip, flip, 1f - Mathf.Exp(-Time.unscaledDeltaTime * 60f)) : 0f;
+            Flip = TrickMode ? Mathf.Lerp(Flip, flip, 1f - Mathf.Exp(-dt * 60f)) : 0f;
             // a short low-pass takes the jitter out of the finger or sensor without feeling laggy
-            Steer = Mathf.Lerp(Steer, target, 1f - Mathf.Exp(-Time.unscaledDeltaTime * (useTilt ? 16f : 60f)));
+            Steer = Mathf.Lerp(Steer, target, 1f - Mathf.Exp(-dt * (useTilt ? 16f : 60f)));
 
-            // jump / tuck
-            // the jump finger: in stick mode a second finger while the first steers; in tilt mode any finger; or
-            // Space, or a controller's bottom face button. A quick tap of it is a jump, on lifting; held past a
-            // tap it is a tuck, and letting go of a tuck is just standing back up
-            bool press = (useTilt ? PointerDown() : (twoTime > 0f || SpaceDown())) || PadButton();
-            if (swallow) { if (!press) swallow = false; press = false; pressTime = 0f; }
-            float heldBefore = pressTime;
-            bool down = TapOrTuck(press, Time.unscaledDeltaTime, ref pressTime, out bool jump);
-            // the same finger, for tricks. Drag: the second finger landing is the tap. Tilt: the one finger is tap and
-            // swipe both, so it is a tap when it lifts unmoved (or has stayed down past a tap), and a swipe is the flip
-            bool began = press && !pressPrev;
-            if (began) { pressUsed = false; swiped = false; }
-            bool oneFinger = useTilt && !SpaceDown() && !PadButton();
-            if (oneFinger && press && Mathf.Abs(flip) >= 0.5f) swiped = true;
-            bool tap = oneFinger ? !swiped && (jump || (press && pressTime >= TapTime && heldBefore < TapTime)) : began;
-            TrickTap = TrickMode && tap;
-            GrabHold = TrickMode && press && !swiped && (!oneFinger || pressTime >= TapTime);
-            if (TrickMode && (press || tap)) pressUsed = true;
-            if (pressUsed || swiped) jump = false;   // a press that was a trick's is not also a jump when it lifts
-            pressPrev = press;
-            Jump = jump;
+            bool air = TrickMode && !OnRail, rail = TrickMode && OnRail, snow = !TrickMode;
+
+            // ---- the buttons: a second finger while the first steers, Space, a controller's bottom button. As they
+            //      always were: a quick tap is a jump (on lifting), held past a tap it is a tuck; in the air its
+            //      landing is the grab and keeping it down holds the grab; on a rail its landing is the pop
+            bool button = (!useTilt && twoTime > 0f) || SpaceDown() || PadButton();
+            if (swallow) { if (!button) swallow = false; button = false; pressTime = 0f; }
+            bool downB = TapOrTuck(button, dt, ref pressTime, out bool jumpB);
+            bool beganB = button && !pressPrev;
+            if (beganB) pressUsed = false;
+            if (TrickMode && button) pressUsed = true;
+            if (pressUsed) jumpB = false;   // a press that was a trick's is not also a jump when it lifts
+            pressPrev = button;
+
+            // ---- the one finger, by the JUMP setting: on the snow a double tap (or a tap, or a flick up) is the
+            //      jump; on a rail a double tap (a tap, with TAP) is the pop off it; in the air a tap is the grab. One
+            //      gesture is only ever one of them: a tap that grabbed starts no double tap, and the double tap's
+            //      own second touch is never a tap
+            bool oneJump = false, onePop = false, oneGrab = false;
+            if (air)
+            {
+                if (gesture.Tap) { oneGrab = true; gesture.CancelChain(); }
+                // with tilt the finger held still past a tap is a grab too, held (it always was)
+                if (useTilt && finger && !gesture.Consumed && gesture.Held >= TapTime && gesture.Held - dt < TapTime && gesture.Travel <= FingerGesture.TapSlop * Mathf.Max(screen.x, 320f)) oneGrab = true;
+            }
+            else if (rail) onePop = jumpStyle == JumpStyle.Tap ? gesture.Tap : gesture.DoubleTap;
+            else if (snow) oneJump = jumpStyle == JumpStyle.DoubleTap ? gesture.DoubleTap : jumpStyle == JumpStyle.Tap ? gesture.Tap : gesture.Flick;
+            if (!snow && gesture.Tap && jumpStyle == JumpStyle.Tap) gesture.CancelChain();
+
+            TrickTap = air && (beganB || oneGrab);
+            GrabHold = air && (button || (useTilt && finger && !gesture.Consumed && gesture.Held >= TapTime && gesture.Travel <= FingerGesture.TapSlop * Mathf.Max(screen.x, 320f)));
+            RailPop = rail && (beganB || onePop);
+            Jump = snow && (jumpB || oneJump);
+            // the tuck: a button held; with tilt the finger held still (as ever)
+            bool down = downB || (useTilt && finger && snow && gesture.Held >= TapTime && gesture.Travel <= FingerGesture.TapSlop * Mathf.Max(screen.x, 320f));
             Pressed = down && !wasDown;
             Released = !down && wasDown;
             if (Released) LastHold = HoldTime;
-            HoldTime = down ? HoldTime + Time.unscaledDeltaTime : 0f;
+            HoldTime = down ? HoldTime + dt : 0f;
             Hold = down;
             wasDown = down;
         }
@@ -240,6 +296,7 @@ namespace Summit
         static void Pointers(out int fingers, out Vector2 pos)
         {
             fingers = 0; pos = Vector2.zero;
+            if (TestDrive) { fingers = TestFingers; pos = TestPos; return; }
 #if ENABLE_INPUT_SYSTEM
             if (Touchscreen.current != null)
             {
@@ -281,6 +338,7 @@ namespace Summit
 
         static bool PointerDown()
         {
+            if (TestDrive) return TestFingers > 0;
 #if ENABLE_INPUT_SYSTEM
             if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.isPressed) return true;
             if (Mouse.current != null && Mouse.current.leftButton.isPressed) return true;

@@ -269,17 +269,16 @@ namespace Summit
 
         void Update()
         {
-            // a jump is a quick tap (of the second finger); input is read per frame, physics runs on its own clock
+            // input is read per frame, physics runs on its own clock
             if (!Running || Time.timeScale <= 0f || input == null) return;   // (pause-menu taps are not jumps)
-            // in an air long enough to trick the tap is the grab's, the moment the finger lands (RiderTricks); on a
-            // rail or a cable it is the pop off it, at once; anywhere else it is a jump, when the finger lifts
+            // what the fingers' gestures mean here (RiderInput sorts them by context: the JUMP setting's double tap,
+            // tap or flick, a second finger, Space): in an air long enough to trick a tap is the grab's
+            // (RiderTricks); on a rail or a cable the pop off it, at once; anywhere else the jump
             bool trick = Airborne && trickAir && !Crashed;
             input.TrickMode = trick || (Grinding && !Crashed);
-            if (input.TrickTap)
-            {
-                if (Grinding) { popPending = true; popHold = TapPop; }
-                else if (trick) tapQueue++;
-            }
+            input.OnRail = Grinding && !Crashed;
+            if (input.RailPop && Grinding) { popPending = true; popHold = TapPop; }
+            if (input.TrickTap && trick) tapQueue++;
             if (input.Jump && !trick && !Grinding)
             {
                 popPending = true;

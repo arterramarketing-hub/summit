@@ -39,19 +39,32 @@ namespace Summit
         string endTitle = "WIPED OUT";
         bool crevasseWatch;   // went over a crevasse: lost only if the body actually drops in
 
-        // the medical bill: what this run's falls are costing you. Every cost goes through Bill, which also makes the
-        // figure on screen jump (HudPoints): the fall's own bill, racking up while the rider is down
+        // the medical bill: what this run's falls are costing you, as a receipt (Receipt). Every line comes from
+        // something that happened in the fall (RiderBody.Injured, LimbLost, Killed, a crevasse, the avalanche) and
+        // what followed it once the body stopped; each prints on the fall's slip the moment it is billed (HudReceipt)
         float medical;
         bool downBefore;
-        float billBankIn;   // a bill run up while still riding (a sign: Breakables.RiderHit) goes into the total after this long
-        void Bill(float cost)
+        float downT;
+        readonly Receipt receipt = new Receipt();
+        /// <summary>The run's medical receipt (for the test tools).</summary>
+        public Receipt Bill => receipt;
+        void OnBilled(Receipt.Item it)
         {
-            if (cost <= 0f) return;
-            medical += cost;
-            hud.BillHit(cost);
+            medical += it.cost;
+            string name = it.Name(blood == null || blood.On);
+            // (a hit taken while still riding, a sign or a banner's stake: one line that pops and folds into the
+            // corner's total; a fall's lines go on its slip)
+            if (it.riding) hud.RideHit(name, it.cost, it.grade);
+            else hud.BillLine(name, it.cost, it.grade, it.service);
         }
-        static int BoneCost(string limb) =>
-            limb == "Head" ? 12500 : limb == "Ribs" ? 7800 : limb.EndsWith("leg") ? 9400 : limb.EndsWith("arm") ? 4600 : 3000;
+        static BodyPart LostPart(string limb)
+        {
+            bool left = limb.StartsWith("Left");
+            if (limb.EndsWith("forearm")) return left ? BodyPart.ForearmL : BodyPart.ForearmR;
+            if (limb.EndsWith("lower leg")) return left ? BodyPart.ShinL : BodyPart.ShinR;
+            if (limb.EndsWith("arm")) return left ? BodyPart.ArmL : BodyPart.ArmR;
+            return left ? BodyPart.ThighL : BodyPart.ThighR;
+        }
 
         bool RiderTapped()
         {
@@ -149,6 +162,11 @@ namespace Summit
         void StepHalation(int dir) { halation = Mathf.Clamp(halation + dir, 0, LensFX.HalationName.Length - 1); ApplyLook(); }
         void StepTime(int dir) { TimeOfDay.StepLock(dir); hud.SetTime(TimeOfDay.LockLabel); }
         void ToggleSteer() { input.SetTilt(!input.useTilt); hud.SetPauseSteer(input.useTilt); hud.SetMode(input.useTilt); }
+        // how the one finger jumps: a double tap (the default), a tap, or a flick up (RiderInput, FingerGesture)
+        void StepJump(int dir) { input.SetJumpStyle((JumpStyle)(((int)input.jumpStyle + dir + 3) % 3)); hud.SetPauseJump(JumpName); if (state == State.Ready) ShowReadyHint(); }
+        string JumpName => RiderInput.JumpNames[(int)input.jumpStyle];
+        /// <summary>The jump, in words, for the hints: as the JUMP setting has it.</summary>
+        string JumpWords => input.jumpStyle == JumpStyle.Tap ? "tap" : input.jumpStyle == JumpStyle.FlickUp ? "flick up" : "double-tap";
         // (tilt steering the other way round: the game has always read "summit_invert", but nothing could set it)
         void ToggleInvert() { input.invertTilt = !input.invertTilt; PlayerPrefs.SetInt("summit_invert", input.invertTilt ? 1 : 0); PlayerPrefs.Save(); }
         void ToggleTrees() { props.SetRealistic(!props.IsRealistic); hud.SetPauseTrees(props.IsRealistic); }
@@ -179,6 +197,7 @@ namespace Summit
             start.AddRow(look, "FILTER STRENGTH", () => filterStrength * 10 + "%", StepStrength);
             start.AddRow(look, "HALATION", () => LensFX.HalationName[halation], StepHalation);
             start.AddRow(game, "STEERING", () => input.useTilt ? "TILT" : "DRAG", d => ToggleSteer(), true);
+            start.AddRow(game, "JUMP", () => JumpName, StepJump);
             start.AddRow(game, "INVERT TILT", () => OnOff(input.invertTilt), d => ToggleInvert(), true, () => input.useTilt);
             start.AddRow(game, "RIDE", () => RideName, StepRide);
             start.AddRow(game, "TREES", () => props.IsRealistic ? "REALISTIC" : "ORIGINAL", d => ToggleTrees(), true);
@@ -247,6 +266,7 @@ namespace Summit
             hud.SetLens(LensName[lensLevel]);
             ShowView();
             hud.SetPauseSteer(input.useTilt);
+            hud.SetPauseJump(JumpName);
             hud.SetPauseTrees(props.IsRealistic);
             if (blood != null) hud.SetBlood(blood.On);
             hud.SetFlashlight(DayNight.FlashlightOn);
@@ -332,15 +352,14 @@ namespace Summit
                 // a harsh crack for each kind of break: the neck, the spine, a big bone in the leg, an arm
                 audioFx.Play(limb == "Head" ? Sfx.BoneNeck : limb == "Ribs" ? Sfx.BoneBack : limb.EndsWith("leg") ? Sfx.BoneLeg : Sfx.BoneArm);
                 hud.Hurt(0.5f);
-                Bill(BoneCost(limb));
-                hurtShake = 1f;
+                hurtShake = 1f;   // (the bill hears the hit itself, with the break: body.Injured)
             };
             body.LimbLost += (limb, at, whole) =>
             {
                 // a limb torn off: it goes on the bill, and you get up and ride on without it (RiderBodyLimbs).
                 // (the crash it came off in has already counted as a fall)
                 if (state != State.Riding) return;
-                Bill(whole ? 186000 : 124000);
+                receipt.Lost(LostPart(limb), whole);
                 hud.Hurt(1f); hurtShake = 1f;
                 audioFx.Play(Sfx.Bone); audioFx.Play(Sfx.Crash);
                 if (audioFx.Screaming) audioFx.ScreamHit();
@@ -356,7 +375,6 @@ namespace Summit
             {
                 if (!isBoard && v > 6f) hurtShake = Mathf.Max(hurtShake, Mathf.Clamp01((v - 6f) / 10f) * 0.8f);
                 if (v < 1.5f || Time.time < nextImpactSound) return;
-                if (!isBoard && v > 5f && state == State.Riding) Bill((v - 5f) * 45f);   // bruises, by how hard you hit
                 // mid-tumble: a fresh scream on each big hit, above all against trees, rocks and signs
                 if (audioFx.Screaming && rider.Crashed && !isBoard && (v > 14f || (v > 7f && body.RagdollHitObject)))
                     audioFx.ScreamHit();
@@ -403,15 +421,17 @@ namespace Summit
             // a numbered flag wherever a fall came to rest, for the rest of the run
             flags = new GameObject("FallFlags").AddComponent<FallFlags>();
             flags.Build(jacket != null ? jacket.shader : null);
+            body.Injured += inj => { if (state == State.Riding) receipt.Hit(inj); };   // each hit on the receipt (Receipt)
+            receipt.Printed += OnBilled;
             body.FallRested += at => { if (state == State.Riding) flags.Plant(at, falls); };
             body.Killed += fell =>
             {
                 // off a cliff and into the snow far below: it's over (see RiderBodyFall)
                 if (state == State.Hub) { HitStop(1f); audioFx.Play(Sfx.Crash); return; }   // off the camp's edge: just the thump
                 if (state != State.Riding) return;
-                bool huge = fell > 80f;
-                int bill = huge ? 95000 : 68000;
-                rider.StayDown = true; wipeoutTimer = 2.6f; endTitle = "WIPED OUT"; Bill(bill);
+                Vector3 c = body.RagdollCentre;
+                rider.StayDown = true; wipeoutTimer = 2.6f; endTitle = "WIPED OUT";
+                receipt.Killed(fell, RockFace.IsRock(Slope.Normal(c.x, c.z), c.x, c.z));
                 HitStop(1f);   // the body hitting the snow at the foot of the cliff
                 audioFx.Play(Sfx.BoneBack); audioFx.Play(Sfx.Crash);
             };
@@ -506,7 +526,7 @@ namespace Summit
             };
 
             // a sign (or a banner's stake) ridden into: you stay up, and it hurts. The camera shakes, the hero flinches
-            // from it, and it goes on the bill while you ride, banked into the total a moment later
+            // from it, and it goes on the receipt while you ride: one line that pops up and folds into the corner's total
             breaks.RiderHit += (kind, speed, at, part, cost) =>
             {
                 if (state != State.Riding) return;
@@ -514,8 +534,7 @@ namespace Summit
                 hurtShake = Mathf.Max(hurtShake, kind == Breakable.Kind.Sign ? 0.4f + 0.45f * k : 0.25f);
                 body.Flinch(at, 0.5f + 0.5f * k);
                 if (kind == Breakable.Kind.Sign && speed > 12f) audioFx.Play(Sfx.Grunt);
-                Bill(cost);
-                billBankIn = 1.6f;
+                receipt.RideHit(kind == Breakable.Kind.Sign, part, speed, cost);
             };
 
             atmo = new GameObject("Atmosphere").AddComponent<Atmosphere>();
@@ -738,7 +757,7 @@ namespace Summit
             dressing.Prewarm();
             chase.Snap();
             hud.SetWhiteout(0f);
-            falls = 0; wipeoutTimer = 0f; hurtShake = 0f; crevasseWatch = false; medical = 0f; billBankIn = 0f;
+            falls = 0; wipeoutTimer = 0f; hurtShake = 0f; crevasseWatch = false; medical = 0f; receipt.Reset(); downT = 0f;
             flags.Clear();
             hud.SetPrompt("");
             if (paused) SetPaused(false);
@@ -746,12 +765,19 @@ namespace Summit
             if (atmo != null) atmo.ResetParallax();
             if (fx != null) fx.Clear();
             if (blood != null) blood.Clear();
-            hud.Show("", "Best " + Mathf.RoundToInt(best).ToString("N0"),
-                Application.isMobilePlatform ? "Drag to steer  ·  second finger: tap to jump, hold to tuck\nIn the air: push a direction to spin or flip  ·  tap to grab"
-                              : "A / D to steer  ·  tap Space to jump, hold it to tuck\nIn the air: A / D spin  ·  W / S flip  ·  Space grabs");
+            ShowReadyHint();
             hud.SetButtons(true, false, "PLAY");
             hud.SetMode(input.useTilt);
             meta.SetMode(MetaUi.Mode.Ready);
+        }
+
+        /// <summary>The start pad's words: the best, and how it's played (one finger, the jump as the JUMP setting has it).</summary>
+        void ShowReadyHint()
+        {
+            string jump = JumpWords;
+            hud.Show("", "Best " + Mathf.RoundToInt(best).ToString("N0"),
+                Application.isMobilePlatform ? (input.useTilt ? "Tilt to steer" : "Drag to steer") + "  ·  " + jump + " to jump\nIn the air: push a direction to spin or flip  ·  tap to grab"
+                              : "A / D to steer  ·  tap Space to jump, hold it to tuck\nIn the air: A / D spin  ·  W / S flip  ·  Space grabs");
         }
 
         void ToRiding()
@@ -790,9 +816,10 @@ namespace Summit
             if (record) { best = s; PlayerPrefs.SetInt("summit_best", s); PlayerPrefs.Save(); }
             hud.Show(title, (title == "YOU SURVIVED" ? "MT. VERTIGO  ·  " : "") + "Score " + s.ToString("N0"),
                      (record ? "NEW BEST  " : "Best ") + Mathf.RoundToInt(best).ToString("N0") +
-                     "   ·   " + Mathf.RoundToInt(rider.Distance) + " m   ·   " + Hud.FormatTime(runTime) +
-                     (medical > 0f ? "\n " : ""));   // (the bill's own line: it carries over from the fall and counts up: HudPoints)
-            hud.BillEnd(medical);
+                     "   ·   " + Mathf.RoundToInt(rider.Distance) + " m   ·   " + Hud.FormatTime(runTime));
+            // the bill: the last fall's slip carries up to the top of the screen as the run's whole receipt (HudReceipt)
+            if (receipt.Open) { if (buried) receipt.Avalanche(); receipt.Rest(); receipt.Close(); }
+            hud.BillEnd(receipt.Merged(blood == null || blood.On), receipt.RunTotal, blood == null || blood.On);
             hud.SetButtons(true, false, "TO CAMP");
             // points for the run (mission rewards were paid as they happened); the score mission sees the final
             // score, finish bonus and all
@@ -890,6 +917,7 @@ namespace Summit
                             else if (hud.OnStrengthMinus(pp) || hud.OnStrengthPlus(pp)) { audioFx.Play(Sfx.Click); StepStrength(hud.OnStrengthPlus(pp) ? 1 : -1); }
                             else if (hud.OnTimeMinus(pp) || hud.OnTimePlus(pp)) { audioFx.Play(Sfx.Click); StepTime(hud.OnTimePlus(pp) ? 1 : -1); }
                             else if (hud.OnPauseSteer(pp)) { audioFx.Play(Sfx.Click); ToggleSteer(); }
+                            else if (hud.OnPauseJump(pp)) { audioFx.Play(Sfx.Click); StepJump(1); }
                             else if (hud.OnPauseTrees(pp)) { audioFx.Play(Sfx.Click); ToggleTrees(); }
                             else if (hud.OnPauseVoiceLines(pp)) { audioFx.Play(Sfx.Click); ToggleVoice(); }
                             else if (hud.OnPauseFlashlight(pp)) { audioFx.Play(Sfx.Click); ToggleFlashlight(); }
@@ -913,7 +941,7 @@ namespace Summit
                     Missions.Step(dt, slide.Gap(rider), Score);
                     if (crevasseWatch)
                     {
-                        if (body.RagdollBelowSnow > 3f) { crevasseWatch = false; rider.StayDown = true; wipeoutTimer = 2.0f; endTitle = "WIPED OUT"; Bill(42000f); }
+                        if (body.RagdollBelowSnow > 3f) { crevasseWatch = false; rider.StayDown = true; wipeoutTimer = 2.0f; endTitle = "WIPED OUT"; receipt.Crevasse(); }
                         else if (!rider.Crashed) crevasseWatch = false;   // caught the lip: you live
                     }
                     if (!rider.Crashed && !rider.Airborne && !slide.Caught && rider.Z > Slope.FinishZ + 30f)
@@ -1087,9 +1115,16 @@ namespace Summit
             if (live != null) combo.SetLive(live, rider.LivePoints, rider.LiveKind);
             else if (combo.LiveName != null) { combo.SetLive(null, 0, LinkKind.Trick); liveSteps = 0; }
             combo.Step(dt, rider.Airborne || rider.Grinding);
-            if (downBefore && !rider.Crashed) hud.BillBank();
+            // the fall's receipt: what followed is billed once the body has stopped (or the rider is up); up again,
+            // it tears off into the corner's total
+            if (rider.Crashed && receipt.Open)
+            {
+                body.ReportBreaks();   // (a bone the wipeout broke with no hit to carry it: RiderBodyInjury)
+                downT += dt;
+                if (!receipt.Served && !slide.Caught && (rider.CanGetUp || (downT > 1f && !body.RagdollMoving))) receipt.Rest();   // (under the avalanche: billed at the end, buried)
+            }
+            if (downBefore && !rider.Crashed) { receipt.Rest(); receipt.Close(); hud.BillBank(); }
             downBefore = rider.Crashed;
-            if (billBankIn > 0f && (billBankIn -= dt) <= 0f && !rider.Crashed) hud.BillBank();   // (a fall meanwhile banks it as it ends)
         }
 
         /// <summary>For the test tools (batchmode never runs Update): a frame of the points, on their clock.</summary>
@@ -1107,7 +1142,7 @@ namespace Summit
             else if (kind == PowerUps.Kind.SuperJump)
             {
                 rider.AddSuperJump(SuperJumpSeconds * Progress.PowerUpTime);
-                hud.Flash("SUPER JUMP", "tap a second finger for big air", 1.2f);
+                hud.Flash("SUPER JUMP", JumpWords + " for big air", 1.2f);
                 audioFx.Play(Sfx.PowerJump);
             }
             else if (kind == PowerUps.Kind.Invincible)
@@ -1419,6 +1454,7 @@ namespace Summit
             {
                 // the slide took the board out from under you: no fall counted, no getting up (see Avalanche)
                 combo.Drop();
+                receipt.Ride = rider.Ride; receipt.Tube = rider.Tube; receipt.Begin();   // (what the burial did is billed at the end: ToEnd)
                 audioFx.Play(Sfx.SlideHit);
                 StartScreaming();
 #if UNITY_IOS || UNITY_ANDROID
@@ -1429,7 +1465,7 @@ namespace Summit
             combo.Drop();   // whatever was in hand is gone
             falls++;
             int left = Progress.Falls(MaxFalls) - falls;   // a spare helmet from the camp adds one
-            Bill(rider.Tube ? 400f : 850f);   // the trip to the clinic
+            receipt.Ride = rider.Ride; receipt.Tube = rider.Tube; receipt.Begin(); downT = 0f;   // a new fall on the bill
             // the impact, frozen for a heartbeat: into a tree, rock or sign, or the ground at the foot of a cliff
             // (not a crevasse, a slam on landing or the avalanche)
             if (why != "Slammed!" && !why.StartsWith("Crevasse")) HitStop((rider.Speed * 3.6f - 30f) / 110f);

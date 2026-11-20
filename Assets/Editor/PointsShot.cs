@@ -10,10 +10,12 @@ using Summit;
 /// The points on screen, rendered: a small trick, a big air trick as it is built and as it lands, a combo on a
 /// rail and on a lift cable with the multiplier up, the bank, a dropped combo, and the medical bill mid-fall, on
 /// its way to the corner and on the end screen. Each by day and by night, with the HUD as the phone draws it.
+/// The receipt's hits go in the way the ragdoll reports them (Ragdoll.Hit, then Struck), so every line on it comes
+/// through the game's own path: RiderBody's break, RiderBody.Injured, the Receipt, the HUD.
 /// Run: Unity -batchmode -quit -projectPath . -executeMethod PointsShot.Run -logFile points.log   (no -nographics)
 /// Writes points-shots/*.png; log lines start POINTS.
-/// (Batchmode sends no collision messages, so the ragdoll's hits never reach the bill here: the shots put a
-/// fall's costs on it by hand, the amounts the game charges: a bruise, a leg, an arm, a limb torn off.)
+/// (Batchmode sends no collision messages, so the shots make the ragdoll's hits themselves: which part, how hard,
+/// into what.)
 /// </summary>
 public static class PointsShot
 {
@@ -58,6 +60,7 @@ public static class PointsShot
         r.Landed += impact => landings++;
         game.Points.BankedNow += (total, pot, mult) => { bankedAt = clock; Debug.Log($"POINTS banked {total} = {pot} x{mult}"); };
         game.Points.Dropped += total => Debug.Log($"POINTS dropped {total}");
+        game.Points.Added += (line, up) => { if (!line.live) addedAt = clock; };
         r.Link += l => Debug.Log($"POINTS link {l.name} +{l.points}{(l.sketchy ? " sketchy" : "")}");
         try
         {
@@ -68,7 +71,7 @@ public static class PointsShot
                 tag = name;
                 TimeOfDay.TestClock = at; dayNight.ApplyNow();
                 if (name == "day") { Begin(Slope.Centre(Course.First + 110f), Course.First + 110f, 18f); Run(0.3f, null); for (int i = 0; i < 3; i++) Shoot(Dir + "/warmup.png"); }
-                Ready(); Small(); BigAir(); Rail(); Cable(); Dropped(); Fall(); End();
+                Ready(); Small(); BigAir(); Rail(); Cable(); Dropped(); Fall(); RideHits(); End();
             }
             File.Delete(Dir + "/warmup.png");
         }
@@ -244,6 +247,7 @@ public static class PointsShot
         return default;
     }
 
+    static float addedAt = -1f; static string stampShot;
     static void OntoRail(Course.Feature f, float until, bool flicks)
     {
         Begin(f.a.x, f.a.z - 18f, 14f);
@@ -259,6 +263,8 @@ public static class PointsShot
                 if (flicks) { r.TrickX = on > 0.3f && on < 0.4f ? 1f : on > 1.0f && on < 1.1f ? -1f : 0f; r.TrickY = on > 0.65f && on < 0.75f ? 1f : on > 1.3f && on < 1.4f ? -1f : 0f; }
             }
             Step();
+            // a link stamping in, caught mid-stamp
+            if (stampShot != null && on > 0.9f && addedAt > 0f && clock - addedAt >= 0.05f) { Shot(stampShot); stampShot = null; }
         }
     }
 
@@ -266,13 +272,16 @@ public static class PointsShot
     static void Rail()
     {
         var f = Feature(Course.Kind.Rail);
+        stampShot = "04a-link-stamping"; addedAt = -1f;
         OntoRail(f, 1.55f, true);
+        stampShot = null;
         Shot("04-rail-combo");
         if (Missions.Today.Count > 0) { meta.ToastNow(Missions.Today[0]); Shot("04b-rail-combo-with-a-mission-toast"); typeof(MetaUi).GetField("toastT", NP).SetValue(meta, 99f); typeof(MetaUi).GetMethod("Update", NP).Invoke(meta, null); }
         // off the end, landed, and the window runs out: the bank
         landings = 0; bankedAt = -1f;
         for (float t = 0f; t < 8f && bankedAt < 0f; t += Dt) Run(Dt, null, f.b.x - Slope.Centre(f.b.z));
-        Run(0.2f, null); Shot("06-bank-flying");
+        Run(0.07f, null); Shot("06a-bank-folding");
+        Run(0.33f, null); Shot("06-bank-flying");
         Run(0.4f, null); Shot("07-bank-counted");
     }
 
@@ -319,52 +328,131 @@ public static class PointsShot
         Run(0.34f, null); Shot("09-dropped-falling");
     }
 
-    static void Bill(float cost) => typeof(SummitGame).GetMethod("Bill", NP).Invoke(game, new object[] { cost });
+    // ---------------------------------------------------------------- the receipt: hits as the ragdoll reports them
 
-    /// <summary>A fall at speed on the piste: the bill jumping with each hit, then into the corner as the rider gets up.</summary>
+    static Collider snowC, treeC, rockC;
+
+    /// <summary>One hit, as the ragdoll reports it (batchmode sends no collision messages): Hit (RiderBody's break),
+    /// then Struck (the blood, the limbs, and RiderBody.Injured: the receipt).</summary>
+    static void Strike(Summit.BodyPart part, Collider what, float v, Vector3 n, bool face = false, int side = 0)
+    {
+        var rd = (Ragdoll)typeof(RiderBody).GetField("ragdoll", NP).GetValue(body);
+        if (rd == null || !rd.Active) { Debug.Log("POINTS no ragdoll to hit"); return; }
+        if (snowC == null) Surfaces(rd);
+        if (what == null) what = snowC;
+        var bone = body.BoneOf(part);
+        Vector3 across = body.BoneOf(Summit.BodyPart.ArmR).position - body.BoneOf(Summit.BodyPart.ArmL).position;
+        Vector3 front = Vector3.Cross(across, body.BoneOf(Summit.BodyPart.Head).position - rd.Centre).normalized;
+        if (face) n = -front;
+        if (side != 0) n = -side * across.normalized;
+        rd.LastHitObject = what != null && what.GetComponentInParent<Obstacle>() != null;
+        rd.Hit?.Invoke(v, false, bone.position, bone);
+        rd.Struck?.Invoke(what, bone.position, n, v, bone);
+    }
+
+    static void Surfaces(Ragdoll rd)
+    {
+        var gb = (Rigidbody)typeof(Ragdoll).GetField("groundBody", NP).GetValue(rd);
+        if (gb != null) snowC = gb.GetComponent<Collider>();
+        foreach (var ob in Object.FindObjectsByType<Obstacle>(FindObjectsSortMode.InstanceID))
+        {
+            var c = ob.GetComponentInChildren<Collider>();
+            if (c == null) continue;
+            if (ob.label == "Tree" && treeC == null) treeC = c;
+            else if (ob.label == "Rock" && rockC == null) rockC = c;
+        }
+    }
+
+    static void Crash(string why) { r.DoCrash(why); Run(2 * Dt, null); }
+
+    /// <summary>Lie there until what followed is on the bill, then the printing of it.</summary>
+    static void Down(float after)
+    {
+        for (float t = 0f; t < 8f && !game.Bill.Served; t += Dt) Run(Dt, null);
+        Run(after, null);
+    }
+
+    static void GetUp()
+    {
+        for (float t = 0f; t < 10f && r.Crashed; t += Dt) { if (r.CanGetUp) r.RequestUp = true; Run(Dt, null); }
+    }
+
+    /// <summary>A fall at speed into the trees: the receipt printing as the body breaks, the services once it stops,
+    /// then torn off into the corner as the rider gets up. Then a cliff: the long one.</summary>
     static void Fall()
     {
         float z = Course.First + 110f;
         Begin(Slope.Centre(z), z, 24f);
         Run(1.2f, null);
-        r.DoCrash("Tree");                      // (the clinic trip goes on at once: 850)
-        Run(0.3f, null); Bill(320f);            // a bruise
-        Run(0.1f, null); Shot("10-bill-first-hits");
-        Run(0.2f, null); Bill(9400f);           // a leg
-        Run(0.07f, null); Shot("11-bill-big-hit");
-        Run(0.5f, null); Bill(540f); Run(0.3f, null); Bill(4600f);   // another bruise, an arm
-        Run(0.6f, null); Shot("12-bill-settled");
-        // back on your feet: the fall's figure flies up into the total
-        for (float t = 0f; t < 10f && r.Crashed; t += Dt) { if (r.CanGetUp) r.RequestUp = true; Run(Dt, null); }
-        Run(0.2f, null); Shot("13-bill-to-corner");
-        Run(0.9f, null); Shot("14-bill-in-corner");
-        // and a worst case for size: a limb torn off
-        r.DoCrash("Tree");
-        Run(0.3f, null); Bill(9400f); Run(0.25f, null); Bill(124000f);
-        Run(0.08f, null); Shot("15-bill-limb");
+        Crash("Tree");
+        Strike(Summit.BodyPart.ForearmL, snowC, 6f, Vector3.up);              // the hand out: snowboarder's wrist
+        Run(0.35f, null);
+        Strike(Summit.BodyPart.Head, treeC, 9f, Vector3.up);                  // a concussion
+        Run(0.3f, null); Shot("10-receipt-first-hits");
+        Strike(Summit.BodyPart.Chest, treeC, 15f, Vector3.up, side: -1);      // the trunk: a lung
+        Run(0.07f, null); Shot("11-receipt-big-hit");
+        Run(0.4f, null);
+        Strike(Summit.BodyPart.ThighR, snowC, 7f, Vector3.up);                // a bruise
+        Down(1.9f); Shot("12-receipt-settled");
+        GetUp();
+        Run(0.06f, null); Shot("13-receipt-tearing");
+        Run(0.24f, null); Shot("13b-receipt-to-corner");
+        Run(0.9f, null); Shot("14-receipt-in-corner");
+
+        // off a cliff: 130 m
+        Begin(Slope.Centre(z), z, 24f);
+        Run(1.0f, null);
+        Crash("Cliff");
+        Random.InitState(42);   // (the limb a fatal fall takes is the game's draw)
+        Strike(Summit.BodyPart.Pelvis, snowC, 34f, Vector3.up);
+        Run(0.1f, null);
+        Strike(Summit.BodyPart.ThighL, snowC, 31f, Vector3.up);
+        Strike(Summit.BodyPart.Chest, snowC, 30f, Vector3.up);
+        Strike(Summit.BodyPart.Head, snowC, 26f, Vector3.up);
+        body.Killed?.Invoke(130f);
+        Run(1.4f, null); Shot("15-cliff-receipt-printing");
+        Run(4.5f, null); Shot("15b-cliff-receipt-long");
     }
 
-    /// <summary>The run's last fall: the bill mid-fall, then carried into the end screen, counting up to the total.</summary>
+    /// <summary>Signs ridden through: the rider stays up, and one line pops over the corner's total and folds into it.</summary>
+    static void RideHits()
+    {
+        float z = Course.First + 110f;
+        Begin(Slope.Centre(z), z, 24f);
+        Run(1.0f, null);
+        var breaks = F<Breakables>("breaks");
+        breaks.RiderHit?.Invoke(Breakable.Kind.Sign, 20f, r.transform.position, "Shoulder", Breakables.SignCost(28f));
+        Run(0.3f, null); Shot("19-ride-hit");
+        Run(1.2f, null); Shot("19b-ride-hit-folding");
+        Run(0.6f, null); Shot("19c-ride-hit-in-corner");
+    }
+
+    /// <summary>A run's three falls, the last one ending it: the slip carried to the top of the end screen as the
+    /// run's whole itemized receipt, printing, then whole.</summary>
     static void End()
     {
         float z = Course.First + 110f;
         Begin(Slope.Centre(z), z, 24f);
-        typeof(SummitGame).GetField("medical", NP).SetValue(game, 15710f);   // (two earlier falls' worth)
-        typeof(SummitGame).GetField("falls", NP).SetValue(game, 2);
         Run(1.2f, null);
-        r.DoCrash("Tree");
-        Run(0.3f, null); Bill(410f); Run(0.3f, null); Bill(12500f); Run(0.4f, null); Bill(7800f);
-        Run(0.9f, null); Shot("16-last-fall");
+        Crash("Tree"); Strike(Summit.BodyPart.ForearmR, snowC, 6f, Vector3.up); Run(0.3f, null); Strike(Summit.BodyPart.ArmR, snowC, 7f, Vector3.up);
+        Down(1.2f); GetUp(); Run(1.5f, null);
+        Crash("Rock"); Strike(Summit.BodyPart.Head, rockC, 12f, Vector3.up, face: true); Run(0.3f, null); Strike(Summit.BodyPart.ShinL, rockC, 14f, Vector3.up);
+        Down(2.2f); GetUp(); Run(1.5f, null);
+        Crash("Tree"); Strike(Summit.BodyPart.Chest, treeC, 13f, Vector3.up, side: 1); Run(0.3f, null); Strike(Summit.BodyPart.ThighL, snowC, 8f, Vector3.up);
+        Down(1.4f); Shot("16-last-fall");
+        Debug.Log($"POINTS receipt: {game.Bill.All.Count} lines, run total ${game.Bill.RunTotal:N0}, game medical ${F<float>("medical"):N0}");
         Call("ToEnd", "WIPED OUT", false, false);
         // the end screen fades in over the last of it (SummitGame.Update's State.Buried, by hand)
-        for (float t = 0f; t < 2.6f; t += Dt)
+        for (float t = 0f; t < 9f; t += Dt)
         {
             float a = Mathf.Clamp01(t / 1.4f);
             hud.SetAlpha(a); meta.SetEndAlpha(a);
             Run(Dt, null);
-            if (At(t, 0.55f)) Shot("17-end-screen-counting");
+            if (At(t, 0.5f)) Shot("17-end-receipt-carried");
+            if (At(t, 1.2f)) Shot("17b-end-receipt-printing");
+            if (At(t, 3.0f)) Shot("18-end-screen");
+            if (At(t, 8.5f)) Shot("18b-end-screen-scrolled");
         }
-        Shot("18-end-screen");
         hud.SetAlpha(1f);
     }
 }

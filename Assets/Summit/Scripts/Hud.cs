@@ -318,11 +318,13 @@ namespace Summit
             timeLabel = Row(1, "TIME OF DAY", -420f, out timeMinus, out timePlus);   // CYCLE, or one phase held
             // GAME
             var game = tabPage[2].transform;
-            steerBtn = Button(game, "STEERING", new Vector2(0f, 200f), new Vector2(700f, 120f), grey, out steerLabel, 38);
-            bloodBtn = Button(game, "BLOOD", new Vector2(0f, 50f), new Vector2(700f, 120f), grey, out bloodLabel, 38);
-            treesBtn = Button(game, "TREES", new Vector2(0f, -100f), new Vector2(700f, 120f), grey, out treesLabel, 38);
-            torchBtn = Button(game, "FLASHLIGHT", new Vector2(0f, -250f), new Vector2(700f, 120f), grey, out torchLabel, 38);
-            againBtn = Button(game, "RESTART RUN", new Vector2(0f, -400f), new Vector2(560f, 120f), new Color(0.8f, 0.2f, 0.15f, 0.9f), out _, 48);
+            // (five rows and the restart, 132 apart)
+            steerBtn = Button(game, "STEERING", new Vector2(0f, 250f), new Vector2(700f, 112f), grey, out steerLabel, 38);
+            jumpBtn = Button(game, "JUMP", new Vector2(0f, 118f), new Vector2(700f, 112f), grey, out jumpLabel, 38);
+            bloodBtn = Button(game, "BLOOD", new Vector2(0f, -14f), new Vector2(700f, 112f), grey, out bloodLabel, 38);
+            treesBtn = Button(game, "TREES", new Vector2(0f, -146f), new Vector2(700f, 112f), grey, out treesLabel, 38);
+            torchBtn = Button(game, "FLASHLIGHT", new Vector2(0f, -278f), new Vector2(700f, 112f), grey, out torchLabel, 38);
+            againBtn = Button(game, "RESTART RUN", new Vector2(0f, -420f), new Vector2(560f, 112f), new Color(0.8f, 0.2f, 0.15f, 0.9f), out _, 48);
             // SOUND
             musicLabel = Row(3, "MUSIC", 180f, out musicMinus, out musicPlus);
             voiceBtn = Button(tabPage[3].transform, "VOICE LINES", new Vector2(0f, -60f), new Vector2(700f, 120f), grey, out voiceLabel, 38);
@@ -351,6 +353,9 @@ namespace Summit
         public bool OnCamMinus(Vector2 p) => Inside(camMinus, p);
         public bool OnCamPlus(Vector2 p) => Inside(camPlus, p);
         public bool OnPauseSteer(Vector2 p) => Inside(steerBtn, p);
+        RectTransform jumpBtn; Text jumpLabel;
+        public void SetPauseJump(string name) { jumpLabel.text = "JUMP: " + name + "  (tap to change)"; }
+        public bool OnPauseJump(Vector2 p) => Inside(jumpBtn, p);
         public bool OnPauseRestart(Vector2 p) => Inside(againBtn, p);
         RectTransform bloodBtn; Text bloodLabel;
         RectTransform torchBtn; Text torchLabel;
@@ -502,7 +507,7 @@ namespace Summit
             else
             {
                 scoreTarget = points;
-                if (!scoreCounting) { scoreShown = points - (chipT >= 0f && !chipBill ? chipAmount : 0); ShowScore(); }
+                if (!scoreCounting) { scoreShown = points - (bankPending ? bankTotal : chipT >= 0f && !chipBill ? chipAmount : 0); ShowScore(); }
             }
             int s0 = showRun ? Mathf.Max(0, Mathf.RoundToInt(gap)) : -1;
             if (s0 != lastGap) { lastGap = s0; slide.text = showRun && s0 < 9999 ? "SLIDE " + s0 + " m" : ""; }   // 9999: not released yet
@@ -564,7 +569,7 @@ namespace Summit
             medTotal = dollars; medShow = show;
             if (!show) medCounting = false;
             if (medCounting) return;
-            medShown = show ? dollars - (billOn ? billTarget : 0f) : 0f;
+            medShown = show ? dollars - (billOn ? billTarget : 0f) - rideHeld : 0f;
             ShowMedical();
         }
 
@@ -623,6 +628,7 @@ namespace Summit
         {
             big.text = small.text = hint.text = "";
             flashT = 0f;
+            if (rmode == RMode.End) ClearReceipt();   // (the end screen's receipt goes with it: HudReceipt)
         }
     }
 }
