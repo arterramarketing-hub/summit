@@ -376,6 +376,15 @@ namespace Summit
             Hand[s].rotation = Quaternion.Slerp(Hand[s].rotation, handRot, w);
         }
 
+        // ---- for poses made outside the clips (the camp's fire and its mugs: CampPose, Alyssa)
+
+        /// <summary>Put a hand's wrist (0 left, 1 right) at a point, the elbow bending toward the hint.</summary>
+        public void ArmTo(int s, Vector3 wrist, Vector3 elbowHint) { if (Ok) Limb(UpperArm[s], LowerArm[s], Hand[s], wrist, elbowHint); }
+        /// <summary>Put an ankle at a point, the knee bending toward the hint.</summary>
+        public void LegTo(int s, Vector3 ankle, Vector3 kneeHint) { if (Ok) Limb(UpperLeg[s], LowerLeg[s], Foot[s], ankle, kneeHint); }
+        /// <summary>The way the hips face, level (from the line through the hip joints).</summary>
+        public Vector3 HipsForward() { Vector3 l = UpperLeg[0].position - UpperLeg[1].position; l.y = 0f; return Vector3.Cross(Vector3.up, l).normalized; }
+
         /// <summary>Two-bone IK: the end reaches the target; the middle joint bends toward where the hint is.</summary>
         static void Limb(Transform upper, Transform lower, Transform end, Vector3 target, Vector3 hint)
         {

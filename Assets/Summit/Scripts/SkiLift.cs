@@ -26,9 +26,10 @@ namespace Summit
     ///     across the sky and do not crawl.
     ///   - The chairs have no state: each frame every chair's place on the loop is worked out from the clock
     ///     (LiftLine.Lift.Loop), with a slow swing of its own and a kick that dies away as it comes off each
-    ///     tower's sheaves. More than half the chairs going up carry one to four seated riders, in jackets of
-    ///     eight colours, skis on the footrest or a board hanging; hardly any coming down do. Who sits where is
-    ///     drawn afresh each time a chair leaves the bottom station.
+    ///     tower's sheaves. Who rides them is LiftRiders' business (the mountain's people, from the hero's own
+    ///     model, seated on the chairs and drawn by distance): about three chairs in four going up carry one to
+    ///     four people, hardly any coming down do, drawn afresh each time a chair leaves the bottom station.
+    ///     (LiftRiders.On = false brings back the old block figures from Lift.fbx.)
     ///
     /// A first line's bottom station is, where the ground allows, the big one you ski through and jump off
     /// (LiftJumpStation: laid out in LiftJump.cs, ridden by CableGrind, built here once as one mesh).
@@ -198,6 +199,7 @@ namespace Summit
             lamp.type = LightType.Point; lamp.color = new Color(1f, 0.9f, 0.74f); lamp.range = 34f; lamp.shadows = LightShadows.None;
             lamp.enabled = false;
             ready = true;
+            LiftRiders.Prewarm();   // the riders' poses baked for distance, now rather than when first seen
             if (System.Environment.GetEnvironmentVariable("SUMMIT_LIFTCHECK") == "1") Debug.Log("SkiLift\n" + LiftLine.Report() + LiftLine.RampReport() + LiftLine.JumpReport());
         }
 
@@ -239,6 +241,7 @@ namespace Summit
             foreach (var lv in live) Free(lv);
             live.Clear();
             foreach (var part in parts) part.list.Clear();
+            LiftRiders.Clear();
             refreshClock = 0f;
             clackTower = -1;
             bent = null;
@@ -896,6 +899,8 @@ namespace Summit
             double clock = Clock;
             float t = (float)(clock % 3600.0);
             bool canHit = rider != null && rider.Running && !rider.Crashed && CableGrind.ChairsHit;   // (on a cable the board skims over the chairs' grips)
+            var camNow = Camera.main;
+            LiftRiders.Begin(camNow != null ? camNow.transform.position : p, p, rider != null);   // the people aboard (LiftRiders.cs)
             foreach (var lv in live)
             {
                 var l = lv.lift;
@@ -920,9 +925,13 @@ namespace Summit
                     bool near = d2 < ChairNear * ChairNear;
                     (near ? chair : chairLod).list.Add(m * (near ? chair : chairLod).local);
                     // who is aboard: drawn when the chair left the bottom station, and gone at the top
-                    float h = Slope.Hash01(c + l.id * 977, lap, 151);
-                    int who = up ? (h < 0.56f ? Mathf.Min(3, (int)(h / 0.56f * 4f)) : -1) : (h > 0.95f ? 2 : -1);
-                    if (who >= 0) { var r = near ? riders[who] : ridersLod[who]; r.list.Add(m * r.local); }
+                    if (LiftRiders.On) LiftRiders.Chair(l, c, lap, (float)(along - lap * (double)l.loop), m);
+                    else
+                    {
+                        float h = Slope.Hash01(c + l.id * 977, lap, 151);
+                        int who = up ? (h < 0.56f ? Mathf.Min(3, (int)(h / 0.56f * 4f)) : -1) : (h > 0.95f ? 2 : -1);
+                        if (who >= 0) { var r = near ? riders[who] : ridersLod[who]; r.list.Add(m * r.local); }
+                    }
                     // jumped into: the seat, its frame and whoever is on it, as a box under the grip
                     if (canHit && d2 < 8f * 8f)
                     {
@@ -948,6 +957,7 @@ namespace Summit
                 for (int i = 0; i < part.list.Count; i += 1000)
                     Graphics.RenderMeshInstanced(rp, part.mesh, 0, part.list, Mathf.Min(1000, part.list.Count - i), i);
             }
+            LiftRiders.Draw(Time.deltaTime);
         }
 
         /// <summary>What the lift asks the GPU for this frame: draw calls (instanced batches and cable spans) and triangles.</summary>
@@ -966,6 +976,7 @@ namespace Summit
                 // a station with a lane through it, and its two signs
                 if (lv.station != null) { draws += 3; tris += lv.station.GetIndexCount(0) / 3 + 4; }
             }
+            if (LiftRiders.On) { draws += LiftRiders.DrawCalls; tris += LiftRiders.Triangles; instances += LiftRiders.MidShown + LiftRiders.FarShown; }
         }
 
         // ---------------------------------------------------------------- dusk and night

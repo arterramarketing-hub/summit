@@ -96,9 +96,19 @@ public static class ClosetShot
 
             // who you ride as, and whose clothes: each try-on builds the rider anew and the studio copies them afresh
             meta.ClosetTry(Wardrobe.Cat.Rider, 2); Settle(20); Shoot("Closet10b_rider_val.png");
-            meta.ClosetTry(Wardrobe.Cat.Rider, 3); Settle(20); Shoot("Closet10c_rider_brianna.png");
+            meta.ClosetTry(Wardrobe.Cat.Rider, 3); Settle(20); Shoot("Closet10c_rider_breanna.png");
             meta.ClosetTry(Wardrobe.Cat.Rider, 1); Settle(20); Shoot("Closet10d_rider_female.png");
-            meta.ClosetTry(Wardrobe.Cat.Outfit, 2); Settle(20); Shoot("Closet10e_outfit_brianna.png");
+            meta.ClosetTry(Wardrobe.Cat.Outfit, 2); Settle(20); Shoot("Closet10e_outfit_breanna.png");
+            // Paul, in his own puffer and in his hoodie and vest; Breanna in her fleece
+            // (PLAY AS Paul first: an outfit is tried on whoever is being played)
+            meta.ClosetTry(Wardrobe.Cat.Rider, Wardrobe.PaulRow); Settle(20); Shoot("Closet10h_rider_paul.png");
+            meta.ClosetBuy();
+            Debug.Log($"CLOSET Paul played: ride {Progress.Ride}");
+            meta.ClosetTry(Wardrobe.Cat.Outfit, 4); Settle(20); Shoot("Closet10i_paul_hoodie.png");
+            stage.Yaw = 160f; Settle(5); Shoot("Closet10j_paul_hoodie_back.png"); stage.Yaw = -22f;
+            meta.ClosetTry(Wardrobe.Cat.Rider, 0); meta.ClosetBuy(); Progress.PickRide(RideKind.Snowboard);
+            meta.ClosetTry(Wardrobe.Cat.Rider, 3); Settle(20); Shoot("Closet10k_breanna_fleece.png");
+            stage.Yaw = 160f; Settle(5); Shoot("Closet10l_breanna_back.png"); stage.Yaw = -22f;
             // Val's pyjamas worn: the first jacket row is the fleece as made, any other dyes it
             meta.ClosetTry(Wardrobe.Cat.Outfit, 1); meta.ClosetBuy();
             meta.ClosetTry(Wardrobe.Cat.Jacket, 0); Settle(20); Shoot("Closet10f_pyjamas_as_made.png");

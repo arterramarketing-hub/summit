@@ -55,7 +55,7 @@ namespace Summit
         // Each set of clothes keeps its own colours: the jacket, trousers and boots picked for the summit kit stay with
         // the kit, and pyjamas are as they were made until you dye them. What the sets not on now were last worn in:
         static readonly Wardrobe.Cat[] Dyes = { Wardrobe.Cat.Jacket, Wardrobe.Cat.Pants, Wardrobe.Cat.Boots };
-        static readonly int[,] kept = new int[3, 3];   // [set of clothes, which of Dyes]
+        static readonly int[,] kept = new int[8, 3];   // (room for sets of clothes yet to come)   // [set of clothes, which of Dyes]
         static string KeptKey(int set, int k) => "summit_set" + set + "_" + Dyes[k];
         /// <summary>Test tools: every key the sets' own colours are saved under.</summary>
         public static System.Collections.Generic.IEnumerable<string> SetKeys()
@@ -170,6 +170,8 @@ namespace Summit
             // a rider arrives in their own clothes (the OUTFIT tab then puts them in anyone's), and a set of clothes
             // comes in the colours it was last worn in
             if (c == Wardrobe.Cat.Rider) PutOn(Wardrobe.OwnOutfit(i));
+            // Paul is a skier: picking him puts him on his skis (the RIDE tab still changes it)
+            if (c == Wardrobe.Cat.Rider && i == Wardrobe.PaulRow && worn[(int)c] != i) ride = (int)RideKind.Skis;
             if (c == Wardrobe.Cat.Outfit) PutOn(i); else worn[(int)c] = i;
             Save(); Changed?.Invoke();
             return true;

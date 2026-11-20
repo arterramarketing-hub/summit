@@ -15,9 +15,9 @@ namespace Summit
     /// Built from primitives and the textures in Resources/Camp (Tools/MakeCampSigns.swift). It also walks
     /// the rider around (thumb joystick, third-person camera) while the game is in its hub state.
     /// </summary>
-    public class Camp : MonoBehaviour
+    public partial class Camp : MonoBehaviour
     {
-        public enum Station { None, Missions, Upgrades, Style, DropIn, Lookout }
+        public enum Station { None, Missions, Upgrades, Style, DropIn, Lookout, Talk, Roast, Cocoa }   // (the last three: the fire and the kitchen, CampFire.cs)
 
         // where the camp sits: on the plateau behind the start pad (downhill is +Z), so the run is right
         // in front of you and the view down the mountain is past the Drop In gate. It stands close behind the gate:
@@ -53,6 +53,7 @@ namespace Summit
         public void Build(Shader litShader)
         {
             lit = litShader;
+            if (CampLife.On && GetComponent<CampLife>() == null) gameObject.AddComponent<CampLife>().Setup(this);   // the people living here (CampLife.cs)
             var woodTex = Resources.Load<Texture2D>("Camp/Wood");
             var logTex = Resources.Load<Texture2D>("Camp/Logs");
             wood = M(new Color(0.95f, 0.88f, 0.8f), 0.18f, woodTex);
@@ -79,7 +80,7 @@ namespace Summit
             noteMats = new Material[3];
             for (int i = 0; i < 3; i++) noteMats[i] = Sign("Camp/Note" + i);
             Progress.Changed += Redress;
-            // Val and Brianna, living here while they aren't the one being played (CampCouple)
+            // Val and Breanna, living here while they aren't the one being played (CampCouple)
             Couple = new GameObject("Couple").AddComponent<CampCouple>();
             Couple.transform.SetParent(transform, false);
             Couple.Setup(this);
@@ -129,6 +130,8 @@ namespace Summit
             Benches();
             firePit = FirePit(Frame(0f, -71f, 0f)).gameObject;
             snowman = Snowman(Frame(11.5f, -61f, 180f)).gameObject;
+            Campfire();       // Alyssa and the stumps at the fire (CampFire.cs)
+            CocoaCorner();    // the hot chocolate in the kitchen (CampCocoa.cs)
             flags = new GameObject("Flags"); flags.transform.SetParent(root, false);
             lights = new GameObject("Lights"); lights.transform.SetParent(root, false);
             Strings();
@@ -142,6 +145,7 @@ namespace Summit
             Redress();
             SetNight(Night);   // the new lamps start at the evening's brightness
             if (Couple != null) Couple.Rebuilt();   // (their spots moved with the camp)
+            Built?.Invoke(root);   // (the camp's people: CampLife)
         }
 
         /// <summary>A building spot: on the snow at (dx from the run's centre, z), turned by yaw degrees.</summary>
@@ -1276,6 +1280,7 @@ namespace Summit
         {
             if (root == null) return;
             if (firePit != null) firePit.SetActive(Progress.Has(Progress.Up.FirePit));
+            FireRedress();   // Alyssa and the stumps come with the fire (CampFire.cs)
             if (flags != null) flags.SetActive(Progress.Has(Progress.Up.Flags));
             if (lights != null) lights.SetActive(Progress.Has(Progress.Up.Lights));
             if (snowman != null) snowman.SetActive(Progress.Has(Progress.Up.Snowman));
@@ -1330,6 +1335,8 @@ namespace Summit
             // ignore it until it lifts
             input.IgnoreCurrent(Touches());
             moveKind = 0; moveT = 0f; jumpY = 0f; camPitch = 0f; lookRest = 99f;
+            body.CampPose = this;   // sitting at the fire, a mug in hand (CampFire.cs)
+            if (alyssa != null) alyssa.enabled = true;   // (still while you're out on the mountain: nothing to pose)
             Place();
             lastStep = body.WalkPhase;
             Redress();
@@ -1340,6 +1347,9 @@ namespace Summit
             if (!Active) return;
             Active = false;
             Showcase = false;
+            EndActs(fadeUi);
+            if (alyssa != null) alyssa.enabled = false;
+            if (body != null) body.CampPose = null;
             CampShadows(false);
             if (stepPool != null) { foreach (var src in stepPool) src.Stop(); stepVol = 0f; }
             if (body != null) body.SetWalking(false);
@@ -1432,7 +1442,8 @@ namespace Summit
                     if (b.lo > feet + 1.7f || b.hi < feet + 0.1f) continue;   // above your head or under your feet
                     p2 = PushOut(b, p2, 0.38f);
                 }
-            if (Couple != null) p2 = Couple.PushOut(p2, 0.38f);   // (and round Val and Brianna, if they're about)
+            if (Couple != null) p2 = Couple.PushOut(p2, 0.38f);   // (and round Val and Breanna, if they're about)
+            if (PushWalker != null) p2 = PushWalker(p2);   // (the camp's people: you don't walk through them)
             pos = new Vector3(p2.x, feet, p2.y);
             Place();
             // the nearest station you're standing at
@@ -1440,6 +1451,7 @@ namespace Summit
             float best = float.MaxValue;
             foreach (var s in spots)
             {
+                if (s.root != null && !s.root.gameObject.activeInHierarchy) continue;   // (not built yet: the fire before it's bought)
                 var d = new Vector2(s.at.x - pos.x, s.at.z - pos.z).magnitude;
                 if (d < s.radius && d < best && Mathf.Abs(s.at.y - pos.y) < 1.5f) { best = d; Near = s.st; }   // on its floor
             }
@@ -1454,7 +1466,7 @@ namespace Summit
 
         // ---- the camp's own people (CampCouple): where things are, and walking round what's in the way as the hero does
 
-        /// <summary>Val and Brianna (made in Build).</summary>
+        /// <summary>Val and Breanna (made in Build).</summary>
         public CampCouple Couple { get; private set; }
         /// <summary>A point on the snow at (dx from the run's centre, z).</summary>
         public static Vector3 GroundAt(float dx, float z) => Ground(dx, z);
@@ -1478,6 +1490,44 @@ namespace Summit
             q.y = FloorAt(q, from.y);
             onSnow = keep;
             return q;
+        }
+
+        // ---------------------------------------------------------------- for the camp's people (CampLife.cs)
+
+        /// <summary>The camp was built (or rebuilt for a new mountain): its root, which anything added to the camp goes under.</summary>
+        public System.Action<Transform> Built;
+        /// <summary>Moves the walker out of anyone standing in the way (set by CampLife).</summary>
+        public System.Func<Vector2, Vector2> PushWalker;
+        /// <summary>How fast the walker is going (m/s).</summary>
+        public float WalkerSpeed => speed;
+
+        /// <summary>A point pushed out of everything solid in the camp at a body's height, for a body of radius r.</summary>
+        public Vector2 PushOutOfThings(Vector2 p, float r, float feet)
+        {
+            for (int it = 0; it < 2; it++)
+                foreach (var b in boxes)
+                {
+                    if (b.floor || (b.owner != null && !b.owner.activeInHierarchy)) continue;
+                    if (b.lo > feet + 1.7f || b.hi < feet + 0.1f) continue;
+                    p = PushOut(b, p, r);
+                }
+            return p;
+        }
+
+        /// <summary>What someone stands on at p coming from height feet (the snow, a deck, a step).</summary>
+        public float FloorHeight(Vector3 p, float feet)
+        {
+            bool was = onSnow;
+            float y = FloorAt(p, feet);
+            onSnow = was;
+            return y;
+        }
+
+        /// <summary>Something solid added to the camp (a bench, a stand): a box on the snow, half sizes, turned by yaw.</summary>
+        public void AddBlock(Vector3 at, Vector2 half, float yawDeg)
+        {
+            float yaw = yawDeg * Mathf.Deg2Rad;
+            boxes.Add(new Box { c = new Vector2(at.x, at.z), h = half, cos = Mathf.Cos(yaw), sin = Mathf.Sin(yaw), top = at.y, lo = at.y - 1000f, hi = at.y + 1000f });
         }
 
         static Vector2 PushOut(Box b, Vector2 p, float r)
@@ -1775,17 +1825,18 @@ namespace Summit
             }
             input.Step(touches, dt, cam != null ? cam.pixelWidth : Screen.width, cam != null ? cam.pixelHeight : Screen.height, ui.Hit, ui.PanelOpen);
             if (input.Button != null) ui.Act(input.Button);
+            if (ActStep(dt, ui, touches)) return false;   // talking, roasting, at the stove (CampFire.cs)
             if (input.ContextTapped && Open(Near, ui)) return true;
             if (input.Tapped && !ui.PanelOpen)
             {
                 // standing still, a tap on a station opens it (the gate drops you in); otherwise it's a jump
                 var st = speed < 0.5f ? StationAt(input.TapAt) : Station.None;
                 if (st != Station.None) { if (Open(st, ui)) return true; }
-                else Jump();
+                else if (!Sip()) Jump();   // (a mug in hand: a tap is a sip, CampCocoa)
             }
-            if (input.Swiped && !ui.PanelOpen) Roll(input.SwipeDir);
-            if (KeyJump()) Jump();
-            if (KeyRoll()) Roll(Vector2.up);
+            if (input.Swiped && !ui.PanelOpen && !HoldingMug) Roll(input.SwipeDir);
+            if (KeyJump() && !Sip()) Jump();
+            if (KeyRoll() && !HoldingMug) Roll(Vector2.up);
             // a controller: its sticks take over until the screen is touched again
             bool padUsed = Pad(out Vector2 padMove, out Vector2 padLook, out bool padJump, out bool padRoll);
             if (padUsed) padMode = true; else if (touches.Count > 0) padMode = false;
@@ -1793,14 +1844,15 @@ namespace Summit
             else
             {
                 // the bottom button: standing at a station it opens it (the gate drops you in), otherwise a jump
-                if (padJump) { if (speed < 0.5f && Near != Station.None) { if (Open(Near, ui)) return true; } else Jump(); }
-                if (padRoll) Roll(Vector2.up);
+                if (padJump) { if (speed < 0.5f && Near != Station.None) { if (Open(Near, ui)) return true; } else if (!Sip()) Jump(); }
+                if (padRoll && !HoldingMug) Roll(Vector2.up);
             }
             Look(input.Look + padLook, dt);
             lookRest = input.Look.sqrMagnitude > 0.0025f ? 0f : lookRest + dt;
             ui.SetStick(input.MoveShown && !ui.PanelOpen, input.MoveOrigin, input.MovePos);
             ui.SetLookStick(input.LookShown && !ui.PanelOpen, input.LookOrigin, input.LookPos);
             var stick = ui.PanelOpen ? Vector2.zero : Vector2.ClampMagnitude(input.Move + padMove + Keys(), 1f);
+            if (HoldingMug) stick = Vector2.ClampMagnitude(stick, 0.9f);   // a full mug: you walk, you don't run
             Showcase = ui.PanelOpen && ui.ShopTab == 1;
             if (Walk(stick, dt)) return true;
             ui.SetContext(Near);
@@ -1876,6 +1928,8 @@ namespace Summit
 
         bool Open(Station st, MetaUi ui)
         {
+            if (OpenFireStation(st, ui)) return false;
+            if (st == Station.DropIn) LeaveMug();   // (it waits on the gate's post)
             if (st == Station.Missions) ui.ShowMissions();
             else if (st == Station.Upgrades) ui.ShowShop(0);
             else if (st == Station.Style) ui.ShowShop(1);

@@ -58,51 +58,72 @@ namespace Summit
             P("SNOW CAMO", 750, C(0.86f, 0.88f, 0.92f), C(0.55f, 0.60f, 0.68f), Pattern.Camo, 6f),
             P("LUMBERJACK", 800, C(0.70f, 0.08f, 0.08f), C(0.08f, 0.08f, 0.10f), Pattern.Plaid, 9f),
             new Item { name = "GOLD RUSH", cost = 1500, a = C(0.95f, 0.72f, 0.20f), b = Keep, c = Keep, smooth = 0.85f },
-            // (the knit of Brianna's fleece, for any jacket: cream with paler diamonds, zigzags and dots in bands)
+            // (the knit of Breanna's fleece, for any jacket: cream with paler diamonds, zigzags and dots in bands)
             P("NORDIC KNIT", 700, C(0.84f, 0.78f, 0.66f), C(0.97f, 0.95f, 0.90f), Pattern.Nordic, 8f),
         };
 
+        /// <summary>Her name as the player sees it (one place, so a change of spelling is one edit).</summary>
+        public const string Breanna = "BREANNA";
+
         // Who you ride as, and which set of clothes they have on. All free, all there from the start: they are who
-        // you are, not prizes. The summit rider comes as a man or a woman (the same kit, cut for each); Val and
-        // Brianna each bring their own pyjamas, and anyone can wear anyone's clothes.
+        // you are, not prizes. The summit rider comes as a man or a woman (the same kit, cut for each); Val, Breanna and
+        // Paul each bring their own clothes, and anyone can wear anyone's. (Rows are only ever added at the end: saves
+        // keep the row's number.)
         static readonly Item[] riders =
         {
             I("SUMMIT RIDER · MALE", 0, C(0.93f, 0.31f, 0.14f)), I("SUMMIT RIDER · FEMALE", 0, C(0.98f, 0.55f, 0.35f)),
-            I("PAJAMA BUDDY VAL", 0, C(0.10f, 0.25f, 0.80f)), I("PAJAMA BRIANNA", 0, C(0.93f, 0.90f, 0.82f)),
+            I("PAJAMA BUDDY VAL", 0, C(0.10f, 0.25f, 0.80f)), I("PAJAMA " + Breanna, 0, C(0.93f, 0.90f, 0.82f)),
+            I("PAUL", 0, C(0.06f, 0.06f, 0.07f)),
         };
+        /// <summary>The RIDER row that is Paul (a skier: picking him puts him on skis).</summary>
+        public const int PaulRow = 4;
         static readonly Item[] outfits =
         {
-            I("SUMMIT KIT", 0, C(0.93f, 0.31f, 0.14f)), I("VAL'S PYJAMAS", 0, C(0.07f, 0.09f, 0.30f)), I("BRIANNA'S PYJAMAS", 0, C(0.66f, 0.07f, 0.13f)),
+            I("SUMMIT KIT", 0, C(0.93f, 0.31f, 0.14f)), I("VAL'S PYJAMAS", 0, C(0.07f, 0.09f, 0.30f)), I(Breanna + "'S PYJAMAS", 0, C(0.66f, 0.07f, 0.13f)),
+            I("PAUL'S PUFFER", 0, C(0.60f, 0.06f, 0.06f)), I("PAUL'S HOODIE", 0, C(0.50f, 0.51f, 0.53f)), I(Breanna + "'S FLEECE", 0, C(0.93f, 0.90f, 0.82f)),
         };
-        // the pyjamas as they were made: what the first row of JACKETS, PANTS and BOOTS stands for while they are worn
-        // (any other row dyes them, pattern and all)
+        /// <summary>The file each set of clothes is taken from (Resources/Rider/...; the summit kit's is cut per build).</summary>
+        public static readonly string[] OutfitModels = { "Hero", "Buddy", "BreannaPJ", "Paul", "PaulB", "Breanna" };
+        // each set as it was made: what the first row of JACKETS, PANTS and BOOTS stands for while it is worn
+        // (any other row dyes it, pattern and all)
         static readonly Item[] ownFleece =
         {
             null, I("VAL'S BLUE", 0, C(0.08f, 0.24f, 0.72f)),
-            P("BRIANNA'S NORDIC", 0, C(0.86f, 0.81f, 0.70f), C(0.98f, 0.96f, 0.91f), Pattern.Nordic, 8f),
+            P(Breanna + "'S NORDIC", 0, C(0.86f, 0.81f, 0.70f), C(0.98f, 0.96f, 0.91f), Pattern.Nordic, 8f),
+            I("BLACK PUFFER", 0, C(0.035f, 0.035f, 0.04f)), I("BLACK VEST", 0, C(0.035f, 0.035f, 0.04f)), I("CREAM FLEECE", 0, C(0.90f, 0.86f, 0.77f)),
         };
-        static readonly Item[] ownPants = { null, I("POLAR BEARS", 0, C(0.07f, 0.09f, 0.30f)), I("RED PLAID", 0, C(0.66f, 0.07f, 0.13f)) };
-        static readonly Item[] ownShoes = { null, I("WHITE SNEAKERS", 0, C(0.93f, 0.93f, 0.92f)), I("SLIPPER BOOTS", 0, C(0.66f, 0.52f, 0.37f)) };
+        static readonly Item[] ownPants =
+        {
+            null, I("POLAR BEARS", 0, C(0.07f, 0.09f, 0.30f)), I("RED PLAID", 0, C(0.66f, 0.07f, 0.13f)),
+            I("RED SKI PANTS", 0, C(0.60f, 0.06f, 0.06f)), I("CHARCOAL", 0, C(0.09f, 0.09f, 0.10f)), I("BLACK", 0, C(0.025f, 0.025f, 0.03f)),
+        };
+        static readonly Item[] ownShoes =
+        {
+            null, I("WHITE SNEAKERS", 0, C(0.93f, 0.93f, 0.92f)), I("SLIPPER BOOTS", 0, C(0.66f, 0.52f, 0.37f)),
+            I("BLUE SKI BOOTS", 0, C(0.10f, 0.26f, 0.58f)), I("BLUE SKI BOOTS", 0, C(0.10f, 0.26f, 0.58f)), I("SLIPPER BOOTS", 0, C(0.66f, 0.52f, 0.37f)),
+        };
+        /// <summary>How many sets of clothes there are.</summary>
+        public static int OutfitCount => outfits.Length;
 
-        /// <summary>The clothes a rider comes in (an OUTFIT row for a RIDER row).</summary>
-        public static int OwnOutfit(int rider) => rider == 2 ? 1 : rider == 3 ? 2 : 0;
+        /// <summary>The clothes a rider comes in (an OUTFIT row for a RIDER row): Val his pyjamas, Breanna her fleece, Paul his puffer.</summary>
+        public static int OwnOutfit(int rider) => rider == 2 ? 1 : rider == 3 ? 5 : rider == PaulRow ? 3 : 0;
 
         /// <summary>
         /// An outfit as the one number the rider's model is built from (RiderBody.SetCharacter): whose head and hands
-        /// (0 the summit rider, 1 Val, 2 Brianna), + 10 x the set of clothes, + 100 when the summit kit is cut for a
-        /// woman, + 1000 when pyjama trousers are dyed (plain cloth then, in place of their print).
+        /// (0 the summit rider, 1 Val, 2 Breanna, 3 Paul), + 10 x the set of clothes, + 100 when the summit kit is cut for
+        /// a woman, + 1000 when pyjama trousers are dyed (plain cloth then, in place of their print).
         /// </summary>
         public static int Look(int[] o)
         {
             int r = o[(int)Cat.Rider], set = Mathf.Clamp(o[(int)Cat.Outfit], 0, outfits.Length - 1);
-            int who = r == 2 ? 1 : r == 3 ? 2 : 0;
+            int who = r == 2 ? 1 : r == 3 ? 2 : r == PaulRow ? 3 : 0;
             bool her = r == 1 || r == 3;
-            return who + 10 * set + (her ? 100 : 0) + (set != 0 && o[(int)Cat.Pants] != 0 ? 1000 : 0);
+            return who + 10 * set + (her ? 100 : 0) + ((set == 1 || set == 2) && o[(int)Cat.Pants] != 0 ? 1000 : 0);
         }
 
         /// <summary>
         /// An item as it shows on a set of clothes. The first jacket, trousers and boots are the summit kit's own
-        /// colours; on pyjamas the first row is the pyjamas as they were made instead.
+        /// colours; on any other set the first row is that set as it was made instead.
         /// </summary>
         public static Item Shown(Cat c, int i, int outfit)
         {

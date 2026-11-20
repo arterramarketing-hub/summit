@@ -38,9 +38,23 @@ FEM = CHAR == "herof"                    # the summit rider's kit cut for a woma
 # how her jacket differs, ring by ring: (width, depth) against his. Narrower shoulders and a drawn-in waist, the hips kept
 FEMCUT = {"hemfold": (0.94, 0.94), "hem": (0.94, 0.94), "skirt": (0.95, 0.95), "hips": (0.97, 0.97), "waist": (0.82, 0.84), "belly": (0.83, 0.88),
           "a": (0.87, 0.98), "b": (0.89, 1.02), "c": (0.90, 0.95), "d": (0.94, 0.94), "e": (0.95, 0.95), "efold": (0.95, 0.95)}
-BRI = CHAR == "brianna"                  # Pajama Brianna: built the way Val is, with her own shapes where they differ
-BUDDY = CHAR in ("buddy", "brianna")     # the two friends in pyjamas (bare-headed, a fleece, printed bottoms)
-SKIN, HAIR = ("skin3", "hair2") if BRI else ("skin2", "hair")
+# --character breanna: Breanna (spelt Breanna at first, and still called that here on the command line), built the
+# way Val is with her own shapes: long dark curls under a grey beanie, white goggles with a pink mirror lens, a cream
+# half-zip fleece and black trousers. --character breannapj: her first outfit, the Nordic fleece and plaid pyjamas
+# (its head is never shown: the game puts the clothes on whoever wears them).
+# --character paul: Paul, a skier: short dark hair and a moustache under a cream beanie with his goggles pushed up on
+# it, a white turtleneck under a black puffer, red ski trousers, blue ski boots. --character paulb: his second
+# outfit, a grey hoodie under a black puffer vest with a white balaclava, charcoal trousers, the same boots.
+if CHAR == "brianna": CHAR = "breanna"
+VAL = CHAR == "buddy"                    # Pajama Buddy Val
+BRI = CHAR in ("breanna", "breannapj")   # Breanna (her head, hair and hands; her clothes by BRI_PJ)
+BRI_PJ = CHAR == "breannapj"
+PAUL = CHAR in ("paul", "paulb")
+PAUL_B = CHAR == "paulb"
+BUDDY = VAL or BRI or PAUL               # the riders built from photos: a bare face, their own clothes and hands
+SKIN, HAIR = ("skin3", "hair2") if BRI else ("skin4", "hair3") if PAUL else ("skin2", "hair")
+# the file each one is written to (Resources/Rider/<name>.fbx), and the name in the pictures it paints
+FILE = {"hero": "Hero", "herof": "HeroF", "buddy": "Buddy", "breanna": "Breanna", "breannapj": "BreannaPJ", "paul": "Paul", "paulb": "PaulB"}[CHAR]
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 scene = bpy.context.scene
@@ -146,12 +160,18 @@ PAL = [  # name, rgb, smoothness
     ("gold", (0.90, 0.68, 0.20), 0.85), ("stitch", (0.04, 0.16, 0.50), 0.3),
     ("eyewhite", (0.90, 0.89, 0.86), 0.5), ("iris", (0.34, 0.45, 0.50), 0.6), ("lip", (0.60, 0.30, 0.28), 0.35),
     # (hair has no shine at all: seen at a shallow angle under a bright sky, even a little turns dark hair grey)
-    # Brianna: her skin and hair, brown eyes, clear glasses frames, a scrunchie, slipper boots
+    # Breanna: her skin and hair, brown eyes, (once) clear glasses frames, a scrunchie, slipper boots
     # (the game's closet repaints swatches by their place here: Wardrobe / RiderBody's PaletteCells and ShoeCell.
     # Add new ones at the end, and never move helmet, frame, lens, glove, cuff, boot, vent, the pack's three, sneaker or slipper)
     ("skin3", (0.82, 0.62, 0.52), 0.3), ("hair2", (0.030, 0.018, 0.014), 0.0), ("irisb", (0.26, 0.15, 0.08), 0.6), ("lip2", (0.68, 0.30, 0.31), 0.4),
     ("frameclear", (0.70, 0.74, 0.75), 0.9), ("scrunch", (0.30, 0.06, 0.10), 0.2), ("slipper", (0.66, 0.52, 0.37), 0.1), ("slippersole", (0.74, 0.63, 0.47), 0.15),
-    ("logocyan", (0.08, 0.68, 0.86), 0.45)]
+    ("logocyan", (0.08, 0.68, 0.86), 0.45),
+    # Paul: olive skin, near-black hair, his cream beanie, blue ski boots with grey buckles, the balaclava;
+    # Breanna's grey beanie and her goggles (a white frame, a pink mirror lens, a pink strap)
+    ("skin4", (0.74, 0.53, 0.40), 0.3), ("hair3", (0.035, 0.025, 0.020), 0.0), ("beanie", (0.60, 0.56, 0.47), 0.0),
+    ("skiboot", (0.10, 0.26, 0.58), 0.55), ("buckle", (0.62, 0.64, 0.68), 0.7), ("beanie2", (0.20, 0.20, 0.21), 0.0),
+    ("frame2", (0.90, 0.90, 0.91), 0.5), ("lens2", (0.95, 0.42, 0.62), 0.95), ("strap2", (0.88, 0.40, 0.56), 0.25),
+    ("balaclava", (0.92, 0.92, 0.91), 0.08), ("tache2", (0.10, 0.07, 0.05), 0.2)]
 PALI = {p[0]: i for i, p in enumerate(PAL)}
 assert len(PALI) == len(PAL), "two swatches share a name: the later one would take the first one's gear"
 PAL_ROWS = 8   # always 8 x 8: a size the game takes as it is. Any other height it rescales, which bleeds each row of colours into the next
@@ -259,7 +279,7 @@ def make_jacket():
         ("e", (1.532, 1.515), 0.114, 0.124, 0.106, 0.01, 2.0, {"Neck": 0.6, "Head": 0.1, "UpperChest": 0.3}),
         ("efold", (1.52, 1.50), 0.096, 0.106, 0.09, 0.01, 2.0, {"Neck": 0.6, "Head": 0.1, "UpperChest": 0.3}),
     ]
-    if BUDDY:
+    if VAL:
         # a fleece pullover on a stocky build: a full belly and chest, an elastic hem at the hips, a short stand collar
         R = [
             ("hemfold", (0.885, 0.875), 0.215, 0.170, 0.162, 0.0, 2.3, {"Hips": 1}),
@@ -275,22 +295,10 @@ def make_jacket():
             ("e", (1.440, 1.442), 0.104, 0.094, 0.100, 0.02, 2.0, {"Neck": 0.4, "UpperChest": 0.6}),
             ("efold", (1.428, 1.430), 0.088, 0.080, 0.086, 0.02, 2.0, {"Neck": 0.4, "UpperChest": 0.6}),
         ]
-    rings = {}
-    for name, (zf, zb), rx, ryf, ryb, cy, p, w in R:
-        if FEM: rx, ryf, ryb = rx * FEMCUT[name][0], ryf * FEMCUT[name][1], ryb * FEMCUT[name][1]
-        idx = []
-        for th in ang:
-            x, y = superellipse(th, p)
-            z = zf + (zb - zf) * (1 - math.cos(th)) / 2
-            co = V(rx * math.copysign(abs(math.sin(th)) ** (2 / p), math.sin(th)),
-                   cy - (ryf if math.cos(th) >= 0 else ryb) * math.copysign(abs(math.cos(th)) ** (2 / p), math.cos(th)), z)
-            wv = dict(w)
-            idx.append(J.add(co, wv))
-        rings[name] = idx
-    if BRI:
-        # her fleece: slimmer, cropped to an elastic hem at the waist that the body blouses over, the shoulders
+    sp = {"Hips": 0.35, "Spine": 0.65}; nk = {"Neck": 0.7, "Head": 0.1, "UpperChest": 0.2}
+    if BRI_PJ:
+        # her pyjama fleece: slimmer, cropped to an elastic hem at the waist that the body blouses over, the shoulders
         # dropped, and a funnel neck standing up under the chin
-        sp = {"Hips": 0.35, "Spine": 0.65}; nk = {"Neck": 0.7, "Head": 0.1, "UpperChest": 0.2}
         R = [
             ("hemfold", (1.000, 1.000), 0.150, 0.114, 0.108, 0.0, 2.3, sp),
             ("hem", (1.006, 1.006), 0.170, 0.130, 0.122, 0.0, 2.3, sp),
@@ -305,15 +313,53 @@ def make_jacket():
             ("e", (1.512, 1.520), 0.092, 0.094, 0.090, 0.015, 2.0, nk),
             ("efold", (1.498, 1.506), 0.074, 0.076, 0.072, 0.015, 2.0, nk),
         ]
-        rings = {}
-        for name, (zf, zb), rx, ryf, ryb, cy, p, w in R:
-            idx = []
-            for th in ang:
-                z = zf + (zb - zf) * (1 - math.cos(th)) / 2
-                co = V(rx * math.copysign(abs(math.sin(th)) ** (2 / p), math.sin(th)),
-                       cy - (ryf if math.cos(th) >= 0 else ryb) * math.copysign(abs(math.cos(th)) ** (2 / p), math.cos(th)), z)
-                idx.append(J.add(co, dict(w)))
-            rings[name] = idx
+    elif BRI:
+        # her half-zip fleece, as in her photo: loose and long, down over the hips, the shoulders dropped, a short stand
+        # collar (the zip runs from it down the chest: see the details)
+        R = [
+            ("hemfold", (0.880, 0.870), 0.178, 0.132, 0.126, 0.0, 2.3, {"Hips": 1}),
+            ("hem", (0.856, 0.846), 0.212, 0.164, 0.154, 0.0, 2.4, {"Hips": 1}),
+            ("skirt", (0.898, 0.888), 0.222, 0.172, 0.160, 0.0, 2.4, {"Hips": 1}),
+            ("hips", (0.952, 0.942), 0.222, 0.172, 0.160, 0.0, 2.5, {"Hips": 1}),
+            ("waist", (1.030, 1.030), 0.216, 0.166, 0.154, 0.0, 2.5, {"Hips": 0.45, "Spine": 0.55}),
+            ("belly", (1.115, 1.115), 0.216, 0.162, 0.152, 0.0, 2.5, {"Spine": 0.55, "Chest": 0.45}),
+            ("a", (1.20, 1.20), 0.218, 0.160, 0.150, 0.005, 2.5, {"Chest": 0.75, "UpperChest": 0.25}),
+            ("b", (1.285, 1.285), 0.230, 0.152, 0.150, 0.01, 2.6, {"Chest": 0.3, "UpperChest": 0.7}),
+            ("c", (1.37, 1.37), 0.216, 0.130, 0.134, 0.02, 2.5, {"UpperChest": 1}),
+            ("d", (1.425, 1.425), 0.100, 0.094, 0.098, 0.025, 2.0, {"UpperChest": 0.65, "Neck": 0.35}),
+            ("e", (1.488, 1.494), 0.084, 0.088, 0.082, 0.015, 2.0, nk),
+            ("efold", (1.476, 1.482), 0.070, 0.074, 0.068, 0.015, 2.0, nk),
+        ]
+    elif PAUL:
+        # a black puffer on a slim build (the vest of his second outfit is the same body): full and quilted, to the hips,
+        # the collar standing open round the white turtleneck (or the hoodie's neck)
+        k_ = 0.96 if PAUL_B else 1.0
+        R = [
+            ("hemfold", (0.86, 0.84), 0.190 * k_, 0.128 * k_, 0.140 * k_, 0.01, 2.3, {"Hips": 1}),
+            ("hem", (0.840, 0.815), 0.226 * k_, 0.160 * k_, 0.172 * k_, 0.012, 2.4, {"Hips": 1}),
+            ("skirt", (0.878, 0.858), 0.222 * k_, 0.158 * k_, 0.168 * k_, 0.012, 2.4, {"Hips": 1}),
+            ("hips", (0.94, 0.93), 0.210 * k_, 0.150 * k_, 0.158 * k_, 0.01, 2.5, {"Hips": 1}),
+            ("waist", (1.02, 1.02), 0.198 * k_, 0.142 * k_, 0.146 * k_, 0.01, 2.5, {"Hips": 0.45, "Spine": 0.55}),
+            ("belly", (1.115, 1.115), 0.206 * k_, 0.148 * k_, 0.146 * k_, 0.005, 2.5, {"Spine": 0.55, "Chest": 0.45}),
+            ("a", (1.20, 1.20), 0.232 * k_, 0.160 * k_, 0.154 * k_, 0.005, 2.6, {"Chest": 0.75, "UpperChest": 0.25}),
+            ("b", (1.285, 1.285), 0.248 * k_, 0.152 * k_, 0.150 * k_, 0.01, 2.7, {"Chest": 0.3, "UpperChest": 0.7}),
+            ("c", (1.37, 1.37), 0.222 * k_, 0.132 * k_, 0.136 * k_, 0.02, 2.5, {"UpperChest": 1}),
+            ("d", (1.425, 1.425), 0.112, 0.102, 0.108, 0.025, 2.0, {"UpperChest": 0.65, "Neck": 0.35}),
+            ("e", (1.478, 1.470), 0.110, 0.112, 0.104, 0.015, 2.0, {"Neck": 0.5, "UpperChest": 0.5}),
+            ("efold", (1.466, 1.458), 0.096, 0.098, 0.090, 0.015, 2.0, {"Neck": 0.5, "UpperChest": 0.5}),
+        ]
+    rings = {}
+    for name, (zf, zb), rx, ryf, ryb, cy, p, w in R:
+        if FEM: rx, ryf, ryb = rx * FEMCUT[name][0], ryf * FEMCUT[name][1], ryb * FEMCUT[name][1]
+        idx = []
+        for th in ang:
+            x, y = superellipse(th, p)
+            z = zf + (zb - zf) * (1 - math.cos(th)) / 2
+            co = V(rx * math.copysign(abs(math.sin(th)) ** (2 / p), math.sin(th)),
+                   cy - (ryf if math.cos(th) >= 0 else ryb) * math.copysign(abs(math.cos(th)) ** (2 / p), math.cos(th)), z)
+            wv = dict(w)
+            idx.append(J.add(co, wv))
+        rings[name] = idx
     order = [r[0] for r in R]
     holes = {1: (2, 3, 4), -1: (10, 9, 8)}   # the arm openings: columns at 60/90/120 degrees each side
     def in_hole(lo, hi, k0, k1):
@@ -327,7 +373,7 @@ def make_jacket():
         for k in range(N):
             k1 = (k + 1) % N
             if in_hole(lo, hi, k, k1): continue
-            if BUDDY and not BRI and k in (N - 1, 0) and lo in ("c", "d", "e"):
+            if VAL and k in (N - 1, 0) and lo in ("c", "d", "e"):
                 # the top snap is undone: the front opens in a V from the collar down to just above the second snap
                 if lo == "c":
                     sx_ = -1 if k == N - 1 else 1
@@ -376,7 +422,10 @@ def make_jacket():
             (0.495, 0.058, 1, {tw: 0.85, hd: 0.15}),   # the cuff turned in
         ]
         if FEM: sleeve = [(d, r * 0.88, e_, w) for d, r, e_, w in sleeve]   # slimmer arms
-        if BUDDY:
+        if PAUL:
+            # puffer sleeves, fuller than the summit jacket's; or the hoodie's, under the vest
+            sleeve = [(d, r * (1.0 if PAUL_B else 1.08), e_, w) for d, r, e_, w in sleeve]
+        if VAL or BRI:
             # thicker arms in a loose fleece sleeve, gathered at an elastic cuff
             k_ = 1.06 if BRI else 1.16
             sleeve = [(d, r * k_, e_, w) for d, r, e_, w in sleeve[:7]] + [(0.500, 0.060 if BRI else 0.066, 1, sleeve[7][3]), (0.492, 0.046 if BRI else 0.052, 1, sleeve[8][3])]
@@ -398,8 +447,8 @@ def make_jacket():
     return J
 
 # ---- the hood, rolled up behind the collar
-def make_hood():
-    H = Cage("HeroHood", "Jacket")
+def make_hood(mat="Jacket"):
+    H = Cage("HeroHood", mat)
     path = [(V(0, 0.10, 1.50), 0.115, 0.05), (V(0, 0.15, 1.475), 0.15, 0.07), (V(0, 0.178, 1.42), 0.145, 0.066),
             (V(0, 0.17, 1.37), 0.10, 0.04)]
     angs = [k * 2 * math.pi / 8 for k in range(8)]
@@ -425,7 +474,7 @@ def make_pants():
          ("low", 0.845, 0.190, 0.124, 0.146, 0.01, {"Hips": 1})]
     rings = {}
     for name, z, rx, ryf, ryb, cy, w in R:
-        if BUDDY and not BRI: rx, ryf, ryb = rx * 1.2, ryf * 1.4, ryb * 1.16   # a fuller seat and belly
+        if VAL: rx, ryf, ryb = rx * 1.2, ryf * 1.4, ryb * 1.16   # a fuller seat and belly
         if FEM: rx, ryf, ryb = rx * (0.88 if name == "top" else 0.98), ryf * 0.92, ryb * 0.96   # a narrower waist over the same hips
         idx = []
         for k, th in enumerate(ang):
@@ -474,7 +523,7 @@ def make_pants():
             (0.136, 0.104, 0.110, 1, {ll: 0.88, ft: 0.12}, 0),   # turned in at the hem
         ]
         if FEM: legs = [(z, a_ * (0.95 if z > 0.6 else 0.88), b_ * (0.95 if z > 0.6 else 0.88), e_, w_, o_) for z, a_, b_, e_, w_, o_ in legs]   # slimmer legs
-        if BUDDY:
+        if VAL:
             # pyjama bottoms: soft and very loose, bunched at an elastic ankle over the sneakers
             legs = [
                 (0.745, 0.146, 0.152, 0.2, {ul: 0.9, "Hips": 0.1}, 0),
@@ -489,8 +538,21 @@ def make_pants():
                 (0.118, 0.082, 0.086, 1, {ll: 0.88, ft: 0.12}, 0),
                 (0.126, 0.066, 0.070, 1, {ll: 0.88, ft: 0.12}, 0),
             ]
-        if BRI:
-            # hers: straight and wide all the way down, the hems falling over her boots
+        if BRI and not BRI_PJ:
+            # her black trousers: straight and slim-fitting, the hems resting on her boots
+            legs = [
+                (0.745, 0.118, 0.124, 0.2, {ul: 0.9, "Hips": 0.1}, 0),
+                (0.645, 0.110, 0.116, 0.7, {ul: 1}, 0),
+                (0.565, 0.102, 0.108, 1, {ul: 0.92, ll: 0.08}, 0.004),
+                (0.490, 0.096, 0.102, 1, {ul: 0.5, ll: 0.5}, 0.008),
+                (0.415, 0.092, 0.096, 1, {ul: 0.1, ll: 0.9}, 0.0),
+                (0.310, 0.090, 0.094, 1, {ll: 1}, 0),
+                (0.205, 0.090, 0.094, 1, {ll: 1}, 0),
+                (0.120, 0.092, 0.098, 1, {ll: 0.92, ft: 0.08}, 0),
+                (0.084, 0.090, 0.096, 1, {ll: 0.88, ft: 0.12}, 0),
+            ]
+        if BRI_PJ:
+            # her pyjamas: straight and wide all the way down, the hems falling over her boots
             legs = [
                 (0.745, 0.120, 0.126, 0.2, {ul: 0.9, "Hips": 0.1}, 0),
                 (0.645, 0.114, 0.120, 0.7, {ul: 1}, 0),
@@ -588,11 +650,12 @@ def make_gear_buddy():
     G = Cage("HeroGear", "Gear"); G.cur = "head"
     hd = {"Head": 1}
     HC = V(0, -0.004, 1.615)
-    HS = 1.07 if BRI else 1.13     # a touch big, as the hero's helmet is: the head is what you read first at phone size
+    HS = 1.07 if BRI else 1.08 if PAUL else 1.13     # a touch big, as the hero's helmet is: the head is what you read first at phone size
     def HV(x, y, z): return HC + V(x, y, z) * HS
-    if BRI:
-        loft(G, [(V(0, 0.018, 1.40), 0.058, 0.060, {"UpperChest": 0.7, "Neck": 0.3}), (V(0, 0.015, 1.455), 0.050, 0.052, {"Neck": 1}),
-                 (V(0, 0.008, 1.53), 0.050, 0.052, {"Neck": 0.4, "Head": 0.6})], 10, SKIN, 2.0, closed_start=False, closed_end=False, ref=FWD)
+    if BRI or PAUL:
+        nr = 1.0 if BRI else 1.16     # (his a little thicker)
+        loft(G, [(V(0, 0.018, 1.40), 0.058 * nr, 0.060 * nr, {"UpperChest": 0.7, "Neck": 0.3}), (V(0, 0.015, 1.455), 0.050 * nr, 0.052 * nr, {"Neck": 1}),
+                 (V(0, 0.008, 1.53), 0.050 * nr, 0.052 * nr, {"Neck": 0.4, "Head": 0.6})], 10, SKIN, 2.0, closed_start=False, closed_end=False, ref=FWD)
     else:
         # a thick neck, a gold chain round its base
         uc = {"UpperChest": 1}
@@ -609,6 +672,10 @@ def make_gear_buddy():
     head = [(HV(0, 0.0, -0.138), 0.052, 0.058, hd), (HV(0, -0.004, -0.114), 0.092, 0.092, hd, 0.086),
             (HV(0, -0.006, -0.066), 0.110, 0.106, hd, 0.100), (HV(0, -0.004, 0.0), 0.110, 0.103, hd, 0.108),
             (HV(0, 0, 0.07), 0.096, 0.090, hd, 0.100), (HV(0, 0, 0.115), 0.045, 0.045, hd)]
+    if PAUL:   # his (after his photos): a lean oval, a firm square jaw and chin
+        head = [(HV(0, 0.0, -0.138), 0.040, 0.046, hd), (HV(0, -0.004, -0.115), 0.072, 0.070, hd, 0.070),
+                (HV(0, -0.006, -0.066), 0.094, 0.088, hd, 0.092), (HV(0, -0.004, 0.0), 0.104, 0.094, hd, 0.106),
+                (HV(0, 0, 0.07), 0.095, 0.088, hd, 0.100), (HV(0, 0, 0.115), 0.045, 0.045, hd)]
     if BRI:   # hers: a longer, slimmer oval with a narrow chin
         head = [(HV(0, 0.0, -0.142), 0.032, 0.034, hd), (HV(0, -0.004, -0.118), 0.066, 0.054, hd, 0.066),
                 (HV(0, -0.006, -0.066), 0.094, 0.077, hd, 0.090), (HV(0, -0.004, 0.0), 0.104, 0.088, hd, 0.106),
@@ -640,6 +707,7 @@ def make_gear_buddy():
                                   (-0.033, 0.0125, 0.026, 0.022), (-0.043, 0.0020, 0.018, 0.019)):
         hit = skin_tree.ray_cast(HV(0, -0.6, z_), V(0, 1, 0))[0]
         if BRI: proud, wide = proud * 0.8, wide * 0.7      # a slimmer, smaller nose
+        if PAUL: proud, wide = proud * 1.1, wide * 0.8     # a long, straight nose
         nose.append((V(0, hit.y - proud + deep, hit.z), deep, wide, hd))
     NO = Cage("NoseOnly", "Gear"); loft(NO, nose, 8, SKIN, 2.0, ref=FWD)
     add_smooth(NO)[1].free()
@@ -674,7 +742,7 @@ def make_gear_buddy():
         if BRI:   # a small gold hoop through each lobe
             hoop = [lobe + V(sx * 0.004, -0.002 + 0.010 * math.sin(a), -0.004 - 0.010 * math.cos(a)) for a in [2 * math.pi * k / 8 for k in range(9)]]
             loft(G, [(c, 0.0026, 0.0026, hd) for c in hoop], 4, "gold", 2.0, ref=V(1, 0, 0))
-        else: loft(G, [(lobe + V(sx * 0.001, -0.002, 0.006), 0.0042, 0.0042, hd), (lobe + V(sx * 0.006, -0.002, 0.006), 0.0036, 0.0036, hd)], 6, "zip", 2.0, ref=V(0, 0, 1))
+        elif VAL: loft(G, [(lobe + V(sx * 0.001, -0.002, 0.006), 0.0042, 0.0042, hd), (lobe + V(sx * 0.006, -0.002, 0.006), 0.0036, 0.0036, hd)], 6, "zip", 2.0, ref=V(0, 0, 1))
     # The features are part of the face, not things stuck on it: each is laid point by point onto the skin,
     # rising a millimetre or a few with its edge sunk under the skin, so nothing floats or casts a gap.
     # After his photos: narrow, heavy-lidded grey-blue eyes; thick, low, straight brows; a slim moustache that
@@ -724,7 +792,7 @@ def make_gear_buddy():
     for sx in (1, -1):
         ex, ez, ew = 0.040 * sx, 0.004, 0.0158
         decal(ex, ez, ew, 0.0076 if BRI else 0.0066, "eyewhite", 0.0009)
-        decal(ex, ez + 0.0008, 0.0066 if BRI else 0.0062, 0.0066 if BRI else 0.0062, "irisb" if BRI else "iris", 0.0016, 0.0009, 10)
+        decal(ex, ez + 0.0008, 0.0066 if BRI else 0.0062, 0.0066 if BRI else 0.0062, "irisb" if BRI or PAUL else "iris", 0.0016, 0.0009, 10)
         decal(ex, ez + 0.0008, 0.0027, 0.0027, "snap", 0.0022, 0.0016, 8)
         # the upper lid: skin above the eye with the lash line along its edge, sitting low over the iris (his eyes
         # are heavy-lidded). In the "Blink" shape its edge comes down over the eye.
@@ -748,19 +816,18 @@ def make_gear_buddy():
                 quad = (c0[k], c0[k + 1], c1[k + 1], c1[k])
                 q0, q1, q2 = [C_.v[j] for j in quad[:3]]
                 C_.face(*(quad if (q1 - q0).cross(q2 - q0).y < 0 else quad[::-1]))
-        if BRI:   # hers: finer, higher and arched
+        if BRI:   # hers: finer, higher and arched (her glasses are gone: in her new photo she wears goggles)
             band([(0.014 * sx, 0.0235, 0.0026), (0.029 * sx, 0.0285, 0.0034), (0.044 * sx, 0.0300, 0.0030), (0.055 * sx, 0.0262, 0.0018)], HAIR, 0.0022,
                  moved=("Brows", lambda i: 0.0065 - 0.0008 * i))
-            # her glasses: big, clear frames standing a little off the face, a bridge between them
-            def sq(c_): return math.copysign(abs(c_) ** 0.62, c_)      # a rounded square
-            fr = [(ex + 0.0265 * sq(math.cos(a)), 0.002 + 0.0205 * sq(math.sin(a)), 0.0015) for a in [2 * math.pi * (k + 0.5) / 20 for k in range(21)]]
-            band(fr, "frameclear", 0.0105, 0.0075, tips=(0.01, 0.01))
         else:
-            band([(0.012 * sx, 0.0205, 0.0042), (0.028 * sx, 0.0238, 0.0058), (0.045 * sx, 0.0246, 0.0056), (0.061 * sx, 0.0196, 0.0036)], HAIR, 0.0034,
+            th_ = 0.8 if PAUL else 1.0   # (his brows a little lighter than Val's)
+            band([(0.012 * sx, 0.0205, 0.0042 * th_), (0.028 * sx, 0.0238, 0.0058 * th_), (0.045 * sx, 0.0246, 0.0056 * th_), (0.061 * sx, 0.0196, 0.0036 * th_)], HAIR, 0.0034 * th_,
                  moved=("Brows", lambda i: 0.0075 - 0.0012 * i))
-    if BRI: band([(-0.013, 0.006, 0.0019), (0.0, 0.0075, 0.0019), (0.013, 0.006, 0.0019)], "frameclear", 0.0105, 0.0075, tips=(0.01, 0.01))
-    else: band([(-0.041, -0.0668, 0.0026), (-0.031, -0.0608, 0.0052), (-0.016, -0.0562, 0.0066), (0.0, -0.0550, 0.0062),
-                (0.016, -0.0562, 0.0066), (0.031, -0.0608, 0.0052), (0.041, -0.0668, 0.0026)], HAIR, 0.0042)
+    if VAL: band([(-0.041, -0.0668, 0.0026), (-0.031, -0.0608, 0.0052), (-0.016, -0.0562, 0.0066), (0.0, -0.0550, 0.0062),
+                  (0.016, -0.0562, 0.0066), (0.031, -0.0608, 0.0052), (0.041, -0.0668, 0.0026)], HAIR, 0.0042)
+    # Paul's moustache: thin, along the top lip, dark
+    if PAUL: band([(-0.030, -0.0640, 0.0016), (-0.020, -0.0596, 0.0030), (-0.008, -0.0574, 0.0034), (0.0, -0.0570, 0.0032),
+                   (0.008, -0.0574, 0.0034), (0.020, -0.0596, 0.0030), (0.030, -0.0640, 0.0016)], HAIR, 0.0028)
     # the mouth, one shape: the lower lip under the moustache, its top line turning up a little at the corners
     # (he is usually half smiling), full in the middle and thinning to nothing at each end
     f0 = len(XF.f); mw = 0.0240 if BRI else 0.0215; cols_ = []
@@ -775,9 +842,9 @@ def make_gear_buddy():
         for k in range(4): XF.face(c0[k], c0[k + 1], c1[k + 1], c1[k])
     to_front(f0)
     # the patch under the lip: a small wedge, broad under the lip and running down to a point on the chin
-    if not BRI: band([(0.0, -0.0850, 0.0068), (0.0, -0.0895, 0.0056), (0.0, -0.0945, 0.0036), (0.0, -0.0990, 0.0014)], HAIR, 0.0018, tips=(0.3, 1.2))
+    if VAL: band([(0.0, -0.0850, 0.0068), (0.0, -0.0895, 0.0056), (0.0, -0.0945, 0.0036), (0.0, -0.0990, 0.0014)], HAIR, 0.0018, tips=(0.3, 1.2))
     skin_bm.free()
-    if not BRI:
+    if VAL:
         # hair: dark and wavy, swept up and back off the forehead with a lifted front, over the tops of the ears,
         # curling behind them and down to the collar at the back
         import random
@@ -946,33 +1013,169 @@ def make_gear_buddy():
             XL.face(rim[ri + 1][M - 1], rim[ri][M - 1], inner[ri][M - 1], inner[ri + 1][M - 1])
         top = len(grid) - 1
         for i in range(M - 1): XL.face(rim[top][i + 1], rim[top][i], inner[top][i], inner[top][i + 1])  # the top edge
-    if BRI:
-        # her hair: dark, drawn back smooth and tight to the head, tied low at the back with a scrunchie, and from
-        # there a long tail, waving, down to the middle of her back. The tail goes from her head's bone to her back's
-        # down its length, so it stays lying on her back when she turns her head.
+    # ---- caps, goggles and long hair (Breanna and Paul)
+    def beanie(col, fz, sz, bz, rx, ryf, ryb, slouch=0.0, n=24):
+        """A knit beanie pulled down over the head: a turned-up ribbed cuff (its edge fz, sz, bz high at the front, the
+        sides and the back, head units), then the crown, level, a little slouched to the back. Returns the cuff's
+        radii, for goggles to sit on it."""
+        def edge(th):
+            c = math.cos(th)
+            return lerp(sz, fz, c) if c >= 0 else lerp(sz, bz, -c)
+        crown = [(0.080, 0.985), (0.110, 0.93), (0.136, 0.80), (0.156, 0.60), (0.168, 0.34)]
+        rows_ = []
+        # the cuff, folded up and ribbed (every other column stands out), with a ledge where it ends
+        for dz, k in ((0.0, 1.0), (0.018, 1.06), (0.038, 1.065), (0.042, 1.06), (0.046, 0.965), (0.054, 0.97)):
+            rows_.append([(edge(2 * math.pi * i / n) + dz, k * (1.0 + (0.026 if dz < 0.043 and i % 2 else 0.0)), dz / 0.2) for i in range(n)])
+        for j_, (zc, k) in enumerate(crown):
+            rows_.append([(max(zc, edge(2 * math.pi * i / n) + 0.056 + 0.012 * j_), k, 0.3 + 0.7 * j_ / 4) for i in range(n)])
+        rings_ = []
+        for row in rows_:
+            idx = []
+            for i, (z, k, sl) in enumerate(row):
+                th = 2 * math.pi * i / n
+                x, y = math.sin(th), -math.cos(th)
+                idx.append(G.add(HV(x * rx * k, 0.012 + y * (ryf if y < 0 else ryb) * k + slouch * sl * sl, z), hd, swatch_uv(col)))
+            rings_.append(idx)
+        for a_, b_ in zip(rings_, rings_[1:]): G.bridge(a_, b_)
+        G.cap(rings_[-1], HV(0, 0.012 + slouch, crown[-1][0] + 0.008), hd, swatch_uv(col))
+        inner = [G.add(G.v[i] + (HV(0, 0.012, 0) + V(0, 0, G.v[i].z - HV(0, 0, 0).z) - G.v[i]) * 0.10 + V(0, 0, 0.006), hd, swatch_uv(col)) for i in rings_[0]]
+        G.bridge(inner, rings_[0])       # the edge turned under, against the head
+        return rx * 1.03, ryf * 1.03, ryb * 1.03
+    def goggles(zc, rx, ryf, ryb, cols, a0=1.15, h=0.044, lift=0.010):
+        """Goggles round the head at height zc: a frame (rx, ryf, ryb: the head's or the cap's radii there), a mirrored
+        lens in front of it, a strap round the back."""
+        fcol, lcol, scol = cols
+        def at(a, extra): return HV(math.sin(a) * (rx + extra), 0.012 - math.cos(a) * ((ryf if math.cos(a) >= 0 else ryb) + extra), zc)
+        m = 8
+        def inward(q): d_ = HC - q; d_.z = 0.0; return d_.normalized()     # (level: the head's middle is lower than goggles on a cap)
+        fr = [at(-a0 + 2 * a0 * i / m, lift) for i in range(m + 1)]
+        loft(G, [(c, 0.010, h * 0.5 * (1 - 0.22 * (abs(i - m / 2) / (m / 2)) ** 2), hd) for i, c in enumerate(fr)], 6, fcol, 2.6, ref=inward(fr[m // 2]), twist=math.pi / 6)
+        # (the lens a size smaller than the frame, so a black rim shows all round it)
+        ln = [at(-a0 * 0.82 + 2 * a0 * 0.82 * i / m, lift + 0.013) for i in range(m + 1)]
+        loft(G, [(c, 0.005, h * 0.34 * (1 - 0.22 * (abs(i - m / 2) / (m / 2)) ** 2), hd) for i, c in enumerate(ln)], 6, lcol, 2.8, ref=inward(ln[m // 2]), twist=math.pi / 6)
+        st = [at(a, lift * 0.5) for a in [a0 + (2 * math.pi - 2 * a0) * i / 12 for i in range(13)]]
+        loft(G, [(c, 0.004, 0.015, hd) for c in st], 4, scol, 2.0, ref=V(0, 0, 1), twist=math.pi / 4)
+    def cap_hair(rows_spec, front_line, back_line, sq=0.93):
+        """Hair close to the head (under a cap, or drawn back), down to its hairline."""
         n = 16; rows = []
-        for i, (dz, r) in enumerate([(0.122, 0.030), (0.116, 0.068), (0.096, 0.093), (0.064, 0.102), (0.030, 0.102), (-0.010, 0.099), (-0.055, 0.090), (-0.092, 0.068)]):
+        for i, (dz, r) in enumerate(rows_spec):
             idx = []
             for k in range(n):
                 th = 2 * math.pi * k / n
                 x, y = math.sin(th), -math.cos(th)
                 front = max(0.0, -y)
-                hl = lerp(0.100, -0.004, sm(-0.80, -0.05, y)) if y <= 0 else lerp(-0.004, -0.095, sm(0.05, 0.55, y))
+                hl = lerp(front_line, -0.004, sm(-0.80, -0.05, y)) if y <= 0 else lerp(-0.004, back_line, sm(0.05, 0.55, y))
                 z, rr = dz, r
                 if z < hl: z = hl + 0.003 * i; rr = 0.098 - 0.012 * front ** 3 + 0.004 * max(0.0, y)
-                idx.append(G.add(HV(x * rr * 0.93, 0.010 + y * rr * (1.08 if y > 0 else 0.95), z), hd, swatch_uv(HAIR)))
+                idx.append(G.add(HV(x * rr * sq, 0.010 + y * rr * (1.08 if y > 0 else 0.95), z), hd, swatch_uv(HAIR)))
             rows.append(idx)
         for a_, b_ in zip(rows, rows[1:]): G.bridge(a_, b_)
-        G.cap(rows[0][::-1], HV(0, 0.010, 0.128), hd, swatch_uv(HAIR))
-        tie = HV(0, 0.118, 0.018)
-        loft(G, [(tie + V(0, -0.012, 0.004), 0.030, 0.030, hd), (tie + V(0, 0.012, -0.004), 0.030, 0.030, hd)], 8, "scrunch", 2.0, ref=V(0, 0, 1))
-        tail = []
-        for k, (dy, z, r1, r2, w) in enumerate([(0.004, 1.628, 0.022, 0.024, hd), (0.040, 1.585, 0.030, 0.034, {"Head": 0.7, "UpperChest": 0.3}),
-                                              (0.052, 1.515, 0.036, 0.044, {"Head": 0.3, "UpperChest": 0.7}), (0.046, 1.435, 0.036, 0.048, {"UpperChest": 1}),
-                                              (0.040, 1.350, 0.034, 0.050, {"UpperChest": 0.6, "Chest": 0.4}), (0.036, 1.265, 0.030, 0.046, {"Chest": 1}),
-                                              (0.034, 1.185, 0.024, 0.036, {"Chest": 0.5, "Spine": 0.5}), (0.034, 1.125, 0.010, 0.014, {"Spine": 1})]):
-            tail.append((V(0.016 * math.sin(k * 1.9), tie.y + dy + 0.006 * math.cos(k * 2.3), z), r1, r2, w))
-        loft(G, tail, 8, HAIR, 2.0, ref=V(0, 1, 0))
+        G.cap(rows[0][::-1], HV(0, 0.010, rows_spec[0][0] + 0.006), hd, swatch_uv(HAIR))
+    if PAUL:
+        # short dark hair, mostly under the beanie: it shows at the sides over the ears, in short sideburns and at the nape
+        cap_hair([(0.110, 0.080), (0.074, 0.110), (0.038, 0.112), (0.0, 0.110), (-0.050, 0.102), (-0.094, 0.082)], 0.082, -0.090, sq=0.95)
+        # the cream beanie, its cuff low on the forehead; his goggles pushed up on it (black frame, orange lens)
+        crx, cry, crb = beanie("beanie", 0.046, 0.012, -0.044, 0.118, 0.106, 0.122, slouch=0.018)
+        goggles(0.046 + 0.034, crx, cry, crb, ("frame", "lens", "strap"), a0=1.10, h=0.092, lift=0.012)
+        # outfit pieces that go with the head: the turtleneck's roll collar (outfit one), the balaclava (outfit two)
+        def tring(C_, zf, zb, rx_, ry_, cy_, w_, uvn, n_=12):
+            return [C_.add(V(rx_ * math.sin(a), cy_ - ry_ * math.cos(a), lerp(zf, zb, 0.5 - 0.5 * math.cos(a))), w_, swatch_uv(uvn)) for a in [2 * math.pi * k / n_ for k in range(n_)]]
+        if not PAUL_B:
+            XK = Cage("Turtleneck", "Knit"); XK.recalc = True; XTRA.append((XK, "HeroBody"))
+            nk_ = {"Neck": 0.7, "Head": 0.1, "UpperChest": 0.2}
+            rs = [tring(XK, 1.405, 1.405, 0.074, 0.076, 0.018, {"UpperChest": 0.7, "Neck": 0.3}, "spare"),
+                  tring(XK, 1.445, 1.455, 0.066, 0.068, 0.017, {"Neck": 1}, "spare"),
+                  tring(XK, 1.470, 1.508, 0.068, 0.070, 0.014, nk_, "spare"),
+                  tring(XK, 1.482, 1.522, 0.077, 0.079, 0.014, nk_, "spare"),
+                  tring(XK, 1.462, 1.500, 0.079, 0.081, 0.015, nk_, "spare")]
+            for a_, b_ in zip(rs, rs[1:]): XK.bridge(a_, b_)
+        else:
+            # the white balaclava, pulled up over the mouth and nose: laid round the neck and on the face, a centimetre
+            # off the skin, and up under the beanie at the back
+            XB = Cage("Balaclava", "Gear"); XB.recalc = True; XTRA.append((XB, "HeroGear"))
+            nb = 16; rows_b = []
+            for t in [0.0, 0.18, 0.36, 0.52, 0.66, 0.78, 0.88, 0.96, 1.0]:
+                row = []
+                for k in range(nb):
+                    a = 2 * math.pi * k / nb; ca, sa = math.cos(a), math.sin(a)
+                    ztop = lerp(-0.010, 0.020, 0.5 - 0.5 * ca)         # the top edge: over the nose in front, under the beanie behind
+                    zl = lerp(-0.22, ztop, t)                            # head units, from the base of the neck up
+                    zabs = HC.z + zl * HS
+                    if zl < -0.135:
+                        rr = (0.068 + 0.010 * (1 - t)) ; q = V(sa * rr, 0.015 - ca * rr, zabs)
+                    else:
+                        hit = skin_tree.ray_cast(HV(sa * 0.6, 0.012 - ca * 0.6, zl), V(-sa, ca, 0))[0]
+                        q = (hit if hit is not None else HV(sa * 0.10, 0.012 - ca * 0.10, zl)) + V(sa, -ca, 0) * (0.009 + (0.010 if ca > 0.85 and -0.06 < zl < 0.0 else 0.0))
+                    w_ = {"UpperChest": 0.4, "Neck": 0.6} if zabs < 1.46 else {"Neck": 0.5, "Head": 0.5} if zabs < 1.51 else hd
+                    row.append(XB.add(q, w_, swatch_uv("balaclava")))
+                rows_b.append(row)
+            for a_, b_ in zip(rows_b, rows_b[1:]): XB.bridge(a_, b_)
+    if BRI:
+        # her hair (after her new photo): long, dark brown and curly, falling from under a grey beanie past her shoulders
+        # to her chest in front and down her back. Under the locks, a close cap and a mass behind; the locks themselves
+        # are tight curls (each a thin tube wound round its line), hanging from the head's bone and lying on her shoulders
+        # and back on the chest's, so they stay on her when she turns her head.
+        cap_hair([(0.122, 0.030), (0.116, 0.068), (0.096, 0.093), (0.064, 0.104), (0.030, 0.106), (-0.010, 0.104), (-0.055, 0.096), (-0.092, 0.078)], 0.098, -0.096)
+        crx, cry, crb = beanie("beanie2", 0.040, 0.020, -0.034, 0.118, 0.104, 0.124, slouch=0.022)
+        # her goggles over her eyes: a white frame, a pink mirror lens, a pink strap round the beanie's edge
+        goggles(0.010, 0.106, 0.091, 0.118, ("frame2", "lens2", "strap2"), a0=1.22, h=0.092, lift=0.011)
+        def wz(z):
+            if z > 1.56: return {"Head": 1.0}
+            if z > 1.47: k = (z - 1.47) / 0.09; return {"Head": k, "Neck": 1 - k}
+            if z > 1.39: k = (z - 1.39) / 0.08; return {"Neck": k, "UpperChest": 1 - k}
+            if z > 1.25: return {"UpperChest": 1.0}
+            return {"UpperChest": 0.6, "Chest": 0.4}
+        def catmull(ctrl, m):
+            out = []
+            P_ = [ctrl[0]] + list(ctrl) + [ctrl[-1]]
+            for i in range(m):
+                u = i / (m - 1) * (len(ctrl) - 1); j = min(int(u), len(ctrl) - 2); t = u - j
+                p0, p1, p2, p3 = P_[j], P_[j + 1], P_[j + 2], P_[j + 3]
+                out.append(0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t * t * t))
+            return out
+        # the mass behind: a broad soft sheet from under the beanie down her back, and one down each side of the face
+        loft(G, [(V(0, 0.100, 1.585), 0.020, 0.100, wz(1.585)), (V(0, 0.132, 1.505), 0.024, 0.130, wz(1.505)), (V(0, 0.168, 1.415), 0.024, 0.150, wz(1.415)),
+                 (V(0, 0.182, 1.330), 0.022, 0.150, wz(1.33)), (V(0, 0.186, 1.255), 0.016, 0.118, wz(1.255))], 10, HAIR, 2.2, ref=V(0, 1, 0))
+        for sx in (1, -1):
+            loft(G, [(V(sx * 0.104, 0.010, 1.630), 0.030, 0.018, wz(1.63)), (V(sx * 0.122, 0.018, 1.545), 0.036, 0.022, wz(1.545)),
+                     (V(sx * 0.132, 0.030, 1.470), 0.034, 0.022, wz(1.47)), (V(sx * 0.150, 0.040, 1.420), 0.024, 0.016, wz(1.42))], 8, HAIR, 2.2, ref=V(0, 1, 0))
+        XC = Cage("Curls", "Gear"); XC.recalc = True; XTRA.append((XC, "HeroHead"))
+        import random
+        rc = random.Random(7)
+        def lock(ctrl, r=0.011, amp=0.009, turns=3.2, n=5, m=18):
+            r, amp = r * 0.85, amp * 1.7     # (springy coils, not twisted rope)
+            P_ = catmull([V(*q) for q in ctrl], m)
+            rings_ = []; tip = None
+            for i in range(m):
+                t = (P_[min(i + 1, m - 1)] - P_[max(i - 1, 0)]).normalized()
+                a1, a2 = frame_of(t, V(0, 1, 0) if abs(t.y) < 0.9 else V(1, 0, 0))
+                u_ = i / (m - 1); ang = 2 * math.pi * (turns * u_ + rc.random() * 0.15)
+                c = P_[i] + (a1 * math.cos(ang) + a2 * math.sin(ang)) * amp * (0.35 + 0.65 * u_)
+                if i == m - 1: tip = XC.add(c, wz(c.z), swatch_uv(HAIR)); break
+                rr = r * (1.0 - 0.5 * u_ * u_)
+                rings_.append([XC.add(c + (a1 * math.cos(2 * math.pi * k / n) + a2 * math.sin(2 * math.pi * k / n)) * rr, wz(c.z), swatch_uv(HAIR)) for k in range(n)])
+            for a_, b_ in zip(rings_, rings_[1:]):
+                for k in range(n): XC.face(a_[k], a_[(k + 1) % n], b_[(k + 1) % n], b_[k])
+            for k in range(n): XC.face(rings_[-1][k], rings_[-1][(k + 1) % n], tip)
+            XC.face(*rings_[0][::-1])
+        for sx in (1, -1):
+            # in front of the shoulders, framing the face, down to her chest
+            for k, (x0, y0, x1, y1, zend) in enumerate([(0.098, -0.035, 0.122, -0.168, 1.255), (0.106, -0.012, 0.150, -0.162, 1.235), (0.112, 0.010, 0.176, -0.150, 1.27)]):
+                lock([(sx * x0, y0, 1.628), (sx * (x0 + 0.020), y0 - 0.006, 1.555), (sx * (x0 + 0.030), y0 - 0.020 - 0.01 * k, 1.478), (sx * (x1 - 0.010), y1 * 0.55, 1.415),
+                      (sx * x1, y1 * 0.95, 1.335), (sx * (x1 - 0.004), y1, zend)], r=0.016, amp=0.012, turns=3.4 + 0.3 * k)
+            # over the tops of the shoulders, to the back
+            for k, ps in enumerate((112, 128, 144)):
+                a = math.radians(ps); xs, yc = math.sin(a), -math.cos(a)
+                lock([(sx * xs * 0.118, 0.012 + yc * 0.120, 1.600), (sx * xs * 0.135, 0.020 + yc * 0.135, 1.520), (sx * xs * 0.160, 0.050 + yc * 0.130, 1.440),
+                      (sx * xs * 0.170, 0.100 + yc * 0.090, 1.380), (sx * xs * 0.160, 0.175, 1.300), (sx * xs * 0.150, 0.190, 1.245)], r=0.016, amp=0.012, turns=3.0 + 0.4 * k)
+        for k, xb in enumerate((-0.095, -0.050, -0.010, 0.030, 0.070, 0.105)):
+            # down her back
+            lock([(xb * 0.9, 0.118, 1.590), (xb, 0.150, 1.515), (xb * 1.05, 0.180, 1.430), (xb * 1.1, 0.196, 1.345), (xb * 1.05, 0.200, 1.265), (xb, 0.198, 1.215)],
+                 r=0.017, amp=0.013, turns=3.6 + 0.25 * (k % 3))
+        for k, xb in enumerate((-0.072, -0.030, 0.010, 0.050, 0.088)):
+            # a second layer over them, a little shorter: the curls are thick
+            lock([(xb * 0.9, 0.124, 1.575), (xb, 0.160, 1.505), (xb * 1.05, 0.192, 1.425), (xb * 1.1, 0.206, 1.345), (xb, 0.206, 1.280)],
+                 r=0.016, amp=0.012, turns=3.2 + 0.3 * (k % 2), m=12)
     for s in (1, -1):
         sd = SIDE[s]
         sh, u, el, f, wr, kn = arm_points(s)
@@ -990,7 +1193,26 @@ def make_gear_buddy():
                               (-0.228, 0.040, 0.032, 0.066), (-0.242, 0.014, 0.038, 0.054)]:
             zc, hh = (h0 + h1) / 2, (h1 - h0) / 2
             foot.append((V(x + 0.004 * s, y, zc), hh, w_, fw(y)))
-        if BRI:
+        if PAUL:
+            # blue ski boots: a stiff shell to mid-shin round the trouser cuff, a big square-toed foot on a thick sole, grey
+            # buckles over the instep and up the shin
+            loft(G, [(V(x, 0.020, 0.060), 0.082, 0.074, {ft: 1}), (V(x, 0.022, 0.170), 0.078, 0.070, {ft: 0.7, sd + "LowerLeg": 0.3}),
+                     (V(x, 0.024, 0.260), 0.074, 0.068, {ft: 0.25, sd + "LowerLeg": 0.75}), (V(x, 0.026, 0.305), 0.076, 0.070, {sd + "LowerLeg": 1})], 10, "skiboot", 2.4, ref=FWD)
+            sfoot = []
+            for y, w_, h0, h1 in [(0.095, 0.054, 0.030, 0.17), (0.06, 0.072, 0.028, 0.18), (0.0, 0.078, 0.028, 0.17), (-0.07, 0.078, 0.028, 0.135),
+                                  (-0.14, 0.074, 0.030, 0.105), (-0.198, 0.064, 0.032, 0.090), (-0.236, 0.044, 0.036, 0.078), (-0.252, 0.016, 0.044, 0.066)]:
+                sfoot.append((V(x + 0.004 * s, y, (h0 + h1) / 2), (h1 - h0) / 2, w_, fw(y)))
+            loft(G, sfoot, 10, "skiboot", 2.8, ref=V(0, 0, 1))
+            loft(G, [(V(x + 0.004 * s, y, 0.022), 0.022, w_, fw(y)) for y, w_ in
+                     [(0.106, 0.054), (0.085, 0.078), (0.0, 0.084), (-0.10, 0.082), (-0.19, 0.074), (-0.242, 0.052), (-0.262, 0.020)]], 8, "sole", 3.4, ref=V(0, 0, 1))
+            for zb, yb, rb in ((0.205, 0.022, 0.082), (0.268, 0.024, 0.078)):     # up the shin
+                loft(G, [(V(x + math.sin(a) * rb, yb - math.cos(a) * rb, zb), 0.006, 0.011, {sd + "LowerLeg": 0.7, ft: 0.3}) for a in [-1.3 + 2.6 * k / 6 for k in range(7)]],
+                     4, "buckle", 2.0, ref=V(0, 0, 1), twist=math.pi / 4)
+            for yb in (-0.02, -0.085):                                          # over the instep
+                zt = 0.17 if yb > -0.05 else 0.142
+                loft(G, [(V(x + 0.004 * s + math.sin(a) * 0.080, yb, 0.09 + math.cos(a) * (zt - 0.09 + 0.006)), 0.006, 0.011, fw(yb)) for a in [-1.35 + 2.7 * k / 6 for k in range(7)]],
+                     4, "buckle", 2.0, ref=V(0, 1, 0), twist=math.pi / 4)
+        elif BRI:
             # tan slipper boots on a thick sole
             loft(G, [(c_ + V(0, 0, 0.022), r1_ + 0.010, r2_ + 0.004, w_) for c_, r1_, r2_, w_ in foot], 10, "slipper", 2.6, ref=V(0, 0, 1))
             loft(G, [(V(x + 0.004 * s, y, 0.027), 0.028, w_, fw(y)) for y, w_ in
@@ -1175,6 +1397,7 @@ def make_board():
 
 make_jacket()
 if not BUDDY: make_hood()
+if PAUL: make_hood("Hoodie" if PAUL_B else "Jacket")   # (his puffer's hood down behind the collar; the hoodie's, under the vest)
 make_pants(); make_gear(); make_board()
 
 # ----------------------------------------------------------------------------------------------- meshes
@@ -1211,7 +1434,7 @@ pal_img = bpy.data.images.load(PAL_PATH)
 pal_img.alpha_mode = 'NONE'
 pal_img.colorspace_settings.name = 'sRGB'
 def plaid_print(path, n=256):
-    """Brianna's pyjama bottoms: a red tartan, white bands and fine black lines crossing both ways."""
+    """Breanna's pyjama bottoms: a red tartan, white bands and fine black lines crossing both ways."""
     red, white, black = (0.62, 0.06, 0.11), (0.90, 0.88, 0.85), (0.05, 0.04, 0.05)
     def thread(t):
         t = (t * 4) % 1.0
@@ -1225,12 +1448,13 @@ def plaid_print(path, n=256):
         rows.append(row)
     write_png(path, n, n, rows)
 
-def face_paint(path, n=256, her=False):
+def face_paint(path, n=256, her=False, base=None, beard=0.34):
     """Val's face, painted (the picture is laid on his head from the front, see FACE_UV): warm skin, colour in the
     cheeks and the tip of the nose, the shadow of a shaved beard over the jaw and top lip, the hollows round the
     eyes with a crease above each lid, the top lip under the moustache, and the hair's shadow at the hairline.
     The eyes, brows, moustache and lower lip are modelled; this is what lies under and between them."""
     W, H, Z0 = FACE_UV
+    beard_k = beard
     def g(dx, dz, rx, rz): return math.exp(-((dx / rx) ** 2 + (dz / rz) ** 2))
     def st(a, b, x):
         t = max(0.0, min(1.0, (x - a) / (b - a)))
@@ -1241,7 +1465,7 @@ def face_paint(path, n=256, her=False):
         row = []
         for c in range(n):
             x = ((c + 0.5) / n - 0.5) * W; ax = abs(x)
-            col = [0.82, 0.62, 0.52] if her else [0.83, 0.57, 0.45]
+            col = list(base) if base else [0.82, 0.62, 0.52] if her else [0.83, 0.57, 0.45]
             def mix(to, k):
                 k = max(0.0, min(1.0, k))
                 for i in range(3): col[i] += (to[i] - col[i]) * k
@@ -1253,7 +1477,7 @@ def face_paint(path, n=256, her=False):
             mix((0.60, 0.39, 0.35), 0.30 * g(ax - 0.040, z + 0.0080, 0.016, 0.0030))     # under the eyes
             beard = st(-0.040, -0.078, z) * (1 - st(0.070, 0.102, ax))
             beard = max(beard, 0.9 * g(x, z + 0.058, 0.040, 0.010))
-            if not her: mix((0.50, 0.39, 0.35), 0.34 * beard)                            # the beard's shadow
+            if not her: mix((0.50, 0.39, 0.35), beard_k * beard)                          # the beard's shadow
             lipz = -0.0722 + 0.0030 * (x / 0.0215) ** 2
             if ax < 0.0215:                                                              # the top lip
                 mix((0.68, 0.30, 0.31) if her else (0.60, 0.30, 0.28), 0.9 * st(lipz + (0.0075 if her else 0.0058), lipz + 0.0036, z) * st(lipz - 0.012, lipz - 0.009, z) * (1 - (ax / 0.0215) ** 2) ** 0.5)
@@ -1317,19 +1541,28 @@ def bear_print(path, n=512):
     write_png(path, n, n, [[(srgb(c[0]), srgb(c[1]), srgb(c[2]), 1.0) for c in row] for row in reversed(px)])
 
 if BUDDY:
-    WHO = "Brianna" if BRI else "Buddy"
-    PRINT_PATH = os.path.join(PROJECT, "Assets/Summit/Resources/Rider/%sPants.png" % WHO) if PROJECT else os.path.join(bpy.app.tempdir or "/tmp", "%sPants.png" % WHO)
-    (plaid_print if BRI else bear_print)(PRINT_PATH)
-    print_img = bpy.data.images.load(PRINT_PATH)
+    WHO = "Breanna" if BRI else "Paul" if PAUL else "Buddy"     # (whose face and print pictures: one each, whatever they wear)
+    RDIR = os.path.join(PROJECT, "Assets/Summit/Resources/Rider") if PROJECT else (bpy.app.tempdir or "/tmp")
+    if VAL or BRI_PJ:
+        PRINT_PATH = os.path.join(RDIR, "%sPants.png" % WHO)
+        (plaid_print if BRI else bear_print)(PRINT_PATH)
+        print_img = bpy.data.images.load(PRINT_PATH)
+        m_ = material("Pants", (1, 1, 1), 0.15, print_img); m_.name = "PantsPrint"
+        for nd in m_.node_tree.nodes:
+            if nd.type == 'TEX_IMAGE': nd.interpolation = 'Linear'
+    else:
+        # plain trousers (the game's snowy cloth, dyed by the closet's PANTS): Paul's red ski trousers or charcoal, her black
+        material("Pants", (0.60, 0.06, 0.06) if PAUL and not PAUL_B else (0.09, 0.09, 0.10) if PAUL_B else (0.025, 0.025, 0.03), 0.2)
     if BRI: material("Jacket", (0.93, 0.90, 0.82), 0.12).name = "FleeceWhite"   # her fleece is cream all over
+    elif PAUL:
+        material("Jacket", (0.03, 0.03, 0.035), 0.4)                           # the black puffer (or vest)
+        material("Knit", (0.92, 0.91, 0.88), 0.05)                             # the white turtleneck
+        material("Hoodie", (0.50, 0.51, 0.53), 0.05)                           # the grey hoodie
     else:
         material("Jacket", (0.09, 0.25, 0.72), 0.12).name = "FleeceBlue"      # royal blue over cream, as the real fleece
         MATS["FleeceWhite"] = material("FleeceWhite", (0.93, 0.90, 0.82), 0.12)
-    m_ = material("Pants", (1, 1, 1), 0.15, print_img); m_.name = "PantsPrint"
-    for nd in m_.node_tree.nodes:
-        if nd.type == 'TEX_IMAGE': nd.interpolation = 'Linear'
-    FACE_PATH = os.path.join(os.path.dirname(PRINT_PATH), "%sFace.png" % WHO)
-    face_paint(FACE_PATH, her=BRI)
+    FACE_PATH = os.path.join(RDIR, "%sFace.png" % WHO)
+    face_paint(FACE_PATH, her=BRI, base=(0.74, 0.53, 0.40) if PAUL else None, beard=0.24 if PAUL else 0.34)
     face_img = bpy.data.images.load(FACE_PATH); face_img.alpha_mode = 'NONE'
     m_ = material("FaceSkin", (1, 1, 1), 0.3, face_img)
     for nd in m_.node_tree.nodes:
@@ -1473,9 +1706,36 @@ def lin(a, b, n): return [a + (b - a) * i / (n - 1) for i in range(n)]
 JS, LS = Surface(OBJS["HeroBody"]), Surface(OBJS["HeroLegs"])
 JD = Cage("JacketDetail", "Jacket"); LD = Cage("LegDetail", "Pants"); GD = Cage("GearDetail", "Gear")
 by, PK = 0.17, {"Backpack": 1.0}
-if BRI:
+if BRI or PAUL:
     fwd_ray = lambda u, v: V(0, 1, 0)
-elif BUDDY:
+    def line_on(rays, wd, lift, col):
+        hits = [JS.cast(o_, d_, lift) for o_, d_ in rays]
+        if all(h_[0] is not None for h_ in hits): strip(GD, hits, wd, 0.003, col)
+        else: print("HERO detail line missed the cloth")
+    def round_on(z, a0, a1, n, wd, lift, col):   # round the body at a height, between two angles (0 = the front)
+        line_on([(V(0.7 * math.sin(a), 0.02 - 0.7 * math.cos(a), z), V(-math.sin(a), math.cos(a), 0)) for a in lin(math.radians(a0), math.radians(a1), n)], wd, lift, col)
+    if BRI and not BRI_PJ:
+        # the half zip: down from the collar to the top of the chest, and its pull
+        line_on([(V(0.0, -0.7, z), V(0, 1, 0)) for z in lin(1.488, 1.300, 6)], 0.007, 0.004, "sneakergrey")
+        q, nq = JS.cast(V(0.0, -0.7, 1.305), V(0, 1, 0), 0.008)
+        if q is not None: loft(GD, [(q, 0.006, 0.004, {}), (q + V(0, 0, -0.03), 0.006, 0.004, {})], 4, "zip", 2.0, ref=V(0, 1, 0))
+    if PAUL:
+        # the puffer's quilting: stitched lines round the body between the baffles, and the front zip
+        for z in ((0.97, 1.07, 1.17, 1.27) if PAUL_B else (0.95, 1.04, 1.13, 1.22, 1.31)):
+            round_on(z, -62, 62, 9, 0.005, 0.002, "seam"); round_on(z, 118, 242, 9, 0.005, 0.002, "seam")
+        line_on([(V(0.0, -0.7, z), V(0, 1, 0)) for z in lin(1.47, 0.86, 10)], 0.010, 0.004, "seam")
+        if PAUL_B:
+            # the hoodie's drawstrings, hanging out over the vest
+            for sx_ in (1, -1):
+                line_on([(V(sx_ * (0.032 + 0.004 * k), -0.7, z), V(0, 1, 0)) for k, z in enumerate(lin(1.45, 1.24, 5))], 0.006, 0.008, "sneakergrey")
+        else:
+            # the puffer's sleeves quilted too
+            for s_ in (1, -1):
+                sh_, u_, el_, f_, wr_, kn_ = arm_points(s_)
+                for c_, ax_ in ((sh_ + u_ * 0.15, u_), (el_ + f_ * 0.07, f_), (el_ + f_ * 0.17, f_)):
+                    a1_, a2_ = frame_of(ax_)
+                    line_on([(c_ + (a1_ * math.cos(a) + a2_ * math.sin(a)) * 0.3, -(a1_ * math.cos(a) + a2_ * math.sin(a))) for a in lin(0, 2 * math.pi, 11)], 0.005, 0.002, "seam")
+elif VAL:
     fwd_ray = lambda u, v: V(0, 1, 0)
     # the fleece: a kangaroo pocket low on the front, a snap placket from the collar to the colour seam, a small
     # stitched mark on the chest
@@ -1675,7 +1935,7 @@ if "HeroHood" in OBJS:
     bpy.context.view_layer.objects.active = OBJS["HeroBody"]
     bpy.ops.object.join()
     del OBJS["HeroHood"]
-if BUDDY and not BRI:
+if VAL:
     # the fleece is blue above the chest seam and down the sleeves, white below (the pocket too)
     ob = OBJS["HeroBody"]; me = ob.data
     while len(me.materials) < 2: me.materials.append(MATS["FleeceWhite"])
@@ -1686,7 +1946,19 @@ if BUDDY and not BRI:
         z = sum(me.vertices[i].co.z for i in pg.vertices) / len(pg.vertices)
         aw = sum(arm_w(me.vertices[i]) for i in pg.vertices) / len(pg.vertices)
         pg.material_index = 1 if (z < 1.2005 and aw < 0.45) else 0
-if BUDDY:
+if PAUL_B:
+    # the hoodie's grey sleeves under the black vest (the vest's body is the jacket's; its hood is grey already)
+    ob = OBJS["HeroBody"]; me = ob.data
+    names_ = [m.name for m in me.materials]
+    if "Hoodie" not in names_: me.materials.append(MATS["Hoodie"])
+    hi_ = [m.name for m in me.materials].index("Hoodie"); ji_ = [m.name for m in me.materials].index("Jacket")
+    arm_groups = {g.index for g in ob.vertex_groups if "Arm" in g.name or "Twist" in g.name or "Hand" in g.name}
+    def arm_w(v): return sum(g.weight for g in v.groups if g.group in arm_groups)
+    for pg in me.polygons:
+        if me.materials[pg.material_index].name != "Jacket": continue
+        aw = sum(arm_w(me.vertices[i]) for i in pg.vertices) / len(pg.vertices)
+        if aw >= 0.45: pg.material_index = hi_
+if VAL or BRI_PJ:
     # the pyjama print: laid on flat from the front and back, and from the sides (a box mapping), 0.36 m a tile (a bear about 7 cm)
     ob = OBJS["HeroLegs"]; me = ob.data
     uvl = me.uv_layers.active or me.uv_layers.new(name="UVMap")
@@ -2298,7 +2570,7 @@ def bake_clips():
 def export_all():
     import json
     apply(Solver())
-    rider = os.path.join(PROJECT, "Assets/Summit/Resources/Rider/%s.fbx" % ("Brianna" if BRI else "Buddy" if BUDDY else "HeroF" if FEM else "Hero"))
+    rider = os.path.join(PROJECT, "Assets/Summit/Resources/Rider/%s.fbx" % FILE)
     anims = os.path.join(PROJECT, "Assets/Summit/Art/Hero/HeroAnims.fbx")
     os.makedirs(os.path.dirname(anims), exist_ok=True)
     common = dict(apply_unit_scale=True, add_leaf_bones=False, use_armature_deform_only=True, primary_bone_axis='Y',

@@ -147,10 +147,11 @@ namespace Summit
             if (o == null || o.Length < Wardrobe.Count) return;
             SetCharacter(Wardrobe.Look(o));   // who is riding, in which clothes: a new body if that changed (RiderBodyHero)
             if (!ownMats) OwnMaterials();
-            var j = Wardrobe.Get(Wardrobe.Cat.Jacket, o[(int)Wardrobe.Cat.Jacket]);
+            // (on another rider's set of clothes the first row is that set as made: Paul's black puffer, his red trousers)
+            var j = Wardrobe.Shown(Wardrobe.Cat.Jacket, o[(int)Wardrobe.Cat.Jacket], heroOutfit);
             if (gearJacket != null) Cloth(gearJacket, j, 1f);
             for (int i = 0; i < jacketMats.Count; i++) Cloth(jacketMats[i], j, i < jacketShade.Count ? jacketShade[i] : 1f);
-            if (pantsMat != null) Cloth(pantsMat, Wardrobe.Get(Wardrobe.Cat.Pants, o[(int)Wardrobe.Cat.Pants]), 1f);
+            if (pantsMat != null) Cloth(pantsMat, Wardrobe.Shown(Wardrobe.Cat.Pants, o[(int)Wardrobe.Cat.Pants], heroOutfit), 1f);
             WearFleece(o);   // (pyjamas: the fleece as made, or dyed by the jacket's row, RiderBodyHero)
             var b = Wardrobe.Get(Wardrobe.Cat.Board, o[(int)Wardrobe.Cat.Board]);
             if (boardMat != null)

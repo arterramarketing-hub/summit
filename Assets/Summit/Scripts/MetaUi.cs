@@ -164,14 +164,20 @@ namespace Summit
             missionsText.text = "MISSIONS  " + Missions.DoneCount + " / " + Missions.Today.Count;
         }
 
+        /// <summary>The camp's say over the bottom button and the hint: a label of its own (null: the station's), and a mug in hand.</summary>
+        public string ContextLabel; public bool Sipping, Quiet;
+
         public void SetContext(Camp.Station st)
         {
             string label = st == Camp.Station.Missions ? "DAILY MISSIONS" : st == Camp.Station.Upgrades ? "UPGRADES"
-                         : st == Camp.Station.Style ? "WARDROBE" : st == Camp.Station.DropIn ? "DROP IN" : null;
+                         : st == Camp.Station.Style ? "WARDROBE" : st == Camp.Station.DropIn ? "DROP IN"
+                         : st == Camp.Station.Talk ? "TALK" : st == Camp.Station.Roast ? "ROAST A MARSHMALLOW"
+                         : st == Camp.Station.Cocoa ? "MAKE HOT CHOCOLATE" : null;
+            if (ContextLabel != null) { label = ContextLabel; st = Camp.Station.None; }   // the fire's own button (CampFire: TAKE IT OUT)
             bool on = label != null && !PanelOpen;
             if (contextBtn.gameObject.activeSelf != on) contextBtn.gameObject.SetActive(on);
             if (on) { contextText.text = label; contextImg.color = st == Camp.Station.DropIn ? new Color(0.85f, 0.2f, 0.12f, 0.97f) : Blue; }
-            hintText.text = PanelOpen ? "" : on ? "" : "Drag: walk  ·  hold a second finger: look  ·  tap: jump  ·  swipe: roll";
+            hintText.text = PanelOpen || on || Quiet ? "" : Sipping ? "Drag: walk  ·  tap: sip" : "Drag: walk  ·  hold a second finger: look  ·  tap: jump  ·  swipe: roll";
         }
 
         /// <summary>The camera stick under the right thumb (screen pixels), tinted so the two sticks read apart.</summary>

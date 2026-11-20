@@ -19,8 +19,8 @@ namespace Summit
         public static int TestCharacter = -1;
         int heroChar = -1, heroLook = -1; bool heroHooked;
         int wantLook = -1;              // the look SetCharacter asked for (a closet try-on isn't what's saved)
-        int heroOutfit;                 // the set of clothes on: 0 the summit kit, 1 Val's pyjamas, 2 Brianna's
-        Material fleeceMain;            // the pyjama fleece the JACKETS rows dye (Val's blue half, all of Brianna's)
+        int heroOutfit;                 // the set of clothes on: 0 the summit kit, 1 Val's pyjamas, 2 Breanna's
+        Material fleeceMain;            // the pyjama fleece the JACKETS rows dye (Val's blue half, all of Breanna's)
         /// <summary>How many times the hero has been built: it goes up when a rider or outfit swap makes a new body.</summary>
         public int Built { get; private set; }
         // Val's face moves: a blink and a lift of the brows, shapes that come with his model (none on the summit rider)
@@ -71,6 +71,14 @@ namespace Summit
             DestroyImmediate(donor);
         }
 
+        /// <summary>
+        /// A pose the camp makes on top of the hero's own (sitting at the fire with a roasting stick, at the stove,
+        /// holding a mug: Camp, CampPoses). Want: true to take the clips over (the standing idle, no walk); After: runs
+        /// once the frame's pose is done, to move the model and place the limbs.
+        /// </summary>
+        public interface ICampPose { bool Want(HeroRig h); void After(HeroRig h, Transform model, float dt); }
+        public ICampPose CampPose;
+
         bool SetUpHero()
         {
             if (!UseHero || PlayerPrefs.GetInt(OldHeroPref, 0) == 1) return false;
@@ -79,7 +87,7 @@ namespace Summit
             int look = TestCharacter >= 0 ? TestCharacter : wantLook >= 0 ? wantLook : Progress.RiderLook;
             int who = look % 10, outfit = (look / 10) % 10, cut = (look / 100) % 10;
             bool dyed = look >= 1000;   // pyjama trousers in a wardrobe colour: plain snowy cloth in place of their print
-            string[] people = { "Rider/Hero", "Rider/Buddy", "Rider/Brianna" };
+            string[] people = { "Rider/Hero", "Rider/Buddy", "Rider/Breanna", "Rider/Paul" };
             if (who >= people.Length) who = 0;
             var prefab = Resources.Load<GameObject>(people[who]);
             if (prefab == null) { who = 0; prefab = Resources.Load<GameObject>("Rider/Hero"); }
@@ -88,9 +96,11 @@ namespace Summit
             heroChar = who; heroLook = look; heroOutfit = outfit; Built++;
             var go = Instantiate(prefab, upper, false);
             go.name = "Hero";
-            // what they wear: the summit kit (cut for a man or a woman), Val's pyjamas or Brianna's. Another rider's
-            // clothes are hung on this one's bones (Dress). The summit kit has gloves, so the bare hands stay unseen.
-            string wear = outfit == 1 ? "Rider/Buddy" : outfit == 2 ? "Rider/Brianna" : cut == 1 ? "Rider/HeroF" : "Rider/Hero";
+            // what they wear: the summit kit (cut for a man or a woman), or one of the others' sets (Wardrobe.OutfitModels).
+            // Another rider's clothes are hung on this one's bones (Dress). The summit kit has gloves, so the bare hands
+            // stay unseen.
+            if (outfit >= Wardrobe.OutfitModels.Length) outfit = 0;
+            string wear = outfit == 0 ? (cut == 1 ? "Rider/HeroF" : "Rider/Hero") : "Rider/" + Wardrobe.OutfitModels[outfit];
             if (wear != people[who]) Dress(go, wear);
             foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                 if (smr.name.StartsWith("HeroHands")) smr.gameObject.SetActive(outfit != 0);
@@ -136,13 +146,13 @@ namespace Summit
             gearM.SetFloat("_Smoothness", 1f);
             gearM.SetFloat("_SmoothnessTextureChannel", 1f);
             gearM.EnableKeyword("_SMOOTHNESS_TEXTURE_ALBEDO_CHANNEL_A");
-            Material fleeceBlue = null, fleeceWhite = null, printM = null, faceM = null;
+            Material fleeceBlue = null, fleeceWhite = null, printM = null, faceM = null, knitM = null, hoodieM = null;
             faceSmr = null; blinkShape = browShape = -1;
             Material Face(Shader lit)
             {
                 // Val's painted face (cheeks, the beard's shadow, lids): plain lit skin with its picture
                 var m = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? lit);
-                var tex = Resources.Load<Texture2D>(who == 2 ? "Rider/BriannaFace" : "Rider/BuddyFace");
+                var tex = Resources.Load<Texture2D>(who == 2 ? "Rider/BreannaFace" : who == 3 ? "Rider/PaulFace" : "Rider/BuddyFace");
                 if (tex != null) { m.SetTexture("_BaseMap", tex); m.mainTexture = tex; }
                 m.SetColor("_BaseColor", Color.white); m.SetFloat("_Smoothness", 0.3f);
                 return m;
@@ -156,7 +166,7 @@ namespace Summit
             {
                 // the pyjama print: a plain lit cloth with its picture (it takes no snow: the snowy cloth has no picture)
                 var m = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? lit);
-                var tex = Resources.Load<Texture2D>(outfit == 2 ? "Rider/BriannaPants" : "Rider/BuddyPants");
+                var tex = Resources.Load<Texture2D>(outfit == 2 ? "Rider/BreannaPants" : "Rider/BuddyPants");
                 if (tex != null) { m.SetTexture("_BaseMap", tex); m.mainTexture = tex; }
                 m.SetColor("_BaseColor", Color.white); m.SetFloat("_Smoothness", 0.12f);
                 return m;
@@ -172,6 +182,9 @@ namespace Summit
                             : n.StartsWith("FleeceWhite") ? (fleeceWhite ??= Fleece(new Color(0.93f, 0.90f, 0.82f), 1.5f))
                             : n.StartsWith("PantsPrint") ? (dyed ? pantsM : (printM ??= Print(sh)))
                             : n.StartsWith("FaceSkin") ? (faceM ??= Face(sh))
+                            // (Paul's white turtleneck and his grey hoodie: snowy cloth in their own colours)
+                            : n.StartsWith("Knit") ? (knitM ??= Cloth(new Color(0.92f, 0.91f, 0.88f), 0.05f, 1.2f))
+                            : n.StartsWith("Hoodie") ? (hoodieM ??= Cloth(new Color(0.50f, 0.51f, 0.53f), 0.05f, 1.3f))
                             : n.StartsWith("Jacket") ? jacketM : n.StartsWith("Pants") ? pantsM : gearM;
                 }
                 smr.sharedMaterials = mats;
@@ -181,7 +194,7 @@ namespace Summit
                 smr.quality = SkinQuality.Bone4;   // the weights are painted for up to four bones
                 smr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
             }
-            fleeceMain = outfit == 1 ? fleeceBlue : outfit == 2 ? fleeceWhite : null;
+            fleeceMain = outfit == 1 ? fleeceBlue : outfit == 2 || outfit == 5 ? fleeceWhite : null;
             // the hero's own board and bindings take the place of the plain one (still the game's board object,
             // painted by the board rack and thrown in a crash)
             Transform deck = null;
@@ -264,7 +277,7 @@ namespace Summit
 
         /// <summary>
         /// Pyjamas and the closet. Their fleece is as it was made while the first JACKETS row is worn (Val's blue,
-        /// Brianna's cream Nordic knit); any other row dyes it, pattern and all. Val's cream lower half stays cream.
+        /// Breanna's cream Nordic knit); any other row dyes it, pattern and all. Val's cream lower half stays cream.
         /// </summary>
         void WearFleece(int[] o)
         {
@@ -272,8 +285,9 @@ namespace Summit
             Cloth(fleeceMain, Wardrobe.Shown(Wardrobe.Cat.Jacket, o[(int)Wardrobe.Cat.Jacket], heroOutfit), 1f);
         }
 
-        // where the pyjamas' own shoes sit in the palette (Tools/MakeHero.py's PAL): Val's sneakers, Brianna's slipper boots
-        static readonly int[] ShoeCell = { -1, 27, 41 };
+        // where each set's own shoes sit in the palette (Tools/MakeHero.py's PAL), by Wardrobe outfit: Val's sneakers,
+        // Breanna's slipper boots, Paul's ski boots (both his sets), and her slipper boots again with her fleece
+        static readonly int[] ShoeCell = { -1, 27, 41, 47, 47, 41 };
         /// <summary>The pyjamas' shoes take the colour of any BOOTS row but the first (theirs as made).</summary>
         void WearShoes(int[] o)
         {
@@ -330,7 +344,8 @@ namespace Summit
                 // on foot: the Root bone stands on the snow, the clips stride in time with the camp's footsteps
                 model.localPosition = heroRidePos - new Vector3(0f, BoardTop, 0f);
                 int move = CampMove == 1 ? idCampJump : CampMove == 2 ? idCampRoll : -1;
-                if (move >= 0)
+                if (CampPose != null && CampPose.Want(h)) blend = 6f;   // the camp's own pose (on a stump at the fire, at the stove)
+                else if (move >= 0)
                 {
                     // a jump or a roll: its clip, held at the camp's own clock for it, so the push off and the
                     // landing happen exactly when the camp lifts and drops the body
@@ -424,6 +439,7 @@ namespace Summit
             if (HandGone(0)) d.handL = 0f;   // no reaching for the board with a hand that's gone (RiderBodyLimbs)
             if (HandGone(1)) d.handR = 0f;
             h.Layer(d, dt);
+            if (Walking && CampPose != null) CampPose.After(h, model, dt);
         }
     }
 }

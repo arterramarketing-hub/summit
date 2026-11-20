@@ -38,8 +38,10 @@ public static class HeroShot
         RiderBody.UseHero = !old;
         // HERO_CHAR=buddy: start as the summit rider, swap to the buddy at the camp's rack, then everything as him
         string heroChar = System.Environment.GetEnvironmentVariable("HERO_CHAR") ?? "";
-        bool buddy = heroChar == "buddy" || heroChar == "brianna";
-        int pick = heroChar == "brianna" ? 3 : 2;   // (the closet's RIDER rows: 0 and 1 the summit rider, 2 Val, 3 Brianna)
+        bool buddy = heroChar == "buddy" || heroChar == "breanna" || heroChar == "paul";
+        bool paul = heroChar == "paul";
+        // (the closet's RIDER rows: 0 and 1 the summit rider, 2 Val, 3 Breanna, 4 Paul)
+        int pick = heroChar == "breanna" ? 3 : paul ? Wardrobe.PaulRow : 2;
         Summit.Progress.Wear(Wardrobe.Cat.Rider, 0);
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop(); CampAssets.Ensure();
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
@@ -60,8 +62,8 @@ public static class HeroShot
                 campDir = Quaternion.Euler(0f, camp.WalkerYaw, 0f) * Vector3.forward;
                 CampFront(); Shoot("SwapBefore", cam, 720, 900);
                 // every rider in every set of clothes (the game hears each change and rebuilds the rider)
-                for (int who = 0; who < 4; who++)
-                    for (int wear = 0; wear < 3; wear++)
+                for (int who = 0; who < 5; who++)
+                    for (int wear = 0; wear < Wardrobe.OutfitCount; wear++)
                     {
                         Summit.Progress.Wear(Wardrobe.Cat.Rider, who); Summit.Progress.Wear(Wardrobe.Cat.Outfit, wear);
                         for (int i = 0; i < 6; i++) CampStep(Vector2.zero);
@@ -82,10 +84,12 @@ public static class HeroShot
                 Summit.Progress.Wear(Wardrobe.Cat.Rider, pick);
                 for (int i = 0; i < 20; i++) CampStep(Vector2.zero);
                 CampFront(); Shoot("SwapAfter", cam, 720, 900);
-                pre = pick == 2 ? "Brianna" : "Buddy";
+                pre = pick == 3 ? "Breanna" : paul ? "Paul" : "Buddy";
                 Stats();
             }
             Camp_();
+            if (paul) Night(() => { camp.Teleport(-4f, -58f, 90f); for (int i = 0; i < 60; i++) CampStep(new Vector2(0f, 0.5f)); CampSide(); Shoot("CampWalkNight", cam, 720, 900); Shoot("CampWalkNightGame", cam, 590, 1278); });
+            Log($"ride: {Summit.Progress.Ride} (the body rides {body.Ride})");
             typeof(SummitGame).GetMethod("ToReady", NP, null, new[] { typeof(bool) }, null).Invoke(game, new object[] { true });
             camp.SetNight(0f);
             Physics.simulationMode = SimulationMode.Script;
@@ -96,6 +100,7 @@ public static class HeroShot
             rider.input = null;
             Timing();
             Carve();
+            if (paul) Night(() => { Reset(Course.First + 40f, 16f); RideFor(1.5f, () => 0.6f); late.Invoke(chase, null); Shoot("CarveNightGame", cam, 590, 1278); Side(1); Shoot("CarveNight", cam, 720, 900); late.Invoke(chase, null); });
             Jump();
             Tube();
             Crash();
@@ -105,6 +110,15 @@ public static class HeroShot
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
         EditorApplication.Exit(0);
+    }
+
+    /// <summary>Something done at night (the camp's lamps lit, the night sky), and back to day after.</summary>
+    static void Night(System.Action a)
+    {
+        var dn = Object.FindFirstObjectByType<DayNight>();
+        TimeOfDay.TestClock = 3.4f; if (dn != null) dn.ApplyNow(); camp.SetNight(1f);
+        try { a(); }
+        finally { TimeOfDay.TestClock = 1.4f; if (dn != null) dn.ApplyNow(); camp.SetNight(0f); }
     }
 
     // ---- what the hero is made of

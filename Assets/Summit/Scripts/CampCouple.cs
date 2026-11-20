@@ -4,14 +4,14 @@ using UnityEngine;
 namespace Summit
 {
     /// <summary>
-    /// Val and Brianna at home in the camp. Whoever of them isn't the one being played lives here: walks about,
+    /// Val and Breanna at home in the camp. Whoever of them isn't the one being played lives here: walks about,
     /// stops at the lookout, warms up by the fire, goes into the chalet to look out of the French doors, watches the
     /// gate, admires the snowman. They're a couple: when both are free they go about together, holding hands (the
     /// joined hands are reached by each arm's own IK from the walk clip, so the arms follow the bodies), at the same
     /// pace, and at a view they stop side by side and she leans in to him for a moment. When one of them is played,
     /// the other carries on alone and now and then waves at the hero (who is, after all, their other half).
     ///
-    /// They are the very models the hero rides as (Resources/Rider/Buddy and Brianna, from Tools/MakeHero.py), on the
+    /// They are the very models the hero rides as (Resources/Rider/Buddy and Breanna, from Tools/MakeHero.py), on the
     /// same clips (Rider/HeroAnim), dressed the way RiderBodyHero dresses them: their own pyjamas, in whatever colours
     /// the closet last left that set of clothes in. Near the camera they are posed every frame with shadows; further
     /// off every second or fourth frame, with lighter skinning and no shadows; far off not drawn at all.
@@ -27,7 +27,7 @@ namespace Summit
 
         Camp camp;
         Camera cam;
-        Person val, bri;
+        Person val, bri, paul;   // (Paul lives here too, on his own: he isn't part of their couple)
         int seed = 20261120;
         System.Random rnd;
         float clock;
@@ -38,17 +38,22 @@ namespace Summit
         /// <summary>The camp was rebuilt (another mountain): its spots moved, so they set off again from new ones.</summary>
         public void Rebuilt() { spotsMade = false; placed = false; }
 
-        /// <summary>Test tools: the people, by name ("Val", "Brianna"), for where they are and how they stand.</summary>
-        public Transform Of(int who) { var p = who == 1 ? val : bri; return p != null && p.shown ? p.root : null; }
-        public HeroRig RigOf(int who) { var p = who == 1 ? val : bri; return p != null ? p.rig : null; }
+        /// <summary>Test tools: the people, by name ("Val", "Breanna"), for where they are and how they stand.</summary>
+        public Transform Of(int who) { var p = Who(who); return p != null && p.shown ? p.root : null; }
+        public HeroRig RigOf(int who) { var p = Who(who); return p != null ? p.rig : null; }
+        Person Who(int who) => who == 1 ? val : who == 2 ? bri : who == 3 ? paul : null;
         /// <summary>Test tools: holding hands now (0..1), and what each of them is doing.</summary>
         public float Holding => holdW;
         /// <summary>Test tools: where they are in the walk cycle (0..1), and how much they're walking (0 standing, 1 striding).</summary>
-        public float PhaseOf(int who) { var p = who == 1 ? val : bri; return p != null ? p.phase : 0f; }
-        public float WalkOf(int who) { var p = who == 1 ? val : bri; return p != null && p.shown ? p.walk : 0f; }
-        public string State => (val != null && val.shown ? "Val " + val.doing + " " : "") + (bri != null && bri.shown ? "Brianna " + bri.doing : "") + (together ? " (together)" : "");
+        public float PhaseOf(int who) { var p = Who(who); return p != null ? p.phase : 0f; }
+        public float WalkOf(int who) { var p = Who(who); return p != null && p.shown ? p.walk : 0f; }
+        public string State => (val != null && val.shown ? "Val " + val.doing + " " : "") + (bri != null && bri.shown ? "Breanna " + bri.doing : "") + (together ? " (together)" : "")
+                             + (paul != null && paul.shown ? "; Paul " + paul.doing : "");
         /// <summary>Test tools: go to this spot next (by name: Lookout, Fire, Chalet, Gate, Snowman, Stroll).</summary>
         public void Send(string spot) { forced = spot; foreach (var p in new[] { val, bri }) if (p != null) { p.stay = 0f; p.path.Clear(); } }
+        /// <summary>Test tools: Paul goes to this spot next.</summary>
+        public void SendPaul(string spot) { if (paul == null) return; paulForced = spot; paul.stay = 0f; paul.path.Clear(); }
+        string paulForced;
         string forced;
         /// <summary>Test tools: she leans in now (at a stop); the one alone waves now.</summary>
         public void LeanNow() { leanT = 0f; }
@@ -62,11 +67,11 @@ namespace Summit
 
         // ---------------------------------------------------------------------------------------------- who's free
 
-        /// <summary>Which of them the player is: 1 Val, 2 Brianna, 0 neither (the summit rider).</summary>
+        /// <summary>Which of them the player is: 1 Val, 2 Breanna, 3 Paul, 0 none (the summit rider).</summary>
         static int Played()
         {
             int r = Progress.Worn(Wardrobe.Cat.Rider);
-            return r == 2 ? 1 : r == 3 ? 2 : 0;
+            return r == 2 ? 1 : r == 3 ? 2 : r == Wardrobe.PaulRow ? 3 : 0;
         }
 
         bool together;      // walking as a couple (both free, side by side)
@@ -86,11 +91,13 @@ namespace Summit
             // a person is made the first time they're free (the one being played isn't loaded until then)
             if (played != 1 && val == null) { val = Person.Make(this, 1); if (val != null && placed) ComeOut(val); }
             if (played != 2 && bri == null) { bri = Person.Make(this, 2); if (bri != null && placed) ComeOut(bri); }
+            if (played != 3 && paul == null) { paul = Person.Make(this, 3); if (paul != null && placed) ComeOut(paul); }
             if (!placed) { Place(played); placed = true; }
             // the one being played isn't here (they're the hero); the one who has just stopped being played comes
             // out of the chalet
             Show(val, played != 1);
             Show(bri, played != 2);
+            Show(paul, played != 3);
             bool both = val != null && bri != null && val.shown && bri.shown;
             if (!both) { together = false; joiner = null; }
             else if (!together)
@@ -114,9 +121,11 @@ namespace Summit
             // together, they're posed on the same frames (by the nearer one's distance), so their joined hands agree
             int every = 0;
             if (together && cam != null) every = Every(Mathf.Min(Vector3.Distance(cam.transform.position, val.pos), Vector3.Distance(cam.transform.position, bri.pos)));
+            if (paul != null && paul.shown) Alone(paul, dt, null, false);
             foreach (var p in new[] { val, bri }) if (p != null && p.shown) Pose(p, dt, every);
+            if (paul != null && paul.shown) Pose(paul, dt, 0);
             if (together && val.posed && bri.posed) Hands(dt); else if (!together) holdW = 0f;
-            foreach (var p in new[] { val, bri }) if (p != null && p.shown && p.posed) Extras(p, dt);
+            foreach (var p in new[] { val, bri, paul }) if (p != null && p.shown && p.posed) Extras(p, dt);
             if (waver != null && !waver.shown) { waver = null; wave = 0f; }
             waveCool -= dt;
         }
@@ -136,6 +145,13 @@ namespace Summit
         /// <summary>Back from being the hero: out through the chalet's door, then over to the other if they're about.</summary>
         void ComeOut(Person p)
         {
+            if (p == paul)
+            {
+                var c = spots["Chalet"];
+                p.pos = c.at; p.y = c.at.y; p.yaw = p.yawNow = p.lastYaw = c.yaw + Mathf.PI; p.speed = p.vel = 0f;
+                p.path.Clear(); p.path.AddRange(Exit("Chalet")); p.at = null; p.stay = 0f; p.doing = "out of the chalet";
+                return;
+            }
             var s = spots["Chalet"];
             p.pos = s.at; p.y = s.at.y; p.yaw = p.yawNow = p.lastYaw = s.yaw + Mathf.PI; p.speed = p.vel = 0f;
             p.path.Clear(); p.path.AddRange(Exit("Chalet")); p.at = null; p.stay = 0f; p.doing = "out of the chalet";
@@ -150,8 +166,10 @@ namespace Summit
             var s = spots["Lookout"];
             if (val != null) { val.pos = s.at - Right(s.yaw) * Gap; val.yaw = s.yaw; val.at = "Lookout"; val.stay = 6f; }
             if (bri != null) { bri.pos = s.at + Right(s.yaw) * Gap; bri.yaw = s.yaw; bri.at = "Lookout"; bri.stay = 6f; }
-            together = played == 0 && val != null && bri != null;
-            foreach (var p in new[] { val, bri }) if (p != null) { p.pos.y = camp.StepTo(p.pos + Vector3.up * 0.5f, p.pos, 0.3f).y; p.y = p.pos.y; p.yawNow = p.lastYaw = p.yaw; }
+            together = played != 1 && played != 2 && val != null && bri != null;
+            // Paul starts his day by the gate, watching who drops in
+            if (paul != null) { var g = spots["Gate"]; paul.pos = g.at + Right(g.yaw) * 1.6f; paul.yaw = g.yaw; paul.at = "Gate"; paul.stay = 4f; }
+            foreach (var p in new[] { val, bri, paul }) if (p != null) { p.pos.y = camp.StepTo(p.pos + Vector3.up * 0.5f, p.pos, 0.3f).y; p.y = p.pos.y; p.yawNow = p.lastYaw = p.yaw; }
         }
 
         // ---------------------------------------------------------------------------------------------- the camp's spots
@@ -242,9 +260,9 @@ namespace Summit
         /// <summary>The way back out of where they are before going anywhere else (the chalet's door and steps; the lookout's back).</summary>
         IEnumerable<Vector3> Exit(string at) => at != null && spots.TryGetValue(at, out var s) ? s.exit : new Vector3[0];
 
-        string Pick(string now)
+        string Pick(string now, bool useForced = true)
         {
-            if (forced != null) { var f = forced; forced = null; return f; }
+            if (useForced && forced != null) { var f = forced; forced = null; return f; }
             // by night the fire and the chalet's warm room win; by day the views
             float n = camp.Night;
             float[] w = { 3f - 2f * n, 2f + 3f * n, 1.5f + 2.5f * n, 2f - n, 1.5f - n, 1.5f };
@@ -376,8 +394,9 @@ namespace Summit
             if (p.path.Count > 0) return true;
             p.stay -= dt;
             if (p.stay > 0f && p.at != null) { p.doing = p.at; return false; }
-            // off somewhere else: out of where they are, then the way in to the next
-            string next = Pick(p.at);
+            // off somewhere else: out of where they are, then the way in to the next (Paul, somewhere the couple isn't)
+            string next = p == paul ? (paulForced ?? Pick(p.at, false)) : Pick(p.at);
+            if (p == paul) { if (paulForced != null) paulForced = null; else if (bri != null && bri.shown && next == bri.at) next = Pick(next, false); }
             p.path.Clear();
             if (p.at != null) p.path.AddRange(Exit(p.at));
             p.path.AddRange(spots[next].via);
@@ -417,7 +436,7 @@ namespace Summit
             var d = Flat(p.pos - was);
             // pushed off their line (along a wall, round a post): they turn the way they're actually going, so the
             // feet step that way instead of sliding sideways under a forward stride (side by side, they keep facing together)
-            if (!together && d.magnitude > dt * 0.25f && Vector3.Angle(d, Fwd(p.yawNow)) > 35f)
+            if ((!together || p == paul) && d.magnitude > dt * 0.25f && Vector3.Angle(d, Fwd(p.yawNow)) > 35f)
                 p.yawNow = Mathf.MoveTowardsAngle(p.yawNow * Mathf.Rad2Deg, Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg, dt * 220f) * Mathf.Deg2Rad;
             // (stepping round on the spot or sideways counts as walking too: feet that move with the body don't slide)
             p.moved = d.magnitude;
@@ -463,7 +482,7 @@ namespace Summit
             var h = p.rig;
             h.Begin();
             // standing about: Val alone has his own way (hands in his fleece pocket, rocking on his heels)
-            int stand = p.who == 1 && !together && p.idStandVal >= 0 ? p.idStandVal : p.idStand;
+            int stand = p.who == 1 && !together && p.idStandVal >= 0 ? p.idStandVal : p.idStand;   // (Paul: the plain stand)
             h.Want(stand, 1f - p.walk);
             h.Want(p.idWalk, p.walk);
             h.At(p.idWalk, p.phase);
@@ -490,7 +509,8 @@ namespace Summit
             bool stopped = p.path.Count == 0 && p.at != null && p.walk < 0.3f && p.doing == p.at;
             var s = p.at != null ? spots[p.at] : null;
             // her lean against him at a view: her body tips toward him and her head rests over (his tilts to hers)
-            if (together && stopped)
+            bool inCouple = together && p != paul;
+            if (inCouple && stopped)
             {
                 float k = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(leanT / 0.8f)) * (1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((leanT - 4.5f) / 1f)));
                 if (k > 0f)
@@ -516,7 +536,7 @@ namespace Summit
             {
                 for (int side = 0; side < 2; side++)
                 {
-                    if (together && side == (p.who == 1 ? 1 : 0)) continue;   // that hand is in the other's
+                    if (inCouple && side == (p.who == 1 ? 1 : 0)) continue;   // that hand is in the other's
                     if (wave > 0f && waver == p && side == p.waveSide) continue;
                     float sx = side == 0 ? -1f : 1f;
                     var chest = h.UpperArm[side].position;
@@ -526,7 +546,7 @@ namespace Summit
                 }
             }
             // a wave at the hero, now and then, from the one alone (the hero is their other half)
-            if (!together && waver == null && waveCool <= 0f && camp.Active && d < 14f && d > 2.5f && InView(p.pos))
+            if ((!inCouple) && waver == null && waveCool <= 0f && camp.Active && d < 14f && d > 2.5f && InView(p.pos))
             {
                 waver = p; wave = 2.2f; waveCool = 18f + 20f * (float)rnd.NextDouble();
                 p.waveSide = Vector3.Dot(hero - p.pos, rt) > 0f ? 1 : 0;
@@ -612,7 +632,7 @@ namespace Summit
 
         class Person
         {
-            public int who;                    // 1 Val, 2 Brianna
+            public int who;                    // 1 Val, 2 Breanna, 3 Paul
             public Transform root, model;      // root: on the snow, turned the way they face; the model under it
             public HeroRig rig;
             public SkinnedMeshRenderer[] skins;
@@ -633,11 +653,11 @@ namespace Summit
             /// <summary>One of them, built from their own model, dressed as the hero is.</summary>
             public static Person Make(CampCouple home, int who)
             {
-                var prefab = Resources.Load<GameObject>(who == 1 ? "Rider/Buddy" : "Rider/Brianna");
+                var prefab = Resources.Load<GameObject>(who == 1 ? "Rider/Buddy" : who == 2 ? "Rider/Breanna" : "Rider/Paul");
                 var table = Resources.Load<TextAsset>("Rider/HeroAnim");
                 if (prefab == null || table == null) return null;
                 var p = new Person { who = who };
-                p.root = new GameObject(who == 1 ? "Val" : "Brianna").transform;
+                p.root = new GameObject(who == 1 ? "Val" : who == 2 ? "Breanna" : "Paul").transform;
                 p.root.SetParent(home.transform, false);
                 var go = Object.Instantiate(prefab, p.root, false);
                 go.name = "Model";
@@ -693,7 +713,7 @@ namespace Summit
             /// </summary>
             static void Dress(Person p)
             {
-                int set = p.who;   // Val's pyjamas are set 1, Brianna's set 2 (Wardrobe.Cat.Outfit)
+                int set = p.who == 1 ? 1 : p.who == 2 ? 5 : 3;   // their own clothes (Wardrobe.OwnOutfit): Val's pyjamas, her fleece, his puffer
                 var lit = Shader.Find("Universal Render Pipeline/Lit");
                 var snowy = new SnowyClothes();
                 if (!snowy.Ok) snowy = null;
@@ -711,7 +731,7 @@ namespace Summit
                     return m;
                 }
                 int jacket = Progress.SetWorn(set, Wardrobe.Cat.Jacket), pants = Progress.SetWorn(set, Wardrobe.Cat.Pants), boots = Progress.SetWorn(set, Wardrobe.Cat.Boots);
-                Material blue = null, white = null, print = null, plain = null, face = null;
+                Material blue = null, white = null, print = null, plain = null, face = null, jacketM = null, knit = null, hoodie = null;
                 Material Fleece(Color c, float holds) { var m = Cloth(c, 0.12f, holds); m.SetFloat("_Fuzz", 1f); return m; }
                 // the gear palette (shoes, chain, glasses, hair): the shared picture, or a copy with the shoes dyed
                 var gear = new Material(lit);
@@ -724,7 +744,7 @@ namespace Summit
                         try
                         {
                             var px = pal.GetPixels();
-                            int cell = set == 1 ? 27 : 41, w = pal.width, hh = pal.height;   // the sneakers / the slipper boots (MakeHero.py's PAL)
+                            int cell = set == 1 ? 27 : set == 3 || set == 4 ? 47 : 41, w = pal.width, hh = pal.height;   // sneakers, ski boots, slipper boots (MakeHero.py's PAL)
                             int x = Mathf.FloorToInt((cell % 8 + 0.5f) / 8f * w), y = Mathf.FloorToInt((cell / 8 + 0.5f) / 8f * hh);
                             var c = Wardrobe.Get(Wardrobe.Cat.Boots, boots).a;
                             px[y * w + x] = new Color(c.r, c.g, c.b, px[y * w + x].a);
@@ -748,16 +768,21 @@ namespace Summit
                         string n = mats[i] != null ? mats[i].name : "";
                         mats[i] = n.StartsWith("FleeceBlue") ? (blue ??= Fleece(new Color(0.08f, 0.24f, 0.72f), 1.3f))
                                 : n.StartsWith("FleeceWhite") ? (white ??= Fleece(new Color(0.93f, 0.90f, 0.82f), 1.5f))
-                                : n.StartsWith("PantsPrint") ? (pants != 0 ? (plain ??= Cloth(Color.white, 0.2f, 0.5f)) : (print ??= Tex(set == 2 ? "Rider/BriannaPants" : "Rider/BuddyPants", 0.12f)))
-                                : n.StartsWith("FaceSkin") ? (face ??= Tex(p.who == 2 ? "Rider/BriannaFace" : "Rider/BuddyFace", 0.3f))
+                                : n.StartsWith("PantsPrint") ? (pants != 0 ? (plain ??= Cloth(Color.white, 0.2f, 0.5f)) : (print ??= Tex(set == 2 ? "Rider/BreannaPants" : "Rider/BuddyPants", 0.12f)))
+                                : n.StartsWith("FaceSkin") ? (face ??= Tex(p.who == 2 ? "Rider/BreannaFace" : p.who == 3 ? "Rider/PaulFace" : "Rider/BuddyFace", 0.3f))
+                                // (Paul's puffer and trousers: snowy cloth the closet's rows dye; his turtleneck, his hoodie)
+                                : n.StartsWith("Jacket") ? (jacketM ??= Cloth(Color.black, 0.35f, 0.85f))
+                                : n.StartsWith("Pants") ? (plain ??= Cloth(Color.white, 0.2f, 0.5f))
+                                : n.StartsWith("Knit") ? (knit ??= Cloth(new Color(0.92f, 0.91f, 0.88f), 0.05f, 1.2f))
+                                : n.StartsWith("Hoodie") ? (hoodie ??= Cloth(new Color(0.50f, 0.51f, 0.53f), 0.05f, 1.3f))
                                 : gear;
                     }
                     smr.sharedMaterials = mats;
                 }
-                // the fleece the jacket rows dye (Val's blue half, all of Brianna's), and dyed trousers
-                var main = set == 1 ? blue : white;
+                // the fleece the jacket rows dye (Val's blue half, all of Breanna's), and dyed trousers
+                var main = set == 1 ? blue : set == 3 || set == 4 ? jacketM : white;
                 if (main != null) Paint(main, Wardrobe.Shown(Wardrobe.Cat.Jacket, jacket, set));
-                if (plain != null) Paint(plain, Wardrobe.Get(Wardrobe.Cat.Pants, pants));
+                if (plain != null) Paint(plain, Wardrobe.Shown(Wardrobe.Cat.Pants, pants, set));
                 // the snowy cloth's rest frame, and the clothes a little looser, as on the hero
                 if (snowy != null)
                 {
@@ -809,7 +834,7 @@ namespace Summit
         /// <summary>Keep the walker out of them (Camp.Walk asks): they're solid, as a post would be.</summary>
         public Vector2 PushOut(Vector2 p, float r)
         {
-            foreach (var q in new[] { val, bri })
+            foreach (var q in new[] { val, bri, paul })
             {
                 if (q == null || !q.shown) continue;
                 var d = p - new Vector2(q.pos.x, q.pos.z);

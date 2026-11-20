@@ -1,0 +1,405 @@
+using System.Collections.Generic;
+using System.IO;
+using System.Reflection;
+using UnityEditor;
+using UnityEditor.SceneManagement;
+using UnityEngine;
+using Summit;
+
+/// <summary>
+/// The mountain's people, rendered through the game's own wiring (the phone's quality level):
+///   lineup: a row of people off the same seeds, the full model and the simplified one, day and night;
+///   lift:   riders on the chairs up close (from a seat on the chair behind), from the piste below, the far tiers;
+///   camp:   camp life from a few places, day and night.
+/// Run without -quit (one picture an editor frame: instanced draws stay queued for the frame in batchmode):
+///   Unity -batchmode -projectPath . -executeMethod PeopleShot.Run -logFile x.log
+///   SUMMIT_PEOPLE_SET  lineup|lift|camp|all (all)          SUMMIT_PEOPLE_OUT  the folder (PeopleShots)
+/// </summary>
+public static class PeopleShot
+{
+    const BindingFlags NP = BindingFlags.NonPublic | BindingFlags.Instance;
+    static SummitGame game; static Camp camp; static RiderBody body; static Rider rider; static Camera cam;
+    static SlopeStreamer terrain; static Forest props; static Atmosphere atmo; static DayNight dayNight; static MetaUi meta;
+    static MethodInfo tUpd, fUpd, aLate;
+    static string outDir;
+    static readonly List<System.Action> steps = new List<System.Action>();
+    static int at;
+    const float dt = 1f / 60f;
+
+    public static void Run()
+    {
+        outDir = System.Environment.GetEnvironmentVariable("SUMMIT_PEOPLE_OUT") ?? "PeopleShots";
+        string set = System.Environment.GetEnvironmentVariable("SUMMIT_PEOPLE_SET") ?? "all";
+        Directory.CreateDirectory(outDir);
+        SummitImport.EnsureSky(); SummitImport.EnsureBackdrop(); CampAssets.Ensure();
+        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
+        QualitySettings.SetQualityLevel(0, true);
+        TestPrefs.Pin();
+        game = Object.FindFirstObjectByType<SummitGame>();
+        bool liftSet = set == "lift";
+        TestBoot.Boot(game, liftSet);
+        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
+        camp = Get<Camp>("camp"); body = Get<RiderBody>("body"); rider = Get<Rider>("rider"); meta = Get<MetaUi>("meta");
+        terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props"); dayNight = Get<DayNight>("dayNight");
+        cam = Camera.main; atmo = Object.FindFirstObjectByType<Atmosphere>();
+        tUpd = typeof(SlopeStreamer).GetMethod("Update", NP); fUpd = typeof(Forest).GetMethod("Update", NP); aLate = typeof(Atmosphere).GetMethod("LateUpdate", NP);
+        if (!liftSet) typeof(SummitGame).GetMethod("ToHub", NP).Invoke(game, new object[] { true });
+        ChaseCamera.TestDt = dt;
+        steps.Clear(); at = 0;
+        if (set == "lineup" || set == "all") Lineup();
+        if (liftSet) Lifts();
+        if (set == "camp") CampShots();
+        steps.Add(() =>
+        {
+            ChaseCamera.TestDt = 0f;
+            TimeOfDay.TestClock = -1f;
+            TestPrefs.Restore();
+        });
+        EditorApplication.update += Tick;
+    }
+
+    static void Tick()
+    {
+        if (at < steps.Count)
+        {
+            try { steps[at++](); }
+            catch (System.Exception e) { Debug.LogError("PEOPLESHOT exception " + e); at = steps.Count; }
+            return;
+        }
+        EditorApplication.update -= Tick;
+        EditorApplication.Exit(0);
+    }
+
+    static void Log(string s) => Debug.Log("PEOPLESHOT " + s);
+
+    // ---------------------------------------------------------------- the lineup
+
+    static void Lineup()
+    {
+        var people = new List<Person>();
+        float cx = Slope.Centre(Slope.PadLip);
+        steps.Add(() =>
+        {
+            float t0 = Time.realtimeSinceStartup;
+            PeopleKit.Load();
+            Log($"kit loaded in {(Time.realtimeSinceStartup - t0) * 1000f:0} ms");
+            for (int i = 0; i < 12; i++)
+            {
+                var look = PersonLook.Random(1000 + i);
+                float t1 = Time.realtimeSinceStartup;
+                var p = Person.Make(look);
+                Log($"person {i}: {(look.female ? "F" : "M")} h{look.height:0.00} b{look.build:0.00} s{look.shoulders:0.00} {look.head} {look.hairStyle} pack {look.pack != null} {look.gear} jacket {look.jacket.name} made in {(Time.realtimeSinceStartup - t1) * 1000f:0.0} ms");
+                p.mode = Person.Mode.Stand;
+                p.SetLod(2);
+                people.Add(p);
+            }
+            camp.TeleportTo(new Vector3(cx + 30f, 0f, -90f), 0f);
+        });
+        // in pairs, a few metres off: the full model; then the whole crowd further off, full and simplified
+        float gz = -62f;
+        foreach (var (when, clock) in new[] { ("day", 1.4f), ("night", 3.4f) })
+        {
+            for (int pair = 0; pair < 6; pair++)
+            {
+                int k = pair;
+                foreach (bool back in new[] { false, true })
+                {
+                    if (back && k % 2 == 1) continue;
+                    bool b = back;
+                    steps.Add(() =>
+                    {
+                        TimeOfDay.TestClock = clock; dayNight.ApplyNow();
+                        foreach (var p in people) p.SetLod(2);
+                        float g = Slope.DrawnHeight(cx, gz);
+                        for (int j = 0; j < 2; j++)
+                        {
+                            var p = people[k * 2 + j];
+                            p.SetLod(0);
+                            float x = cx + (j == 0 ? -0.5f : 0.5f);
+                            p.transform.SetPositionAndRotation(new Vector3(x, Slope.DrawnHeight(x, gz), gz), Quaternion.Euler(0f, (b ? 180f : 0f) + (j == 0 ? 12f : -12f), 0f));
+                            p.Apply(0f); for (int f = 0; f < 20; f++) p.Apply(dt);
+                        }
+                        var eye = new Vector3(cx, g + 1.25f, gz + 3.6f);
+                        Aim(eye, new Vector3(cx, g + 0.92f, gz), 38f);
+                        Shoot($"pair{k}{(b ? "-back" : "")}-{when}.png");
+                    });
+                }
+            }
+            steps.Add(() =>
+            {
+                for (int i = 0; i < people.Count; i++)
+                {
+                    var p = people[i];
+                    int row = i / 6, c = i % 6;
+                    float x = cx - 3.75f + c * 1.5f, z = gz - row * 2.5f;
+                    p.transform.SetPositionAndRotation(new Vector3(x, Slope.DrawnHeight(x, z), z), Quaternion.Euler(0f, 0f, 0f));
+                    p.SetLod(row == 0 ? 0 : 1);
+                    p.Apply(0f); for (int f = 0; f < 20; f++) p.Apply(dt);
+                }
+                float g = Slope.DrawnHeight(cx, gz);
+                var eye = new Vector3(cx, g + 1.6f, gz + 9f);
+                Aim(eye, new Vector3(cx, g + 0.9f, gz - 1.2f), 40f);
+                Shoot($"crowd-{when}.png");
+            });
+        }
+        steps.Add(() => { foreach (var p in people) Object.DestroyImmediate(p.gameObject); });
+    }
+
+    // ---------------------------------------------------------------- the lifts
+
+    static SkiLift lift; static MethodInfo lUpd; static CourseDressing dress;
+
+    static void Lifts()
+    {
+        lift = Object.FindFirstObjectByType<SkiLift>();
+        dress = Object.FindFirstObjectByType<CourseDressing>();
+        lUpd = typeof(SkiLift).GetMethod("Update", NP);
+        Physics.simulationMode = SimulationMode.Script;
+        typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
+        rider.input = null;
+        int seed = int.TryParse(System.Environment.GetEnvironmentVariable("SUMMIT_LIFT_SEED"), out int sd) ? sd : 4242;
+        Slope.Init(seed);
+        terrain.Rebuild(); props.Rebuild(); if (dress != null) dress.Rebuild();
+        // a first line, and a chair with three or four aboard half way up its third span from the bottom
+        LiftLine.Lift F = null;
+        foreach (var l in LiftLine.Lifts) if (!l.second && (F == null || l.k == 1)) F = l;
+        int n = F.Spans;
+        float d0 = F.cum[3] + (F.cum[4] - F.cum[3]) * 0.5f;
+        double clock = 0; int chair = -1;
+        for (int lap = 3; lap < 40 && chair < 0; lap++)
+            for (int c = 0; c < F.chairs; c++)
+            {
+                float h = Slope.Hash01(c + F.id * 977, lap, 151);
+                if (h < 0.72f) continue;
+                clock = (d0 + lap * (double)F.loop - c * (double)F.spacing) / LiftLine.Speed;
+                if (clock < 30.0) continue;
+                chair = c; break;
+            }
+        F.Loop(d0, out Vector3 pos, out Vector3 travel, out bool up, out float since);
+        var fwd = new Vector3(travel.x, 0f, travel.z).normalized; var right = Vector3.Cross(Vector3.up, fwd);
+        Log($"lift {F.id} (cycle {F.k}), chair {chair} at {pos} going {(up ? "up" : "down")}, clock {clock:0.0}; {LiftLine.Lifts.Length} lifts");
+        Vector3 seat = pos + Vector3.up * -2.5f;
+        // the piste side: the way to the piste's middle from the line
+        float px = Slope.Centre(pos.z);
+        Vector3 toPiste = new Vector3(px - pos.x, 0f, 0f).normalized;
+        void Ground(ref Vector3 v, float up2) { v.y = Slope.DrawnHeight(v.x, v.z) + up2; }
+        var shots = new List<(string name, Vector3 rider, Vector3 eye, Vector3 look, float fov, double clock)>();
+        // up close, from the front and a little to the side (as from a tower's catwalk), and from beside
+        shots.Add(("close-front", pos + right * 25f, seat + fwd * 3.4f + right * 0.8f + Vector3.up * 0.25f, seat + Vector3.down * 0.15f, 52f, clock));
+        shots.Add(("close-side", pos + right * 25f, seat + right * 3.6f + fwd * 1.6f + Vector3.up * 0.1f, seat + Vector3.down * 0.25f, 50f, clock));
+        shots.Add(("close-back", pos + right * 25f, seat - fwd * 3.6f + right * 0.6f + Vector3.up * 0.6f, seat, 52f, clock));
+        // from the piste under the line: the player stood looking up at them going over
+        var under = pos + toPiste * 9f - fwd * 8f; Ground(ref under, 1.6f);
+        shots.Add(("piste", under, under, seat + Vector3.down * 0.3f, 50f, clock));
+        // further off, square to the line on its lower side: the chairs going up across the slope
+        Vector3 sideA = pos + right * 38f - fwd * 6f, sideB = pos - right * 38f - fwd * 6f;
+        Ground(ref sideA, 1.6f); Ground(ref sideB, 1.6f);
+        var underFar = sideA.y < sideB.y ? sideA : sideB;
+        shots.Add(("piste-far", underFar, underFar, seat + fwd * 6f, 50f, clock));
+        // the player stood under the line as the chair comes over: they look down, one points
+        var below = pos + fwd * 7f; Ground(ref below, 0f);
+        var side = seat + right * 6.5f + fwd * 1.5f + Vector3.down * 1.2f;
+        shots.Add(("pointing", below, side, seat + Vector3.down * 0.9f, 50f, clock));
+        shots.Add(("pointing-up", below, below + Vector3.up * 1.6f, seat + Vector3.down * 0.2f, 55f, clock));
+        foreach (var (when, tod) in new[] { ("day", 1.4f), ("night", 3.4f) })
+            foreach (var sh in shots)
+            {
+                var shot = sh;
+                steps.Add(() =>
+                {
+                    TimeOfDay.TestClock = tod; dayNight.ApplyNow();
+                    rider.ResetAt(shot.rider.x, shot.rider.z); body.ResetVisual(); rider.Stop();
+                    terrain.Prewarm(); props.Prewarm(); if (dress != null) dress.Prewarm();
+                    SkiLift.TestClock = shot.clock;
+                    var chase = cam.GetComponent<ChaseCamera>(); if (chase != null) chase.enabled = false;
+                    cam.fieldOfView = shot.fov;
+                    cam.transform.SetPositionAndRotation(shot.eye, Quaternion.LookRotation(shot.look - shot.eye));
+                    tUpd.Invoke(terrain, null); fUpd.Invoke(props, null);
+                    typeof(Forest).GetMethod("Draw", NP)?.Invoke(props, null);
+                    typeof(SkiLift).GetField("refreshClock", NP).SetValue(lift, 0f);
+                    for (int i = 0; i < 3; i++) lUpd.Invoke(lift, null);
+                    lift.Stats(out int draws, out long tris, out int inst);
+                    Shoot($"lift-{shot.name}-{when}.png");
+                    Log($"lift-{shot.name}-{when}: aboard {LiftRiders.Aboard}, near {LiftRiders.NearShown}, mid {LiftRiders.MidShown}, far {LiftRiders.FarShown}; riders {LiftRiders.DrawCalls} draws {LiftRiders.Triangles} tris; lifts in all {draws} draws {tris} tris");
+                });
+            }
+        // what the riders cost: the rider at every 30 m down the mountain, the camera behind as the chase camera has it
+        steps.Add(() =>
+        {
+            TimeOfDay.TestClock = 1.4f; dayNight.ApplyNow();
+            var chase = cam.GetComponent<ChaseCamera>(); if (chase != null) chase.enabled = false;
+            int n = 0, near = 0, mid = 0, far = 0, nearMax = 0, aboardMax = 0, drawsMax = 0; long tris = 0, trisMax = 0; double ms = 0, msMax = 0;
+            float zTop = float.MaxValue, zBot = float.MinValue;
+            foreach (var l in LiftLine.Lifts) { zTop = Mathf.Min(zTop, l.ZMin); zBot = Mathf.Max(zBot, l.ZMax); }
+            for (float z = Mathf.Max(0f, zTop); z < zBot; z += 30f)
+            {
+                float x = Slope.Centre(z);
+                rider.ResetAt(x, z); body.ResetVisual(); rider.Stop();
+                var at = new Vector3(x, Slope.DrawnHeight(x, z), z);
+                cam.transform.SetPositionAndRotation(at + new Vector3(0f, 3.2f, -6.5f), Quaternion.LookRotation(new Vector3(0f, -0.3f, 1f)));
+                for (int k = 0; k < 6; k++)
+                {
+                    SkiLift.TestClock = 200.0 + z * 0.37 + k * 1.3;
+                    typeof(SkiLift).GetField("refreshClock", NP).SetValue(lift, 0f);
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    lUpd.Invoke(lift, null);
+                    double t = sw.Elapsed.TotalMilliseconds;
+                    n++; ms += t; msMax = System.Math.Max(msMax, t);
+                    near += LiftRiders.NearShown; mid += LiftRiders.MidShown; far += LiftRiders.FarShown;
+                    nearMax = Mathf.Max(nearMax, LiftRiders.NearShown); aboardMax = Mathf.Max(aboardMax, LiftRiders.Aboard);
+                    tris += LiftRiders.Triangles; trisMax = System.Math.Max(trisMax, LiftRiders.Triangles); drawsMax = Mathf.Max(drawsMax, LiftRiders.DrawCalls);
+                }
+            }
+            Log($"lift budget over {n} frames down the mountain: riders aboard in range at most {aboardMax}; drawn as people {near / (float)n:0.0} on average ({nearMax} at most), mid {mid / (float)n:0.0}, far {far / (float)n:0.0}; " +
+                $"rider triangles {tris / n} on average, {trisMax} at most; rider draw calls at most {drawsMax}; SkiLift.Update with the riders {ms / n:0.00} ms on average, {msMax:0.00} at most (editor)");
+        });
+        steps.Add(() => { SkiLift.TestClock = -1.0; Physics.simulationMode = SimulationMode.FixedUpdate; });
+    }
+
+    // ---------------------------------------------------------------- camp life
+
+    static CampLife life;
+    static void Sim(float seconds, Vector2 stick = default)
+    {
+        for (float t = 0f; t < seconds; t += dt)
+        {
+            camp.Walk(stick, dt);
+            body.Apply(dt);
+            camp.CameraStep(dt);
+            life.Step(dt, cam.transform.position);
+            life.Tick(dt);
+        }
+    }
+
+    static CampLife.Agent Find(System.Func<CampLife.Agent, bool> want, float maxSeconds)
+    {
+        for (float t = 0f; t < maxSeconds; t += 0.5f)
+        {
+            foreach (var a in life.Agents) if (a.p.gameObject.activeSelf && want(a)) return a;
+            Sim(0.5f);
+        }
+        return null;
+    }
+
+    /// <summary>The camera a few metres in front of someone (and a little to the side), at eye height, looking at them.</summary>
+    static void Face(CampLife.Agent a, float dist, float side, float up, float fov, float yawOff = 0f)
+    {
+        var rot = Quaternion.Euler(0f, a.yaw + yawOff, 0f);
+        var target = a.p.transform.position + Vector3.up * (a.doing == CampLife.Doing.Sit ? 0.5f : 1.0f) * a.p.Scale;
+        var eye = target + rot * new Vector3(side, 0f, dist) + Vector3.up * up;
+        eye.y = Mathf.Max(eye.y, Slope.DrawnHeight(eye.x, eye.z) + 0.5f);
+        cam.GetComponent<ChaseCamera>().enabled = false;
+        Aim(eye, target, fov);
+    }
+
+    static void CampShots()
+    {
+        float cx = Slope.Centre(Slope.PadLip);
+        steps.Add(() =>
+        {
+            life = camp.GetComponent<CampLife>();
+            TimeOfDay.TestClock = 1.4f; dayNight.ApplyNow();
+            camp.TeleportTo(new Vector3(cx - 16f, 0f, -45f), 90f);
+            Sim(6f);
+        });
+        void Overview(string name, float clock, Vector3 eye, Vector3 look, float fov)
+        {
+            steps.Add(() =>
+            {
+                TimeOfDay.TestClock = clock; dayNight.ApplyNow(); camp.SetNight(clock > 3f ? 1f : 0f);
+                Sim(1f);
+                cam.GetComponent<ChaseCamera>().enabled = false;
+                Aim(eye, look, fov);
+                Shoot($"camp-{name}.png");
+                var sbx = new System.Text.StringBuilder();
+                foreach (var a in life.Agents) sbx.Append($"{a.role}:{a.doing}@({a.pos.x - cx:0.0},{a.pos.z:0.0}) lod{a.p.Lod}  ");
+                Log($"camp-{name}: {sbx}");
+            });
+        }
+        var g = Slope.DrawnHeight(cx, -60f);
+        Overview("overview-day", 1.4f, new Vector3(cx + 3f, g + 8f, -44f), new Vector3(cx - 2f, g, -68f), 62f);
+        void Doing(string name, System.Func<CampLife.Agent, bool> want, float dist, float side, float up, float fov, float clock = 1.4f, float yawOff = 0f, float wait = 0f)
+        {
+            steps.Add(() =>
+            {
+                TimeOfDay.TestClock = clock; dayNight.ApplyNow(); camp.SetNight(clock > 3f ? 1f : 0f);
+                var a = Find(want, 300f);
+                if (a == null) { Log($"camp-{name}: nobody doing that in 5 minutes"); return; }
+                if (wait > 0f) Sim(wait);
+                // the hero out of the picture
+                camp.TeleportTo(a.pos + Quaternion.Euler(0f, a.yaw + 180f, 0f) * Vector3.forward * 9f, a.yaw, false);
+                Sim(0.1f);
+                Face(a, dist, side, up, fov, yawOff);
+                Shoot($"camp-{name}.png");
+                Log($"camp-{name}: role {a.role} {a.doing} at ({a.pos.x - cx:0.0}, {a.pos.z:0.0}) lod {a.p.Lod} look {a.p.Look.jacket.name} {(a.p.Look.female ? "F" : "M")}");
+            });
+        }
+        Doing("photo", a => a.role == 0 && a.doing == CampLife.Doing.Look && a.p.phoneUp > 0.9f, 3.2f, 1.2f, 0.1f, 45f);
+        Doing("chat", a => a.doing == CampLife.Doing.Chat && a.partner != null && a.partner.doing == CampLife.Doing.Chat && (a.pos - a.partner.pos).magnitude < 1.6f, 3.6f, 2.4f, 0.2f, 50f, 1.4f, 90f);
+        Doing("bench", a => a.doing == CampLife.Doing.Sit && a.p.sitW > 0.95f, 3.4f, 0.8f, 0.3f, 50f);
+        Doing("wax", a => a.doing == CampLife.Doing.Wax, 3.0f, -1.6f, 0.4f, 48f, 1.4f, 0f, 1.2f);
+        Doing("strap", a => a.doing == CampLife.Doing.Strap && a.t > 1.5f, 3.4f, 1.6f, 0.5f, 48f);
+        Doing("ride", a => a.doing == CampLife.Doing.Ride && a.pos.z > Slope.GateZ + 6f, 7f, -3.5f, 1.5f, 50f, 1.4f, 200f);
+        Doing("walk", a => a.doing == CampLife.Doing.Walk && a.speed > 0.8f && a.p.Lod == 0, 4.5f, 2.5f, 0.3f, 48f);
+        // the edge gives way under the hero: everyone looks
+        steps.Add(() =>
+        {
+            TimeOfDay.TestClock = 1.4f; dayNight.ApplyNow(); camp.SetNight(0f);
+            var at = new Vector3(cx + 23.5f, Slope.DrawnHeight(cx + 23.5f, -66f), -66f);
+            camp.TeleportTo(new Vector3(cx - 20f, 0f, -50f), 0f, false);
+            typeof(CampLife).GetMethod("OnCollapse", NP).Invoke(life, new object[] { at, Vector3.right });
+            Sim(6f);
+            cam.GetComponent<ChaseCamera>().enabled = false;
+            // over the people turned to the rail where it went
+            Aim(new Vector3(cx + 7f, g + 3.2f, -57f), new Vector3(cx + 20f, g + 0.4f, -67f), 62f);
+            Shoot("camp-fall-day.png");
+            var sbx = new System.Text.StringBuilder();
+            foreach (var a in life.Agents) sbx.Append($"{a.role}:{a.doing}@({a.pos.x - cx:0.0},{a.pos.z:0.0}) facing {Vector3.Angle(a.p.Facing, at - a.p.HeadPosition):0}deg  ");
+            Log("camp-fall: " + sbx);
+        });
+        Overview("overview-night", 3.4f, new Vector3(cx + 3f, g + 8f, -44f), new Vector3(cx - 2f, g, -68f), 62f);
+        Doing("chat-night", a => a.doing == CampLife.Doing.Chat && a.partner != null && a.partner.doing == CampLife.Doing.Chat && (a.pos - a.partner.pos).magnitude < 1.6f, 3.6f, 2.4f, 0.2f, 50f, 3.4f, 90f);
+        Doing("photo-night", a => a.doing == CampLife.Doing.Look, 3.2f, 1.2f, 0.1f, 45f, 3.4f);
+        Overview("lodge-day", 1.4f, camp.ChaletPoint(9f, 1.6f, 24f), camp.ChaletPoint(-2f, 1f, 10f), 55f);
+    }
+
+    // ---------------------------------------------------------------- the camera
+
+    static void Aim(Vector3 eye, Vector3 look, float fov)
+    {
+        cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(look - eye, Vector3.up));
+        cam.fieldOfView = fov;
+    }
+
+    static void Shoot(string file)
+    {
+        int w = 590, h = 1278;
+        var rt = new RenderTexture(w, h, 24);
+        cam.targetTexture = rt; cam.aspect = w / (float)h;
+        tUpd.Invoke(terrain, null); fUpd.Invoke(props, null); aLate.Invoke(atmo, null);
+        // (skinned meshes don't skin in batchmode: bake each into a plain mesh for the picture)
+        var skins = Object.FindObjectsByType<SkinnedMeshRenderer>(FindObjectsSortMode.None);
+        var baked = new List<GameObject>(); var off = new List<SkinnedMeshRenderer>();
+        foreach (var sk in skins)
+        {
+            if (!sk.enabled || !sk.gameObject.activeInHierarchy) continue;
+            var m = new Mesh(); sk.BakeMesh(m);
+            var g = new GameObject("b", typeof(MeshFilter), typeof(MeshRenderer)); g.layer = sk.gameObject.layer;
+            g.GetComponent<MeshFilter>().sharedMesh = m;
+            var mr = g.GetComponent<MeshRenderer>(); mr.sharedMaterials = sk.sharedMaterials; mr.shadowCastingMode = sk.shadowCastingMode;
+            var mpb = new MaterialPropertyBlock(); sk.GetPropertyBlock(mpb); mr.SetPropertyBlock(mpb);
+            g.transform.SetPositionAndRotation(sk.transform.position, sk.transform.rotation);
+            sk.enabled = false; off.Add(sk); baked.Add(g);
+        }
+        cam.Render();
+        foreach (var g in baked) Object.DestroyImmediate(g);
+        foreach (var sk in off) sk.enabled = true;
+        RenderTexture.active = rt;
+        var tex = new Texture2D(w, h, TextureFormat.RGB24, false);
+        tex.ReadPixels(new Rect(0, 0, w, h), 0, 0); tex.Apply();
+        File.WriteAllBytes(Path.Combine(outDir, file), tex.EncodeToPNG());
+        cam.targetTexture = null; RenderTexture.active = null;
+        Object.DestroyImmediate(rt); Object.DestroyImmediate(tex);
+        Log($"{file} cam={cam.transform.position}");
+    }
+}

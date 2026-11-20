@@ -8,7 +8,7 @@ using Summit;
 using Progress = Summit.Progress;
 
 /// <summary>
-/// Val and Brianna in the camp (CampCouple): pictures of them walking hand in hand, at the lookout, by the fire and
+/// Val and Breanna in the camp (CampCouple): pictures of them walking hand in hand, at the lookout, by the fire and
 /// in the chalet, of the one left alone waving at the hero, by day and by night; and a long walk about the camp that
 /// measures their feet (how far a planted foot slides), their joined hands, and any time they got stuck.
 /// Batch: -executeMethod CoupleShot.Run  (writes CoupleShots/*.png; logs COUPLE lines)
@@ -59,19 +59,19 @@ public static class CoupleShot
             ShootPair("Together_Walk_Day_Hands", 2.4f, 0f, 0.9f, 38f);
             ShootPair("Together_Walk_Day_Behind", 4.0f, 165f, 1.4f);
             ShootPair("Together_Walk_Day_Far", 16f, 25f, 3f, 28f);
-            Until(() => couple.State.Contains("Brianna Fire"), 40f);
+            Until(() => couple.State.Contains("Breanna Fire"), 40f);
             Wait(3f);
             ShootPair("Together_Fire_Day", 3.2f, 40f, 1.4f);
             ShootPair("Together_Fire_Day_Hands", 2.2f, 100f, 1.0f, 40f);
             // to the lookout: side by side, looking at the view; she leans in
             couple.Send("Lookout");
-            Until(() => couple.State.Contains("Brianna Lookout"), 60f);
+            Until(() => couple.State.Contains("Breanna Lookout"), 60f);
             Wait(2.5f); couple.LeanNow(); Wait(1.4f);
             ShootPair("Together_Lookout_Day", 3.0f, -35f, 1.5f, 40f);
             ShootPair("Together_Lookout_Day_Back", 3.6f, -20f, 1.3f);
             // the chalet: at the French doors, looking out
             couple.Send("Chalet");
-            Until(() => couple.State.Contains("Brianna Chalet"), 80f);
+            Until(() => couple.State.Contains("Breanna Chalet"), 80f);
             Wait(2f);
             ShootPair("Together_Chalet_Day", 4.5f, 180f, 1.2f, 40f, true);
             // night: the fire, and walking
@@ -80,7 +80,7 @@ public static class CoupleShot
             Until(() => Walking(1) && couple.Holding > 0.95f, 20f);
             Wait(1.5f);
             ShootPair("Together_Walk_Night", 3.6f, 30f, 1.1f);
-            Until(() => couple.State.Contains("Brianna Fire"), 60f);
+            Until(() => couple.State.Contains("Breanna Fire"), 60f);
             Wait(3f);
             ShootPair("Together_Fire_Night", 3.2f, 40f, 1.4f);
             Day(true);
@@ -88,10 +88,10 @@ public static class CoupleShot
             // ---- feet, hands and getting stuck, over a long while together
             Measure("together", 150f);
 
-            // ---- Brianna played: Val alone, waving at her now and then
+            // ---- Breanna played: Val alone, waving at her now and then
             Progress.Wear(Wardrobe.Cat.Rider, 3);
             for (int i = 0; i < 20; i++) Frame();
-            Log($"Brianna played: {couple.State} (Brianna shown: {couple.Of(2) != null})");
+            Log($"Breanna played: {couple.State} (Breanna shown: {couple.Of(2) != null})");
             Wait(8f);
             var v = couple.Of(1);
             if (v != null)
@@ -114,12 +114,12 @@ public static class CoupleShot
                 Day(true);
             }
             Measure("Val alone", 50f);
-            // ---- Val played: Brianna alone
+            // ---- Val played: Breanna alone
             Progress.Wear(Wardrobe.Cat.Rider, 2);
             Wait(4f);
             Log($"Val played: {couple.State}");
-            ShootOne(2, "Alone_Brianna_Day", 3.4f, 30f);
-            Measure("Brianna alone", 50f);
+            ShootOne(2, "Alone_Breanna_Day", 3.4f, 30f);
+            Measure("Breanna alone", 50f);
             // ---- the summit rider again: Val comes out of the chalet and joins her
             Progress.Wear(Wardrobe.Cat.Rider, 0);
             float t0 = 0f;
@@ -170,7 +170,7 @@ public static class CoupleShot
                     if (!mid && inStance[who, f])
                     {
                         slips.Add(stanceSlip[who, f]); steps++;
-                        if (stanceSlip[who, f] > worst) { worst = stanceSlip[who, f]; worstWhere = $"{(who == 1 ? "Val" : "Brianna")} {(f == 0 ? "left" : "right")} at {couple.State}"; }
+                        if (stanceSlip[who, f] > worst) { worst = stanceSlip[who, f]; worstWhere = $"{(who == 1 ? "Val" : "Breanna")} {(f == 0 ? "left" : "right")} at {couple.State}"; }
                         stanceSlip[who, f] = 0f;
                     }
                     inStance[who, f] = mid; last[who, f] = fp;
