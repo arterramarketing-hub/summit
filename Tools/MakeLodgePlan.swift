@@ -160,3 +160,43 @@ plan("LodgePlanC", "C — Two levels (built, LODGE: C)", "A mezzanine across the
       Zone(name: "HOT CHOCOLATE", x0: -15.7, z0: -5.2, x1: -11, z1: 4.7, col: cocoa, note: "café in the wing"),
       Zone(name: "missions", x0: 2.6, z0: -6.7, x1: 4.6, z1: -5.2, col: mission, note: "")],
      [[(-0.2, 12.6), (2.5, 8.2), (4.5, 7), (2.9, 5.0), (1.1, 4.4), (1.1, -1.8), (-2, -3.1), (-6, -4.5)], [(2.9, 5.0), (-1.0, 3.0), (-5, 2.6)], [(4.5, 7), (3.8, 1.0), (3.8, -4.4)], [(3.8, -2.8), (-9.5, -2.8), (-13.5, 1.0)], [(3.8, 1.0), (7.0, -0.5)]])
+
+// B with an upstairs (B1, B2, B3): B's ground floor, the floor at +3.8 m drawn over it (dashed, violet) with its stair
+let upCol = NSColor(calibratedRed: 0.45, green: 0.3, blue: 0.85, alpha: 1)
+func upstairs(_ rects: [(CGFloat, CGFloat, CGFloat, CGFloat)], _ label: String, _ at: (CGFloat, CGFloat), _ stairs: [(CGFloat, CGFloat, CGFloat, CGFloat)]) {
+    for (x0, z0, x1, z1) in rects {
+        let r = R(x0, z0, x1, z1)
+        upCol.withAlphaComponent(0.14).setFill(); r.fill()
+        let p = NSBezierPath(rect: r); p.lineWidth = 3; p.setLineDash([10, 6], count: 2, phase: 0); upCol.setStroke(); p.stroke()
+    }
+    for (x0, z0, x1, z1) in stairs {
+        let r = R(x0, z0, x1, z1)
+        NSColor(calibratedWhite: 0.45, alpha: 0.85).setFill(); r.fill()
+        text("stair", NSPoint(x: r.midX, y: r.midY - 6), 11, .white, bold: true)
+    }
+    text(label, P(at.0, at.1), 13, upCol, bold: true)
+}
+let bGround = [Zone(name: "LOUNGE + FIRE", x0: -6.2, z0: -6.7, x1: 2.7, z1: -0.4, col: lounge, note: "low open fire, a clear ring all round"),
+               Zone(name: "BOARD SHOP", x0: 5.3, z0: -6.7, x1: 10.7, z1: 0.8, col: board, note: "counter (upgrades)"),
+               Zone(name: "WAX & TUNE", x0: 8.4, z0: 4.4, x1: 10.7, z1: 6.7, col: tune, note: "bench"),
+               Zone(name: "HOT CHOCOLATE", x0: -15.7, z0: -5.2, x1: -11, z1: 4.7, col: cocoa, note: "café in the wing"),
+               Zone(name: "missions", x0: 3.05, z0: -6.7, x1: 4.95, z1: -5.2, col: mission, note: "")]
+let shopBack = Zone(name: "BOUTIQUE", x0: -10.7, z0: -6.7, x1: -6.4, z1: -0.4, col: shop, note: "gear wall · jackets\nwardrobe + closet")
+let shopFront = Zone(name: "STOREFRONT", x0: -10.7, z0: 1.9, x1: -6.4, z1: 6.7, col: shop, note: "rails · mannequins")
+let snug = Zone(name: "SNUG + CAFÉ TABLES", x0: -10.7, z0: -6.7, x1: -6.4, z1: 6.7, col: lounge, note: "books · leather sofa\nunder the loft")
+
+plan("LodgePlanB1", "B1 — Gallery (built, LODGE: B1)", "B, with a gallery at +3.8 m along the back and over the boutique, open to the fire's double height; a stair up the hall's east side by the door",
+     bGround + [shopBack, shopFront],
+     [[(-0.2, 12.6), (2.5, 8.2), (4.5, 7), (3.9, 3.2), (3.9, -4.4), (-5, -5.6), (-8.6, -3.6)], [(4.5, 7), (2.5, 1.2), (-6, 0.9), (-13.5, 1.0)]]) {
+    upstairs([(-10.7, -6.7, 4.6, -4.5), (-10.7, -4.5, -6.5, -0.5)], "UPSTAIRS +3.8: the gear gallery, a sofa corner over the boutique", (-2.0, -7.6), [(3.2, -4.5, 4.6, 1.66)])
+}
+plan("LodgePlanB2", "B2 — Loft (built, LODGE: B2)", "B, with a loft at +3.8 m over the whole high end: the outfitters and the wardrobe up there, a snug below; a stair along the front glass",
+     bGround + [snug],
+     [[(-0.2, 12.6), (2.5, 8.2), (4.5, 7), (1.2, 5.35), (-5.2, 5.35), (-7.2, 1.5), (-8.6, -4.0)], [(4.5, 7), (2.4, 2.4), (-6, 0.9), (-13.5, 1.0)]]) {
+    upstairs([(-10.7, -6.7, -5.4, 6.5)], "UPSTAIRS +3.8: the outfitters' loft (wardrobe + closet)", (-8.0, 7.6), [(-5.4, 4.6, 0.76, 6.1)])
+}
+plan("LodgePlanB3", "B3 — Balcony (built, LODGE: B3)", "B, with a balcony at +3.8 m along the tall front glass, looking out and down over the fire; a dog-leg stair standing in the hall",
+     bGround + [shopBack, shopFront],
+     [[(-0.2, 12.6), (2.5, 8.2), (4.5, 7), (2.4, 2.6), (-4.0, 2.6), (-4.0, 5.2), (0.7, 5.0), (0.7, 3.8), (-6.0, 3.0)], [(4.5, 7), (2.5, 1.2), (-6, 0.9), (-13.5, 1.0)]]) {
+    upstairs([(-10.7, 0.8, -3.08, 6.5)], "UPSTAIRS +3.8: the window lounge, a telescope", (-6.5, 7.6), [(-3.08, 4.6, 0.0, 5.8), (0.0, 3.2, 1.4, 5.8), (-3.08, 3.2, 0.0, 4.4)])
+}

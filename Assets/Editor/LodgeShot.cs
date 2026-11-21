@@ -208,9 +208,9 @@ public static class LodgeShot
         // LODGE_COST_ONLY=1 stops after it)
         CostRounds();
         if (System.Environment.GetEnvironmentVariable("LODGE_COST_ONLY") == "1") return;
-        for (int k = 0; k < 3; k++)
+        foreach (int k in Chosen())
         {
-            string n = "ABC"[k].ToString();
+            string n = Camp.LodgeLayoutKeys[k];
             PlayerPrefs.SetInt(Camp.LodgePref, k);
             camp.Rebuild();
             Simulate();
@@ -246,6 +246,42 @@ public static class LodgeShot
                 WalkTo(C(-11.6f, 0f, 0.8f), 0.8f); Frames(10);
                 Shoot($"LodgeLayout{n}_6hero_tocafe.png");
             }
+            else if (k >= 3)
+            {
+                // B with an upstairs: the ground floor and the upstairs from eye height, then the hero on the stair
+                // and up there (the camera kept clear of the floors)
+                foreach (var (name, clock) in new[] { Times[0], Times[1] })
+                {
+                    SetTime(clock);
+                    var (g0, g1, u0, u1) = k == 3 ? (C(2.0f, 1.65f, 3.6f), C(-6.0f, 3.4f, -5.0f), C(3.7f, 5.45f, -5.5f), C(-8.0f, 4.6f, -2.0f))
+                                         : k == 4 ? (C(1.4f, 1.65f, 0.8f), C(-9.0f, 3.2f, 3.6f), C(-5.8f, 5.45f, 5.3f), C(-9.6f, 4.8f, -4.6f))
+                                                  : (C(3.4f, 1.65f, 0.4f), C(-4.6f, 3.0f, 5.4f), C(-3.6f, 5.45f, 1.4f), C(-10.2f, 4.9f, 5.6f));
+                    EyeCam(g0, g1, 88f);
+                    Shoot($"LodgeLayout{n}_8ground_{name}.png", 720, 960);
+                    EyeCam(u0, u1, 88f);
+                    Shoot($"LodgeLayout{n}_9upstairs_{name}.png", 720, 960);
+                }
+                SetTime(1.4f);
+                var path = k == 3 ? new[] { (3.9f, 4.0f), (3.9f, 0.6f), (3.9f, -4.0f), (3.9f, -5.5f), (-2.0f, -5.6f) }
+                         : k == 4 ? new[] { (1.6f, 5.3f), (0.4f, 5.35f), (-2.2f, 5.35f), (-5.0f, 5.35f), (-6.6f, 3.0f) }
+                                  : new[] { (-4.0f, 5.2f), (-3.4f, 5.2f), (-0.6f, 5.2f), (0.7f, 4.4f), (-0.2f, 3.8f), (-3.4f, 3.8f), (-6.0f, 3.0f) };
+                camp.TeleportTo(C(path[0].Item1, 0f, path[0].Item2), cy);
+                for (int i = 1; i < path.Length; i++)
+                {
+                    WalkTo(C(path[i].Item1, 0f, path[i].Item2), 0.8f);
+                    float feet = rider.transform.position.y - Rider.R - C(0, 0, 0).y;
+                    Debug.Log($"LODGESHOT {n} at mark {i}: feet {feet:0.00} above the floor, camera {cam.transform.position.y - C(0, 0, 0).y:0.00}");
+                    if (i == 2) { Frames(6); Shoot($"LodgeLayout{n}_4hero_stair.png"); }
+                }
+                Frames(30);
+                Shoot($"LodgeLayout{n}_5hero_upstairs.png");
+                // and below it, the camera under its slab
+                var under = k == 3 ? (-8.6f, -3.6f) : k == 4 ? (-8.6f, -1.2f) : (-6.0f, 2.8f);
+                camp.TeleportTo(C(under.Item1 + 3.0f, 0f, under.Item2), cy - 90f);
+                WalkTo(C(under.Item1, 0f, under.Item2), 0.8f); Frames(20);
+                Shoot($"LodgeLayout{n}_6hero_under.png");
+                Debug.Log($"LODGESHOT under {n}'s upper floor: feet {rider.transform.position.y - Rider.R - C(0, 0, 0).y:0.00}, camera {cam.transform.position.y - C(0, 0, 0).y:0.00} above the floor");
+            }
             else
             {
                 camp.TeleportTo(C(1.1f, 0f, 5.4f), cy + 180f);
@@ -278,16 +314,28 @@ public static class LodgeShot
     /// the Mac is doing falls on all three alike), each timing the view in from the door at dusk with its inside on
     /// and off, interleaved, and the photo's view at night with the whole lodge on and off.
     /// </summary>
+    /// <summary>The layouts to render and time: LODGE_ONLY (keys, comma-separated, e.g. "B1,B2,B3"), or all of them.</summary>
+    static List<int> Chosen()
+    {
+        var only = System.Environment.GetEnvironmentVariable("LODGE_ONLY");
+        var l = new List<int>();
+        for (int k = 0; k < Camp.LodgeLayoutKeys.Length; k++)
+            if (string.IsNullOrEmpty(only) || System.Array.IndexOf(only.Split(','), Camp.LodgeLayoutKeys[k]) >= 0) l.Add(k);
+        return l;
+    }
+
     static void CostRounds()
     {
         const int Rounds = 4, N = 15;
-        var inOn = new List<double>[3]; var inOff = new List<double>[3]; var outOn = new List<double>[3]; var outOff = new List<double>[3];
-        for (int k = 0; k < 3; k++) { inOn[k] = new List<double>(); inOff[k] = new List<double>(); outOn[k] = new List<double>(); outOff[k] = new List<double>(); }
+        int NL = Camp.LodgeLayoutKeys.Length;
+        var inOn = new List<double>[NL]; var inOff = new List<double>[NL]; var outOn = new List<double>[NL]; var outOff = new List<double>[NL];
+        for (int k = 0; k < NL; k++) { inOn[k] = new List<double>(); inOff[k] = new List<double>(); outOn[k] = new List<double>(); outOff[k] = new List<double>(); }
+        var chosen = Chosen();
         var rt = new RenderTexture(1170, 2532, 24);
         var tmp = new Texture2D(1, 1);
         double Med(List<double> l) { var c = new List<double>(l); c.Sort(); return c[c.Count / 2]; }
         for (int r = 0; r < Rounds; r++)
-            for (int k = 0; k < 3; k++)
+            foreach (int k in chosen)
             {
                 PlayerPrefs.SetInt(Camp.LodgePref, k);
                 camp.Rebuild();
@@ -325,8 +373,8 @@ public static class LodgeShot
                 noUi = false;
             }
         Object.DestroyImmediate(tmp); rt.Release();
-        for (int k = 0; k < 3; k++)
-            Debug.Log($"LODGECOST [{"ABC"[k]}] phone-size renders, editor on this Mac, {Rounds} rounds of A/B/C x {N} interleaved (median of the rounds' medians): " +
+        foreach (int k in chosen)
+            Debug.Log($"LODGECOST [{Camp.LodgeLayoutKeys[k]}] phone-size renders, editor on this Mac, {Rounds} rounds of the layouts in turn x {N} interleaved (median of the rounds' medians): " +
                       $"in from the door at dusk {Med(inOn[k]):0.00} ms, the same with its inside off {Med(inOff[k]):0.00} ms (the inside: +{Med(inOn[k]) - Med(inOff[k]):0.00} ms); " +
                       $"the photo's view at night {Med(outOn[k]):0.00} ms, without the lodge {Med(outOff[k]):0.00} ms; rounds in from the door: {string.Join(" / ", inOn[k].ConvertAll(x => x.ToString("0.0")))}");
         Simulate();

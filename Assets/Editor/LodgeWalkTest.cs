@@ -30,7 +30,9 @@ public static class LodgeWalkTest
     static readonly List<(Vector3 at, string what)> problems = new List<(Vector3, string)>();
     static int fails;
     static int layout, problemsFrom;
-    static readonly float[] Mezz = { 0f, 0f, 3.8f };   // each layout's upper floor (C's mezzanine), above the hall's
+    // each layout's floors above the hall's: C's mezzanine, B1's gallery, B2's loft, B3's landing and balcony
+    static readonly float[][] Levels = { new[] { 0f }, new[] { 0f }, new[] { 0f, 3.8f }, new[] { 0f, 3.8f }, new[] { 0f, 3.8f }, new[] { 0f, 1.9f, 3.8f } };
+    static string Key => Camp.LodgeLayoutKeys[layout];
 
     public static void Run()
     {
@@ -45,12 +47,12 @@ public static class LodgeWalkTest
             typeof(SummitGame).GetMethod("ToHub", NP).Invoke(game, new object[] { true });
             ChaseCamera.TestDt = dt;
             fPos = typeof(Camp).GetField("pos", NP); fCamYaw = typeof(Camp).GetField("camYaw", NP);
-            // each of the lodge's layouts in turn (LODGE_LAYOUTS, default all three: "ABC")
+            // each of the lodge's layouts in turn (LODGE_LAYOUTS, comma-separated, default all: "A,B,C,B1,B2,B3")
             var which = System.Environment.GetEnvironmentVariable("LODGE_LAYOUTS");
-            if (string.IsNullOrEmpty(which)) which = "ABC";
-            foreach (char k in which)
+            if (string.IsNullOrEmpty(which)) which = string.Join(",", Camp.LodgeLayoutKeys);
+            foreach (var k in which.Split(','))
             {
-                layout = "ABC".IndexOf(k);
+                layout = System.Array.IndexOf(Camp.LodgeLayoutKeys, k.Trim());
                 if (layout < 0) continue;
                 PlayerPrefs.SetInt(Camp.LodgePref, layout);
                 camp.Rebuild();
@@ -63,7 +65,7 @@ public static class LodgeWalkTest
                 People();
                 Audit();
                 Map();
-                Debug.Log($"LODGEWALK layout {"ABC"[layout]}: {fails - f0} failed leg(s), {problems.Count - p0} problem(s)");
+                Debug.Log($"LODGEWALK layout {Key}: {fails - f0} failed leg(s), {problems.Count - p0} problem(s)");
             }
             Switch((MetaUi)typeof(SummitGame).GetField("meta", NP).GetValue(game));
         }
@@ -77,6 +79,8 @@ public static class LodgeWalkTest
     }
 
     static Vector3 L(float x, float z) => camp.ChaletPoint(x, 0f, z);
+    /// <summary>A point upstairs (the floors at +3.8).</summary>
+    static Vector3 U(float x, float z) => camp.ChaletPoint(x, 3.8f, z);
 
     /// <summary>Walk through the marks in turn (stick 0.85, or 1 to run); true if each is reached (and the station wanted comes up at the end).</summary>
     static float Leg(string name, Vector3 from, Vector3[] marks, Camp.Station want = Camp.Station.None, float stick = 0.85f, bool teleport = true)
@@ -158,6 +162,55 @@ public static class LodgeWalkTest
             Leg("the fire out the side door to the racks", L(-3.5f, -2.05f), new[] { L(-4.5f, -2.05f), L(-4.6f, 0.3f), L(0f, 1.0f), L(8f, 3.9f), L(10.4f, 3.95f), L(11.6f, 3.95f), L(11.6f, -2.8f) });
             toDropIn = new[] { L(-7.1f, -3.6f), L(-7.1f, 0.9f), L(2.5f, 1.2f), door, L(2f, 9f), foot, dropIn };
         }
+        else if (layout == 3)
+        {
+            // B1: up the feature stair by the door onto the gallery, along it to the corner over the boutique
+            var up = new[] { L(3.9f, 4.0f), L(3.9f, 2.4f), L(3.9f, -4.0f), L(3.9f, -5.5f), L(-5.2f, -5.6f), L(-8.6f, -5.4f), L(-8.4f, -3.7f) };
+            Leg("the door up the feature stair, along the gallery to its corner over the boutique", door, up);
+            Leg("the gallery's corner back down the stair to the missions board", U(-8.4f, -3.7f), new[] { L(-8.6f, -5.4f), L(-5.2f, -5.6f), L(3.9f, -5.5f), L(3.9f, -4.0f), L(3.9f, 2.4f), L(5.2f, 1.6f), L(5.2f, -3.0f), L(5.1f, -5.3f), missions }, Camp.Station.Missions);
+            Leg("the door to the wardrobe (the boutique's back, under the gallery)", door, new[] { L(2.5f, 1.2f), L(-7.1f, 0.9f), L(-7.1f, -3.6f), style }, Camp.Station.Style);
+            Leg("the missions board to the board shop's counter", missions, new[] { L(5.2f, -3.0f), L(5.2f, -0.4f), counter }, Camp.Station.Upgrades);
+            Leg("the counter to the tuning bench", counter, new[] { L(7.2f, 2.5f), bench }, Camp.Station.Upgrades);
+            Leg("the tuning bench round the stair's foot into the café", bench, new[] { L(6f, 2.4f), L(2.5f, 2.4f), L(-6f, 1.0f), L(-10f, 0.8f), L(-13.5f, 2.2f) });
+            Leg("the café into the ring round the fire", L(-13.5f, 2.2f), new[] { L(-10f, 0.8f), L(-4.6f, 0.3f), L(-4.5f, -2.05f), L(-3.0f, -2.05f) });
+            Leg("all the way round the fire (under the gallery behind it)", L(-3.0f, -2.05f), new[] { L(-0.1f, -2.05f), L(0.6f, -3.2f), L(-0.1f, -4.35f), L(-3.5f, -4.35f), L(-4.3f, -3.2f), L(-3.5f, -2.05f) });
+            Leg("the fire out the side door to the racks", L(-3.5f, -2.05f), new[] { L(-4.5f, -2.05f), L(-4.6f, 0.3f), L(0f, 1.0f), L(2.5f, 2.4f), L(8f, 3.9f), L(10.4f, 3.95f), L(11.6f, 3.95f), L(11.6f, -2.8f) });
+            toDropIn = new[] { L(-7.1f, -3.6f), L(-7.1f, 0.9f), L(2.5f, 1.2f), door, L(2f, 9f), foot, dropIn };
+        }
+        else if (layout == 4)
+        {
+            // B2: up the stair along the front glass into the loft, round to the wardrobe up there
+            var up = new[] { L(1.6f, 5.3f), L(0.4f, 5.35f), L(-5.0f, 5.35f), L(-6.4f, 5.0f), L(-6.6f, 3.0f), L(-7.2f, 1.5f), L(-7.2f, -3.5f), L(-8.6f, -4.0f) };
+            var down = new[] { L(-7.2f, -3.5f), L(-7.2f, 1.5f), L(-6.6f, 3.0f), L(-6.4f, 5.0f), L(-5.0f, 5.35f), L(0.4f, 5.35f), L(1.6f, 4.6f) };
+            var toStyle = new List<Vector3>(up) { style };
+            Leg("the door up the stair along the glass to the wardrobe in the loft", door, toStyle.ToArray(), Camp.Station.Style);
+            var toMissions = new List<Vector3>(down) { L(2.4f, 2.4f), L(4.6f, -3.0f), missions };
+            Leg("the loft back down the stair to the missions board", style, toMissions.ToArray(), Camp.Station.Missions);
+            Leg("the missions board to the board shop's counter", missions, new[] { L(4.6f, -3.0f), L(4.6f, -0.4f), counter }, Camp.Station.Upgrades);
+            Leg("the counter to the tuning bench", counter, new[] { L(7.2f, 2.5f), bench }, Camp.Station.Upgrades);
+            Leg("the tuning bench through the snug's way into the café", bench, new[] { L(6f, 1.0f), L(-6f, 1.0f), L(-10f, 0.8f), L(-13.5f, 2.2f) });
+            Leg("the café to the snug under the loft", L(-13.5f, 2.2f), new[] { L(-10f, 0.8f), L(-8.6f, 0.6f), L(-8.6f, -1.6f) });
+            Leg("the snug into the ring round the fire", L(-8.6f, -1.6f), new[] { L(-6.8f, -1.6f), L(-4.6f, 0.3f), L(-4.5f, -2.05f), L(-3.0f, -2.05f) });
+            Leg("all the way round the fire", L(-3.0f, -2.05f), new[] { L(-0.1f, -2.05f), L(0.6f, -3.2f), L(-0.1f, -4.35f), L(-3.5f, -4.35f), L(-4.3f, -3.2f), L(-3.5f, -2.05f) });
+            Leg("the fire out the side door to the racks", L(-3.5f, -2.05f), new[] { L(-4.5f, -2.05f), L(-4.6f, 0.3f), L(0f, 1.0f), L(8f, 3.9f), L(10.4f, 3.95f), L(11.6f, 3.95f), L(11.6f, -2.8f) });
+            var tdi = new List<Vector3>(down) { door, L(2f, 9f), foot, dropIn };
+            toDropIn = tdi.ToArray();
+        }
+        else if (layout == 5)
+        {
+            // B3: round the dog-leg, up it (a landing half way) onto the balcony along the glass
+            var up = new[] { L(2.4f, 2.6f), L(-4.0f, 2.6f), L(-4.0f, 5.2f), L(-3.4f, 5.2f), L(-0.2f, 5.2f), L(0.7f, 5.0f), L(0.7f, 3.8f), L(-0.2f, 3.8f), L(-3.4f, 3.8f), L(-5.0f, 3.0f), L(-8.0f, 3.0f) };
+            Leg("the door round the dog-leg, up it onto the balcony along the glass", door, up);
+            Leg("the balcony back down the dog-leg to the missions board", U(-8.0f, 3.0f), new[] { L(-5.0f, 3.0f), L(-3.4f, 3.8f), L(-0.2f, 3.8f), L(0.7f, 3.8f), L(0.7f, 5.0f), L(-0.2f, 5.2f), L(-3.4f, 5.2f), L(-4.0f, 5.2f), L(-4.0f, 2.6f), L(2.4f, 2.4f), L(4.6f, -3.0f), missions }, Camp.Station.Missions);
+            Leg("the door to the wardrobe (the boutique's back)", door, new[] { L(2.5f, 1.2f), L(-7.1f, 0.9f), L(-7.1f, -3.6f), style }, Camp.Station.Style);
+            Leg("the missions board to the board shop's counter", missions, new[] { L(4.6f, -3.0f), L(4.6f, -0.4f), counter }, Camp.Station.Upgrades);
+            Leg("the counter to the tuning bench", counter, new[] { L(7.2f, 2.5f), bench }, Camp.Station.Upgrades);
+            Leg("the tuning bench under the balcony into the café", bench, new[] { L(6f, 1.0f), L(-6f, 1.0f), L(-10f, 0.8f), L(-13.5f, 2.2f) });
+            Leg("the café into the ring round the fire", L(-13.5f, 2.2f), new[] { L(-10f, 0.8f), L(-4.6f, 0.3f), L(-4.5f, -2.05f), L(-3.0f, -2.05f) });
+            Leg("all the way round the fire", L(-3.0f, -2.05f), new[] { L(-0.1f, -2.05f), L(0.6f, -3.2f), L(-0.1f, -4.35f), L(-3.5f, -4.35f), L(-4.3f, -3.2f), L(-3.5f, -2.05f) });
+            Leg("the fire out the side door to the racks", L(-3.5f, -2.05f), new[] { L(-4.5f, -2.05f), L(-4.6f, 0.3f), L(0f, 1.0f), L(2.4f, 2.4f), L(8f, 3.9f), L(10.4f, 3.95f), L(11.6f, 3.95f), L(11.6f, -2.8f) });
+            toDropIn = new[] { L(-7.1f, -3.6f), L(-7.1f, 0.9f), L(2.5f, 1.2f), door, L(2f, 9f), foot, dropIn };
+        }
         else
         {
             var up = new[] { L(2.9f, 5.0f), L(1.1f, 5.3f), L(1.1f, 3.9f), L(1.1f, -1.3f), L(1.1f, -2.4f), L(-2.0f, -3.1f), L(-5.6f, -3.1f), L(-5.9f, -4.5f) };
@@ -201,7 +254,8 @@ public static class LodgeWalkTest
         PlayerPrefs.SetInt(Camp.LodgePref, 0);
         camp.Rebuild();
         Physics.SyncTransforms();
-        for (int n = 1; n <= 3; n++)
+        int count = Camp.LodgeLayoutKeys.Length;
+        for (int n = 1; n <= count; n++)
         {
             camp.TeleportTo(L(-2.0f, 2.0f), camp.ChaletYaw + 30f);
             camp.Step(dt, meta);
@@ -217,10 +271,10 @@ public static class LodgeWalkTest
             }
             var after = (Vector3)fPos.GetValue(camp);
             float moved = Vector2.Distance(new Vector2(before.x, before.z), new Vector2(after.x, after.z));
-            int want = n % 3;
+            int want = n % count;
             bool ok = saw && !camp.LodgeSwitching && Camp.LodgeLayout == want && moved < 0.05f && Mathf.Abs(after.y - before.y) < 0.05f;
             if (!ok) { fails++; problems.Add((after, "the LODGE chip's switch")); }
-            Debug.Log($"LODGEWALK the LODGE chip, tap {n}: {(ok ? "" : "FAILED: ")}now {Camp.LodgeLayoutName} (wanted {"ABC"[want]}), swapped {black:0.00} s in, back in view at {t:0.00} s, the hero moved {moved:0.000} m");
+            Debug.Log($"LODGEWALK the LODGE chip, tap {n}: {(ok ? "" : "FAILED: ")}now {Camp.LodgeLayoutName} (wanted {Camp.LodgeLayoutKeys[want]}), swapped {black:0.00} s in, back in view at {t:0.00} s, the hero moved {moved:0.000} m");
         }
     }
 
@@ -248,7 +302,9 @@ public static class LodgeWalkTest
         }
         Debug.Log($"LODGEWALK people's standing spots checked: {n}, {bad} not clear");
         var window = ((Vector2[])typeof(Camp).GetField("LodgeWindow", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null))[layout];
-        Leg("the door to the couple's place at the big glass", L(4.5f, 5.5f), new[] { L(4.5f, 4.6f), L(window.x, window.y) });
+        // (round B3's dog-leg: it stands between the door and the glass there)
+        var toWindow = layout == 5 ? new[] { L(4.5f, 4.6f), L(2.4f, 2.6f), L(-4.0f, 2.6f), L(window.x, window.y) } : new[] { L(4.5f, 4.6f), L(window.x, window.y) };
+        Leg("the door to the couple's place at the big glass", L(4.5f, 5.5f), toWindow);
         if (camp.WalkBlocked(L(window.x, window.y), 0.45f)) { fails++; problems.Add((L(window.x, window.y), "the couple's place")); Debug.LogError("LODGEWALK the couple's place at the glass: no room for two"); }
     }
 
@@ -320,7 +376,7 @@ public static class LodgeWalkTest
         // drawn things, and (on a floor) there is a drawn surface just under its feet
         int stand = 0, through = 0, floating = 0;
         var seen = new HashSet<Vector2Int>();
-        foreach (float above in Mezz[layout] > 0f ? new[] { 0f, Mezz[layout] } : new[] { 0f })
+        foreach (float above in Levels[layout])
         for (float x = -17.4f; x <= 14.2f; x += 0.25f)
             for (float z = -8f; z <= 18.5f; z += 0.25f)
             {
@@ -403,7 +459,7 @@ public static class LodgeWalkTest
         foreach (var p in trail) Dot(p, new Color(0.15f, 0.45f, 1f), 1);
         for (int i = problemsFrom; i < problems.Count; i++) Dot(problems[i].at, Color.magenta, 6);
         tex.Apply();
-        File.WriteAllBytes(Path.Combine(dir, $"LodgeWalk_map_{"ABC"[layout]}.png"), tex.EncodeToPNG());
+        File.WriteAllBytes(Path.Combine(dir, $"LodgeWalk_map_{Key}.png"), tex.EncodeToPNG());
         cam.targetTexture = null; cam.orthographic = false;
         Debug.Log("LODGEWALK map written");
     }

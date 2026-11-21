@@ -7,7 +7,7 @@ using UnityEngine;
 using Summit;
 
 /// <summary>
-/// The camp rebuilt over and over (as every run start does, and as the LODGE setting does when it changes layout),
+/// The camp rebuilt over and over (as every run start does, and as the LODGE setting does when it changes layout: through all six),
 /// with both looks of the trees: the materials, meshes and textures in memory must stay flat, so nothing a build makes
 /// is left behind by the next. Logs what grew, by name. Batch: -executeMethod CampLeakTest.Run (exit 1 if anything
 /// grew).
@@ -32,9 +32,9 @@ public static class CampLeakTest
             {
                 // the trees' look: the camp's firs follow it (TREES: REALISTIC or ORIGINAL)
                 if (props.IsRealistic != realistic) typeof(SummitGame).GetMethod("ToggleTrees", NP).Invoke(game, new object[] { });
-                for (int i = 0; i < 2; i++) Build(camp, i);   // (warm: whatever is made once, and cached, is made now)
+                for (int i = 0; i < Camp.LodgeLayoutKeys.Length; i++) Build(camp, i);   // (warm: whatever is made once, and cached, is made now: each layout once)
                 var before = Count();
-                const int N = 9;
+                int N = 2 * Camp.LodgeLayoutKeys.Length;
                 for (int i = 0; i < N; i++) Build(camp, i);
                 var after = Count();
                 foreach (var kind in after.Keys)
@@ -54,10 +54,10 @@ public static class CampLeakTest
         EditorApplication.Exit(grew == 0 ? 0 : 1);
     }
 
-    /// <summary>A rebuild, through the lodge's three layouts in turn (as the LODGE setting rebuilds it).</summary>
+    /// <summary>A rebuild, through the lodge's layouts in turn (as the LODGE setting rebuilds it).</summary>
     static void Build(Camp camp, int i)
     {
-        PlayerPrefs.SetInt(Camp.LodgePref, i % 3);
+        PlayerPrefs.SetInt(Camp.LodgePref, i % Camp.LodgeLayoutKeys.Length);
         camp.Rebuild();
     }
 

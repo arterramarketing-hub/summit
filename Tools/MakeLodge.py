@@ -1275,8 +1275,8 @@ def layout_B():
 MY = 3.8                                    # the mezzanine's floor (3.5 m clear under it)
 MX0, MX1, MZ0, MZ1 = XH + T, 2.2, MZ, -1.8  # its extent
 NS, TREAD = 22, 0.28                        # the stair's steps (17 cm risers) and their depth
-SX0, SX1, SZT = 0.0, 2.2, -1.8              # the stair: x0..x1, its top at the mezzanine's front edge
-SZB = SZT + NS * TREAD                      # its foot (1.8 m clear between it and the front's columns)
+CSX0, CSX1, CSZT = 0.0, 2.2, -1.8              # the stair: x0..x1, its top at the mezzanine's front edge
+CSZB = CSZT + NS * TREAD                      # its foot (1.8 m clear between it and the front's columns)
 
 
 def layout_C():
@@ -1285,7 +1285,7 @@ def layout_C():
     lohi("Oak", (MX0, MY - 0.02, MZ0), (MX1, MY, MZ1))
     lohi("Steel", (MX0, MY - 0.32, MZ1 - 0.02), (MX1, MY + 0.02, MZ1 + 0.04))
     lohi("Steel", (MX1 - 0.02, MY - 0.32, MZ0), (MX1 + 0.04, MY + 0.02, MZ1))
-    lohi("LED", (MX0 + 0.2, MY - 0.34, MZ1 - 0.1), (SX0 - 0.1, MY - 0.32, MZ1 - 0.05))
+    lohi("LED", (MX0 + 0.2, MY - 0.34, MZ1 - 0.1), (CSX0 - 0.1, MY - 0.32, MZ1 - 0.05))
     for x in (-8.6, -4.6, -1.0):
         lohi("Steel", (x - 0.07, 0.0, MZ1 - 0.2), (x + 0.07, MY - 0.3, MZ1 - 0.06))
         helper("BLK_post", (x - 0.1, 0.0, MZ1 - 0.23), (x + 0.1, MY - 0.3, MZ1 - 0.03))
@@ -1294,41 +1294,41 @@ def layout_C():
     helper("FLR_mezz", (MX0, MY - 0.3, MZ0), (MX1, MY, MZ1))
     helper("CAM_mezzslab", (MX0, MY - 0.32, MZ0), (MX1 + 0.04, MY - 0.01, MZ1 + 0.04))
     # glass rails: along its front (left of the stair) and down its open side over the hall
-    pane("x", MZ1 + 0.02, MX0, SX0, MY, MY + 1.0, MY + 1.0, 0.02, "GlassIn")
-    lohi("Steel", (MX0, MY + 1.0, MZ1 - 0.01), (SX0, MY + 1.05, MZ1 + 0.05))
-    helper("BLK_mezzrail", (MX0, MY, MZ1 - 0.05), (SX0 + 0.02, MY + 1.1, MZ1 + 0.08))
+    pane("x", MZ1 + 0.02, MX0, CSX0, MY, MY + 1.0, MY + 1.0, 0.02, "GlassIn")
+    lohi("Steel", (MX0, MY + 1.0, MZ1 - 0.01), (CSX0, MY + 1.05, MZ1 + 0.05))
+    helper("BLK_mezzrail", (MX0, MY, MZ1 - 0.05), (CSX0 + 0.02, MY + 1.1, MZ1 + 0.08))
     pane("z", MX1 + 0.02, MZ0, MZ1, MY, MY + 1.0, MY + 1.0, 0.02, "GlassIn")
     lohi("Steel", (MX1 - 0.01, MY + 1.0, MZ0), (MX1 + 0.05, MY + 1.05, MZ1))
     helper("BLK_mezzrail", (MX1 - 0.05, MY, MZ0), (MX1 + 0.08, MY + 1.1, MZ1))
     # the stair: wide oak treads on black steel plates either side, rising beside the door to the mezzanine's front
-    run = (SZB - SZT) / NS
+    run = (CSZB - CSZT) / NS
     for i in range(NS):
         yt = MY * (i + 1) / (NS + 0.0)
-        zt = SZB - (i + 0.5) * run
-        lohi("Oak", (SX0 + 0.06, yt - 0.06, zt - run / 2 - 0.02), (SX1 - 0.06, yt, zt + run / 2 + 0.02))
-        lohi("LED", (SX0 + 0.1, yt - 0.075, zt + run / 2 - 0.04), (SX1 - 0.1, yt - 0.065, zt + run / 2))
-    for x in (SX0, SX1):
-        solid("Steel", [(x - 0.03, 0.0, SZB + 0.05), (x + 0.03, 0.0, SZB + 0.05), (x + 0.03, MY - 0.35, SZT), (x - 0.03, MY - 0.35, SZT)],
-              [(x - 0.03, 0.25, SZB + 0.05), (x + 0.03, 0.25, SZB + 0.05), (x + 0.03, MY + 0.02, SZT), (x - 0.03, MY + 0.02, SZT)])
-        solid("GlassIn", [(x - 0.01, 0.25, SZB), (x + 0.01, 0.25, SZB), (x + 0.01, MY, SZT), (x - 0.01, MY, SZT)],
-              [(x - 0.01, 1.2, SZB), (x + 0.01, 1.2, SZB), (x + 0.01, MY + 1.0, SZT), (x - 0.01, MY + 1.0, SZT)])
-        span("Steel", (x, 1.25, SZB), (x, MY + 1.05, SZT), 0.05)
-        helper("BLK_stairrail", (x - 0.06, 0.0, SZT), (x + 0.06, MY + 1.1, SZB + 0.06))
+        zt = CSZB - (i + 0.5) * run
+        lohi("Oak", (CSX0 + 0.06, yt - 0.06, zt - run / 2 - 0.02), (CSX1 - 0.06, yt, zt + run / 2 + 0.02))
+        lohi("LED", (CSX0 + 0.1, yt - 0.075, zt + run / 2 - 0.04), (CSX1 - 0.1, yt - 0.065, zt + run / 2))
+    for x in (CSX0, CSX1):
+        solid("Steel", [(x - 0.03, 0.0, CSZB + 0.05), (x + 0.03, 0.0, CSZB + 0.05), (x + 0.03, MY - 0.35, CSZT), (x - 0.03, MY - 0.35, CSZT)],
+              [(x - 0.03, 0.25, CSZB + 0.05), (x + 0.03, 0.25, CSZB + 0.05), (x + 0.03, MY + 0.02, CSZT), (x - 0.03, MY + 0.02, CSZT)])
+        solid("GlassIn", [(x - 0.01, 0.25, CSZB), (x + 0.01, 0.25, CSZB), (x + 0.01, MY, CSZT), (x - 0.01, MY, CSZT)],
+              [(x - 0.01, 1.2, CSZB), (x + 0.01, 1.2, CSZB), (x + 0.01, MY + 1.0, CSZT), (x - 0.01, MY + 1.0, CSZT)])
+        span("Steel", (x, 1.25, CSZB), (x, MY + 1.05, CSZT), 0.05)
+        helper("BLK_stairrail", (x - 0.06, 0.0, CSZT), (x + 0.06, MY + 1.1, CSZB + 0.06))
     # what you walk on: the slope through the treads' middles (the game sets a ramp's top half an outside riser under
     # its hi, so that's added back), from half a riser over the floor at its foot to half one over the mezzanine
-    rise, slope = MY / NS, MY / (SZB - SZT)
-    helper("RMP_stair", (SX0, rise / 2 + 0.085, SZT), (SX1, MY + rise / 2 + 0.085, SZB))
-    ramp = lambda z: rise / 2 + (SZB - z) * slope
+    rise, slope = MY / NS, MY / (CSZB - CSZT)
+    helper("RMP_stair", (CSX0, rise / 2 + 0.085, CSZT), (CSX1, MY + rise / 2 + 0.085, CSZB))
+    ramp = lambda z: rise / 2 + (CSZB - z) * slope
     # under it, closed: oak-lined sides down from the stringers and an end under the mezzanine's edge...
-    for x in (SX0, SX1):
-        solid("Lining", [(x - 0.025, 0.0, SZB + 0.05), (x + 0.025, 0.0, SZB + 0.05), (x + 0.025, 0.0, SZT), (x - 0.025, 0.0, SZT)],
-              [(x - 0.025, 0.0, SZB + 0.05), (x + 0.025, 0.0, SZB + 0.05), (x + 0.025, MY - 0.36, SZT), (x - 0.025, MY - 0.36, SZT)])
-    lohi("Lining", (SX0, 0.0, SZT - 0.04), (SX1, MY - 0.32, SZT))
+    for x in (CSX0, CSX1):
+        solid("Lining", [(x - 0.025, 0.0, CSZB + 0.05), (x + 0.025, 0.0, CSZB + 0.05), (x + 0.025, 0.0, CSZT), (x - 0.025, 0.0, CSZT)],
+              [(x - 0.025, 0.0, CSZB + 0.05), (x + 0.025, 0.0, CSZB + 0.05), (x + 0.025, MY - 0.36, CSZT), (x - 0.025, MY - 0.36, CSZT)])
+    lohi("Lining", (CSX0, 0.0, CSZT - 0.04), (CSX1, MY - 0.32, CSZT))
     # ...and blocked, in steps each kept under a climber's feet (a body 0.38 round reaching in from below it), as far
     # as where the floor's step up onto the slope takes over
-    zs = [SZT, 1.4, 1.9, 2.4, 2.9, 3.3, SZB - (0.5 - rise / 2) / slope]
+    zs = [CSZT, 1.4, 1.9, 2.4, 2.9, 3.3, CSZB - (0.5 - rise / 2) / slope]
     for k in range(len(zs) - 1):
-        helper("BLK_understair_%d" % k, (SX0, 0.0, zs[k]), (SX1, min(1.2, ramp(zs[k + 1] + 0.4) - 0.05), zs[k + 1]))
+        helper("BLK_understair_%d" % k, (CSX0, 0.0, zs[k]), (CSX1, min(1.2, ramp(zs[k + 1] + 0.4) - 0.05), zs[k + 1]))
     # upstairs: the outfitters (the gear wall on up the back wall, the jackets, the closet, a mirror on the end wall)
     gear_wall(-10.3, -1.8, y0=MY, levels=(2.3, 2.75), n=12, top=2.8)   # (under the back wall's high windows)
     rail_x(-9.4, -5.4, MZ + 0.38, y0=MY, blk=False)
@@ -1363,7 +1363,304 @@ def layout_C():
     marker("LIGHT_low", (8.0, 2.9, 1.5))
 
 
-LAYOUTS = {"A": layout_A, "B": layout_B, "C": layout_C}
+# ---- B with an upstairs, three ways (B1, B2, B3): B's ground floor, its fire in the middle, with a floor at +3.8
+
+def b_lounge(pend=((-3.6, 4.6, -4.6), (-0.2, 4.2, -4.8), (-2.2, 5.0, -1.4), (0.6, 4.8, -2.0))):
+    """B's lounge: the low open fire in the middle of the hall, sofas facing across it, armchairs at its ends."""
+    FX, FZ = -1.8, -3.2
+    lohi("Wool", (-5.2, 0.0, -6.3), (1.6, 0.015, -0.2))
+    open_fire(FX, FZ)
+    marker("LIGHT_fire", (FX, 1.4, FZ + 1.2))
+    sofa(-4.0, 0.4, -5.55, 1)
+    sofa(-4.0, 0.4, -0.95, -1)
+    armchair(-5.5, -3.2, 90)
+    armchair(1.9, -3.2, -90)
+    for (tx, tz) in ((-4.6, -5.7), (1.0, -0.6)):
+        cyl("Oak", (tx, 0.5, tz), 0.25, 0.04, 14); cyl("Steel", (tx, 0.0, tz), 0.03, 0.5, 6)
+        helper("BLK_sidetable", (tx - 0.27, 0.0, tz - 0.27), (tx + 0.27, 0.55, tz + 0.27))
+    pendants(pend, under_flat)
+
+
+def b_boutique(gear_levels=(2.7, 3.7, 4.7, 5.7), gear_top=None, sign_z=0.75, storefront=True):
+    """B's outfitters at the high end, on the ground: the gear wall, the jackets and the closet at the back, a clear
+    way through to the café, the storefront at the tall glass."""
+    gear_wall(-10.4, -6.9, n=7, levels=gear_levels, top=gear_top)
+    rail_x(-10.2, -7.0, MZ + 0.38, blk=False)
+    helper("BLK_rack", (-10.3, 0.0, MZ), (-6.9, 2.2, MZ + 0.55))
+    mirror(-6.4, -5.0)
+    helper("TAP_Style", (-10.7, 0.0, MZ), (-6.8, 2.6, MZ + 1.2))
+    marker("SPOT_Style", (-8.6, 0.0, MZ + 2.0))
+    display_table(-8.6, -2.3)
+    lohi("Charcoal", (-10.9, 0.0, -0.4), (-6.5, 0.012, 1.9))
+    if storefront:
+        rail_x(-10.1, -7.2, 3.4, two_sided=True)
+        rail_x(-10.2, -7.6, 5.75)
+        mannequin(-9.3, 6.35, "Red"); mannequin(-8.3, 6.35, "ArtB"); mannequin(-7.3, 6.35, "Navy")
+        till(-7.3, 2.6, -6.6, 3.9)
+    if sign_z is not None:
+        hanging_sign(0, -6.55, 4.9, sign_z, 3.0, 0.75, lambda x: ru(x) - RD, yaw=90)
+
+
+def b_rest(missions_x=4.0):
+    """B's low end and the wing as they are: the missions board, the board shop, wax & tune, the café."""
+    missions_board(missions_x, w=1.9)
+    board_shop(back_x0=5.3)
+    tuning_bench()
+    welcome_mat()
+    cafe()
+    marker("LIGHT_low", (8.0, 2.9, 1.5))
+
+
+def upper_floor(name, x0, x1, z0, z1, y=MY):
+    """A floor upstairs: concrete with an oak top; walked on (FLR_), and the camera keeps under or over its slab (CAM_)."""
+    lohi("Concrete", (x0, y - 0.3, z0), (x1, y - 0.02, z1))
+    lohi("Oak", (x0, y - 0.02, z0), (x1, y, z1))
+    helper("FLR_" + name, (x0, y - 0.3, z0), (x1, y, z1))
+    helper("CAM_" + name + "slab", (x0, y - 0.32, z0), (x1, y - 0.01, z1))
+
+
+def open_edge(axis, fixed, a0, a1, y=MY, side=1, rail=True, name="edge"):
+    """An upper floor's open edge (along x at z=fixed, or along z at x=fixed): a black fascia, a warm strip under it,
+    and a glass rail on it (walls the walker in, not the camera). side: which way the floor lies from the edge."""
+    if axis == "x":
+        lohi("Steel", (a0, y - 0.32, fixed - 0.02), (a1, y + 0.02, fixed + 0.02))
+        zl = fixed + side * 0.1
+        lohi("LED", (a0 + 0.15, y - 0.34, min(zl, zl + side * 0.05)), (a1 - 0.15, y - 0.32, max(zl, zl + side * 0.05)))
+        if rail:
+            pane("x", fixed + side * 0.04, a0, a1, y, y + 1.0, y + 1.0, 0.02, "GlassIn")
+            lohi("Steel", (a0, y + 1.0, fixed + side * 0.04 - 0.03), (a1, y + 1.05, fixed + side * 0.04 + 0.03))
+            helper("BLK_" + name, (a0, y, fixed - 0.1), (a1, y + 1.1, fixed + 0.1))
+    else:
+        lohi("Steel", (fixed - 0.02, y - 0.32, a0), (fixed + 0.02, y + 0.02, a1))
+        xl = fixed + side * 0.1
+        lohi("LED", (min(xl, xl + side * 0.05), y - 0.34, a0 + 0.15), (max(xl, xl + side * 0.05), y - 0.32, a1 - 0.15))
+        if rail:
+            pane("z", fixed + side * 0.04, a0, a1, y, y + 1.0, y + 1.0, 0.02, "GlassIn")
+            lohi("Steel", (fixed + side * 0.04 - 0.03, y + 1.0, a0), (fixed + side * 0.04 + 0.03, y + 1.05, a1))
+            helper("BLK_" + name, (fixed - 0.1, y, a0), (fixed + 0.1, y + 1.1, a1))
+
+
+def post(x, z, y=MY):
+    lohi("Steel", (x - 0.07, 0.0, z - 0.07), (x + 0.07, y - 0.3, z + 0.07))
+    helper("BLK_post", (x - 0.1, 0.0, z - 0.1), (x + 0.1, y - 0.3, z + 0.1))
+
+
+def flight(name, x0, x1, z0, z1, up, y0, y1, glass=(True, True), end=True):
+    """A straight flight filling x0..x1, z0..z1, climbing from y0 to y1 toward `up` ('-z', '+z', '-x' or '+x'): oak
+    treads (17 cm risers) on black steel stringers with glass sides; the walking slope through the treads' middles
+    (RMP_, RMPS_, RMPW_, RMPE_: the game turns the last three); under it closed in timber and blocked in steps that
+    stay under a climber's feet; at its top end (end) a panel down to the floor under whatever it climbs onto."""
+    along_z = up in ("-z", "+z")
+    sgn = -1.0 if up in ("-z", "-x") else 1.0
+    s0, s1 = (z0, z1) if along_z else (x0, x1)
+    v0, v1 = (x0, x1) if along_z else (z0, z1)
+    L = s1 - s0
+    n = max(1, int(round((y1 - y0) / 0.1727)))
+    rise, run = (y1 - y0) / n, L / n
+    foot = s1 if sgn < 0 else s0
+    top = foot + sgn * L
+
+    def P(s, y, v):
+        return (v, y, s) if along_z else (s, y, v)
+
+    def box_sv(mat, sa, sb, ya, yb, va, vb):
+        lohi(mat, P(min(sa, sb), ya, min(va, vb)), P(max(sa, sb), yb, max(va, vb)))
+
+    for i in range(n):
+        yt = y0 + rise * (i + 1)
+        sc = foot + sgn * (i + 0.5) * run
+        box_sv("Oak", sc - run / 2 - 0.02, sc + run / 2 + 0.02, yt - 0.06, yt, v0 + 0.06, v1 - 0.06)
+        nose = sc - sgn * run / 2
+        box_sv("LED", nose, nose + sgn * 0.04, yt - 0.075, yt - 0.065, v0 + 0.1, v1 - 0.1)
+    fs = foot - sgn * 0.05
+    for k, v in enumerate((v0, v1)):
+        solid("Steel", [P(fs, y0, v - 0.03), P(fs, y0, v + 0.03), P(top, y1 - 0.35, v + 0.03), P(top, y1 - 0.35, v - 0.03)],
+              [P(fs, y0 + 0.25, v - 0.03), P(fs, y0 + 0.25, v + 0.03), P(top, y1 + 0.02, v + 0.03), P(top, y1 + 0.02, v - 0.03)])
+        if glass[k]:
+            solid("GlassIn", [P(foot, y0 + 0.25, v - 0.01), P(foot, y0 + 0.25, v + 0.01), P(top, y1, v + 0.01), P(top, y1, v - 0.01)],
+                  [P(foot, y0 + 1.2, v - 0.01), P(foot, y0 + 1.2, v + 0.01), P(top, y1 + 1.0, v + 0.01), P(top, y1 + 1.0, v - 0.01)])
+            span("Steel", P(foot, y0 + 1.25, v), P(top, y1 + 1.05, v), 0.05)
+        lo = P(min(foot, top), y0, v - 0.06); hi = P(max(foot, top), y1 + 1.1, v + 0.06)
+        helper("BLK_%srail" % name, lo, hi)
+        # the timber side under it, down to the floor
+        solid("Lining", [P(fs, 0.0, v - 0.025), P(fs, 0.0, v + 0.025), P(top, 0.0, v + 0.025), P(top, 0.0, v - 0.025)],
+              [P(fs, max(0.0, y0 - 0.36), v - 0.025), P(fs, max(0.0, y0 - 0.36), v + 0.025), P(top, y1 - 0.36, v + 0.025), P(top, y1 - 0.36, v - 0.025)])
+    if end:
+        box_sv("Lining", top, top - sgn * 0.04, 0.0, y1 - 0.32, v0, v1)
+    # what you walk on (the game sets a ramp's top half an outside riser under its hi: added back)
+    prefix = {"-z": "RMP_", "+z": "RMPS_", "-x": "RMPW_", "+x": "RMPE_"}[up]
+    yh = y1 + rise / 2 + 0.085
+    helper(prefix + name, P(min(foot, top), yh - (y1 - y0), v0), P(max(foot, top), yh, v1))
+
+    def h(d):   # the slope's height d along from the foot
+        return y0 + rise / 2 + d / L * (y1 - y0)
+    # blocked under it, in steps (each under a climber's feet as their body reaches over it from below), from where
+    # the floor's own step up onto the slope gives out to the top
+    d_min = max(0.0, (0.5 - y0 - rise / 2) / (y1 - y0) * L) if y0 < 0.5 else 0.0
+    ds = [d_min]
+    while ds[-1] < L - 1e-3:
+        ds.append(min(L, ds[-1] + 0.5))
+    for k in range(len(ds) - 1):
+        da, db = ds[k], ds[k + 1]
+        hi_k = min(1.2, h(max(0.0, da - 0.4)) - 0.05)
+        if hi_k < 0.12:
+            continue
+        sa, sb = foot + sgn * da, foot + sgn * db
+        helper("BLK_%sunder%d" % (name, k), P(min(sa, sb), 0.0, v0), P(max(sa, sb), hi_k, v1))
+        # (and the camera kept out of its solid body too, up to just under the treads: else, looking across the
+        # stair, it can end up inside it, between flights)
+        hc = h(da) - rise / 2 - 0.12
+        if hc > 0.3:
+            helper("CAM_%sbody%d" % (name, k), P(min(sa, sb), 0.0, v0 + 0.03), P(max(sa, sb), hc, v1 - 0.03))
+
+
+def landing(name, x0, x1, z0, z1, y, closed=("x0", "x1", "z0", "z1"), rails=()):
+    """A landing between flights: a slab on its own, closed in timber under it and blocked there."""
+    upper_floor(name, x0, x1, z0, z1, y)
+    for c in closed:
+        if c == "x0": lohi("Lining", (x0, 0.0, z0), (x0 + 0.04, y - 0.3, z1))
+        if c == "x1": lohi("Lining", (x1 - 0.04, 0.0, z0), (x1, y - 0.3, z1))
+        if c == "z0": lohi("Lining", (x0, 0.0, z0), (x1, y - 0.3, z0 + 0.04))
+        if c == "z1": lohi("Lining", (x0, 0.0, z1 - 0.04), (x1, y - 0.3, z1))
+    helper("BLK_%sunder" % name, (x0, 0.0, z0), (x1, min(1.2, y - 0.5), z1))
+    helper("CAM_%sbody" % name, (x0 + 0.03, 0.0, z0 + 0.03), (x1 - 0.03, y - 0.33, z1 - 0.03))
+    for (axis, fixed, a0, a1, side) in rails:
+        open_edge(axis, fixed, a0, a1, y, side, True, name + "rail")
+
+
+def telescope(x, z, y=0.0, yaw=0.0):
+    """A brass-and-black telescope on a tripod, aimed out of the glass."""
+    for k in range(3):
+        a = math.radians(yaw + 120 * k)
+        span("Steel", (x + 0.32 * math.sin(a), y, z + 0.32 * math.cos(a)), (x, y + 1.15, z), 0.03)
+    box("Steel", (x, y + 1.28, z), (0.12, 0.12, 0.9), (-12, yaw, 0))
+    box("Oak", (x, y + 1.28, z), (0.13, 0.13, 0.2), (-12, yaw, 0))
+    helper("BLK_telescope", (x - 0.4, y, z - 0.4), (x + 0.4, y + 1.5, z + 0.4))
+
+
+def bookcase(x0, x1, z, h=2.2, y=0.0):
+    """Oak shelves of books against the back wall."""
+    lohi("Oak", (x0, y, z), (x1, y + h, z + 0.05))
+    for k in range(5):
+        yy = y + 0.1 + k * (h - 0.2) / 4.5
+        lohi("Oak", (x0, yy, z), (x1, yy + 0.03, z + 0.32))
+        if k < 4:
+            n = int((x1 - x0) / 0.16)
+            for i in range(n):
+                hb = 0.2 + 0.08 * ((i * 7 + k * 3) % 3)
+                box(("Red", "Navy", "Cream", "ArtA", "Charcoal", "Leaf", "ArtB")[(i + k * 2) % 7], (x0 + 0.1 + i * 0.16, yy + 0.03 + hb / 2, z + 0.18), (0.12, hb, 0.24))
+    helper("BLK_bookcase", (x0, y, z), (x1, y + h, z + 0.35))
+
+
+# ---- B1: the gallery (a gallery at +3.8 along the back and over the boutique, open to the fire's double height)
+
+def layout_B1():
+    b_lounge(pend=((-4.2, 4.6, -2.0), (0.6, 4.8, -2.0), (-2.6, 5.0, -1.2), (-0.4, 4.4, -4.0)))
+    b_boutique(gear_levels=(2.1, 2.9), gear_top=3.35, sign_z=1.4)
+    plant(-2.9, 6.15, 1.1); plant(1.6, 6.15, 1.5); plant(-6.0, -6.1, 1.2)
+    b_rest()
+    # the gallery: along the back wall from the high end to past the missions board, and over the boutique's back
+    GZ, GX = -4.5, -6.5
+    upper_floor("gal", XH + T, 4.6, MZ, GZ)
+    upper_floor("galend", XH + T, GX, GZ, -0.5)
+    open_edge("x", GZ, GX, 3.2, side=-1, name="galrail")
+    open_edge("z", 4.6, MZ, GZ, side=-1, name="galrail")
+    open_edge("z", GX, GZ, -0.5, side=-1, name="galrail")
+    open_edge("x", -0.5, XH + T, GX, side=-1, name="galrail")
+    post(GX - 0.05, -0.55); post(GX - 0.05, GZ - 0.05); post(3.15, GZ - 0.05)
+    for (px, pz) in ((-9.0, -5.6), (-5.0, -5.6), (-1.0, -5.6), (2.6, -5.6), (-8.6, -2.6)):   # downlights under it
+        cyl("LED", (px, MY - 0.33, pz), 0.12, 0.02, 12)
+    # the feature stair: up the hall's east side from by the door, onto the gallery over the missions board
+    flight("b1", 3.2, 4.6, GZ, GZ + 6.16, "-z", 0.0, MY)
+    # upstairs: the gear gallery along the back wall (under the high windows), and a corner over the boutique with a
+    # sofa looking out over the storefront to the tall glass
+    gear_wall(-10.3, 2.8, y0=MY, levels=(2.3, 2.75), n=18, top=2.8)
+    for (r0, r1) in ((-9.6, -6.8), (-3.6, -0.4)):
+        rail_x(r0, r1, MZ + 0.38, y0=MY, blk=False)
+        helper("BLK_rack", (r0 - 0.1, MY, MZ), (r1 + 0.1, MY + 2.2, MZ + 0.55))
+    sofa(-10.2, -7.2, -1.35, 1, mat="Leather", y=MY)
+    armchair(-7.4, -2.9, 90, y=MY)
+    low_table(-9.6, -2.9, -8.2, -2.3, y=MY)
+    plant(-10.2, -3.9, 1.0, y=MY)
+    plant(4.0, -6.2, 1.0, y=MY)
+    marker("LIGHT_hall", (-1.8, 7.5, -3.2))
+
+
+# ---- B2: the loft (a full floor at +3.8 over the high end: the outfitters up there; a snug under it)
+
+def layout_B2():
+    b_lounge()
+    b_rest()
+    # under the loft: the snug (books, a leather sofa, armchairs) and, at the glass, the café's tables spilling out
+    lohi("Charcoal", (-10.9, 0.0, -0.4), (-6.5, 0.012, 1.9))          # the runner: the way through to the café
+    lohi("Wool", (-10.4, 0.0, -6.0), (-6.4, 0.015, -1.8))
+    bookcase(-10.3, -6.9, MZ, h=2.4)
+    sofa(-10.0, -7.4, -5.25, 1, mat="Leather")
+    low_table(-9.4, -4.2, -8.0, -3.6)
+    armchair(-9.6, -2.6, 180); armchair(-7.8, -2.6, 180)
+    bistro(-9.2, 3.6); bistro(-8.4, 5.6)
+    plant(-6.0, -6.1, 1.2)
+    # the loft
+    LX = -5.4
+    upper_floor("loft", XH + T, LX, MZ, 6.5)
+    open_edge("z", LX, MZ, 4.6, side=-1, name="loftrail")
+    open_edge("z", LX, 6.1, 6.5, side=-1, name="loftrail")
+    post(LX - 0.05, -6.55); post(LX - 0.05, 4.45)   # (at the back wall and at the stair's top: the column at (-6.37, 0) holds the middle)
+    for (px, pz) in ((-9.0, -5.0), (-7.0, -2.0), (-9.0, 1.0), (-7.0, 4.4)):
+        cyl("LED", (px, MY - 0.33, pz), 0.12, 0.02, 12)
+    # the stair along the front glass, from by the door up to the loft
+    flight("b2", LX, LX + 6.16, 4.6, 6.1, "-x", 0.0, MY)
+    # upstairs: the outfitters (gear wall, jackets and the closet, a mirror, a table, the till) and their storefront
+    # at the glass
+    gear_wall(-10.3, -6.0, y0=MY, levels=(2.3, 2.75), n=7, top=2.8)
+    rail_x(-10.2, -7.0, MZ + 0.38, y0=MY, blk=False)
+    helper("BLK_rack", (-10.3, MY, MZ), (-6.9, MY + 2.2, MZ + 0.55))
+    mirror(-6.6, -5.75, y0=MY)
+    helper("TAP_Style", (-10.7, MY, MZ), (-6.8, MY + 2.6, MZ + 1.2))
+    marker("SPOT_Style", (-8.6, MY, MZ + 2.0))
+    display_table(-8.6, -2.3, y0=MY)
+    rail_x(-10.1, -7.2, 3.4, y0=MY, two_sided=True)
+    mannequin(-9.3, 6.0, "Red", y0=MY); mannequin(-8.3, 6.0, "ArtB", y0=MY); mannequin(-7.3, 6.0, "Navy", y0=MY)
+    till(-10.6, 0.3, -9.9, 1.5, y0=MY)
+    hanging_sign(0, LX + 0.15, MY + 2.0, 1.0, 3.0, 0.75, lambda x: ru(x) - RD, yaw=90)
+    marker("LIGHT_hall", (-4.6, 7.6, -1.0))
+
+
+# ---- B3: the balcony (a floor at +3.8 along the front glass, the stair a dog-leg standing in the hall)
+
+def layout_B3():
+    b_lounge()
+    b_boutique(sign_z=None)
+    sign(0, (-8.6, MY - 0.62, 0.76), 2.4, 0.6, 180)     # (on the balcony's edge, facing the hall)
+    plant(-6.0, -6.1, 1.2); plant(2.2, 6.2, 1.5)
+    b_rest()
+    # the balcony
+    BX, BZ = -3.08, 0.8
+    upper_floor("balc", XH + T, BX, BZ, 6.5)
+    open_edge("x", BZ, XH + T, BX, side=1, name="balcrail")
+    open_edge("z", BX, BZ, 3.2, side=-1, name="balcrail")
+    open_edge("z", BX, 4.4, 6.5, side=-1, name="balcrail")
+    post(BX - 0.05, BZ + 0.05); post(-10.6, BZ + 0.05)
+    for (px, pz) in ((-9.0, 2.2), (-6.0, 1.8), (-4.0, 4.0), (-9.0, 4.8), (-6.0, 5.4)):
+        cyl("LED", (px, MY - 0.33, pz), 0.12, 0.02, 12)
+    # the dog-leg: up toward the door, a landing half way, and back up onto the balcony
+    YL = MY / 2
+    flight("b3a", BX, 0.0, 4.6, 5.8, "+x", 0.0, YL, end=False)
+    landing("b3land", 0.0, 1.4, 3.2, 5.8, YL, closed=("x1", "z0", "z1"),
+            rails=(("z", 1.4, 3.2, 5.8, -1), ("x", 3.2, 0.0, 1.4, 1), ("x", 5.8, 0.0, 1.4, -1)))
+    flight("b3b", BX, 0.0, 3.2, 4.4, "-x", YL, MY)
+    # upstairs: a window lounge along the glass (the camp, the fire pit and the gate below), a telescope, a chair at
+    # the big end window
+    sofa(-9.6, -6.9, 5.55, 1, y=MY)
+    armchair(-5.3, 5.45, 0, y=MY)
+    low_table(-6.5, 3.9, -5.3, 4.5, y=MY)
+    telescope(-4.1, 5.9, y=MY)
+    armchair(-9.8, 2.4, -90, y=MY)
+    plant(-10.2, 1.4, 1.0, y=MY)
+    marker("LIGHT_hall", (-1.8, 7.5, -3.2))
+
+
+LAYOUTS = {"A": layout_A, "B": layout_B, "C": layout_C, "B1": layout_B1, "B2": layout_B2, "B3": layout_B3}
 
 # warm light: a strip along the clerestory beam
 solid("LED", [(XH + 0.2, ru(XH + 0.2) - RD - BD - 0.03, ZC + 0.15), (XB, ru(XB) - RD - BD - 0.03, ZC + 0.15), (XB, ru(XB) - RD - BD - 0.03, ZC + 0.19), (XH + 0.2, ru(XH + 0.2) - RD - BD - 0.03, ZC + 0.19)],
