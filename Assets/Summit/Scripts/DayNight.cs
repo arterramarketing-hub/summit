@@ -173,7 +173,12 @@ namespace Summit
         RiderBody body;
         Transform torch; Material torchLens; Vector3 torchLocalPos; Quaternion torchLocalRot = Quaternion.identity;   // the little flashlight strapped to the jacket: the light comes from it
         /// <summary>The player's FLASHLIGHT setting (pause menu): on, it lights up at dusk and night; off, never.</summary>
-        public static bool FlashlightOn = PlayerPrefs.GetInt("summit_flashlight", 1) == 1;
+        public static bool FlashlightOn
+        {
+            get { if (torchSetting < 0) torchSetting = PlayerPrefs.GetInt("summit_flashlight", 1); return torchSetting == 1; }
+            set { torchSetting = value ? 1 : 0; }
+        }
+        static int torchSetting = -1;   // (read on first use: Unity refuses PlayerPrefs while a component is being built)
         float shown = -1f;
         Color lastParticles = new Color(-1f, 0f, 0f), lastGlint = new Color(-1f, 0f, 0f);
         RiderGlow glowFx;
@@ -246,7 +251,7 @@ namespace Summit
         }
 
         /// <summary>Put the light for the clock on now (the test tools call it; batchmode runs no LateUpdate).</summary>
-        public void ApplyNow() { shown = TimeOfDay.Clock; capturedAt = -1f; Apply(shown); }
+        public void ApplyNow() { shown = TimeOfDay.Clock; captureNow = true; Apply(shown); }
 
         /// <summary>Whether the reflections are the captured sky (true) or the nearer photo (false): the tests log it.</summary>
         public bool ReflectionCaptured => reflCam != null && !reflFailed;
@@ -272,17 +277,19 @@ namespace Summit
         static Color Mul(Color a, Color b) => new Color(a.r * b.r, a.g * b.g, a.b * b.b, 1f);
 
         /// <summary>
-        /// Draw the sky now showing into the reflection cubemap, at most a few times a second and only when the
-        /// clock has moved (128 a face: the snow's sheen is rough, it needs no more). False where it can't.
+        /// Keep the reflection cubemap showing the sky as it is now (64 a face: the snow's sheen is rough, it needs no
+        /// more). It is drawn again only when the sky's look has changed (a blend between phases moving on, the evening
+        /// going pink, the start page turning the sky, the weather's cloud: SkyVersion), never while a phase holds,
+        /// at most every 3 seconds, and then one face a frame into a second cube that takes over once all six are
+        /// drawn, so no frame carries more than one face of it. A time jump (ApplyNow) draws all six at once.
+        /// False where it can't.
         /// </summary>
-        bool CaptureReflection(float clock)
+        bool CaptureReflection(Vector4 look)
         {
             if (reflFailed) return false;
             if (reflCam == null)
             {
-                reflRT = new RenderTexture(128, 128, 16, RenderTextureFormat.ARGBHalf)
-                    { dimension = TextureDimension.Cube, useMipMap = true, autoGenerateMips = true, name = "SkyReflection" };
-                reflRT.Create();
+                reflRT = Cube("SkyReflection"); reflBack = Cube("SkyReflectionNext");
                 var go = new GameObject("SkyReflectionCamera");
                 go.transform.SetParent(transform, false);
                 reflCam = go.AddComponent<Camera>();
@@ -290,18 +297,68 @@ namespace Summit
                 reflCam.nearClipPlane = 0.1f; reflCam.farClipPlane = 10f;
                 var data = go.AddComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>();
                 data.renderPostProcessing = false; data.renderShadows = false;
+                captureNow = true;
             }
-            if (Mathf.Abs(clock - capturedAt) < 0.003f && capturedAt >= 0f) return true;
-            if (Time.unscaledTime < nextCapture && capturedAt >= 0f) return true;
-            if (!reflCam.RenderToCubemap(reflRT)) { reflFailed = true; return false; }
-            capturedAt = clock; nextCapture = Time.unscaledTime + 0.25f;
-            if (probe.customBakedTexture != reflRT) probe.customBakedTexture = reflRT;
+            if (captureNow)
+            {
+                captureNow = false; face = -1;
+                long t0 = PerfMarks.Now;
+                if (!reflCam.RenderToCubemap(reflRT)) { reflFailed = true; return false; }
+                reflRT.GenerateMips();
+                capturedLook = look; capturedVersion = SkyVersion;
+                if (probe.customBakedTexture != reflRT) probe.customBakedTexture = reflRT;
+                PerfMarks.Mark("reflections all six", t0);
+                return true;
+            }
+            if (face < 0)
+            {
+                bool changed = capturedVersion != SkyVersion || Mathf.Abs(look.x - capturedLook.x) > 0.01f ||
+                               Mathf.Abs(look.y - capturedLook.y) > 0.03f || Mathf.Abs(look.z - capturedLook.z) > 0.04f ||
+                               Mathf.Abs(Mathf.DeltaAngle(look.w, capturedLook.w)) > 4f;
+                if (!changed || Time.realtimeSinceStartup < nextCapture) return true;
+                face = 0; pendingLook = look; pendingVersion = SkyVersion; nextCapture = Time.realtimeSinceStartup + CaptureEvery;
+            }
+            long f0 = PerfMarks.Now;
+            if (!reflCam.RenderToCubemap(reflBack, 1 << face)) { reflFailed = true; return false; }
+            FacesDrawn++;
+            PerfMarks.MarkIfOver("reflections face", f0, 0.5, FaceName[face]);
+            if (++face == 6)
+            {
+                // all six drawn: it takes over
+                reflBack.GenerateMips();
+                (reflRT, reflBack) = (reflBack, reflRT);
+                probe.customBakedTexture = reflRT;
+                capturedLook = pendingLook; capturedVersion = pendingVersion; face = -1;
+            }
             return true;
         }
-        RenderTexture reflRT;
+
+        static readonly string[] FaceName = { "1/6", "2/6", "3/6", "4/6", "5/6", "6/6" };
+        /// <summary>Seconds at least between starting one redraw of the reflections and the next.</summary>
+        const float CaptureEvery = 3f;
+        /// <summary>Faces drawn into the reflections so far (the test tools count them).</summary>
+        public static int FacesDrawn;
+
+        static RenderTexture Cube(string name)
+        {
+            var rt = new RenderTexture(64, 64, 16, RenderTextureFormat.ARGBHalf)
+                { dimension = TextureDimension.Cube, useMipMap = true, autoGenerateMips = false, name = name };
+            rt.Create();
+            return rt;
+        }
+        RenderTexture reflRT, reflBack;
         Camera reflCam;
-        bool reflFailed;
-        float capturedAt = -1f, nextCapture;
+        bool reflFailed, captureNow;
+        int face = -1;
+        float nextCapture;
+        Vector4 capturedLook = new Vector4(-99f, 0f, 0f, 0f), pendingLook;
+        int capturedVersion = -1, pendingVersion;
+        /// <summary>Bumped by whatever else changes the sky (Weather's cloud): the reflections are drawn again.</summary>
+        public static int SkyVersion;
+        /// <summary>Called at the end of each lighting pass (every frame, and on ApplyNow): Weather turns this light into its own.</summary>
+        public static event System.Action<DayNight> Applied;
+        /// <summary>How strongly the headlamp's beam shows in the air (Weather: more in falling snow and fog).</summary>
+        public static float BeamGain = 1f;
 
         void Apply(float clock)
         {
@@ -326,7 +383,8 @@ namespace Summit
             if (photoSky)
             {
                 Sky sa = skies[a.sky], sb = skies[b.sky];
-                SunDirection = SunBetween(sa.sun, sb.sun, t);
+                // (the start page's time-lapse turns the whole sky, its sun or moon with it: SkyTurn)
+                SunDirection = Quaternion.Euler(0f, SkyTurn, 0f) * SunBetween(sa.sun, sb.sun, t);
 
                 skyMat.SetTexture("_CubeA", sa.cube);
                 skyMat.SetTexture("_CubeB", sb.cube);
@@ -334,6 +392,7 @@ namespace Summit
                 // the grade lives in the tint (exposure stays 1), so a blend between two grades is one colour
                 skyMat.SetColor("_Tint", Color.Lerp(gradeA, gradeB, t));
                 skyMat.SetFloat("_Exposure", 1f);
+                skyMat.SetFloat(RotationId, SkyTurn);
 
                 // ambient: each sky's own light, graded the same way, then blended (RenderSettings wants gamma colours)
                 Color ka = gradeA * a.ambient, kb = gradeB * b.ambient;
@@ -346,7 +405,9 @@ namespace Summit
                 // reflections: the nearer sky's cubemap (it is stored squeezed, so a little dimmer than it shows)
                 // reflections: the sky as shown (both photos blended, graded), drawn into a small cubemap now and
                 // then as the light changes, so they turn with the day rather than jump half-way through a blend
-                if (CaptureReflection(clock))
+                // (what the cube shows: which skies, how far between them, their grade, how far the sky is turned)
+                Color tint = Color.Lerp(gradeA, gradeB, t);
+                if (CaptureReflection(new Vector4(a.sky * 4 + b.sky, a.sky == b.sky ? 0f : t, tint.r + tint.g + tint.b, SkyTurn)))
                     probe.intensity = Mathf.Lerp(a.reflect, b.reflect, t);
                 else
                 {
@@ -393,6 +454,7 @@ namespace Summit
             Headlamp(Mathf.Lerp(a.headlamp, b.headlamp, t));
             PlaceTorch(headlamp != null && headlamp.enabled);
             if (glowFx != null) glowFx.Step(0f);
+            Applied?.Invoke(this);
         }
 
         /// <summary>
@@ -446,7 +508,7 @@ namespace Summit
                 // beam only as it swings across the view
                 float along = cam != null ? Vector3.Dot(cam.transform.forward, headlamp.transform.forward) : 1f;
                 float side = 1f - Mathf.SmoothStep(0.78f, 0.96f, along);
-                beamMat.SetColor("_BaseColor", new Color(headlamp.color.r, headlamp.color.g, headlamp.color.b, 0.22f * k * side));
+                beamMat.SetColor("_BaseColor", new Color(headlamp.color.r, headlamp.color.g, headlamp.color.b, Mathf.Min(0.6f, 0.22f * k * side * BeamGain)));
             }
             Shader.SetGlobalVector("_LampPos", new Vector4(lp.x, lp.y, lp.z, 1f));
             Shader.SetGlobalVector("_LampDir", headlamp.transform.forward);
@@ -564,6 +626,13 @@ namespace Summit
         /// <summary>How far a sign still shines the lamp back (a reflector sends it home efficiently: further than the
         /// lamp lights the snow).</summary>
         const float SignReach = 110f;
+
+        /// <summary>
+        /// Degrees the whole sky is turned round the vertical, its sun or moon and clouds with it: the start page's
+        /// time-lapse turns it to race the clouds and swing the light round (0 everywhere else).
+        /// </summary>
+        public static float SkyTurn;
+        static readonly int RotationId = Shader.PropertyToID("_Rotation");
 
         /// <summary>The test tools switch the headlamp off to compare signs with and without it.</summary>
         public static bool HeadlampOff;

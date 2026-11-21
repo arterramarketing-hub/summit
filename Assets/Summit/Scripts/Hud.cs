@@ -4,20 +4,20 @@ using UnityEngine.UI;
 namespace Summit
 {
     /// <summary>The heads-up display, built in code so there is nothing to wire up.</summary>
-    public class Hud : MonoBehaviour
+    public partial class Hud : MonoBehaviour
     {
-        int lastKmh = -2, lastPts = -2, lastMult = -1, lastGap = -2;
+        int lastKmh = -2, lastPts = -2, lastGap = -2;
         RectTransform canvasRect, stickRing, stickKnob;
         Canvas canvasRef;
         Text diag;
         RectTransform playBtn, restartBtn, modeBtn, riderBtn;
         Text riderLabel;
-        public void SetRider(bool tube) { riderLabel.text = tube ? "RIDER: SNOW TUBE  (tap to change)" : "RIDER: SNOWBOARD  (tap to change)"; }
+        /// <summary>The start pad's RIDER label: what is being ridden, by name ("SNOWBOARD", "SKIS", "TOBOGGAN", "SNOW TUBE").</summary>
+        public void SetRider(string ride) { riderLabel.text = "RIDER: " + ride + "  (tap to change)"; }
         public bool OnRider(Vector2 p) => Inside(riderBtn, p);
         Text modeLabel;
         Text playLabel;
-        Text speed, score, chain, slide, big, small, hint, timer, altitude, medical, prompt;
-        int lastBill = -1;
+        Text speed, score, slide, big, small, hint, timer, altitude, medical, prompt;
         int lastAlt = -1;
         Image[] shieldPips;
         Image[] timerBg, timerFill;
@@ -25,6 +25,7 @@ namespace Summit
         int[] lastTimer;
         int lastTenths = -2;
         Image slideFill, whiteout, hurt;
+        GameObject slideBar;   // the avalanche's bar: its dark track and the fill in it
         Image[] fallPips;
         Text fallsLabel;
         float hurtA;
@@ -46,15 +47,20 @@ namespace Summit
             scaler.referenceResolution = new Vector2(1080f, 1920f);
             scaler.matchWidthOrHeight = 0.5f;
 
+            // the full-screen washes, on a canvas of their own: the whiteout changes every frame once the slide is
+            // loose, and the red flash as it fades, and a canvas is re-batched whole whenever anything in it changes
+            var washes = NestedCanvas("Washes", transform);
             // full-screen white that rises as the slide closes in
-            whiteout = NewImage("Whiteout", transform, new Color(1f, 1f, 1f, 0f));
+            whiteout = NewImage("Whiteout", washes, new Color(1f, 1f, 1f, 0f));
             Stretch(whiteout.rectTransform);
             whiteout.raycastTarget = false;
+            whiteout.canvasRenderer.cullTransparentMesh = true;   // (nothing drawn while it's clear: two full-screen blends saved)
 
             // a red flash when something breaks
-            hurt = NewImage("Hurt", transform, new Color(0.85f, 0.05f, 0.05f, 0f));
+            hurt = NewImage("Hurt", washes, new Color(0.85f, 0.05f, 0.05f, 0f));
             Stretch(hurt.rectTransform);
             hurt.raycastTarget = false;
+            hurt.canvasRenderer.cullTransparentMesh = true;
 
             safe = new GameObject("Safe", typeof(RectTransform)).GetComponent<RectTransform>();
             safe.SetParent(transform, false);
@@ -62,8 +68,6 @@ namespace Summit
 
             speed = NewText("Speed", safe, new Vector2(0f, 1f), new Vector2(40f, -40f), 54, TextAnchor.UpperLeft);
             score = NewText("Score", safe, new Vector2(0.5f, 1f), new Vector2(0f, -34f), 84, TextAnchor.UpperCenter);
-            chain = NewText("Chain", safe, new Vector2(0.5f, 1f), new Vector2(0f, -132f), 44, TextAnchor.UpperCenter);
-            chain.color = new Color(1f, 0.82f, 0.35f);
             timer = NewText("Timer", safe, new Vector2(0f, 1f), new Vector2(40f, -104f), 46, TextAnchor.UpperLeft);
             timer.color = new Color(0.85f, 0.93f, 1f);
             medical = NewText("Medical", safe, new Vector2(1f, 1f), new Vector2(-40f, -232f), 40, TextAnchor.UpperRight);
@@ -71,9 +75,13 @@ namespace Summit
             prompt = NewText("Prompt", safe, new Vector2(0.5f, 0f), new Vector2(0f, 230f), 58, TextAnchor.LowerCenter);
             altitude = NewText("Altitude", safe, new Vector2(0f, 1f), new Vector2(40f, -160f), 40, TextAnchor.UpperLeft);
             altitude.color = new Color(0.85f, 0.93f, 1f, 0.95f);
-            slide = NewText("Slide", safe, new Vector2(1f, 1f), new Vector2(-40f, -40f), 44, TextAnchor.UpperRight);
+            // the avalanche's distance and bar, on their own canvas too: both change every frame while it's on its way
+            var slideBox = NestedCanvas("Slide", safe);
+            slide = NewText("Slide", slideBox, new Vector2(1f, 1f), new Vector2(-40f, -40f), 44, TextAnchor.UpperRight);
 
-            var barBg = NewImage("SlideBar", safe, new Color(0f, 0f, 0f, 0.35f));
+            var barBg = NewImage("SlideBar", slideBox, new Color(0f, 0f, 0f, 0.35f));
+            slideBar = barBg.gameObject;
+            slideBar.SetActive(false);   // (shown only while the avalanche is on its way: SetRun)
             Place(barBg.rectTransform, new Vector2(1f, 1f), new Vector2(-40f, -104f), new Vector2(300f, 16f), new Vector2(1f, 1f));
             slideFill = NewImage("Fill", barBg.transform, new Color(1f, 1f, 1f, 0.95f));
             var fr = slideFill.rectTransform;
@@ -156,6 +164,7 @@ namespace Summit
             Place(rbtn.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, -400f), new Vector2(620f, 100f), new Vector2(0.5f, 0.5f));
             riderBtn = rbtn.rectTransform;
             riderLabel = NewText("RiderLabel", rbtn.transform, new Vector2(0.5f, 0.5f), Vector2.zero, 40, TextAnchor.MiddleCenter);
+            BuildPoints();   // the combo and the medical bill as they run up (HudPoints.cs)
             SetButtons(false, false, "PLAY");
         }
 
@@ -246,7 +255,8 @@ namespace Summit
         public bool OnPlay(Vector2 p) => Inside(playBtn, p);
         public bool OnRestart(Vector2 p) => Inside(restartBtn, p);
 
-        // ---- the pause menu: RESUME always, then four tabs. VIEW: camera distance, angle, lens, lens type.
+        // ---- the pause menu: RESUME always, then four tabs. VIEW: chase camera or first person, camera distance,
+        //      angle (those two are for the chase camera: greyed out in first person), lens, lens type.
         //      LOOK: filter, filter strength, halation, time of day. GAME: steering, blood, trees, restart run.
         //      SOUND: music volume. A hidden tab's buttons are inactive, so they can't be hit.
 
@@ -302,11 +312,12 @@ namespace Summit
                 plus = Button(parent, "+", new Vector2(270f, y), new Vector2(150f, 120f), grey, out _, 80);
                 return NewText(label + "Value", parent, new Vector2(0.5f, 0.5f), new Vector2(0f, y), 54, TextAnchor.MiddleCenter);
             }
-            // VIEW
-            camLabel = Row(0, "CAMERA DISTANCE", 180f, out camMinus, out camPlus);
-            angLabel = Row(0, "CAMERA ANGLE", -20f, out angMinus, out angPlus);
-            lensLabel = Row(0, "LENS", -220f, out lensMinus, out lensPlus);
-            lensTypeLabel = Row(0, "LENS TYPE", -420f, out lensTypeMinus, out lensTypePlus);
+            // VIEW: the first-person switch on top, and the four rows closed up under it (173 apart) to make room
+            povBtn = Button(tabPage[0].transform, "FirstPerson", new Vector2(0f, 262f), new Vector2(700f, 100f), grey, out povLabel, 38);
+            camLabel = Row(0, "CAMERA DISTANCE", 85f, out camMinus, out camPlus);
+            angLabel = Row(0, "CAMERA ANGLE", -88f, out angMinus, out angPlus);
+            lensLabel = Row(0, "LENS", -261f, out lensMinus, out lensPlus);
+            lensTypeLabel = Row(0, "LENS TYPE", -434f, out lensTypeMinus, out lensTypePlus);
             // LOOK
             filterLabel = Row(1, "FILTER", 180f, out filterMinus, out filterPlus);
             strengthLabel = Row(1, "FILTER STRENGTH", -20f, out strengthMinus, out strengthPlus);
@@ -314,13 +325,16 @@ namespace Summit
             timeLabel = Row(1, "TIME OF DAY", -420f, out timeMinus, out timePlus);   // CYCLE, or one phase held
             // GAME
             var game = tabPage[2].transform;
-            steerBtn = Button(game, "STEERING", new Vector2(0f, 200f), new Vector2(700f, 120f), grey, out steerLabel, 38);
-            bloodBtn = Button(game, "BLOOD", new Vector2(0f, 50f), new Vector2(700f, 120f), grey, out bloodLabel, 38);
-            treesBtn = Button(game, "TREES", new Vector2(0f, -100f), new Vector2(700f, 120f), grey, out treesLabel, 38);
-            torchBtn = Button(game, "FLASHLIGHT", new Vector2(0f, -250f), new Vector2(700f, 120f), grey, out torchLabel, 38);
-            againBtn = Button(game, "RESTART RUN", new Vector2(0f, -400f), new Vector2(560f, 120f), new Color(0.8f, 0.2f, 0.15f, 0.9f), out _, 48);
+            // (five rows and the restart, 132 apart)
+            steerBtn = Button(game, "STEERING", new Vector2(0f, 250f), new Vector2(700f, 112f), grey, out steerLabel, 38);
+            jumpBtn = Button(game, "JUMP", new Vector2(0f, 118f), new Vector2(700f, 112f), grey, out jumpLabel, 38);
+            bloodBtn = Button(game, "BLOOD", new Vector2(0f, -14f), new Vector2(700f, 112f), grey, out bloodLabel, 38);
+            treesBtn = Button(game, "TREES", new Vector2(0f, -146f), new Vector2(700f, 112f), grey, out treesLabel, 38);
+            torchBtn = Button(game, "FLASHLIGHT", new Vector2(0f, -278f), new Vector2(700f, 112f), grey, out torchLabel, 38);
+            againBtn = Button(game, "RESTART RUN", new Vector2(0f, -420f), new Vector2(560f, 112f), new Color(0.8f, 0.2f, 0.15f, 0.9f), out _, 48);
             // SOUND
             musicLabel = Row(3, "MUSIC", 180f, out musicMinus, out musicPlus);
+            voiceBtn = Button(tabPage[3].transform, "VOICE LINES", new Vector2(0f, -60f), new Vector2(700f, 120f), grey, out voiceLabel, 38);
             ShowTab(0);
             pausePanel.SetActive(false);
         }
@@ -346,9 +360,15 @@ namespace Summit
         public bool OnCamMinus(Vector2 p) => Inside(camMinus, p);
         public bool OnCamPlus(Vector2 p) => Inside(camPlus, p);
         public bool OnPauseSteer(Vector2 p) => Inside(steerBtn, p);
+        RectTransform jumpBtn; Text jumpLabel;
+        public void SetPauseJump(string name) { jumpLabel.text = "JUMP: " + name + "  (tap to change)"; }
+        public bool OnPauseJump(Vector2 p) => Inside(jumpBtn, p);
         public bool OnPauseRestart(Vector2 p) => Inside(againBtn, p);
         RectTransform bloodBtn; Text bloodLabel;
         RectTransform torchBtn; Text torchLabel;
+        RectTransform voiceBtn; Text voiceLabel;
+        public void SetVoiceLines(bool on) { voiceLabel.text = on ? "VOICE LINES: ON  (tap to change)" : "VOICE LINES: OFF  (tap to change)"; }
+        public bool OnPauseVoiceLines(Vector2 p) => Inside(voiceBtn, p);
         public void SetFlashlight(bool on) { torchLabel.text = on ? "FLASHLIGHT: ON  (tap to change)" : "FLASHLIGHT: OFF  (tap to change)"; }
         public bool OnPauseFlashlight(Vector2 p) => Inside(torchBtn, p);
         public void SetBlood(bool on) { bloodLabel.text = on ? "BLOOD: ON  (tap to change)" : "BLOOD: OFF  (tap to change)"; }
@@ -364,6 +384,17 @@ namespace Summit
         public bool OnStrengthPlus(Vector2 p) => Inside(strengthPlus, p);
         public bool OnPauseTrees(Vector2 p) => Inside(treesBtn, p);
         public void SetPauseTrees(bool realistic) { treesLabel.text = realistic ? "TREES: REALISTIC  (tap to change)" : "TREES: ORIGINAL  (tap to change)"; }
+        RectTransform povBtn; Text povLabel;
+        public bool OnPausePov(Vector2 p) => Inside(povBtn, p);
+        /// <summary>The VIEW button's state. In first person the distance and angle rows are greyed out: they set the chase camera.</summary>
+        public void SetPausePov(bool firstPerson)
+        {
+            povLabel.text = firstPerson ? "VIEW: FIRST PERSON  (tap to change)" : "VIEW: CHASE CAMERA  (tap to change)";
+            camLabel.color = angLabel.color = new Color(1f, 1f, 1f, firstPerson ? 0.35f : 1f);
+            var c = new Color(1f, 1f, 1f, firstPerson ? 0.06f : 0.16f);
+            camMinus.GetComponent<Image>().color = camPlus.GetComponent<Image>().color = c;
+            angMinus.GetComponent<Image>().color = angPlus.GetComponent<Image>().color = c;
+        }
         public void SetTime(string value) { timeLabel.text = value; }
         public void SetHalation(string value) { halationLabel.text = value; }
         public bool OnHalationMinus(Vector2 p) => Inside(halationMinus, p);
@@ -439,6 +470,16 @@ namespace Summit
             r.sizeDelta = size;
         }
 
+        /// <summary>A canvas inside the HUD's, filling its parent and drawn in its place among the parent's children.</summary>
+        static RectTransform NestedCanvas(string name, Transform parent)
+        {
+            var r = new GameObject(name, typeof(RectTransform)).GetComponent<RectTransform>();
+            r.SetParent(parent, false);
+            Stretch(r);
+            r.gameObject.AddComponent<Canvas>();
+            return r;
+        }
+
         static void Stretch(RectTransform r)
         {
             r.anchorMin = Vector2.zero;
@@ -450,10 +491,11 @@ namespace Summit
         {
             Rect a = Screen.safeArea;
             lastSafe = a;
-            if (Screen.width <= 0 || Screen.height <= 0) { Stretch(safe); return; }
+            if (Screen.width <= 0 || Screen.height <= 0) { Stretch(safe); if (pts != null) Stretch(pts); return; }
             safe.anchorMin = new Vector2(a.xMin / Screen.width, a.yMin / Screen.height);
             safe.anchorMax = new Vector2(a.xMax / Screen.width, a.yMax / Screen.height);
             safe.offsetMin = safe.offsetMax = Vector2.zero;
+            if (pts != null) { pts.anchorMin = safe.anchorMin; pts.anchorMax = safe.anchorMax; pts.offsetMin = pts.offsetMax = Vector2.zero; }   // (the points and the bill: HudPoints)
         }
 
         void Update()
@@ -476,13 +518,21 @@ namespace Summit
             // only touch the Text objects when the number changes: rebuilding them every frame causes hitches
             int k0 = showRun ? Mathf.RoundToInt(kmh) : -1;
             if (k0 != lastKmh) { lastKmh = k0; speed.text = showRun ? k0 + " km/h" : ""; }
-            int p0 = showRun ? points : -1;
-            if (p0 != lastPts) { lastPts = p0; score.text = showRun ? points.ToString("N0") : ""; }
-            int m0 = showRun && mult > 1.01f ? Mathf.RoundToInt(mult * 10f) : 0;
-            if (m0 != lastMult) { lastMult = m0; chain.text = m0 > 0 ? "x" + mult.ToString("0.#") + " chain" : ""; }
+            // the score: as it is, except that what a combo has just banked waits for its number to fly up, then counts
+            // up (HudPoints). The multiplier is the combo's own now, shown with it (the "x1.5 chain" line is gone)
+            if (!showRun) { scoreTarget = -1; scoreCounting = false; if (lastPts != -1) { lastPts = -1; score.text = ""; } }
+            else
+            {
+                scoreTarget = points;
+                if (!scoreCounting) { scoreShown = points - (bankPending ? bankTotal : chipT >= 0f && !chipBill ? chipAmount : 0); ShowScore(); }
+            }
             int s0 = showRun ? Mathf.Max(0, Mathf.RoundToInt(gap)) : -1;
             if (s0 != lastGap) { lastGap = s0; slide.text = showRun && s0 < 9999 ? "SLIDE " + s0 + " m" : ""; }   // 9999: not released yet
             slide.color = gap < 40f ? new Color(1f, 0.45f, 0.35f) : Color.white;
+            // the bar only while riding with the slide released, like its "SLIDE n m" (its dark track used to stay
+            // up always: on the start pad, the end screen, and every other screen the HUD sits under)
+            bool bar = showRun && s0 < 9999;
+            if (slideBar.activeSelf != bar) slideBar.SetActive(bar);
             float k = Mathf.Clamp01(gap / gapMax);
             slideFill.rectTransform.anchorMax = new Vector2(showRun ? k : 0f, 1f);
             slideFill.color = gap < 40f ? new Color(1f, 0.45f, 0.35f) : Color.white;
@@ -532,10 +582,12 @@ namespace Summit
         /// <summary>The run's medical bill so far (hidden until there is one).</summary>
         public void SetMedical(float dollars, bool show)
         {
-            int d = show ? Mathf.RoundToInt(dollars) : -1;
-            if (d == lastBill) return;
-            lastBill = d;
-            medical.text = show && d > 0 ? "MEDICAL  $" + d.ToString("N0") : "";
+            // (less the fall being paid for right now: that is the big figure, and lands here when the rider gets up: HudPoints)
+            medTotal = dollars; medShow = show;
+            if (!show) medCounting = false;
+            if (medCounting) return;
+            medShown = show ? dollars - (billOn ? billTarget : 0f) - rideHeld : 0f;
+            ShowMedical();
         }
 
         /// <summary>A pulsing instruction near the bottom (empty to hide).</summary>
@@ -579,6 +631,11 @@ namespace Summit
             big.text = line;
             small.text = sub;
             hint.text = bottom;
+            // (the hint is the one long line here: fitted to the screen, where it used to run off both sides)
+            // (a portrait phone is narrower than the 1080 the layout is drawn on: about 980 across)
+            float room = safe.rect.width > 200f ? safe.rect.width - 70f : 900f;
+            float hw = Wide(hint), hs = hw > room ? room / hw : 1f;
+            hint.rectTransform.localScale = new Vector3(hs, hs, 1f);
             flashT = 0f;
             big.color = Color.white;
             small.color = Color.white;
@@ -588,6 +645,7 @@ namespace Summit
         {
             big.text = small.text = hint.text = "";
             flashT = 0f;
+            if (rmode == RMode.End) ClearReceipt();   // (the end screen's receipt goes with it: HudReceipt)
         }
     }
 }

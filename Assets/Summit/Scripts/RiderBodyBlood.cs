@@ -30,11 +30,11 @@ namespace Summit
             var ob = pendingOb; float into = pendingInto; pendingOb = null;
             if (why == null || !why.StartsWith(ob.label)) return;   // this fall wasn't that hit (a crevasse or ridge in the same frame)
             if (blood == null) return;
-            var col = ob.GetComponentInChildren<Collider>();
+            var col = ob.HitBy(rider);   // (the part hit: a crag's or a cabin's first collider can be far off)
             if (col == null) return;
             // the rider's middle against the obstacle's surface: that is where the body met it
             Vector3 me = rider.transform.position + Vector3.up * 0.8f;
-            Vector3 at = col.ClosestPoint(me);
+            Vector3 at = Obstacle.Nearest(col, me);
             Vector3 n = me - at; n.y *= 0.3f;
             if (n.sqrMagnitude < 1e-4f) n = -rider.Velocity;
             blood.Hit(at, n, into, false, rider.Velocity, ob.always ? null : col);   // (no marks on an animal)

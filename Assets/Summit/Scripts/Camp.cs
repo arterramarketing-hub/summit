@@ -15,17 +15,19 @@ namespace Summit
     /// Built from primitives and the textures in Resources/Camp (Tools/MakeCampSigns.swift). It also walks
     /// the rider around (thumb joystick, third-person camera) while the game is in its hub state.
     /// </summary>
-    public class Camp : MonoBehaviour
+    public partial class Camp : MonoBehaviour
     {
-        public enum Station { None, Missions, Upgrades, Style, DropIn, Lookout }
+        public enum Station { None, Missions, Upgrades, Style, DropIn, Lookout, Talk, Roast, Cocoa }   // (the last three: the fire and the kitchen, CampFire.cs)
 
         // where the camp sits: on the plateau behind the start pad (downhill is +Z), so the run is right
-        // in front of you and the view down the mountain is past the Drop In gate
-        public const float BackZ = -126f, HalfWidth = 23f;   // (the camp's extent, for keeping trees off it: you can walk anywhere)
+        // in front of you and the view down the mountain is past the Drop In gate. It stands close behind the gate:
+        // the chalet's steps are some 35 m from DROP IN (it was 30 m further back, on ground the start no longer
+        // uses now a run starts at the gate, and the walk down took over 20 seconds)
+        public const float BackZ = -96f, HalfWidth = 23f;   // (the camp's extent, for keeping trees off it: you can walk anywhere)
         static float Cx => Slope.Centre(Slope.PadLip);
         /// <summary>True inside the camp and its framing trees (the forest leaves this ground alone).</summary>
-        public static bool InCamp(float x, float z) => z < -68f && z > BackZ - 16f && Mathf.Abs(x - Cx) < HalfWidth + 10f
-            || z < -64f && z > -360f && x - Cx > Slope.SummitRight - 1f && x - Cx < 175f;   // (and no trees down the cliff's rock)
+        public static bool InCamp(float x, float z) => z < -38f && z > BackZ - 16f && Mathf.Abs(x - Cx) < HalfWidth + 10f
+            || z < -34f && z > -360f && x - Cx > Slope.SummitRight - 1f && x - Cx < 175f;   // (and no trees down the cliff's rock)
 
         public bool Active { get; private set; }
         public Station Near { get; private set; }
@@ -51,6 +53,7 @@ namespace Summit
         public void Build(Shader litShader)
         {
             lit = litShader;
+            if (CampLife.On && GetComponent<CampLife>() == null) gameObject.AddComponent<CampLife>().Setup(this);   // the people living here (CampLife.cs)
             var woodTex = Resources.Load<Texture2D>("Camp/Wood");
             var logTex = Resources.Load<Texture2D>("Camp/Logs");
             wood = M(new Color(0.95f, 0.88f, 0.8f), 0.18f, woodTex);
@@ -77,9 +80,30 @@ namespace Summit
             noteMats = new Material[3];
             for (int i = 0; i < 3; i++) noteMats[i] = Sign("Camp/Note" + i);
             Progress.Changed += Redress;
+            // Val and Breanna, living here while they aren't the one being played (CampCouple)
+            Couple = new GameObject("Couple").AddComponent<CampCouple>();
+            Couple.transform.SetParent(transform, false);
+            Couple.Setup(this);
             CaptureDay();
             SetNight(0f);   // daylight until the day/night cycle says otherwise
         }
+
+        // ---- what each build makes for itself (its materials, meshes, textures): gone with the camp it was made for.
+        // Camp.Rebuild runs at every run start (and when the LODGE setting changes layout); destroying only the root
+        // GameObject left these behind (with no scene loads, UnloadUnusedAssets never comes for them).
+        readonly List<Object> made = new List<Object>();
+        bool building;
+        /// <summary>The original trees' swaying copies of their materials, by the material copied: made once, kept.</summary>
+        readonly Dictionary<Material, Material> swayed = new Dictionary<Material, Material>();
+        /// <summary>Something this build made: destroyed when the camp is next rebuilt (made outside a build, e.g. in Build(), it stays).</summary>
+        T Made<T>(T o) where T : Object { if (building && o != null) made.Add(o); return o; }
+        void Unmake()
+        {
+            foreach (var o in made) if (o != null) { if (Application.isPlaying) Destroy(o); else DestroyImmediate(o); }
+            made.Clear();
+        }
+        /// <summary>Test tools: how many things the current build made for itself.</summary>
+        public int MadeCount => made.Count;
 
         Material M(Color c, float smooth, Texture2D tex = null, Vector2 tile = default, Color emit = default)
         {
@@ -94,12 +118,12 @@ namespace Summit
                 m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.None;
             }
             m.enableInstancing = true;
-            return m;
+            return Made(m);
         }
 
         Material Sign(string path)
         {
-            var m = CourseDressing.Sign(lit, path);
+            var m = Made(CourseDressing.Sign(lit, path));
             m.SetFloat("_Smoothness", 0.15f);
             // (no self-light: lit by the camp's lamps and the sky like real carved boards; SignLit.shader)
             return m;
@@ -111,18 +135,24 @@ namespace Summit
         public void Rebuild()
         {
             if (lit == null) return;
+            if (alyssa != null) { alyssa.Release(); alyssa = null; }   // (what she made for herself: CampFire.cs; before she goes with the root)
             if (root != null) { if (Application.isPlaying) Destroy(root.gameObject); else DestroyImmediate(root.gameObject); }
+            Unmake();   // (the last build's materials and meshes with it)
+            building = true;
             root = new GameObject("Camp").transform;
             root.SetParent(transform, false);
             spots.Clear(); boxes.Clear(); lamps.Clear(); lampPower.Clear(); lampDay.Clear(); cameraWalls.Clear();
 
             tapRoots.Clear();
-            Chalet(Frame(-9f, -118.5f, 12f));
+            if (UseLodge) Lodge(Frame(LodgeDx, LodgeZ, LodgeYaw));   // (CampLodge.cs)
+            else Chalet(Frame(-9f, -88.5f, 12f));
             StartBanner();
-            Lookout(Frame(16f, -84f, 0f));
+            Lookout(Frame(16f, -54f, 0f));
             Benches();
-            firePit = FirePit(Frame(0f, -101f, 0f)).gameObject;
-            snowman = Snowman(Frame(11.5f, -91f, 180f)).gameObject;
+            firePit = FirePit(Frame(0f, -71f, 0f)).gameObject;
+            snowman = Snowman(Frame(11.5f, -61f, 180f)).gameObject;
+            Campfire();       // Alyssa and the stumps at the fire (CampFire.cs)
+            CocoaCorner();    // the hot chocolate in the kitchen (CampCocoa.cs)
             flags = new GameObject("Flags"); flags.transform.SetParent(root, false);
             lights = new GameObject("Lights"); lights.transform.SetParent(root, false);
             Strings();
@@ -135,6 +165,9 @@ namespace Summit
             Physics.SyncTransforms();
             Redress();
             SetNight(Night);   // the new lamps start at the evening's brightness
+            if (Couple != null) Couple.Rebuilt();   // (their spots moved with the camp)
+            building = false;
+            Built?.Invoke(root);   // (the camp's people: CampLife)
         }
 
         /// <summary>A building spot: on the snow at (dx from the run's centre, z), turned by yaw degrees.</summary>
@@ -378,7 +411,7 @@ namespace Summit
         Material Glass()
         {
             var b = Resources.Load<Material>("Camp/GlassBase");
-            var m = b != null ? new Material(b) : M(Color.white, 0.95f);
+            var m = b != null ? Made(new Material(b)) : M(Color.white, 0.95f);
             m.SetColor("_BaseColor", new Color(0.62f, 0.74f, 0.82f, 0.22f));
             m.SetFloat("_Smoothness", 0.95f);
             return m;
@@ -388,7 +421,7 @@ namespace Summit
         public Vector3 ChaletPoint(float x, float y, float z) => chalet != null ? chalet.TransformPoint(new Vector3(x, y, z)) : Vector3.zero;
         public float ChaletYaw => chalet != null ? chalet.eulerAngles.y : 0f;
         /// <summary>True inside the chalet's walls.</summary>
-        bool Indoors => chalet != null && InHouse(chalet.InverseTransformPoint(pos));
+        bool Indoors => chalet != null && (UseLodge ? LodgeInsideAt(chalet.InverseTransformPoint(pos)) : InHouse(chalet.InverseTransformPoint(pos)));
         static bool InHouse(Vector3 l) => Mathf.Abs(l.x) < ChaletHalfX - 0.2f && Mathf.Abs(l.z) < ChaletHalfZ - 0.2f;
 
         // ---------------------------------------------------------------- birches, lumpy snow, the trodden path
@@ -396,7 +429,7 @@ namespace Summit
         /// <summary>Tall bare birches round the lodge: white trunks, a few dark forks of branches.</summary>
         void Birches()
         {
-            var where = new[] { new Vector2(-22.5f, -108f), new Vector2(-22f, -116f), new Vector2(3f, -124f), new Vector2(-17.5f, -93f), new Vector2(-25.5f, -100f), new Vector2(6f, -121f) };
+            var where = UseLodge ? LodgeBirches : new[] { new Vector2(-22.5f, -78f), new Vector2(-22f, -86f), new Vector2(3f, -94f), new Vector2(-17.5f, -63f), new Vector2(-25.5f, -70f), new Vector2(6f, -91f) };
             for (int i = 0; i < where.Length; i++)
             {
                 var t = Frame(where[i].x, where[i].y, i * 53f);
@@ -427,10 +460,11 @@ namespace Summit
             for (int i = 0; i < 26; i++)
             {
                 // along the left edge (the right is the cliff), and a few across the back
-                float dx = -(22f + 6f * Slope.Hash01(i, 1, 41)), z = Mathf.Lerp(-124f, -80f, Slope.Hash01(i, 2, 41));
-                if (i >= 20) { dx = Mathf.Lerp(-14f, 14f, Slope.Hash01(i, 3, 41)); z = -127f - 3f * Slope.Hash01(i, 4, 41); }
+                float dx = -(22f + 6f * Slope.Hash01(i, 1, 41)), z = Mathf.Lerp(-94f, -50f, Slope.Hash01(i, 2, 41));
+                if (i >= 20) { dx = Mathf.Lerp(-14f, 14f, Slope.Hash01(i, 3, 41)); z = -97f - 3f * Slope.Hash01(i, 4, 41); }
                 var p = Ground(dx, z);
                 float s = 1.4f + 2.2f * Slope.Hash01(i, 5, 41);
+                if (UseLodge && !LodgeClear(p, s * 0.7f)) continue;   // (not into the lodge or onto its terrace)
                 P(PrimitiveType.Sphere, t, p + Vector3.down * s * 0.22f, new Vector3(s * 1.4f, s * 0.6f, s), new Vector3(0f, i * 41f, 0f), snowCap);
             }
         }
@@ -438,7 +472,8 @@ namespace Summit
         /// <summary>A path trodden through the snow from the fire to the lodge's stairs, boot prints and all.</summary>
         void Footpath()
         {
-            var pts = new List<Vector3> { Ground(-1f, -97.5f), Ground(-4.5f, -100.5f), Ground(-7.5f, -104.5f), stairsFoot };
+            if (UseLodge) { LodgePath(); return; }   // (a paved path with lamp posts: CampLodge.cs)
+            var pts = new List<Vector3> { Ground(-1f, -67.5f), Ground(-4.5f, -70.5f), Ground(-7.5f, -74.5f), stairsFoot };
             // sample a smooth curve through them, laid on the snow
             var line = new List<Vector3>();
             for (int i = 0; i < pts.Count - 1; i++)
@@ -465,7 +500,7 @@ namespace Summit
                 }
                 if (i > 0) { int k = v.Count - 4; tri.AddRange(new[] { k, k + 2, k + 1, k + 1, k + 2, k + 3 }); }
             }
-            var mesh = new Mesh { name = "Footpath" };
+            var mesh = Made(new Mesh { name = "Footpath" });
             mesh.SetVertices(v); mesh.SetUVs(0, uv); mesh.SetTriangles(tri, 0);
             mesh.RecalculateNormals(); mesh.RecalculateBounds();
             var go = new GameObject("Footpath", typeof(MeshFilter), typeof(MeshRenderer));
@@ -547,6 +582,7 @@ namespace Summit
             // the photo backdrop is unlit: its shader takes the evening tint from this. (Not a colour grade on
             // the post profile: a cool filter with lower exposure tipped every warm light to pure red.)
             Shader.SetGlobalFloat("_SummitNight", k);
+            LodgeNight(k);
             if (mistMat != null) mistMat.SetColor("_BaseColor", Color.Lerp(new Color(1f, 1f, 1f, 0.75f), new Color(0.26f, 0.31f, 0.44f, 0.6f), k));
             for (int i = 0; i < lamps.Count; i++)
                 if (lamps[i] != null) { float w = Mathf.Lerp(lampDay[i], 1f, k); lamps[i].intensity = lampPower[i] * w; lamps[i].enabled = w > 0.01f; }
@@ -558,24 +594,24 @@ namespace Summit
         void OnDisable() { if (dayKnown) SetNight(0f); CampShadows(false); }
 
         /// <summary>
-        /// DROP IN is at the run's own MT. VERTIGO banner (SummitGame.BuildStartGate, 36 m above the lip): walk down
-        /// to it from the camp and the button comes up. Its posts and the warning signs below it are solid.
+        /// DROP IN is at the run's own start gate (StartGate.cs, 36 m above the lip; a run starts just behind it): walk
+        /// down to it from the camp and the button comes up. Its posts and the warning signs below it are solid.
         /// </summary>
         void StartBanner()
         {
-            float gz = Slope.PadLip - 36f;
+            float gz = Slope.GateZ;
             var t = Frame(0f, gz, 0f);
             t.name = "DropInBanner";
             var tap = new GameObject("TAP_DropIn").transform;
-            tap.SetParent(t, false); tap.localPosition = new Vector3(0f, 2.6f, 0f);
+            tap.SetParent(t, false); tap.localPosition = new Vector3(0f, 3.2f, 0f);
             // a trigger: the tap ray sees triggers, and the run goes straight through under the banner (a solid box
             // here stops the rider dead at the start)
             var tapBox = tap.gameObject.AddComponent<BoxCollider>();
-            tapBox.size = new Vector3(9f, 5.4f, 1f); tapBox.isTrigger = true;
+            tapBox.size = new Vector3(2f * StartGate.PostX + 0.6f, 6.6f, 1f); tapBox.isTrigger = true;   // posts, board and beam
             spots.Add(new Spot { st = Station.DropIn, at = Ground(0f, gz - 2.6f), radius = 4.2f, root = tap });
             for (int s = -1; s <= 1; s += 2)
             {
-                Block(t, new Vector3(s * 4.2f, 0f, 0f), new Vector2(0.3f, 0.3f));
+                Block(t, new Vector3(s * StartGate.PostX, 0f, 0f), new Vector2(StartGate.PostHalf, StartGate.PostHalf));
                 // the safety signs on their posts either side of the in-run
                 foreach (var z in new[] { Slope.PadLip - 22f, Slope.PadLip - 11f }) Block(Frame(s * 6.5f, z, 0f), Vector3.zero, new Vector2(1.6f, 0.3f));
             }
@@ -623,7 +659,7 @@ namespace Summit
         void Benches()
         {
             // log seats round the fire: left, right and behind; the front stays open to the view
-            var t = Frame(0f, -101f, 0f);
+            var t = Frame(0f, -71f, 0f);
             t.name = "Benches";
             foreach (var c in new[] { new Vector3(-2.9f, 0f, 0f), new Vector3(2.9f, 0f, 0f), new Vector3(0f, 0f, -2.9f) })
             {
@@ -735,14 +771,14 @@ namespace Summit
         void Soft(ParticleSystemRenderer r)
         {
             if (soft == null) return;
-            var m = new Material(soft);
+            var m = Made(new Material(soft));
             m.SetColor("_BaseColor", Color.white);
             r.sharedMaterial = m;
         }
 
         void Strings()
         {
-            Vector3 pa = Ground(5f, -112f), pb = Ground(6f, -90f);
+            Vector3 pa = UseLodge ? Ground(10.8f, -75f) : Ground(5f, -82f), pb = Ground(6f, -60f);
             // two tall poles for the flags and lights to hang from
             var poles = new GameObject("Poles").transform; poles.SetParent(root, false);
             Log(poles, pa + Vector3.down * 0.3f, pa + Vector3.up * 6.6f, 0.16f, logs);
@@ -798,10 +834,10 @@ namespace Summit
             bool real = Forest.Realistic && RealFir.Load();   // the forest's own look
             var kinds = real ? new GameObject[0] : Resources.LoadAll<GameObject>("Trees");
             if (!real && kinds.Length == 0) return;
-            var where = new[] { new Vector2(-27f, -126f), new Vector2(-19f, -134f), new Vector2(-6f, -137f), new Vector2(7f, -135f), new Vector2(19f, -131f),
-                                new Vector2(21f, -134f), new Vector2(-30f, -112f), new Vector2(-29f, -97f), new Vector2(-26.5f, -122f), new Vector2(-27f, -104f),   // (none on the cliff side)
-                                new Vector2(-24f, -138f), new Vector2(13f, -140f), new Vector2(-31f, -84f),
-                                new Vector2(-20.5f, -111f), new Vector2(2.6f, -114.5f) };   // the last two: spruces beside the chalet
+            var where = UseLodge ? LodgeTrees : new[] { new Vector2(-27f, -96f), new Vector2(-19f, -104f), new Vector2(-6f, -107f), new Vector2(7f, -105f), new Vector2(19f, -101f),
+                                new Vector2(21f, -104f), new Vector2(-30f, -82f), new Vector2(-29f, -67f), new Vector2(-26.5f, -92f), new Vector2(-27f, -74f),   // (none on the cliff side)
+                                new Vector2(-24f, -108f), new Vector2(13f, -110f), new Vector2(-31f, -54f),
+                                new Vector2(-20.5f, -81f), new Vector2(2.6f, -84.5f) };   // the last two: spruces beside the chalet
             for (int i = 0; i < where.Length; i++)
             {
                 if (real)
@@ -812,6 +848,7 @@ namespace Summit
                     continue;
                 }
                 var g = Instantiate(kinds[i % kinds.Length], root, false);
+                TreeWind.SwayAll(g, swayed);   // moves in the wind like the forest's (one swaying copy per material, kept)
                 foreach (var c in g.GetComponentsInChildren<Collider>()) DestroyImmediate(c);
                 var rs = g.GetComponentsInChildren<Renderer>();
                 if (rs.Length == 0) continue;
@@ -830,7 +867,7 @@ namespace Summit
         // at a summit lookout (square grey posts every 2.5 m on a concrete kerb, six taut steel cables), and three
         // tall flagpoles inside it with red-and-white flags streaming in the wind off the drop. The railing is one
         // mesh per material; the flags are small cloth grids moved on the CPU each frame (a few hundred vertices).
-        const float EdgeX = 24.1f, EdgeZ0 = -138f, EdgeZ1 = -71f;
+        const float EdgeX = 24.1f, EdgeZ0 = -108f, EdgeZ1 = -41f;
         Material railMetal, kerbMat, flagMat, mistMat;
         readonly List<Mesh> flagMeshes = new List<Mesh>();
         readonly List<Vector3> flagRoots = new List<Vector3>();
@@ -878,7 +915,7 @@ namespace Summit
             flagMeshes.Clear(); flagRoots.Clear(); flagRends.Clear();
             var poleM = M(new Color(0.88f, 0.89f, 0.9f), 0.6f); poleM.SetFloat("_Metallic", 0.5f);
             var gold = M(new Color(0.9f, 0.72f, 0.3f), 0.8f); gold.SetFloat("_Metallic", 0.9f);
-            foreach (var z in new[] { -104f, -97.5f, -91f })
+            foreach (var z in new[] { -74f, -67.5f, -61f })
             {
                 var g = Ground(EdgeX - 1.6f, z);
                 Log(t.parent, g + Vector3.down * 0.3f, g + Vector3.up * 6f, 0.11f, poleM);
@@ -894,7 +931,7 @@ namespace Summit
                 var mr = fo.GetComponent<MeshRenderer>(); mr.sharedMaterial = flagMat;
                 flagMeshes.Add(mesh); flagRends.Add(mr);
                 // the middle one has a lamp at its foot, lighting all three from below at night
-                if (z > -100f && z < -95f) Lamp(t.parent, g + Vector3.up * 1.2f + Vector3.left * 0.8f, 11f, 1.8f);
+                if (z > -70f && z < -65f) Lamp(t.parent, g + Vector3.up * 1.2f + Vector3.left * 0.8f, 11f, 1.8f);
             }
             WaveFlags(0f);
         }
@@ -918,7 +955,7 @@ namespace Summit
                     tri.AddRange(new[] { a, c, b, b, c, d });
                     tri.AddRange(new[] { nv + a, nv + b, nv + c, nv + b, nv + d, nv + c });   // the other side
                 }
-            var m = new Mesh { name = "Flag" };
+            var m = Made(new Mesh { name = "Flag" });
             m.MarkDynamic();
             m.vertices = new Vector3[nv * 2]; m.uv = uv; m.SetTriangles(tri, 0);
             return m;
@@ -961,7 +998,7 @@ namespace Summit
         }
 
         /// <summary>Merge everything under t into one mesh per material (the railing's two hundred pieces: two draws).</summary>
-        static void Combine(Transform t)
+        void Combine(Transform t)
         {
             var byMat = new Dictionary<Material, List<CombineInstance>>();
             foreach (var mf in t.GetComponentsInChildren<MeshFilter>())
@@ -973,7 +1010,7 @@ namespace Summit
             for (int i = t.childCount - 1; i >= 0; i--) { var c = t.GetChild(i).gameObject; if (Application.isPlaying) Destroy(c); else DestroyImmediate(c); }
             foreach (var kv in byMat)
             {
-                var mesh = new Mesh { name = "Combined", indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
+                var mesh = Made(new Mesh { name = "Combined", indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 });
                 mesh.CombineMeshes(kv.Value.ToArray(), true, true);
                 var g = new GameObject("Part", typeof(MeshFilter), typeof(MeshRenderer));
                 g.transform.SetParent(t, false);
@@ -992,9 +1029,9 @@ namespace Summit
                 mistMat.SetColor("_BaseColor", new Color(1f, 1f, 1f, 0.75f));
             }
             if (mistMat == null) return;
-            float top = Ground(0f, -100f).y;
-            MistBank(new Vector3(Cx + 200f, top - 150f, -150f), new Vector3(300f, 220f, 420f), 26, 70f, 160f);   // over the drop
-            MistBank(new Vector3(Cx - 190f, top - 150f, -120f), new Vector3(200f, 120f, 320f), 12, 50f, 110f);   // below the left slopes
+            float top = Ground(0f, -70f).y;
+            MistBank(new Vector3(Cx + 200f, top - 150f, -120f), new Vector3(300f, 220f, 420f), 26, 70f, 160f);   // over the drop
+            MistBank(new Vector3(Cx - 190f, top - 150f, -90f), new Vector3(200f, 120f, 320f), 12, 50f, 110f);   // below the left slopes
         }
 
         void MistBank(Vector3 centre, Vector3 size, int count, float small, float big)
@@ -1268,6 +1305,7 @@ namespace Summit
         {
             if (root == null) return;
             if (firePit != null) firePit.SetActive(Progress.Has(Progress.Up.FirePit));
+            FireRedress();   // Alyssa and the stumps come with the fire (CampFire.cs)
             if (flags != null) flags.SetActive(Progress.Has(Progress.Up.Flags));
             if (lights != null) lights.SetActive(Progress.Has(Progress.Up.Lights));
             if (snowman != null) snowman.SetActive(Progress.Has(Progress.Up.Snowman));
@@ -1297,6 +1335,8 @@ namespace Summit
         public int MoveKind => moveKind;
         public float MoveTime => moveT;
         bool snap;
+        float lookRest = 99f;   // seconds since the camera was last turned by hand
+        bool padMode;           // a controller's sticks are in use (two sticks: the camera stays where the right one leaves it)
         public Vector3 WalkerPosition => pos;
         /// <summary>The way the walker faces (degrees).</summary>
         public float WalkerYaw => yaw * Mathf.Rad2Deg;
@@ -1307,7 +1347,7 @@ namespace Summit
             rider = r; body = b; cam = c;
             Active = true;
             // arrive on the path by the fire, looking up at the lodge
-            pos = Ground(-1.5f, -94f);
+            pos = Ground(-1.5f, -64f);
             var toLodge = lodgeApex - pos;
             yaw = Mathf.Atan2(toLodge.x, toLodge.z); camYaw = yaw; speed = 0f;
             snap = true;
@@ -1319,7 +1359,9 @@ namespace Summit
             // a finger already down (the tap on TO CAMP or < CAMP that brought you here) is not a walk or a tap here:
             // ignore it until it lifts
             input.IgnoreCurrent(Touches());
-            moveKind = 0; moveT = 0f; jumpY = 0f; camPitch = 0f;
+            moveKind = 0; moveT = 0f; jumpY = 0f; camPitch = 0f; lookRest = 99f;
+            body.CampPose = this;   // sitting at the fire, a mug in hand (CampFire.cs)
+            if (alyssa != null) alyssa.enabled = true;   // (still while you're out on the mountain: nothing to pose)
             Place();
             lastStep = body.WalkPhase;
             Redress();
@@ -1330,6 +1372,9 @@ namespace Summit
             if (!Active) return;
             Active = false;
             Showcase = false;
+            EndActs(fadeUi);
+            if (alyssa != null) alyssa.enabled = false;
+            if (body != null) body.CampPose = null;
             CampShadows(false);
             if (stepPool != null) { foreach (var src in stepPool) src.Stop(); stepVol = 0f; }
             if (body != null) body.SetWalking(false);
@@ -1422,6 +1467,8 @@ namespace Summit
                     if (b.lo > feet + 1.7f || b.hi < feet + 0.1f) continue;   // above your head or under your feet
                     p2 = PushOut(b, p2, 0.38f);
                 }
+            if (Couple != null) p2 = Couple.PushOut(p2, 0.38f);   // (and round Val and Breanna, if they're about)
+            if (PushWalker != null) p2 = PushWalker(p2);   // (the camp's people: you don't walk through them)
             pos = new Vector3(p2.x, feet, p2.y);
             Place();
             // the nearest station you're standing at
@@ -1429,6 +1476,7 @@ namespace Summit
             float best = float.MaxValue;
             foreach (var s in spots)
             {
+                if (s.root != null && !s.root.gameObject.activeInHierarchy) continue;   // (not built yet: the fire before it's bought)
                 var d = new Vector2(s.at.x - pos.x, s.at.z - pos.z).magnitude;
                 if (d < s.radius && d < best && Mathf.Abs(s.at.y - pos.y) < 1.5f) { best = d; Near = s.st; }   // on its floor
             }
@@ -1439,6 +1487,72 @@ namespace Summit
             if (onSnow) EdgeCheck(f);
             body.CampMove = moveKind; body.CampMoveT = moveT;
             return false;
+        }
+
+        // ---- the camp's own people (CampCouple): where things are, and walking round what's in the way as the hero does
+
+        /// <summary>Val and Breanna (made in Build).</summary>
+        public CampCouple Couple { get; private set; }
+        /// <summary>A point on the snow at (dx from the run's centre, z).</summary>
+        public static Vector3 GroundAt(float dx, float z) => Ground(dx, z);
+        /// <summary>
+        /// A step from one place toward another for someone of radius r: round the trees and walls, onto the floors,
+        /// decks and steps, as the walker goes (the walker's own state is left as it was).
+        /// </summary>
+        public Vector3 StepTo(Vector3 from, Vector3 to, float r)
+        {
+            bool keep = onSnow;
+            var p2 = new Vector2(to.x, to.z);
+            var t = OffTrees(new Vector3(to.x, from.y, to.z)); p2 = new Vector2(t.x, t.z);
+            for (int it = 0; it < 2; it++)
+                foreach (var b in boxes)
+                {
+                    if (b.floor || (b.owner != null && !b.owner.activeInHierarchy)) continue;
+                    if (b.lo > from.y + 1.7f || b.hi < from.y + 0.1f) continue;
+                    p2 = PushOut(b, p2, r);
+                }
+            var q = new Vector3(p2.x, from.y, p2.y);
+            q.y = FloorAt(q, from.y);
+            onSnow = keep;
+            return q;
+        }
+
+        // ---------------------------------------------------------------- for the camp's people (CampLife.cs)
+
+        /// <summary>The camp was built (or rebuilt for a new mountain): its root, which anything added to the camp goes under.</summary>
+        public System.Action<Transform> Built;
+        /// <summary>Moves the walker out of anyone standing in the way (set by CampLife).</summary>
+        public System.Func<Vector2, Vector2> PushWalker;
+        /// <summary>How fast the walker is going (m/s).</summary>
+        public float WalkerSpeed => speed;
+
+        /// <summary>A point pushed out of everything solid in the camp at a body's height, for a body of radius r.</summary>
+        public Vector2 PushOutOfThings(Vector2 p, float r, float feet)
+        {
+            for (int it = 0; it < 2; it++)
+                foreach (var b in boxes)
+                {
+                    if (b.floor || (b.owner != null && !b.owner.activeInHierarchy)) continue;
+                    if (b.lo > feet + 1.7f || b.hi < feet + 0.1f) continue;
+                    p = PushOut(b, p, r);
+                }
+            return p;
+        }
+
+        /// <summary>What someone stands on at p coming from height feet (the snow, a deck, a step).</summary>
+        public float FloorHeight(Vector3 p, float feet)
+        {
+            bool was = onSnow;
+            float y = FloorAt(p, feet);
+            onSnow = was;
+            return y;
+        }
+
+        /// <summary>Something solid added to the camp (a bench, a stand): a box on the snow, half sizes, turned by yaw.</summary>
+        public void AddBlock(Vector3 at, Vector2 half, float yawDeg)
+        {
+            float yaw = yawDeg * Mathf.Deg2Rad;
+            boxes.Add(new Box { c = new Vector2(at.x, at.z), h = half, cos = Mathf.Cos(yaw), sin = Mathf.Sin(yaw), top = at.y, lo = at.y - 1000f, hi = at.y + 1000f });
         }
 
         static Vector2 PushOut(Box b, Vector2 p, float r)
@@ -1715,32 +1829,56 @@ namespace Summit
         public CampInput Controls => input;
 
         /// <summary>
-        /// One frame in camp, twin sticks: the left thumb walks, the right one turns the camera; a quick tap jumps
-        /// (or, standing on a station, opens it), a flick rolls; the menus take their own taps. True when it's time
-        /// to drop in.
+        /// One frame in camp. One thumb, anywhere, walks, and the camera follows round behind; a second finger held
+        /// down turns the camera by hand; a quick tap jumps (or, standing on a station, opens it), a flick rolls; the
+        /// menus take their own taps. A plugged-in controller has its two sticks: left walks, right turns the camera.
+        /// True when it's time to drop in.
         /// </summary>
         public bool Step(float dt, MetaUi ui)
         {
             fadeUi = ui;
+            if (LodgeSwitchStep(dt, ui)) return false;   // a change of the lodge's layout, behind a dip to black (CampLodge.cs)
             if (fadeIn) { fade = Mathf.MoveTowards(fade, 0f, dt / 0.6f); ui.SetFade(fade); fadeIn = fade > 0f; }
             if (falling) { FallStep(dt); ui.SetStick(false, Vector2.zero, Vector2.zero); ui.SetLookStick(false, Vector2.zero, Vector2.zero); ui.SetContext(Station.None); return false; }
-            input.Step(Touches(), dt, cam != null ? cam.pixelWidth : Screen.width, cam != null ? cam.pixelHeight : Screen.height, ui.Hit, ui.PanelOpen);
+            var touches = Touches();
+            if (ui.ClosetOpen)
+            {
+                // the closet takes every finger (its list scrolls, its hero turns); nothing walks or looks meanwhile
+                ui.ClosetStep(touches, dt);
+                ui.SetStick(false, Vector2.zero, Vector2.zero); ui.SetLookStick(false, Vector2.zero, Vector2.zero);
+                Showcase = false;
+                return false;
+            }
+            input.Step(touches, dt, cam != null ? cam.pixelWidth : Screen.width, cam != null ? cam.pixelHeight : Screen.height, ui.Hit, ui.PanelOpen);
             if (input.Button != null) ui.Act(input.Button);
+            if (ActStep(dt, ui, touches)) return false;   // talking, roasting, at the stove (CampFire.cs)
             if (input.ContextTapped && Open(Near, ui)) return true;
             if (input.Tapped && !ui.PanelOpen)
             {
                 // standing still, a tap on a station opens it (the gate drops you in); otherwise it's a jump
                 var st = speed < 0.5f ? StationAt(input.TapAt) : Station.None;
                 if (st != Station.None) { if (Open(st, ui)) return true; }
-                else Jump();
+                else if (!Sip()) Jump();   // (a mug in hand: a tap is a sip, CampCocoa)
             }
-            if (input.Swiped && !ui.PanelOpen) Roll(input.SwipeDir);
-            if (KeyJump()) Jump();
-            if (KeyRoll()) Roll(Vector2.up);
-            Look(input.Look, dt);
+            if (input.Swiped && !ui.PanelOpen && !HoldingMug) Roll(input.SwipeDir);
+            if (KeyJump() && !Sip()) Jump();
+            if (KeyRoll() && !HoldingMug) Roll(Vector2.up);
+            // a controller: its sticks take over until the screen is touched again
+            bool padUsed = Pad(out Vector2 padMove, out Vector2 padLook, out bool padJump, out bool padRoll);
+            if (padUsed) padMode = true; else if (touches.Count > 0) padMode = false;
+            if (ui.PanelOpen) { padMove = padLook = Vector2.zero; }
+            else
+            {
+                // the bottom button: standing at a station it opens it (the gate drops you in), otherwise a jump
+                if (padJump) { if (speed < 0.5f && Near != Station.None) { if (Open(Near, ui)) return true; } else if (!Sip()) Jump(); }
+                if (padRoll && !HoldingMug) Roll(Vector2.up);
+            }
+            Look(input.Look + padLook, dt);
+            lookRest = input.Look.sqrMagnitude > 0.0025f ? 0f : lookRest + dt;
             ui.SetStick(input.MoveShown && !ui.PanelOpen, input.MoveOrigin, input.MovePos);
             ui.SetLookStick(input.LookShown && !ui.PanelOpen, input.LookOrigin, input.LookPos);
-            var stick = ui.PanelOpen ? Vector2.zero : input.Move + Keys();
+            var stick = ui.PanelOpen ? Vector2.zero : Vector2.ClampMagnitude(input.Move + padMove + Keys(), 1f);
+            if (HoldingMug) stick = Vector2.ClampMagnitude(stick, 0.9f);   // a full mug: you walk, you don't run
             Showcase = ui.PanelOpen && ui.ShopTab == 1;
             if (Walk(stick, dt)) return true;
             ui.SetContext(Near);
@@ -1748,8 +1886,8 @@ namespace Summit
         }
 
         /// <summary>
-        /// Turn the camera round the hero with the look stick: sideways swings it round (it stays where you leave it),
-        /// up and down tilts it a little, within limits.
+        /// Turn the camera round the hero with the look stick: sideways swings it round, up and down tilts it a
+        /// little, within limits.
         /// </summary>
         public void Look(Vector2 look, float dt)
         {
@@ -1777,6 +1915,25 @@ namespace Summit
             return touchList;
         }
 
+        /// <summary>
+        /// A plugged-in controller, twin sticks: the left one walks, the right one turns the camera, the bottom face
+        /// button jumps and the right one rolls. True while any of it is in use.
+        /// </summary>
+        static bool Pad(out Vector2 move, out Vector2 look, out bool jump, out bool roll)
+        {
+            move = look = Vector2.zero; jump = roll = false;
+#if ENABLE_INPUT_SYSTEM
+            var g = Gamepad.current;
+            if (g == null) return false;
+            Vector2 Dead(Vector2 v) { float m = v.magnitude; return m < 0.15f ? Vector2.zero : v / m * Mathf.Clamp01((m - 0.15f) / 0.8f); }
+            move = Dead(g.leftStick.ReadValue()); look = Dead(g.rightStick.ReadValue());
+            jump = g.buttonSouth.wasPressedThisFrame; roll = g.buttonEast.wasPressedThisFrame;
+            return move != Vector2.zero || look != Vector2.zero || jump || roll;
+#else
+            return false;
+#endif
+        }
+
         static bool KeyJump()
         {
 #if ENABLE_INPUT_SYSTEM
@@ -1797,6 +1954,8 @@ namespace Summit
 
         bool Open(Station st, MetaUi ui)
         {
+            if (OpenFireStation(st, ui)) return false;
+            if (st == Station.DropIn) LeaveMug();   // (it waits on the gate's post)
             if (st == Station.Missions) ui.ShowMissions();
             else if (st == Station.Upgrades) ui.ShowShop(0);
             else if (st == Station.Style) ui.ShowShop(1);
@@ -1835,8 +1994,14 @@ namespace Summit
             if (cam == null) return;
             if (ChaseCamera.TestDt > 0f) dt = ChaseCamera.TestDt;
             if (falling) { FallCamera(dt); return; }
+            if (ClosetStage.Showing != null) { ClosetStage.Showing.Frame(cam); snap = true; return; }   // the closet's studio has the camera
             float k(float rate) => snap ? 1f : 1f - Mathf.Exp(-dt * rate);
-            // the camera stays where the look stick leaves it (it no longer swings round behind you as you walk)
+            // one thumb walks and turns: the camera swings round behind you as you go, as it first did. Turned by
+            // hand (a second finger held), it stays where you left it for a moment, then eases back to following.
+            // With a controller's two sticks it stays where the right stick leaves it
+            float follow = padMode ? 0f : Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(1.2f, 2.6f, lookRest));
+            if (speed > 0.4f && follow > 0f)
+                camYaw = Mathf.LerpAngle(camYaw * Mathf.Rad2Deg, yaw * Mathf.Rad2Deg, k(1.4f) * Mathf.Clamp01(speed / MaxSpeed) * follow) * Mathf.Deg2Rad;
             lookBlend = Mathf.Lerp(lookBlend, OnLookout && speed < 0.5f ? 1f : 0f, k(2f));
             showBlend = Mathf.Lerp(showBlend, Showcase ? 1f : 0f, k(4f));
             var f = new Vector3(Mathf.Sin(camYaw), 0f, Mathf.Cos(camYaw));

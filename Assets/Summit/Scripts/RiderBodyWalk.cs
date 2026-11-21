@@ -40,13 +40,13 @@ namespace Summit
                 // hands free, so both arms swing (it is back on the feet for the run)
                 tubeBeforeWalk = Tube;
                 if (Tube) SetTube(false);
-                boardRoot.gameObject.SetActive(false);
+                ShowRide();   // nothing carried: the board (or the skis and poles) waits at the gate
             }
             else
             {
                 boardRoot.localPosition = boardHomePos;
                 boardRoot.localRotation = boardHomeRot;
-                boardRoot.gameObject.SetActive(true);
+                ShowRide();
                 walkPhase = 0f; walkAmp = 0f; WalkPace = 0f; RunBlend = 0f; runAmp = 0f;
                 if (tubeBeforeWalk) SetTube(true);
             }
@@ -117,6 +117,118 @@ namespace Summit
             for (int i = 0; i < jacketMats.Count; i++) jacketMats[i].SetColor("_BaseColor", jacket * (i < jacketShade.Count ? jacketShade[i] : 1f));
         }
 
+        // ---- the closet's outfit (Wardrobe): the jacket's and trousers' colours and patterns, the gear's swatches,
+        // the board's colour and finish
+
+        Material pantsMat;                  // the hero's trousers (the previous rider's aren't painted)
+        Texture2D gearPalette;              // the hero's gear palette, this rider's own copy
+        Color[] palBase, palNow;
+        readonly System.Collections.Generic.Dictionary<Material, float> ownSheen = new System.Collections.Generic.Dictionary<Material, float>();
+        // where each gear category sits in the palette (Tools/MakeHero.py's PAL): its colour, its trim, an accent
+        static readonly int[][] PaletteCells =
+        {
+            null, null,
+            new[] { 1, 11 },        // helmet, its vents
+            new[] { 3, 2 },         // the goggles' lens, their frame
+            new[] { 4, 5 },         // gloves, cuffs
+            new[] { 6 },            // boots
+            new[] { 16, 17, 18 },   // the pack, its side panels, its accent
+        };
+
+        /// <summary>The parts of the rider the closet can show (ClosetStage clones them for its preview).</summary>
+        public Transform Upper => upper;
+        public Transform BoardGear => boardRoot;
+        public Transform SkiGear => skiRoot;
+        public Transform SledGear => sledRoot;
+
+        /// <summary>Put an outfit on (an item for each Wardrobe category; the ride is left to SetRide).</summary>
+        public void Wear(int[] o)
+        {
+            if (o == null || o.Length < Wardrobe.Count) return;
+            SetCharacter(Wardrobe.Look(o));   // who is riding, in which clothes: a new body if that changed (RiderBodyHero)
+            if (!ownMats) OwnMaterials();
+            // (on another rider's set of clothes the first row is that set as made: Paul's black puffer, his red trousers)
+            var j = Wardrobe.Shown(Wardrobe.Cat.Jacket, o[(int)Wardrobe.Cat.Jacket], heroOutfit);
+            if (gearJacket != null) Cloth(gearJacket, j, 1f);
+            for (int i = 0; i < jacketMats.Count; i++) Cloth(jacketMats[i], j, i < jacketShade.Count ? jacketShade[i] : 1f);
+            if (pantsMat != null) Cloth(pantsMat, Wardrobe.Shown(Wardrobe.Cat.Pants, o[(int)Wardrobe.Cat.Pants], heroOutfit), 1f);
+            WearFleece(o);   // (pyjamas: the fleece as made, or dyed by the jacket's row, RiderBodyHero)
+            var b = Wardrobe.Get(Wardrobe.Cat.Board, o[(int)Wardrobe.Cat.Board]);
+            if (boardMat != null)
+            {
+                boardMat.SetColor("_BaseColor", b.a);
+                Sheen(boardMat, b.smooth);
+                if (boardMat.HasProperty("_Metallic")) boardMat.SetFloat("_Metallic", b.metal);
+            }
+            if (gearPalette != null)
+            {
+                System.Array.Copy(palBase, palNow, palBase.Length);
+                for (int c = 0; c < PaletteCells.Length; c++)
+                {
+                    var cells = PaletteCells[c];
+                    if (cells == null) continue;
+                    var it = Wardrobe.Get((Wardrobe.Cat)c, o[c]);
+                    for (int k = 0; k < cells.Length; k++)
+                    {
+                        Color col = k == 0 ? it.a : k == 1 ? it.b : it.c;
+                        int px = PalettePixel(cells[k]);
+                        if (col.a <= 0f || px < 0) continue;   // (a trim the item leaves as it is)
+                        float smooth = k == 0 && it.smooth >= 0f ? it.smooth : palBase[px].a;   // the alpha is the sheen
+                        palNow[px] = new Color(col.r, col.g, col.b, smooth);
+                    }
+                }
+                WearShoes(o);   // (pyjamas: their own shoes take the boots' colour, RiderBodyHero)
+                gearPalette.SetPixels(palNow);
+                gearPalette.Apply(false);
+            }
+        }
+
+        // MakeHero.py writes the palette 8 swatches wide and 8 rows high (a size the importer leaves as it is: scaled,
+        // each row bled into the next), and the gear's uvs sit in the middle of each swatch
+        public const int PaletteCols = 8, PaletteRows = 8;   // (Alyssa reads them too)
+        int PalettePixel(int cell)
+        {
+            if (gearPalette == null) return -1;
+            int w = gearPalette.width, h = gearPalette.height;
+            int x = Mathf.FloorToInt((cell % PaletteCols + 0.5f) / PaletteCols * w), y = Mathf.FloorToInt((cell / PaletteCols + 0.5f) / PaletteRows * h);
+            int i = y * w + x;
+            return x < w && y < h && i < palNow.Length ? i : -1;
+        }
+
+        void Cloth(Material m, Wardrobe.Item it, float shade)
+        {
+            m.SetColor("_BaseColor", it.a * shade);
+            m.SetColor("_Color2", (it.b.a > 0f ? it.b : it.a) * shade);
+            m.SetFloat("_Pattern", (float)it.pattern);
+            m.SetFloat("_PatternScale", it.scale);
+            m.SetFloat("_PatternAt", it.at);
+            Sheen(m, it.smooth);
+        }
+
+        /// <summary>An item's sheen, or the material's own when it has none.</summary>
+        void Sheen(Material m, float s)
+        {
+            if (!m.HasProperty("_Smoothness")) return;
+            if (!ownSheen.TryGetValue(m, out float own)) { own = m.GetFloat("_Smoothness"); ownSheen[m] = own; }
+            m.SetFloat("_Smoothness", s >= 0f ? s : own);
+        }
+
+        /// <summary>A copy of the gear palette this rider can repaint (null if the texture can't be read).</summary>
+        Texture2D OwnPalette(Texture2D pal)
+        {
+            try
+            {
+                if (gearPalette != null) { if (Application.isPlaying) Destroy(gearPalette); else DestroyImmediate(gearPalette); }   // (a rider swapped for another: the old body's copy goes)
+                palBase = pal.GetPixels();
+                palNow = (Color[])palBase.Clone();
+                gearPalette = new Texture2D(pal.width, pal.height, TextureFormat.RGBA32, false) { filterMode = pal.filterMode, wrapMode = TextureWrapMode.Clamp, name = "HeroPalette (own)" };
+                gearPalette.SetPixels(palBase);
+                gearPalette.Apply(false);
+                return gearPalette;
+            }
+            catch (UnityException) { gearPalette = null; return null; }   // (not readable: the gear keeps its colours)
+        }
+
         /// <summary>
         /// Swap the shared board and jacket materials on this rider for copies, so painting them never
         /// writes into the project's material assets (in the editor that would stick after Play).
@@ -125,7 +237,10 @@ namespace Summit
         {
             ownMats = true;
             var copies = new System.Collections.Generic.Dictionary<Material, Material>();
-            Material Copy(Material m) { if (!copies.TryGetValue(m, out var c)) { c = new Material(m); copies[m] = c; } return c; }
+            // (the snowy cloth is already this rider's own, made at start, not a project asset: it must stay the
+            // very material SnowyClothes writes the snow to. Copied, the jacket wore a copy that never got any,
+            // and stayed clean through every fall while the trousers caked up)
+            Material Copy(Material m) { if (snowy != null && snowy.Owns(m)) return m; if (!copies.TryGetValue(m, out var c)) { c = new Material(m); copies[m] = c; } return c; }
             foreach (var r in GetComponentsInChildren<Renderer>(true))
             {
                 var ms = r.sharedMaterials;

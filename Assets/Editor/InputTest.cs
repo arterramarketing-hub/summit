@@ -1,0 +1,255 @@
+using System.Collections.Generic;
+using System.Reflection;
+using UnityEditor;
+using UnityEditor.SceneManagement;
+using UnityEngine;
+using Summit;
+
+/// <summary>
+/// The one-finger controls, driven by a scripted finger through the real RiderInput and Rider. Each JUMP style
+/// (DOUBLE TAP, TAP, FLICK UP), with drag steering and with tilt steering:
+/// - on the snow: a single tap, a double tap, a nervous lift-and-retouch, a flick up, a second finger's tap;
+/// - in a big air: three single taps while holding a spin, a double tap;
+/// - on a rail: a deliberate switch-up, then a single tap and a double tap with the finger held at full lock.
+/// Each line prints what fired: jumps off the snow, pops off a rail, grab steps, switch-ups. Lines start INPUT;
+/// expectations that fail are marked "!!" and counted.
+///
+/// Run: Unity -batchmode -nographics -quit -projectPath . -executeMethod InputTest.Run -logFile input.log
+/// </summary>
+public static class InputTest
+{
+    const BindingFlags NP = BindingFlags.NonPublic | BindingFlags.Instance;
+    const float Dt = 1f / 120f;
+    static SummitGame game; static Rider r; static RiderBody body; static RiderInput input; static SlopeStreamer terrain; static Forest props;
+    static MethodInfo riderUpdate; static FieldInfo grabField;
+    static int jumps, pops, switches, fails, checks;
+    static string grindNames = "";
+    static Vector2 centre;
+
+    public static void Run()
+    {
+        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
+        game = Object.FindFirstObjectByType<SummitGame>();
+        TestPrefs.Pin();
+        TestBoot.Boot(game);
+        Physics.simulationMode = SimulationMode.Script;
+        r = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
+        body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
+        input = (RiderInput)typeof(SummitGame).GetField("input", NP).GetValue(game);
+        terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
+        props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        riderUpdate = typeof(Rider).GetMethod("Update", NP);
+        grabField = typeof(Rider).GetField("grabLevel", NP);
+        r.Jumped += () => { if (wasGrinding) pops++; else jumps++; };
+        r.Link += l => { if (l.kind == LinkKind.Grind && onRailWatch) grindNames += " " + l.name; };
+        RiderInput.TestDrive = true;
+        centre = new Vector2(Mathf.Max(Screen.width, 320) * 0.5f, Mathf.Max(Screen.height, 480) * 0.4f);
+        try
+        {
+            TestBoot.NewMountain(game, 1000, terrain, props);
+            foreach (bool tilt in new[] { false, true })
+                foreach (JumpStyle style in new[] { JumpStyle.DoubleTap, JumpStyle.Tap, JumpStyle.FlickUp })
+                {
+                    input.useTilt = tilt; input.jumpStyle = style;
+                    Debug.Log($"INPUT ==== {(tilt ? "TILT" : "DRAG")} steering, JUMP: {RiderInput.JumpNames[(int)style]}");
+                    Snow(style, tilt);
+                    Air(style, tilt);
+                    Rail(style, tilt);
+                }
+            Debug.Log(fails == 0 ? $"INPUT PASS ({checks} checks)" : $"INPUT FAIL ({fails} of {checks} checks)");
+        }
+        catch (System.Exception e) { Debug.LogError("INPUT exception " + e); }
+        RiderInput.TestDrive = false; RiderInput.TestFingers = 0;
+        Physics.simulationMode = SimulationMode.FixedUpdate;
+        TestPrefs.Restore();
+        EditorApplication.Exit(0);
+    }
+
+    static bool wasGrinding, onRailWatch;
+
+    // ---------------------------------------------------------------- the stepping
+
+    static void Step(int fingers, Vector2 pos)
+    {
+        RiderInput.TestFingers = fingers; RiderInput.TestPos = pos;
+        wasGrinding = r.Grinding;
+        input.TestStep(Dt);
+        riderUpdate.Invoke(r, null);
+        r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+        game.TestPoints(Dt);
+        // a switch-up or a press: the stance on the rail changed while still on it
+        if (r.Grinding)
+        {
+            int st = (int)quarterF.GetValue(r) + 4 * ((int)pressF.GetValue(r) + 1);
+            if (onRailWatch && wasGrinding && st != stance) switches++;
+            stance = st;
+        }
+    }
+    static FieldInfo quarterF = typeof(Rider).GetField("grindQuarter", NP), pressF = typeof(Rider).GetField("grindPress", NP);
+    static int stance;
+
+    static void Frames(float secs, int fingers, Vector2 pos) { for (float t = 0f; t < secs - 1e-4f; t += Dt) Step(fingers, pos); }
+
+    // a finger: a tap (down 0.08 s, then up for `up` s), a double tap, a flick up
+    static void Tap(Vector2 at, float up = 0.12f) { Frames(0.08f, 1, at); Frames(up, 0, at); }
+    static void DoubleTap(Vector2 at) { Tap(at, 0.12f); Frames(0.08f, 1, at); }
+    static void Flick(Vector2 from)
+    {
+        float hgt = Mathf.Max(Screen.height, 480);
+        for (float t = 0f; t < 0.1f; t += Dt) Step(1, from + Vector2.up * (hgt * 0.14f * t / 0.1f));
+        Frames(0.1f, 1, from + Vector2.up * hgt * 0.14f);
+    }
+
+    static void Start(float x, float z, float v0)
+    {
+        typeof(SummitGame).GetMethod("ToReady", NP, null, new[] { typeof(bool) }, null).Invoke(game, new object[] { false });
+        typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
+        r.input = null;
+        r.ResetAt(x, z); body.ResetVisual(); r.Begin();
+        r.Body.linearVelocity = Vector3.ProjectOnPlane(Vector3.forward, Slope.Normal(x, z)).normalized * v0;
+        terrain.Prewarm(); props.Prewarm();
+        RiderInput.TestFingers = 0;
+        input.TestStep(Dt); input.SwallowCurrentPress();
+        jumps = pops = switches = 0; grindNames = ""; onRailWatch = false;
+    }
+
+    static void Expect(string label, bool ok, string got)
+    {
+        checks++;
+        if (!ok) fails++;
+        Debug.Log($"INPUT {(ok ? "  " : "!!")} {label,-58} {got}");
+    }
+
+    static string Fired() => $"jumps {jumps}, pops {pops}, switch-ups {switches}";
+
+    // ---------------------------------------------------------------- on the snow
+
+    static void Snow(JumpStyle style, bool tilt)
+    {
+        float z = Course.First + 110f;
+        // (steering by hand on the snow: the rider goes where the finger says; down the piste straight is fine)
+        void Fresh() { Start(Slope.Centre(z), z, 16f); r.input = input; Frames(0.5f, 1, centre); jumps = 0; }
+
+        Fresh(); Frames(0.35f, 0, centre); Tap(centre, 0.5f); Frames(0.6f, 1, centre);
+        Expect("snow: a single tap", jumps == (style == JumpStyle.Tap ? 1 : 0), Fired());
+
+        Fresh(); Frames(0.3f, 0, centre); DoubleTap(centre); Frames(0.6f, 1, centre);
+        Expect("snow: a double tap", style == JumpStyle.DoubleTap ? jumps == 1 : style == JumpStyle.Tap ? jumps >= 1 : jumps == 0, Fired());
+
+        // steering a long while, the finger lifted and put back nervously, twice, slowly
+        Fresh(); Frames(1f, 1, centre + Vector2.right * 40f); Frames(0.18f, 0, centre); Frames(0.6f, 1, centre + Vector2.right * 40f);
+        Frames(0.35f, 0, centre); Frames(0.6f, 1, centre);
+        Expect("snow: a nervous lift-and-retouch", jumps == 0, Fired());
+
+        Fresh(); Flick(centre); Frames(0.6f, 1, centre);
+        Expect("snow: a flick up while steering", jumps == (style == JumpStyle.FlickUp ? 1 : 0), Fired());
+
+        if (!tilt)
+        {
+            // the old two-handed way: a second finger's quick tap, whatever the setting
+            Fresh(); Frames(0.08f, 2, centre); Frames(0.6f, 1, centre);
+            Expect("snow: a second finger's tap", jumps == 1, Fired());
+        }
+    }
+
+    // ---------------------------------------------------------------- in the air
+
+    static void Air(JumpStyle style, bool tilt)
+    {
+        foreach (bool dbl in new[] { false, true })
+        {
+            Slope.NextKicker(100f, out Vector3 at);
+            Start(at.x, at.z - 30f, 30f);
+            float dx = at.x - Slope.Centre(at.z - 30f);
+            // the bot rides it in; the finger takes over as the board leaves the lip, holding a spin (drag) or still (tilt)
+            for (float t = 0f; t < 6f && !(r.Airborne && r.Z > at.z && r.AirTime > 0.1f); t += Dt)
+            {
+                r.Steer = Mathf.Clamp((Slope.Centre(r.Z + 12f) + dx - r.transform.position.x) * 0.06f - r.Heading * 0.8f, -1f, 1f);
+                Step(0, centre);
+            }
+            if (!r.Airborne) { Expect("air: got airborne off the kicker", false, "never left the snow"); continue; }
+            r.input = input;
+            float radius = Mathf.Max(60f, Mathf.Max(Screen.width, 320) * input.stickRadiusFrac);
+            // drag: the finger lands and pushes over to full lock, the spin, and stays there between taps (each tap
+            // a moment off the glass and straight back); tilt: the finger only comes down to tap
+            Vector2 hold = centre;
+            int rest = tilt ? 0 : 1;
+            if (!tilt) { Frames(0.05f, 1, centre); hold = centre + Vector2.right * radius; Frames(0.15f, 1, hold); }
+            jumps = 0;
+            int spin0 = SpinHalves();
+            if (!dbl)
+            {
+                for (int k = 0; k < 3; k++) { Frames(0.06f, 0, hold); Frames(0.08f, 1, hold); Frames(0.06f, 0, hold); Frames(0.3f, rest, hold); }
+                int grabs = (int)grabField.GetValue(r);
+                Expect("air: three taps" + (tilt ? "" : " while holding the spin"), grabs == 3 && jumps == 0 && r.Airborne,
+                       $"grab steps {grabs}, spin {spin0} -> {SpinHalves()} half turns, {Fired()}{(r.Airborne ? "" : " (landed before the taps were done)")}");
+            }
+            else
+            {
+                Frames(0.06f, 0, hold); DoubleTap(hold); Frames(0.3f, rest, hold);
+                int grabs = (int)grabField.GetValue(r);
+                // (in the air every quick press is a grab, the bigger for each: a double tap is two grab taps, or one
+                // when the second touch stays down to steer; it is never a jump, now or at the landing)
+                Expect("air: a double tap (grab taps only, no jump)", grabs == (tilt ? 2 : 1) && jumps == 0, $"grab steps {grabs}, {Fired()}");
+            }
+            for (float t = 0f; t < 6f && r.Airborne && !r.Crashed; t += Dt) Step(rest, hold);
+            Frames(0.4f, rest, hold);
+            Expect(dbl ? "air: ... and nothing queued for the landing" : "air: ... and nothing queued for the landing", jumps == 0, Fired() + (r.Crashed ? " (crashed on landing)" : ""));
+        }
+    }
+
+    static int SpinHalves() => (int)typeof(Rider).GetField("spinHalves", NP).GetValue(r);
+
+    // ---------------------------------------------------------------- on a rail
+
+    static Course.Feature Feature(Course.Kind kind)
+    {
+        for (int c = 0; c < 3; c++)
+            foreach (var f in Course.FeaturesOf(c)) if (f.kind == kind) return f;
+        return default;
+    }
+
+    static bool OntoRail(Course.Feature f)
+    {
+        Start(f.a.x, f.a.z - 18f, 14f);
+        for (float t = 0f; t < 6f && !r.Grinding; t += Dt)
+        {
+            float tx = r.Z < f.a.z ? f.a.x : Mathf.Lerp(f.a.x, f.b.x, Mathf.InverseLerp(f.a.z, f.b.z, r.Z));
+            r.Steer = Mathf.Clamp((tx - r.transform.position.x) * 0.4f - r.Heading * 1.5f, -1f, 1f);
+            Step(0, centre);
+        }
+        return r.Grinding;
+    }
+
+    static void Rail(JumpStyle style, bool tilt)
+    {
+        var f = Feature(Course.Kind.Rail);
+        foreach (bool dbl in new[] { false, true })
+        {
+            if (!OntoRail(f)) { Expect("rail: got onto it", false, "never boarded"); continue; }
+            r.input = input; onRailWatch = true; switches = 0; pops = 0; jumps = 0;
+            float radius = Mathf.Max(60f, Mathf.Max(Screen.width, 320) * input.stickRadiusFrac);
+            if (!tilt) Frames(0.05f, 1, centre);
+            Vector2 lockPos = centre;
+            if (!tilt)
+            {
+                // a deliberate switch-up: the finger flicked over to full lock, and held there
+                lockPos = centre + Vector2.right * radius;
+                for (float t = 0f; t < 0.06f; t += Dt) Step(1, Vector2.Lerp(centre, lockPos, t / 0.06f));
+                Frames(0.12f, 1, lockPos);
+            }
+            int deliberate = switches;
+            if (!r.Grinding) { Expect("rail: still on it after the switch-up", false, "fell off"); continue; }
+            // a single tap, then the finger back down after a beat (longer than a double tap's gap); or a double tap
+            if (!dbl) { Frames(0.06f, 0, lockPos); Tap(lockPos, 0.35f); Frames(0.2f, tilt ? 0 : 1, lockPos); }
+            else { Frames(0.06f, 0, lockPos); DoubleTap(lockPos); Frames(0.2f, tilt ? 0 : 1, lockPos); }
+            bool stillOn = r.Grinding || pops > 0;
+            int extra = switches - deliberate;
+            bool wantPop = dbl || style == JumpStyle.Tap;
+            Expect(dbl ? "rail: a double tap" + (tilt ? "" : " at full lock") : "rail: a single tap" + (tilt ? "" : " at full lock"), (pops == 1) == wantPop && extra == 0 && (stillOn || !wantPop),
+                   $"pops {pops}, switch-ups from it {extra} (the deliberate one: {deliberate}),{grindNames}{(stillOn ? "" : " (ran off the end first)")}");
+            onRailWatch = false;
+            for (float t = 0f; t < 3f && (r.Grinding || r.Airborne); t += Dt) Step(1, lockPos);
+        }
+    }
+}

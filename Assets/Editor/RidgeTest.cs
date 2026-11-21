@@ -490,6 +490,163 @@ public static class RidgeTest
         EditorApplication.Exit(0);
     }
 
+    /// <summary>
+    /// Where the snow meets the rock, and the shapes of the big faces, by day and by night: the summit's shoulders
+    /// seen from below them (left, behind, and beside the start, where the first lift tops out), the camp's cliff
+    /// from the valley under it, a deadly cliff from its foot, and the whole top of the mountain from down the run.
+    /// Unity -batchmode -projectPath . -executeMethod RidgeTest.SnowLineShots (writes SnowLine*.png to $RIDGE_SHOTS)
+    /// </summary>
+    public static void SnowLineShots()
+    {
+        SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
+        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
+        var game = Object.FindFirstObjectByType<SummitGame>();
+        TestBoot.Boot(game);
+        Physics.simulationMode = SimulationMode.Script;
+        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
+        var rider = Get<Rider>("rider"); var body = Get<RiderBody>("body");
+        var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props"); var dayNight = Get<DayNight>("dayNight");
+        var dress = Object.FindFirstObjectByType<CourseDressing>();
+        var atmo = Object.FindFirstObjectByType<Atmosphere>();
+        var draw = typeof(Forest).GetMethod("Draw", NP);
+        rider.input = null;
+        var cam = Camera.main;
+        cam.GetComponent<ChaseCamera>().enabled = false;
+        string outDir = System.Environment.GetEnvironmentVariable("RIDGE_SHOTS");
+        if (string.IsNullOrEmpty(outDir)) outDir = ".";
+        void View(string file, Vector3 eye, Vector3 at, float fov, bool night)
+        {
+            TimeOfDay.TestClock = night ? 3.4f : 1.4f; dayNight.ApplyNow();
+            Vector3 flat = at - eye; flat.y = 0f;
+            float rz = eye.z - flat.normalized.z * 2.5f, rx = eye.x - flat.normalized.x * 2.5f;
+            rider.ResetAt(rx, rz); body.ResetVisual();
+            rider.Heading = Mathf.Clamp(Mathf.Atan2(flat.x, flat.z), -1.4f, 1.4f);
+            for (int k = 0; k < 5; k++) { terrain.Prewarm(); props.Prewarm(); dress.Prewarm(); }
+            body.Apply(Dt);
+            typeof(Atmosphere).GetMethod("LateUpdate", NP).Invoke(atmo, null);
+            draw.Invoke(props, null);
+            dayNight.ApplyNow();
+            cam.fieldOfView = fov;
+            cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(at - eye));
+            Shoot(cam, Path.Combine(outDir, file));
+        }
+        int seed = 1;
+        for (int sd = 1; sd < 400; sd++) { Slope.Init(sd); if (Cliffs.WallOf(0, out _)) { seed = sd; break; } }
+        Slope.Init(seed);
+        terrain.Rebuild(); props.Rebuild(); dress.Rebuild();
+        float cx = Slope.Centre(Slope.PadLip);
+        float top = Slope.Height(cx, -100f);
+        Vector3 G(float a, float z, float up) { float x = cx + a; return new Vector3(x, Slope.Height(x, z) + up, z); }
+        Cliffs.WallOf(0, out var w);
+        float zw = w.z1 + 18f, hw = Cliffs.WallHeight(w, zw);
+        float cw = Slope.Centre(zw);
+        if (System.Environment.GetEnvironmentVariable("SNOWLINE_DEBUG") == "2")
+        {
+            // the left shoulder's snow bands: as drawn, without the strata's shelf snow, without the strata at all,
+            // without the rock's own up-facing snow, and without the snow line's push
+            var trm = RockFace.TerrainMaterial(Shader.Find("Universal Render Pipeline/Lit"));
+            Vector3 eye = new Vector3(cx - 190f, top - 20f, -40f), at = new Vector3(cx - 45f, top - 30f, -110f);
+            Vector4 st = trm.GetVector("_Strata");
+            View("DbgL0Base.png", eye, at, 60f, false);
+            trm.SetVector("_Strata", new Vector4(st.x, st.y, 1f, 0f)); View("DbgL1NoShelf.png", eye, at, 60f, false);
+            trm.SetVector("_Strata", new Vector4(st.x, 0f, 1f, 0f)); View("DbgL2NoStrata.png", eye, at, 60f, false);
+            trm.SetVector("_Snow", new Vector4(5f, 6f, 0f, 0f)); View("DbgL3NoUpSnow.png", eye, at, 60f, false);
+            trm.SetVector("_Line", new Vector4(0f, 0.16f, 0f, 0f)); View("DbgL4NoPush.png", eye, at, 60f, false);
+            EditorApplication.Exit(0);
+            return;
+        }
+        if (System.Environment.GetEnvironmentVariable("SNOWLINE_DEBUG") == "1")
+        {
+            // what the far rock's white flecks are: the camp cliff from 330 m and from 110 m, as drawn, then with the
+            // rock's snow turned off piece by piece, then (from 110 m) with both terrain materials flat colours: holes
+            // show the sky, and blue is snow no rock covers
+            var trm = RockFace.TerrainMaterial(Shader.Find("Universal Render Pipeline/Lit"));
+            Vector3 farEye = new Vector3(cx + 330f, top - 140f, -260f), at = new Vector3(cx + 40f, top - 150f, -130f);
+            Vector3 nearEye = at + (farEye - at).normalized * 110f;
+            void Both(string tag) { View($"Dbg{tag}Far.png", farEye, at, 60f, false); View($"Dbg{tag}Near.png", nearEye, at, 60f, false); }
+            Both("0Base");
+            Vector4 sn = trm.GetVector("_Snow"), ln = trm.GetVector("_Line");
+            trm.SetVector("_Snow", new Vector4(5f, 6f, 0f, 0f)); Both("1NoUpSnow");
+            trm.SetVector("_Line", new Vector4(0f, ln.y, 0f, 0f)); Both("2NoLinePush");
+            trm.SetVector("_Snow", sn); trm.SetVector("_Line", ln);
+            // (both terrain materials as flat colours, each chunk given its own copies: the snow's is a project asset)
+            var flatSnow = new Material(Shader.Find("Unlit/Color")) { color = Color.blue };
+            var flatRock = new Material(Shader.Find("Unlit/Color")) { color = Color.red };
+            foreach (var mr in terrain.GetComponentsInChildren<MeshRenderer>()) mr.sharedMaterials = new[] { flatSnow, flatRock };
+            View("Dbg3FlatNear.png", nearEye, at, 60f, false);
+            EditorApplication.Exit(0);
+            return;
+        }
+        foreach (bool night in new[] { false, true })
+        {
+            string when = night ? "Night" : "Day";
+            // (the shoulders' views are from the air: the slopes under them are forest)
+            View($"SnowLineLeft{when}.png", new Vector3(cx - 190f, top - 20f, -40f), new Vector3(cx - 45f, top - 30f, -110f), 60f, night);
+            View($"SnowLineStart{when}.png", G(-95f, -10f, 1.7f), new Vector3(cx - 35f, top - 4f, -45f), 62f, night);
+            View($"SnowLineBack{when}.png", new Vector3(cx - 120f, top + 10f, -300f), new Vector3(cx, top - 50f, -170f), 60f, night);
+            View($"SnowLineCampCliff{when}.png", new Vector3(cx + 330f, top - 140f, -260f), new Vector3(cx + 40f, top - 150f, -130f), 60f, night);
+            float fx = cw + w.side * (w.edge + hw * 0.7f + 22f);
+            View($"SnowLineWallFoot{when}.png", new Vector3(fx, Slope.Height(fx, zw - 30f) + 2.5f, zw - 30f),
+                 new Vector3(Slope.Centre(zw + 25f) + w.side * (w.edge + hw * 0.3f), Slope.Height(Slope.Centre(zw + 25f), zw + 25f) - hw * 0.45f, zw + 25f), 66f, night);
+            View($"SnowLineFar{when}.png", new Vector3(cx + 420f, top + 60f, 160f), new Vector3(cx, top - 60f, -100f), 45f, night);
+            // from the piste part way down, across at a valley's wall (or a ridge's cliff, if the mountain has no wall)
+            float mz = -1f, ms = 1f, md = 0f;
+            foreach (var kind in new[] { Ridge.Side.Wall, Ridge.Side.Cliff })
+            {
+                for (float z = 300f; z < 4000f && mz < 0f; z += 4f)
+                    foreach (float sd in new[] { -1f, 1f })
+                        if (Ridge.SideAt(z, sd) == kind && Ridge.DepthHere(z, sd) > 40f) { mz = z + 60f; ms = sd; md = Ridge.DepthHere(z + 60f, sd); break; }
+                if (mz > 0f) break;
+            }
+            if (mz > 0f)
+            {
+                float mc = Slope.Centre(mz), ac = Slope.Centre(mz + 20f), hwM = Ridge.HalfWidth(mz + 20f);
+                float floorY = Slope.Height(mc - ms * 2f, mz - 20f);
+                View($"SnowLineMidRun{when}.png", new Vector3(mc - ms * 2f, floorY + 1.7f, mz - 20f),
+                     new Vector3(ac + ms * (hwM + 30f), floorY + md * 0.35f, mz + 20f), 64f, night);
+                if (!night) Debug.Log($"SNOWLINE mid-run view at z {mz} side {ms} depth {md} ({Ridge.SideAt(mz, ms)})");
+            }
+        }
+        var tm = RockFace.TerrainMaterial(Shader.Find("Universal Render Pipeline/Lit"));
+        Debug.Log($"SNOWLINE seed {seed} wall z {zw} height {hw} side {w.side}; terrain rock {tm.shader.name} keyword {tm.IsKeywordEnabled("SUMMIT_ROCK_TERRAIN")} queue {tm.renderQueue}");
+        TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt;
+        Physics.simulationMode = SimulationMode.FixedUpdate;
+        EditorApplication.Exit(0);
+    }
+
+    /// <summary>The summit's left shoulder, down its fall line at a few places along it: where the ground holds snow
+    /// (s), is part bare (/) or rock (R), every 2 m out from the shoulder's edge (seed 1).</summary>
+    public static void Shoulder()
+    {
+        Slope.Init(1);
+        float cx = Slope.Centre(Slope.PadLip);
+        for (float z = -20f; z >= -150f; z -= 10f)
+        {
+            var sb = new System.Text.StringBuilder();
+            for (float e = 0f; e <= 160f; e += 2f)
+            {
+                float x = cx + Slope.SummitLeft - e;
+                float ny = Slope.Normal(x, z).y;
+                float r = RockFace.Rockiness(ny, x, z);
+                sb.Append(r < 0.3f ? 's' : r < 0.7f ? '/' : 'R');
+            }
+            Debug.Log($"SHOULDER z{z,5:0} {sb}");
+        }
+        // and the back, down from its edge, at a few places across it
+        for (float a = -80f; a <= 40f; a += 15f)
+        {
+            var sb = new System.Text.StringBuilder();
+            for (float e = 0f; e <= 160f; e += 2f)
+            {
+                float x = cx + a, z = Slope.SummitBack - e;
+                float r = RockFace.Rockiness(Slope.Normal(x, z).y, x, z);
+                sb.Append(r < 0.3f ? 's' : r < 0.7f ? '/' : 'R');
+            }
+            Debug.Log($"BACK a{a,5:0} {sb}");
+        }
+        EditorApplication.Exit(0);
+    }
+
     /// <summary>The ground along the piste's centre line from $LINE_Z0 to $LINE_Z1 on mountain $LINE_SEED, term by term.</summary>
     public static void Line()
     {

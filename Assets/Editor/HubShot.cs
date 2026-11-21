@@ -89,32 +89,34 @@ public static class HubShot
         camp.TeleportTo(from, Toward(from, C(0f, 0f, 0f)));
         Frames(40);
         Shoot("HubShot0b_chalet.png");
-        // 1, 2: up the terrace steps and in through the French doors
-        camp.TeleportTo(C(0f, 0f, 13f), cy + 180f);
+        // (the lodge, CampLodge.cs, or the old chalet: where each view stands)
+        bool lodge = Camp.UseLodge;
+        // 1, 2: up the terrace steps and in through the doors
+        camp.TeleportTo(lodge ? C(4.5f, 0f, 16f) : C(0f, 0f, 13f), cy + 180f);
         Walk(new Vector2(0f, 0.8f), 1.9f);
         Shoot("HubShot1_walkin.png");
         Debug.Log("HUBSHOT steps walking outside: " + camp.FootstepsState);
         Walk(new Vector2(0f, 0.8f), 1.7f); Frames(20);
         Shoot("HubShot2_inside.png");
         Debug.Log("HUBSHOT steps inside, stopped: " + camp.FootstepsState);
-        // 3: the great room: sunken lounge, the hanging fireplace, the pendants
-        camp.TeleportTo(C(-3f, 0f, 4.8f), cy + 118f);
+        // 3: the great room (the chalet's sunken lounge; the lodge's hall toward its tall glass and the wing)
+        camp.TeleportTo(lodge ? C(6.5f, 0f, 2.5f) : C(-3f, 0f, 4.8f), lodge ? cy - 80f : cy + 118f);
         Frames(60);
         Shoot("HubShot3_greatroom.png");
-        // 4: from the lounge back to the kitchen island under the mezzanine
-        camp.TeleportTo(C(3.6f, -0.4f, 3.4f), cy + 200f);
+        // 4: from the lounge back to the kitchen island under the mezzanine (the lodge: the hall, the wing beyond)
+        camp.TeleportTo(lodge ? C(-6f, 0f, 3f) : C(3.6f, -0.4f, 3.4f), lodge ? cy - 70f : cy + 200f);
         Frames(60);
         Shoot("HubShot4_kitchen.png");
         // 5, 6: the mission board and its panel
-        camp.TeleportTo(C(5.4f, 0f, -3f), cy + 90f);
+        if (lodge) camp.TeleportTo(camp.StationPoint(Camp.Station.Missions), cy + 180f); else camp.TeleportTo(C(5.4f, 0f, -3f), cy + 90f);
         Frames(40);
         meta.SetContext(camp.Near);
         Shoot("HubShot5_board.png");
         meta.ShowMissions(); meta.SetContext(camp.Near);
         Shoot("HubShot6_missions.png");
         meta.ClosePanel(false);
-        // 7: up the floating stairs
-        camp.TeleportTo(C(-7.1f, 0f, 4.4f), cy + 180f);
+        // 7: up the floating stairs (the lodge has none: across the hall into the wing)
+        camp.TeleportTo(lodge ? C(-6f, 0f, 0.5f) : C(-7.1f, 0f, 4.4f), lodge ? cy - 90f : cy + 180f);
         Walk(new Vector2(0f, 0.8f), 2.0f);
         Shoot("HubShot7_stairs.png");
         Debug.Log("HUBSHOT steps on the stairs: " + camp.FootstepsState);
@@ -126,7 +128,7 @@ public static class HubShot
         }
         Debug.Log($"HUBSHOT after stairs: walker y={rider.transform.position.y - camp.ChaletPoint(0, 0, 0).y:0.00} (mezzanine 3.6)");
         // 8, 9: the tune-up bench on the mezzanine and the upgrades shop
-        camp.TeleportTo(C(4.6f, 3.6f, -3.0f), cy + 180f);
+        if (lodge) camp.TeleportTo(camp.StationPoint(Camp.Station.Upgrades), cy + 180f); else camp.TeleportTo(C(4.6f, 3.6f, -3.0f), cy + 180f);
         Frames(40);
         meta.SetContext(camp.Near);
         Shoot("HubShot8_bench.png");
@@ -134,27 +136,30 @@ public static class HubShot
         meta.Act("buy" + (int)Progress.Up.Fizz);
         Shoot("HubShot9_upgrades.png");
         meta.ClosePanel(false);
-        // 10: outfits by the board wall, the camera round in front
-        camp.TeleportTo(C(-3.3f, 3.6f, -3.4f), cy);
+        // 10: the wardrobe, from the board wall (the closet lays itself out as it opens: at the phone's shape)
+        if (lodge) camp.TeleportTo(camp.StationPoint(Camp.Station.Style), cy + 180f); else camp.TeleportTo(C(-3.3f, 3.6f, -3.4f), cy);
         Frames(10);
         meta.SetContext(camp.Near);
-        meta.ShowShop(1); camp.Showcase = true; meta.SetContext(camp.Near);
-        Frames(60);
+        Debug.Log($"HUBSHOT at the board wall: near={camp.Near}");
+        cam.targetTexture = new RenderTexture(590, 1278, 24); cam.aspect = 590f / 1278f;
+        Canvas.ForceUpdateCanvases();
+        meta.ShowShop(1);
+        for (int i = 0; i < 40; i++) { meta.Stage.Pose(dt); Step(Vector2.zero); }
         Shoot("HubShot10_outfits.png");
-        camp.Showcase = false; meta.ClosePanel(false);
-        // 11: from the mezzanine over the great room and out through the glass
-        camp.TeleportTo(C(1.5f, 3.6f, -1.3f), cy);
+        meta.ClosePanel(false);
+        // 11: from the mezzanine over the great room and out through the glass (the lodge: from the back of the hall)
+        camp.TeleportTo(lodge ? C(-2f, 0f, -3f) : C(1.5f, 3.6f, -1.3f), lodge ? cy + 10f : cy);
         Frames(60);
         Shoot("HubShot11_mezzview.png");
         // 12: running across the camp (stick pushed right out)
-        camp.Teleport(-2f, -84f, 180f);
+        camp.Teleport(-2f, -54f, 180f);
         Walk(new Vector2(0f, 1f), 1.6f);
         Shoot("HubShot12_run.png");
         Debug.Log("HUBSHOT steps running: " + camp.FootstepsState);
         Walk(new Vector2(0f, 1f), 0.17f);
         Shoot("HubShot12b_run.png");
         // footprints: walk a loop on open snow, then run; look back along them
-        camp.Teleport(-4f, -88f, 90f);
+        camp.Teleport(-4f, -58f, 90f);
         Walk(new Vector2(0f, 0.75f), 2.6f);
         Walk(new Vector2(-0.5f, 0.6f), 1.2f);
         Frames(30);
@@ -172,12 +177,12 @@ public static class HubShot
         camp.TeleportTo(from, Toward(from, C(0f, 0f, 0f)));
         Frames(40);
         Shoot("HubShot13_night.png");
-        camp.TeleportTo(C(-3f, 0f, 4.8f), cy + 118f);
+        camp.TeleportTo(lodge ? C(-4f, 0f, -2f) : C(-3f, 0f, 4.8f), lodge ? cy - 20f : cy + 118f);
         Frames(60);
         Shoot("HubShot13b_night_inside.png");
         camp.SetNight(0f);
         // 8: the lookout
-        camp.Teleport(16f, -84.5f, 0f);
+        camp.Teleport(16f, -54.5f, 0f);
         Frames(120);
         Shoot("HubShot14_lookout.png");
         // 9: DROP IN, under the MT. VERTIGO banner above the start pad
@@ -258,10 +263,12 @@ public static class HubShot
         Canvas.ForceUpdateCanvases();
         var skins = Object.FindObjectsByType<SkinnedMeshRenderer>(FindObjectsSortMode.None);
         var baked = new System.Collections.Generic.List<GameObject>();
-        foreach (var sk in skins) { var m = new Mesh(); sk.BakeMesh(m); var g = new GameObject("b", typeof(MeshFilter), typeof(MeshRenderer)); g.GetComponent<MeshFilter>().sharedMesh = m; g.GetComponent<MeshRenderer>().sharedMaterials = sk.sharedMaterials; g.transform.SetPositionAndRotation(sk.transform.position, sk.transform.rotation); sk.enabled = false; baked.Add(g); }
+        int mask = cam.cullingMask; cam.cullingMask |= 1 << meta.gameObject.layer;   // (the canvas draws with this camera here; the closet's studio limits what it sees)
+        foreach (var sk in skins) { var m = new Mesh(); sk.BakeMesh(m); var g = new GameObject("b", typeof(MeshFilter), typeof(MeshRenderer)); g.layer = sk.gameObject.layer; g.GetComponent<MeshFilter>().sharedMesh = m; g.GetComponent<MeshRenderer>().sharedMaterials = sk.sharedMaterials; g.transform.SetPositionAndRotation(sk.transform.position, sk.transform.rotation); sk.enabled = false; baked.Add(g); }
         cam.Render();
         foreach (var g in baked) Object.DestroyImmediate(g);
         foreach (var sk in skins) sk.enabled = true;
+        cam.cullingMask = mask;
         RenderTexture.active = rt;
         var tex = new Texture2D(w, h, TextureFormat.RGB24, false);
         tex.ReadPixels(new Rect(0, 0, w, h), 0, 0); tex.Apply();

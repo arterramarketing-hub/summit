@@ -66,6 +66,7 @@ namespace Summit
         static void PlantTree(Transform root, GameObject prefab, Vector3 at, float size, float yaw)
         {
             var g = Object.Instantiate(prefab, root);
+            TreeWind.SwayAll(g);   // moves in the wind like the forest's
             g.name = "TapeTree";
             g.transform.rotation = Quaternion.Euler(0f, yaw, 0f) * prefab.transform.rotation;   // keep the model's own axis fix
             g.transform.position = Vector3.zero;

@@ -29,6 +29,8 @@ namespace Summit
         Vector3 lastVel;
         /// <summary>The thrown body or board hit something: impact speed, and whether it was the board.</summary>
         public System.Action<float, bool> RagdollHit;
+        /// <summary>The tumbling body struck something (a tree, rock, sign): what, where, how hard (m/s into it).</summary>
+        public System.Action<Collider, Vector3, float> RagdollStruck;
         /// <summary>A bone gave way: which limb ("Left arm", "Ribs", ...), and where.</summary>
         public System.Action<string, Vector3> BoneBroke;
         public SnowFX fx;
@@ -99,6 +101,8 @@ namespace Summit
 
             // a groove pressed into the snow behind the board
             trail = new SnowTrail(jacket != null ? jacket.shader : Shader.Find("Universal Render Pipeline/Lit"));
+            sideTrail = new[] { new SnowTrail(jacket != null ? jacket.shader : Shader.Find("Universal Render Pipeline/Lit")),
+                                new SnowTrail(jacket != null ? jacket.shader : Shader.Find("Universal Render Pipeline/Lit")) };   // the skis' two tracks (RiderBodyRide)
             craters = new Craters(jacket != null ? jacket.shader : Shader.Find("Universal Render Pipeline/Lit"));
 
             // powder off the edge
@@ -442,8 +446,10 @@ namespace Summit
             ragdoll.Drag += OnRagdollDrag;
             ragdoll.Ploughed += (bone, down, v) => snowy?.Plough(down, v, Time.fixedDeltaTime);   // snow packed onto the clothes
             ragdoll.Struck += OnRagdollStruck; ragdoll.Ploughed += BleedAlong;   // blood on a hard hit (RiderBodyBlood)
+            ragdoll.Struck += (c, at, n, into, bone) => RagdollStruck?.Invoke(c, at, into);
             ragdoll.Prebuild();
             HookLimbs();   // limbs torn off by the worst hits (RiderBodyLimbs)
+            HookInjuries();   // each hit, for the medical receipt (RiderBodyInjury)
         }
         float tubeSpin, tubeSpinRate;
         public bool Tube { get; private set; }
@@ -500,12 +506,12 @@ namespace Summit
         {
             Tube = on;
             if (ragdoll != null && ragdoll.Active) ragdoll.End();
-            boardRoot.gameObject.SetActive(!on);
+            ShowRide();   // the board (or the skis) when not in the tube (RiderBodyRide)
             tubeRoot.gameObject.SetActive(on);
             MakeRagdoll();
             if (ragdoll == null) return;
-            if (on) ragdoll.SetBoard(tubeRoot, new Vector3(1.6f, 0.44f, 1.6f), new Vector3(0f, 0.22f, 0f));
-            else ragdoll.SetBoard(boardRoot, new Vector3(0.29f, 0.07f, 1.55f), new Vector3(0f, 0.04f, 0f));
+            if (on) { ragdoll.SetBoard(tubeRoot, new Vector3(1.6f, 0.44f, 1.6f), new Vector3(0f, 0.22f, 0f)); ragdoll.SetExtras(null); }
+            else RideRagdoll();   // the board, or the skis and poles
             tubeSpin = 0f; tubeSpinRate = 0f;
         }
 
@@ -533,9 +539,9 @@ namespace Summit
             compV += (-comp * 140f - compV * 16f) * dt;
             comp = Mathf.Clamp(comp + compV * dt, -0.15f, 0.6f);
             bool idle = !rider.Running, crashed = rider.Crashed, air = rider.Airborne;
-            bool grab = air && rider.TrickGrab > 0 && rider.TrickProgress > 0.1f && rider.TrickProgress < 0.95f;
-            bool flip = air && Mathf.Abs(rider.TrickFlip) > 0f;
-            float toe = Mathf.Clamp(rider.Lean / Rider.MaxLean, -1f, 1f);
+            bool grab = air && rider.GrabPose > 0.5f;
+            bool flip = air && Mathf.Abs(rider.TrickFlip) > 0f && rider.TrickProgress < 0.97f;
+            float toe = Mathf.Clamp(rider.Lean / Rider.MaxLean * StanceSign, -1f, 1f);
             float chatterV = idle || air ? 0f : (Mathf.PerlinNoise(t * 9f, 1.3f) - 0.5f) * 0.1f * Mathf.Clamp01(rider.Speed / 30f);
             float crouch = idle ? 0.15f + 0.04f * Mathf.Sin(t * 2.1f) : 0.45f + 0.35f * rider.Tuck + comp + Mathf.Abs(toe) * 0.2f + chatterV;
             if (grab || flip) crouch = 1f;
@@ -642,11 +648,11 @@ namespace Summit
 
             float tuck = rider.Tuck, carve = rider.Carve, steer = rider.Steer, speed01 = Mathf.Clamp01(rider.Speed / 30f);
             bool idle = !rider.Running, crashed = rider.Crashed, air = rider.Airborne;
-            bool grab = air && rider.TrickGrab > 0 && rider.TrickProgress > 0.1f && rider.TrickProgress < 0.95f;
-            bool flip = air && Mathf.Abs(rider.TrickFlip) > 0f;
+            bool grab = air && rider.GrabPose > 0.5f;
+            bool flip = air && Mathf.Abs(rider.TrickFlip) > 0f && rider.TrickProgress < 0.97f;
             // the board chatters a little at speed: tiny fast flex in the knees
             chatter = idle || air ? 0f : (Mathf.PerlinNoise(t * 9f, 1.3f) - 0.5f) * 0.08f * speed01;
-            float toe = Mathf.Clamp(steer, -1f, 1f);   // + = toe-side (right) turn, - = heel-side
+            float toe = Mathf.Clamp(steer * StanceSign, -1f, 1f);   // + = toe-side (right) turn, - = heel-side (switch: the other way about)
             float crouch = idle ? 0.25f + 0.03f * Mathf.Sin(t * 2.1f)
                          : Mathf.Lerp(0.5f, 0.9f, tuck) + comp + Mathf.Abs(toe) * 0.18f + chatter;
             if (grab || flip) crouch = 1f;
@@ -685,6 +691,7 @@ namespace Summit
                 W(mArmFL, Mathf.Sin(t * 7f) * 0.8f); W(mArmFR, Mathf.Sin(t * 6f + 2f) * 0.8f);
                 W(mKneeL, Mathf.Sin(t * 5f) * 0.6f); W(mKneeR, Mathf.Sin(t * 6f + 1f) * 0.6f);
             }
+            if (!crashed) FlinchMuscles(dt);
             if (Walking) WalkMuscles(t);
             // ease every muscle toward its target, so nothing snaps
             float k = dt <= 0f ? 1f : 1f - Mathf.Exp(-dt * (crashed ? 20f : 11f));
@@ -706,6 +713,40 @@ namespace Summit
         }
 
         void W(int i, float v) { if (i >= 0 && i < want.Length) want[i] = Mathf.Clamp(v, -1f, 1f); }
+
+        /// <summary>Riding switch, as drawn (Rider.Switch: snowboard and skis only).</summary>
+        bool SwitchNow => rider != null && rider.Switch && !Tube;
+        /// <summary>+1 riding the normal way, -1 switch: the board's toe and heel edges (a skier's left and right) are
+        /// the other way about in the world.</summary>
+        float StanceSign => SwitchNow ? -1f : 1f;
+
+        // ---- a flinch: branches whipping past, an arm thrown up on that side, the head turned away
+        float flinchT, flinchK; bool flinchLeft;
+
+        /// <summary>Something whipped past at `from` (branches ridden through): the arm on that side comes up over the
+        /// face and the head turns away, for a moment, `amount` 0..1 how hard.</summary>
+        public void Flinch(Vector3 from, float amount)
+        {
+            if (anim == null || rider == null || rider.Crashed) return;
+            var l = anim.GetBoneTransform(HumanBodyBones.LeftUpperArm); var r = anim.GetBoneTransform(HumanBodyBones.RightUpperArm);
+            if (l == null || r == null) return;
+            flinchLeft = (from - l.position).sqrMagnitude < (from - r.position).sqrMagnitude;
+            flinchK = Mathf.Max(flinchT > 0f ? flinchK : 0f, Mathf.Clamp01(0.45f + 0.55f * amount));
+            flinchT = 0.25f + 0.3f * amount;
+        }
+
+        void FlinchMuscles(float dt)
+        {
+            if (flinchT <= 0f) return;
+            flinchT -= dt;
+            float k = flinchK * Mathf.Clamp01(flinchT / 0.15f);
+            int arm = flinchLeft ? mArmL : mArmR, front = flinchLeft ? mArmFL : mArmFR, elbow = flinchLeft ? mElbowL : mElbowR;
+            float side = flinchLeft ? 1f : -1f;
+            float G(int i) => i >= 0 && i < want.Length ? want[i] : 0f;
+            W(arm, Mathf.Lerp(G(arm), 1f, k)); W(front, Mathf.Lerp(G(front), 1f, k)); W(elbow, Mathf.Lerp(G(elbow), -0.9f, k));
+            W(mHead, Mathf.Lerp(G(mHead), 0.65f - side * 0.6f, k)); W(mNeck, Mathf.Lerp(G(mNeck), 0.55f - side * 0.3f, k));
+            W(mChest, G(mChest) + 0.25f * k);   // ducking in
+        }
 
         /// <summary>How far the target is beyond the leg's full stretch (negative when reachable).</summary>
         static float Reach(Transform hip, Transform knee, Transform foot, Vector3 target)
@@ -853,10 +894,12 @@ namespace Summit
             foreach (var g in bandages) if (g != null) { if (Application.isPlaying) Destroy(g); else DestroyImmediate(g); }
             bandages.Clear(); bandaged.Clear(); brokenThisCrash.Clear();
             trail.Clear();
+            if (sideTrail != null) foreach (var st in sideTrail) st.Clear();
             RagdollBelowSnow = 0f;
             RagdollMoving = false;
             Dead = false;
             spray.Clear();
+            if (sparks != null) sparks.Clear();
             bow.Clear();
             marks.Clear();
             craters.Clear();
@@ -934,15 +977,16 @@ namespace Summit
                 if (ragdoll.Active)
                 {
                     // crashed again before the last one was tidied away: patch up, then throw again
-                    DetachLimbs(); ragdoll.End();   // (a limb lost stays lost: RiderBodyLimbs)
+                    DetachLimbs(); ragdoll.End(); MendLimbs();   // (a limb lost is patched back on, bandaged: RiderBodyLimbs)
                     foreach (var b in brokenThisCrash) Bandage(b);
                 }
                 ragdoll.Begin(lastVel);
                 FallBegin();   // how far it falls from here, and whether that kills (RiderBodyFall)
                 stillFor = 0f;
                 fx?.Thud(transform.position, Mathf.Max(6f, lastVel.magnitude * 0.6f), lastVel * 0.6f);   // the wipeout itself
-                brokenThisCrash.Clear();
+                brokenThisCrash.Clear(); breaksTold = 0;   // (breaksTold: the receipt's count, RiderBodyInjury)
                 crashClock = 0f;
+                ResetSettle();   // every fall ends (RiderBodySettle)
             }
             if (ragdoll != null && ragdoll.Active)
             {
@@ -957,6 +1001,7 @@ namespace Summit
                 ragdoll.Steer = rider.Crashed && !rider.StayDown ? rider.Steer : 0f;   // steer the fall with the same thumb (not once it's over, or the slide has you)
                 ragdoll.PhysicsStep();
                 FallStep();
+                SettleStep();
                 SnowLayer.Instance?.PressBody(ragdoll);   // every part presses its own shape into the snow
                 rider.CrashFollow = ragdoll.Centre;
                 rider.HasCrashFollow = rider.Crashed;
@@ -979,7 +1024,7 @@ namespace Summit
             pivot.localPosition = Vector3.down * Rider.R;
 
             // tilt with the snow, blending to level as you leave it
-            Vector3 n = Vector3.Slerp(Slope.Normal(p.x, p.z), Vector3.up, Mathf.Clamp01(rider.AboveGround / 1.5f));
+            Vector3 n = Vector3.Slerp(rider.GroundNormal(p), Vector3.up, Mathf.Clamp01(rider.AboveGround / 1.5f));   // (a roof's pitch, on a roof)
             normal = dt <= 0f ? n : Vector3.Slerp(normal, n, 1f - Mathf.Exp(-dt * 14f));
 
             if (!rider.Crashed) lastVel = rider.Velocity;
@@ -995,7 +1040,7 @@ namespace Summit
                 else
                 {
                     FallRested?.Invoke(ragdoll.Centre);   // a flag where you came to rest
-                    DetachLimbs(); ragdoll.End(); spray.Emit(30);   // back up on the board, patched up (a lost limb left on the snow: RiderBodyLimbs)
+                    DetachLimbs(); ragdoll.End(); MendLimbs(); spray.Emit(30);   // back up on the board, patched up (a lost limb left on the snow, the rider's bandaged: RiderBodyLimbs)
                     RagdollMoving = false; rider.HoldCrash = false;
                     RagdollBelowSnow = 0f;
                     foreach (var b in brokenThisCrash) Bandage(b);
@@ -1023,36 +1068,57 @@ namespace Summit
                 {
                     // 50-50 along a box; across the rail for a boardslide
                     var fd = rider.GrindFeature.Dir;
-                    yaw = Mathf.Atan2(fd.x, fd.z) + (rider.GrindFeature.kind == Course.Kind.Rail ? Mathf.PI * 0.5f : 0f);
+                    // (and whatever it has been switched to since: Rider.GrindYaw; a lift's launch ramp is ridden straight)
+                    yaw = Mathf.Atan2(fd.x, fd.z) + (rider.GrindLive ? rider.GrindYaw : 0f);
                     up = Vector3.up;
                 }
                 var f = new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw));
                 Vector3 fp = Vector3.ProjectOnPlane(f, up);
                 Quaternion baseRot = fp.sqrMagnitude > 1e-4f ? Quaternion.LookRotation(fp.normalized, up) : pivot.rotation;
-                // an automatic trick: spin about the body's up axis and flip about the board, round the middle of the body
-                Quaternion rot = baseRot;
+                // riding switch: the rider (and the board under them) turned round, going tail first (Rider.Switch)
+                Quaternion stance = SwitchNow ? baseRot * Quaternion.AngleAxis(180f, Vector3.up) : baseRot;
+                // the trick being turned: spin about the body's up axis and flip about the board, round the middle of the body
+                Quaternion rot = stance;
+                Vector3 flipAxis = RidingGear ? Vector3.right : Vector3.forward;   // (a skier faces the way they go: a flip is head over heels along the line)
                 if (rider.Airborne && rider.TrickName != null)
                 {
-                    float k = rider.TrickProgress;
-                    rot = baseRot * Quaternion.AngleAxis(rider.TrickSpin * k * Mathf.Rad2Deg, Vector3.up)
-                                  * Quaternion.AngleAxis(rider.TrickFlip * k * Mathf.Rad2Deg, Vector3.forward);
+                    float tw = rider.GrabTweak;   // a tweaked grab: the board poked out and across
+                    rot = stance * Quaternion.AngleAxis(rider.SpinNow * Mathf.Rad2Deg, Vector3.up)
+                                  * Quaternion.AngleAxis(rider.FlipNow * Mathf.Rad2Deg, flipAxis)
+                                  * Quaternion.Euler(9f * tw, 24f * tw, 0f);
                 }
+                // just landed short of the line (a half turn lands switch): the board swings round under the rider
+                else if (!rider.Airborne && !rider.Grinding && (rider.LandSpin != 0f || rider.LandFlip != 0f))
+                    rot = stance * Quaternion.AngleAxis(rider.LandSpin * Mathf.Rad2Deg, Vector3.up) * Quaternion.AngleAxis(rider.LandFlip * Mathf.Rad2Deg, flipAxis);
+                // a press on a rail: the nose (or the tail) down, the other end up
+                else if (rider.GrindLive && rider.GrindPress != 0f)
+                    rot = stance * Quaternion.AngleAxis(rider.GrindPress * 11f, Vector3.right);
                 if (Tube)
                 {
                     // the rider faces down the line (the model faces the board's +X), and the tube turns slowly
                     // after a bounce
                     tubeSpinRate *= Mathf.Exp(-dt * 0.8f);
                     tubeSpin += tubeSpinRate * dt;
-                    rot = baseRot * Quaternion.Euler(0f, -90f + tubeSpin * Mathf.Rad2Deg, 0f);
+                    // (and spun in the air by the stick: Rider.SpinNow, with what a landing leaves of it swinging out)
+                    float spun = rider.Airborne ? rider.SpinNow : rider.LandSpin;
+                    rot = baseRot * Quaternion.Euler(0f, -90f + (tubeSpin + spun) * Mathf.Rad2Deg, 0f);
                 }
                 Vector3 mid = new Vector3(0f, 0.9f, 0f);
                 pivot.rotation = rot;
                 pivot.position = p + Vector3.down * Rider.R + baseRot * mid - rot * mid;
 
-                // the lean IS the steering readout: the body is on exactly the edge the thumb asked for
-                float leanDeg = rider.Lean * Mathf.Rad2Deg;
+                // the lean IS the steering readout: the body is on exactly the edge the thumb asked for (turned round,
+                // riding switch, the board's own sides are the other way about: the same lean in the world)
+                float leanDeg = rider.Lean * Mathf.Rad2Deg * StanceSign;
                 roll.localRotation = Tube ? Quaternion.Euler(leanDeg * 0.5f, 0f, 0f) : Quaternion.Euler(0f, 0f, -leanDeg * 0.75f);
                 upper.localRotation = Quaternion.Euler(0f, 0f, -leanDeg * 0.25f);
+                if (RidingGear) upper.localRotation = Quaternion.identity;   // a skier's upper body angles back out of the turn (in the clips)
+                if (RidingGear && Ride == RideKind.Toboggan)
+                {
+                    // a toboggan has no edge to stand on: it stays nearly flat and the rider leans over its side
+                    roll.localRotation = Quaternion.Euler(0f, 0f, -leanDeg * 0.2f);
+                    upper.localRotation = Quaternion.Euler(0f, 0f, -leanDeg * 0.3f);
+                }
                 if (Walking) WalkFrame(dt);   // on foot in the camp
                 if (poser != null) Pose(dt);
                 else if (rig != null) PoseRig(dt);
@@ -1060,9 +1126,13 @@ namespace Summit
             }
 
             // the track: a groove pressed into the snow under the board (none in snow the avalanche is churning)
-            trail.Feed(p + Vector3.down * Rider.R, normal, rider.TravelHeading, rider.Running && !rider.Crashed && !rider.Airborne && !rider.Grinding && rider.Undercut < 0.05f,
-                       Tube ? 1.25f : Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Slope.Rough(p.x, p.z)),
-                       Tube ? 0f : rider.Lean / Rider.MaxLean, Tube ? 0.5f : rider.Skid, dt);   // a tube leaves a wide, shallow chute
+            bool tracking = rider.Running && !rider.Crashed && !rider.Airborne && !rider.Grinding && rider.Undercut < 0.05f;
+            bool onSkis = RidingGear && Ride == RideKind.Skis;        // two narrow tracks instead of the one trench
+            bool onSled = RidingGear && Ride == RideKind.Toboggan;    // a wide flat track, and the dragged heel's scuff beside it
+            FeedSideTracks(p + Vector3.down * Rider.R, tracking, Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Slope.Rough(p.x, p.z)), dt);
+            trail.Feed(p + Vector3.down * Rider.R, normal, rider.TravelHeading, tracking && !onSkis,
+                       (Tube ? 1.25f : Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Slope.Rough(p.x, p.z))) * (onSled ? 1.6f : 1f),
+                       Tube || onSled ? 0f : rider.Lean / Rider.MaxLean, Tube ? 0.5f : onSled ? rider.Skid * 0.3f : rider.Skid, dt);   // a tube leaves a wide, shallow chute
 
             // bow wave off the nose: more with speed, deeper snow and when the edge bites
             bool riding = rider.Running && !rider.Crashed && !rider.Airborne && !rider.Grinding;
@@ -1070,6 +1140,7 @@ namespace Summit
                 ? rider.Speed * (4.5f + 4f * Slope.Rough(p.x, p.z)) * (1f + 1.2f * Mathf.Abs(rider.Lean) / Rider.MaxLean + rider.Skid)
                 : 0f;
 
+            GrindSparks(p, dt);   // a few sparks off a rail (RiderBodySparks)
             sprayEm.rateOverTime = rider.Running && !rider.Crashed && !rider.Airborne
                 ? rider.Carve * rider.Speed * 7f + Mathf.Max(0f, rider.Speed - 22f) * 1.5f + (rider.BoostTime > 0f ? 60f : 0f)
                 : 0f;

@@ -11,7 +11,12 @@ namespace Summit
         Nooo, Ledge,  // the player's own clips (Resources/Audio/user_*.mp3)
         BigScream,    // one of the player's screams (Resources/Audio/UserScreams), shuffled
         SlideCrack,   // the slope letting go behind you: a crack, and the rumble building
-        BoneLeg, BoneBack, BoneNeck, BoneArm   // the harsh breaks: a big bone, the spine, the neck, an arm
+        BoneLeg, BoneBack, BoneNeck, BoneArm,  // the harsh breaks: a big bone, the spine, the neck, an arm
+        BuddyWoah, BuddyClose, BuddyCheer, BuddyOuch,  // the player's own voice lines (Resources/Audio/Buddy/<group>)
+        BuddyWarn, BuddyDeep,                           // "lookout" (something in the way), "don't go down there" (a deadly drop or crevasse)
+        PointTick, Bank, ComboLost, BillTick,           // the points running up (a note that climbs), a combo banked (by its size, 0..4), one lost; the bill running up
+        Branches,     // riding through a tree's branches: needles swishing past and twigs cracking (made here: BranchClips)
+        ClothRip      // a SLOW banner torn off its stakes: the fabric ripping and a flap (made here: ClothClips)
     }
 
     /// <summary>What the ride sounds like this frame (all 0..1 unless noted).</summary>
@@ -25,8 +30,9 @@ namespace Summit
 
     /// <summary>
     /// The whole soundscape, from clips made by Tools/MakeAudio.swift (Resources/Audio):
-    /// a bed of mountain air; two layers of wind (a deep roar and a whistle past the ears) that rise
-    /// with speed; the board on the snow as separate layers that the ride crossfades between: a
+    /// a bed of mountain air; a quiet bed of moving air (wind_low) always there and barely rising with speed, and a
+    /// harsh rush of wind (wind_high) only in extreme weather (Weather.Howl: a storm, a windy day, a front arriving),
+    /// coming and going with the gusts; the board on the snow as separate layers that the ride crossfades between: a
     /// glide hiss, the edge biting in a carve, the chatter of a skid, the soft crush of powder; metal
     /// and plastic grinds; the avalanche rumbling up behind; the fizz of a boost. One-shots for
     /// everything that happens, some of them placed in the world (the bear, birds, crows), and a
@@ -69,6 +75,92 @@ namespace Summit
 
         static AudioClip C(string n) => Resources.Load<AudioClip>("Audio/" + n);
 
+        AudioClip[] branches;
+
+        /// <summary>
+        /// Riding through branches, made rather than recorded (no clip in Resources/Audio has it): a swish of needles
+        /// (noise, shaped like a brush past: a fast rise and a half-second fall, band-limited to the hiss of
+        /// needles), with twigs cracking in it (sharp clicks, each a few milliseconds of bright noise with a short
+        /// woody ring). Three takes, different cracks.
+        /// </summary>
+        static AudioClip[] BranchClips()
+        {
+            const int rate = 44100; int n = (int)(rate * 0.55f);
+            var takes = new AudioClip[3];
+            var rs = Random.state;
+            for (int k = 0; k < takes.Length; k++)
+            {
+                Random.InitState(5021 + k * 97);
+                var d = new float[n];
+                float lp1 = 0f, lp2 = 0f;
+                for (int i = 0; i < n; i++)
+                {
+                    float t = i / (float)rate;
+                    float env = Mathf.Min(1f, t / 0.02f) * Mathf.Exp(-t / 0.13f);
+                    float w = Random.value * 2f - 1f;
+                    lp1 += (w - lp1) * 0.55f; lp2 += (lp1 - lp2) * 0.08f;   // keep 1-6 kHz or so: needles, not wind
+                    d[i] = (lp1 - lp2) * env * 0.9f;
+                }
+                int cracks = 4 + k;
+                for (int c = 0; c < cracks; c++)
+                {
+                    int at = (int)(rate * Random.Range(0.005f, 0.3f));
+                    float ring = Random.Range(1700f, 3400f), amp = Random.Range(0.45f, 1f) * (c == 0 ? 1f : 0.7f);
+                    int len = (int)(rate * 0.03f);
+                    for (int i = 0; i < len && at + i < n; i++)
+                    {
+                        float t = i / (float)rate;
+                        float click = (Random.value * 2f - 1f) * Mathf.Exp(-t / 0.0025f);
+                        float body = Mathf.Sin(t * ring * 2f * Mathf.PI) * Mathf.Exp(-t / 0.009f) * 0.6f;
+                        d[at + i] += (click + body) * amp;
+                    }
+                }
+                float peak = 0.01f; foreach (var x in d) peak = Mathf.Max(peak, Mathf.Abs(x));
+                for (int i = 0; i < n; i++) d[i] *= 0.9f / peak;
+                takes[k] = AudioClip.Create("Branches" + k, n, 1, rate, false);
+                takes[k].SetData(d, 0);
+            }
+            Random.state = rs;
+            return takes;
+        }
+
+        /// <summary>
+        /// A banner ripping (three takes): a grainy tear (noise in the fabric's band, gated on and off every few
+        /// milliseconds like threads giving one after another) and the slap of the cloth as it comes free.
+        /// </summary>
+        static AudioClip[] ClothClips()
+        {
+            const int rate = 44100; int n = (int)(rate * 0.5f);
+            var takes = new AudioClip[3];
+            var rs = Random.state;
+            for (int k = 0; k < takes.Length; k++)
+            {
+                Random.InitState(7717 + k * 131);
+                var d = new float[n];
+                float lp1 = 0f, lp2 = 0f, gate = 1f; int nextGate = 0;
+                float len = 0.22f + 0.05f * k;
+                for (int i = 0; i < n; i++)
+                {
+                    float t = i / (float)rate;
+                    if (i >= nextGate) { gate = Random.Range(0.15f, 1f); nextGate = i + (int)(rate * Random.Range(0.002f, 0.006f)); }
+                    float env = Mathf.Min(1f, t / 0.008f) * (t < len ? 1f - 0.4f * t / len : 0.6f * Mathf.Exp(-(t - len) / 0.03f));
+                    float w = Random.value * 2f - 1f;
+                    lp1 += (w - lp1) * 0.4f; lp2 += (lp1 - lp2) * 0.04f;   // about 600 Hz to 5 kHz: cloth, not wind
+                    d[i] = (lp1 - lp2) * env * gate;
+                    // the flap, as it comes off the stake
+                    float tf = t - len;
+                    if (tf > 0f) d[i] += Mathf.Sin(tf * 150f * 2f * Mathf.PI) * Mathf.Exp(-tf / 0.035f) * 0.5f;
+                }
+                float peak = 0.01f; foreach (var x in d) peak = Mathf.Max(peak, Mathf.Abs(x));
+                for (int i = 0; i < n; i++) d[i] *= 0.9f / peak;
+                takes[k] = AudioClip.Create("ClothRip" + k, n, 1, rate, false);
+                takes[k].SetData(d, 0);
+            }
+            Random.state = rs;
+            return takes;
+        }
+        AudioClip[] clothRips;
+
         public void Build()
         {
             ambience = Loop("ambience"); windLow = Loop("wind_low"); windHigh = Loop("wind_high");
@@ -107,6 +199,9 @@ namespace Summit
             voice = gameObject.AddComponent<AudioSource>(); voice.playOnAwake = false; voice.spatialBlend = 0f;
             nooo = C("user_crevasse_nooo"); ledge = C("user_ledge_suspense");
             bigScreams = Resources.LoadAll<AudioClip>("Audio/UserScreams");
+            buddy = new[] { new Bag(Resources.LoadAll<AudioClip>("Audio/Buddy/Woah")), new Bag(Resources.LoadAll<AudioClip>("Audio/Buddy/Close")),
+                            new Bag(Resources.LoadAll<AudioClip>("Audio/Buddy/Cheer")), new Bag(Resources.LoadAll<AudioClip>("Audio/Buddy/Ouch")),
+                            new Bag(Resources.LoadAll<AudioClip>("Audio/Buddy/Warn")), new Bag(Resources.LoadAll<AudioClip>("Audio/Buddy/Deep")) };
             screamBag = new int[bigScreams.Length]; screamNext = screamBag.Length;   // shuffled on first use
             cue = gameObject.AddComponent<AudioSource>(); cue.playOnAwake = false; cue.spatialBlend = 0f;
             music = new GameObject("Music").AddComponent<Music>();
@@ -160,6 +255,24 @@ namespace Summit
             l.src.pitch = l.pitch;
         }
 
+        /// <summary>
+        /// The wind's levels (AudioSource volume): wind_low's at rest in calm weather (it rises to about 2.7 times this at
+        /// most: speed, air, a gust, a storm), and wind_high's at the height of a storm's gust (0.45 of it between gusts).
+        /// Set for the cleaned recordings as Unity imports them (Force To Mono, no Normalize: wind_low -27.5 LUFS, a
+        /// rumble under 500 Hz; wind_high -15.8 LUFS, up to 8 kHz) so the wind is heard as loud as it was tuned before the
+        /// cleanup: wind_low about -41.5 LUFS at rest, near the ambience bed (-42); a storm's wind_high -33.9 LUFS
+        /// between gusts and -27.2 at a full gust, 7.6 and 14.3 LU over the calm bed.
+        /// </summary>
+        public static float WindLow = 0.2f, WindHigh = 0.27f;
+
+        /// <summary>
+        /// The wind's two volumes (x wind_low, y wind_high) for a speed (0..1 of 36 m/s), in the air or not, a gust
+        /// (0..1) and the weather's extreme wind (Weather.Howl, 0 calm .. 1 a storm). wind_high is the weather's alone.
+        /// </summary>
+        public static Vector2 WindLevels(float speed01, bool air, float gust, float howl) =>
+            new Vector2(WindLow * (1f + 0.5f * speed01 + (air ? 0.25f : 0f) + 0.375f * gust + 0.6f * howl),
+                        howl * WindHigh * (0.45f + 0.55f * gust));
+
         public void Set(RideSound r)
         {
             if (glide == null) return;
@@ -169,8 +282,14 @@ namespace Summit
 
             // air and wind
             Mix(ambience, 0.22f * (1f - 0.5f * s), 1f, 2f, 2f, dt);
-            Mix(windLow, (0.05f + 0.55f * s * s) * master, 0.8f + 0.4f * s, 4f, 3f, dt);
-            Mix(windHigh, (0.02f + 0.42f * Mathf.Pow(s, 2.2f) + (r.air ? 0.12f + 0.15f * s : 0f)) * master, 0.85f + 0.35f * s, 4f, 3f, dt);
+            // the wind is ambience, kept low: the speed is heard in the board (glide, carve), not in a roar. wind_low is
+            // the everyday bed, a little more with speed, in the air, in a gust and in a storm; wind_high is only the
+            // weather's (Weather.Howl, 0 in calm weather, so never from speed), swelling with each gust as the trees bend
+            float gust = TreeWind.Strength > 0.01f ? Mathf.Clamp01(TreeWind.Here / TreeWind.Strength) : 0f;
+            float howl = Weather.Howl;
+            var wind = WindLevels(s, r.air, gust, howl);
+            Mix(windLow, wind.x * master, 0.93f + 0.1f * s + 0.04f * gust, 2f, 2f, dt);
+            Mix(windHigh, wind.y * master, 0.88f + 0.18f * gust, 1.5f, 1f, dt);
 
             // the board on the snow: snaps on when you land, cuts out the moment you leave the ground
             float snowUp = 30f, snowDown = 25f;
@@ -187,7 +306,8 @@ namespace Summit
             Mix(boost, r.boost ? 0.45f : 0f, 1f + 0.2f * s, 10f, 4f, dt);
 
             muffle = Mathf.Lerp(muffle, r.muffle, 1f - Mathf.Exp(-dt * 5f));
-            muffler.cutoffFrequency = Mathf.Lerp(22000f, 700f, Mathf.Sqrt(muffle));
+            // (falling snow hushes the world too, gently: Weather.Hush, 0..1, down to about 4.5 kHz at most)
+            muffler.cutoffFrequency = Mathf.Min(Mathf.Lerp(22000f, 700f, Mathf.Sqrt(muffle)), Mathf.Lerp(22000f, 4500f, Weather.Hush));
             music.Set(r, dt);
 
             TickScream(Time.unscaledDeltaTime);
@@ -226,6 +346,28 @@ namespace Summit
             s.PlayOneShot(c, vol);
         }
 
+        // ---- the ski lifts (SkiLift.cs): the hum of the line from its nearest point, and a clack as a chair crosses a tower
+        AudioSource liftHum; AudioClip liftClack; bool liftLoaded;
+
+        public void LiftHum(Vector3 at, float level)
+        {
+            if (!liftLoaded)
+            {
+                liftLoaded = true;
+                liftClack = C("lift_clack");
+                var hum = C("lift_hum");
+                if (hum != null) liftHum = Source3D("Lift Hum", hum, 9f, 130f);
+            }
+            if (liftHum == null) return;
+            liftHum.transform.position = at;
+            liftHum.volume = Mathf.MoveTowards(liftHum.volume, 0.42f * Mathf.Clamp01(level), Time.unscaledDeltaTime * 0.7f);
+        }
+
+        public void LiftClack(Vector3 at, float vol)
+        {
+            if (liftClack != null) PlayAt(liftClack, at, vol, Random.Range(0.93f, 1.07f), 7f);
+        }
+
         // pentatonic steps up the scale as a trick chain grows
         static readonly int[] Scale = { 0, 2, 4, 7, 9, 12, 14, 16, 19 };
 
@@ -237,6 +379,51 @@ namespace Summit
             if (cue.volume <= 0.001f) cue.Stop();
         }
         public void StopCue() { if (cue != null) cue.Stop(); }
+
+        // ---- the player's voice lines (the Pjama Buddy recording): woahs on big air, a line on a close call, a whoop
+        // on a big trick, an ouch on a hard landing. Each group is a shuffle bag (never the same line twice in a row);
+        // they share the rider's one voice, never talk over a scream or the "nooo", and keep a few seconds apart
+        /// <summary>The player's VOICE LINES setting (pause menu, SOUND tab).</summary>
+        public static bool VoiceLines
+        {
+            get { if (voiceSetting < 0) voiceSetting = PlayerPrefs.GetInt("summit_voicelines", 1); return voiceSetting == 1; }
+            set { voiceSetting = value ? 1 : 0; }
+        }
+        static int voiceSetting = -1;   // (read on first use: Unity refuses PlayerPrefs while a component is being built)
+        class Bag
+        {
+            readonly AudioClip[] clips; readonly int[] order; int next; int last = -1;
+            public Bag(AudioClip[] c) { clips = c ?? new AudioClip[0]; order = new int[clips.Length]; next = order.Length; }
+            public AudioClip Next()
+            {
+                if (clips.Length == 0) return null;
+                if (next >= order.Length)
+                {
+                    for (int i = 0; i < order.Length; i++) order[i] = i;
+                    for (int i = order.Length - 1; i > 0; i--) { int j = Random.Range(0, i + 1); (order[i], order[j]) = (order[j], order[i]); }
+                    if (order.Length > 1 && order[0] == last) (order[0], order[1]) = (order[1], order[0]);
+                    next = 0;
+                }
+                last = order[next]; return clips[order[next++]];
+            }
+        }
+        Bag[] buddy;
+        float nextBuddy;
+        /// <summary>Seconds of quiet the voice lines keep between them.</summary>
+        public const float BuddyGap = 7f;
+
+        void PlayBuddy(int group)
+        {
+            if (!VoiceLines || buddy == null || voice == null) return;
+            if (Time.unscaledTime < nextBuddy) return;
+            if (screamOn || NoooPlaying) return;                                         // a scream or the "nooo" has the voice
+            if (voice.isPlaying && Time.unscaledTime < voiceLock) return;               // nor talk over a cry still going
+            var c = buddy[group].Next();
+            if (c == null) return;
+            voice.clip = c; voice.pitch = 1f; voice.volume = 0.95f; voice.Play();
+            voiceLock = Time.unscaledTime + c.length;
+            nextBuddy = Time.unscaledTime + c.length + BuddyGap;
+        }
 
         // the player's screams, one after another from the impact until the tumble has slowed (SummitGame decides when)
         bool screamOn, screamFading;
@@ -353,6 +540,13 @@ namespace Summit
                 case Sfx.Trick: c = chime; vol = 0.55f; pitch = Mathf.Pow(2f, Scale[Mathf.Clamp((int)amount, 0, Scale.Length - 1)] / 36f); break;   // a chain lifts it a little
                 case Sfx.TrickBig: c = trickBig; vol = 0.65f; pitch = Mathf.Pow(2f, Scale[Mathf.Clamp((int)amount, 0, Scale.Length - 1)] / 36f); break;
                 case Sfx.CloseCall: c = closeCall; vol = 0.5f; break;
+                case Sfx.PointTick: c = chime; vol = 0.14f; pitch = 1.5f * Mathf.Pow(2f, Scale[Mathf.Clamp((int)amount, 0, Scale.Length - 1)] / 36f); break;
+                case Sfx.Bank:
+                    if (amount < 2f) { c = chime; vol = 0.6f; pitch = 1.26f; }
+                    else { c = trickBig; vol = 0.75f; pitch = 1f + 0.06f * Mathf.Clamp(amount, 0f, 4f); }
+                    break;
+                case Sfx.ComboLost: c = thumps[0]; vol = 0.6f; pitch = 0.55f; break;
+                case Sfx.BillTick: c = click; vol = 0.28f; pitch = Random.Range(1.25f, 1.4f); break;
                 case Sfx.Soda: c = soda; vol = 0.75f; pitch = 1f; break;
                 case Sfx.ShieldGet: c = shieldGet; vol = 0.5f; pitch = Mathf.Pow(2f, (amount - 1f) * 2f / 12f); break;
                 case Sfx.ShieldFull: c = powerShort; vol = 0.5f; pitch = 1.15f; break;
@@ -366,12 +560,18 @@ namespace Summit
                 case Sfx.BoneArm: c = bonesLeg[Random.Range(0, bonesLeg.Length)]; vol = 0.95f; pitch = Random.Range(1.08f, 1.18f); break;
                 case Sfx.BoneBack: c = bonesBack[Random.Range(0, bonesBack.Length)]; vol = 1f; pitch = Random.Range(0.92f, 1.02f); break;
                 case Sfx.BoneNeck: c = bonesNeck[Random.Range(0, bonesNeck.Length)]; vol = 1f; pitch = Random.Range(0.96f, 1.04f); break;
-                case Sfx.SmashWood: c = smashWood; vol = 1f; pitch = Random.Range(0.9f, 1.1f); break;
+                case Sfx.SmashWood: c = smashWood; vol = Mathf.Clamp(amount, 0.3f, 1f); pitch = Random.Range(0.9f, 1.1f) * (amount < 0.7f ? 1.15f : 1f); break;   // (quieter and lighter: a fence's thin rails)
                 case Sfx.SmashRock: c = smashRock; vol = 1f; pitch = Random.Range(0.9f, 1.1f); break;
                 case Sfx.PowerJump: c = powerJump; vol = 0.7f; pitch = 1f; break;
                 case Sfx.PowerStar: c = powerStar; vol = 0.65f; pitch = 1f; break;
                 case Sfx.SlideHit: c = slideHit; vol = 1f; pitch = 1f; break;
                 case Sfx.SlideCrack: c = slideCrack; vol = 1f; pitch = 1f; break;
+                case Sfx.Branches:
+                    if (branches == null) branches = BranchClips();
+                    c = branches[Random.Range(0, branches.Length)]; vol = 0.35f + 0.6f * Mathf.Clamp01(amount); pitch = Random.Range(0.9f, 1.12f); break;
+                case Sfx.ClothRip:
+                    if (clothRips == null) clothRips = ClothClips();
+                    c = clothRips[Random.Range(0, clothRips.Length)]; vol = 0.4f + 0.5f * Mathf.Clamp01(amount); pitch = Random.Range(0.92f, 1.1f); break;
             }
             if (kind == Sfx.Nooo)
             {
@@ -389,6 +589,7 @@ namespace Summit
                     return;
                 }
             }
+            if (kind >= Sfx.BuddyWoah && kind <= Sfx.BuddyDeep) { PlayBuddy(kind - Sfx.BuddyWoah); return; }
             if (kind == Sfx.Ledge)
             {
                 if (ledge != null) { cue.clip = ledge; cue.volume = 0.9f; cue.pitch = 1f; cue.Play(); }

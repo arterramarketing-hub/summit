@@ -43,7 +43,17 @@ public class SummitImport : AssetPostprocessor
             if (clips.Length > 0) m.clipAnimations = clips;
             return;
         }
-        if (assetPath.Contains("/Rider/"))
+        // Rides.fbx is the skis, poles and sled: gear with no skeleton, so not a Humanoid (it has no Hips to find)
+        if (assetPath.EndsWith("/Rider/Character.fbx"))
+        {
+            // the previous rider: its feet hang off the root, not the shins, so it can never be a Humanoid
+            // ("Required human bone 'LeftFoot' not found"). RiderRig poses it by bone name instead.
+            m.animationType = ModelImporterAnimationType.Generic;
+            m.avatarSetup = ModelImporterAvatarSetup.NoAvatar;
+            m.importAnimation = false;
+            m.isReadable = true;
+        }
+        else if (assetPath.Contains("/Rider/") && !assetPath.EndsWith("/Rides.fbx"))
         {
             m.animationType = ModelImporterAnimationType.Human;
             m.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
@@ -92,6 +102,19 @@ public class SummitImport : AssetPostprocessor
         var t = (TextureImporter)assetImporter;
         t.filterMode = FilterMode.Point;    // a flat-colour palette: keep the colours crisp
         t.mipmapEnabled = false;
+        t.npotScale = TextureImporterNPOTScale.None; t.textureCompression = TextureImporterCompression.Uncompressed;   // (and never blended or squeezed)
+        if (assetPath.EndsWith("Face.png"))
+        {
+            // a painted face, laid on the head once: smooth, with mip levels, and its edge colour carried outward
+            t.filterMode = FilterMode.Bilinear; t.mipmapEnabled = true; t.wrapMode = TextureWrapMode.Clamp;
+            return;
+        }
+        if (assetPath.EndsWith("Pants.png"))
+        {
+            // a printed cloth, tiled over the legs: smooth, with mip levels so it doesn't sparkle at a distance
+            t.filterMode = FilterMode.Bilinear; t.mipmapEnabled = true; t.wrapMode = TextureWrapMode.Repeat;
+            return;
+        }
         if (assetPath.EndsWith("HeroPalette.png"))
         {
             // 8 x 2 swatches with the smoothness in the alpha: block compression would smear them into each other
@@ -170,6 +193,14 @@ public class SummitImport : AssetPostprocessor
     }
 
     /// <summary>
+    /// How deep the snow's wind grooves look (parallax: the height map shifts the texture lookup with the view angle).
+    /// The height map's full range, as a fraction of one 36 m tile: 0.0011 is about 4 cm from trough to crest,
+    /// what the normal map implies (at 0.0007, about 2.5 cm, it could hardly be seen). Not much deeper: the stock
+    /// shader cannot fade it with distance. 0 turns the relief off, on the terrain and in the snow layer alike.
+    /// </summary>
+    public const float SnowGrooveDepth = 0.0011f;
+
+    /// <summary>
     /// Gives the snow a surface without visible repeats: a large map (one tile spans ~36 m of slope)
     /// for broad drifts and wind-scoured patches, plus a fine detail layer (~2 m) for grain and sparkle,
     /// on separate tilings so neither pattern lines up with the other.
@@ -204,6 +235,12 @@ public class SummitImport : AssetPostprocessor
         mat.SetFloat("_Smoothness", 0.32f);
         mat.EnableKeyword("_NORMALMAP");
         mat.EnableKeyword("_DETAIL_MULX2");
+        // the grooves' height (Tools/MakeSnowHeight.py, the same height field as the two maps above): a little depth
+        // by parallax. The snow layer round the rider copies all of this from the material (SnowLayer.cs).
+        var relief = SnowGrooveDepth > 0f ? AssetDatabase.LoadAssetAtPath<Texture2D>(dir + "SnowGroovesHeight.png") : null;
+        mat.SetTexture("_ParallaxMap", relief);
+        mat.SetFloat("_Parallax", SnowGrooveDepth);
+        if (relief != null) mat.EnableKeyword("_PARALLAXMAP"); else mat.DisableKeyword("_PARALLAXMAP");
         EditorUtility.SetDirty(mat);
         AssetDatabase.SaveAssets();
     }

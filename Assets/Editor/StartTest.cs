@@ -12,6 +12,7 @@ public static class StartTest
     {
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
         var game = Object.FindFirstObjectByType<SummitGame>();
+        TestPrefs.Pin();
         TestBoot.Boot(game);
         var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
         var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
@@ -35,6 +36,7 @@ public static class StartTest
             }
         }
         Physics.simulationMode = SimulationMode.FixedUpdate;
+        TestPrefs.Restore();
         EditorApplication.Exit(0);
     }
 }

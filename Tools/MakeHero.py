@@ -29,6 +29,32 @@ def arg(name, default=None):
 PROJECT = arg("--project")
 RENDER = arg("--render")
 WHAT = set((arg("--what", "all") or "all").split(","))
+# --character buddy: a second rider on the same skeleton (so every clip is shared): the player's friend as he
+# stood for his photos: a stocky build, curly dark hair and a moustache, a blue-and-white snap fleece, polar-bear
+# pyjama bottoms and white sneakers. Writes Resources/Rider/Buddy.fbx and BuddyPants.png; the clips come from the
+# hero's run.
+CHAR = arg("--character", "hero")
+FEM = CHAR == "herof"                    # the summit rider's kit cut for a woman's build (the same head and gear)
+# how her jacket differs, ring by ring: (width, depth) against his. Narrower shoulders and a drawn-in waist, the hips kept
+FEMCUT = {"hemfold": (0.94, 0.94), "hem": (0.94, 0.94), "skirt": (0.95, 0.95), "hips": (0.97, 0.97), "waist": (0.82, 0.84), "belly": (0.83, 0.88),
+          "a": (0.87, 0.98), "b": (0.89, 1.02), "c": (0.90, 0.95), "d": (0.94, 0.94), "e": (0.95, 0.95), "efold": (0.95, 0.95)}
+# --character breanna: Breanna (spelt Breanna at first, and still called that here on the command line), built the
+# way Val is with her own shapes: long dark curls under a grey beanie, white goggles with a pink mirror lens, a cream
+# half-zip fleece and black trousers. --character breannapj: her first outfit, the Nordic fleece and plaid pyjamas
+# (its head is never shown: the game puts the clothes on whoever wears them).
+# --character paul: Paul, a skier: short dark hair and a moustache under a cream beanie with his goggles pushed up on
+# it, a white turtleneck under a black puffer, red ski trousers, blue ski boots. --character paulb: his second
+# outfit, a grey hoodie under a black puffer vest with a white balaclava, charcoal trousers, the same boots.
+if CHAR == "brianna": CHAR = "breanna"
+VAL = CHAR == "buddy"                    # Pajama Buddy Val
+BRI = CHAR in ("breanna", "breannapj")   # Breanna (her head, hair and hands; her clothes by BRI_PJ)
+BRI_PJ = CHAR == "breannapj"
+PAUL = CHAR in ("paul", "paulb")
+PAUL_B = CHAR == "paulb"
+BUDDY = VAL or BRI or PAUL               # the riders built from photos: a bare face, their own clothes and hands
+SKIN, HAIR = ("skin3", "hair2") if BRI else ("skin4", "hair3") if PAUL else ("skin2", "hair")
+# the file each one is written to (Resources/Rider/<name>.fbx), and the name in the pictures it paints
+FILE = {"hero": "Hero", "herof": "HeroF", "buddy": "Buddy", "breanna": "Breanna", "breannapj": "BreannaPJ", "paul": "Paul", "paulb": "PaulB"}[CHAR]
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 scene = bpy.context.scene
@@ -124,12 +150,37 @@ PAL = [  # name, rgb, smoothness
     ("boot", (0.14, 0.12, 0.11), 0.30), ("sole", (0.05, 0.05, 0.05), 0.10), ("strap", (0.09, 0.09, 0.10), 0.25),
     ("binding", (0.07, 0.07, 0.08), 0.35), ("bstrap", (0.22, 0.23, 0.26), 0.30), ("vent", (0.55, 0.57, 0.60), 0.4),
     ("nose", (0.84, 0.55, 0.45), 0.25), ("deckedge", (0.08, 0.08, 0.09), 0.5), ("base", (0.06, 0.06, 0.07), 0.6),
-    ("spare", (1, 1, 1), 0.2),
+    ("spare", (1, 1, 1), 0.2),   # (white: Tools/MakeRides.py lays the skis' and the sled's painted parts on it)
     ("pack", (0.13, 0.14, 0.16), 0.25), ("packside", (0.20, 0.21, 0.24), 0.2), ("packaccent", (0.92, 0.72, 0.16), 0.35),
     ("seam", (0.10, 0.10, 0.11), 0.3), ("zip", (0.70, 0.71, 0.74), 0.7), ("gaiter", (0.18, 0.19, 0.23), 0.12),
-    ("gaiterband", (0.92, 0.72, 0.16), 0.15), ("chinstrap", (0.07, 0.07, 0.08), 0.3)]
+    ("gaiterband", (0.92, 0.72, 0.16), 0.15), ("chinstrap", (0.07, 0.07, 0.08), 0.3),
+    # the buddy: skin and hair, the fleece's snaps and stitched mark, sneakers, a chain
+    ("skin2", (0.80, 0.52, 0.42), 0.3), ("hair", (0.045, 0.030, 0.022), 0.0), ("tache", (0.44, 0.28, 0.16), 0.3),
+    ("sneaker", (0.93, 0.93, 0.92), 0.4), ("sneakergrey", (0.60, 0.62, 0.66), 0.4), ("snap", (0.06, 0.06, 0.08), 0.6),
+    ("gold", (0.90, 0.68, 0.20), 0.85), ("stitch", (0.04, 0.16, 0.50), 0.3),
+    ("eyewhite", (0.90, 0.89, 0.86), 0.5), ("iris", (0.34, 0.45, 0.50), 0.6), ("lip", (0.60, 0.30, 0.28), 0.35),
+    # (skin2/3/4 are what Val's, Breanna's and Paul's hands, necks and ears are: each the average of their painted
+    # face's cheeks and jaw, so the hands match the face; they were the faces' base tones, a shade paler than the
+    # painted faces with their colour and shading)
+    # (hair has no shine at all: seen at a shallow angle under a bright sky, even a little turns dark hair grey)
+    # Breanna: her skin and hair, brown eyes, (once) clear glasses frames, a scrunchie, slipper boots
+    # (the game's closet repaints swatches by their place here: Wardrobe / RiderBody's PaletteCells and ShoeCell.
+    # Add new ones at the end, and never move helmet, frame, lens, glove, cuff, boot, vent, the pack's three, sneaker or slipper)
+    ("skin3", (0.81, 0.58, 0.49), 0.3), ("hair2", (0.030, 0.018, 0.014), 0.0), ("irisb", (0.26, 0.15, 0.08), 0.6), ("lip2", (0.68, 0.30, 0.31), 0.4),
+    ("frameclear", (0.70, 0.74, 0.75), 0.9), ("scrunch", (0.30, 0.06, 0.10), 0.2), ("slipper", (0.66, 0.52, 0.37), 0.1), ("slippersole", (0.74, 0.63, 0.47), 0.15),
+    ("logocyan", (0.08, 0.68, 0.86), 0.45),
+    # Paul: olive, tanned skin (measured off his photos: a warmer, deeper tone than Val's or Breanna's; it was a shade
+    # off theirs at first, and in the closet's bright studio he came out as pale as them), near-black hair, his cream beanie, blue ski boots with grey buckles, the balaclava;
+    # Breanna's grey beanie and her goggles (a white frame, a pink mirror lens, a pink strap)
+    ("skin4", (0.54, 0.31, 0.21), 0.3), ("hair3", (0.035, 0.025, 0.020), 0.0), ("beanie", (0.60, 0.56, 0.47), 0.0),
+    ("skiboot", (0.10, 0.26, 0.58), 0.55), ("buckle", (0.62, 0.64, 0.68), 0.7), ("beanie2", (0.20, 0.20, 0.21), 0.0),
+    ("frame2", (0.90, 0.90, 0.91), 0.5), ("lens2", (0.95, 0.42, 0.62), 0.95), ("strap2", (0.88, 0.40, 0.56), 0.25),
+    ("balaclava", (0.92, 0.92, 0.91), 0.08), ("tache2", (0.10, 0.07, 0.05), 0.2)]
 PALI = {p[0]: i for i, p in enumerate(PAL)}
-PAL_ROWS = (len(PAL) + 7) // 8
+PAUL_FACE = (0.56, 0.34, 0.22)   # Paul's skin as measured off his photos: his painted face's base (his hands are skin4)
+assert len(PALI) == len(PAL), "two swatches share a name: the later one would take the first one's gear"
+PAL_ROWS = 8   # always 8 x 8: a size the game takes as it is. Any other height it rescales, which bleeds each row of colours into the next
+assert len(PAL) <= 64
 def swatch_uv(name):
     i = PALI[name]
     return ((i % 8 + 0.5) / 8.0, (i // 8 + 0.5) / PAL_ROWS)
@@ -139,8 +190,9 @@ class Cage:
     def __init__(self, name, mat):
         self.name, self.mat = name, mat
         self.v, self.w, self.uv, self.f = [], [], [], []
+        self.cur, self.part = "gear", []    # which part of the rider is being built now, and each vertex's part
     def add(self, co, w, uv=(0.5, 0.5)):
-        self.v.append(Vector(co)); self.w.append(dict(w)); self.uv.append(uv)
+        self.v.append(Vector(co)); self.w.append(dict(w)); self.uv.append(uv); self.part.append(self.cur)
         return len(self.v) - 1
     def face(self, *ix): self.f.append(tuple(ix))
     def bridge(self, a, b, closed=True):
@@ -153,6 +205,22 @@ class Cage:
         for i in range(len(ring)):
             self.face(ring[i], ring[(i + 1) % len(ring)], c)
         return c
+
+# The rider comes apart into WHO they are and WHAT they wear, so the game can put any rider in any outfit (they all
+# share one skeleton): the head (with hair, face and neck) and the bare hands are the person; the jacket, the
+# trousers and the rest of the gear (boots, gloves, pack) are the outfit. An outfit with gloves hides the hands.
+PARTS = {"head": "HeroHead", "hands": "HeroHands", "gear": "HeroGear"}
+def split_parts(G):
+    out = []
+    for part, name in PARTS.items():
+        C = Cage(name, G.mat); remap = {}
+        for fc in G.f:
+            if G.part[fc[0]] != part: continue
+            for i in fc:
+                if i not in remap: remap[i] = C.add(G.v[i], G.w[i], G.uv[i])
+            C.face(*[remap[i] for i in fc])
+        if C.f: out.append(C)
+    return out
 
 def frame_of(t, ref=FWD):
     """Two directions across a limb (front, and the other way round it) for a limb running along t."""
@@ -191,6 +259,11 @@ def blend_angles(angs, n, k):
 
 SIDE = {1: "Left", -1: "Right"}
 CAGES = []
+XTRA = []      # extra pieces built to their final shape (not subdivided, faces already turned the right way)
+SHAPES = {}    # face shapes the game can blend in (a blink, raised brows): name -> [(where a vertex is, where it goes)]
+GEAR_SHAPES = {}   # the same, on the outfit's gear (the balaclava pulled down)
+GOGGLES = None     # where the goggles are worn (Breanna's and Paul's): for the shape that pushes them up onto the beanie
+FACE_UV = (0.28, 0.30, 0.15)   # the painted face: how wide and tall a piece of the head it covers (m, head units), and how far below the middle it starts
 
 # ---- the jacket: torso, shoulders, sleeves, collar, one surface
 def make_jacket():
@@ -213,8 +286,78 @@ def make_jacket():
         ("e", (1.532, 1.515), 0.114, 0.124, 0.106, 0.01, 2.0, {"Neck": 0.6, "Head": 0.1, "UpperChest": 0.3}),
         ("efold", (1.52, 1.50), 0.096, 0.106, 0.09, 0.01, 2.0, {"Neck": 0.6, "Head": 0.1, "UpperChest": 0.3}),
     ]
+    if VAL:
+        # a fleece pullover on a stocky build: a full belly and chest, an elastic hem at the hips, a short stand collar
+        R = [
+            ("hemfold", (0.885, 0.875), 0.215, 0.170, 0.162, 0.0, 2.3, {"Hips": 1}),
+            ("hem", (0.862, 0.852), 0.250, 0.204, 0.188, 0.0, 2.4, {"Hips": 1}),
+            ("skirt", (0.905, 0.895), 0.268, 0.226, 0.200, 0.0, 2.4, {"Hips": 1}),
+            ("hips", (0.96, 0.95), 0.274, 0.236, 0.202, 0.0, 2.5, {"Hips": 1}),
+            ("waist", (1.04, 1.04), 0.272, 0.240, 0.194, 0.0, 2.5, {"Hips": 0.45, "Spine": 0.55}),
+            ("belly", (1.12, 1.12), 0.270, 0.228, 0.186, 0.0, 2.5, {"Spine": 0.55, "Chest": 0.45}),
+            ("a", (1.20, 1.20), 0.270, 0.204, 0.178, 0.005, 2.6, {"Chest": 0.75, "UpperChest": 0.25}),
+            ("b", (1.285, 1.285), 0.280, 0.180, 0.172, 0.01, 2.7, {"Chest": 0.3, "UpperChest": 0.7}),
+            ("c", (1.37, 1.37), 0.250, 0.150, 0.154, 0.02, 2.5, {"UpperChest": 1}),
+            ("d", (1.425, 1.425), 0.126, 0.106, 0.114, 0.025, 2.0, {"UpperChest": 0.65, "Neck": 0.35}),
+            ("e", (1.440, 1.442), 0.104, 0.094, 0.100, 0.02, 2.0, {"Neck": 0.4, "UpperChest": 0.6}),
+            ("efold", (1.428, 1.430), 0.088, 0.080, 0.086, 0.02, 2.0, {"Neck": 0.4, "UpperChest": 0.6}),
+        ]
+    sp = {"Hips": 0.35, "Spine": 0.65}; nk = {"Neck": 0.7, "Head": 0.1, "UpperChest": 0.2}
+    if BRI_PJ:
+        # her pyjama fleece: slimmer, cropped to an elastic hem at the waist that the body blouses over, the shoulders
+        # dropped, and a funnel neck standing up under the chin
+        R = [
+            ("hemfold", (1.000, 1.000), 0.150, 0.114, 0.108, 0.0, 2.3, sp),
+            ("hem", (1.006, 1.006), 0.170, 0.130, 0.122, 0.0, 2.3, sp),
+            ("skirt", (1.032, 1.032), 0.198, 0.152, 0.140, 0.0, 2.4, {"Hips": 0.15, "Spine": 0.85}),
+            ("hips", (1.072, 1.072), 0.206, 0.158, 0.146, 0.0, 2.4, {"Spine": 1}),
+            ("waist", (1.115, 1.115), 0.206, 0.156, 0.146, 0.0, 2.4, {"Spine": 0.6, "Chest": 0.4}),
+            ("belly", (1.160, 1.160), 0.206, 0.154, 0.146, 0.0, 2.4, {"Spine": 0.3, "Chest": 0.7}),
+            ("a", (1.20, 1.20), 0.212, 0.152, 0.146, 0.005, 2.5, {"Chest": 0.75, "UpperChest": 0.25}),
+            ("b", (1.285, 1.285), 0.226, 0.148, 0.148, 0.01, 2.6, {"Chest": 0.3, "UpperChest": 0.7}),
+            ("c", (1.37, 1.37), 0.214, 0.126, 0.132, 0.02, 2.5, {"UpperChest": 1}),
+            ("d", (1.425, 1.425), 0.100, 0.092, 0.096, 0.025, 2.0, {"UpperChest": 0.65, "Neck": 0.35}),
+            ("e", (1.512, 1.520), 0.092, 0.094, 0.090, 0.015, 2.0, nk),
+            ("efold", (1.498, 1.506), 0.074, 0.076, 0.072, 0.015, 2.0, nk),
+        ]
+    elif BRI:
+        # her half-zip fleece, as in her photo: loose and long, down over the hips, the shoulders dropped, a short stand
+        # collar (the zip runs from it down the chest: see the details)
+        R = [
+            ("hemfold", (0.880, 0.870), 0.178, 0.132, 0.126, 0.0, 2.3, {"Hips": 1}),
+            ("hem", (0.856, 0.846), 0.212, 0.164, 0.154, 0.0, 2.4, {"Hips": 1}),
+            ("skirt", (0.898, 0.888), 0.222, 0.172, 0.160, 0.0, 2.4, {"Hips": 1}),
+            ("hips", (0.952, 0.942), 0.222, 0.172, 0.160, 0.0, 2.5, {"Hips": 1}),
+            ("waist", (1.030, 1.030), 0.216, 0.166, 0.154, 0.0, 2.5, {"Hips": 0.45, "Spine": 0.55}),
+            ("belly", (1.115, 1.115), 0.216, 0.162, 0.152, 0.0, 2.5, {"Spine": 0.55, "Chest": 0.45}),
+            ("a", (1.20, 1.20), 0.218, 0.160, 0.150, 0.005, 2.5, {"Chest": 0.75, "UpperChest": 0.25}),
+            ("b", (1.285, 1.285), 0.230, 0.152, 0.150, 0.01, 2.6, {"Chest": 0.3, "UpperChest": 0.7}),
+            ("c", (1.37, 1.37), 0.216, 0.130, 0.134, 0.02, 2.5, {"UpperChest": 1}),
+            ("d", (1.425, 1.425), 0.100, 0.094, 0.098, 0.025, 2.0, {"UpperChest": 0.65, "Neck": 0.35}),
+            ("e", (1.488, 1.494), 0.084, 0.088, 0.082, 0.015, 2.0, nk),
+            ("efold", (1.476, 1.482), 0.070, 0.074, 0.068, 0.015, 2.0, nk),
+        ]
+    elif PAUL:
+        # a black puffer on a slim build (the vest of his second outfit is the same body): full and quilted, to the hips,
+        # the collar standing open round the white turtleneck (or the hoodie's neck)
+        k_ = 0.96 if PAUL_B else 1.0
+        R = [
+            ("hemfold", (0.86, 0.84), 0.190 * k_, 0.128 * k_, 0.140 * k_, 0.01, 2.3, {"Hips": 1}),
+            ("hem", (0.840, 0.815), 0.226 * k_, 0.160 * k_, 0.172 * k_, 0.012, 2.4, {"Hips": 1}),
+            ("skirt", (0.878, 0.858), 0.222 * k_, 0.158 * k_, 0.168 * k_, 0.012, 2.4, {"Hips": 1}),
+            ("hips", (0.94, 0.93), 0.210 * k_, 0.150 * k_, 0.158 * k_, 0.01, 2.5, {"Hips": 1}),
+            ("waist", (1.02, 1.02), 0.198 * k_, 0.142 * k_, 0.146 * k_, 0.01, 2.5, {"Hips": 0.45, "Spine": 0.55}),
+            ("belly", (1.115, 1.115), 0.206 * k_, 0.148 * k_, 0.146 * k_, 0.005, 2.5, {"Spine": 0.55, "Chest": 0.45}),
+            ("a", (1.20, 1.20), 0.232 * k_, 0.160 * k_, 0.154 * k_, 0.005, 2.6, {"Chest": 0.75, "UpperChest": 0.25}),
+            ("b", (1.285, 1.285), 0.248 * k_, 0.152 * k_, 0.150 * k_, 0.01, 2.7, {"Chest": 0.3, "UpperChest": 0.7}),
+            ("c", (1.37, 1.37), 0.222 * k_, 0.132 * k_, 0.136 * k_, 0.02, 2.5, {"UpperChest": 1}),
+            ("d", (1.425, 1.425), 0.112, 0.102, 0.108, 0.025, 2.0, {"UpperChest": 0.65, "Neck": 0.35}),
+            ("e", (1.478, 1.470), 0.110, 0.112, 0.104, 0.015, 2.0, {"Neck": 0.5, "UpperChest": 0.5}),
+            ("efold", (1.466, 1.458), 0.096, 0.098, 0.090, 0.015, 2.0, {"Neck": 0.5, "UpperChest": 0.5}),
+        ]
     rings = {}
     for name, (zf, zb), rx, ryf, ryb, cy, p, w in R:
+        if FEM: rx, ryf, ryb = rx * FEMCUT[name][0], ryf * FEMCUT[name][1], ryb * FEMCUT[name][1]
         idx = []
         for th in ang:
             x, y = superellipse(th, p)
@@ -237,6 +380,14 @@ def make_jacket():
         for k in range(N):
             k1 = (k + 1) % N
             if in_hole(lo, hi, k, k1): continue
+            if VAL and k in (N - 1, 0) and lo in ("c", "d", "e"):
+                # the top snap is undone: the front opens in a V from the collar down to just above the second snap
+                if lo == "c":
+                    sx_ = -1 if k == N - 1 else 1
+                    nv = J.add(V(sx_ * 0.030, 0.025 - 0.106 * 0.971, 1.425), {"UpperChest": 0.65, "Neck": 0.35})
+                    if sx_ < 0: J.face(A[k], A[k1], nv, B[k])
+                    else: J.face(A[k], A[k1], B[k1], nv)
+                continue
             J.face(A[k], A[k1], B[k1], B[k])
     # the shoulder line: the side columns at the top of the arm opening move with the arm a little, and the
     # tops of the shoulders with the collarbone
@@ -277,6 +428,14 @@ def make_jacket():
             (0.505, 0.076, 1, {tw: 0.85, hd: 0.15}),
             (0.495, 0.058, 1, {tw: 0.85, hd: 0.15}),   # the cuff turned in
         ]
+        if FEM: sleeve = [(d, r * 0.88, e_, w) for d, r, e_, w in sleeve]   # slimmer arms
+        if PAUL:
+            # puffer sleeves, fuller than the summit jacket's; or the hoodie's, under the vest
+            sleeve = [(d, r * (1.0 if PAUL_B else 1.08), e_, w) for d, r, e_, w in sleeve]
+        if VAL or BRI:
+            # thicker arms in a loose fleece sleeve, gathered at an elastic cuff
+            k_ = 1.06 if BRI else 1.16
+            sleeve = [(d, r * k_, e_, w) for d, r, e_, w in sleeve[:7]] + [(0.500, 0.060 if BRI else 0.066, 1, sleeve[7][3]), (0.492, 0.046 if BRI else 0.052, 1, sleeve[8][3])]
         prev = hole
         for d, r, ease, w in sleeve:
             # the axis bends at the elbow: before it along the upper arm, after it along the forearm
@@ -295,8 +454,8 @@ def make_jacket():
     return J
 
 # ---- the hood, rolled up behind the collar
-def make_hood():
-    H = Cage("HeroHood", "Jacket")
+def make_hood(mat="Jacket"):
+    H = Cage("HeroHood", mat)
     path = [(V(0, 0.10, 1.50), 0.115, 0.05), (V(0, 0.15, 1.475), 0.15, 0.07), (V(0, 0.178, 1.42), 0.145, 0.066),
             (V(0, 0.17, 1.37), 0.10, 0.04)]
     angs = [k * 2 * math.pi / 8 for k in range(8)]
@@ -322,6 +481,8 @@ def make_pants():
          ("low", 0.845, 0.190, 0.124, 0.146, 0.01, {"Hips": 1})]
     rings = {}
     for name, z, rx, ryf, ryb, cy, w in R:
+        if VAL: rx, ryf, ryb = rx * 1.2, ryf * 1.4, ryb * 1.16   # a fuller seat and belly
+        if FEM: rx, ryf, ryb = rx * (0.88 if name == "top" else 0.98), ryf * 0.92, ryb * 0.96   # a narrower waist over the same hips
         idx = []
         for k, th in enumerate(ang):
             co = V(rx * math.copysign(abs(math.sin(th)) ** (2 / 2.5), math.sin(th)),
@@ -368,6 +529,48 @@ def make_pants():
             (0.118, 0.128, 0.134, 1, {ll: 0.88, ft: 0.12}, 0),
             (0.136, 0.104, 0.110, 1, {ll: 0.88, ft: 0.12}, 0),   # turned in at the hem
         ]
+        if FEM: legs = [(z, a_ * (0.95 if z > 0.6 else 0.88), b_ * (0.95 if z > 0.6 else 0.88), e_, w_, o_) for z, a_, b_, e_, w_, o_ in legs]   # slimmer legs
+        if VAL:
+            # pyjama bottoms: soft and very loose, bunched at an elastic ankle over the sneakers
+            legs = [
+                (0.745, 0.146, 0.152, 0.2, {ul: 0.9, "Hips": 0.1}, 0),
+                (0.645, 0.140, 0.146, 0.7, {ul: 1}, 0),
+                (0.565, 0.132, 0.138, 1, {ul: 0.92, ll: 0.08}, 0.004),
+                (0.490, 0.126, 0.134, 1, {ul: 0.5, ll: 0.5}, 0.012),
+                (0.415, 0.122, 0.126, 1, {ul: 0.1, ll: 0.9}, 0.0),
+                (0.310, 0.120, 0.124, 1, {ll: 1}, 0),
+                (0.225, 0.118, 0.122, 1, {ll: 1}, 0),
+                (0.175, 0.122, 0.128, 1, {ll: 0.95, ft: 0.05}, 0),      # the slack gathers above the cuff
+                (0.140, 0.104, 0.108, 1, {ll: 0.9, ft: 0.1}, 0),
+                (0.118, 0.082, 0.086, 1, {ll: 0.88, ft: 0.12}, 0),
+                (0.126, 0.066, 0.070, 1, {ll: 0.88, ft: 0.12}, 0),
+            ]
+        if BRI and not BRI_PJ:
+            # her black trousers: straight and slim-fitting, the hems resting on her boots
+            legs = [
+                (0.745, 0.118, 0.124, 0.2, {ul: 0.9, "Hips": 0.1}, 0),
+                (0.645, 0.110, 0.116, 0.7, {ul: 1}, 0),
+                (0.565, 0.102, 0.108, 1, {ul: 0.92, ll: 0.08}, 0.004),
+                (0.490, 0.096, 0.102, 1, {ul: 0.5, ll: 0.5}, 0.008),
+                (0.415, 0.092, 0.096, 1, {ul: 0.1, ll: 0.9}, 0.0),
+                (0.310, 0.090, 0.094, 1, {ll: 1}, 0),
+                (0.205, 0.090, 0.094, 1, {ll: 1}, 0),
+                (0.120, 0.092, 0.098, 1, {ll: 0.92, ft: 0.08}, 0),
+                (0.084, 0.090, 0.096, 1, {ll: 0.88, ft: 0.12}, 0),
+            ]
+        if BRI_PJ:
+            # her pyjamas: straight and wide all the way down, the hems falling over her boots
+            legs = [
+                (0.745, 0.120, 0.126, 0.2, {ul: 0.9, "Hips": 0.1}, 0),
+                (0.645, 0.114, 0.120, 0.7, {ul: 1}, 0),
+                (0.565, 0.108, 0.114, 1, {ul: 0.92, ll: 0.08}, 0.004),
+                (0.490, 0.104, 0.110, 1, {ul: 0.5, ll: 0.5}, 0.010),
+                (0.415, 0.102, 0.106, 1, {ul: 0.1, ll: 0.9}, 0.0),
+                (0.310, 0.102, 0.106, 1, {ll: 1}, 0),
+                (0.205, 0.104, 0.108, 1, {ll: 1}, 0),
+                (0.105, 0.106, 0.112, 1, {ll: 0.92, ft: 0.08}, 0),
+                (0.062, 0.100, 0.106, 1, {ll: 0.88, ft: 0.12}, 0),
+            ]
         prev = loop
         for z, rs, rf, ease, w, bulge in legs:
             c, t = axis_at(z)
@@ -383,6 +586,18 @@ def make_pants():
             P.bridge(prev, idx)
             prev = idx
     CAGES.append(P)
+
+def smooth_tree(C, levels):
+    """The surface a cage becomes once it is subdivided, as something to cast rays at (for laying details on it)."""
+    from mathutils.bvhtree import BVHTree
+    me = bpy.data.meshes.new("tmp")
+    me.from_pydata([tuple(v) for v in C.v], [], [list(f) for f in C.f]); me.update()
+    ob = bpy.data.objects.new("tmp", me); bpy.context.scene.collection.objects.link(ob)
+    md = ob.modifiers.new("s", 'SUBSURF'); md.levels = levels
+    bm = bmesh.new(); bm.from_mesh(ob.evaluated_get(bpy.context.evaluated_depsgraph_get()).data)
+    tree = BVHTree.FromBMesh(bm)
+    bpy.data.objects.remove(ob); bpy.data.meshes.remove(me)
+    return tree, bm
 
 # ---- gear: rigid pieces (each vertex on one or two bones), in the palette material
 def loft(G, path, n, uvname, p=2.0, closed_start=True, closed_end=True, ref=FWD, twist=0.0):
@@ -420,8 +635,621 @@ def shell(G, rows, axis_pt, thick, w, uvname):
         G.face(O[0][c + 1], O[0][c], I[0][c], I[0][c + 1])
         G.face(O[m - 1][c], O[m - 1][c + 1], I[m - 1][c + 1], I[m - 1][c])
 
+def bare_hand(G, s, SKIN):
+    """A bare hand: a broad palm, the fingers together, a thumb."""
+    sd = SIDE[s]
+    sh, u, el, f, wr, kn = arm_points(s)
+    H = {sd + "Hand": 1}
+    I1, I2, I3 = {sd + "IndexProximal": 1}, {sd + "IndexIntermediate": 1}, {sd + "IndexDistal": 1}
+    loft(G, [(wr - f * 0.03, 0.036, 0.030, {sd + "ForearmTwist": 0.5, sd + "Hand": 0.5}), (wr + f * 0.02, 0.046, 0.030, H), (kn - f * 0.005, 0.050, 0.028, H),
+             (kn + f * 0.02, 0.048, 0.025, {sd + "Hand": 0.5, sd + "IndexProximal": 0.5}),
+             (kn + f * 0.045, 0.046, 0.022, I1), (kn + f * 0.07, 0.043, 0.020, I2), (kn + f * 0.09, 0.036, 0.017, I3),
+             (kn + f * 0.102, 0.018, 0.010, I3)], 10, SKIN, 2.6, ref=FWD)
+    tb = wr + f * 0.025 + FWD * 0.032
+    td = (f * 0.45 + FWD * 0.75 + V(0, 0, -0.35)).normalized()
+    T1, T2, T3 = {sd + "ThumbProximal": 1}, {sd + "ThumbIntermediate": 1}, {sd + "ThumbDistal": 1}
+    loft(G, [(tb - td * 0.012, 0.017, 0.017, {sd + "Hand": 0.6, sd + "ThumbProximal": 0.4}), (tb + td * 0.02, 0.017, 0.018, T1),
+             (tb + td * 0.045, 0.015, 0.016, T2), (tb + td * 0.066, 0.012, 0.013, T3), (tb + td * 0.076, 0.005, 0.006, T3)],
+         6, SKIN, 2.0, ref=f)
+
+def make_gear_buddy():
+    """The buddy's head, hands and feet: bare-headed with curly dark hair and a moustache, bare hands, sneakers."""
+    G = Cage("HeroGear", "Gear"); G.cur = "head"
+    hd = {"Head": 1}
+    HC = V(0, -0.004, 1.615)
+    HS = 1.07 if BRI else 1.08 if PAUL else 1.13     # a touch big, as the hero's helmet is: the head is what you read first at phone size
+    def HV(x, y, z): return HC + V(x, y, z) * HS
+    if BRI or PAUL:
+        nr = 1.0 if BRI else 1.16     # (his a little thicker)
+        loft(G, [(V(0, 0.018, 1.40), 0.058 * nr, 0.060 * nr, {"UpperChest": 0.7, "Neck": 0.3}), (V(0, 0.015, 1.455), 0.050 * nr, 0.052 * nr, {"Neck": 1}),
+                 (V(0, 0.008, 1.53), 0.050 * nr, 0.052 * nr, {"Neck": 0.4, "Head": 0.6})], 10, SKIN, 2.0, closed_start=False, closed_end=False, ref=FWD)
+    else:
+        # a thick neck, a gold chain round its base
+        uc = {"UpperChest": 1}
+        G.cur = "gear"
+        loft(G, [(V(0, 0.012, 1.33), 0.135, 0.130, uc), (V(0, 0.016, 1.375), 0.120, 0.115, uc),
+                 (V(0, 0.018, 1.412), 0.090, 0.088, {"UpperChest": 0.7, "Neck": 0.3})], 10, SKIN, 2.0, closed_start=False, closed_end=False, ref=FWD)
+        G.cur = "head"
+        loft(G, [(V(0, 0.018, 1.395), 0.086, 0.084, {"UpperChest": 0.7, "Neck": 0.3}), (V(0, 0.015, 1.455), 0.070, 0.072, {"Neck": 1}),
+                 (V(0, 0.008, 1.52), 0.070, 0.072, {"Neck": 0.4, "Head": 0.6})], 10, SKIN, 2.0, closed_start=False, closed_end=False, ref=FWD)
+        chain = [V(math.sin(a) * 0.078, 0.02 - math.cos(a) * (0.078 + 0.022 * max(0.0, math.cos(a))), 1.478 - 0.070 * max(0.0, math.cos(a)) ** 1.5)
+                 for a in [-2.2 + 4.4 * k / 12 for k in range(13)]]
+        loft(G, [(c, 0.004, 0.004, {"UpperChest": 0.5, "Neck": 0.5}) for c in chain], 4, "gold", 2.0, ref=V(0, 0, 1))
+    # the head: a full, round face with a soft jaw (after his portrait)
+    head = [(HV(0, 0.0, -0.138), 0.052, 0.058, hd), (HV(0, -0.004, -0.114), 0.092, 0.092, hd, 0.086),
+            (HV(0, -0.006, -0.066), 0.110, 0.106, hd, 0.100), (HV(0, -0.004, 0.0), 0.110, 0.103, hd, 0.108),
+            (HV(0, 0, 0.07), 0.096, 0.090, hd, 0.100), (HV(0, 0, 0.115), 0.045, 0.045, hd)]
+    if PAUL:   # his (after his photos): a lean oval, a firm square jaw and chin
+        head = [(HV(0, 0.0, -0.138), 0.040, 0.046, hd), (HV(0, -0.004, -0.115), 0.072, 0.070, hd, 0.070),
+                (HV(0, -0.006, -0.066), 0.094, 0.088, hd, 0.092), (HV(0, -0.004, 0.0), 0.104, 0.094, hd, 0.106),
+                (HV(0, 0, 0.07), 0.095, 0.088, hd, 0.100), (HV(0, 0, 0.115), 0.045, 0.045, hd)]
+    if BRI:   # hers: a longer, slimmer oval with a narrow chin
+        head = [(HV(0, 0.0, -0.142), 0.032, 0.034, hd), (HV(0, -0.004, -0.118), 0.066, 0.054, hd, 0.066),
+                (HV(0, -0.006, -0.066), 0.094, 0.077, hd, 0.090), (HV(0, -0.004, 0.0), 0.104, 0.088, hd, 0.106),
+                (HV(0, 0, 0.07), 0.096, 0.086, hd, 0.100), (HV(0, 0, 0.115), 0.045, 0.045, hd)]
+    # The features are part of the face, not things stuck on it: each is laid point by point onto the skin (the
+    # head as it is once smoothed), rising a millimetre or a few with its edge sunk under the skin, so nothing
+    # floats or casts a gap. Eyes (light grey-blue, under a heavy lid), thick low brows, a full moustache the
+    # colour of his hair with its ends turned down, the mouth as one shape, and the tuft under the lip.
+    # The head, nose and ears are skin with a painted face on it (face_paint, further down): colour in the cheeks,
+    # the shadow of a beard, lids and lips, laid on from the front. They are smoothed here, not later with the
+    # rest of the gear, so the features below can be laid on the finished skin.
+    XH = Cage("Head", "FaceSkin"); XH.recalc = True; XTRA.append((XH, "HeroHead"))
+    def face_uv(q):
+        r = (Vector(q) - HC) / HS
+        return (0.5 + r.x / FACE_UV[0], (r.z + FACE_UV[2]) / FACE_UV[1])
+    def add_smooth(C_):
+        tree_, bm_ = smooth_tree(C_, 1); o = len(XH.v)
+        for v in bm_.verts: XH.add(v.co.copy(), hd, face_uv(v.co))
+        for f in bm_.faces: XH.face(*[o + v.index for v in f.verts])
+        return tree_, bm_
+    HO = Cage("HeadOnly", "Gear"); loft(HO, head, 12, SKIN, 2.2, ref=FWD)
+    skin_tree, skin_bm = add_smooth(HO)
+    XF = Cage("Face", "Gear"); XTRA.append((XF, "HeroHead"))
+    # the nose: one shape that grows out of the face. Each section sits on the skin where it is (found by a ray),
+    # flush at the bridge and standing out most at the tip, and is much broader and deeper than what shows, so
+    # its sides meet the cheeks at a shallow angle instead of standing off them
+    nose = []
+    for z_, proud, deep, wide in ((0.026, 0.0005, 0.014, 0.009), (0.004, 0.0050, 0.018, 0.012), (-0.020, 0.0150, 0.026, 0.019),
+                                  (-0.033, 0.0125, 0.026, 0.022), (-0.043, 0.0020, 0.018, 0.019)):
+        hit = skin_tree.ray_cast(HV(0, -0.6, z_), V(0, 1, 0))[0]
+        if BRI: proud, wide = proud * 0.8, wide * 0.7      # a slimmer, smaller nose
+        if PAUL: proud, wide = proud * 1.1, wide * 0.8     # a long, straight nose
+        nose.append((V(0, hit.y - proud + deep, hit.z), deep, wide, hd))
+    NO = Cage("NoseOnly", "Gear"); loft(NO, nose, 8, SKIN, 2.0, ref=FWD)
+    add_smooth(NO)[1].free()
+    # the ears grow out of the side of the head the same way: the outline is found on the skin by rays from the
+    # side, its root is sunk under the skin, and it stands out from the head as an ear does, close at the front
+    # edge and furthest at the back, with a rim and a hollow inside it. A stud in each lobe.
+    XE = Cage("Ears", "FaceSkin"); XTRA.append((XE, "HeroHead"))
+    for sx in (1, -1):
+        f0 = len(XE.f); n_ = 10
+        def ear(k_, a, lift):
+            dy = 0.015 * k_ * math.cos(a) * (1.0 + 0.22 * math.sin(a)) + 0.004 * math.sin(a)     # broader at the top, leaning back
+            hit = skin_tree.ray_cast(HV(sx * 0.6, 0.008 + dy, -0.018 + 0.031 * k_ * math.sin(a)), V(-sx, 0, 0))[0]
+            q = hit + V(sx * lift, 0, 0)
+            # (the ear takes plain skin from the painted face, a touch pink: laid on from the front like the rest, its
+            # rim reached out into the hair's shadow at the edge of the picture and read as a dark ring from afar)
+            return XE.add(q, hd, face_uv(HV(sx * 0.085, 0.0, -0.010 - 0.012 * k_)))
+        # (it stood out further, with a deep hollow: from afar the pale rim round a dark middle read as a ring worn
+        # on the side of the head. Closer to the head now, and the hollow only a shallow dip)
+        def flare(a): return 0.008 + 0.015 * (0.5 + 0.5 * math.cos(a))
+        angs = [2 * math.pi * i / n_ for i in range(n_)]
+        rings_ = [[ear(1.0, a, -0.004) for a in angs], [ear(1.0, a, flare(a) * 0.6) for a in angs], [ear(0.90, a, flare(a)) for a in angs],
+                  [ear(0.58, a, flare(a) * 0.68 + 0.001) for a in angs]]
+        mid = ear(0.0, 0.0, 0.009)
+        for r0, r1 in zip(rings_, rings_[1:]):
+            for i in range(n_): XE.face(r0[i], r0[(i + 1) % n_], r1[(i + 1) % n_], r1[i])
+        for i in range(n_): XE.face(rings_[-1][i], rings_[-1][(i + 1) % n_], mid)
+        for i in range(f0, len(XE.f)):     # every face turned to look outward
+            q0, q1, q2 = [XE.v[j_] for j_ in XE.f[i][:3]]
+            c_ = sum([XE.v[j_] for j_ in XE.f[i]], Vector()) / len(XE.f[i])
+            if (q1 - q0).cross(q2 - q0).dot(c_ - HV(sx * 0.06, 0.008, -0.018)) < 0: XE.f[i] = tuple(reversed(XE.f[i]))
+        lobe = XE.v[rings_[2][int(n_ * 0.75)]]
+        if BRI:   # a small gold hoop through each lobe
+            hoop = [lobe + V(sx * 0.004, -0.002 + 0.010 * math.sin(a), -0.004 - 0.010 * math.cos(a)) for a in [2 * math.pi * k / 8 for k in range(9)]]
+            loft(G, [(c, 0.0026, 0.0026, hd) for c in hoop], 4, "gold", 2.0, ref=V(1, 0, 0))
+        elif VAL: loft(G, [(lobe + V(sx * 0.001, -0.002, 0.006), 0.0042, 0.0042, hd), (lobe + V(sx * 0.006, -0.002, 0.006), 0.0036, 0.0036, hd)], 6, "zip", 2.0, ref=V(0, 0, 1))
+    # The features are part of the face, not things stuck on it: each is laid point by point onto the skin,
+    # rising a millimetre or a few with its edge sunk under the skin, so nothing floats or casts a gap.
+    # After his photos: narrow, heavy-lidded grey-blue eyes; thick, low, straight brows; a slim moustache that
+    # follows the top lip, in the colour of his hair; the lower lip as one shape; a small wedge under it.
+    def fpoint(x, z, lift):
+        hit, nm, _i, _d = skin_tree.ray_cast(HV(x, -0.6, z), V(0, 1, 0))
+        if nm.y > 0: nm = -nm
+        return hit + nm * lift
+    def fadd(x, z, lift, col): return XF.add(fpoint(x, z, lift), hd, swatch_uv(col))
+    def to_front(f0):
+        for i in range(f0, len(XF.f)):
+            q0, q1, q2 = [XF.v[j] for j in XF.f[i][:3]]
+            if (q1 - q0).cross(q2 - q0).y > 0: XF.f[i] = tuple(reversed(XF.f[i]))
+    SUNK = 0.0007
+    def decal(cx, cz, rx, rz, col, lift, base=0.0, n_=12):   # a rounded patch
+        f0 = len(XF.f)
+        def ring(k_, l_): return [fadd(cx + rx * k_ * math.cos(2 * math.pi * i / n_), cz + rz * k_ * math.sin(2 * math.pi * i / n_), l_, col) for i in range(n_)]
+        r0, r1, c_ = ring(1.0, base - SUNK), ring(0.78, lift), fadd(cx, cz, lift, col)
+        for i in range(n_):
+            i1 = (i + 1) % n_
+            XF.face(r0[i], r0[i1], r1[i1], r1[i]); XF.face(r1[i], r1[i1], c_)
+        to_front(f0)
+    def band(path, col, lift, base=0.0, tips=(1.2, 1.2), moved=None):
+        """A ridge along a line of (x, z, half width) points, pointed at its ends. moved: (shape name, how far up
+        each point goes in that shape) to make it one of the face's moving parts."""
+        f0 = len(XF.f); rows_ = []; m = len(path)
+        def across(i):
+            x0, z0 = path[max(i - 1, 0)][:2]; x1, z1 = path[min(i + 1, m - 1)][:2]
+            ln = math.hypot(x1 - x0, z1 - z0)
+            return (x1 - x0) / ln, (z1 - z0) / ln
+        def put(x, z, l_, i):
+            ix = fadd(x, z, l_, col)
+            if moved: SHAPES.setdefault(moved[0], []).append((XF.v[ix].copy(), fpoint(x, z + moved[1](i), l_)))
+            return ix
+        for i, (x, z, hw) in enumerate(path):
+            tx, tz = across(i)
+            top = lift * (0.45 if i in (0, m - 1) else 1.0)
+            rows_.append([put(x - tz * hw * k_, z + tx * hw * k_, l_, i) for k_, l_ in
+                          ((-1, base - SUNK), (-0.55, base + (top - base) * 0.8), (0, top), (0.55, base + (top - base) * 0.8), (1, base - SUNK))])
+        for r0, r1 in zip(rows_, rows_[1:]):
+            for k in range(4): XF.face(r0[k], r0[k + 1], r1[k + 1], r1[k])
+        for i, sg, tk in ((0, -1, tips[0]), (m - 1, 1, tips[1])):
+            tx, tz = across(i); x, z, hw = path[i]
+            tip = put(x + tx * hw * tk * sg, z + tz * hw * tk * sg, base - SUNK, i)
+            for k in range(4): XF.face(rows_[i][k], rows_[i][k + 1], tip)
+        to_front(f0)
+    for sx in (1, -1):
+        ex, ez, ew = 0.040 * sx, 0.004, 0.0158
+        decal(ex, ez, ew, 0.0076 if BRI else 0.0066, "eyewhite", 0.0009)
+        decal(ex, ez + 0.0008, 0.0066 if BRI else 0.0062, 0.0066 if BRI else 0.0062, "irisb" if BRI or PAUL else "iris", 0.0016, 0.0009, 10)
+        decal(ex, ez + 0.0008, 0.0027, 0.0027, "snap", 0.0022, 0.0016, 8)
+        # the upper lid: skin above the eye with the lash line along its edge, sitting low over the iris (his eyes
+        # are heavy-lidded). In the "Blink" shape its edge comes down over the eye.
+        cols_ = []
+        for i in range(7):
+            u_ = -1 + 2 * i / 6
+            x = ex + u_ * (ew + 0.001)
+            arch = max(0.0, 1 - u_ * u_) ** 0.5
+            z_open, z_shut = ez + 0.0006 + (0.0064 if BRI else 0.0048) * arch, ez - 0.0006 - (0.0074 if BRI else 0.0064) * arch
+            col_ = []
+            for dz, l_, c_, moves in ((0.0055, -SUNK, SKIN, 0.0), (0.0026, 0.0027, SKIN, 0.5), (0.0, 0.0031, SKIN, 1.0),
+                                      (0.0, 0.0031, HAIR, 1.0), (-0.0030 if BRI else -0.0020, 0.0027, HAIR, 1.0)):
+                q = fpoint(x, z_open + dz, l_ if abs(u_) < 0.99 else min(l_, 0.0012))
+                ix = XE.add(q, hd, face_uv(q)) if c_ == SKIN else XF.add(q, hd, swatch_uv(c_))   # the lid is painted skin, the lash line hair
+                if moves: SHAPES.setdefault("Blink", []).append((q.copy(), fpoint(x, lerp(z_open, z_shut, moves) + dz * (1 if dz < 0 else 1 - moves), max(l_, 0.0027))))
+                col_.append(ix)
+            cols_.append(col_)
+        for c0, c1 in zip(cols_, cols_[1:]):
+            for k in (0, 1, 3):
+                C_ = XE if k < 2 else XF
+                quad = (c0[k], c0[k + 1], c1[k + 1], c1[k])
+                q0, q1, q2 = [C_.v[j] for j in quad[:3]]
+                C_.face(*(quad if (q1 - q0).cross(q2 - q0).y < 0 else quad[::-1]))
+        if BRI:   # hers: finer, higher and arched (her glasses are gone: in her new photo she wears goggles)
+            band([(0.014 * sx, 0.0235, 0.0026), (0.029 * sx, 0.0285, 0.0034), (0.044 * sx, 0.0300, 0.0030), (0.055 * sx, 0.0262, 0.0018)], HAIR, 0.0022,
+                 moved=("Brows", lambda i: 0.0065 - 0.0008 * i))
+        else:
+            th_ = 0.8 if PAUL else 1.0   # (his brows a little lighter than Val's)
+            band([(0.012 * sx, 0.0205, 0.0042 * th_), (0.028 * sx, 0.0238, 0.0058 * th_), (0.045 * sx, 0.0246, 0.0056 * th_), (0.061 * sx, 0.0196, 0.0036 * th_)], HAIR, 0.0034 * th_,
+                 moved=("Brows", lambda i: 0.0075 - 0.0012 * i))
+    if VAL: band([(-0.041, -0.0668, 0.0026), (-0.031, -0.0608, 0.0052), (-0.016, -0.0562, 0.0066), (0.0, -0.0550, 0.0062),
+                  (0.016, -0.0562, 0.0066), (0.031, -0.0608, 0.0052), (0.041, -0.0668, 0.0026)], HAIR, 0.0042)
+    # Paul's moustache: thin, along the top lip, dark
+    if PAUL: band([(-0.030, -0.0640, 0.0016), (-0.020, -0.0596, 0.0030), (-0.008, -0.0574, 0.0034), (0.0, -0.0570, 0.0032),
+                   (0.008, -0.0574, 0.0034), (0.020, -0.0596, 0.0030), (0.030, -0.0640, 0.0016)], HAIR, 0.0028)
+    # the mouth, one shape: the lower lip under the moustache, its top line turning up a little at the corners
+    # (he is usually half smiling), full in the middle and thinning to nothing at each end
+    f0 = len(XF.f); mw = 0.0240 if BRI else 0.0215; cols_ = []
+    for i in range(9):
+        u_ = -1 + 2 * i / 8
+        x = u_ * mw
+        zt = -0.0722 + (0.0048 if BRI else 0.0030) * u_ * u_
+        zb = zt - 0.0010 - 0.0082 * max(0.0, 1 - u_ * u_) ** 0.75
+        full = 0.0020 * (0.35 + 0.65 * max(0.0, 1 - u_ * u_))
+        cols_.append([fadd(x, lerp(zt, zb, k_), l_, "lip2" if BRI else "lip") for k_, l_ in ((0, -SUNK), (0.22, full * 0.7), (0.55, full), (0.85, full * 0.6), (1, -SUNK))])
+    for c0, c1 in zip(cols_, cols_[1:]):
+        for k in range(4): XF.face(c0[k], c0[k + 1], c1[k + 1], c1[k])
+    to_front(f0)
+    # the patch under the lip: a small wedge, broad under the lip and running down to a point on the chin
+    if VAL: band([(0.0, -0.0850, 0.0068), (0.0, -0.0895, 0.0056), (0.0, -0.0945, 0.0036), (0.0, -0.0990, 0.0014)], HAIR, 0.0018, tips=(0.3, 1.2))
+    skin_bm.free()
+    if VAL:
+        # hair: dark and wavy, swept up and back off the forehead with a lifted front, over the tops of the ears,
+        # curling behind them and down to the collar at the back
+        import random
+        rnd = random.Random(11)
+        n = 16
+        def hairline(y):   # the lowest the hair comes, round the head (y: -1 the front, +1 the back)
+            return lerp(0.088, 0.004, sm(-0.8, -0.05, y)) if y <= 0 else lerp(0.004, -0.108, sm(0.05, 0.6, y))
+        rows = []
+        for i, (dz, r) in enumerate([(0.132, 0.035), (0.126, 0.078), (0.106, 0.107), (0.074, 0.118), (0.038, 0.118), (0.0, 0.115), (-0.052, 0.108), (-0.108, 0.096)]):
+            idx = []
+            for k in range(n):
+                th = 2 * math.pi * k / n
+                x, y = math.sin(th), -math.cos(th)
+                front = max(0.0, -y)
+                wave = (rnd.random() - 0.4) * 0.014
+                rr = (r + wave) * (1.0 + 0.05 * max(0.0, y))
+                z = dz + wave * 0.5
+                hl = hairline(y)
+                if z < hl: z = hl + 0.004 * i; rr = (0.108 - 0.011 * front ** 3 + 0.012 * max(0.0, y)) * (1.0 - 0.01 * i)   # tucked in at the hairline
+                lift = front * (0.006 if i in (2, 3) else 0.003 if i == 1 else 0.0)                      # the front, lifted
+                idx.append(G.add(HV(x * rr * 0.98, 0.012 + y * rr * (1.04 if y > 0 else 0.94) - lift * 0.7, z + lift), hd, swatch_uv(HAIR)))   # flatter over the forehead than round the back
+            rows.append(idx)
+        for a, b in zip(rows, rows[1:]): G.bridge(a, b)
+        G.cap(rows[0][::-1], HV(0, 0.012, 0.137), hd, swatch_uv(HAIR))
+        inner = [G.add(G.v[i] + (HC - G.v[i]) * 0.12, hd, swatch_uv(HAIR)) for i in rows[-1]]
+        G.bridge(rows[-1], inner)
+        # Over that cap, the hair itself, built the way stylised slicked-back hair is: layered blades. Each is a flat
+        # wedge, wide at the root and tapering to a point, with a ridge down its middle; a front tier rises off the
+        # hairline and sweeps back, the tiers behind overlap it like shingles, side blades sweep back over the ears,
+        # and the back ends in points that flick out at the neck. A wave runs down each blade.
+        XG = Cage("HairBlades", "Gear"); XTRA.append((XG, "HeroHead"))
+        O = HV(0, 0.012, 0.02)
+        def turned_out(f0, centre, inward=False):
+            for i in range(f0, len(XG.f)):
+                fc = XG.f[i]
+                pts_ = [XG.v[j] for j in fc]
+                c = sum(pts_, Vector()) / len(pts_)
+                nrm = (pts_[1] - pts_[0]).cross(pts_[2] - pts_[0])
+                if (nrm.dot(c - centre) < 0) != inward: XG.f[i] = tuple(reversed(fc))
+        def blade(pts, width, thick, wave=0.006, phase=0.0, col=HAIR):
+            P = [HV(*q) for q in pts]
+            m = len(P); f0 = len(XG.f); rings_ = []
+            taper = [0.5, 1.0, 0.85, 0.5, 0.2]
+            for i, c in enumerate(P):
+                t = (P[min(i + 1, m - 1)] - P[max(i - 1, 0)]).normalized()
+                nr = (c - O); nr = (nr - t * nr.dot(t)).normalized()
+                sd_ = t.cross(nr)
+                u_ = i / (m - 1)
+                c = c + nr * wave * math.sin(2 * math.pi * (u_ * 1.1 + phase)) * (0.3 + 0.7 * u_)
+                if i == m - 1: rings_.append([XG.add(c + nr * thick * 0.3, hd, swatch_uv(col))]); break
+                th_ = thick * (0.35 if i == 0 else 0.8 if i == 1 else 1.0)
+                w_ = width * taper[min(i, 4)] if m <= 5 else width * lerp(1.0, 0.25, u_)
+                rings_.append([XG.add(c + nr * th_, hd, swatch_uv(col)), XG.add(c + sd_ * w_, hd, swatch_uv(col)),
+                               XG.add(c - nr * th_ * 0.5, hd, swatch_uv(col)), XG.add(c - sd_ * w_, hd, swatch_uv(col))])
+            for a_, b_ in zip(rings_, rings_[1:]):
+                if len(b_) == 1:
+                    for k in range(4): XG.face(a_[k], a_[(k + 1) % 4], b_[0])
+                else:
+                    for k in range(4): XG.face(a_[k], a_[(k + 1) % 4], b_[(k + 1) % 4], b_[k])
+            XG.face(*rings_[0][::-1])
+            turned_out(f0, sum(P, Vector()) / m)
+        rnd2 = random.Random(4)
+        def j(v): return v + (rnd2.random() - 0.5) * 0.012
+        # Where the blades go is worked out on the hair's own dome (the cap above), so from the front the outline is
+        # a rounded mass like his, not a row of spikes: a point is a direction from the middle of the head, pushed
+        # out to the cap and lifted a few millimetres. Every blade's root is sunk under the cap, so none stands off
+        # the head with a gap under it.
+        prof = [(90, 0.117), (72.6, 0.117), (53.7, 0.132), (38.8, 0.137), (24.6, 0.130), (8.7, 0.119), (-9.9, 0.117), (-33.7, 0.130), (-53, 0.160)]
+        def rho(el):
+            for (e0, r0), (e1, r1) in zip(prof, prof[1:]):
+                if el >= e1: return lerp(r1, r0, min(1.0, (el - e1) / (e0 - e1)))
+            return prof[-1][1]
+        def on_hair(d, lift):
+            d = d.normalized(); el = math.degrees(math.asin(max(-1.0, min(1.0, d.z))))
+            q = d * (rho(el) + lift)
+            return (q.x * 0.98, 0.012 + q.y * (1.04 * (1.0 + 0.05 * d.y) if d.y > 0 else 0.94), 0.020 + q.z)
+        def over(a_, t, lift):    # on a line running front to back over the head: a_ how far to the side (-1..1), t how far round (0 front, 90 top, 180 back)
+            a_ = max(-0.93, min(0.93, a_ + 0.07 * math.sin(math.radians(t))))    # all swept a little to his left
+            c = math.sqrt(1 - a_ * a_); tr = math.radians(t)
+            return on_hair(V(a_, -c * math.cos(tr), c * math.sin(tr)), lift)
+        def around(sx, ps, el, lift):   # round the side of the head: ps degrees round from the front, el degrees up
+            pr, er = math.radians(ps), math.radians(el)
+            return on_hair(V(sx * math.sin(pr) * math.cos(er), -math.cos(pr) * math.cos(er), math.sin(er)), lift)
+        def hairline_t(a_): return math.degrees(math.asin(min(1.0, math.sin(math.radians(31)) / math.sqrt(1 - a_ * a_))))
+        def jl(v): return v + (rnd2.random() - 0.5) * 0.004
+        for a_ in (-0.80, -0.56, -0.29, 0.0, 0.29, 0.56, 0.80):      # the front: up off the hairline, swept back over the top
+            t0 = hairline_t(a_) + (3 if abs(a_) < 0.1 else 0)
+            blade([over(a_, t0 + 3, -0.012), over(a_, t0 + 15, jl(0.003)), over(a_, t0 + 33, jl(0.007)), over(a_, t0 + 56, 0.005), over(a_, t0 + 80, 0.001)],
+                  0.030, 0.008, wave=0.004, phase=rnd2.random())
+        for a_ in (-0.62, -0.33, 0.0, 0.33, 0.62):              # the top
+            blade([over(a_, 62, -0.006), over(a_, 84, jl(0.004)), over(a_, 108, jl(0.004)), over(a_, 130, 0.003), over(a_, 150, 0.0)], 0.032, 0.008, phase=rnd2.random())
+        for a_ in (-0.80, -0.50, -0.17, 0.17, 0.50, 0.80):      # the crown, down the back of the head
+            blade([over(a_, 118, -0.006), over(a_, 140, jl(0.004)), over(a_, 162, jl(0.004)), over(a_, 184, 0.003), over(a_, 202, 0.0)], 0.031, 0.008, phase=rnd2.random())
+        for a_ in (-0.72, -0.38, 0.0, 0.38, 0.72):              # the back, curling out at the neck
+            blade([over(a_, 168, -0.006), over(a_, 190, jl(0.003)), over(a_, 210, jl(0.004)), over(a_, 226, 0.007), over(a_, 238, 0.016)], 0.030, 0.008, phase=rnd2.random())
+        for sx in (1, -1):                                       # the sides: back from the temple, over the ear, and down behind it
+            blade([around(sx, 52, 27, -0.010), around(sx, 72, 26, 0.004), around(sx, 96, 22, 0.004), around(sx, 122, 14, 0.003), around(sx, 148, 6, 0.0)], 0.028, 0.008, phase=0.2)
+            blade([around(sx, 78, 9, -0.010), around(sx, 96, 12, 0.003), around(sx, 116, 6, 0.003), around(sx, 138, -4, 0.002), around(sx, 158, -16, 0.0)], 0.026, 0.008, phase=0.6)
+            blade([around(sx, 118, -4, -0.008), around(sx, 132, -18, 0.003), around(sx, 146, -32, 0.003), around(sx, 156, -44, 0.005), around(sx, 162, -52, 0.012)], 0.024, 0.008, wave=0.004, phase=0.9)
+        # curls: his hair is curly, so small hooked locks lie over the smooth ones, along the fringe, over the top
+        # and at the neck: each turns most of a circle on the hair, rising as it goes
+        def curl(d0, size, lift0, turn=1.0, w=0.010):
+            d0 = d0.normalized()
+            e1 = d0.cross(V(0, 0, 1))
+            if e1.length < 0.05: e1 = V(1, 0, 0)
+            e1.normalize(); e2 = d0.cross(e1)
+            pts_ = []
+            for k in range(5):
+                th = turn * (0.4 + 1.2 * k)
+                rr = size * (1.0 - 0.13 * k)
+                pts_.append(on_hair(d0 + (e1 * math.cos(th) + e2 * math.sin(th)) * rr, lift0 + 0.002 * k))
+            blade(pts_, w, 0.007, wave=0.0)
+        def dir_over(a_, t):
+            c = math.sqrt(1 - a_ * a_); tr = math.radians(t)
+            return V(a_, -c * math.cos(tr), c * math.sin(tr))
+        for a_, sg in ((-0.66, 1), (-0.40, -1), (-0.12, 1), (0.16, -1), (0.44, 1), (0.68, -1)):          # the fringe
+            curl(dir_over(a_, hairline_t(a_) + 9), 0.085, 0.004, sg)
+        for a_, t, sg in ((-0.42, 70, 1), (0.05, 64, -1), (0.46, 74, 1), (-0.20, 98, -1), (0.28, 104, 1), (-0.50, 128, 1), (0.02, 134, -1), (0.52, 124, -1)):   # the top and crown
+            curl(dir_over(a_, t), 0.10, 0.008, sg, 0.011)
+        for sx in (1, -1):                                                                             # behind the ears and at the neck
+            for ps, el, sg in ((128, 2, 1), (146, -22, -1), (160, -40, 1)):
+                pr, er = math.radians(ps), math.radians(el)
+                curl(V(sx * math.sin(pr) * math.cos(er), -math.cos(pr) * math.cos(er), math.sin(er)), 0.09, 0.006, sg * sx)
+        # The fleece's collar, as in the photos: a stand collar left unsnapped. It stands round the back of the neck
+        # and opens in a V at the throat, and its two front corners fold over outward, showing the dark lining.
+        # Built as two skins a few millimetres apart: blue outside, dark inside.
+        XJ = Cage("Collar", "Jacket"); XL = Cage("CollarLining", "Gear")
+        XTRA.append((XJ, "HeroBody")); XTRA.append((XL, "HeroGear"))
+        M = 20
+        rows = [  # height (front, back), radius (side, front, back), where the open edge is (degrees off the front), weights
+            ((1.408, 1.410), (0.122, 0.102, 0.110), 13, {"UpperChest": 0.75, "Neck": 0.25}),
+            ((1.440, 1.448), (0.118, 0.106, 0.104), 20, {"UpperChest": 0.6, "Neck": 0.4}),
+            ((1.468, 1.482), (0.123, 0.114, 0.104), 28, {"UpperChest": 0.5, "Neck": 0.5}),
+            ((1.490, 1.512), (0.132, 0.124, 0.106), 36, {"UpperChest": 0.4, "Neck": 0.6})]
+        grid = []
+        for ri, ((zf, zb), (rx, rf, rb), edge, w_) in enumerate(rows):
+            row = []
+            for i in range(M):
+                u_ = i / (M - 1)
+                ph = math.radians(edge + (360 - 2 * edge) * (u_ - 0.1 * math.sin(2 * math.pi * u_)))
+                cs, sn = math.cos(ph), math.sin(ph)
+                ry = rf if cs > 0 else rb
+                co = V(rx * sn, 0.02 - ry * cs, lerp(zf, zb, 0.5 - 0.5 * cs))
+                if ri >= 2:
+                    # the fold: near the open edge the top of the collar turns over, outward and down
+                    fold = max(0.0, 1.0 - min(u_, 1 - u_) / 0.26) ** 1.3
+                    out = V(sn, -cs, 0)
+                    if ri == 2: co += out * 0.010 * fold
+                    else:
+                        below = grid[2][i]
+                        co = (below + V(0, 0, 0.012)).lerp(co, 1 - fold) + out * 0.026 * fold + V(0, 0, -0.030) * fold
+                row.append(co)
+            grid.append(row)
+        def gnorm(ri, i):   # which way the outside faces at a point of the grid
+            a_ = grid[ri][min(i + 1, M - 1)] - grid[ri][max(i - 1, 0)]
+            b_ = grid[min(ri + 1, len(grid) - 1)][i] - grid[max(ri - 1, 0)][i]
+            return a_.cross(b_).normalized()
+        outer = [[XJ.add(grid[ri][i], rows[ri][3]) for i in range(M)] for ri in range(len(grid))]
+        inner = [[XL.add(grid[ri][i] - gnorm(ri, i) * 0.006, rows[ri][3], swatch_uv("snap")) for i in range(M)] for ri in range(len(grid))]
+        rim = [[XL.add(grid[ri][i], rows[ri][3], swatch_uv("snap")) for i in range(M)] for ri in range(len(grid))]
+        for ri in range(len(grid) - 1):
+            for i in range(M - 1):
+                XJ.face(outer[ri][i], outer[ri][i + 1], outer[ri + 1][i + 1], outer[ri + 1][i])
+                XL.face(inner[ri][i + 1], inner[ri][i], inner[ri + 1][i], inner[ri + 1][i + 1])
+            XL.face(rim[ri][0], rim[ri + 1][0], inner[ri + 1][0], inner[ri][0])                        # the two open edges
+            XL.face(rim[ri + 1][M - 1], rim[ri][M - 1], inner[ri][M - 1], inner[ri + 1][M - 1])
+        top = len(grid) - 1
+        for i in range(M - 1): XL.face(rim[top][i + 1], rim[top][i], inner[top][i], inner[top][i + 1])  # the top edge
+    # ---- caps, goggles and long hair (Breanna and Paul)
+    def beanie(col, fz, sz, bz, rx, ryf, ryb, slouch=0.0, n=24):
+        """A knit beanie pulled down over the head: a turned-up ribbed cuff (its edge fz, sz, bz high at the front, the
+        sides and the back, head units), then the crown, level, a little slouched to the back. Returns the cuff's
+        radii, for goggles to sit on it."""
+        def edge(th):
+            c = math.cos(th)
+            return lerp(sz, fz, c) if c >= 0 else lerp(sz, bz, -c)
+        crown = [(0.080, 0.985), (0.110, 0.93), (0.136, 0.80), (0.156, 0.60), (0.168, 0.34)]
+        rows_ = []
+        # the cuff, folded up and ribbed (every other column stands out), with a ledge where it ends
+        for dz, k in ((0.0, 1.0), (0.018, 1.06), (0.038, 1.065), (0.042, 1.06), (0.046, 0.965), (0.054, 0.97)):
+            rows_.append([(edge(2 * math.pi * i / n) + dz, k * (1.0 + (0.026 if dz < 0.043 and i % 2 else 0.0)), dz / 0.2) for i in range(n)])
+        for j_, (zc, k) in enumerate(crown):
+            rows_.append([(max(zc, edge(2 * math.pi * i / n) + 0.056 + 0.012 * j_), k, 0.3 + 0.7 * j_ / 4) for i in range(n)])
+        rings_ = []
+        for row in rows_:
+            idx = []
+            for i, (z, k, sl) in enumerate(row):
+                th = 2 * math.pi * i / n
+                x, y = math.sin(th), -math.cos(th)
+                idx.append(G.add(HV(x * rx * k, 0.012 + y * (ryf if y < 0 else ryb) * k + slouch * sl * sl, z), hd, swatch_uv(col)))
+            rings_.append(idx)
+        for a_, b_ in zip(rings_, rings_[1:]): G.bridge(a_, b_)
+        G.cap(rings_[-1], HV(0, 0.012 + slouch, crown[-1][0] + 0.008), hd, swatch_uv(col))
+        inner = [G.add(G.v[i] + (HV(0, 0.012, 0) + V(0, 0, G.v[i].z - HV(0, 0, 0).z) - G.v[i]) * 0.10 + V(0, 0, 0.006), hd, swatch_uv(col)) for i in rings_[0]]
+        G.bridge(inner, rings_[0])       # the edge turned under, against the head
+        BEANIE.update(rx=rx * 1.03, ryf=ryf * 1.03, ryb=ryb * 1.03, crown=crown)
+        return rx * 1.03, ryf * 1.03, ryb * 1.03
+    BEANIE = {}
+    def goggles(zc, rx, ryf, ryb, cols, a0=1.15, h=0.044, lift=0.010):
+        # (worn over the eyes as modelled; in the camp the game blends in "GogglesUp", which pushes them up onto the
+        # beanie so the face shows: see the shape keys further down)
+        global GOGGLES
+        GOGGLES = dict(cols=cols, zc=zc, HC=HC.copy(), HS=HS, beanie=BEANIE, rx=rx, ryf=ryf, ryb=ryb)
+        """Goggles round the head at height zc: a frame (rx, ryf, ryb: the head's or the cap's radii there), a mirrored
+        lens in front of it, a strap round the back."""
+        fcol, lcol, scol = cols
+        def at(a, extra): return HV(math.sin(a) * (rx + extra), 0.012 - math.cos(a) * ((ryf if math.cos(a) >= 0 else ryb) + extra), zc)
+        m = 8
+        def inward(q): d_ = HC - q; d_.z = 0.0; return d_.normalized()     # (level: the head's middle is lower than goggles on a cap)
+        fr = [at(-a0 + 2 * a0 * i / m, lift) for i in range(m + 1)]
+        loft(G, [(c, 0.010, h * 0.5 * (1 - 0.22 * (abs(i - m / 2) / (m / 2)) ** 2), hd) for i, c in enumerate(fr)], 6, fcol, 2.6, ref=inward(fr[m // 2]), twist=math.pi / 6)
+        # (the lens a size smaller than the frame, so a black rim shows all round it)
+        ln = [at(-a0 * 0.82 + 2 * a0 * 0.82 * i / m, lift + 0.013) for i in range(m + 1)]
+        loft(G, [(c, 0.005, h * 0.34 * (1 - 0.22 * (abs(i - m / 2) / (m / 2)) ** 2), hd) for i, c in enumerate(ln)], 6, lcol, 2.8, ref=inward(ln[m // 2]), twist=math.pi / 6)
+        st = [at(a, lift * 0.5) for a in [a0 + (2 * math.pi - 2 * a0) * i / 12 for i in range(13)]]
+        loft(G, [(c, 0.004, 0.015, hd) for c in st], 4, scol, 2.0, ref=V(0, 0, 1), twist=math.pi / 4)
+    def cap_hair(rows_spec, front_line, back_line, sq=0.93):
+        """Hair close to the head (under a cap, or drawn back), down to its hairline."""
+        n = 16; rows = []
+        for i, (dz, r) in enumerate(rows_spec):
+            idx = []
+            for k in range(n):
+                th = 2 * math.pi * k / n
+                x, y = math.sin(th), -math.cos(th)
+                front = max(0.0, -y)
+                hl = lerp(front_line, -0.004, sm(-0.80, -0.05, y)) if y <= 0 else lerp(-0.004, back_line, sm(0.05, 0.55, y))
+                z, rr = dz, r
+                if z < hl: z = hl + 0.003 * i; rr = 0.098 - 0.012 * front ** 3 + 0.004 * max(0.0, y)
+                idx.append(G.add(HV(x * rr * sq, 0.010 + y * rr * (1.08 if y > 0 else 0.95), z), hd, swatch_uv(HAIR)))
+            rows.append(idx)
+        for a_, b_ in zip(rows, rows[1:]): G.bridge(a_, b_)
+        G.cap(rows[0][::-1], HV(0, 0.010, rows_spec[0][0] + 0.006), hd, swatch_uv(HAIR))
+    if PAUL:
+        # short dark hair, mostly under the beanie: it shows at the sides over the ears, in short sideburns and at the nape
+        cap_hair([(0.110, 0.080), (0.074, 0.110), (0.038, 0.112), (0.0, 0.110), (-0.050, 0.102), (-0.094, 0.082)], 0.082, -0.090, sq=0.95)
+        # the cream beanie, its cuff low on the forehead; his goggles pushed up on it (black frame, orange lens)
+        crx, cry, crb = beanie("beanie", 0.046, 0.012, -0.044, 0.118, 0.106, 0.122, slouch=0.018)
+        goggles(0.010, 0.104, 0.094, 0.120, ("frame", "lens", "strap"), a0=1.18, h=0.090, lift=0.012)
+        # outfit pieces that go with the head: the turtleneck's roll collar (outfit one), the balaclava (outfit two)
+        def tring(C_, zf, zb, rx_, ry_, cy_, w_, uvn, n_=12):
+            return [C_.add(V(rx_ * math.sin(a), cy_ - ry_ * math.cos(a), lerp(zf, zb, 0.5 - 0.5 * math.cos(a))), w_, swatch_uv(uvn)) for a in [2 * math.pi * k / n_ for k in range(n_)]]
+        if not PAUL_B:
+            XK = Cage("Turtleneck", "Knit"); XK.recalc = True; XTRA.append((XK, "HeroBody"))
+            nk_ = {"Neck": 0.7, "Head": 0.1, "UpperChest": 0.2}
+            rs = [tring(XK, 1.405, 1.405, 0.074, 0.076, 0.018, {"UpperChest": 0.7, "Neck": 0.3}, "spare"),
+                  tring(XK, 1.445, 1.455, 0.066, 0.068, 0.017, {"Neck": 1}, "spare"),
+                  tring(XK, 1.470, 1.508, 0.068, 0.070, 0.014, nk_, "spare"),
+                  tring(XK, 1.482, 1.522, 0.077, 0.079, 0.014, nk_, "spare"),
+                  tring(XK, 1.462, 1.500, 0.079, 0.081, 0.015, nk_, "spare")]
+            for a_, b_ in zip(rs, rs[1:]): XK.bridge(a_, b_)
+        else:
+            # the white balaclava, pulled up over the mouth and nose: laid round the neck and on the face, a centimetre
+            # off the skin, and up under the beanie at the back
+            XB = Cage("Balaclava", "Gear"); XB.recalc = True; XTRA.append((XB, "HeroGear"))
+            nb = 16; rows_b = []
+            for t in [0.0, 0.18, 0.36, 0.52, 0.66, 0.78, 0.88, 0.96, 1.0]:
+                row = []
+                for k in range(nb):
+                    a = 2 * math.pi * k / nb; ca, sa = math.cos(a), math.sin(a)
+                    ztop = lerp(-0.010, 0.020, 0.5 - 0.5 * ca)         # the top edge: over the nose in front, under the beanie behind
+                    zl = lerp(-0.22, ztop, t)                            # head units, from the base of the neck up
+                    zabs = HC.z + zl * HS
+                    if zl < -0.135:
+                        rr = (0.068 + 0.010 * (1 - t)) ; q = V(sa * rr, 0.015 - ca * rr, zabs)
+                    else:
+                        hit = skin_tree.ray_cast(HV(sa * 0.6, 0.012 - ca * 0.6, zl), V(-sa, ca, 0))[0]
+                        q = (hit if hit is not None else HV(sa * 0.10, 0.012 - ca * 0.10, zl)) + V(sa, -ca, 0) * (0.009 + (0.010 if ca > 0.85 and -0.06 < zl < 0.0 else 0.0))
+                    w_ = {"UpperChest": 0.4, "Neck": 0.6} if zabs < 1.46 else {"Neck": 0.5, "Head": 0.5} if zabs < 1.51 else hd
+                    row.append(XB.add(q, w_, swatch_uv("balaclava")))
+                    # pulled down: bunched round the neck below the chin, a roll at its top edge (lower in front)
+                    zt_ = lerp(1.452, 1.490, 0.5 - 0.5 * ca)
+                    rd = 0.074 + 0.012 * math.sin(math.pi * t) + 0.006 * t
+                    GEAR_SHAPES.setdefault("MaskDown", []).append((q.copy(), V(sa * rd, 0.015 - ca * rd, lerp(1.418, zt_, t))))
+                rows_b.append(row)
+            for a_, b_ in zip(rows_b, rows_b[1:]): XB.bridge(a_, b_)
+    if BRI:
+        # her hair (after her new photo): long, dark brown and curly, falling from under a grey beanie past her shoulders
+        # to her chest in front and down her back. Under the locks, a close cap and a mass behind; the locks themselves
+        # are tight curls (each a thin tube wound round its line), hanging from the head's bone and lying on her shoulders
+        # and back on the chest's, so they stay on her when she turns her head.
+        cap_hair([(0.122, 0.030), (0.116, 0.068), (0.096, 0.093), (0.064, 0.104), (0.030, 0.106), (-0.010, 0.104), (-0.055, 0.096), (-0.092, 0.078)], 0.098, -0.096)
+        crx, cry, crb = beanie("beanie2", 0.040, 0.020, -0.034, 0.118, 0.104, 0.124, slouch=0.022)
+        # her goggles over her eyes: a white frame, a pink mirror lens, a pink strap round the beanie's edge
+        goggles(0.010, 0.106, 0.091, 0.118, ("frame2", "lens2", "strap2"), a0=1.22, h=0.092, lift=0.011)
+        def wz(z):
+            if z > 1.56: return {"Head": 1.0}
+            if z > 1.47: k = (z - 1.47) / 0.09; return {"Head": k, "Neck": 1 - k}
+            if z > 1.39: k = (z - 1.39) / 0.08; return {"Neck": k, "UpperChest": 1 - k}
+            if z > 1.25: return {"UpperChest": 1.0}
+            return {"UpperChest": 0.6, "Chest": 0.4}
+        def catmull(ctrl, m):
+            out = []
+            P_ = [ctrl[0]] + list(ctrl) + [ctrl[-1]]
+            for i in range(m):
+                u = i / (m - 1) * (len(ctrl) - 1); j = min(int(u), len(ctrl) - 2); t = u - j
+                p0, p1, p2, p3 = P_[j], P_[j + 1], P_[j + 2], P_[j + 3]
+                out.append(0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t * t * t))
+            return out
+        # the mass behind: a broad soft sheet from under the beanie down her back, and one down each side of the face
+        loft(G, [(V(0, 0.100, 1.585), 0.020, 0.100, wz(1.585)), (V(0, 0.132, 1.505), 0.024, 0.130, wz(1.505)), (V(0, 0.168, 1.415), 0.024, 0.150, wz(1.415)),
+                 (V(0, 0.182, 1.330), 0.022, 0.150, wz(1.33)), (V(0, 0.186, 1.255), 0.016, 0.118, wz(1.255))], 10, HAIR, 2.2, ref=V(0, 1, 0))
+        for sx in (1, -1):
+            loft(G, [(V(sx * 0.104, 0.010, 1.630), 0.030, 0.018, wz(1.63)), (V(sx * 0.122, 0.018, 1.545), 0.036, 0.022, wz(1.545)),
+                     (V(sx * 0.132, 0.030, 1.470), 0.034, 0.022, wz(1.47)), (V(sx * 0.150, 0.040, 1.420), 0.024, 0.016, wz(1.42))], 8, HAIR, 2.2, ref=V(0, 1, 0))
+        XC = Cage("Curls", "Gear"); XC.recalc = True; XTRA.append((XC, "HeroHead"))
+        import random
+        rc = random.Random(7)
+        def lock(ctrl, r=0.011, amp=0.009, turns=3.2, n=5, m=18):
+            r, amp = r * 0.85, amp * 1.7     # (springy coils, not twisted rope)
+            P_ = catmull([V(*q) for q in ctrl], m)
+            rings_ = []; tip = None
+            for i in range(m):
+                t = (P_[min(i + 1, m - 1)] - P_[max(i - 1, 0)]).normalized()
+                a1, a2 = frame_of(t, V(0, 1, 0) if abs(t.y) < 0.9 else V(1, 0, 0))
+                u_ = i / (m - 1); ang = 2 * math.pi * (turns * u_ + rc.random() * 0.15)
+                c = P_[i] + (a1 * math.cos(ang) + a2 * math.sin(ang)) * amp * (0.35 + 0.65 * u_)
+                if i == m - 1: tip = XC.add(c, wz(c.z), swatch_uv(HAIR)); break
+                rr = r * (1.0 - 0.5 * u_ * u_)
+                rings_.append([XC.add(c + (a1 * math.cos(2 * math.pi * k / n) + a2 * math.sin(2 * math.pi * k / n)) * rr, wz(c.z), swatch_uv(HAIR)) for k in range(n)])
+            for a_, b_ in zip(rings_, rings_[1:]):
+                for k in range(n): XC.face(a_[k], a_[(k + 1) % n], b_[(k + 1) % n], b_[k])
+            for k in range(n): XC.face(rings_[-1][k], rings_[-1][(k + 1) % n], tip)
+            XC.face(*rings_[0][::-1])
+        for sx in (1, -1):
+            # in front of the shoulders, framing the face, down to her chest
+            for k, (x0, y0, x1, y1, zend) in enumerate([(0.098, -0.035, 0.122, -0.168, 1.255), (0.106, -0.012, 0.150, -0.162, 1.235), (0.112, 0.010, 0.176, -0.150, 1.27)]):
+                lock([(sx * x0, y0, 1.628), (sx * (x0 + 0.020), y0 - 0.006, 1.555), (sx * (x0 + 0.030), y0 - 0.020 - 0.01 * k, 1.478), (sx * (x1 - 0.010), y1 * 0.55, 1.415),
+                      (sx * x1, y1 * 0.95, 1.335), (sx * (x1 - 0.004), y1, zend)], r=0.016, amp=0.012, turns=3.4 + 0.3 * k)
+            # over the tops of the shoulders, to the back
+            for k, ps in enumerate((112, 128, 144)):
+                a = math.radians(ps); xs, yc = math.sin(a), -math.cos(a)
+                lock([(sx * xs * 0.118, 0.012 + yc * 0.120, 1.600), (sx * xs * 0.135, 0.020 + yc * 0.135, 1.520), (sx * xs * 0.160, 0.050 + yc * 0.130, 1.440),
+                      (sx * xs * 0.170, 0.100 + yc * 0.090, 1.380), (sx * xs * 0.160, 0.175, 1.300), (sx * xs * 0.150, 0.190, 1.245)], r=0.016, amp=0.012, turns=3.0 + 0.4 * k)
+        for k, xb in enumerate((-0.095, -0.050, -0.010, 0.030, 0.070, 0.105)):
+            # down her back
+            lock([(xb * 0.9, 0.118, 1.590), (xb, 0.150, 1.515), (xb * 1.05, 0.180, 1.430), (xb * 1.1, 0.196, 1.345), (xb * 1.05, 0.200, 1.265), (xb, 0.198, 1.215)],
+                 r=0.017, amp=0.013, turns=3.6 + 0.25 * (k % 3))
+        for k, xb in enumerate((-0.072, -0.030, 0.010, 0.050, 0.088)):
+            # a second layer over them, a little shorter: the curls are thick
+            lock([(xb * 0.9, 0.124, 1.575), (xb, 0.160, 1.505), (xb * 1.05, 0.192, 1.425), (xb * 1.1, 0.206, 1.345), (xb, 0.206, 1.280)],
+                 r=0.016, amp=0.012, turns=3.2 + 0.3 * (k % 2), m=12)
+    for s in (1, -1):
+        sd = SIDE[s]
+        sh, u, el, f, wr, kn = arm_points(s)
+        G.cur = "hands"; bare_hand(G, s, SKIN); G.cur = "gear"
+        # white low-top sneakers: a chunky sole, a grey panel on the side and the heel
+        hip, knee, ankle, ball, toe = leg_points(s)
+        x = ankle.x
+        ft, ts = sd + "Foot", sd + "Toes"
+        def fw(y):
+            k = sm(-0.07, -0.13, y)
+            return {ft: 1 - k, ts: k} if k > 0 else {ft: 1}
+        foot = []
+        for y, w_, h0, h1 in [(0.092, 0.046, 0.030, 0.105), (0.065, 0.062, 0.028, 0.128), (0.01, 0.066, 0.028, 0.125),
+                              (-0.06, 0.068, 0.028, 0.108), (-0.13, 0.068, 0.030, 0.088), (-0.19, 0.060, 0.030, 0.078),
+                              (-0.228, 0.040, 0.032, 0.066), (-0.242, 0.014, 0.038, 0.054)]:
+            zc, hh = (h0 + h1) / 2, (h1 - h0) / 2
+            foot.append((V(x + 0.004 * s, y, zc), hh, w_, fw(y)))
+        if PAUL:
+            # blue ski boots: a stiff shell to mid-shin round the trouser cuff, a big square-toed foot on a thick sole, grey
+            # buckles over the instep and up the shin
+            loft(G, [(V(x, 0.020, 0.060), 0.082, 0.074, {ft: 1}), (V(x, 0.022, 0.170), 0.078, 0.070, {ft: 0.7, sd + "LowerLeg": 0.3}),
+                     (V(x, 0.024, 0.260), 0.074, 0.068, {ft: 0.25, sd + "LowerLeg": 0.75}), (V(x, 0.026, 0.305), 0.076, 0.070, {sd + "LowerLeg": 1})], 10, "skiboot", 2.4, ref=FWD)
+            sfoot = []
+            for y, w_, h0, h1 in [(0.095, 0.054, 0.030, 0.17), (0.06, 0.072, 0.028, 0.18), (0.0, 0.078, 0.028, 0.17), (-0.07, 0.078, 0.028, 0.135),
+                                  (-0.14, 0.074, 0.030, 0.105), (-0.198, 0.064, 0.032, 0.090), (-0.236, 0.044, 0.036, 0.078), (-0.252, 0.016, 0.044, 0.066)]:
+                sfoot.append((V(x + 0.004 * s, y, (h0 + h1) / 2), (h1 - h0) / 2, w_, fw(y)))
+            loft(G, sfoot, 10, "skiboot", 2.8, ref=V(0, 0, 1))
+            loft(G, [(V(x + 0.004 * s, y, 0.022), 0.022, w_, fw(y)) for y, w_ in
+                     [(0.106, 0.054), (0.085, 0.078), (0.0, 0.084), (-0.10, 0.082), (-0.19, 0.074), (-0.242, 0.052), (-0.262, 0.020)]], 8, "sole", 3.4, ref=V(0, 0, 1))
+            for zb, yb, rb in ((0.205, 0.022, 0.082), (0.268, 0.024, 0.078)):     # up the shin
+                loft(G, [(V(x + math.sin(a) * rb, yb - math.cos(a) * rb, zb), 0.006, 0.011, {sd + "LowerLeg": 0.7, ft: 0.3}) for a in [-1.3 + 2.6 * k / 6 for k in range(7)]],
+                     4, "buckle", 2.0, ref=V(0, 0, 1), twist=math.pi / 4)
+            for yb in (-0.02, -0.085):                                          # over the instep
+                zt = 0.17 if yb > -0.05 else 0.142
+                loft(G, [(V(x + 0.004 * s + math.sin(a) * 0.080, yb, 0.09 + math.cos(a) * (zt - 0.09 + 0.006)), 0.006, 0.011, fw(yb)) for a in [-1.35 + 2.7 * k / 6 for k in range(7)]],
+                     4, "buckle", 2.0, ref=V(0, 1, 0), twist=math.pi / 4)
+        elif BRI:
+            # tan slipper boots on a thick sole
+            loft(G, [(c_ + V(0, 0, 0.022), r1_ + 0.010, r2_ + 0.004, w_) for c_, r1_, r2_, w_ in foot], 10, "slipper", 2.6, ref=V(0, 0, 1))
+            loft(G, [(V(x + 0.004 * s, y, 0.027), 0.028, w_, fw(y)) for y, w_ in
+                     [(0.104, 0.050), (0.085, 0.074), (0.0, 0.080), (-0.10, 0.082), (-0.19, 0.072), (-0.240, 0.050), (-0.258, 0.018)]], 8, "slippersole", 3.0, ref=V(0, 0, 1))
+        else:
+            loft(G, foot, 10, "sneaker", 2.6, ref=V(0, 0, 1))
+            sole = [(V(x + 0.004 * s, y, 0.018), 0.019, w_, fw(y)) for y, w_ in
+                    [(0.102, 0.046), (0.085, 0.07), (0.0, 0.076), (-0.10, 0.078), (-0.19, 0.068), (-0.238, 0.046), (-0.256, 0.016)]]
+            loft(G, sole, 8, "sneaker", 3.0, ref=V(0, 0, 1))
+            # the grey side panels and the heel tab; the tongue
+            for sx2 in (1, -1):
+                loft(G, [(V(x + 0.004 * s + sx2 * 0.068, 0.02, 0.070), 0.012, 0.004, fw(0.02)), (V(x + 0.004 * s + sx2 * 0.070, -0.06, 0.062), 0.016, 0.004, fw(-0.06)),
+                         (V(x + 0.004 * s + sx2 * 0.068, -0.12, 0.054), 0.008, 0.004, fw(-0.12))], 4, "sneakergrey", 2.0, ref=V(0, 0, 1), twist=math.pi / 4)
+            loft(G, [(V(x + 0.004 * s, 0.094, 0.055), 0.006, 0.022, fw(0.09)), (V(x + 0.004 * s, 0.094, 0.10), 0.006, 0.02, fw(0.09))], 4, "sneakergrey", 2.0, ref=V(0, 1, 0), twist=math.pi / 4)
+            loft(G, [(V(x + 0.004 * s, 0.0, 0.132), 0.010, 0.034, fw(0.0)), (V(x + 0.004 * s, -0.07, 0.112), 0.010, 0.036, fw(-0.07))], 6, "sneaker", 2.4, ref=V(0, 0, 1))
+    CAGES.extend(split_parts(G))
+
 def make_gear():
-    G = Cage("HeroGear", "Gear")
+    if BUDDY: return make_gear_buddy()
+    G = Cage("HeroGear", "Gear"); G.cur = "head"
     hd = {"Head": 1}
     HC = V(0, -0.004, 1.612)      # the middle of the head
     HS = 1.06                     # head and helmet a size up: it is what you read first at phone size
@@ -485,6 +1313,8 @@ def make_gear():
     loft(G, secs, 6, "lens", 2.8, ref=(HC - lens[4]).normalized(), twist=math.pi / 6)
     strap = arc(0.143, gz, 1.2, 2 * math.pi - 1.2, 8)
     loft(G, [(c, 0.006, 0.017, hd) for c in strap], 4, "strap", 2.0, ref=V(0, 0, 1), twist=math.pi / 4)
+    for s in (1, -1): G.cur = "hands"; bare_hand(G, s, "skin")     # (hidden inside the gloves; they show in pyjamas)
+    G.cur = "gear"
     # gloves: a palm, a mitten for the fingers, a thumb, and a gauntlet cuff over the sleeve
     for s in (1, -1):
         sd = SIDE[s]
@@ -530,7 +1360,7 @@ def make_gear():
         loft(G, sole, 8, "sole", 3.0, ref=V(0, 0, 1))
         # a strap of the boot's laces cover
         loft(G, [(V(x, -0.02, 0.172), 0.012, 0.064, fw(-0.02)), (V(x, -0.085, 0.138), 0.012, 0.07, fw(-0.085))], 6, "strap", 2.4, ref=V(0, 0, 1))
-    CAGES.append(G)
+    CAGES.extend(split_parts(G))
 
 # ---- the snowboard (not skinned: the game moves it, and throws it in a crash), with its bindings
 def make_board():
@@ -582,7 +1412,10 @@ def make_board():
             loft(BI, [(q, 0.018, 0.007, w) for q in pts], 4, "bstrap", 2.0, ref=R @ V(0, 1, 0), twist=math.pi / 4)
     CAGES.append(BI)
 
-make_jacket(); make_hood(); make_pants(); make_gear(); make_board()
+make_jacket()
+if not BUDDY: make_hood()
+if PAUL: make_hood("Hoodie" if PAUL_B else "Jacket")   # (his puffer's hood down behind the collar; the hoodie's, under the vest)
+make_pants(); make_gear(); make_board()
 
 # ----------------------------------------------------------------------------------------------- meshes
 MATS = {}
@@ -617,12 +1450,148 @@ write_png(PAL_PATH, 8, PAL_ROWS, rows_)
 pal_img = bpy.data.images.load(PAL_PATH)
 pal_img.alpha_mode = 'NONE'
 pal_img.colorspace_settings.name = 'sRGB'
-material("Jacket", (0.93, 0.31, 0.14), 0.35)
-material("Pants", (0.17, 0.19, 0.24), 0.2)
+def plaid_print(path, n=256):
+    """Breanna's pyjama bottoms: a red tartan, white bands and fine black lines crossing both ways."""
+    red, white, black = (0.62, 0.06, 0.11), (0.90, 0.88, 0.85), (0.05, 0.04, 0.05)
+    def thread(t):
+        t = (t * 4) % 1.0
+        return white if 0.50 <= t < 0.60 or 0.66 <= t < 0.72 else black if 0.76 <= t < 0.80 or 0.20 <= t < 0.23 else red
+    rows = []
+    for r in range(n):
+        a_ = thread((r + 0.5) / n); row = []
+        for c in range(n):
+            b_ = thread((c + 0.5) / n)
+            row.append((srgb((a_[0] + b_[0]) / 2), srgb((a_[1] + b_[1]) / 2), srgb((a_[2] + b_[2]) / 2), 1.0))
+        rows.append(row)
+    write_png(path, n, n, rows)
+
+def face_paint(path, n=256, her=False, base=None, beard=0.34):
+    """Val's face, painted (the picture is laid on his head from the front, see FACE_UV): warm skin, colour in the
+    cheeks and the tip of the nose, the shadow of a shaved beard over the jaw and top lip, the hollows round the
+    eyes with a crease above each lid, the top lip under the moustache, and the hair's shadow at the hairline.
+    The eyes, brows, moustache and lower lip are modelled; this is what lies under and between them."""
+    W, H, Z0 = FACE_UV
+    beard_k = beard
+    def g(dx, dz, rx, rz): return math.exp(-((dx / rx) ** 2 + (dz / rz) ** 2))
+    def st(a, b, x):
+        t = max(0.0, min(1.0, (x - a) / (b - a)))
+        return t * t * (3 - 2 * t)
+    rows = []
+    for r in range(n):
+        z = (1 - (r + 0.5) / n) * H - Z0
+        row = []
+        for c in range(n):
+            x = ((c + 0.5) / n - 0.5) * W; ax = abs(x)
+            col = [0.82, 0.62, 0.52] if her else [0.83, 0.57, 0.45]
+            def mix(to, k):
+                k = max(0.0, min(1.0, k))
+                for i in range(3): col[i] += (to[i] - col[i]) * k
+            mix((0.90, 0.66, 0.54), 0.30 * g(x, z - 0.055, 0.075, 0.030))                # the forehead, lighter
+            mix((0.86, 0.40, 0.34), (0.26 if her else 0.46) * g(ax - (0.050 if her else 0.058), z + 0.030, 0.030, 0.024))       # cheeks
+            mix((0.86, 0.44, 0.37), 0.30 * g(x, z + 0.024, 0.018, 0.016))                # the tip of the nose
+            mix((0.64, 0.41, 0.35), 0.40 * g(ax - 0.040, z - 0.006, 0.026, 0.015))       # round the eyes
+            mix((0.46, 0.28, 0.24), 0.50 * g(ax - 0.040, z - 0.0150, 0.019, 0.0020))     # the crease above each lid
+            mix((0.60, 0.39, 0.35), 0.30 * g(ax - 0.040, z + 0.0080, 0.016, 0.0030))     # under the eyes
+            beard = st(-0.040, -0.078, z) * (1 - st(0.070, 0.102, ax))
+            beard = max(beard, 0.9 * g(x, z + 0.058, 0.040, 0.010))
+            if not her: mix((0.50, 0.39, 0.35), beard_k * beard)                          # the beard's shadow
+            lipz = -0.0722 + 0.0030 * (x / 0.0215) ** 2
+            if ax < 0.0215:                                                              # the top lip
+                mix((0.68, 0.30, 0.31) if her else (0.60, 0.30, 0.28), 0.9 * st(lipz + (0.0075 if her else 0.0058), lipz + 0.0036, z) * st(lipz - 0.012, lipz - 0.009, z) * (1 - (ax / 0.0215) ** 2) ** 0.5)
+            mix((0.58, 0.36, 0.31), 0.35 * g(x, z + 0.0840, 0.018, 0.0032))              # the shadow under the bottom lip
+            mix((0.66, 0.43, 0.35), 0.5 * st(-0.105, -0.135, z))                         # under the jaw
+            hz = (0.102 if her else 0.090) - 0.070 * (ax / 0.1) ** 2
+            mix((0.20, 0.15, 0.12), 0.75 * st(hz - 0.018, hz + 0.004, z))                # the hair's shadow at the hairline
+            if base: col = [col[i] * base[i] / (0.83, 0.57, 0.45)[i] for i in range(3)]   # (all of it in his own skin's tone)
+            row.append((srgb(col[0]), srgb(col[1]), srgb(col[2]), 1.0))
+        rows.append(row)
+    write_png(path, n, n, rows)
+
+def bear_print(path, n=512):
+    """The pyjama print, drawn after the real fleece: fat cream polar bears sat at all angles on near-black navy,
+    each in a red knit hat with a pompom and a long red scarf flying behind, inked in dark outline, with a happy
+    face; six-armed snowflakes and snow between. Tiles in both directions."""
+    import random
+    rnd = random.Random(5)
+    navy, cream, red, ink = (0.045, 0.045, 0.10), (0.93, 0.90, 0.83), (0.83, 0.13, 0.10), (0.035, 0.035, 0.06)
+    px = [[navy] * n for _ in range(n)]
+    def blob(cx, cy, rx, ry, rot, col):
+        c, s_ = math.cos(rot), math.sin(rot)
+        R = int(max(rx, ry)) + 2
+        for dy in range(-R, R + 1):
+            for dx in range(-R, R + 1):
+                u, v = dx * c + dy * s_, -dx * s_ + dy * c
+                if (u / rx) ** 2 + (v / ry) ** 2 <= 1.0: px[int(cy + dy) % n][int(cx + dx) % n] = col
+    for _ in range(70): blob(rnd.uniform(0, n), rnd.uniform(0, n), rnd.choice((1.4, 1.8, 2.4)), rnd.choice((1.4, 1.8, 2.4)), 0, cream)
+    for _ in range(9):   # snowflakes: three strokes crossed, a dot at each tip
+        cx, cy, a0 = rnd.uniform(0, n), rnd.uniform(0, n), rnd.uniform(0, 1)
+        for k in range(3):
+            a = a0 + k * math.pi / 3
+            blob(cx, cy, 10, 1.4, a, cream)
+            for sg in (1, -1): blob(cx + sg * 7 * math.cos(a) , cy + sg * 7 * math.sin(a), 3.5, 1.1, a + 0.9, cream)
+    # bear: parts in its own frame (x right, y down, about 150 tall), then placed turned, flipped and scaled
+    def bear(cx, cy, a, flip, k=0.56):
+        c, s_ = math.cos(a), math.sin(a)
+        def part(x, y, rx, ry, rot, col, grow=0.0):
+            x *= flip
+            blob(cx + (x * c - y * s_) * k, cy + (x * s_ + y * c) * k, (rx + grow) * k, (ry + grow) * k, a + rot * flip, col)
+        fur = [(0, 6, 50, 60, 0), (14, -64, 36, 31, 0), (52, -14, 22, 13, -0.5), (-20, 62, 18, 12, 0), (28, 64, 18, 12, 0), (44, -86, 9, 9, 0)]
+        for x, y, rx, ry, r in fur: part(x, y, rx, ry, r, ink, 3.0)          # the inked outline
+        for x, y, rx, ry, r in fur: part(x, y, rx, ry, r, cream)
+        part(-6, 30, 16, 1.6, 1.1, ink); part(18, 34, 14, 1.6, 1.9, ink)       # the lines of the haunches
+        part(62, -20, 4, 4, 0, ink); part(56, -27, 2, 2, 0, ink); part(66, -27, 2, 2, 0, ink)   # a paw's pads
+        # the scarf: round the neck, two tails flying back, with fringes
+        for x, y, rx, ry, r in [(-62, -52, 44, 11, 0.12), (-58, -30, 42, 11, -0.16), (8, -38, 40, 10, 0.3)]: part(x, y, rx, ry, r, ink, 2.5)
+        for x, y, rx, ry, r in [(-62, -52, 44, 11, 0.12), (-58, -30, 42, 11, -0.16), (8, -38, 40, 10, 0.3)]: part(x, y, rx, ry, r, red)
+        for yy, r in ((-58, 0.12), (-52, 0.12), (-46, 0.12), (-36, -0.16), (-30, -0.16), (-24, -0.16)): part(-104, yy + (4 if r > 0 else -6), 5, 1.4, r, ink)
+        # the hat: red, a cream brim and a pompom
+        part(12, -92, 32, 21, -0.1, ink, 2.5); part(12, -92, 32, 21, -0.1, red)
+        part(14, -78, 36, 8, -0.08, ink, 2.0); part(14, -78, 36, 8, -0.08, cream)
+        part(-22, -104, 10, 10, 0, ink, 2.0); part(-22, -104, 10, 10, 0, cream)
+        # a happy face: closed eyes, a nose, a smile
+        part(8, -66, 6, 1.8, -0.3, ink); part(34, -64, 6, 1.8, 0.3, ink)
+        part(22, -56, 6, 4.5, 0, ink)
+        part(17, -47, 5, 1.6, 0.5, ink); part(27, -47, 5, 1.6, -0.5, ink)
+    # eight to a tile, about 7 cm each on the leg (the size and scatter of the real cloth), at all angles
+    for cx, cy, a, fl in [(84, 96, 0.15, 1), (300, 64, 1.45, -1), (446, 190, -0.35, -1), (196, 236, 2.85, 1),
+                          (64, 344, -1.2, 1), (338, 330, 0.6, -1), (222, 456, -2.4, 1), (454, 440, 3.6, -1)]:
+        bear(cx, cy, a, fl)
+    write_png(path, n, n, [[(srgb(c[0]), srgb(c[1]), srgb(c[2]), 1.0) for c in row] for row in reversed(px)])
+
+if BUDDY:
+    WHO = "Breanna" if BRI else "Paul" if PAUL else "Buddy"     # (whose face and print pictures: one each, whatever they wear)
+    RDIR = os.path.join(PROJECT, "Assets/Summit/Resources/Rider") if PROJECT else (bpy.app.tempdir or "/tmp")
+    if VAL or BRI_PJ:
+        PRINT_PATH = os.path.join(RDIR, "%sPants.png" % WHO)
+        (plaid_print if BRI else bear_print)(PRINT_PATH)
+        print_img = bpy.data.images.load(PRINT_PATH)
+        m_ = material("Pants", (1, 1, 1), 0.15, print_img); m_.name = "PantsPrint"
+        for nd in m_.node_tree.nodes:
+            if nd.type == 'TEX_IMAGE': nd.interpolation = 'Linear'
+    else:
+        # plain trousers (the game's snowy cloth, dyed by the closet's PANTS): Paul's red ski trousers or charcoal, her black
+        material("Pants", (0.60, 0.06, 0.06) if PAUL and not PAUL_B else (0.09, 0.09, 0.10) if PAUL_B else (0.025, 0.025, 0.03), 0.2)
+    if BRI: material("Jacket", (0.93, 0.90, 0.82), 0.12).name = "FleeceWhite"   # her fleece is cream all over
+    elif PAUL:
+        material("Jacket", (0.03, 0.03, 0.035), 0.4)                           # the black puffer (or vest)
+        material("Knit", (0.92, 0.91, 0.88), 0.05)                             # the white turtleneck
+        material("Hoodie", (0.50, 0.51, 0.53), 0.05)                           # the grey hoodie
+    else:
+        material("Jacket", (0.09, 0.25, 0.72), 0.12).name = "FleeceBlue"      # royal blue over cream, as the real fleece
+        MATS["FleeceWhite"] = material("FleeceWhite", (0.93, 0.90, 0.82), 0.12)
+    FACE_PATH = os.path.join(RDIR, "%sFace.png" % WHO)
+    face_paint(FACE_PATH, her=BRI, base=PAUL_FACE if PAUL else None, beard=0.24 if PAUL else 0.34)
+    face_img = bpy.data.images.load(FACE_PATH); face_img.alpha_mode = 'NONE'
+    m_ = material("FaceSkin", (1, 1, 1), 0.3, face_img)
+    for nd in m_.node_tree.nodes:
+        if nd.type == 'TEX_IMAGE': nd.interpolation = 'Linear'; nd.extension = 'EXTEND'
+else:
+    material("Jacket", (0.93, 0.31, 0.14), 0.35)
+    material("Pants", (0.17, 0.19, 0.24), 0.2)
 material("Gear", (1, 1, 1), 0.35, pal_img)
 material("Board", (0.12, 0.45, 0.95), 0.5)
 
-SUBDIV = {"HeroBody": 1, "HeroHood": 1, "HeroLegs": 1, "HeroGear": 1, "Snowboard": 0, "Bindings": 0}
+SUBDIV = {"HeroBody": 1, "HeroHood": 1, "HeroLegs": 1, "HeroGear": 1, "HeroHead": 1, "HeroHands": 1, "Snowboard": 0, "Bindings": 0}
 OBJS = {}
 tri_total = 0
 for C in CAGES:
@@ -711,7 +1680,7 @@ def stuck(C, surf, blend=None):
                 for g, x in b.items(): w[g] = w.get(g, 0) + x * k
         C.w[i] = w
 
-def raised(C, grid, lift_mid, lift_edge, uv="spare"):
+def raised(C, grid, lift_mid, lift_edge, uv="skin"):
     """A raised patch (a pocket, a flap) from a grid of points on the cloth with their normals: a lid lifted off
     the surface, walls down to it, and the base tucked a touch under so no edge shows."""
     m, n = len(grid), len(grid[0])
@@ -754,78 +1723,168 @@ def lin(a, b, n): return [a + (b - a) * i / (n - 1) for i in range(n)]
 
 JS, LS = Surface(OBJS["HeroBody"]), Surface(OBJS["HeroLegs"])
 JD = Cage("JacketDetail", "Jacket"); LD = Cage("LegDetail", "Pants"); GD = Cage("GearDetail", "Gear")
-fwd_ray = lambda u, v: V(0, 1, 0)
-# chest pocket (left chest), with a zip along its top
-g = grid_on(JS, lambda u, v: V(u, -0.6, v), fwd_ray, lin(0.045, 0.155, 4), lin(1.245, 1.13, 4))
-if g:
-    raised(JD, g, 0.014, 0.006)
-    strip(GD, [JS.cast(V(x, -0.6, 1.248), V(0, 1, 0), 0.017) for x in lin(0.05, 0.15, 4)], 0.008, 0.004, "zip")
-# hand-warmer pockets low on both sides of the front, zips slanting
-for sx in (1, -1):
-    g = grid_on(JS, lambda u, v: V(u * sx, -0.6, v + (u - 0.09) * 0.4), fwd_ray, lin(0.06, 0.17, 4), lin(1.03, 0.92, 4))
+by, PK = 0.17, {"Backpack": 1.0}
+if BRI or PAUL:
+    fwd_ray = lambda u, v: V(0, 1, 0)
+    def line_on(rays, wd, lift, col):
+        hits = [JS.cast(o_, d_, lift) for o_, d_ in rays]
+        if all(h_[0] is not None for h_ in hits): strip(GD, hits, wd, 0.003, col)
+        else: print("HERO detail line missed the cloth")
+    def round_on(z, a0, a1, n, wd, lift, col):   # round the body at a height, between two angles (0 = the front)
+        line_on([(V(0.7 * math.sin(a), 0.02 - 0.7 * math.cos(a), z), V(-math.sin(a), math.cos(a), 0)) for a in lin(math.radians(a0), math.radians(a1), n)], wd, lift, col)
+    if BRI and not BRI_PJ:
+        # the half zip: down from the collar to the top of the chest, and its pull
+        line_on([(V(0.0, -0.7, z), V(0, 1, 0)) for z in lin(1.488, 1.300, 6)], 0.007, 0.004, "sneakergrey")
+        q, nq = JS.cast(V(0.0, -0.7, 1.305), V(0, 1, 0), 0.008)
+        if q is not None: loft(GD, [(q, 0.006, 0.004, {}), (q + V(0, 0, -0.03), 0.006, 0.004, {})], 4, "zip", 2.0, ref=V(0, 1, 0))
+    if PAUL:
+        # the puffer's quilting: stitched lines round the body between the baffles, and the front zip
+        for z in ((0.97, 1.07, 1.17, 1.27) if PAUL_B else (0.95, 1.04, 1.13, 1.22, 1.31)):
+            round_on(z, -62, 62, 9, 0.005, 0.002, "seam"); round_on(z, 118, 242, 9, 0.005, 0.002, "seam")
+        line_on([(V(0.0, -0.7, z), V(0, 1, 0)) for z in lin(1.47, 0.86, 10)], 0.010, 0.004, "seam")
+        if PAUL_B:
+            # the hoodie's drawstrings, hanging out over the vest
+            for sx_ in (1, -1):
+                line_on([(V(sx_ * (0.032 + 0.004 * k), -0.7, z), V(0, 1, 0)) for k, z in enumerate(lin(1.45, 1.24, 5))], 0.006, 0.008, "sneakergrey")
+        else:
+            # the puffer's sleeves quilted too
+            for s_ in (1, -1):
+                sh_, u_, el_, f_, wr_, kn_ = arm_points(s_)
+                for c_, ax_ in ((sh_ + u_ * 0.15, u_), (el_ + f_ * 0.07, f_), (el_ + f_ * 0.17, f_)):
+                    a1_, a2_ = frame_of(ax_)
+                    line_on([(c_ + (a1_ * math.cos(a) + a2_ * math.sin(a)) * 0.3, -(a1_ * math.cos(a) + a2_ * math.sin(a))) for a in lin(0, 2 * math.pi, 11)], 0.005, 0.002, "seam")
+elif VAL:
+    fwd_ray = lambda u, v: V(0, 1, 0)
+    # the fleece: a kangaroo pocket low on the front, a snap placket from the collar to the colour seam, a small
+    # stitched mark on the chest
+    g = grid_on(JS, lambda u, v: V(u * (1.0 - 0.25 * (v - 0.93) / 0.16), -0.7, v), fwd_ray, lin(-0.15, 0.15, 6), lin(1.09, 0.93, 4))
+    if g: raised(JD, g, 0.016, 0.006)
+    g = grid_on(JS, lambda u, v: V(u, -0.7, v), fwd_ray, lin(-0.022, 0.022, 3), lin(1.366, 1.212, 5))
+    if g: raised(JD, g, 0.007, 0.004)
+    def onto(pts, lift): return [JS.cast(V(x, -0.7, z), V(0, 1, 0), lift) for x, z in pts]
+    def add_gear(L):
+        o = len(GD.v); GD.v += L.v; GD.w += L.w; GD.uv += L.uv; GD.f += [tuple(i + o for i in f_) for f_ in L.f]
+    for z in (1.33, 1.255):   # the snaps (the top one is undone, inside the open collar)
+        q, nq = JS.cast(V(0.0, -0.7, z), V(0, 1, 0), 0.011)
+        if q is not None: loft(GD, [(q, 0.008, 0.008, {}), (q + nq * 0.004, 0.007, 0.007, {})], 6, "snap", 2.0, ref=V(0, 0, 1))
+    # stitching in darker thread: above the pocket and down its slanted openings, along the seam where the blue
+    # meets the cream, round the hem, and at each cuff
+    def seam_line(rays, lift=0.0025):
+        hits = [JS.cast(o_, d_, lift) for o_, d_ in rays]
+        if all(h_[0] is not None for h_ in hits): strip(GD, hits, 0.0036, 0.003, "stitch")
+        else: print("HERO seam missed the cloth")
+    seam_line([(V(x, -0.7, 1.100), V(0, 1, 0)) for x in lin(-0.118, 0.118, 7)])
+    for sx_ in (1, -1): seam_line([(V(sx_ * lerp(0.121, 0.160, k), -0.7, lerp(1.094, 0.925, k)), V(0, 1, 0)) for k in lin(0, 1, 5)])
+    def ring_line(z, a0, a1, n):   # round the body at a height, between two angles (0 = the front)
+        seam_line([(V(0.7 * math.sin(a), 0.02 - 0.7 * math.cos(a), z), V(-math.sin(a), math.cos(a), 0)) for a in lin(math.radians(a0), math.radians(a1), n)])
+    ring_line(1.203, -55, 55, 9); ring_line(1.203, 125, 235, 9); ring_line(0.890, 0, 360, 25)
+    for s_ in (1, -1):
+        sh_, u_, el_, f_, wr_, kn_ = arm_points(s_)
+        ax_ = (el_ - wr_).normalized(); c_ = wr_ + ax_ * 0.05
+        a1_, a2_ = frame_of(ax_)
+        seam_line([(c_ + (a1_ * math.cos(a) + a2_ * math.sin(a)) * 0.3, -(a1_ * math.cos(a) + a2_ * math.sin(a))) for a in lin(0, 2 * math.pi, 11)])
+    # the embroidery on the chest, as on his real fleece: two peaks in bright thread, NORTHWINDS in dark thread,
+    # an underline, and BREWERY LIMITED small beneath. The letters are real type turned to mesh and laid onto
+    # the cloth point by point, so they follow the chest.
+    def stitched(text, cx, zb, size, col, squeeze=0.82, slant=0.22, bold=0.00035, deep=0.0009):
+        cu = bpy.data.curves.new("Stitch", 'FONT')
+        cu.body = text; cu.size = size; cu.align_x = 'CENTER'; cu.shear = slant
+        cu.offset = bold; cu.extrude = deep; cu.resolution_u = 1; cu.fill_mode = 'BOTH'; cu.space_character = 0.92
+        ob_ = bpy.data.objects.new("Stitch", cu); scene.collection.objects.link(ob_)
+        bpy.context.view_layer.update()
+        me_ = bpy.data.meshes.new_from_object(ob_.evaluated_get(bpy.context.evaluated_depsgraph_get()))
+        base = len(GD.v); ok = True
+        for v in me_.vertices:
+            q, nq = JS.cast(V(cx + v.co.x * squeeze, -0.7, zb + v.co.y), V(0, 1, 0), 0.0035 + (v.co.z + deep))
+            if q is None: ok = False; break
+            GD.add(q, {}, swatch_uv(col))
+        if ok:
+            for pg in me_.polygons: GD.face(*[base + i for i in pg.vertices])
+        n_ = sum(len(pg.vertices) - 2 for pg in me_.polygons)
+        bpy.data.objects.remove(ob_); bpy.data.meshes.remove(me_); bpy.data.curves.remove(cu)
+        return n_
+    for pts, wd, col in [([(0.074, 1.304), (0.102, 1.326), (0.130, 1.304)], 0.004, "logocyan"),
+                         ([(0.060, 1.301), (0.088, 1.313), (0.112, 1.306), (0.144, 1.300)], 0.003, "logocyan"),
+                         ([(0.064, 1.2815), (0.140, 1.2815)], 0.0026, "logocyan")]:
+        q = onto(pts, 0.004)
+        if all(t_[0] is not None for t_ in q): strip(GD, q, wd, 0.003, col)
+    nt_ = stitched("NORTHWINDS", 0.101, 1.2855, 0.0175, "snap")
+    nt_ += stitched("BREWERY LIMITED", 0.103, 1.2725, 0.0072, "snap", squeeze=0.9, bold=0.00018)
+    print("HERO buddy wordmark: %d tris" % nt_)
+else:
+    fwd_ray = lambda u, v: V(0, 1, 0)
+    FX = 0.84 if FEM else 1.0    # (her jacket is narrower: the pockets move in with it)
+    # chest pocket (left chest), with a zip along its top
+    g = grid_on(JS, lambda u, v: V(u * FX, -0.6, v), fwd_ray, lin(0.045, 0.155, 4), lin(1.245, 1.13, 4))
     if g:
-        raised(JD, g, 0.012, 0.005)
-        strip(GD, [JS.cast(V(x * sx, -0.6, 1.035 + (x - 0.09) * 0.4), V(0, 1, 0), 0.015) for x in lin(0.07, 0.165, 4)], 0.007, 0.004, "zip")
-# the front zip, collar to hem, with a storm flap beside it
-zp = [JS.cast(V(0.0, -0.6, z), V(0, 1, 0), 0.006) for z in lin(1.52, 0.84, 12)]
-if all(q[0] is not None for q in zp):
-    strip(GD, zp, 0.012, 0.006, "zip")
-    strip(GD, [JS.cast(V(-0.016, -0.6, z), V(0, 1, 0), 0.004) for z in lin(1.50, 0.85, 10)], 0.008, 0.005, "seam")
-# seams: a yoke across the chest and the back, and down each side
-for yy in (-0.6, 0.6):
-    pts = [JS.cast(V(x, yy, 1.30 - 0.05 * abs(x) / 0.2), V(0, -yy, 0), 0.003) for x in lin(-0.2, 0.2, 9)]
-    if all(q[0] is not None for q in pts): strip(GD, pts, 0.006, 0.004, "seam")
-for sx in (1, -1):
-    pts = [JS.cast(V(sx * 0.30, 0.01, z), V(-sx, 0, 0), 0.003) for z in lin(1.12, 0.86, 6)]   # from inside the sleeves' reach
-    if all(q[0] is not None for q in pts): strip(GD, pts, 0.006, 0.004, "seam")
-# a pocket on the left upper arm
-sh, u_, el, f_, wr, kn = arm_points(1)
-up_side = (V(0, 0, 1) - u_ * u_.z).normalized()
-outv = (up_side + V(1, 0, 0) * 0.4).normalized()
-acr = u_.cross(outv).normalized()
-g = grid_on(JS, lambda a, b: sh + u_ * a + acr * b + outv * 0.5, lambda a, b: -outv, lin(0.12, 0.22, 4), lin(-0.04, 0.04, 3))
-if g: raised(JD, g, 0.012, 0.005)
-# trousers: cargo pockets on the outside of each thigh, with flaps
-for sx in (1, -1):
-    side_ray = lambda u, v: V(-sx, 0, 0)
-    g = grid_on(LS, lambda u, v: V(sx * 0.6, u, v), side_ray, lin(-0.07, 0.06, 4), lin(0.66, 0.50, 5))
-    if g: raised(LD, g, 0.020, 0.008)
-    g = grid_on(LS, lambda u, v: V(sx * 0.6, u, v), side_ray, lin(-0.075, 0.065, 4), lin(0.685, 0.635, 3))
-    if g: raised(LD, g, 0.030, 0.016)
-    # a seam down the outside of the leg
-    pts = [LS.cast(V(sx * 0.6, 0.012, z), V(-sx, 0, 0), 0.003) for z in lin(0.95, 0.70, 4) + lin(0.48, 0.19, 5)]
-    if all(q[0] is not None for q in pts[:4]): strip(GD, pts[:4], 0.005, 0.004, "seam")
-# the backpack: a padded body on the upper back, side panels, a top handle, a yellow loop, and straps over the
-# shoulders to the chest with a sternum strap; the body hangs on its own bone and the straps from the jacket
-back_hit, _ = JS.cast(V(0, 0.6, 1.18), V(0, -1, 0))
-by = back_hit.y if back_hit else 0.17
-PK = {"Backpack": 1.0}
-body = []
-for z, hw, d in [(1.035, 0.115, 0.07), (1.06, 0.135, 0.105), (1.16, 0.142, 0.12), (1.26, 0.138, 0.115), (1.315, 0.12, 0.095), (1.335, 0.085, 0.06)]:
-    body.append((V(0, by + 0.012 + d * 0.5, z), d * 0.5, hw, PK))
-loft(GD, body, 12, "pack", 3.0, ref=V(0, 1, 0))
-for sx in (1, -1):   # side panels
-    loft(GD, [(V(sx * 0.143, by + 0.07, z), 0.05, 0.006, PK) for z in (1.08, 1.20, 1.29)], 4, "packside", 2.0, ref=V(0, 1, 0))
-loft(GD, [(V(-0.045 + 0.09 * k / 4, by + 0.05, 1.34 + 0.025 * math.sin(math.pi * k / 4)), 0.008, 0.008, PK) for k in range(5)],
-     4, "packaccent", 2.0, ref=V(0, 1, 0))
-loft(GD, [(V(0, by + 0.135, z), 0.006, 0.05, PK) for z in (1.10, 1.25)], 4, "packaccent", 2.0, ref=V(0, 1, 0))   # a compression strap
-for sx in (1, -1):
-    pts = []
-    pts += [(V(sx * 0.085, by + 0.02, 1.325), V(0, 1, 0))]
-    for yy in lin(0.10, -0.06, 4):   # over the top of the shoulder
-        q = JS.cast(V(sx * 0.125, yy, 1.8), V(0, 0, -1), 0.012)
-        if q[0] is not None: pts.append(q)
-    for z in lin(1.30, 1.06, 5):     # down the chest
-        q = JS.cast(V(sx * 0.115, -0.6, z), V(0, 1, 0), 0.010)
-        if q[0] is not None: pts.append(q)
-    if len(pts) > 4: strip(GD, pts, 0.042, 0.010, "pack")
-sternum = [JS.cast(V(x, -0.6, 1.17), V(0, 1, 0), 0.02) for x in lin(-0.115, 0.115, 5)]
-if all(q[0] is not None for q in sternum): strip(GD, sternum, 0.016, 0.006, "packaccent")
+        raised(JD, g, 0.014, 0.006)
+        strip(GD, [JS.cast(V(x * FX, -0.6, 1.248), V(0, 1, 0), 0.017) for x in lin(0.05, 0.15, 4)], 0.008, 0.004, "zip")
+    # hand-warmer pockets low on both sides of the front, zips slanting
+    for sx in (1, -1):
+        g = grid_on(JS, lambda u, v: V(u * FX * sx, -0.6, v + (u - 0.09) * 0.4), fwd_ray, lin(0.06, 0.17, 4), lin(1.03, 0.92, 4))
+        if g:
+            raised(JD, g, 0.012, 0.005)
+            strip(GD, [JS.cast(V(x * FX * sx, -0.6, 1.035 + (x - 0.09) * 0.4), V(0, 1, 0), 0.015) for x in lin(0.07, 0.165, 4)], 0.007, 0.004, "zip")
+    # the front zip, collar to hem, with a storm flap beside it
+    zp = [JS.cast(V(0.0, -0.6, z), V(0, 1, 0), 0.006) for z in lin(1.52, 0.84, 12)]
+    if all(q[0] is not None for q in zp):
+        strip(GD, zp, 0.012, 0.006, "zip")
+        strip(GD, [JS.cast(V(-0.016, -0.6, z), V(0, 1, 0), 0.004) for z in lin(1.50, 0.85, 10)], 0.008, 0.005, "seam")
+    # seams: a yoke across the chest and the back, and down each side
+    for yy in (-0.6, 0.6):
+        pts = [JS.cast(V(x, yy, 1.30 - 0.05 * abs(x) / 0.2), V(0, -yy, 0), 0.003) for x in lin(-0.2, 0.2, 9)]
+        if all(q[0] is not None for q in pts): strip(GD, pts, 0.006, 0.004, "seam")
+    for sx in (1, -1):
+        pts = [JS.cast(V(sx * 0.30, 0.01, z), V(-sx, 0, 0), 0.003) for z in lin(1.12, 0.86, 6)]   # from inside the sleeves' reach
+        if all(q[0] is not None for q in pts): strip(GD, pts, 0.006, 0.004, "seam")
+    # a pocket on the left upper arm
+    sh, u_, el, f_, wr, kn = arm_points(1)
+    up_side = (V(0, 0, 1) - u_ * u_.z).normalized()
+    outv = (up_side + V(1, 0, 0) * 0.4).normalized()
+    acr = u_.cross(outv).normalized()
+    g = grid_on(JS, lambda a, b: sh + u_ * a + acr * b + outv * 0.5, lambda a, b: -outv, lin(0.12, 0.22, 4), lin(-0.04, 0.04, 3))
+    if g: raised(JD, g, 0.012, 0.005)
+    # trousers: cargo pockets on the outside of each thigh, with flaps
+    for sx in (1, -1):
+        side_ray = lambda u, v: V(-sx, 0, 0)
+        g = grid_on(LS, lambda u, v: V(sx * 0.6, u, v), side_ray, lin(-0.07, 0.06, 4), lin(0.66, 0.50, 5))
+        if g: raised(LD, g, 0.020, 0.008)
+        g = grid_on(LS, lambda u, v: V(sx * 0.6, u, v), side_ray, lin(-0.075, 0.065, 4), lin(0.685, 0.635, 3))
+        if g: raised(LD, g, 0.030, 0.016)
+        # a seam down the outside of the leg
+        pts = [LS.cast(V(sx * 0.6, 0.012, z), V(-sx, 0, 0), 0.003) for z in lin(0.95, 0.70, 4) + lin(0.48, 0.19, 5)]
+        if all(q[0] is not None for q in pts[:4]): strip(GD, pts[:4], 0.005, 0.004, "seam")
+    # the backpack: a padded body on the upper back, side panels, a top handle, a yellow loop, and straps over the
+    # shoulders to the chest with a sternum strap; the body hangs on its own bone and the straps from the jacket
+    back_hit, _ = JS.cast(V(0, 0.6, 1.18), V(0, -1, 0))
+    by = back_hit.y if back_hit else 0.17
+    PK = {"Backpack": 1.0}
+    body = []
+    for z, hw, d in [(1.035, 0.115, 0.07), (1.06, 0.135, 0.105), (1.16, 0.142, 0.12), (1.26, 0.138, 0.115), (1.315, 0.12, 0.095), (1.335, 0.085, 0.06)]:
+        body.append((V(0, by + 0.012 + d * 0.5, z), d * 0.5, hw, PK))
+    loft(GD, body, 12, "pack", 3.0, ref=V(0, 1, 0))
+    for sx in (1, -1):   # side panels
+        loft(GD, [(V(sx * 0.143, by + 0.07, z), 0.05, 0.006, PK) for z in (1.08, 1.20, 1.29)], 4, "packside", 2.0, ref=V(0, 1, 0))
+    loft(GD, [(V(-0.045 + 0.09 * k / 4, by + 0.05, 1.34 + 0.025 * math.sin(math.pi * k / 4)), 0.008, 0.008, PK) for k in range(5)],
+         4, "packaccent", 2.0, ref=V(0, 1, 0))
+    loft(GD, [(V(0, by + 0.135, z), 0.006, 0.05, PK) for z in (1.10, 1.25)], 4, "packaccent", 2.0, ref=V(0, 1, 0))   # a compression strap
+    for sx in (1, -1):
+        pts = []
+        pts += [(V(sx * 0.085, by + 0.02, 1.325), V(0, 1, 0))]
+        for yy in lin(0.10, -0.06, 4):   # over the top of the shoulder
+            q = JS.cast(V(sx * 0.125, yy, 1.8), V(0, 0, -1), 0.012)
+            if q[0] is not None: pts.append(q)
+        for z in lin(1.30, 1.06, 5):     # down the chest
+            q = JS.cast(V(sx * 0.115, -0.6, z), V(0, 1, 0), 0.010)
+            if q[0] is not None: pts.append(q)
+        if len(pts) > 4: strip(GD, pts, 0.042, 0.010, "pack")
+    sternum = [JS.cast(V(x, -0.6, 1.17), V(0, 1, 0), 0.02) for x in lin(-0.115, 0.115, 5)]
+    if all(q[0] is not None for q in sternum): strip(GD, sternum, 0.016, 0.006, "packaccent")
 
 # weights: from the cloth underneath; the pack's own body stays on its bone
 stuck(JD, JS); stuck(LD, LS)
 def pack_or_cloth(co):
-    if co.y > by + 0.015 and co.z > 1.02 and abs(co.x) < 0.16: return PK, 1.0
+    if not BUDDY and co.y > by + 0.015 and co.z > 1.02 and abs(co.x) < 0.16: return PK, 1.0
     return {}, 0.0
 pts_gear = list(range(len(GD.v)))
 for i, co in enumerate(GD.v):
@@ -833,7 +1892,7 @@ for i, co in enumerate(GD.v):
     if k > 0: GD.w[i] = dict(b)
     else:
         GD.w[i] = (LS if co.z < 0.86 and abs(co.x) > 0.12 and co.y > -0.3 else JS).weights(co)
-for C, target in ((JD, "HeroBody"), (LD, "HeroLegs"), (GD, "HeroGear")):
+for C, target in [(JD, "HeroBody"), (LD, "HeroLegs"), (GD, "HeroGear")] + XTRA:
     me = bpy.data.meshes.new(C.name)
     bm = bmesh.new(); vs = [bm.verts.new(v) for v in C.v]
     uvl = bm.loops.layers.uv.new("UVMap")
@@ -842,7 +1901,7 @@ for C, target in ((JD, "HeroBody"), (LD, "HeroLegs"), (GD, "HeroGear")):
         try: face = bm.faces.new([vs[i] for i in fc])
         except ValueError: continue
         for lp, i in zip(face.loops, fc): lp[uvl].uv = C.uv[i]
-    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    if C not in [x[0] for x in XTRA] or getattr(C, "recalc", False): bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bm.to_mesh(me); bm.free()
     for pg in me.polygons: pg.use_smooth = True
     me.materials.append(MATS[C.mat])
@@ -861,10 +1920,69 @@ for C, target in ((JD, "HeroBody"), (LD, "HeroLegs"), (GD, "HeroGear")):
     bpy.context.view_layer.objects.active = OBJS[target]
     bpy.ops.object.join()
 JS.bm.free(); LS.bm.free()
+def shape_keys(ob, shapes):
+    """Shapes made of (where a vertex is, where it goes) pairs, as shape keys on an object (matched by position)."""
+    from mathutils.kdtree import KDTree
+    kd = KDTree(len(ob.data.vertices))
+    for v in ob.data.vertices: kd.insert(v.co, v.index)
+    kd.balance()
+    if ob.data.shape_keys is None: ob.shape_key_add(name="Basis", from_mix=False)
+    for nm_, moves in shapes.items():
+        key = ob.shape_key_add(name=nm_, from_mix=False); n_ = 0
+        for at, to in moves:
+            for co_, ix, dist in kd.find_range(at, 2e-5): key.data[ix].co = to; n_ += 1
+        key.value = 0.0   # at rest as modelled
+        print("HERO shape %s on %s: %d vertices" % (nm_, ob.name, n_))
+# the face's moving parts become shape keys on the head mesh, the balaclava's on the gear; the game blends them in (RiderBodyHero)
+if SHAPES: shape_keys(OBJS["HeroHead"], SHAPES)
+if GEAR_SHAPES: shape_keys(OBJS["HeroGear"], GEAR_SHAPES)
+if GOGGLES:
+    # "GogglesUp": the goggles (every vertex in their swatches: they come through the smoothing whole) tipped up about
+    # a hinge at the back of the head onto the front of the beanie, and out just far enough to sit on its knit. In the
+    # camp the game shows them like this, so the face shows; on a run they come down over the eyes.
+    gob = OBJS["HeroHead"]; me = gob.data
+    cells = [swatch_uv(c) for c in GOGGLES["cols"]]
+    uvl = me.uv_layers.active
+    gv, strap_v = set(), set()
+    for li, lp in enumerate(me.loops):
+        u, v = uvl.data[li].uv
+        for ci, (cu, cv) in enumerate(cells):
+            if abs(u - cu) < 1e-3 and abs(v - cv) < 1e-3:
+                gv.add(lp.vertex_index)
+                if ci == 2: strap_v.add(lp.vertex_index)
+    HC_, HS_, bn = GOGGLES["HC"], GOGGLES["HS"], GOGGLES["beanie"]
+    pivot = HC_ + V(0, 0.118, GOGGLES["zc"]) * HS_
+    R_ = Matrix.Rotation(math.radians(-21), 3, 'X')
+    up = {i: pivot + R_ @ (me.vertices[i].co - pivot) for i in gv}
+    def k_at(z):   # how wide the beanie is at a height (head units), against its cuff
+        if z <= bn["crown"][0][0]: return 1.0
+        for (z0, k0), (z1, k1) in zip(bn["crown"], bn["crown"][1:]):
+            if z <= z1: return lerp(k0, k1, (z - z0) / (z1 - z0)) / 1.03
+        return bn["crown"][-1][1] / 1.03
+    # Up there they wrap the beanie, which is wider than the face they were fitted to: each point keeps how far it
+    # stood off the face (its depth in the goggles) but now stands that far off the knit, all round.
+    def ell(dx, dy, rx_, ryf_, ryb_):
+        dl = math.hypot(dx, dy)
+        return 1.0 / math.sqrt((dx / dl / rx_) ** 2 + (dy / dl / (ryf_ if dy < 0 else ryb_)) ** 2)
+    need = 0.0
+    for i, q in up.items():
+        r0 = (me.vertices[i].co - HC_) / HS_; d0x, d0y = r0.x, r0.y - 0.012
+        if math.hypot(d0x, d0y) < 1e-6: continue
+        off = math.hypot(d0x, d0y) - ell(d0x, d0y, GOGGLES["rx"], GOGGLES["ryf"], GOGGLES["ryb"])
+        r = (q - HC_) / HS_; dx, dy = r.x, r.y - 0.012; dl = math.hypot(dx, dy)
+        if dl < 1e-6: continue
+        nr = ell(dx, dy, bn["rx"], bn["ryf"], bn["ryb"]) * k_at(r.z) + max(off, 0.0) + 0.002
+        up[i] = HC_ + V(dx / dl * nr, 0.012 + dy / dl * nr, r.z) * HS_
+        need = max(need, nr - dl)
+    if gob.data.shape_keys is None: gob.shape_key_add(name="Basis", from_mix=False)
+    key = gob.shape_key_add(name="GogglesUp", from_mix=False)
+    for i, q in up.items(): key.data[i].co = q
+    key.value = 0.0
+    print("HERO shape GogglesUp: %d vertices, out %.1f mm to clear the beanie" % (len(up), need * HS_ * 1000))
 print("HERO rider triangles with details:", tri_total)
 
 # limit to 4 influences and normalise; the skinned meshes go on the skeleton
-for name in ("HeroBody", "HeroHood", "HeroLegs", "HeroGear"):
+for name in [n_ for n_ in ("HeroBody", "HeroHood", "HeroLegs", "HeroGear", "HeroHead", "HeroHands") if n_ in OBJS]:
     ob = OBJS[name]
     bpy.context.view_layer.objects.active = ob
     for o in bpy.context.selected_objects: o.select_set(False)
@@ -874,11 +1992,104 @@ for name in ("HeroBody", "HeroHood", "HeroLegs", "HeroGear"):
     ob.parent = ARM
     md = ob.modifiers.new("Armature", 'ARMATURE'); md.object = ARM
 # the hood and the jacket are one renderer in the game
-bpy.ops.object.select_all(action='DESELECT')
-OBJS["HeroHood"].select_set(True); OBJS["HeroBody"].select_set(True)
-bpy.context.view_layer.objects.active = OBJS["HeroBody"]
-bpy.ops.object.join()
-del OBJS["HeroHood"]
+if "HeroHood" in OBJS:
+    bpy.ops.object.select_all(action='DESELECT')
+    OBJS["HeroHood"].select_set(True); OBJS["HeroBody"].select_set(True)
+    bpy.context.view_layer.objects.active = OBJS["HeroBody"]
+    bpy.ops.object.join()
+    del OBJS["HeroHood"]
+
+# ---- when someone wears another person's clothes. Every rider's clothes fit their own head and hair; on someone else
+# a collar can stand up through a bigger jaw, a hood sits in long hair, long hair in a bulkier jacket. The game blends
+# these in for the wearer (RiderBodyHero.FitShapes), never for the clothes' owner, so each rider still looks as made.
+def add_key(ob, name, move):
+    """A shape key: move(vertex) gives where it goes, or None to leave it."""
+    if ob.data.shape_keys is None: ob.shape_key_add(name="Basis", from_mix=False)
+    key = ob.shape_key_add(name=name, from_mix=False); n_ = 0
+    for v in ob.data.vertices:
+        q = move(v)
+        if q is not None: key.data[v.index].co = q; n_ += 1
+    key.value = 0.0
+    print("HERO shape %s on %s: %d vertices" % (name, ob.name, n_))
+NECK = V(0, 0.015, 0)
+def hood_w(ob, v):
+    g = ob.vertex_groups.get("Hood")
+    return next((x.weight for x in v.groups if g is not None and x.group == g.index), 0.0)
+ob_ = OBJS["HeroBody"]
+def collar_down(v):
+    # the collar (and a turtleneck's roll) folded down to the base of the neck, opening out as it goes
+    co = v.co; d = V(co.x - NECK.x, co.y - NECK.y, 0); r = d.length
+    if co.z < 1.43 or r > 0.18 or hood_w(ob_, v) > 0.2: return None
+    k = min(1.0, (co.z - 1.43) / 0.11)
+    return V(co.x + (d.x / r if r > 1e-6 else 0) * 0.028 * k, co.y + (d.y / r if r > 1e-6 else 0) * 0.028 * k, 1.43 + (co.z - 1.43) * 0.30)
+add_key(ob_, "CollarDown", collar_down)
+# the same for what is stitched or laid on the collar (a zip's top, a stand collar's lining): it's in the gear mesh.
+# (not the balaclava: it has its own shape, and stays on its owner's face)
+gob_ = OBJS["HeroGear"]; bcell = swatch_uv("balaclava"); guv = gob_.data.uv_layers.active; skip_ = set()
+for li, lp in enumerate(gob_.data.loops):
+    u, w_ = guv.data[li].uv
+    if abs(u - bcell[0]) < 1e-3 and abs(w_ - bcell[1]) < 1e-3: skip_.add(lp.vertex_index)
+def collar_gear(v):
+    if v.index in skip_: return None
+    co = v.co; d = V(co.x - NECK.x, co.y - NECK.y, 0); r = d.length
+    if co.z < 1.43 or r > 0.18: return None
+    k = min(1.0, (co.z - 1.43) / 0.11)
+    return V(co.x + (d.x / r if r > 1e-6 else 0) * 0.028 * k, co.y + (d.y / r if r > 1e-6 else 0) * 0.028 * k, 1.43 + (co.z - 1.43) * 0.30)
+add_key(gob_, "CollarDown", collar_gear)
+if ob_.vertex_groups.get("Hood") is not None:
+    # the hood tucked away inside the collar, for long hair to fall where it was
+    tuck = V(0, 0.07, 1.40)
+    add_key(ob_, "HoodAway", lambda v: tuck.lerp(v.co, 0.15) if hood_w(ob_, v) > 0.3 else None)
+if BRI:
+    # her curls a little further out from the body: over someone else's (bulkier) jacket they'd sink into it
+    hair_cell = swatch_uv(HAIR); me_ = OBJS["HeroHead"].data; uvl_ = me_.uv_layers.active; hv_ = set()
+    for li, lp in enumerate(me_.loops):
+        u, w_ = uvl_.data[li].uv
+        if abs(u - hair_cell[0]) < 1e-3 and abs(w_ - hair_cell[1]) < 1e-3: hv_.add(lp.vertex_index)
+    def hair_out(v):
+        if v.index not in hv_ or v.co.z > 1.56: return None
+        d = V(v.co.x - NECK.x, v.co.y - NECK.y, 0)
+        return v.co + d.normalized() * 0.032 * sm(1.57, 1.45, v.co.z) if d.length > 1e-6 else None
+    add_key(OBJS["HeroHead"], "HairOut", hair_out)
+    def hair_pack(v):
+        # over the summit kit's backpack: the curls down her back rest on its top instead of running through it
+        if v.index not in hv_ or v.co.y < 0.06 or v.co.z > 1.50: return None
+        z = v.co.z if v.co.z > 1.42 else 1.42 + (v.co.z - 1.42) * 0.22
+        d = V(v.co.x - NECK.x, v.co.y - NECK.y, 0)
+        return V(v.co.x, v.co.y, z) + (d.normalized() * 0.03 * sm(1.50, 1.40, v.co.z) if d.length > 1e-6 else V(0, 0, 0))
+    add_key(OBJS["HeroHead"], "HairPack", hair_pack)
+if VAL:
+    # the fleece is blue above the chest seam and down the sleeves, white below (the pocket too)
+    ob = OBJS["HeroBody"]; me = ob.data
+    while len(me.materials) < 2: me.materials.append(MATS["FleeceWhite"])
+    me.materials[0] = MATS["Jacket"]; me.materials[1] = MATS["FleeceWhite"]
+    arm_groups = {g.index for g in ob.vertex_groups if "Arm" in g.name or "Twist" in g.name or "Hand" in g.name}
+    def arm_w(v): return sum(g.weight for g in v.groups if g.group in arm_groups)
+    for pg in me.polygons:
+        z = sum(me.vertices[i].co.z for i in pg.vertices) / len(pg.vertices)
+        aw = sum(arm_w(me.vertices[i]) for i in pg.vertices) / len(pg.vertices)
+        pg.material_index = 1 if (z < 1.2005 and aw < 0.45) else 0
+if PAUL_B:
+    # the hoodie's grey sleeves under the black vest (the vest's body is the jacket's; its hood is grey already)
+    ob = OBJS["HeroBody"]; me = ob.data
+    names_ = [m.name for m in me.materials]
+    if "Hoodie" not in names_: me.materials.append(MATS["Hoodie"])
+    hi_ = [m.name for m in me.materials].index("Hoodie"); ji_ = [m.name for m in me.materials].index("Jacket")
+    arm_groups = {g.index for g in ob.vertex_groups if "Arm" in g.name or "Twist" in g.name or "Hand" in g.name}
+    def arm_w(v): return sum(g.weight for g in v.groups if g.group in arm_groups)
+    for pg in me.polygons:
+        if me.materials[pg.material_index].name != "Jacket": continue
+        aw = sum(arm_w(me.vertices[i]) for i in pg.vertices) / len(pg.vertices)
+        if aw >= 0.45: pg.material_index = hi_
+if VAL or BRI_PJ:
+    # the pyjama print: laid on flat from the front and back, and from the sides (a box mapping), 0.36 m a tile (a bear about 7 cm)
+    ob = OBJS["HeroLegs"]; me = ob.data
+    uvl = me.uv_layers.active or me.uv_layers.new(name="UVMap")
+    for pg in me.polygons:
+        nx, ny = abs(pg.normal.x), abs(pg.normal.y)
+        for li in pg.loop_indices:
+            co = me.vertices[me.loops[li].vertex_index].co
+            uvl.data[li].uv = ((co.y if nx > ny else co.x) / 0.36, co.z / 0.36)
 OBJS["Bindings"].select_set(False)
 bpy.ops.object.select_all(action='DESELECT')
 OBJS["Bindings"].select_set(True); OBJS["Snowboard"].select_set(True)
@@ -1339,6 +2550,21 @@ def _(t):
     p["hips"] = p["hips"] + V(0.01 * math.sin(t * 2 * math.pi + 1), 0, 0)
     return p
 
+@clip("Stand_Val", 150, True)
+def _(t):
+    """Val standing about in camp: both hands in the fleece's front pocket, rocking on his heels, looking round."""
+    p = breathe(STAND, t * 3)
+    rock = math.sin(t * 4 * math.pi)
+    for sd, sx in (("L", 1), ("R", -1)):
+        p["h" + sd] = ("rel", V(sx * -0.085, -0.222 - 0.006 * rock, -0.305))
+        p["e" + sd] = V(sx * 0.9, 0.5, -0.3)
+        p["g" + sd] = 0.7
+    look = 28 * math.sin(t * 2 * math.pi + 0.6) + 6 * math.sin(t * 6 * math.pi)
+    p["head"] = (3 + 4 * math.sin(t * 4 * math.pi + 1), 0, look)
+    p["neck"] = (0, 0, look * 0.3)
+    p["hips"] = p["hips"] + V(0.012 * math.sin(t * 2 * math.pi), 0.016 * rock, 0)
+    return p
+
 def gait(t, run):
     """One cycle of walking (run 0) or running (run 1), in place, facing -y. The left heel strikes at t = 0.25."""
     S = lerp(0.36, 0.46, run)               # how far each foot reaches forward and back of the hips
@@ -1375,19 +2601,19 @@ def gait(t, run):
     p["spine"] = (4 + 10 * run, -2 * math.sin(ph) * (1 - run), -13 * math.sin(ph) - 4 * run * math.sin(ph))
     p["neck"] = (0, 0, 3 * math.sin(ph))
     p["head"] = (6 + 4 * run, 0, 3 * math.sin(ph))
-    # the free arm swings against the legs; running it pumps, bent at the elbow
+    # the arms swing against the legs, from the shoulder: walking they hang nearly straight (a slight bend as each
+    # comes forward); running they pump, bent at the elbow, the fist rising in front of the chest and the elbow
+    # driving back with the hand at the hip. The elbows stay under the shoulders (they point back and down, never
+    # out behind the body).
     sw = math.sin(ph)
-    walk_h = V(0.08, 0.20 * sw, -0.48 + 0.04 * abs(sw))
-    run_h = V(0.07, 0.24 * sw - 0.06, -0.24 + 0.12 * max(0, -sw))
-    p["hL"] = ("rel", walk_h.lerp(run_h, run))
-    p["eL"] = V(0.3, 1, -0.2 - 0.6 * run)
-    p["gL"] = lerp(0.35, 0.8, run)
-    # the right arm: the mirror of the left, half a cycle on (forward as the left leg comes through)
-    walk_r = V(-0.08, -0.20 * sw, -0.48 + 0.04 * abs(sw))
-    run_r = V(-0.07, -0.24 * sw - 0.06, -0.24 + 0.12 * max(0, sw))
-    p["hR"] = ("rel", walk_r.lerp(run_r, run))
-    p["eR"] = V(-0.3, 1, -0.2 - 0.6 * run)
-    p["gR"] = lerp(0.35, 0.8, run)
+    for sd, sx, a in (("L", 1, -sw), ("R", -1, sw)):      # a: +1 this arm fully forward, -1 fully back
+        f_ = max(0.0, a); b_ = max(0.0, -a)
+        walk_h = V(sx * (0.075 - 0.03 * f_), -0.19 * f_ + 0.13 * b_, -0.512 + 0.05 * f_ ** 1.5 + 0.004 * b_)
+        mid, fwd, back = V(sx * 0.06, -0.11, -0.32), V(sx * 0.03, -0.27, -0.20), V(sx * 0.09, 0.05, -0.37)
+        run_h = mid.lerp(fwd, f_) if a > 0 else mid.lerp(back, b_)
+        p["h" + sd] = ("rel", walk_h.lerp(run_h, run))
+        p["e" + sd] = V(sx * 0.18, 1.0 - 0.5 * f_ * run, -0.2 - 0.9 * f_ * run)
+        p["g" + sd] = lerp(0.35, 0.8, run)
     return p
 
 @clip("Walk", 30, True)
@@ -1467,7 +2693,7 @@ def bake_clips():
 def export_all():
     import json
     apply(Solver())
-    rider = os.path.join(PROJECT, "Assets/Summit/Resources/Rider/Hero.fbx")
+    rider = os.path.join(PROJECT, "Assets/Summit/Resources/Rider/%s.fbx" % FILE)
     anims = os.path.join(PROJECT, "Assets/Summit/Art/Hero/HeroAnims.fbx")
     os.makedirs(os.path.dirname(anims), exist_ok=True)
     common = dict(apply_unit_scale=True, add_leaf_bones=False, use_armature_deform_only=True, primary_bone_axis='Y',
@@ -1476,6 +2702,7 @@ def export_all():
     for o in [ARM] + list(OBJS.values()): o.select_set(True)
     bpy.context.view_layer.objects.active = ARM
     bpy.ops.export_scene.fbx(filepath=rider, use_selection=True, object_types={'ARMATURE', 'MESH'}, bake_anim=False, **common)
+    if BUDDY or FEM: print("HERO exported", rider, "(the clips are the hero's: same skeleton)"); return
     bake_clips()
     bpy.ops.object.select_all(action='DESELECT')
     ARM.select_set(True)
@@ -1621,7 +2848,7 @@ if RENDER and ("rig" in WHAT or "all" in WHAT):
     render_setup(640, 820)
     # the skin see-through, the deform bones drawn as solid octahedra on top (left blue, right red, middle gold)
     ghost = {}
-    for name in ("HeroBody", "HeroLegs", "HeroGear"):
+    for name in ("HeroBody", "HeroLegs", "HeroGear", "HeroHead", "HeroHands"):
         ob = OBJS[name]
         ghost[name] = list(ob.data.materials)
         m = bpy.data.materials.new("Ghost" + name); m.use_nodes = True

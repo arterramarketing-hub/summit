@@ -84,6 +84,8 @@ namespace Summit
             if (template == null || terrainSnow == null) { enabled = false; return; }
             mat = new Material(template);
             mat.CopyPropertiesFromMaterial(terrainSnow);
+            // the groove relief (parallax) is switched on the terrain's material alone: on there, on here
+            if (terrainSnow.IsKeywordEnabled("_PARALLAXMAP")) mat.EnableKeyword("_PARALLAXMAP"); else mat.DisableKeyword("_PARALLAXMAP");
             mat.name = "SnowLayer";
             groundBuf = new GraphicsBuffer(GraphicsBuffer.Target.Structured, Slots * Slots, 16);
             snowBuf = new GraphicsBuffer(GraphicsBuffer.Target.Structured, Slots * Slots, 16);
@@ -209,7 +211,7 @@ namespace Summit
             int gw = gi1 - gi0 + 1, gd = gj1 - gj0 + 1;
             if (gh.Length < gw * gd) { gh = new float[gw * gd]; gcut = new bool[gw * gd]; grock = new sbyte[gw * gd]; }
             bool danger = false;
-            for (int j = gj0; j <= gj1 && !danger; j++) danger = Course.At(j * q) == Course.Section.Danger;
+            danger = gj0 * q < Course.GlacierBottom + 20f && gj1 * q > Course.GlacierTop - 20f;   // (only the glacier has crevasses)
             for (int j = 0; j < gd; j++)
                 for (int i = 0; i < gw; i++)
                 {

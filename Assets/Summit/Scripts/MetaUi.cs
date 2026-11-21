@@ -9,7 +9,7 @@ namespace Summit
     /// the walk stick, the missions board, the shop, mission-complete toasts and the points earned at the
     /// end of a run. Built in code like Hud; buttons are hit-tested by the caller (Hit), no EventSystem.
     /// </summary>
-    public class MetaUi : MonoBehaviour
+    public partial class MetaUi : MonoBehaviour
     {
         public enum Mode { Off, Hub, Ready, Riding, End }
         public Mode Current { get; private set; }
@@ -62,6 +62,17 @@ namespace Summit
             Place(mc.rectTransform, new Vector2(1f, 1f), new Vector2(-36f, -36f), new Vector2(400f, 100f), new Vector2(1f, 1f));
             missionsText = Label(mc.transform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(380f, 80f), 40, TextAnchor.MiddleCenter);
             buttons.Add(new KeyValuePair<RectTransform, string>(mc.rectTransform, "missions"));
+            // the way back to the start page: a small peak between the two chips
+            var tb0 = Img("TitleChip", hubRoot, new Color(0f, 0f, 0f, 0.45f), disc);
+            Place(tb0.rectTransform, new Vector2(0f, 1f), new Vector2(408f, -38f), new Vector2(96f, 96f), new Vector2(0f, 1f));
+            Place(Img("Peak", tb0.transform, new Color(1f, 1f, 1f, 0.9f), Peak(96)).rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(60f, 60f), new Vector2(0.5f, 0.5f));
+            buttons.Add(new KeyValuePair<RectTransform, string>(tb0.rectTransform, "title"));
+            // the lodge's layout, for playtesting: a tap shows the next one (Camp.StepLodgeLayout; also a setting, LODGE)
+            var lc = Img("LodgeChip", hubRoot, new Color(0f, 0f, 0f, 0.45f), round);
+            Place(lc.rectTransform, new Vector2(0f, 1f), new Vector2(36f, -150f), new Vector2(560f, 84f), new Vector2(0f, 1f));
+            lodgeText = Label(lc.transform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(540f, 70f), 34, TextAnchor.MiddleCenter);
+            lodgeText.text = "LODGE (TEST)  " + Camp.LodgeLayoutName + "  >";
+            buttons.Add(new KeyValuePair<RectTransform, string>(lc.rectTransform, "lodge"));
             var cb = Img("Context", hubRoot, Blue, round);
             Place(cb.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 230f), new Vector2(660f, 140f), new Vector2(0.5f, 0f));
             contextBtn = cb.rectTransform;
@@ -102,9 +113,10 @@ namespace Summit
             rideBtn = rb.rectTransform;
             buttons.Add(new KeyValuePair<RectTransform, string>(rideBtn, "ride"));
 
-            // ---- mission-complete toast, below the score
+            // ---- mission-complete toast: below the score, as ever, except during a run, where the combo and the medical
+            //      bill run up there now (HudPoints): then it comes up at the bottom, over the pause button (see Update)
             toastRoot = New("Toast", safe);
-            Place(toastRoot, new Vector2(0.5f, 1f), new Vector2(0f, -300f), new Vector2(860f, 170f), new Vector2(0.5f, 1f));
+            Place(toastRoot, new Vector2(0.5f, 0f), new Vector2(0f, ToastY), new Vector2(860f, 170f), new Vector2(0.5f, 0f));
             toastGroup = toastRoot.gameObject.AddComponent<CanvasGroup>();
             var tb = Img("ToastCard", toastRoot, new Color(0.08f, 0.10f, 0.18f, 0.9f), round); Stretch(tb.rectTransform);
             var tl = Img("ToastEdge", toastRoot, Gold, null);
@@ -121,6 +133,7 @@ namespace Summit
             // ---- the panel: a dim over everything and a card at the bottom (contents built per panel)
             panelRoot = New("Panel", transform); Stretch(panelRoot);
             var dim = Img("Dim", panelRoot, new Color(0.02f, 0.04f, 0.09f, 0.55f), null); Stretch(dim.rectTransform);
+            dimImg = dim;   // (the closet has no dim: its studio shows through)
             panelRoot.gameObject.SetActive(false);
             // a black fade over everything (the camp's rescue after a fall)
             fadeImg = Img("Fade", transform, new Color(0f, 0f, 0f, 0f), null); Stretch(fadeImg.rectTransform);
@@ -154,17 +167,24 @@ namespace Summit
         public void Refresh()
         {
             pointsText.text = Progress.Points.ToString("N0");
+            SetLodge(Camp.LodgeLayoutName);
             missionsText.text = "MISSIONS  " + Missions.DoneCount + " / " + Missions.Today.Count;
         }
+
+        /// <summary>The camp's say over the bottom button and the hint: a label of its own (null: the station's), and a mug in hand.</summary>
+        public string ContextLabel; public bool Sipping, Quiet;
 
         public void SetContext(Camp.Station st)
         {
             string label = st == Camp.Station.Missions ? "DAILY MISSIONS" : st == Camp.Station.Upgrades ? "UPGRADES"
-                         : st == Camp.Station.Style ? "OUTFITS" : st == Camp.Station.DropIn ? "DROP IN" : null;
+                         : st == Camp.Station.Style ? "WARDROBE" : st == Camp.Station.DropIn ? "DROP IN"
+                         : st == Camp.Station.Talk ? "TALK" : st == Camp.Station.Roast ? "ROAST A MARSHMALLOW"
+                         : st == Camp.Station.Cocoa ? "MAKE HOT CHOCOLATE" : null;
+            if (ContextLabel != null) { label = ContextLabel; st = Camp.Station.None; }   // the fire's own button (CampFire: TAKE IT OUT)
             bool on = label != null && !PanelOpen;
             if (contextBtn.gameObject.activeSelf != on) contextBtn.gameObject.SetActive(on);
             if (on) { contextText.text = label; contextImg.color = st == Camp.Station.DropIn ? new Color(0.85f, 0.2f, 0.12f, 0.97f) : Blue; }
-            hintText.text = PanelOpen ? "" : on ? "" : "Left: walk  ·  right: look  ·  tap: jump  ·  swipe: roll";
+            hintText.text = PanelOpen || on || Quiet ? "" : Sipping ? "Drag: walk  ·  tap: sip" : "Drag: walk  ·  hold a second finger: look  ·  tap: jump  ·  swipe: roll";
         }
 
         /// <summary>The camera stick under the right thumb (screen pixels), tinted so the two sticks read apart.</summary>
@@ -214,6 +234,7 @@ namespace Summit
 
         RectTransform OpenCard(float height, string title, string sub)
         {
+            if (ClosetOpen) EndCloset(false);
             foreach (var g in panelBits) { if (Application.isPlaying) Destroy(g); else DestroyImmediate(g); }
             panelBits.Clear();
             buttons.RemoveAll(b => b.Key == null || b.Key.IsChildOf(panelRoot));
@@ -241,6 +262,7 @@ namespace Summit
         public void ClosePanel(bool click = true)
         {
             if (!PanelOpen) return;
+            if (ClosetOpen) { EndCloset(click); return; }
             if (click) Clicked?.Invoke();
             panelRoot.gameObject.SetActive(false);
             ShopTab = -1;
@@ -257,7 +279,7 @@ namespace Summit
                 var r = Img("Mission", c, m.done ? new Color(0.2f, 0.7f, 0.32f, 0.18f) : Row, round);
                 Place(r.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -200f - i * 290f), new Vector2(930f, 260f), new Vector2(0.5f, 1f));
                 var tt = Label(r.transform, new Vector2(0f, 1f), new Vector2(36f, -28f), new Vector2(600f, 120f), 46, TextAnchor.UpperLeft);
-                tt.horizontalOverflow = HorizontalWrapMode.Wrap; tt.text = m.title;
+                tt.horizontalOverflow = HorizontalWrapMode.Wrap; tt.text = Missions.TitleFor(m);
                 Place(Img("Coin", r.transform, Color.white, coin).rectTransform, new Vector2(1f, 1f), new Vector2(-170f, -32f), new Vector2(60f, 60f), new Vector2(1f, 1f));
                 var rw = Label(r.transform, new Vector2(1f, 1f), new Vector2(-30f, -28f), new Vector2(140f, 70f), 50, TextAnchor.UpperRight);
                 rw.text = "+" + m.reward; rw.color = Gold;
@@ -276,8 +298,9 @@ namespace Summit
 
         public void ShowShop(int tab)
         {
+            if (tab == 1) { ShowCloset(); return; }   // the outfits are the closet now (MetaUiCloset)
             ShopTab = tab;
-            var c = OpenCard(tab == 0 ? 1640f : 900f, tab == 0 ? "UPGRADES" : "OUTFITS", null);
+            var c = OpenCard(tab == 0 ? 1640f : 1180f, tab == 0 ? "UPGRADES" : "OUTFITS & RIDE", null);
             // balance, top left of the card
             Place(Img("Coin", c, Color.white, coin).rectTransform, new Vector2(0f, 1f), new Vector2(36f, -40f), new Vector2(64f, 64f), new Vector2(0f, 1f));
             var bal = Label(c, new Vector2(0f, 1f), new Vector2(112f, -40f), new Vector2(260f, 70f), 50, TextAnchor.UpperLeft);
@@ -289,7 +312,7 @@ namespace Summit
                 Label(tb.transform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(420f, 90f), 42, TextAnchor.MiddleCenter).text = k == 0 ? "UPGRADES" : "OUTFITS";
                 buttons.Add(new KeyValuePair<RectTransform, string>(tb.rectTransform, "tab" + k));
             }
-            if (tab == 0) GearRows(c); else StyleRows(c);
+            GearRows(c);
         }
 
         void GearRows(RectTransform c)
@@ -325,36 +348,21 @@ namespace Summit
             }
         }
 
-        void StyleRows(RectTransform c)
-        {
-            void Swatches(string label, float y, Color[] cols, string[] names, int worn, System.Func<int, bool> owns, string id)
-            {
-                var l = Label(c, new Vector2(0f, 1f), new Vector2(50f, y), new Vector2(600f, 60f), 40, TextAnchor.UpperLeft);
-                l.text = label + "  ·  " + names[worn]; l.color = Dim;
-                for (int i = 0; i < cols.Length; i++)
-                {
-                    float x = -375f + i * 150f;
-                    if (i == worn)
-                        Place(Img("Worn", c, Color.white, disc).rectTransform, new Vector2(0.5f, 1f), new Vector2(x, y - 62f), new Vector2(138f, 138f), new Vector2(0.5f, 1f));
-                    var s = Img("Swatch", c, cols[i], disc);
-                    Place(s.rectTransform, new Vector2(0.5f, 1f), new Vector2(x, y - 70f), new Vector2(122f, 122f), new Vector2(0.5f, 1f));
-                    buttons.Add(new KeyValuePair<RectTransform, string>(s.rectTransform, id + i));
-                    if (!owns(i))
-                    {
-                        var pr = Label(c, new Vector2(0.5f, 1f), new Vector2(x, y - 200f), new Vector2(150f, 44f), 32, TextAnchor.UpperCenter);
-                        pr.text = Progress.OutfitCost(i).ToString(); pr.color = Progress.Points >= Progress.OutfitCost(i) ? Gold : new Color(1f, 1f, 1f, 0.45f);
-                    }
-                }
-            }
-            Swatches("JACKET", -260f, Progress.Jackets, Progress.JacketNames, Progress.Jacket, Progress.OwnsJacket, "jacket");
-            Swatches("BOARD", -540f, Progress.Boards, Progress.BoardNames, Progress.Board, Progress.OwnsBoard, "board");
-        }
+        /// <summary>The camp's peak chip was touched: SummitGame takes it from here (back to the start page).</summary>
+        public bool TitleAsked;
+        /// <summary>The LODGE chip was touched: the camp shows the next layout (Camp.LodgeSwitchStep).</summary>
+        public bool LodgeAsked;
+        Text lodgeText;
+        /// <summary>The LODGE chip's label: the layout showing.</summary>
+        public void SetLodge(string name) { if (lodgeText != null) lodgeText.text = "LODGE (TEST)  " + name + "  >"; }
 
         /// <summary>Do what a panel button says. Returns false if the id isn't a panel/menu action.</summary>
         public bool Act(string id)
         {
             if (id == "close") { ClosePanel(); return true; }
             if (id == "missions") { ShowMissions(); return true; }
+            if (id == "title") { TitleAsked = true; Clicked?.Invoke(); return true; }
+            if (id == "lodge") { LodgeAsked = true; Clicked?.Invoke(); return true; }
             if (id == "tab0" || id == "tab1") { Clicked?.Invoke(); ShowShop(id == "tab0" ? 0 : 1); return true; }
             if (id.StartsWith("buy"))
             {
@@ -364,15 +372,6 @@ namespace Summit
                 else { Denied?.Invoke(); cardMsg.text = "Need " + (cost - Progress.Points).ToString("N0") + " more points: ride to earn them"; cardMsg.color = new Color(1f, 0.5f, 0.42f); }
                 return true;
             }
-            if (id.StartsWith("jacket") || id.StartsWith("board"))
-            {
-                bool jk = id.StartsWith("jacket");
-                int i = int.Parse(id.Substring(jk ? 6 : 5));
-                bool owned = jk ? Progress.OwnsJacket(i) : Progress.OwnsBoard(i);
-                if (jk ? Progress.PickJacket(i) : Progress.PickBoard(i)) { if (owned) Clicked?.Invoke(); else Bought?.Invoke(); ShowShop(1); }
-                else { Denied?.Invoke(); cardMsg.text = "Need " + (Progress.OutfitCost(i) - Progress.Points).ToString("N0") + " more points"; }
-                return true;
-            }
             return false;
         }
 
@@ -380,7 +379,8 @@ namespace Summit
 
         readonly Queue<Missions.Mission> toasts = new Queue<Missions.Mission>();
         float toastT = -1f;
-        const float ToastIn = 0.3f, ToastHold = 2.6f, ToastOut = 0.45f;
+        const float ToastIn = 0.3f, ToastHold = 2.6f, ToastOut = 0.45f, ToastY = 165f;
+        bool toastLow;
 
         public void Toast(Missions.Mission m) { toasts.Enqueue(m); }
 
@@ -407,16 +407,19 @@ namespace Summit
             if (toastT < 0f && toasts.Count > 0)
             {
                 var m = toasts.Dequeue();
-                toastTitle.text = m.title; toastReward.text = "+" + m.reward;
+                toastTitle.text = Missions.TitleFor(m); toastReward.text = "+" + m.reward;
                 toastRoot.gameObject.SetActive(true);
                 toastT = 0f;
+                toastLow = Current == Mode.Riding;
+                toastRoot.anchorMin = toastRoot.anchorMax = toastRoot.pivot = new Vector2(0.5f, toastLow ? 0f : 1f);
             }
             if (toastT >= 0f)
             {
                 toastT += dt;
                 float a = toastT < ToastIn ? toastT / ToastIn : toastT < ToastIn + ToastHold ? 1f : 1f - (toastT - ToastIn - ToastHold) / ToastOut;
                 toastGroup.alpha = Mathf.Clamp01(a);
-                toastRoot.anchoredPosition = new Vector2(0f, -300f + 40f * (1f - Mathf.Clamp01(toastT / ToastIn)));
+                float slide = 40f * (1f - Mathf.Clamp01(toastT / ToastIn));
+                toastRoot.anchoredPosition = toastLow ? new Vector2(0f, ToastY - slide) : new Vector2(0f, -300f + slide);
                 if (toastT > ToastIn + ToastHold + ToastOut) { toastT = -1f; toastRoot.gameObject.SetActive(false); }
             }
         }
@@ -511,6 +514,27 @@ namespace Summit
                     float a = Mathf.Clamp01(c - d);
                     if (hollow) a *= Mathf.Clamp01(d - (c - 10f));
                     t.SetPixel(x, y, new Color(1f, 1f, 1f, a));
+                }
+            t.Apply();
+            return Sprite.Create(t, new Rect(0, 0, px, px), new Vector2(0.5f, 0.5f), 100f);
+        }
+
+        /// <summary>A mountain in two strokes: a peak and the shoulder beside it.</summary>
+        static Sprite Peak(int px)
+        {
+            var t = new Texture2D(px, px, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+            Vector2[] pts = { new Vector2(0.12f, 0.26f), new Vector2(0.44f, 0.78f), new Vector2(0.60f, 0.52f), new Vector2(0.70f, 0.62f), new Vector2(0.90f, 0.26f) };
+            for (int y = 0; y < px; y++)
+                for (int x = 0; x < px; x++)
+                {
+                    var p = new Vector2((x + 0.5f) / px, (y + 0.5f) / px);
+                    float d = 9f;
+                    for (int i = 0; i < pts.Length - 1; i++)
+                    {
+                        Vector2 ab = pts[i + 1] - pts[i]; float h = Mathf.Clamp01(Vector2.Dot(p - pts[i], ab) / ab.sqrMagnitude);
+                        d = Mathf.Min(d, (p - pts[i] - ab * h).magnitude);
+                    }
+                    t.SetPixel(x, y, new Color(1f, 1f, 1f, Mathf.Clamp01((0.04f - d) * px + 0.5f)));
                 }
             t.Apply();
             return Sprite.Create(t, new Rect(0, 0, px, px), new Vector2(0.5f, 0.5f), 100f);

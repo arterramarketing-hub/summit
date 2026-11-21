@@ -7,8 +7,8 @@ using UnityEngine;
 using Summit;
 
 /// <summary>
-/// The crevasses (long slots down the slope), through the game's own wiring: their layout and the lanes past them,
-/// renders, a ride down the middle lane, and a body fallen into one lying against the ice inside. Run: Unity
+/// The glacier's crevasses, through the game's own wiring: the layout, and from the rider's view, day and night, a
+/// field coming up, a snow bridge crossed, the widest crack jumped and a fall into it (the body lying inside). Run: Unity
 /// -batchmode -projectPath . -executeMethod GlacierShot.Run -logFile x.log (no -nographics: it needs the GPU).
 /// Writes GlacierShot*.png in the project folder. GlacierShot.Snow: head-first falls and the snow at the lip;
 /// GlacierShot.Park: the park's rails and boxes and a grind on each.
@@ -63,16 +63,15 @@ public static class GlacierShot
     {
         typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
         rider.input = null;
-        var slot = Course.CrevassesOf(0)[0];
-        float zm = (slot.z0 + slot.z1) * 0.5f;
-        Course.Opening(slot, zm, out float sx);
-        Place(sx, zm - 40f);
+        Course.WidestCrack(out var crack, out var spot);
+        Place(spot.x, spot.z - 40f);
         Shoot("CrevSnowWarmup.png", false);
-        // head first into its top end, and in from the side, steered across it
-        HeadFirst("SlotEnd", slot, sx, slot.z0 - 5f, 14f, 0f);
-        HeadFirst("SlotSide", slot, sx - Mathf.Sign(sx - Slope.Centre(zm)) * 7f, zm - 12f, 16f, Mathf.Sign(sx - Slope.Centre(zm)));
-        // the control: thrown on open snow, the body still leaves its furrow and rims
-        float z0 = Course.First + 30f;
+        // head first, slowly enough to go in: the widest crack, and the bergschrund
+        HeadFirst("Crack", crack, spot.x, spot.z - 8f, 6f, 0f);
+        if (Course.WidestCrack(out var berg, out var bspot, Course.CrevasseKind.Bergschrund))
+            HeadFirst("Bergschrund", berg, bspot.x, bspot.z - 8f, 5f, 0f);
+        // the control: thrown on open snow (below the glacier), the body still leaves its furrow and rims
+        float z0 = Course.GlacierBottom + 80f;
         rider.ResetAt(Slope.Centre(z0), z0); body.ResetVisual(); rider.Begin();
         rider.Body.linearVelocity = Vector3.ProjectOnPlane(Vector3.forward, Slope.Normal(Slope.Centre(z0), z0)).normalized * 18f;
         terrain.Prewarm(); props.Prewarm(); dress.Prewarm();
@@ -144,110 +143,161 @@ public static class GlacierShot
     {
         typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
         rider.input = null;
-        // the layout down the run: every crevasse a long slot down the slope, a lane down the middle and each edge
-        float minLen = 1e9f, maxLen = 0f, minLane = 1e9f, minEdge = 1e9f;
-        int n = 0;
-        for (int c = 0; c < 12; c++)
+        // the glacier as laid out today
+        var all = Course.Crevasses;
+        var byKind = new Dictionary<Course.CrevasseKind, int>();
+        int bridged = 0, hidden = 0, wide = 0; var fieldsSeen = new HashSet<int>();
+        foreach (var c in all)
         {
-            var cs = Course.CrevassesOf(c);
-            foreach (var cv in cs)
-            {
-                n++;
-                minLen = Mathf.Min(minLen, cv.z1 - cv.z0); maxLen = Mathf.Max(maxLen, cv.z1 - cv.z0);
-                for (float z = cv.z0; z < cv.z1; z += 2f)
-                {
-                    Course.Opening(cv, z, out float cx);
-                    float off = Mathf.Abs(cx - Slope.Centre(z));
-                    minEdge = Mathf.Min(minEdge, Slope.PisteHalf - off - cv.half);
-                    minLane = Mathf.Min(minLane, off - cv.half);   // to the middle of the piste
-                }
-                Log($"c{c} slot z={cv.z0:0}..{cv.z1:0} ({cv.z1 - cv.z0:0} m) x={cv.x - Slope.Centre((cv.z0 + cv.z1) * 0.5f):0.0} off centre, {2f * cv.half:0.0} m wide");
-            }
+            byKind.TryGetValue(c.kind, out int n); byKind[c.kind] = n + 1;
+            if (c.HasBridge) bridged++;
+            if (c.b1 - c.b0 > c.len - 4f) hidden++;
+            if (c.half > Course.CarryHalf) wide++;
+            if (c.field >= 0) fieldsSeen.Add(c.field);
         }
-        Log($"{n} slots, {minLen:0}..{maxLen:0} m long; at least {minLane:0.0} m from the middle of the piste and {minEdge:0.0} m from its edge");
-        if (minLen < 45f) { Log("PROBLEM a slot shorter than 45 m"); bad++; }
-        if (minLane < 2.5f || minEdge < 2.5f) { Log("PROBLEM no clear lane past a slot"); bad++; }
+        var sb = new System.Text.StringBuilder();
+        foreach (var kv in byKind) sb.Append($"{kv.Value} {kv.Key} ");
+        Log($"glacier z {Course.GlacierTop:0}..{Course.GlacierBottom:0} ({Slope.AltitudeFeet(Course.GlacierTop):0} to {Slope.AltitudeFeet(Course.GlacierBottom):0} ft): {all.Length} cracks: {sb}in {fieldsSeen.Count} fields; " +
+            $"{wide} too wide to carry, {bridged} with snow bridges ({hidden} hidden under one)");
+        foreach (var c in all)
+            if (c.kind != Course.CrevasseKind.Chevron)
+                Log($"  #{c.id} {c.kind}{(c.field >= 0 ? $" field {c.field}" : "")} z~{(c.z0 + c.z1) * 0.5f:0} {c.len:0} m long, {2f * c.half:0.0} m wide, {c.depth:0} m deep, at {Mathf.Atan2(c.dz, c.dx) * Mathf.Rad2Deg:0} deg" +
+                    $"{(c.b1 > c.b0 ? $", bridge {c.b1 - c.b0:0} m" : "")}{(c.c1 > c.c0 ? $" + {c.c1 - c.c0:0} m" : "")}");
+        if (all.Length == 0) { Log("PROBLEM no crevasses"); bad++; return; }
 
-        var slot = Course.CrevassesOf(0)[0];
-        float zm = (slot.z0 + slot.z1) * 0.5f;
-        float open = Course.Opening(slot, zm, out float sx);
-        Place(sx, slot.z0 - 30f);
+        var dayNight = typeof(SummitGame).GetField("dayNight", NP)?.GetValue(game) as DayNight;
+        Course.WidestCrack(out var widest, out var spot);
+        Place(spot.x, spot.z - 30f);
         Shoot("GlacierShotWarmup.png", false);
-        // from beside the rim, from above its top end, and the whole stretch from high up the hill
-        Place(sx + 10f, zm - 6f);
-        var eye = new Vector3(sx + open + 3.5f, Slope.Surface(sx + open + 3.5f, zm - 7f) + 3.2f, zm - 7f);
-        Look(eye, new Vector3(sx, Slope.Surface(sx, zm) - 5f, zm + 2f), 60f);
-        Shoot("GlacierShotSlot.png", false);
-        eye = new Vector3(sx + 1f, Slope.Surface(sx, slot.z0 - 8f) + 7f, slot.z0 - 8f);
-        Look(eye, new Vector3(sx, Slope.Surface(sx, zm) - 8f, zm), 60f);
-        Shoot("GlacierShotSlotAbove.png", false);
-        float c0 = Slope.Centre(slot.z0 - 30f);
-        Place(c0, slot.z0 - 30f);
-        eye = new Vector3(c0, Slope.Surface(c0, slot.z0 - 40f) + 28f, slot.z0 - 40f);
-        Look(eye, new Vector3(Slope.Centre(zm + 20f), Slope.Surface(Slope.Centre(zm + 20f), zm + 20f), zm + 20f), 70f);
-        Shoot("GlacierShotSlotsWide.png", false);
-        // the rider's own view riding down the middle lane between them
-        rider.ResetAt(c0, slot.z0 - 25f); body.ResetVisual(); rider.Begin();
-        rider.Body.linearVelocity = Vector3.ProjectOnPlane(Vector3.forward, Slope.Normal(c0, slot.z0 - 25f)).normalized * 15f;
-        terrain.Prewarm(); props.Prewarm(); dress.Prewarm(); chase.Snap();
-        lastCrash = "";
-        for (int i = 0; i < 60; i++) { rider.Steer = Mathf.Clamp((Slope.Centre(rider.Z + 12f) - rider.transform.position.x) * 0.06f - rider.Heading * 0.8f, -1f, 1f); Step(); }
-        Shoot("GlacierShotSlotsRide.png", true);
-        for (float t = 0f; t < 8f && rider.Z < slot.z1 + 20f; t += Dt) { rider.Steer = Mathf.Clamp((Slope.Centre(rider.Z + 12f) - rider.transform.position.x) * 0.06f - rider.Heading * 0.8f, -1f, 1f); Step(); }
-        Log($"down the middle lane past the slots: {(rider.Crashed ? "CRASHED (" + lastCrash + ")" : "clear")} to z={rider.Z:0}");
-        if (rider.Crashed) bad++;
-
-        // a fall into a slot from its top end: the body must come to rest inside, on the ice
-        Fall("Slot", slot, sx, slot.z0 - 4f, 8f);
+        Shoot("GlacierShotWarmup2.png", true);   // (the first render with the rider in it comes out in placeholder colours)
+        foreach (var (tag, clock) in new[] { ("Day", 1.4f), ("Night", 3.4f) })
+        {
+            TimeOfDay.TestClock = clock; dayNight?.ApplyNow();
+            Approach(tag, all);
+            Bridge(tag, all);
+            Jump(tag, widest, spot);
+            FallIn(tag, widest, spot);
+        }
+        TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt; dayNight?.ApplyNow();
     }
 
-    static void Fall(string name, Course.Crevasse cv, float x, float z0, float v)
+    /// <summary>Ride straight down at (x, z0) at speed v, steering for x; the step callback sees each step.</summary>
+    static void Ride(float x, float z0, float v, float secs, System.Func<float, bool> each)
     {
         rider.ResetAt(x, z0); body.ResetVisual(); rider.Begin();
         rider.Body.linearVelocity = Vector3.ProjectOnPlane(Vector3.forward, Slope.Normal(x, z0)).normalized * v;
-        terrain.Prewarm(); props.Prewarm(); dress.Prewarm();
+        terrain.Prewarm(); props.Prewarm(); dress.Prewarm(); chase.Snap();
         lastCrash = "";
-        float minY = 1e9f, t = 0f;
-        Vector3 first = Vector3.zero; bool shotFalling = false;
-        for (; t < 12f; t += Dt)
+        for (float t = 0f; t < secs; t += Dt)
         {
-            rider.Steer = 0f; Step();
+            if (!rider.Crashed) rider.Steer = Mathf.Clamp((x - rider.transform.position.x) * 0.15f - rider.Heading * 1.2f, -1f, 1f);
+            Step();
+            if (each != null && !each(t)) break;
+        }
+    }
+
+    /// <summary>Riding down at the first field, from 40 m up the hill: what the player sees coming.</summary>
+    static void Approach(string tag, Course.Crevasse[] all)
+    {
+        float top = float.MaxValue; int field = -1;
+        foreach (var c in all) if (c.field >= 0 && (field < 0 || c.field == 0)) { field = c.field; }
+        foreach (var c in all) if (c.field == field) top = Mathf.Min(top, c.z0);
+        if (field < 0) { Log("no field to approach"); return; }
+        float x = Slope.Centre(top);
+        bool shot = false;
+        Ride(x, top - 45f, 15f, 4f, t => { if (!shot && rider.Z > top - 26f) { shot = true; Shoot($"GlacierShot{tag}Approach.png", true); } return !shot; });
+    }
+
+    /// <summary>Over a snow bridge you can see (wands at its ends), at a normal speed.</summary>
+    static void Bridge(string tag, Course.Crevasse[] all)
+    {
+        foreach (var c in all)
+        {
+            if (c.b1 <= c.b0 || c.b1 - c.b0 > c.len - 4f) continue;
+            float u = (c.b0 + c.b1) * 0.5f;
+            Course.Opening(c, u, out float mid);
+            var q = c.Point(u, mid);
+            if (Mathf.Abs(q.x - Slope.Centre(q.y)) > Slope.PisteHalf - 3f || Mathf.Abs(c.dx) < 0.6f) continue;
+            bool shot = false, over = false;
+            Ride(q.x, q.y - 22f, 16f, 4f, t =>
+            {
+                var p = rider.transform.position;
+                if (Course.OnBridge(p.x, p.z)) over = true;
+                if (!shot && over) { shot = true; Shoot($"GlacierShot{tag}Bridge.png", true); }
+                return !rider.Crashed && rider.Z < q.y + 8f;
+            });
+            Log($"{tag} bridge #{c.id} ({c.b1 - c.b0:0} m) at 16 m/s: {(rider.Crashed ? "CRASHED " + lastCrash : over ? "rode across" : "missed it")}");
+            if (rider.Crashed) bad++;
+            // and at a crawl, from its lip, it gives way
+            float open = Course.Opening(c, u, out _);
+            Ride(q.x, q.y - open - 0.4f, 1.5f, 5f, t => !rider.Crashed);
+            Log($"{tag} bridge #{c.id} from the lip at 1.5 m/s: {(rider.Crashed ? lastCrash : "held")}");
+            if (!rider.Crashed) { Log($"PROBLEM {tag}: a slow board on a bridge did not break through"); bad++; }
+            return;
+        }
+        Log("no visible bridge on the piste to ride");
+    }
+
+    /// <summary>The widest crack, jumped: an ollie at its lip at a normal speed.</summary>
+    static void Jump(string tag, Course.Crevasse cv, Vector3 spot)
+    {
+        bool popped = false, shot = false;
+        Ride(spot.x, spot.z - 25f, 16f, 4f, t =>
+        {
+            var p = rider.transform.position;
+            if (!popped && !rider.Airborne && Course.CrevasseNear(p.x, p.z, 1.2f)) { rider.QueuePop(0.8f); popped = true; }
+            if (!shot && rider.Airborne && Course.CrevasseCut(p.x, p.z) > 0.3f) { shot = true; Shoot($"GlacierShot{tag}Jump.png", true); }
+            return !rider.Crashed && rider.Z < spot.z + 12f;
+        });
+        Log($"{tag} jump over #{cv.id} ({2f * cv.half:0.0} m wide) at 16 m/s: {(rider.Crashed ? "CRASHED " + lastCrash : "cleared")}");
+        if (rider.Crashed) bad++;
+    }
+
+    /// <summary>The widest crack, ridden into slowly: the fall, the look down after the body, and the body inside.</summary>
+    static void FallIn(string tag, Course.Crevasse cv, Vector3 spot)
+    {
+        bool shotFalling = false;
+        float minY = 1e9f;
+        // (from just above its lip at a crawl: from further up, the steep slope has the board going fast enough at the
+        // lip to fly most of the way across before it drops, and it goes in against the far wall)
+        float open0 = Course.Opening(cv, cv.Along(spot.x, spot.z), out _);
+        Ride(spot.x, spot.z - open0 - 0.6f, 2f, 12f, t =>
+        {
             var c = body.RagdollCentre;
             if (rider.Crashed) minY = Mathf.Min(minY, c.y);
-            if (rider.Crashed && first == Vector3.zero) first = rider.transform.position;
             if (!shotFalling && body.RagdollBelowSnow > 6f)
             {
                 shotFalling = true;
                 chase.enabled = true; chase.peek = 1f; chase.peekAt = c; late.Invoke(chase, null);
-                Shoot($"GlacierShot{name}Falling.png", true);
+                Shoot($"GlacierShot{tag}Falling.png", true);
             }
-            if (rider.Crashed && t > 3f && !body.RagdollMoving) break;
-        }
+            return !(rider.Crashed && t > 3f && !body.RagdollMoving);
+        });
         var rc = body.RagdollCentre;
-        float open = Course.Opening(cv, rc.z, out float cx);
-        float off = rc.x - cx;
+        float u = cv.Along(rc.x, rc.z);
+        float open = Course.Opening(cv, u, out float mid);
+        float off = cv.Across(rc.x, rc.z) - mid;
         float surface = Slope.Surface(rc.x, rc.z);
-        float depth = Course.CrevasseDepth * Mathf.Sqrt(Mathf.Max(0f, open) / cv.half) - 1.5f;
-        Log($"{name}: crash '{lastCrash}' at {first}; after {t:0.0}s the body lies {surface - rc.y:0.0} m down (crevasse {depth:0.0} m deep here, lowest {surface - minY:0.0}), " +
-            $"{off:0.00} m off its middle (open {open:0.00}), moving={body.RagdollMoving}, belowSnow={body.RagdollBelowSnow:0.0}");
-        if (!lastCrash.StartsWith("Crevasse")) { Log($"{name}: PROBLEM did not fall in"); bad++; }
-        if (surface - rc.y > depth + 1.2f) { Log($"{name}: PROBLEM fell through the floor"); bad++; }
-        if (Mathf.Abs(off) > open + 0.3f) { Log($"{name}: PROBLEM lies outside the walls"); bad++; }
-        if (body.RagdollMoving) { Log($"{name}: PROBLEM still moving"); bad++; }
+        float depth = cv.depth * Mathf.Sqrt(Mathf.Max(0f, open) / cv.half) - 1.5f;
+        Log($"{tag} fall into #{cv.id}: crash '{lastCrash}'; the body lies {surface - rc.y:0.0} m down (crack {depth:0.0} m deep there), {off:0.00} m off its middle (open {open:0.00}), moving={body.RagdollMoving}");
+        if (!lastCrash.StartsWith("Crevasse")) { Log($"PROBLEM {tag}: did not fall in"); bad++; }
+        if (surface - rc.y > depth + 1.2f) { Log($"PROBLEM {tag}: fell through the floor"); bad++; }
+        if (Mathf.Abs(off) > open + 0.3f) { Log($"PROBLEM {tag}: lies outside the walls"); bad++; }
         chase.enabled = true; chase.peek = 1f; chase.peekAt = rc; late.Invoke(chase, null);
-        Shoot($"GlacierShot{name}Peek.png", true);
+        Shoot($"GlacierShot{tag}Peek.png", true);
         Look(InsideEye(cv, rc, 4f, 0.5f), rc, 60f);
-        Shoot($"GlacierShot{name}Inside.png", true);
+        Shoot($"GlacierShot{tag}Inside.png", true);
         chase.peek = 0f;
     }
 
-    /// <summary>A point on the crevasse's middle line `along` metres down from p, `frac` of p's depth below the snow there.</summary>
+    /// <summary>A point on the crack's middle line `along` metres on from p, `frac` of p's depth below the snow there.</summary>
     static Vector3 InsideEye(Course.Crevasse cv, Vector3 p, float along, float frac)
     {
         float below = Slope.Surface(p.x, p.z) - p.y;
-        float z = p.z + along;
-        Course.Opening(cv, z, out float cx);
-        return new Vector3(cx, Slope.Surface(cx, z) - below * frac, z);
+        float u = Mathf.Clamp(cv.Along(p.x, p.z) + along, 1f, cv.len - 1f);
+        Course.Opening(cv, u, out float mid);
+        var q = cv.Point(u, mid);
+        return new Vector3(q.x, Slope.Surface(q.x, q.y) - below * frac, q.y);
     }
 
     // ---------------------------------------------------------------- the park

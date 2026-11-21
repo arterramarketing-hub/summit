@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Summit
@@ -16,6 +17,12 @@ namespace Summit
 
         public static void Build(Transform root, int cycle, Shader lit, Material poleOrange, Material poleBlack, Material post, Material signBack, Rider rider)
         {
+            foreach (var _ in Steps(root, cycle, lit, poleOrange, poleBlack, post, signBack, rider)) { }
+        }
+
+        /// <summary>Build, a piece at a time (each jump's wands, each length of caution tape), for a cycle built over several frames.</summary>
+        public static IEnumerable<bool> Steps(Transform root, int cycle, Shader lit, Material poleOrange, Material poleBlack, Material post, Material signBack, Rider rider)
+        {
             if (signJump == null)
             {
                 signJump = CourseDressing.Sign(lit, "Signs/SignJump");
@@ -33,6 +40,7 @@ namespace Summit
                     float y = Slope.DrawnHeight(x, z);
                     Pole(root, new Vector3(x, y + 0.35f, z), new Vector3(0.035f, 0.4f, 0.035f), Mathf.Abs(a) > Slope.PisteHalf ? poleBlack : poleOrange);
                 }
+                yield return true;
             }
             if (Cliffs.WallOf(cycle, out var w))
             {
@@ -50,6 +58,7 @@ namespace Summit
                     var tie = new Vector3(x, y + 1.15f, z);
                     if (have && rider != null) CautionTape.Make(root, last, tie, rider, tape);
                     last = tie; have = true;
+                    yield return true;   // (each tape settles into its sag as it is made: about a millisecond)
                 }
             }
         }

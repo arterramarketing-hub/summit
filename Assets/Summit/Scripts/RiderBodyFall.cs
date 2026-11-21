@@ -3,13 +3,13 @@ using UnityEngine;
 namespace Summit
 {
     /// <summary>
-    /// Falls that kill. Once thrown, the body is watched on its way down: tumbling down rock or through the air
-    /// it keeps count of how far it has fallen beyond the mountain's own line, and the moment it reaches snow
-    /// again that settles it. A few metres is a fall like any other. Off a deadly cliff (Rider.DeadlyDrop and more
-    /// onto the ground at its foot: see Deadly), or square into the snow harder than anyone survives, it punches deep
-    /// into the snow and stays there, half buried
-    /// under what it threw up: the end of the run (the game hears Killed). A body that stops short of the snow,
-    /// lodged on a spire or a boulder part way down a cliff (CliffSpires) after a deadly drop, dies where it lies.
+    /// Falls that kill. Once thrown, the body is watched on its way down: tumbling down a face or through the air
+    /// it keeps count of how far it has fallen beyond the mountain's own line, and the moment it reaches ground it
+    /// could lie on again (snow or rock, anything not too steep to stop on) that settles it. One rule, wherever it
+    /// happens: Rider.DeathFall or more and it hits like a bomb, punches deep into the snow and stays there, half
+    /// buried under what it threw up: the end of the run (the game hears Killed). Anything shorter is a fall like any
+    /// other. A body that stops short of the ground, lodged on a spire or a boulder part way down a cliff
+    /// (CliffSpires) after a drop that far, dies where it lies.
     /// Kept apart from RiderBody's riding code, which only calls FallBegin and FallStep.
     /// </summary>
     public partial class RiderBody
@@ -18,9 +18,6 @@ namespace Summit
         public System.Action<float> Killed;
         /// <summary>This crash killed the rider.</summary>
         public bool Dead { get; private set; }
-        /// <summary>Into the snow faster than this (m/s) is fatal however short the fall.</summary>
-        public static float FatalHit = 26f;
-
         float fallTopX, fallTopY, fallTopZ, stuckOnRock;
         Vector3 fallVel;
 
@@ -42,22 +39,20 @@ namespace Summit
             // down a crevasse is the crevasse's own business (the game watches for that)
             if (Course.CrevasseNear(c.x, c.z, 3f)) { fallTopX = c.x; fallTopY = c.y; fallTopZ = c.z; fallVel = v; return; }
             Vector3 n = Slope.Normal(c.x, c.z);
-            // (only at the surface: a body somewhere under it is down a hole, not landing)
+            // (only at the surface: a body somewhere under it is down a hole, not landing; and a face too steep to stop
+            // on, snow or rock, is tumbled down, the fall still counting)
             bool touching = Mathf.Abs(c.y - Slope.DrawnHeight(c.x, c.z)) < 0.6f;
-            // (rock is tumbled down, not landed on; but at the foot of a deadly cliff a rocky patch of the ground below
-            // ends the fall as surely as its snow, or a body that came to rest on one would get up from the fall)
-            bool rock = RockFace.IsRock(n, c.x, c.z);
-            if (touching && (!rock || (n.y > 0.5f && Deadly.Below(c.x, c.z))))
+            if (touching && n.y >= 0.62f)
             {
-                // the speed it came in at, before the snow stopped it
+                // the speed it came in at, before the ground stopped it
                 float into = -Vector3.Dot(fallVel, n);
                 float fell = fallTopY - c.y - Slope.Fall * Mathf.Max(0f, c.z - fallTopZ);
-                // off a deadly cliff onto the ground at its foot, or slammed square into the snow (a body skidding in at a
-                // glancing angle off a big air tumbles on down the slope instead, as a board landing that way rides on)
-                float along = Vector3.ProjectOnPlane(fallVel, n).magnitude;
-                bool square = Mathf.Atan2(into, along) * Mathf.Rad2Deg > Rider.MaxLandAngle;
-                if ((fell > Rider.DeadlyDrop && Deadly.Over(new Vector3(fallTopX, fallTopY, fallTopZ), c)) || (into > FatalHit && square))
-                { Die(c, n, Mathf.Max(into, Mathf.Sqrt(2f * Rider.G * Mathf.Max(0f, fell))), fell); return; }
+                if (fell >= Rider.DeathFall)
+                {
+                    float hit = Mathf.Max(into, Mathf.Sqrt(2f * Rider.G * fell));
+                    if (RockFace.IsRock(n, c.x, c.z)) DieOnRock(c, n, fell); else Die(c, n, hit, fell);
+                    return;
+                }
                 // on the snow: any fall from here starts from here
                 fallTopX = c.x; fallTopY = c.y; fallTopZ = c.z;
                 stuckOnRock = 0f;
@@ -67,7 +62,7 @@ namespace Summit
                 // stopped off the snow: caught on the rocks part way down a cliff, after a drop that kills
                 stuckOnRock = ragdoll.Speed < 1f ? stuckOnRock + Time.fixedDeltaTime : 0f;
                 float fell = fallTopY - c.y - Slope.Fall * Mathf.Max(0f, c.z - fallTopZ);
-                if (stuckOnRock > 0.8f && fell > Rider.DeadlyDrop && Deadly.Over(new Vector3(fallTopX, fallTopY, fallTopZ), c)) { DieOnRock(c, n, fell); return; }
+                if (stuckOnRock > 0.8f && fell >= Rider.DeathFall) { DieOnRock(c, n, fell); return; }
             }
             fallVel = v;
         }
@@ -78,7 +73,7 @@ namespace Summit
             Dead = true;
             rider.StayDown = true;
             float into = Mathf.Sqrt(2f * Rider.G * fell);
-            fx?.Thud(at, 14f, Vector3.zero);
+            fx?.Thud(at, 30f, Vector3.up * 4f);   // a giant impact: the dust and grit of it, and the hit-stop the game puts on Killed
             blood?.Hit(at, n, into, true, fallVel, null);
             Killed?.Invoke(fell);
         }
@@ -91,9 +86,11 @@ namespace Summit
             float depth = Mathf.Clamp(0.7f + into * 0.025f, 0.9f, 1.7f);
             ragdoll.Bury(depth, fallVel);
             SnowLayer.Instance?.Bury(ragdoll, depth);
-            fx?.Thud(at, Mathf.Max(18f, into), fallVel * 0.3f);
-            fx?.Thud(at + Random.insideUnitSphere * 0.8f, Mathf.Max(14f, into * 0.8f), Vector3.up * 6f);
-            spray.Emit(90);
+            // a giant impact: snow bursting out all round and up, a second and third plume after it
+            fx?.Thud(at, Mathf.Max(30f, into), fallVel * 0.3f);
+            fx?.Thud(at + Random.insideUnitSphere * 0.8f, Mathf.Max(24f, into * 0.8f), Vector3.up * 8f);
+            fx?.Thud(at + Random.insideUnitSphere * 1.5f, Mathf.Max(18f, into * 0.6f), Vector3.up * 12f);
+            spray.Emit(180);
             blood?.Hit(at, n, into, true, fallVel, null);
             Killed?.Invoke(Mathf.Max(fell, 0f));
         }

@@ -31,6 +31,9 @@ namespace Summit
 
         public bool Ok => template != null;
 
+        /// <summary>Is this one of the snowy cloth materials made here (and kept up to date with the snow)?</summary>
+        public bool Owns(Material m) => m != null && mats.Contains(m);
+
         /// <summary>A snowy copy of a clothing material, in the same colour and sheen.</summary>
         public Material Make(Color colour, float smoothness, float holds = 1f)
         {

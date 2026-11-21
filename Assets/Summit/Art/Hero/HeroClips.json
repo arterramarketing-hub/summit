@@ -117,6 +117,11 @@
    "loop": true
   },
   {
+   "name": "Stand_Val",
+   "frames": 150,
+   "loop": true
+  },
+  {
    "name": "Walk",
    "frames": 30,
    "loop": true
@@ -134,6 +139,136 @@
   {
    "name": "CampRoll",
    "frames": 24,
+   "loop": false
+  },
+  {
+   "name": "Ski_Idle",
+   "frames": 120,
+   "loop": true
+  },
+  {
+   "name": "Ski_Ride",
+   "frames": 60,
+   "loop": true
+  },
+  {
+   "name": "Ski_TurnL",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Ski_TurnR",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Ski_Tuck",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Ski_PlantL",
+   "frames": 14,
+   "loop": false
+  },
+  {
+   "name": "Ski_PlantR",
+   "frames": 14,
+   "loop": false
+  },
+  {
+   "name": "Ski_Pop",
+   "frames": 16,
+   "loop": false
+  },
+  {
+   "name": "Ski_Air",
+   "frames": 40,
+   "loop": true
+  },
+  {
+   "name": "Ski_Land",
+   "frames": 20,
+   "loop": false
+  },
+  {
+   "name": "Ski_Grab_Safety",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Ski_Grab_Mute",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Ski_Grab_Tail",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Ski_WindL",
+   "frames": 2,
+   "loop": false
+  },
+  {
+   "name": "Ski_WindR",
+   "frames": 2,
+   "loop": false
+  },
+  {
+   "name": "Ski_SpinL",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Ski_SpinR",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Ski_Flip",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Sled_Idle",
+   "frames": 120,
+   "loop": true
+  },
+  {
+   "name": "Sled_Ride",
+   "frames": 60,
+   "loop": true
+  },
+  {
+   "name": "Sled_LeanL",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Sled_LeanR",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Sled_Tuck",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Sled_Air",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Sled_NoHands",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Sled_Bump",
+   "frames": 14,
    "loop": false
   }
  ]
