@@ -37,6 +37,10 @@ namespace Summit
         static int Total => count[0] + count[1] + count[2] + count[3];
 
         static Mesh[] hulls;           // each shape with shared corners, for its convex collider
+        // each shape's collider as it is drawn up close: the near look's own surface (null for a talus block, whose
+        // plain look is its hull). A convex hull round the near look stood up to a few metres clear of it at the
+        // snow (its ledge lips out over feet tucked in, its joints cut in): a hit on nothing beside a crag
+        static Mesh[] rockHits;
         static Vector3[][] sv, sn;     // each shape drawn flat-shaded: its vertices and normals, kept for baking
         static int[][] st;
         static Material rockMat, cragMat, scanMat, driftMat;
@@ -553,10 +557,10 @@ namespace Summit
                 Append(farV, farN, farT, sv[s.v], sn[s.v], st[s.v], m);
                 Append(nearV, nearN, nearT, dv[s.v], dn[s.v], dt[s.v], m);
                 if (s.drift) Drift(nearV, nearN, driftT, s);
-                // its own collider: the shape's hull, placed and scaled as drawn
+                // its own collider: placed and scaled as drawn, the broken rock it is up close (a talus block: its hull)
                 var mc = c.AddComponent<MeshCollider>();
-                mc.convex = true;
-                mc.sharedMesh = hulls[s.v];
+                mc.convex = rockHits[s.v] == null;
+                mc.sharedMesh = rockHits[s.v] != null ? rockHits[s.v] : hulls[s.v];
                 mc.sharedMaterial = Slick;
             }
             if (farT.Count > 0)
@@ -793,7 +797,7 @@ namespace Summit
             }
             if (hulls != null) return;
             int n = Total;
-            hulls = new Mesh[n]; sv = new Vector3[n][]; sn = new Vector3[n][]; st = new int[n][];
+            hulls = new Mesh[n]; rockHits = new Mesh[n]; sv = new Vector3[n][]; sn = new Vector3[n][]; st = new int[n][];
             dv = new Vector3[n][]; dn = new Vector3[n][]; dt = new int[n][]; foot = new Vector2[n][];
             for (int v = 0; v < n; v++) MakeShape(v);
         }
@@ -908,7 +912,18 @@ namespace Summit
             foot[v] = beds.Count > 0 ? beds[0].p : new[] { new Vector2(1, 1), new Vector2(-1, 1), new Vector2(-1, -1), new Vector2(1, -1) };
             // up close: the same beds, broken up (a loose talus block keeps its plain look: the scans stand in for it)
             if (kind == Kind.Talus) { dv[v] = sv[v]; dn[v] = sn[v]; dt[v] = st[v]; }
-            else MakeDetail(v);
+            else
+            {
+                MakeDetail(v);
+                // what it is hit as: that same broken rock, its own surface (a static solid need not be convex),
+                // cooked here once for every spire of the shape
+                var hit = new Mesh { name = "CragHit" + v };
+                if (dv[v].Length > 65535) hit.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+                hit.SetVertices(dv[v]); hit.SetTriangles(dt[v], 0);
+                hit.RecalculateBounds();
+                Physics.BakeMesh(hit.GetInstanceID(), false);
+                rockHits[v] = hit;
+            }
             beds = null;
         }
 

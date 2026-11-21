@@ -124,6 +124,10 @@ namespace Summit
         public System.Action ShieldHit;
         public System.Action<Course.Feature> GrindStart;
         public System.Action<Obstacle, Vector3, float> HitObstacle;
+        /// <summary>The collider of the last HitObstacle (one obstacle can have many: a crag's spires, a cabin's parts),
+        /// and where the board met it.</summary>
+        public Collider HitCollider { get; private set; }
+        public Vector3 HitPoint { get; private set; }
         public System.Action<float> Bounced;                          // the tube bounced off something
         public System.Action<Obstacle, Vector3, Vector3> Smashed;     // invincible: what you went through, where, your velocity
         Vector3 grindOff;
@@ -245,7 +249,7 @@ namespace Summit
             HasCrashFollow = false; rb.detectCollisions = true; StayDown = false; HoldCrash = false;
             AirTime = 0f; Tuck = 0f; Carve = 0f; Skid = 0f; Peak = 0f; AboveGround = 0f;
             Lean = 0f; leanVel = 0f; YawRate = 0f;
-            ClearTrick(); grindScoring = false; LandSpin = 0f; LandFlip = 0f; GrindYaw = 0f; GrindPress = 0f; TrickX = TrickY = 0f; GrabHeld = false;
+            ClearTrick(); SwitchOff(); grindScoring = false; LandSpin = 0f; LandFlip = 0f; GrindYaw = 0f; GrindPress = 0f; TrickX = TrickY = 0f; GrabHeld = false;
             popPending = false; airLock = 0f; lastGrind = -1;
             Flow = 0f; Shields = 0; BoostTime = 0f; invulnerable = 0f; SuperJumpTime = 0f; InvincibleTime = 0f; superAir = false;
             Undercut = 0f; Lift = 0f; fixVy = 0f;
@@ -932,6 +936,7 @@ namespace Summit
                 Scraped?.Invoke(into);
                 return;
             }
+            HitCollider = c.collider; HitPoint = c.contactCount > 0 ? c.GetContact(0).point : Obstacle.Nearest(c.collider, rb.position);
             HitObstacle?.Invoke(ob, c.collider.bounds.center, into);
             if (invulnerable > 0f) return;
             if (Tube && into > 6f && into < 16f && !ob.always)
@@ -1022,7 +1027,7 @@ namespace Summit
             rb.detectCollisions = false;
             Carve = 0f; Skid = 0f; Lean = 0f; leanVel = 0f;
             crashCause = why;
-            ClearTrick(); grindScoring = false;
+            ClearTrick(); SwitchOff(); grindScoring = false;   // (up again the normal way round)
             Crash?.Invoke(why);
         }
 

@@ -52,9 +52,11 @@ public static class InvisibleAudit
     {
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
         game = Object.FindFirstObjectByType<SummitGame>();
+        TestPrefs.Pin();   // (Boot clears the saved points and upgrades: the player's own are put back at the end)
         TestBoot.Boot(game);
         Physics.simulationMode = SimulationMode.Script;
         r = F<Rider>("rider"); body = F<RiderBody>("body"); terrain = F<SlopeStreamer>("terrain"); props = F<Forest>("props");
+        slide = F<Avalanche>("slide");
         typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
         r.input = null;
         r.Crash += why => lastCrash = why;
@@ -63,6 +65,16 @@ public static class InvisibleAudit
         hamlets = Object.FindFirstObjectByType<Hamlets>(); lifts = Object.FindFirstObjectByType<SkiLift>();
         hamUpd = typeof(Hamlets).GetMethod("Update", NP); liftUpd = typeof(SkiLift).GetMethod("Update", NP);
         int seeds = int.TryParse(System.Environment.GetEnvironmentVariable("AUDIT_SEEDS"), out int sv) ? sv : 3;
+        // AUDIT_NIGHT=1: everything at night (the headlamp's hour); AUDIT_SLIDE=1: every ride with the avalanche loose
+        // and close behind (Avalanche.Step each physics step, as SummitGame does)
+        night = System.Environment.GetEnvironmentVariable("AUDIT_NIGHT") == "1";
+        withSlide = System.Environment.GetEnvironmentVariable("AUDIT_SLIDE") == "1";
+        if (night) { TimeOfDay.TestClock = 3.4f; F<DayNight>("dayNight").ApplyNow(); }
+        // AUDIT_MOBILE=1: the phone's quality level (its LOD bias picks the crags' and lifts' LODs)
+        int quality = QualitySettings.GetQualityLevel();
+        if (System.Environment.GetEnvironmentVariable("AUDIT_MOBILE") == "1") QualitySettings.SetQualityLevel(0, true);
+        Debug.Log($"AUDIT quality {QualitySettings.names[QualitySettings.GetQualityLevel()]} lodBias {QualitySettings.lodBias}");
+        Debug.Log($"AUDIT setup: night={night} slide={withSlide}");
         bool rides = System.Environment.GetEnvironmentVariable("AUDIT_RIDES") != "0";
         bool classic = System.Environment.GetEnvironmentVariable("AUDIT_CLASSIC") == "1";
         try
@@ -83,8 +95,14 @@ public static class InvisibleAudit
         catch (System.Exception e) { Debug.LogError("AUDIT exception " + e); }
         Report();
         Physics.simulationMode = SimulationMode.FixedUpdate;
+        TimeOfDay.TestClock = -1f;
+        QualitySettings.SetQualityLevel(quality, false);   // (the editor saves the current level into ProjectSettings)
+        TestPrefs.Restore();
         EditorApplication.Exit(0);
     }
+    static bool night, withSlide;
+    static Avalanche slide;
+    static int caught;
 
     /// <summary>A picture of the first few lift towers (or $AUDIT_SHOT_TARGET: LiftStation, ...) from beside them, the
     /// collider in see-through red (needs the GPU: no -nographics). Writes AuditLift*.png.</summary>
@@ -130,6 +148,78 @@ public static class InvisibleAudit
             }
         }
         EditorApplication.Exit(0);
+    }
+
+    /// <summary>
+    /// The crags' hit shapes where the rides hit nothing drawn (the Ridge section of mountains 0 and 1), in
+    /// see-through red over the scene, seen from the piste at about a rider's height; each spot also without them.
+    /// Needs the GPU (no -nographics). CRAG_TAG names the set: writes AuditCrag_{tag}_{spot}_{plain|hit}.png.
+    /// </summary>
+    public static void CragShot()
+    {
+        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
+        game = Object.FindFirstObjectByType<SummitGame>();
+        TestPrefs.Pin();
+        TestBoot.Boot(game);
+        r = F<Rider>("rider"); terrain = F<SlopeStreamer>("terrain"); props = F<Forest>("props"); body = F<RiderBody>("body");
+        typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
+        cam = Camera.main; cam.GetComponent<ChaseCamera>().enabled = false;
+        hamlets = Object.FindFirstObjectByType<Hamlets>(); lifts = Object.FindFirstObjectByType<SkiLift>();
+        hamUpd = typeof(Hamlets).GetMethod("Update", NP); liftUpd = typeof(SkiLift).GetMethod("Update", NP);
+        string tag = System.Environment.GetEnvironmentVariable("CRAG_TAG") ?? "now";
+        var spots = new (int seed, float z, float xc)[] { (0, 763f, -26f), (1, 703f, -19f), (1, 757f, 26f) };
+        int lastSeed = -1, k = 0;
+        foreach (var (seed, z, xc) in spots)
+        {
+            if (seed != lastSeed) { NewMountain(seed); lastSeed = seed; }
+            float x = Slope.Centre(z) + xc;
+            r.ResetAt(Slope.Centre(z), z - 20f); Stream(false);
+            Vector3 at = new Vector3(x, Slope.DrawnHeight(x, z) + 0.8f, z);
+            Vector3 from = new Vector3(Slope.Centre(z) + xc * 0.3f, 0f, z - 11f); from.y = Slope.DrawnHeight(from.x, from.z) + 1.7f;
+            cam.fieldOfView = 62f;
+            cam.transform.SetPositionAndRotation(from, Quaternion.LookRotation(at - from));
+            int n = 0;
+            foreach (var c in Physics.OverlapSphere(at, 14f, ~0, QueryTriggerInteraction.Ignore))
+            {
+                if (c.name != "SpireHit" || !(c is MeshCollider mc) || mc.sharedMesh == null) continue;
+                var g = new GameObject("CragHitGhost", typeof(MeshFilter), typeof(MeshRenderer));
+                g.GetComponent<MeshFilter>().sharedMesh = mc.sharedMesh;
+                g.GetComponent<MeshRenderer>().sharedMaterial = RedMat();
+                g.transform.SetPositionAndRotation(c.transform.position, c.transform.rotation); g.transform.localScale = c.transform.lossyScale;
+                g.SetActive(false); ghostsLeft.Add(g); n++;
+            }
+            Render($"AuditCrag_{tag}_{k}_plain.png");
+            foreach (var g in ghostsLeft) g.SetActive(true);
+            Render($"AuditCrag_{tag}_{k}_hit.png");
+            foreach (var g in ghostsLeft) Object.DestroyImmediate(g); ghostsLeft.Clear();
+            Debug.Log($"AUDIT crag shot {tag} {k}: seed{seed} z={z} x-c={xc}, {n} crag hit shapes within 14 m");
+            k++;
+        }
+        TestPrefs.Restore();
+        EditorApplication.Exit(0);
+    }
+
+    static void Render(string file)
+    {
+        typeof(Forest).GetMethod("Draw", NP).Invoke(props, null); CliffSpires.DrawNow(); if (lifts != null) liftUpd.Invoke(lifts, null);
+        var rt = new RenderTexture(590, 1278, 24);
+        cam.targetTexture = rt; cam.aspect = 590f / 1278f; cam.Render();
+        RenderTexture.active = rt;
+        var tex = new Texture2D(590, 1278, TextureFormat.RGB24, false);
+        tex.ReadPixels(new Rect(0, 0, 590, 1278), 0, 0); tex.Apply();
+        System.IO.File.WriteAllBytes(file, tex.EncodeToPNG());
+        cam.targetTexture = null; RenderTexture.active = null; Object.DestroyImmediate(rt);
+    }
+
+    static Material RedMat()
+    {
+        if (redMat != null) return redMat;
+        redMat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+        redMat.SetFloat("_Surface", 1f); redMat.SetFloat("_Blend", 0f);
+        redMat.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha); redMat.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+        redMat.SetFloat("_ZWrite", 0f); redMat.renderQueue = 3100; redMat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+        redMat.SetColor("_BaseColor", new Color(1f, 0.1f, 0.1f, 0.35f));
+        return redMat;
     }
 
     static readonly List<GameObject> ghostsLeft = new List<GameObject>();
@@ -204,6 +294,9 @@ public static class InvisibleAudit
         {
             keep.Clear();
             foreach (GameObject g in ((System.Collections.IDictionary)typeof(CourseDressing).GetField("built", NP).GetValue(dress)).Values) keep.Add(g);
+            // (and the cycle being built a piece a frame, not in `built` until it is finished)
+            var ahead = typeof(CourseDressing).GetField("ahead", NP)?.GetValue(dress);
+            if (ahead != null && ahead.GetType().GetField("root")?.GetValue(ahead) is GameObject ar && ar != null) keep.Add(ar);
             foreach (Transform t in Children(dress.transform)) if (t.name.StartsWith("Course ") && !keep.Contains(t.gameObject)) Object.DestroyImmediate(t.gameObject);
         }
     }
@@ -279,8 +372,7 @@ public static class InvisibleAudit
             {
                 Vector3 from = b.center + dir * reach;
                 from.y = Slope.DrawnHeight(from.x, from.z) + h;
-                Vector3 q = c.ClosestPoint(from);
-                if ((q - from).sqrMagnitude < 1e-6f) continue;   // (inside: no surface this way)
+                if (!SurfaceToward(c, from, out Vector3 q)) continue;   // (inside, or nothing of it at this height this way)
                 float snow = Slope.DrawnHeight(q.x, q.z);
                 if (q.y < snow + 0.02f || q.y > snow + 1.8f) continue;   // under the snow, or above anyone's reach
                 samples++;
@@ -309,6 +401,19 @@ public static class InvisibleAudit
             if (colCount[kind] <= 6)
                 Debug.Log($"AUDIT-COL seed{seed} {kind}: nothing drawn within {(worst >= 3f ? ">3" : worst.ToString("0.00"))} m of its surface at z={worstAt.z:0.0} x-c={f.xc:0.0} ({worstAt.y - Slope.DrawnHeight(worstAt.x, worstAt.z):0.00} m up) {path}; {f.detail}; drawn nearby: {NearbyDrawn(b.center, 8f)}");
         }
+    }
+
+    /// <summary>The collider's surface seen from `from`: its nearest point (convex), or for a solid that is not convex
+    /// (ClosestPoint cannot answer for one) where a level line from `from` toward its middle meets it.</summary>
+    static bool SurfaceToward(Collider c, Vector3 from, out Vector3 q)
+    {
+        if (!(c is MeshCollider m) || m.convex) { q = c.ClosestPoint(from); return (q - from).sqrMagnitude >= 1e-6f; }
+        var b = c.bounds;
+        Vector3 to = new Vector3(b.center.x, from.y, b.center.z) - from;
+        q = from;
+        if (to.sqrMagnitude < 1e-6f || !c.Raycast(new Ray(from, to.normalized), out var hit, to.magnitude + b.extents.magnitude)) return false;
+        q = hit.point;
+        return true;
     }
 
     static readonly int shotsPerKind = int.TryParse(System.Environment.GetEnvironmentVariable("AUDIT_SHOTS"), out int sp) ? sp : 0;
@@ -576,6 +681,7 @@ public static class InvisibleAudit
         // as the game's FixedUpdate: the rider's own step first (in it TreeBreak snaps a thin trunk before the board
         // meets its post), then what the physics step's move runs into (Rider.OnCollisionEnter, never called in batchmode)
         var was = hitBy;
+        if (withSlide && slide != null) slide.Step(dt, r, body);
         r.Tick(dt);
         hitBy = r.Crashed ? was : null;
         if (!r.Crashed && r.Running)
@@ -610,6 +716,7 @@ public static class InvisibleAudit
                     r.Heading = 0f;
                     r.Body.linearVelocity = Vector3.ProjectOnPlane(Vector3.forward, Slope.Normal(x, z)).normalized * v0;
                     lastCrash = "";
+                    if (withSlide) { slide.Reset(z - 200f); slide.ForceGap(r, 45f, v0); }
                     Stream(false);
                     float phase = (float)rng.NextDouble() * 10f, amp = 0.3f + 0.5f * (float)rng.NextDouble();
                     float t = 0f;
@@ -621,7 +728,13 @@ public static class InvisibleAudit
                         Step(); t += Time.fixedDeltaTime;
                         if (r.Speed > v0 * 1.3f) r.Body.linearVelocity *= 0.98f;
                     }
-                    if (r.Crashed) Crash(seed, lane, v0);
+                    if (withSlide && slide.Caught)
+                    {
+                        caught++;
+                        Vector3 cp = r.transform.position;
+                        Debug.Log($"AUDIT-CAUGHT seed{seed} lane{lane:0} v{v0:0}: by the slide at z={cp.z:0.0} x-c={cp.x - Slope.Centre(cp.z):0.0}, its depth here {slide.Depth(cp.x, cp.z):0.0} m, front {slide.FrontZ(cp.x) - cp.z:0.0} m from the board");
+                    }
+                    else if (r.Crashed) Crash(seed, lane, v0);
                     z = r.Z + 25f;
                     if (r.Crashed) { r.RequestUp = true; for (int i = 0; i < 4; i++) r.Tick(Time.fixedDeltaTime); }
                 }
@@ -636,7 +749,7 @@ public static class InvisibleAudit
         string why = lastCrash;
         Bump(crashCount, why);
         // where it touched: the collider's surface nearest the board, or the board itself
-        Vector3 at = hitBy != null ? hitBy.ClosestPoint(p) : p;
+        Vector3 at = hitBy != null ? Obstacle.Nearest(hitBy, p) : p;
         float gap = Nearest(at, 3f);
         string what = hitBy != null ? $"{Label(hitBy)} {PathOf(hitBy.transform)} {Group(hitBy)}" : "-";
         string ctx = $"rock={RockFace.IsRock(Slope.Normal(p.x, p.z), p.x, p.z)} cut={Course.CrevasseCut(p.x, p.z):0.00} n.y={Slope.Normal(p.x, p.z).y:0.00} land={r.LastLandAngle:0} deg {r.LastLandImpact:0.0} m/s sec={Course.At(p.z)}";
@@ -700,7 +813,7 @@ public static class InvisibleAudit
         foreach (var k in kinds) { colCount.TryGetValue(k, out int f); if (f > 0) sb.Append($"  {f}/{colChecked[k]}  {k}\n"); }
         sb.Append("  clean kinds: ");
         foreach (var k in kinds) { colCount.TryGetValue(k, out int f); if (f == 0) sb.Append($"{k} ({colChecked[k]}); "); }
-        sb.Append($"\nAUDIT crashes: {crashes}, with nothing drawn within 1.5 m of the contact: {invisible}\n  by cause: ");
+        sb.Append($"\nAUDIT crashes: {crashes}, with nothing drawn within 1.5 m of the contact: {invisible} (night={night} slide={withSlide}, caught by the slide {caught})\n  by cause: ");
         foreach (var kv in crashCount) sb.Append($"{kv.Key}={kv.Value} ");
         sb.Append("\n  invisible: ");
         foreach (var kv in invisibleCount) sb.Append($"{kv.Key}={kv.Value}; ");

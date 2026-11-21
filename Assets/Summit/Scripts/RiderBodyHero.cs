@@ -360,6 +360,20 @@ namespace Summit
 
         static float Sm(float a, float b, float x) { float t = Mathf.Clamp01((x - a) / (b - a)); return t * t * (3f - 2f * t); }
 
+        /// <summary>
+        /// Riding switch the clips still face the way the rider stands, so the eyes and shoulders are turned round to
+        /// where they are going: the shoulders opened toward the line, and the head round over the shoulder that now
+        /// leads (further than the usual glance can turn: HeroRig's lookReach).
+        /// </summary>
+        void SwitchLook(ref HeroRig.Drive d, Vector3 v)
+        {
+            if (!SwitchNow) return;
+            d.twist += -35f;
+            if (v.sqrMagnitude < 1f) v = rider.transform.forward;
+            d.look = v.normalized + Vector3.down * 0.15f;
+            d.lookWeight = 1f; d.lookReach = 110f;
+        }
+
         void PoseHero(float dt)
         {
             var h = hero;
@@ -428,7 +442,7 @@ namespace Summit
                 compV += (-comp * 140f - compV * 16f) * dt;
                 comp = Mathf.Clamp(comp + compV * dt, -0.15f, 0.6f);
                 bool idle = !rider.Running, air = rider.Airborne;
-                float toe = Mathf.Clamp(rider.Lean / Rider.MaxLean, -1f, 1f);
+                float toe = Mathf.Clamp(rider.Lean / Rider.MaxLean * StanceSign, -1f, 1f);   // (switch: the edges are the other way about)
                 float speed01 = Mathf.Clamp01(rider.Speed / 30f);
                 if (down) h.Want(idFlail, 1f);
                 else if (idle) h.Want(idIdle, 1f);
@@ -469,7 +483,7 @@ namespace Summit
                     // the back leans into the turn with the sideways pull (scaled down: it reads, it doesn't topple),
                     // the shoulders lead the board round, and the eyes go where the turn is taking you
                     float lateral = rider.Speed * rider.YawRate;
-                    d.lean = Mathf.Clamp(Mathf.Atan2(lateral, 9.81f) * Mathf.Rad2Deg * 0.45f, -15f, 15f);
+                    d.lean = Mathf.Clamp(Mathf.Atan2(lateral, 9.81f) * Mathf.Rad2Deg * 0.45f, -15f, 15f) * StanceSign;
                     d.twist = Mathf.Clamp(-rider.YawRate * Mathf.Rad2Deg * 0.12f, -14f, 14f);
                     Vector3 v = rider.Velocity; v.y = 0f;
                     if (v.sqrMagnitude > 9f)
@@ -477,6 +491,7 @@ namespace Summit
                         d.look = Quaternion.AngleAxis(rider.YawRate * Mathf.Rad2Deg * 0.35f, Vector3.up) * v + Vector3.down * v.magnitude * 0.15f;
                         d.lookWeight = 0.5f;
                     }
+                    SwitchLook(ref d, v);
                     float chatter = (Mathf.PerlinNoise(t * 9f, 1.3f) - 0.5f) * 0.02f * speed01;
                     d.drop = chatter;
                 }

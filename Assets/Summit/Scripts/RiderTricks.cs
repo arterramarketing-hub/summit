@@ -90,10 +90,36 @@ namespace Summit
         public float GrabPose => grabPose;
         public float GrabTweak => grabTweak;
         /// <summary>
-        /// What a landing left the board short of its line (rad), swinging out over the next few tenths: a 180
-        /// lands switch and reverts; a sketchy landing comes round late.
+        /// What a landing left the board short of its line (rad), swinging out over the next few tenths: a sketchy
+        /// landing comes round late. (A half turn more or less is not left over: that is riding switch.)
         /// </summary>
         public float LandSpin { get; private set; }
+
+        /// <summary>
+        /// Riding switch: the board (or the skis) going tail first, the rider turned round on it, since a landing that
+        /// came round an odd number of half turns (a 180, a 540, one landed half way round). It is only how the rider
+        /// stands: the board goes where it goes as ever, and steering is the same on the screen. The next air that
+        /// comes round an odd number of half turns brings them back; so does slowing to a stop (a revert on the snow),
+        /// a fall, or a new run. Snowboard and skis: a tube and a toboggan have no way round to ride.
+        /// </summary>
+        public bool Switch { get; private set; }
+        bool takeoffSwitch;   // (this air began switch: its trick is a switch one)
+        bool CanSwitch => !Tube && (Ride == RideKind.Snowboard || Ride == RideKind.Skis);
+
+        /// <summary>Back to riding the normal way (a fall, a new run): no swing, it is just so.</summary>
+        void SwitchOff() { Switch = false; takeoffSwitch = false; }
+
+        /// <summary>
+        /// The air's turn as it ended: the whole half turns it came round change which way the rider stands (an odd
+        /// number of them flips it), and what is left over swings out on the snow.
+        /// </summary>
+        float LandStance()
+        {
+            float rem = Mathf.DeltaAngle(0f, spinNow * Mathf.Rad2Deg);
+            if (!CanSwitch) return rem * Mathf.Deg2Rad;
+            if (Mathf.Abs(rem) > 90f) { Switch = !Switch; rem -= Mathf.Sign(rem) * 180f; }
+            return rem * Mathf.Deg2Rad;
+        }
         public float LandFlip { get; private set; }
 
         string[] Grabs => Tube ? TubeGrabs : feel.Grabs;
@@ -130,6 +156,8 @@ namespace Summit
             tickDt = dt;
             if (input != null) { TrickX = input.Steer; TrickY = input.Flip; GrabHeld = input.GrabHold; }
             if (LandSpin != 0f) { LandSpin *= Mathf.Exp(-dt * 9f); if (Mathf.Abs(LandSpin) < 0.01f) LandSpin = 0f; }
+            // a revert: riding switch and come almost to a stop, the board swings round under you to the normal way
+            if (Switch && Running && !Airborne && !Grinding && !Crashed && Speed < 1.5f) { Switch = false; LandSpin += Mathf.PI; }
             if (LandFlip != 0f) { LandFlip *= Mathf.Exp(-dt * 14f); if (Mathf.Abs(LandFlip) < 0.01f) LandFlip = 0f; }
             if (!Airborne && !Grinding) tapQueue = 0;
         }
@@ -140,6 +168,7 @@ namespace Summit
             spinNow = flipNow = 0f; spinHalves = flipTurns = spinDir = 0; xOn = yOn = false;
             grabLevel = 0; grabClock = grabPose = grabTweak = grabHeldFor = 0f;
             landIn = 0f; trickLook = 0f; liveName = null; liveSig = -1; livePoints = 0; tapQueue = 0;
+            takeoffSwitch = false;
         }
 
         /// <summary>How long until a flight from p at v comes down on the snow (up to max seconds).</summary>
@@ -168,6 +197,7 @@ namespace Summit
             }
             if (T < MinTrickAir) return;
             trickAir = true; TrickTime = T; landIn = T;
+            takeoffSwitch = Switch;
             // which grab comes first: from where you took off (on this mountain), so the same jump gives the same grab
             int pick = (int)(Slope.Hash01(Mathf.RoundToInt(p.x * 8f), Mathf.RoundToInt(p.z * 8f), 97) * 4000f);
             grabFirst = pick % Grabs.Length;
@@ -308,7 +338,9 @@ namespace Summit
                        : m > 0 ? count + (flips > 0 ? "Frontflip" : "Backflip")
                        : deg > 0 ? deg.ToString() : null;
             string grab = GrabName(level);
-            return rot == null ? grab : grab == null ? rot : rot + " " + grab;
+            string name = rot == null ? grab : grab == null ? rot : rot + " " + grab;
+            // (taken off riding switch: a switch trick)
+            return name != null && takeoffSwitch ? "Switch " + name : name;
         }
 
         string GrabName(int level)
@@ -382,11 +414,12 @@ namespace Summit
                 }
                 if (!onto)
                 {
-                    // what is left of the turn swings out on the snow (a half turn lands switch and reverts)
-                    LandSpin = Mathf.DeltaAngle(0f, spinNow * Mathf.Rad2Deg) * Mathf.Deg2Rad;
+                    // what is left of the turn swings out on the snow; a half turn more is riding switch (LandStance)
+                    LandSpin = LandStance();
                     LandFlip = Mathf.DeltaAngle(0f, flipNow * Mathf.Rad2Deg) * Mathf.Deg2Rad;
                     if (sketchy) wobble = Mathf.Max(wobble, 0.45f);
                 }
+                else LandStance();   // (onto a rail half way round: on it switch)
             }
             // the air itself first, then the trick done in it (the trick is the headline: the newest link)
             if (!onto && Peak > 0.8f && AirTime > 0.45f)

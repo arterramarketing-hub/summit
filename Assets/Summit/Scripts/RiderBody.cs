@@ -541,7 +541,7 @@ namespace Summit
             bool idle = !rider.Running, crashed = rider.Crashed, air = rider.Airborne;
             bool grab = air && rider.GrabPose > 0.5f;
             bool flip = air && Mathf.Abs(rider.TrickFlip) > 0f && rider.TrickProgress < 0.97f;
-            float toe = Mathf.Clamp(rider.Lean / Rider.MaxLean, -1f, 1f);
+            float toe = Mathf.Clamp(rider.Lean / Rider.MaxLean * StanceSign, -1f, 1f);
             float chatterV = idle || air ? 0f : (Mathf.PerlinNoise(t * 9f, 1.3f) - 0.5f) * 0.1f * Mathf.Clamp01(rider.Speed / 30f);
             float crouch = idle ? 0.15f + 0.04f * Mathf.Sin(t * 2.1f) : 0.45f + 0.35f * rider.Tuck + comp + Mathf.Abs(toe) * 0.2f + chatterV;
             if (grab || flip) crouch = 1f;
@@ -652,7 +652,7 @@ namespace Summit
             bool flip = air && Mathf.Abs(rider.TrickFlip) > 0f && rider.TrickProgress < 0.97f;
             // the board chatters a little at speed: tiny fast flex in the knees
             chatter = idle || air ? 0f : (Mathf.PerlinNoise(t * 9f, 1.3f) - 0.5f) * 0.08f * speed01;
-            float toe = Mathf.Clamp(steer, -1f, 1f);   // + = toe-side (right) turn, - = heel-side
+            float toe = Mathf.Clamp(steer * StanceSign, -1f, 1f);   // + = toe-side (right) turn, - = heel-side (switch: the other way about)
             float crouch = idle ? 0.25f + 0.03f * Mathf.Sin(t * 2.1f)
                          : Mathf.Lerp(0.5f, 0.9f, tuck) + comp + Mathf.Abs(toe) * 0.18f + chatter;
             if (grab || flip) crouch = 1f;
@@ -713,6 +713,12 @@ namespace Summit
         }
 
         void W(int i, float v) { if (i >= 0 && i < want.Length) want[i] = Mathf.Clamp(v, -1f, 1f); }
+
+        /// <summary>Riding switch, as drawn (Rider.Switch: snowboard and skis only).</summary>
+        bool SwitchNow => rider != null && rider.Switch && !Tube;
+        /// <summary>+1 riding the normal way, -1 switch: the board's toe and heel edges (a skier's left and right) are
+        /// the other way about in the world.</summary>
+        float StanceSign => SwitchNow ? -1f : 1f;
 
         // ---- a flinch: branches whipping past, an arm thrown up on that side, the head turned away
         float flinchT, flinchK; bool flinchLeft;
@@ -1069,22 +1075,24 @@ namespace Summit
                 var f = new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw));
                 Vector3 fp = Vector3.ProjectOnPlane(f, up);
                 Quaternion baseRot = fp.sqrMagnitude > 1e-4f ? Quaternion.LookRotation(fp.normalized, up) : pivot.rotation;
+                // riding switch: the rider (and the board under them) turned round, going tail first (Rider.Switch)
+                Quaternion stance = SwitchNow ? baseRot * Quaternion.AngleAxis(180f, Vector3.up) : baseRot;
                 // the trick being turned: spin about the body's up axis and flip about the board, round the middle of the body
-                Quaternion rot = baseRot;
+                Quaternion rot = stance;
                 Vector3 flipAxis = RidingGear ? Vector3.right : Vector3.forward;   // (a skier faces the way they go: a flip is head over heels along the line)
                 if (rider.Airborne && rider.TrickName != null)
                 {
                     float tw = rider.GrabTweak;   // a tweaked grab: the board poked out and across
-                    rot = baseRot * Quaternion.AngleAxis(rider.SpinNow * Mathf.Rad2Deg, Vector3.up)
+                    rot = stance * Quaternion.AngleAxis(rider.SpinNow * Mathf.Rad2Deg, Vector3.up)
                                   * Quaternion.AngleAxis(rider.FlipNow * Mathf.Rad2Deg, flipAxis)
                                   * Quaternion.Euler(9f * tw, 24f * tw, 0f);
                 }
                 // just landed short of the line (a half turn lands switch): the board swings round under the rider
                 else if (!rider.Airborne && !rider.Grinding && (rider.LandSpin != 0f || rider.LandFlip != 0f))
-                    rot = baseRot * Quaternion.AngleAxis(rider.LandSpin * Mathf.Rad2Deg, Vector3.up) * Quaternion.AngleAxis(rider.LandFlip * Mathf.Rad2Deg, flipAxis);
+                    rot = stance * Quaternion.AngleAxis(rider.LandSpin * Mathf.Rad2Deg, Vector3.up) * Quaternion.AngleAxis(rider.LandFlip * Mathf.Rad2Deg, flipAxis);
                 // a press on a rail: the nose (or the tail) down, the other end up
                 else if (rider.GrindLive && rider.GrindPress != 0f)
-                    rot = baseRot * Quaternion.AngleAxis(rider.GrindPress * 11f, Vector3.right);
+                    rot = stance * Quaternion.AngleAxis(rider.GrindPress * 11f, Vector3.right);
                 if (Tube)
                 {
                     // the rider faces down the line (the model faces the board's +X), and the tube turns slowly
@@ -1099,8 +1107,9 @@ namespace Summit
                 pivot.rotation = rot;
                 pivot.position = p + Vector3.down * Rider.R + baseRot * mid - rot * mid;
 
-                // the lean IS the steering readout: the body is on exactly the edge the thumb asked for
-                float leanDeg = rider.Lean * Mathf.Rad2Deg;
+                // the lean IS the steering readout: the body is on exactly the edge the thumb asked for (turned round,
+                // riding switch, the board's own sides are the other way about: the same lean in the world)
+                float leanDeg = rider.Lean * Mathf.Rad2Deg * StanceSign;
                 roll.localRotation = Tube ? Quaternion.Euler(leanDeg * 0.5f, 0f, 0f) : Quaternion.Euler(0f, 0f, -leanDeg * 0.75f);
                 upper.localRotation = Quaternion.Euler(0f, 0f, -leanDeg * 0.25f);
                 if (RidingGear) upper.localRotation = Quaternion.identity;   // a skier's upper body angles back out of the turn (in the clips)

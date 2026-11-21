@@ -80,7 +80,7 @@ namespace Summit
 
         void OnLimbObstacle(Obstacle ob, Vector3 centre, float into)
         {
-            riderHitCol = ob != null ? ob.GetComponentInChildren<Collider>() : null; riderHitInto = into; riderHitFrame = Time.frameCount;
+            riderHitCol = ob != null ? ob.HitBy(rider) : null; riderHitInto = into; riderHitFrame = Time.frameCount;
         }
 
         void OnLimbCrash(string why)
@@ -89,7 +89,7 @@ namespace Summit
             var col = riderHitCol; riderHitCol = null;   // one hit, one crash
             if (!Limbs || riderHitFrame != Time.frameCount || col == null || riderHitInto < SeverRider) return;
             Vector3 me = rider.transform.position + Vector3.up * 0.8f;
-            doomAt = col.ClosestPoint(me);
+            doomAt = Obstacle.Nearest(col, me);
             doomN = me - doomAt; doomN.y *= 0.3f;
             doomN = doomN.sqrMagnitude > 1e-4f ? doomN.normalized : -rider.Velocity.normalized;
             doomInto = riderHitInto; doomed = true;

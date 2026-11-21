@@ -243,7 +243,7 @@ namespace Summit
             compV += (-comp * 140f - compV * 16f) * dt;
             comp = Mathf.Clamp(comp + compV * dt, -0.15f, 0.6f);
             bool idle = !rider.Running, air = rider.Airborne;
-            float turn = Mathf.Clamp(rider.Lean / Rider.MaxLean, -1f, 1f);   // + = turning right
+            float turn = Mathf.Clamp(rider.Lean / Rider.MaxLean * StanceSign, -1f, 1f);   // + = turning right (the skier's own right: skiing backwards, the world's left)
             float speed01 = Mathf.Clamp01(rider.Speed / 30f);
             if (down) h.Want(idFlail, 1f);
             else if (idle) h.Want(idSkiIdle, 1f);
@@ -299,6 +299,7 @@ namespace Summit
                     d.look = Quaternion.AngleAxis(rider.YawRate * Mathf.Rad2Deg * 0.35f, Vector3.up) * v + Vector3.down * v.magnitude * 0.15f;
                     d.lookWeight = 0.5f;
                 }
+                SwitchLook(ref d, v);
                 d.drop = (Mathf.PerlinNoise(t * 9f, 1.3f) - 0.5f) * 0.02f * speed01;
             }
             d.drop += Mathf.Max(0f, comp) * 0.18f;

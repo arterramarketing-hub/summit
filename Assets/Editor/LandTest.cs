@@ -95,6 +95,15 @@ public static class LandTest
                     Bad($"seed{seed} sideways", jb, 32f, flip: false);
                 }
                 if (Cliffs.JumpOf(0, 0, out var jf)) Flat($"seed{seed} flat 45m", 45f, jf);
+                // ---- landing backwards: a 180 or a 540 rides away switch, a 360 does not; a second 180 brings it back
+                if (Cliffs.JumpOf(0, 0, out var js) || Cliffs.JumpOf(0, 1, out js))
+                {
+                    SwitchRide($"seed{seed} 180 lands switch", new[] { js }, 32f, new[] { 1 }, true);
+                    SwitchRide($"seed{seed} 540 lands switch", new[] { js }, 45f, new[] { -3 }, true);
+                    SwitchRide($"seed{seed} 360 lands forward", new[] { js }, 32f, new[] { 2 }, false);
+                }
+                if (Cliffs.JumpOf(0, 0, out var ja) && Cliffs.JumpOf(0, 1, out var jb2))
+                    SwitchRide($"seed{seed} 180 then switch 180 back", new[] { ja, jb2 }, 34f, new[] { 1, -1 }, false);
             }
         }
         catch (System.Exception e) { Debug.LogError("LAND exception " + e); fails++; }
@@ -354,6 +363,45 @@ public static class LandTest
         Debug.Log($"LAND {name}: {air:0.00}s air, trick {progress * 100f:0}% round at the landing, crashed={r.Crashed} '{lastCrash}' landing {r.LastLandImpact:0.0} m/s at {r.LastLandAngle:0} deg, dead={body.Dead}");
         if (!r.Crashed) Fail($"{name}: rode away from a landing {progress * 100f:0}% round");
         else if (lastCrash != (flip ? "Landed upside down!" : "Landed sideways!")) Fail($"{name}: crashed for '{lastCrash}'");
+    }
+
+    /// <summary>
+    /// Off these jump cliffs in turn, a spin of these half turns off each (committed as a flick commits one): every
+    /// landing must be ridden away from (a backwards one rides on switch, not snapped round, not failed), the rider
+    /// must be riding switch at the end exactly when `endSwitch`, and still on the board 2 s after the last landing;
+    /// a trick taken off switch is named so.
+    /// </summary>
+    static void SwitchRide(string name, Cliffs.Jump[] jumps, float v0, int[] halves, bool endSwitch)
+    {
+        rides++;
+        float x = Slope.Centre(jumps[0].Start - 25f);
+        Start(x, jumps[0].Start - 25f, v0);
+        var names = new System.Collections.Generic.List<string>();
+        System.Action<TrickLink> hook = l => { if (l.kind == LinkKind.Trick) names.Add(l.name); };
+        r.Link += hook;
+        int k = 0, n = 0; bool set = false; float after = 0f; var stances = new System.Text.StringBuilder();
+        try
+        {
+            for (float t = 0f; t < 25f && !r.Crashed; t += Dt, n++)
+            {
+                r.Steer = Steer(Slope.Centre(r.Z + 12f));
+                Step(n);
+                if (k < jumps.Length && r.Airborne && !set && r.Z > jumps[k].Start) { set = true; r.ForceTrick(halves[k], 0); }
+                if (set && !r.Airborne && !r.Grinding)
+                {
+                    set = false; k++;
+                    stances.Append(r.Switch ? " switch" : " forward");
+                    if (k == jumps.Length) after = t;
+                }
+                if (k == jumps.Length && t > after + 2f) break;
+            }
+        }
+        finally { r.Link -= hook; }
+        Debug.Log($"LAND {name}: {k} of {jumps.Length} landed, stance after each:{stances}; riding {(r.Switch ? "switch" : "forward")} at the end, crashed={r.Crashed} '{lastCrash}'; tricks: {string.Join(", ", names)}");
+        if (r.Crashed) Fail($"{name}: crashed '{lastCrash}' (landing {r.LastLandImpact:0.0} m/s at {r.LastLandAngle:0} deg)");
+        else if (k < jumps.Length) Fail($"{name}: only {k} of {jumps.Length} landings");
+        else if (r.Switch != endSwitch) Fail($"{name}: riding {(r.Switch ? "switch" : "forward")} at the end, not {(endSwitch ? "switch" : "forward")}");
+        if (jumps.Length > 1 && !names.Exists(nm => nm.StartsWith("Switch "))) Fail($"{name}: the trick taken off switch is not named so ({string.Join(", ", names)})");
     }
 
     /// <summary>Dropped straight down onto flat snow (a jump cliff's bench) from a great height: a slam, not a landing.</summary>
