@@ -10,7 +10,9 @@ namespace Summit
     /// parking deck and a lamp post. A post-and-rail fence runs along the piste's edge beside them.
     ///
     /// Where: in the cruise that opens a cycle (the 200 m before the park), on one side of the run, the nearest
-    /// wall at least 5 m outside the groomed piste. The first cycle always has one, a few seconds after the
+    /// wall at least Margin (12 m) outside the groomed piste, measured square to its curving line: set back in a
+    /// clearing the run looks into, not against the run where a rider at its edge clips a wall. (Riding over to
+    /// them, off the piste, onto a roof is still a few seconds' carve away.) The first cycle always has one, a few seconds after the
     /// drop-in; after that about three cycles in five do, so there are long stretches of wilderness between.
     /// Like everything on the mountain, where they stand is a pure function of position and the day's seed
     /// (Of, Taken): each building looks, within a few metres of its place in the layout, for the ground that
@@ -58,19 +60,21 @@ namespace Summit
         struct Slot { public int kind; public float s, d, reach; }
         static readonly Slot[] Slots =
         {
-            new Slot { kind = Chalet, s = 0f, d = 34.5f, reach = 12f },
-            new Slot { kind = Lodge, s = 25f, d = 32.5f, reach = 8f },
-            new Slot { kind = 2, s = 45f, d = 30f, reach = 5f },
-            new Slot { kind = 3, s = 53f, d = 42.5f, reach = 5f },
-            new Slot { kind = 4, s = 62f, d = 31f, reach = 5f },
-            new Slot { kind = 5, s = 73f, d = 40.5f, reach = 5f },
-            new Slot { kind = CarDeck, s = -15f, d = 33f, reach = 5f },
-            new Slot { kind = CarDeck, s = 37f, d = 45.5f, reach = 4f },
+            // (all 8 m further out than they were, when the margin was 5 m and most hamlets had a wall 4-8 m off the piste)
+            new Slot { kind = Chalet, s = 0f, d = 42.5f, reach = 12f },
+            new Slot { kind = Lodge, s = 25f, d = 40.5f, reach = 8f },
+            new Slot { kind = 2, s = 45f, d = 38f, reach = 5f },
+            new Slot { kind = 3, s = 53f, d = 50.5f, reach = 5f },
+            new Slot { kind = 4, s = 62f, d = 39f, reach = 5f },
+            new Slot { kind = 5, s = 73f, d = 48.5f, reach = 5f },
+            new Slot { kind = CarDeck, s = -15f, d = 41f, reach = 5f },
+            new Slot { kind = CarDeck, s = 37f, d = 53.5f, reach = 4f },
         };
 
         public const float Chance = 0.6f;          // of a hamlet in a cycle after the first
         public const float MinLocal = 12f, MaxLocal = 194f;   // the stretch of a cycle a hamlet may stand in (its opening cruise)
-        public const float Margin = 5f;            // the nearest wall is at least this far outside the groomed piste
+        public const float Margin = 12f;           // the nearest wall is at least this far outside the groomed piste
+        public const float LampOff = 9f;           // the lamp post by the fence's gap, this far outside the piste
         public const float FenceOff = 3.2f;        // the fence, outside the groomed piste's edge
         public const float Room = 4.5f;            // no tree or rock within this of a building
         const int MinHouses = 3;
@@ -176,7 +180,7 @@ namespace Summit
             h.fenceZ1 = Mathf.Min(h.z1 + 8f, zb + Course.ParkAt - 4f);
             h.gapZ = Mathf.Lerp(h.fenceZ0, h.fenceZ1, 0.3f + 0.3f * Slope.Hash01(cycle, 4, 131));
             // a lamp post inside the fence, by the gap
-            float lz = h.gapZ - 5f, lx = Slope.Centre(lz) + side * (Slope.PisteHalf + FenceOff + 1.2f);
+            float lz = h.gapZ - 5f, lx = Slope.Centre(lz) + side * (Slope.PisteHalf + LampOff);
             laid.Add(new Site { kind = Lamp, x = lx, z = lz, yaw = side > 0f ? 180f : 0f });
             h.sites = laid.ToArray();
             score = houses * 10f + (chalet ? 8f : 0f) + (lodge ? 5f : 0f) - drops * 0.3f;
@@ -217,7 +221,7 @@ namespace Summit
             float u = Mathf.Repeat(z - Course.First, Course.Cycle);
             if (u < MinLocal || u > MaxLocal) return false;
             if (Course.At(z) != Course.Section.Cruise) return false;
-            if (Mathf.Abs(x - Slope.Centre(z)) < Slope.PisteHalf + Margin) return false;
+            if (OffPiste(x, z) < Margin) return false;
             if (Slope.OnPad(x, z)) return false;
             // beside a ridge's last canyon (it runs on, filling in, into the top of the next cycle): not on its slopes
             // while it is still a canyon; once it is down to a dip the ground is the mountain's own again
@@ -235,6 +239,22 @@ namespace Summit
                 if (below > -3f && below < j.face + 3f && Mathf.Abs(across) < Slope.PisteHalf + 10f + Cliffs.JumpBand) return false;
             }
             return true;
+        }
+
+        /// <summary>
+        /// How far outside the groomed piste a point is, square to its centre line (which bends: straight across, a
+        /// point beside a bend is nearer the run than its x says).
+        /// </summary>
+        static float OffPiste(float x, float z)
+        {
+            float best = Mathf.Abs(x - Slope.Centre(z));
+            for (float dz = 2f; dz <= 30f; dz += 2f)
+                for (int s = -1; s <= 1; s += 2)
+                {
+                    float zz = z + s * dz, dx = x - Slope.Centre(zz);
+                    best = Mathf.Min(best, Mathf.Sqrt(dx * dx + dz * dz));
+                }
+            return best - Slope.PisteHalf;
         }
 
         static bool Crowds(Kind k, float x, float z)

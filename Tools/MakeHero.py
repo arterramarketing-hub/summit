@@ -155,24 +155,29 @@ PAL = [  # name, rgb, smoothness
     ("seam", (0.10, 0.10, 0.11), 0.3), ("zip", (0.70, 0.71, 0.74), 0.7), ("gaiter", (0.18, 0.19, 0.23), 0.12),
     ("gaiterband", (0.92, 0.72, 0.16), 0.15), ("chinstrap", (0.07, 0.07, 0.08), 0.3),
     # the buddy: skin and hair, the fleece's snaps and stitched mark, sneakers, a chain
-    ("skin2", (0.83, 0.57, 0.45), 0.3), ("hair", (0.045, 0.030, 0.022), 0.0), ("tache", (0.44, 0.28, 0.16), 0.3),
+    ("skin2", (0.80, 0.52, 0.42), 0.3), ("hair", (0.045, 0.030, 0.022), 0.0), ("tache", (0.44, 0.28, 0.16), 0.3),
     ("sneaker", (0.93, 0.93, 0.92), 0.4), ("sneakergrey", (0.60, 0.62, 0.66), 0.4), ("snap", (0.06, 0.06, 0.08), 0.6),
     ("gold", (0.90, 0.68, 0.20), 0.85), ("stitch", (0.04, 0.16, 0.50), 0.3),
     ("eyewhite", (0.90, 0.89, 0.86), 0.5), ("iris", (0.34, 0.45, 0.50), 0.6), ("lip", (0.60, 0.30, 0.28), 0.35),
+    # (skin2/3/4 are what Val's, Breanna's and Paul's hands, necks and ears are: each the average of their painted
+    # face's cheeks and jaw, so the hands match the face; they were the faces' base tones, a shade paler than the
+    # painted faces with their colour and shading)
     # (hair has no shine at all: seen at a shallow angle under a bright sky, even a little turns dark hair grey)
     # Breanna: her skin and hair, brown eyes, (once) clear glasses frames, a scrunchie, slipper boots
     # (the game's closet repaints swatches by their place here: Wardrobe / RiderBody's PaletteCells and ShoeCell.
     # Add new ones at the end, and never move helmet, frame, lens, glove, cuff, boot, vent, the pack's three, sneaker or slipper)
-    ("skin3", (0.82, 0.62, 0.52), 0.3), ("hair2", (0.030, 0.018, 0.014), 0.0), ("irisb", (0.26, 0.15, 0.08), 0.6), ("lip2", (0.68, 0.30, 0.31), 0.4),
+    ("skin3", (0.81, 0.58, 0.49), 0.3), ("hair2", (0.030, 0.018, 0.014), 0.0), ("irisb", (0.26, 0.15, 0.08), 0.6), ("lip2", (0.68, 0.30, 0.31), 0.4),
     ("frameclear", (0.70, 0.74, 0.75), 0.9), ("scrunch", (0.30, 0.06, 0.10), 0.2), ("slipper", (0.66, 0.52, 0.37), 0.1), ("slippersole", (0.74, 0.63, 0.47), 0.15),
     ("logocyan", (0.08, 0.68, 0.86), 0.45),
-    # Paul: olive skin, near-black hair, his cream beanie, blue ski boots with grey buckles, the balaclava;
+    # Paul: olive, tanned skin (measured off his photos: a warmer, deeper tone than Val's or Breanna's; it was a shade
+    # off theirs at first, and in the closet's bright studio he came out as pale as them), near-black hair, his cream beanie, blue ski boots with grey buckles, the balaclava;
     # Breanna's grey beanie and her goggles (a white frame, a pink mirror lens, a pink strap)
-    ("skin4", (0.74, 0.53, 0.40), 0.3), ("hair3", (0.035, 0.025, 0.020), 0.0), ("beanie", (0.60, 0.56, 0.47), 0.0),
+    ("skin4", (0.54, 0.31, 0.21), 0.3), ("hair3", (0.035, 0.025, 0.020), 0.0), ("beanie", (0.60, 0.56, 0.47), 0.0),
     ("skiboot", (0.10, 0.26, 0.58), 0.55), ("buckle", (0.62, 0.64, 0.68), 0.7), ("beanie2", (0.20, 0.20, 0.21), 0.0),
     ("frame2", (0.90, 0.90, 0.91), 0.5), ("lens2", (0.95, 0.42, 0.62), 0.95), ("strap2", (0.88, 0.40, 0.56), 0.25),
     ("balaclava", (0.92, 0.92, 0.91), 0.08), ("tache2", (0.10, 0.07, 0.05), 0.2)]
 PALI = {p[0]: i for i, p in enumerate(PAL)}
+PAUL_FACE = (0.56, 0.34, 0.22)   # Paul's skin as measured off his photos: his painted face's base (his hands are skin4)
 assert len(PALI) == len(PAL), "two swatches share a name: the later one would take the first one's gear"
 PAL_ROWS = 8   # always 8 x 8: a size the game takes as it is. Any other height it rescales, which bleeds each row of colours into the next
 assert len(PAL) <= 64
@@ -1477,7 +1482,7 @@ def face_paint(path, n=256, her=False, base=None, beard=0.34):
         row = []
         for c in range(n):
             x = ((c + 0.5) / n - 0.5) * W; ax = abs(x)
-            col = list(base) if base else [0.82, 0.62, 0.52] if her else [0.83, 0.57, 0.45]
+            col = [0.82, 0.62, 0.52] if her else [0.83, 0.57, 0.45]
             def mix(to, k):
                 k = max(0.0, min(1.0, k))
                 for i in range(3): col[i] += (to[i] - col[i]) * k
@@ -1497,6 +1502,7 @@ def face_paint(path, n=256, her=False, base=None, beard=0.34):
             mix((0.66, 0.43, 0.35), 0.5 * st(-0.105, -0.135, z))                         # under the jaw
             hz = (0.102 if her else 0.090) - 0.070 * (ax / 0.1) ** 2
             mix((0.20, 0.15, 0.12), 0.75 * st(hz - 0.018, hz + 0.004, z))                # the hair's shadow at the hairline
+            if base: col = [col[i] * base[i] / (0.83, 0.57, 0.45)[i] for i in range(3)]   # (all of it in his own skin's tone)
             row.append((srgb(col[0]), srgb(col[1]), srgb(col[2]), 1.0))
         rows.append(row)
     write_png(path, n, n, rows)
@@ -1574,7 +1580,7 @@ if BUDDY:
         material("Jacket", (0.09, 0.25, 0.72), 0.12).name = "FleeceBlue"      # royal blue over cream, as the real fleece
         MATS["FleeceWhite"] = material("FleeceWhite", (0.93, 0.90, 0.82), 0.12)
     FACE_PATH = os.path.join(RDIR, "%sFace.png" % WHO)
-    face_paint(FACE_PATH, her=BRI, base=(0.74, 0.53, 0.40) if PAUL else None, beard=0.24 if PAUL else 0.34)
+    face_paint(FACE_PATH, her=BRI, base=PAUL_FACE if PAUL else None, beard=0.24 if PAUL else 0.34)
     face_img = bpy.data.images.load(FACE_PATH); face_img.alpha_mode = 'NONE'
     m_ = material("FaceSkin", (1, 1, 1), 0.3, face_img)
     for nd in m_.node_tree.nodes:
@@ -1992,6 +1998,66 @@ if "HeroHood" in OBJS:
     bpy.context.view_layer.objects.active = OBJS["HeroBody"]
     bpy.ops.object.join()
     del OBJS["HeroHood"]
+
+# ---- when someone wears another person's clothes. Every rider's clothes fit their own head and hair; on someone else
+# a collar can stand up through a bigger jaw, a hood sits in long hair, long hair in a bulkier jacket. The game blends
+# these in for the wearer (RiderBodyHero.FitShapes), never for the clothes' owner, so each rider still looks as made.
+def add_key(ob, name, move):
+    """A shape key: move(vertex) gives where it goes, or None to leave it."""
+    if ob.data.shape_keys is None: ob.shape_key_add(name="Basis", from_mix=False)
+    key = ob.shape_key_add(name=name, from_mix=False); n_ = 0
+    for v in ob.data.vertices:
+        q = move(v)
+        if q is not None: key.data[v.index].co = q; n_ += 1
+    key.value = 0.0
+    print("HERO shape %s on %s: %d vertices" % (name, ob.name, n_))
+NECK = V(0, 0.015, 0)
+def hood_w(ob, v):
+    g = ob.vertex_groups.get("Hood")
+    return next((x.weight for x in v.groups if g is not None and x.group == g.index), 0.0)
+ob_ = OBJS["HeroBody"]
+def collar_down(v):
+    # the collar (and a turtleneck's roll) folded down to the base of the neck, opening out as it goes
+    co = v.co; d = V(co.x - NECK.x, co.y - NECK.y, 0); r = d.length
+    if co.z < 1.43 or r > 0.18 or hood_w(ob_, v) > 0.2: return None
+    k = min(1.0, (co.z - 1.43) / 0.11)
+    return V(co.x + (d.x / r if r > 1e-6 else 0) * 0.028 * k, co.y + (d.y / r if r > 1e-6 else 0) * 0.028 * k, 1.43 + (co.z - 1.43) * 0.30)
+add_key(ob_, "CollarDown", collar_down)
+# the same for what is stitched or laid on the collar (a zip's top, a stand collar's lining): it's in the gear mesh.
+# (not the balaclava: it has its own shape, and stays on its owner's face)
+gob_ = OBJS["HeroGear"]; bcell = swatch_uv("balaclava"); guv = gob_.data.uv_layers.active; skip_ = set()
+for li, lp in enumerate(gob_.data.loops):
+    u, w_ = guv.data[li].uv
+    if abs(u - bcell[0]) < 1e-3 and abs(w_ - bcell[1]) < 1e-3: skip_.add(lp.vertex_index)
+def collar_gear(v):
+    if v.index in skip_: return None
+    co = v.co; d = V(co.x - NECK.x, co.y - NECK.y, 0); r = d.length
+    if co.z < 1.43 or r > 0.18: return None
+    k = min(1.0, (co.z - 1.43) / 0.11)
+    return V(co.x + (d.x / r if r > 1e-6 else 0) * 0.028 * k, co.y + (d.y / r if r > 1e-6 else 0) * 0.028 * k, 1.43 + (co.z - 1.43) * 0.30)
+add_key(gob_, "CollarDown", collar_gear)
+if ob_.vertex_groups.get("Hood") is not None:
+    # the hood tucked away inside the collar, for long hair to fall where it was
+    tuck = V(0, 0.07, 1.40)
+    add_key(ob_, "HoodAway", lambda v: tuck.lerp(v.co, 0.15) if hood_w(ob_, v) > 0.3 else None)
+if BRI:
+    # her curls a little further out from the body: over someone else's (bulkier) jacket they'd sink into it
+    hair_cell = swatch_uv(HAIR); me_ = OBJS["HeroHead"].data; uvl_ = me_.uv_layers.active; hv_ = set()
+    for li, lp in enumerate(me_.loops):
+        u, w_ = uvl_.data[li].uv
+        if abs(u - hair_cell[0]) < 1e-3 and abs(w_ - hair_cell[1]) < 1e-3: hv_.add(lp.vertex_index)
+    def hair_out(v):
+        if v.index not in hv_ or v.co.z > 1.56: return None
+        d = V(v.co.x - NECK.x, v.co.y - NECK.y, 0)
+        return v.co + d.normalized() * 0.032 * sm(1.57, 1.45, v.co.z) if d.length > 1e-6 else None
+    add_key(OBJS["HeroHead"], "HairOut", hair_out)
+    def hair_pack(v):
+        # over the summit kit's backpack: the curls down her back rest on its top instead of running through it
+        if v.index not in hv_ or v.co.y < 0.06 or v.co.z > 1.50: return None
+        z = v.co.z if v.co.z > 1.42 else 1.42 + (v.co.z - 1.42) * 0.22
+        d = V(v.co.x - NECK.x, v.co.y - NECK.y, 0)
+        return V(v.co.x, v.co.y, z) + (d.normalized() * 0.03 * sm(1.50, 1.40, v.co.z) if d.length > 1e-6 else V(0, 0, 0))
+    add_key(OBJS["HeroHead"], "HairPack", hair_pack)
 if VAL:
     # the fleece is blue above the chest seam and down the sleeves, white below (the pocket too)
     ob = OBJS["HeroBody"]; me = ob.data

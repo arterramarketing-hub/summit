@@ -30,6 +30,13 @@ namespace Summit
         public int buildsPerFrame = 1;  // the fewest finished chunks put in each frame (more while the budget lasts)
         /// <summary>The main thread's time each frame for putting finished chunks in (ms).</summary>
         public float frameBudgetMs = 1f;
+        /// <summary>
+        /// A snow triangle steeper than this (its face's normal.y) is mapped across its face, not from above: from
+        /// above, a triangle on a near-vertical face (1.5 m wide and tens of metres tall on a wall) smears the snow's
+        /// texture into long vertical streaks. (About 57 degrees: the stretch from above is 1.8 times there.) The
+        /// crags' drifts (CliffSpires) go by it too.
+        /// </summary>
+        public const float SteepSnow = 0.55f;
         /// <summary>Rows this far down the hill or further are drawn at half resolution (see above).</summary>
         public int farRows = 5;
 
@@ -329,6 +336,7 @@ namespace Summit
             readonly List<Vector4> tangents = new List<Vector4>();
             Vector3[] tan1 = new Vector3[0], tan2 = new Vector3[0];
             Bounds bounds;
+            int[] sideCopy = new int[0];   // a corner's copy mapped across x (2i) or z (2i + 1), or -1
             const float Facet = 0.85f;   // how far a rock corner's normal leans from the smooth one to its own triangle's
             const float FacetTilt = 0.7f;   // how far each rock facet is tilted its own way
 
@@ -544,12 +552,28 @@ namespace Summit
                 for (int i = 0; i < count; i++) { allV.Add(bv[i]); allN.Add(bn[i]); allUV.Add(buv[i]); allC.Add(bc[i]); allR.Add(br[i]); }
                 allV.AddRange(fineV); allN.AddRange(fineN); allUV.AddRange(fineUV); allC.AddRange(fineC); allR.AddRange(fineR);
                 snowTris.Clear(); rockTris.Clear();
+                int corners = allV.Count;
+                if (sideCopy.Length < corners * 2) sideCopy = new int[corners * 2 + corners / 2];
+                for (int i = 0; i < corners * 2; i++) sideCopy[i] = -1;
                 for (int t = 0; t < use.Count; t += 3)
                 {
                     int a = use[t], b = use[t + 1], c = use[t + 2];
                     float ra = allR[a], rb = allR[b], rc = allR[c];
                     // (the rock's own patches move the line up to about 0.4 either way: see RockLit.shader)
-                    if (Mathf.Min(ra, Mathf.Min(rb, rc)) < 0.9f) { snowTris.Add(a); snowTris.Add(b); snowTris.Add(c); }
+                    if (Mathf.Min(ra, Mathf.Min(rb, rc)) < 0.9f)
+                    {
+                        Vector3 sn = Vector3.Cross(allV[b] - allV[a], allV[c] - allV[a]);
+                        float len = sn.magnitude;
+                        if (len > 1e-12f && sn.y < SteepSnow * len)
+                        {
+                            // a steep face: the snow mapped across it, as the rock is (along the wall and up it), from
+                            // corners shared with the next steep triangle mapped the same way, so a wall's snow runs on
+                            // across its triangles without a seam; its normals stay the ground's own
+                            int axis = Mathf.Abs(sn.x) >= Mathf.Abs(sn.z) ? 0 : 1;
+                            for (int k = 0; k < 3; k++) snowTris.Add(SideCopy(use[t + k], axis));
+                        }
+                        else { snowTris.Add(a); snowTris.Add(b); snowTris.Add(c); }
+                    }
                     if (Mathf.Max(ra, Mathf.Max(rb, rc)) < 0.12f) continue;
                     Vector3 va = allV[a], vb = allV[b], vc = allV[c];
                     Vector3 fnn = Vector3.Cross(vb - va, vc - va);
@@ -571,6 +595,19 @@ namespace Summit
                         allUV.Add(acrossX ? new Vector2(p.z, p.y) / RockFace.Tile : new Vector2(p.x, p.y) / RockFace.Tile);
                     }
                 }
+            }
+
+            /// <summary>A copy of corner i with the snow's texture mapped across a face looking along x (axis 0) or z (1), at the scale from above.</summary>
+            int SideCopy(int i, int axis)
+            {
+                int at = sideCopy[i * 2 + axis];
+                if (at >= 0) return at;
+                at = allV.Count;
+                Vector3 p = allV[i];
+                allV.Add(p); allN.Add(allN[i]); allC.Add(allC[i]); allR.Add(allR[i]);
+                allUV.Add(axis == 0 ? new Vector2(p.z / 9f, p.y / 9f) : new Vector2(p.x / 9f, p.y / 9f));
+                sideCopy[i * 2 + axis] = at;
+                return at;
             }
 
             /// <summary>

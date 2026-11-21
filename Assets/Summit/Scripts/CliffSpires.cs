@@ -580,20 +580,48 @@ namespace Summit
         }
 
         static readonly List<Vector2> uvs = new List<Vector2>();
+        static readonly Dictionary<int, int> copyOf = new Dictionary<int, int>();   // (Part's: a corner's copy mapped across a steep face)
 
         static MeshRenderer Part(Transform parent, string name, List<Vector3> V, List<Vector3> N, List<int> T, List<int> drift, OwnMesh own)
         {
             var g = new GameObject(name);
             g.transform.SetParent(parent, false);
             var mesh = new Mesh { name = "Crags" + name };
-            if (V.Count > 65000) mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
-            mesh.SetVertices(V); mesh.SetNormals(N);
             bool drifts = drift != null && drift.Count > 0;
             if (drifts)
             {
                 // the ground's mapping (SlopeStreamer: x/9, z/9), so a drift's grain runs on from the snow round it
                 uvs.Clear();
                 foreach (var p in V) uvs.Add(new Vector2(p.x / 9f, p.z / 9f));
+                // except where a drift lies against a steep face (a block on a gorge's wall): there, as on the terrain,
+                // mapped across the face, from corners shared with the drift's other steep triangles mapped the same way;
+                // from above it smeared into long white streaks down the wall
+                copyOf.Clear();
+                for (int t = 0; t < drift.Count; t += 3)
+                {
+                    Vector3 a = V[drift[t]], b = V[drift[t + 1]], c = V[drift[t + 2]];
+                    Vector3 fn = Vector3.Cross(b - a, c - a);
+                    float len = fn.magnitude;
+                    if (len < 1e-12f || fn.y >= SlopeStreamer.SteepSnow * len) continue;
+                    int axis = Mathf.Abs(fn.x) >= Mathf.Abs(fn.z) ? 0 : 1;
+                    for (int k = 0; k < 3; k++)
+                    {
+                        int i = drift[t + k], key = i * 2 + axis;
+                        if (!copyOf.TryGetValue(key, out int at))
+                        {
+                            at = V.Count; Vector3 p = V[i];
+                            V.Add(p); N.Add(N[i]);
+                            uvs.Add(axis == 0 ? new Vector2(p.z / 9f, p.y / 9f) : new Vector2(p.x / 9f, p.y / 9f));
+                            copyOf[key] = at;
+                        }
+                        drift[t + k] = at;
+                    }
+                }
+            }
+            if (V.Count > 65000) mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+            mesh.SetVertices(V); mesh.SetNormals(N);
+            if (drifts)
+            {
                 mesh.SetUVs(0, uvs);
                 mesh.subMeshCount = 2;
                 mesh.SetTriangles(drift, 1);
@@ -616,6 +644,8 @@ namespace Summit
         /// uphill side, where the wind and the slope pile it) out and down until it meets the ground's own snow
         /// almost flat, so it runs on into it. Drawn with the ground's snow material (the second submesh).
         /// </summary>
+        const float DriftFall = 0.84f;   // the most a drift's ground may fall away from its rock to its edge (40 degrees)
+
         static void Drift(List<Vector3> V, List<Vector3> N, List<int> T, Spot s)
         {
             var plan = foot[s.v];
@@ -628,6 +658,14 @@ namespace Summit
             {
                 ring[i * 2] = plan[i];
                 ring[i * 2 + 1] = (plan[i] + plan[(i + 1) % plan.Length]) * 0.5f;
+            }
+            // snow drifts against a block only where it can lie all round it: a block on the edge of a ledge, part of
+            // its footprint over the wall below, drew its drift down the wall in long white strips (the spot's own
+            // test is at its middle only)
+            for (int i = 0; i < n; i++)
+            {
+                Vector3 w = s.pos + s.rot * new Vector3(ring[i].x * s.scale.x, 0f, ring[i].y * s.scale.z);
+                if (Slope.Normal(w.x, w.z).y < 0.6f) return;
             }
             Vector2 c = new Vector2(s.pos.x, s.pos.z);
             // across the mound, out from the rock: how far out (of its reach) and how high (of its height) each ring
@@ -645,6 +683,15 @@ namespace Summit
                 float up = Mathf.Max(0f, Vector2.Dot(dir, uphill));
                 float hgt = 0.25f + 0.55f * up + 0.2f * Noise3(w.x * 0.7f, 0f, w.z * 0.7f, 81);
                 float reach = 1.2f + 2.2f * up + 0.8f * Noise3(w.x * 0.5f, 1f, w.z * 0.5f, 82);
+                // never out over a drop: where the ground beyond falls away (a block on a ledge of a gorge's wall) the
+                // drift is drawn in, or its outer edge followed the wall down and hung a white sheet down the rock
+                float baseY = Slope.DrawnHeight(p.x, p.y);
+                for (int k = 0; k < 6 && reach > 0.3f; k++)
+                {
+                    Vector2 q = p + dir * reach;
+                    if (Slope.DrawnHeight(q.x, q.y) >= baseY - reach * DriftFall) break;
+                    reach *= 0.7f;
+                }
                 for (int r = 0; r < rings; r++)
                 {
                     Vector2 q = p + dir * reach * outF[r];

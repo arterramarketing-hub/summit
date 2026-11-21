@@ -84,6 +84,9 @@ namespace Summit
         };
         /// <summary>The file each set of clothes is taken from (Resources/Rider/...; the summit kit's is cut per build).</summary>
         public static readonly string[] OutfitModels = { "Hero", "Buddy", "BreannaPJ", "Paul", "PaulB", "Breanna" };
+        /// <summary>Whose each set of clothes is (RiderBody's people: 0 the summit rider, 1 Val, 2 Breanna, 3 Paul): on anyone
+        /// else they're fitted (a collar folded down, a hood tucked away; RiderBodyHero.FitShapes).</summary>
+        public static readonly int[] OutfitOwner = { 0, 1, 2, 3, 3, 2 };
         // each set as it was made: what the first row of JACKETS, PANTS and BOOTS stands for while it is worn
         // (any other row dyes it, pattern and all)
         static readonly Item[] ownFleece =

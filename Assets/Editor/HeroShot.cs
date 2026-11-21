@@ -68,6 +68,14 @@ public static class HeroShot
                         Summit.Progress.Wear(Wardrobe.Cat.Rider, who); Summit.Progress.Wear(Wardrobe.Cat.Outfit, wear);
                         for (int i = 0; i < 6; i++) CampStep(Vector2.zero);
                         CampFront(); Shoot($"Look_{who}{wear}", cam, 540, 760);
+                        // close, front and back: head, collar, hood and hair, where one rider's clothes can cut into another's body
+                        if (body.Hero != null && body.Hero.Head != null)
+                        {
+                            var hp = body.Hero.Head.position - Vector3.up * 0.08f; var fd = Quaternion.Euler(0f, camp.WalkerYaw, 0f) * Vector3.forward;
+                            var sd = Vector3.Cross(Vector3.up, fd);
+                            Look(hp + fd * 1.1f + sd * 0.35f + Vector3.up * 0.05f, hp, 34f); Shoot($"Close_{who}{wear}", cam, 420, 420, false);
+                            Look(hp - fd * 1.1f - sd * 0.35f + Vector3.up * 0.10f, hp - Vector3.up * 0.10f, 34f); Shoot($"Back_{who}{wear}", cam, 420, 420, false);
+                        }
                     }
                 // the closet's colours on each set of clothes, tried on as the closet does (nothing bought):
                 // a patterned jacket, patterned trousers, red boots; and the Nordic knit on the summit jacket

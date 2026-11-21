@@ -196,8 +196,13 @@ namespace Summit
                 foreach (var nm in new[] { "GogglesUp", "MaskDown" })
                 {
                     int cs = smr.sharedMesh != null ? smr.sharedMesh.GetBlendShapeIndex(nm) : -1;
-                    if (cs >= 0) campShapes.Add((smr, cs));
+                    if (cs < 0) continue;
+                    // (Paul's balaclava is cut for his face, which Breanna's fits inside; on Val's bigger head or over the
+                    // summit rider's own neck warmer it would clip, so on them it stays down round the neck)
+                    if (nm == "MaskDown" && who <= 1) { smr.SetBlendShapeWeight(cs, 100f); continue; }
+                    campShapes.Add((smr, cs));
                 }
+                FitShapes(smr, who, outfit);
                 int bs = smr.sharedMesh != null ? smr.sharedMesh.GetBlendShapeIndex("Blink") : -1;
                 if (bs >= 0) { faceSmr = smr; blinkShape = bs; browShape = smr.sharedMesh.GetBlendShapeIndex("Brows"); }
                 smr.updateWhenOffscreen = true;
@@ -321,6 +326,23 @@ namespace Summit
             m.SetTexture("_EmissionMap", tex);
             m.SetColor("_EmissionColor", new Color(0.16f, 0.16f, 0.16f));
             m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.None;
+        }
+
+        /// <summary>
+        /// Someone else's clothes, fitted to this wearer (shapes made by Tools/MakeHero.py): the collar folded down below
+        /// a jaw it would stand up through, a hood tucked away under long hair, long hair lifted clear of a bulkier jacket.
+        /// The clothes' owner wears them as made.
+        /// </summary>
+        static void FitShapes(SkinnedMeshRenderer smr, int who, int outfit)
+        {
+            var m = smr.sharedMesh;
+            if (m == null) return;
+            int owner = outfit >= 0 && outfit < Wardrobe.OutfitOwner.Length ? Wardrobe.OutfitOwner[outfit] : 0;
+            void Set(string nm, bool on) { int i = m.GetBlendShapeIndex(nm); if (i >= 0) smr.SetBlendShapeWeight(i, on ? 100f : 0f); }
+            Set("CollarDown", who != owner);
+            Set("HoodAway", who == 2);
+            Set("HairOut", who == 2 && owner != 2);
+            Set("HairPack", who == 2 && outfit == 0);   // (the summit kit's backpack)
         }
 
         /// <summary>The camp look (faces shown) on foot, the run look on the board; eased between.</summary>

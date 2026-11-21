@@ -18,8 +18,9 @@ namespace Summit
     ///
     /// ANAMORPHIC: the look of a desqueezed anamorphic picture rather than its flares. The middle is stretched
     /// wide and the sides squeezed (the "mumps"), verticals near the sides bow, the softness and the colour
-    /// fringe run sideways only, a wide oval vignette closes in from top and bottom, and thin black bars give
-    /// a widescreen frame. URP's own barrel warp is off here: the shader does the anamorphic warp instead.
+    /// fringe run sideways only, and a wide oval vignette closes in from top and bottom. No black bars: on a tall
+    /// phone they only took the top and bottom of the picture away (the shader still has them, at height 0). URP's
+    /// own barrel warp is off here: the shader does the anamorphic warp instead.
     ///
     /// HALATION (the LOOK tab): the film glow, red-orange, bleeding round bright highlights. Built at a quarter
     /// of the screen size in three tiny passes (bright parts, blur across, blur down) and screened on in the same
@@ -118,7 +119,7 @@ namespace Summit
             }
             if (anamorphic)
             {
-                edge = new Vector4(AnaFringe[level], AnaSmear[level], 0.035f, 1f);
+                edge = new Vector4(AnaFringe[level], AnaSmear[level], 0f, 1f);   // (z: the bars' height: none)
                 ana = new Vector4(AnaSqueeze[level], AnaSqueeze[level] * 0.5f, 0.45f, 0f);
             }
             else
