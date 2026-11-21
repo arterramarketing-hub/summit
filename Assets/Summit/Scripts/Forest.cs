@@ -24,7 +24,10 @@ namespace Summit
         public const float Cell = 6.5f;
         public Transform target;
         public Material foliage, bark;
-        public int sideCells = 12, aheadCells = 18, behindCells = 3;   // colliders, and shadow-casting trees
+        // the band of cells with hit shapes round the rider. 8 ahead is at least 45 m: more than the rider covers in a
+        // second at top speed (45 m/s), and than the buddy's warning looks ahead (0.9 s: SummitGame); what a rider meets
+        // in a tree (TreeBreak) is only ever in the cells next to the board or the thrown body, which the rider follows
+        public int sideCells = 5, aheadCells = 8, behindCells = 3;
         public int farSide = 44, farAhead = 88;                         // drawn out to here (~570 m ahead, ~290 m aside)
         const float LodRange = 300f;   // beyond this, trees are drawn as simple low-poly firs
         readonly List<Matrix4x4> distL = new List<Matrix4x4>();
@@ -36,7 +39,8 @@ namespace Summit
         bool real;                         // the look this forest was built with
         // realistic trees: card trees out to FadeStart, their pictures beyond FadeEnd, and in between both, each
         // pixel one or the other (Shaders/Fir.hlsl), the pictures' share growing with distance. The band ends where
-        // the shadows have faded out (the render asset's 140 m), so the cards hand over shadowless, like the pictures.
+        // the shadows have faded out (the desktop render asset's 140 m; the phone's stop at 80 m, sooner), so the cards
+        // hand over shadowless, like the pictures.
         public float FadeStart = 100f, FadeEnd = 140f;
         // and right beside the rider the rich trees (RealFir), which dissolve into the plain card trees the same way
         // between RichStart and RichEnd. The plain tree is still drawn in there, for its shadow: the shader folds
@@ -54,7 +58,7 @@ namespace Summit
             loaded = false;
             treeParts.Clear(); treeH.Clear();   // rocks stay as they are
             nearL.Clear(); farL.Clear(); richL.Clear();
-            Rebuild();
+            Rebuild();   // (and the rows placed for the old look go: DropAllStrips)
         }
 
         public enum Kind { None, Tree, Rock }
@@ -389,7 +393,7 @@ namespace Summit
         void Update()
         {
             long t0 = PerfMarks.Now;
-            Refresh(false);
+            if (!Refresh(false)) PlaceAhead();
             PerfMarks.MarkIfOver("forest cells", t0, 0.5);
             Draw();
         }
@@ -436,6 +440,7 @@ namespace Summit
         public void Rebuild()
         {
             cache.Clear();
+            DropAllStrips();
             felled.Clear();
             stumps.Clear(); stumpL.Clear();
             damage.Clear(); damagedL.Clear();
@@ -449,14 +454,156 @@ namespace Summit
             Refresh(true);
         }
 
-        const float ShadowRange = 150f;   // a little past the render asset's 140 m shadow distance
-
-        void Refresh(bool force)
+        /// <summary>
+        /// The trees that cast shadows: those inside the render pipeline's shadow distance and a little past it, so none
+        /// pops a shadow on as it nears (the asset fades shadows out over the last part of it). The phone's asset draws
+        /// them to 80 m, the desktop's to 140 m (and the camp pulls it in to 80 m while you're there: Camp).
+        /// </summary>
+        static float ShadowRange
         {
-            if (target == null) return;
+            get
+            {
+                var urp = UnityEngine.Rendering.Universal.UniversalRenderPipeline.asset;
+                return (urp != null ? urp.shadowDistance : 140f) + 10f;
+            }
+        }
+        /// <summary>How far a stump, or a tree's damage (DrawDamaged), is drawn.</summary>
+        const float DetailRange = 150f;
+
+        // ---- each row of cells is placed once, as it comes into reach (a Strip): what stands in each cell, its matrices
+        // worked out and the lists they go in found. When the rider changes cell the lists are filled from the strips,
+        // with nothing looked up again; and on a frame without a new cell the next row ahead is placed (PlaceAhead)
+
+        /// <summary>A tree, rock or sapling in a strip: its cell's x, and where its matrices are in the strip's `mats`:
+        /// at mat0 its own (pl.m), then each part's (pl.m times the part's own), then (the classic look's trees) its far
+        /// stand-in fir's. `one` and `two`: the lists a sapling's or a realistic tree's own matrix goes in (a sapling's
+        /// cards; a realistic tree's rich model and its picture).</summary>
+        struct Stood { public int x, idx, mat0, parts; public Kind kind; public bool deco, far; public List<Matrix4x4> one, two; }
+
+        /// <summary>A row of cells as placed, x0..x1: what stands in it (the empty cells left out). For each matrix in
+        /// `mats`, the list it is drawn from near (casting a shadow) and far.</summary>
+        class Strip
+        {
+            public int x0, x1, n, nm;
+            public Stood[] stood = new Stood[48];
+            public Matrix4x4[] mats = new Matrix4x4[96];
+            public List<Matrix4x4>[] near = new List<Matrix4x4>[96], far = new List<Matrix4x4>[96];
+
+            public void Clear() { System.Array.Clear(near, 0, nm); System.Array.Clear(far, 0, nm); n = 0; nm = 0; }
+
+            public int Mat(Matrix4x4 m, List<Matrix4x4> nearList, List<Matrix4x4> farList)
+            {
+                if (nm == mats.Length)
+                {
+                    System.Array.Resize(ref mats, nm * 2); System.Array.Resize(ref near, nm * 2); System.Array.Resize(ref far, nm * 2);
+                }
+                mats[nm] = m; near[nm] = nearList; far[nm] = farList;
+                return nm++;
+            }
+
+            public void Add(in Stood e)
+            {
+                if (n == stood.Length) System.Array.Resize(ref stood, n * 2);
+                stood[n++] = e;
+            }
+        }
+        readonly Dictionary<int, Strip> strips = new Dictionary<int, Strip>();
+        readonly Stack<Strip> spareStrips = new Stack<Strip>();
+        readonly List<int> stripDrop = new List<int>();
+        /// <summary>Cells placed past the drawn width each side, so weaving down the hill rarely widens a strip.</summary>
+        const int StripSlack = 8;
+
+        /// <summary>The strip for row z, holding at least the cells from..to.</summary>
+        Strip StripAt(int z, int from, int to)
+        {
+            if (!strips.TryGetValue(z, out var s))
+            {
+                s = spareStrips.Count > 0 ? spareStrips.Pop() : new Strip();
+                strips[z] = s;
+                PlaceStrip(s, z, from - StripSlack, to + StripSlack);
+            }
+            else if (from < s.x0 || to > s.x1)
+            {
+                if (to < s.x0 - 1 || from > s.x1 + 1 || Mathf.Max(to, s.x1) - Mathf.Min(from, s.x0) > 4 * (to - from + 1))
+                    PlaceStrip(s, z, from - StripSlack, to + StripSlack);   // somewhere else entirely (a new start): again
+                else
+                {
+                    if (from < s.x0) { int was = s.x0; s.x0 = from - StripSlack; PlaceCells(s, z, s.x0, was - 1); }
+                    if (to > s.x1) { int was = s.x1; s.x1 = to + StripSlack; PlaceCells(s, z, was + 1, s.x1); }
+                }
+            }
+            return s;
+        }
+
+        void PlaceStrip(Strip s, int z, int x0, int x1)
+        {
+            s.Clear();
+            s.x0 = x0; s.x1 = x1;
+            PlaceCells(s, z, x0, x1);
+        }
+
+        void PlaceCells(Strip s, int z, int x0, int x1)
+        {
+            for (int x = x0; x <= x1; x++)
+            {
+                var pl = Get(x, z);
+                if (pl.kind == Kind.None && !pl.deco) continue;
+                var e = new Stood { x = x, kind = pl.kind, idx = pl.idx, deco = pl.deco, mat0 = s.Mat(pl.m, null, null) };
+                if (pl.deco) e.one = ListFor(nearL, Key(Kind.Tree, pl.idx, 0));
+                else
+                {
+                    if (real && pl.kind == Kind.Tree) { e.one = ListFor(richL, Key(Kind.Tree, RealFir.Variants + pl.idx, 0)); e.two = impL[pl.idx]; }
+                    var parts = pl.kind == Kind.Tree ? treeParts[pl.idx] : rockParts[pl.idx];
+                    for (int i = 0; i < parts.Count; i++)
+                    {
+                        int key = Key(pl.kind, pl.idx, i);
+                        s.Mat(pl.m * parts[i].local, ListFor(nearL, key), ListFor(farL, key));
+                    }
+                    e.parts = parts.Count;
+                    // (the classic look's far firs)
+                    if (pl.kind == Kind.Tree && !real && lodMesh != null) { s.Mat(pl.m * Matrix4x4.Scale(Vector3.one * (treeH[pl.idx] / 6.3f)), null, null); e.far = true; }
+                }
+                s.Add(e);
+            }
+        }
+
+        /// <summary>A frame without a new cell: place the next row ahead not placed yet (one a frame), so a crossing
+        /// has only the lists to fill.</summary>
+        void PlaceAhead()
+        {
+            if (target == null || lastCell.x == int.MinValue) return;
+            int xFrom = lastCell.x - farSide, xTo = lastCell.x + farSide;
+            for (int z = lastCell.y + farAhead + 1; z <= lastCell.y + farAhead + 2; z++)
+                if (!strips.ContainsKey(z)) { StripAt(z, xFrom, xTo); return; }
+        }
+
+        /// <summary>Rows out of reach: their strips back to the spares, and their cells' placements forgotten.</summary>
+        void DropStrips(int z0, int z1)
+        {
+            stripDrop.Clear();
+            foreach (var kv in strips) if (kv.Key < z0 || kv.Key > z1) stripDrop.Add(kv.Key);
+            foreach (int z in stripDrop)
+            {
+                var s = strips[z]; strips.Remove(z);
+                for (int x = s.x0; x <= s.x1; x++) cache.Remove(new Vector2Int(x, z));
+                spareStrips.Push(s);
+            }
+        }
+
+        void DropAllStrips()
+        {
+            foreach (var s in strips.Values) spareStrips.Push(s);
+            strips.Clear();
+        }
+
+        /// <summary>Fill the drawing lists and place the hit shapes for the rider's cell, if it has changed (or `force`).
+        /// True if it did.</summary>
+        bool Refresh(bool force)
+        {
+            if (target == null) return false;
             LoadKinds();
             var c = new Vector2Int(Mathf.FloorToInt(target.position.x / Cell), Mathf.FloorToInt(target.position.z / Cell));
-            if (!force && c == lastCell) return;
+            if (!force && c == lastCell) return false;
             lastCell = c;
             foreach (var l in nearL.Values) l.Clear();
             foreach (var l in farL.Values) l.Clear();
@@ -464,63 +611,89 @@ namespace Summit
             distL.Clear();
             damagedL.Clear();
             if (impL != null) foreach (var l in impL) l.Clear();
-            for (int z = c.y - behindCells; z <= c.y + farAhead; z++)
-                for (int x = c.x - farSide; x <= c.x + farSide; x++)
+            // shadows for every tree within the shadow range, so none pops a shadow on as it nears
+            float shadow2 = ShadowRange * ShadowRange, detail2 = DetailRange * DetailRange;
+            float band0 = (FadeStart - FadeSlack) * (FadeStart - FadeSlack), band1 = (FadeEnd + FadeSlack) * (FadeEnd + FadeSlack);
+            float rich = (RichEnd + FadeSlack) * (RichEnd + FadeSlack), lod = LodRange * LodRange;
+            int zFrom = c.y - behindCells, zTo = c.y + farAhead, xFrom = c.x - farSide, xTo = c.x + farSide;
+            for (int z = zFrom; z <= zTo; z++)
+            {
+                var s = StripAt(z, xFrom, xTo);
+                float dzm = (z - c.y) * Cell;
+                var stood = s.stood; var mats = s.mats;
+                for (int j = 0; j < s.n; j++)
                 {
-                    var pl = Get(x, z);
-                    if (pl.kind == Kind.None && !pl.deco) continue;
-                    // shadows for every tree within the shadow range, so none pops a shadow on as it nears
-                    // (the render asset fades shadows out over the last part of that range)
-                    float dxm = (x - c.x) * Cell, dzm = (z - c.y) * Cell;
+                    ref var e = ref stood[j];
+                    if (e.x < xFrom || e.x > xTo) continue;
+                    float dxm = (e.x - c.x) * Cell;
                     float d2 = dxm * dxm + dzm * dzm;
-                    if (pl.deco)
+                    if (e.deco)
                     {
                         // a sapling: its cards as far as the trees' reach (it fades out with them; no picture beyond)
-                        if (d2 <= (FadeEnd + FadeSlack) * (FadeEnd + FadeSlack)) ListFor(nearL, Key(Kind.Tree, pl.idx, 0)).Add(pl.m);
+                        if (d2 <= band1) e.one.Add(mats[e.mat0]);
                         continue;
                     }
-                    if (real && pl.kind == Kind.Tree && damage.Count > 0 && d2 < ShadowRange * ShadowRange && damage.ContainsKey(new Vector2Int(x, z)))
+                    if (real && e.kind == Kind.Tree && damage.Count > 0 && d2 < detail2 && damage.ContainsKey(new Vector2Int(e.x, z)))
                     {
-                        damagedL.Add(new Vector2Int(x, z));   // drawn on its own, with its damage (DrawDamaged)
+                        damagedL.Add(new Vector2Int(e.x, z));   // drawn on its own, with its damage (DrawDamaged)
                         continue;
                     }
-                    if (real && pl.kind == Kind.Tree)
+                    if (real && e.kind == Kind.Tree)
                     {
                         // far realistic tree: its picture on two crossed quads; through the band, the cards too
-                        if (d2 > (FadeStart - FadeSlack) * (FadeStart - FadeSlack)) impL[pl.idx].Add(pl.m);
-                        if (d2 > (FadeEnd + FadeSlack) * (FadeEnd + FadeSlack)) continue;
+                        if (d2 > band0) e.two.Add(mats[e.mat0]);
+                        if (d2 > band1) continue;
                         // close by, the rich tree as well (the plain one below still casts the shadow for both)
-                        if (d2 < (RichEnd + FadeSlack) * (RichEnd + FadeSlack)) ListFor(richL, Key(Kind.Tree, RealFir.Variants + pl.idx, 0)).Add(pl.m);
+                        if (d2 < rich) e.one.Add(mats[e.mat0]);
                     }
-                    if (d2 > LodRange * LodRange)
+                    if (d2 > lod)
                     {
                         // far away: one cheap fir the same height instead of the full model (rocks are left out)
-                        if (pl.kind == Kind.Tree && lodMesh != null) distL.Add(pl.m * Matrix4x4.Scale(Vector3.one * (treeH[pl.idx] / 6.3f)));
+                        if (e.far) distL.Add(mats[e.mat0 + 1 + e.parts]);
                         continue;
                     }
-                    bool isNear = d2 < ShadowRange * ShadowRange;
-                    var parts = pl.kind == Kind.Tree ? treeParts[pl.idx] : rockParts[pl.idx];
-                    var dict = isNear ? nearL : farL;
-                    for (int i = 0; i < parts.Count; i++)
-                    {
-                        int key = Key(pl.kind, pl.idx, i);
-                        if (!dict.TryGetValue(key, out var list)) dict[key] = list = new List<Matrix4x4>();
-                        list.Add(pl.m * parts[i].local);
-                    }
+                    var lists = d2 < shadow2 ? s.near : s.far;
+                    for (int i = e.mat0 + 1; i <= e.mat0 + e.parts; i++) lists[i].Add(mats[i]);
                 }
+            }
+            // rows out of reach go (a few kept either side, for a turn back up the hill)
+            DropStrips(zFrom - 4, zTo + 4);
             PlaceColliders(c);
             stumpL.Clear();
             foreach (var kv in stumps)
             {
                 float dxm = (kv.Key.x - c.x) * Cell, dzm = (kv.Key.y - c.y) * Cell;
-                if (dxm * dxm + dzm * dzm < ShadowRange * ShadowRange) stumpL.Add(kv.Value);
+                if (dxm * dxm + dzm * dzm < detail2) stumpL.Add(kv.Value);
             }
-            // forget cells well behind
+            // forget cells well behind (the strips take theirs with them as they go: this is for any looked up on their own)
             if (cache.Count > 30000)
             {
-                var drop = new List<Vector2Int>();
-                foreach (var k in cache.Keys) if (k.y < c.y - behindCells - 4) drop.Add(k);
-                foreach (var k in drop) cache.Remove(k);
+                dropList.Clear();
+                foreach (var k in cache.Keys) if (k.y < zFrom - 4 || k.y > zTo + 4) dropList.Add(k);
+                foreach (var k in dropList) cache.Remove(k);
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// The tree or rock in this cell, felled or snapped: out of its strip and out of whichever drawing lists hold it,
+        /// without filling them all again (thousands of cells). Its matrices are found in the lists of its kind.
+        /// </summary>
+        void Unplace(Vector2Int cell)
+        {
+            damagedL.Remove(cell);
+            if (!strips.TryGetValue(cell.y, out var s)) return;   // (a row out of reach: in no list)
+            for (int j = 0; j < s.n; j++)
+            {
+                var e = s.stood[j];
+                if (e.x != cell.x) continue;
+                s.stood[j] = s.stood[--s.n];
+                if (e.deco) return;
+                for (int i = e.mat0 + 1; i <= e.mat0 + e.parts; i++) { DropFrom(s.near[i], s.mats[i]); DropFrom(s.far[i], s.mats[i]); }
+                if (e.one != null) DropFrom(e.one, s.mats[e.mat0]);
+                if (e.two != null) DropFrom(e.two, s.mats[e.mat0]);
+                if (e.far) DropFrom(distL, s.mats[e.mat0 + 1 + e.parts]);
+                return;
             }
         }
 
@@ -639,7 +812,9 @@ namespace Summit
             g.transform.localScale = new Vector3(r0, h, r0);
         }
 
-        static bool IsTreeHit(GameObject g) => g.name == "TreeHit";
+        /// <summary>The tree hit shapes (the rest are rocks'), told apart without reading a name (a new string each time).</summary>
+        readonly HashSet<GameObject> treeHits = new HashSet<GameObject>();
+        bool IsTreeHit(GameObject g) => treeHits.Contains(g);
 
         static readonly Mesh[] trunkHulls = new Mesh[11];
 
@@ -736,9 +911,7 @@ namespace Summit
                 else foreach (var part in pl.kind == Kind.Tree ? treeParts[pl.idx] : rockParts[pl.idx])
                     into.Add(new Piece { mesh = part.mesh, sub = part.sub, mat = part.mat, m = pl.m * part.local, cut = pl.kind == Kind.Tree ? pl.cut : 0f });
                 damage.Remove(kv.Key);
-                // redraw without it
-                lastCell = new Vector2Int(int.MinValue, int.MinValue);
-                Refresh(false);
+                Unplace(kv.Key);   // drawn without it from now on
                 return true;
             }
             return false;
@@ -829,8 +1002,8 @@ namespace Summit
             float h = at + 0.35f;
             stumps[cell] = Matrix4x4.TRS(pl.foot - up * 0.35f, Quaternion.FromToRotation(Vector3.up, up) * Quaternion.Euler(0f, Slope.Hash01(cell.x, cell.y, 12) * 360f, 0f),
                                          new Vector3(Mathf.Max(pl.girth, girth) * 1.05f, h / TreeBreak.StumpTop, Mathf.Max(pl.girth, girth) * 1.05f));
-            if (real) { Unlist(cell, pl, false); stumpL.Add(stumps[cell]); }   // (a realistic tree is one instance in each list)
-            else { lastCell = new Vector2Int(int.MinValue, int.MinValue); Refresh(false); }
+            Unplace(cell);   // drawn without it from now on, and its stump with
+            stumpL.Add(stumps[cell]);
             return true;
         }
 
@@ -1123,6 +1296,7 @@ namespace Summit
         GameObject NewCollider(bool tree)
         {
             var g = new GameObject(tree ? "TreeHit" : "RockHit");
+            if (tree) treeHits.Add(g);
             g.transform.SetParent(transform, false);
             g.AddComponent<MeshCollider>().convex = true;   // a tree's trunk post, a rock's hull
             var ob = g.AddComponent<Obstacle>();

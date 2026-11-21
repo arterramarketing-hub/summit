@@ -47,15 +47,20 @@ namespace Summit
             scaler.referenceResolution = new Vector2(1080f, 1920f);
             scaler.matchWidthOrHeight = 0.5f;
 
+            // the full-screen washes, on a canvas of their own: the whiteout changes every frame once the slide is
+            // loose, and the red flash as it fades, and a canvas is re-batched whole whenever anything in it changes
+            var washes = NestedCanvas("Washes", transform);
             // full-screen white that rises as the slide closes in
-            whiteout = NewImage("Whiteout", transform, new Color(1f, 1f, 1f, 0f));
+            whiteout = NewImage("Whiteout", washes, new Color(1f, 1f, 1f, 0f));
             Stretch(whiteout.rectTransform);
             whiteout.raycastTarget = false;
+            whiteout.canvasRenderer.cullTransparentMesh = true;   // (nothing drawn while it's clear: two full-screen blends saved)
 
             // a red flash when something breaks
-            hurt = NewImage("Hurt", transform, new Color(0.85f, 0.05f, 0.05f, 0f));
+            hurt = NewImage("Hurt", washes, new Color(0.85f, 0.05f, 0.05f, 0f));
             Stretch(hurt.rectTransform);
             hurt.raycastTarget = false;
+            hurt.canvasRenderer.cullTransparentMesh = true;
 
             safe = new GameObject("Safe", typeof(RectTransform)).GetComponent<RectTransform>();
             safe.SetParent(transform, false);
@@ -70,9 +75,11 @@ namespace Summit
             prompt = NewText("Prompt", safe, new Vector2(0.5f, 0f), new Vector2(0f, 230f), 58, TextAnchor.LowerCenter);
             altitude = NewText("Altitude", safe, new Vector2(0f, 1f), new Vector2(40f, -160f), 40, TextAnchor.UpperLeft);
             altitude.color = new Color(0.85f, 0.93f, 1f, 0.95f);
-            slide = NewText("Slide", safe, new Vector2(1f, 1f), new Vector2(-40f, -40f), 44, TextAnchor.UpperRight);
+            // the avalanche's distance and bar, on their own canvas too: both change every frame while it's on its way
+            var slideBox = NestedCanvas("Slide", safe);
+            slide = NewText("Slide", slideBox, new Vector2(1f, 1f), new Vector2(-40f, -40f), 44, TextAnchor.UpperRight);
 
-            var barBg = NewImage("SlideBar", safe, new Color(0f, 0f, 0f, 0.35f));
+            var barBg = NewImage("SlideBar", slideBox, new Color(0f, 0f, 0f, 0.35f));
             slideBar = barBg.gameObject;
             slideBar.SetActive(false);   // (shown only while the avalanche is on its way: SetRun)
             Place(barBg.rectTransform, new Vector2(1f, 1f), new Vector2(-40f, -104f), new Vector2(300f, 16f), new Vector2(1f, 1f));
@@ -461,6 +468,16 @@ namespace Summit
             r.pivot = pivot;
             r.anchoredPosition = pos;
             r.sizeDelta = size;
+        }
+
+        /// <summary>A canvas inside the HUD's, filling its parent and drawn in its place among the parent's children.</summary>
+        static RectTransform NestedCanvas(string name, Transform parent)
+        {
+            var r = new GameObject(name, typeof(RectTransform)).GetComponent<RectTransform>();
+            r.SetParent(parent, false);
+            Stretch(r);
+            r.gameObject.AddComponent<Canvas>();
+            return r;
         }
 
         static void Stretch(RectTransform r)
