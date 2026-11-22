@@ -16,7 +16,7 @@ using Summit;
 ///   - nowhere the walker can stand has drawn geometry through its body (nothing to walk through);
 ///   - every floor the walker stands on has a drawn surface just under it.
 /// Writes LodgeWalk_map_A/B/C.png (top down: blocks red, floors green, the walks blue, any problem magenta) with the GPU.
-/// Each of the lodge's three layouts in turn (LODGE_LAYOUTS=ABC, or some of them).
+/// Each of the lodge's layouts in turn (LODGE_LAYOUTS=A,B,C,B1,B2,B3,B2R, or some of them).
 /// Batch: -executeMethod LodgeWalkTest.Run (exit 1 on a failed leg or a problem); $LODGE_SHOTS for the map's folder.
 /// </summary>
 public static class LodgeWalkTest
@@ -30,8 +30,8 @@ public static class LodgeWalkTest
     static readonly List<(Vector3 at, string what)> problems = new List<(Vector3, string)>();
     static int fails;
     static int layout, problemsFrom;
-    // each layout's floors above the hall's: C's mezzanine, B1's gallery, B2's loft, B3's landing and balcony
-    static readonly float[][] Levels = { new[] { 0f }, new[] { 0f }, new[] { 0f, 3.8f }, new[] { 0f, 3.8f }, new[] { 0f, 3.8f }, new[] { 0f, 1.9f, 3.8f } };
+    // each layout's floors above the hall's: C's mezzanine, B1's gallery, B2's loft, B3's landing and balcony, B2R's loft
+    static readonly float[][] Levels = { new[] { 0f }, new[] { 0f }, new[] { 0f, 3.8f }, new[] { 0f, 3.8f }, new[] { 0f, 3.8f }, new[] { 0f, 1.9f, 3.8f }, new[] { 0f, 3.8f } };
     static string Key => Camp.LodgeLayoutKeys[layout];
 
     public static void Run()
@@ -194,6 +194,26 @@ public static class LodgeWalkTest
             Leg("all the way round the fire", L(-3.0f, -2.05f), new[] { L(-0.1f, -2.05f), L(0.6f, -3.2f), L(-0.1f, -4.35f), L(-3.5f, -4.35f), L(-4.3f, -3.2f), L(-3.5f, -2.05f) });
             Leg("the fire out the side door to the racks", L(-3.5f, -2.05f), new[] { L(-4.5f, -2.05f), L(-4.6f, 0.3f), L(0f, 1.0f), L(8f, 3.9f), L(10.4f, 3.95f), L(11.6f, 3.95f), L(11.6f, -2.8f) });
             var tdi = new List<Vector3>(down) { door, L(2f, 9f), foot, dropIn };
+            toDropIn = tdi.ToArray();
+        }
+        else if (layout == 6)
+        {
+            // B2R: in past the lounge to the back wall, up the stair along it into the loft by the gear wall, to the wardrobe
+            var up = new[] { L(3.6f, 0.8f), L(3.0f, -4.4f), L(1.6f, -5.9f), L(0.4f, -5.9f), L(-5.0f, -5.9f), L(-6.4f, -5.6f), L(-7.2f, -4.4f), L(-8.6f, -4.0f) };
+            var down = new[] { L(-7.2f, -4.4f), L(-6.4f, -5.6f), L(-5.0f, -5.9f), L(0.4f, -5.9f), L(1.6f, -5.9f), L(3.0f, -4.4f) };
+            var toStyle = new List<Vector3>(up) { style };
+            Leg("the door up the stair along the back wall to the wardrobe in the loft", door, toStyle.ToArray(), Camp.Station.Style);
+            var toMissions = new List<Vector3>(down) { missions };
+            Leg("the loft back down the stair to the missions board", style, toMissions.ToArray(), Camp.Station.Missions);
+            Leg("the missions board to the board shop's counter", missions, new[] { L(4.6f, -3.0f), L(4.6f, -0.4f), counter }, Camp.Station.Upgrades);
+            Leg("the counter to the tuning bench", counter, new[] { L(7.2f, 2.5f), bench }, Camp.Station.Upgrades);
+            Leg("the tuning bench through the snug's way into the café", bench, new[] { L(6f, 1.0f), L(-6f, 1.0f), L(-10f, 0.8f), L(-13.5f, 2.2f) });
+            Leg("the café to the snug under the loft", L(-13.5f, 2.2f), new[] { L(-10f, 0.8f), L(-8.6f, 0.6f), L(-8.6f, -1.6f) });
+            Leg("the snug into the ring round the fire", L(-8.6f, -1.6f), new[] { L(-6.8f, -1.6f), L(-4.6f, 0.3f), L(-4.5f, -1.72f), L(-3.0f, -1.72f) });
+            Leg("all the way round the fire (the stair behind the back sofa)", L(-3.0f, -1.72f), new[] { L(-0.1f, -1.72f), L(0.45f, -2.71f), L(-0.1f, -3.7f), L(-3.5f, -3.7f), L(-4.1f, -2.71f), L(-3.5f, -1.72f) });
+            Leg("the fire out the side door to the racks", L(-3.5f, -1.72f), new[] { L(-4.5f, -1.72f), L(-4.6f, 0.3f), L(0f, 1.0f), L(8f, 3.9f), L(10.4f, 3.95f), L(11.6f, 3.95f), L(11.6f, -2.8f) });
+            Leg("the stair's foot round the lounge to the couple's glass", L(1.6f, -5.9f), new[] { L(3.0f, -4.4f), L(3.6f, 0.8f), L(-1.0f, 5.0f) });
+            var tdi = new List<Vector3>(down) { L(3.6f, 0.8f), door, L(2f, 9f), foot, dropIn };
             toDropIn = tdi.ToArray();
         }
         else if (layout == 5)

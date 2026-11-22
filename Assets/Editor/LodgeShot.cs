@@ -253,17 +253,27 @@ public static class LodgeShot
                 foreach (var (name, clock) in new[] { Times[0], Times[1] })
                 {
                     SetTime(clock);
-                    var (g0, g1, u0, u1) = k == 3 ? (C(2.0f, 1.65f, 3.6f), C(-6.0f, 3.4f, -5.0f), C(3.7f, 5.45f, -5.5f), C(-8.0f, 4.6f, -2.0f))
-                                         : k == 4 ? (C(1.4f, 1.65f, 0.8f), C(-9.0f, 3.2f, 3.6f), C(-5.8f, 5.45f, 5.3f), C(-9.6f, 4.8f, -4.6f))
+                    // (B2 and B2R from the same places: before and after its stair moved to the back wall)
+                    var (g0, g1, u0, u1) = n == "B1" ? (C(2.0f, 1.65f, 3.6f), C(-6.0f, 3.4f, -5.0f), C(3.7f, 5.45f, -5.5f), C(-8.0f, 4.6f, -2.0f))
+                                         : n == "B2" || n == "B2R" ? (C(1.4f, 1.65f, 0.8f), C(-9.0f, 3.2f, 3.6f), C(-5.8f, 5.45f, 5.3f), C(-9.6f, 4.8f, -4.6f))
                                                   : (C(3.4f, 1.65f, 0.4f), C(-4.6f, 3.0f, 5.4f), C(-3.6f, 5.45f, 1.4f), C(-10.2f, 4.9f, 5.6f));
                     EyeCam(g0, g1, 88f);
                     Shoot($"LodgeLayout{n}_8ground_{name}.png", 720, 960);
                     EyeCam(u0, u1, 88f);
                     Shoot($"LodgeLayout{n}_9upstairs_{name}.png", 720, 960);
+                    if (n == "B2" || n == "B2R")
+                    {
+                        // the back wall from the front glass (where B2R's stair went), and the loft from its back corner
+                        EyeCam(C(-0.6f, 1.65f, 5.6f), C(-2.4f, 2.4f, -6.7f), 88f);
+                        Shoot($"LodgeLayout{n}_7backwall_{name}.png", 720, 960);
+                        EyeCam(C(-6.0f, 5.45f, -5.9f), C(-9.0f, 4.6f, 4.0f), 88f);
+                        Shoot($"LodgeLayout{n}_9loftback_{name}.png", 720, 960);
+                    }
                 }
                 SetTime(1.4f);
-                var path = k == 3 ? new[] { (3.9f, 4.0f), (3.9f, 0.6f), (3.9f, -4.0f), (3.9f, -5.5f), (-2.0f, -5.6f) }
-                         : k == 4 ? new[] { (1.6f, 5.3f), (0.4f, 5.35f), (-2.2f, 5.35f), (-5.0f, 5.35f), (-6.6f, 3.0f) }
+                var path = n == "B1" ? new[] { (3.9f, 4.0f), (3.9f, 0.6f), (3.9f, -4.0f), (3.9f, -5.5f), (-2.0f, -5.6f) }
+                         : n == "B2" ? new[] { (1.6f, 5.3f), (0.4f, 5.35f), (-2.2f, 5.35f), (-5.0f, 5.35f), (-6.6f, 3.0f) }
+                         : n == "B2R" ? new[] { (2.6f, -4.6f), (0.4f, -5.9f), (-2.2f, -5.9f), (-5.0f, -5.9f), (-6.6f, -5.3f), (-7.4f, -3.6f) }
                                   : new[] { (-4.0f, 5.2f), (-3.4f, 5.2f), (-0.6f, 5.2f), (0.7f, 4.4f), (-0.2f, 3.8f), (-3.4f, 3.8f), (-6.0f, 3.0f) };
                 camp.TeleportTo(C(path[0].Item1, 0f, path[0].Item2), cy);
                 for (int i = 1; i < path.Length; i++)
@@ -276,7 +286,7 @@ public static class LodgeShot
                 Frames(30);
                 Shoot($"LodgeLayout{n}_5hero_upstairs.png");
                 // and below it, the camera under its slab
-                var under = k == 3 ? (-8.6f, -3.6f) : k == 4 ? (-8.6f, -1.2f) : (-6.0f, 2.8f);
+                var under = n == "B1" ? (-8.6f, -3.6f) : n == "B2" || n == "B2R" ? (-8.6f, -1.2f) : (-6.0f, 2.8f);
                 camp.TeleportTo(C(under.Item1 + 3.0f, 0f, under.Item2), cy - 90f);
                 WalkTo(C(under.Item1, 0f, under.Item2), 0.8f); Frames(20);
                 Shoot($"LodgeLayout{n}_6hero_under.png");

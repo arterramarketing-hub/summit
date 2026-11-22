@@ -1365,17 +1365,19 @@ def layout_C():
 
 # ---- B with an upstairs, three ways (B1, B2, B3): B's ground floor, its fire in the middle, with a floor at +3.8
 
-def b_lounge(pend=((-3.6, 4.6, -4.6), (-0.2, 4.2, -4.8), (-2.2, 5.0, -1.4), (0.6, 4.8, -2.0))):
-    """B's lounge: the low open fire in the middle of the hall, sofas facing across it, armchairs at its ends."""
-    FX, FZ = -1.8, -3.2
-    lohi("Wool", (-5.2, 0.0, -6.3), (1.6, 0.015, -0.2))
+def b_lounge(pend=((-3.6, 4.6, -4.6), (-0.2, 4.2, -4.8), (-2.2, 5.0, -1.4), (0.6, 4.8, -2.0)),
+             FZ=-3.2, back=-5.55, front=-0.95, rug=-6.3, tables=((-4.6, -5.7), (1.0, -0.6))):
+    """B's lounge: the low open fire in the middle of the hall, sofas facing across it, armchairs at its ends (FZ the
+    fire's z, back and front the sofas', rug the rug's back edge: drawn forward in B2R, its stair behind)."""
+    FX = -1.8
+    lohi("Wool", (-5.2, 0.0, rug), (1.6, 0.015, -0.2))
     open_fire(FX, FZ)
     marker("LIGHT_fire", (FX, 1.4, FZ + 1.2))
-    sofa(-4.0, 0.4, -5.55, 1)
-    sofa(-4.0, 0.4, -0.95, -1)
-    armchair(-5.5, -3.2, 90)
-    armchair(1.9, -3.2, -90)
-    for (tx, tz) in ((-4.6, -5.7), (1.0, -0.6)):
+    sofa(-4.0, 0.4, back, 1)
+    sofa(-4.0, 0.4, front, -1)
+    armchair(-5.5, FZ, 90)
+    armchair(1.9, FZ, -90)
+    for (tx, tz) in tables:
         cyl("Oak", (tx, 0.5, tz), 0.25, 0.04, 14); cyl("Steel", (tx, 0.0, tz), 0.03, 0.5, 6)
         helper("BLK_sidetable", (tx - 0.27, 0.0, tz - 0.27), (tx + 0.27, 0.55, tz + 0.27))
     pendants(pend, under_flat)
@@ -1626,6 +1628,55 @@ def layout_B2():
     marker("LIGHT_hall", (-4.6, 7.6, -1.0))
 
 
+# ---- B2R: B2 revised, the user's pick with its stair moved to the back wall (the default lodge). The loft, the
+# outfitters up there and the snug under it as B2; the stair is B2's (the same flight, climbing toward the loft) but
+# along the back wall, arriving at the loft's back corner by the gear wall; the lounge drawn forward off the wall for it
+# (the fire and the sofas a little closer, the ring round the fire between them); the front glass clear again, as B's.
+
+def layout_B2R():
+    LX = -5.4
+    SZ0, SZ1 = MZ + 0.06, MZ + 1.56       # the stair: off the back wall's face, 1.5 m wide (as B2's)
+    b_lounge(pend=((-3.6, 4.6, -3.9), (-0.2, 4.2, -4.0), (-2.2, 5.0, -1.5), (0.6, 4.8, -2.0)),
+             FZ=-2.71, back=-4.62, front=-0.8, rug=-5.05, tables=((-4.6, -4.62), (1.0, -0.45)))
+    b_rest()
+    # under the loft: the snug and the café's tables, as B2
+    lohi("Charcoal", (-10.9, 0.0, -0.4), (-6.5, 0.012, 1.9))
+    lohi("Wool", (-10.4, 0.0, -6.0), (-6.4, 0.015, -1.8))
+    bookcase(-10.3, -6.9, MZ, h=2.4)
+    sofa(-10.0, -7.4, -5.25, 1, mat="Leather")
+    low_table(-9.4, -4.2, -8.0, -3.6)
+    armchair(-9.6, -2.6, 180); armchair(-7.8, -2.6, 180)
+    bistro(-9.2, 3.6); bistro(-8.4, 5.6)
+    plant(-6.0, -6.1, 1.2)
+    plant(-2.9, 6.15, 1.1); plant(1.6, 6.15, 1.5)   # (the front glass clear again, as B's)
+    # the loft, open along its edge but where the stair comes up at its back corner
+    upper_floor("loft", XH + T, LX, MZ, 6.5)
+    open_edge("z", LX, SZ1, 6.5, side=-1, name="loftrail")
+    post(LX - 0.05, SZ1 + 0.1); post(LX - 0.05, 4.45)   # (beside the stair's top, and toward the glass: the column at (-6.37, 0) holds the middle)
+    for (px, pz) in ((-9.0, -5.0), (-7.0, -2.0), (-9.0, 1.0), (-7.0, 4.4)):
+        cyl("LED", (px, MY - 0.33, pz), 0.12, 0.02, 12)
+    # the stair along the back wall, from behind the lounge up to the loft (glass on the hall's side, a handrail on the wall)
+    flight("b2r", LX, LX + 6.16, SZ0, SZ1, "-x", 0.0, MY, glass=(False, True))
+    span("Steel", (LX + 6.16, 1.0, MZ + 0.045), (LX, MY + 0.95, MZ + 0.045), 0.04)
+    for k in range(4):   # (its brackets)
+        bx = LX + 6.16 - (k + 0.5) * 6.16 / 4
+        by = 1.0 + (LX + 6.16 - bx) / 6.16 * (MY - 0.05)
+        lohi("Steel", (bx - 0.02, by - 0.06, MZ), (bx + 0.02, by - 0.02, MZ + 0.05))
+    # upstairs: the outfitters as B2's (the stair comes up beside the gear wall)
+    gear_wall(-10.3, -6.0, y0=MY, levels=(2.3, 2.75), n=7, top=2.8)
+    rail_x(-10.2, -7.0, MZ + 0.38, y0=MY, blk=False)
+    helper("BLK_rack", (-10.3, MY, MZ), (-6.9, MY + 2.2, MZ + 0.55))
+    mirror(-6.6, -5.75, y0=MY)
+    helper("TAP_Style", (-10.7, MY, MZ), (-6.8, MY + 2.6, MZ + 1.2))
+    marker("SPOT_Style", (-8.6, MY, MZ + 2.0))
+    display_table(-8.6, -2.3, y0=MY)
+    rail_x(-10.1, -7.2, 3.4, y0=MY, two_sided=True)
+    mannequin(-9.3, 6.0, "Red", y0=MY); mannequin(-8.3, 6.0, "ArtB", y0=MY); mannequin(-7.3, 6.0, "Navy", y0=MY)
+    till(-10.6, 0.3, -9.9, 1.5, y0=MY)
+    hanging_sign(0, LX + 0.15, MY + 2.0, 1.0, 3.0, 0.75, lambda x: ru(x) - RD, yaw=90)
+    marker("LIGHT_hall", (-4.6, 7.6, -1.0))
+
+
 # ---- B3: the balcony (a floor at +3.8 along the front glass, the stair a dog-leg standing in the hall)
 
 def layout_B3():
@@ -1660,7 +1711,7 @@ def layout_B3():
     marker("LIGHT_hall", (-1.8, 7.5, -3.2))
 
 
-LAYOUTS = {"A": layout_A, "B": layout_B, "C": layout_C, "B1": layout_B1, "B2": layout_B2, "B3": layout_B3}
+LAYOUTS = {"A": layout_A, "B": layout_B, "C": layout_C, "B1": layout_B1, "B2": layout_B2, "B3": layout_B3, "B2R": layout_B2R}
 
 # warm light: a strip along the clerestory beam
 solid("LED", [(XH + 0.2, ru(XH + 0.2) - RD - BD - 0.03, ZC + 0.15), (XB, ru(XB) - RD - BD - 0.03, ZC + 0.15), (XB, ru(XB) - RD - BD - 0.03, ZC + 0.19), (XH + 0.2, ru(XH + 0.2) - RD - BD - 0.03, ZC + 0.19)],

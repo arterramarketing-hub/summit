@@ -30,7 +30,7 @@ public static class TestPrefs
             "summit_ride", Forest.TreesPref, "summit_invert", "summit_tilt", RiderBody.OldHeroPref,
             "summit_jacket", "summit_jackets", "summit_boardcol", "summit_boards", "summit_weather", Camp.LodgePref,
             // (no longer read on main, still written by other branches)
-            "summit_rider", "summit_body", "summit_outfit" })
+            "summit_rider", "summit_body", "summit_outfit", "summit_lodge" })
             keys[k] = Kind.Int;
         foreach (Summit.Progress.Up u in System.Enum.GetValues(typeof(Summit.Progress.Up))) keys["summit_up_" + u] = Kind.Int;
         foreach (Wardrobe.Cat c in System.Enum.GetValues(typeof(Wardrobe.Cat))) { keys["summit_wear_" + c] = Kind.Int; keys["summit_own_" + c] = Kind.Int; }

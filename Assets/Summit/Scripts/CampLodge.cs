@@ -55,16 +55,20 @@ namespace Summit
         // ---------------------------------------------------------------- the three layouts (a playtest switch)
 
         /// <summary>
-        /// The LODGE setting: which layout is inside (0 A gallery hall, 1 B fireside centre, 2 C two levels; and B with an
-        /// upstairs three ways: 3 B1 the gallery, 4 B2 the loft, 5 B3 the balcony).
+        /// The LODGE setting: which layout is inside (0 A gallery hall, 1 B fireside centre, 2 C two levels; B with an
+        /// upstairs three ways: 3 B1 the gallery, 4 B2 the loft, 5 B3 the balcony; and 6 B2R, B2 with its stair along the
+        /// back wall: the one picked, the default).
         /// </summary>
-        public const string LodgePref = "summit_lodge";
-        public static readonly string[] LodgeLayoutKeys = { "A", "B", "C", "B1", "B2", "B3" };
-        public static int LodgeLayout => Mathf.Clamp(PlayerPrefs.GetInt(LodgePref, 0), 0, LodgeLayoutKeys.Length - 1);
-        public static readonly string[] LodgeLayoutNames = { "A  GALLERY HALL", "B  FIRESIDE CENTRE", "C  TWO LEVELS", "B1  GALLERY", "B2  LOFT", "B3  BALCONY" };
+        /// <remarks>(A new key with B2R: a phone that remembered a layout from the playtests starts at the default too.)</remarks>
+        public const string LodgePref = "summit_lodge2";
+        public static readonly string[] LodgeLayoutKeys = { "A", "B", "C", "B1", "B2", "B3", "B2R" };
+        /// <summary>The lodge unless the LODGE setting says otherwise: B2R.</summary>
+        public const int LodgeDefault = 6;
+        public static int LodgeLayout => Mathf.Clamp(PlayerPrefs.GetInt(LodgePref, LodgeDefault), 0, LodgeLayoutKeys.Length - 1);
+        public static readonly string[] LodgeLayoutNames = { "A  GALLERY HALL", "B  FIRESIDE CENTRE", "C  TWO LEVELS", "B1  GALLERY", "B2  LOFT", "B3  BALCONY", "B2R  LOFT, BACK STAIR" };
         public static string LodgeLayoutName => LodgeLayoutNames[LodgeLayout];
         /// <summary>The same, short enough for the settings' row.</summary>
-        public static string LodgeLayoutShort => new[] { "A  GALLERY", "B  FIRESIDE", "C  TWO LEVELS", "B1  GALLERY", "B2  LOFT", "B3  BALCONY" }[LodgeLayout];
+        public static string LodgeLayoutShort => new[] { "A  GALLERY", "B  FIRESIDE", "C  TWO LEVELS", "B1  GALLERY", "B2  LOFT", "B3  BALCONY", "B2R  BACK STAIR" }[LodgeLayout];
 
         /// <summary>
         /// Show another layout (saved). In the camp the screen dips to black, the lodge is rebuilt with it, and you're
@@ -146,7 +150,8 @@ namespace Summit
         }
         // where Val and Breanna stand to look out of the big glass, in each layout (clear of its furniture)
         static readonly Vector2[] LodgeWindow = { new Vector2(-1.0f, 5.6f), new Vector2(-1.0f, 5.6f), new Vector2(-1.2f, 5.75f),
-                                                  new Vector2(-1.0f, 5.6f), new Vector2(1.8f, 5.9f), new Vector2(-5.0f, 6.0f) };
+                                                  new Vector2(-1.0f, 5.6f), new Vector2(1.8f, 5.9f), new Vector2(-5.0f, 6.0f),
+                                                  new Vector2(-1.0f, 5.6f) };
 
         /// <summary>
         /// Places for people in and round the lodge (the camp's NPCs), in this layout, in its own frame: where they stand
@@ -227,6 +232,18 @@ namespace Summit
                 ("sit", new Vector3(-8.9f, 4.25f, 5.65f), 0f), ("sit", new Vector3(-7.6f, 4.25f, 5.65f), 0f), ("sit", new Vector3(-5.3f, 4.25f, 5.55f), 0f),
                 ("sit", new Vector3(-9.8f, 4.25f, 2.4f), -90f),
                 ("stand", new Vector3(-4.1f, 3.8f, 5.0f), 0f), ("stand", new Vector3(-7.6f, 3.8f, 3.0f), 0f) }),
+            // B2R: B2 with its stair along the back wall: the lounge drawn forward off it; the snug, the café's tables
+            // and the loft's outfitters as B2's
+            Join(Shared, new[] {
+                ("sit", new Vector3(-3.2f, 0.45f, -4.52f), 0f), ("sit", new Vector3(-1.8f, 0.45f, -4.52f), 0f), ("sit", new Vector3(-0.4f, 0.45f, -4.52f), 0f),
+                ("sit", new Vector3(-3.2f, 0.45f, -0.9f), 180f), ("sit", new Vector3(-1.8f, 0.45f, -0.9f), 180f), ("sit", new Vector3(-0.4f, 0.45f, -0.9f), 180f),
+                ("sit", new Vector3(-5.5f, 0.45f, -2.71f), 90f), ("sit", new Vector3(1.9f, 0.45f, -2.71f), -90f),
+                ("sit", new Vector3(-9.3f, 0.45f, -5.15f), 0f), ("sit", new Vector3(-8.1f, 0.45f, -5.15f), 0f), ("sit", new Vector3(-9.6f, 0.45f, -2.6f), 180f),
+                ("sit", new Vector3(-9.9f, 0.45f, 3.6f), 90f), ("sit", new Vector3(-7.7f, 0.45f, 5.6f), -90f),
+                ("browse", new Vector3(6.4f, 0f, -5.6f), 180f),
+                ("stand", new Vector3(1.0f, 0f, 4.0f), 0f), ("stand", new Vector3(-4.4f, 0f, 5.9f), 0f),
+                ("browse", new Vector3(-9.5f, 3.8f, -5.6f), 180f), ("browse", new Vector3(-8.0f, 3.8f, -5.6f), 180f), ("browse", new Vector3(-8.6f, 3.8f, -1.6f), 180f),
+                ("browse", new Vector3(-8.6f, 3.8f, 2.6f), 0f), ("browse", new Vector3(-8.6f, 3.8f, 4.6f), 180f) }),
         };
 
         static (string, Vector3, float)[] Join((string, Vector3, float)[] a, (string, Vector3, float)[] b)

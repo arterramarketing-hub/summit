@@ -200,3 +200,10 @@ plan("LodgePlanB3", "B3 — Balcony (built, LODGE: B3)", "B, with a balcony at +
      [[(-0.2, 12.6), (2.5, 8.2), (4.5, 7), (2.4, 2.6), (-4.0, 2.6), (-4.0, 5.2), (0.7, 5.0), (0.7, 3.8), (-6.0, 3.0)], [(4.5, 7), (2.5, 1.2), (-6, 0.9), (-13.5, 1.0)]]) {
     upstairs([(-10.7, 0.8, -3.08, 6.5)], "UPSTAIRS +3.8: the window lounge, a telescope", (-6.5, 7.6), [(-3.08, 4.6, 0.0, 5.8), (0.0, 3.2, 1.4, 5.8), (-3.08, 3.2, 0.0, 4.4)])
 }
+// B2R: B2 with its stair along the back wall (the user's pick, revised: the default lodge)
+plan("LodgePlanB2R", "B2R — Loft, back stair (built, LODGE: B2R, the default)", "B2's loft and snug as they were; its stair moved to the back wall, behind the lounge, arriving at the loft's back corner by the gear wall; the front glass clear again",
+     [Zone(name: "LOUNGE + FIRE", x0: -6.2, z0: -5.1, x1: 2.7, z1: -0.3, col: lounge, note: "drawn forward off the wall\nthe ring round the fire")] + Array(bGround.dropFirst()) + [snug],
+     [[(-0.2, 12.6), (2.5, 8.2), (4.5, 7), (3.6, 0.8), (3.0, -4.4), (1.6, -5.9), (-5.0, -5.9), (-7.2, -4.4), (-8.6, -4.0)], [(4.5, 7), (2.4, 2.4), (-6, 0.9), (-13.5, 1.0)],
+      [(-0.1, -1.72), (0.45, -2.71), (-0.1, -3.7), (-3.5, -3.7), (-4.1, -2.71), (-3.5, -1.72), (-0.1, -1.72)]]) {
+    upstairs([(-10.7, -6.7, -5.4, 6.5)], "UPSTAIRS +3.8: the outfitters' loft (wardrobe + closet)", (-8.0, 7.6), [(-5.4, -6.64, 0.76, -5.14)])
+}

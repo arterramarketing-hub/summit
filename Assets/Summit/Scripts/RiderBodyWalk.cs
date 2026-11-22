@@ -138,6 +138,10 @@ namespace Summit
         /// <summary>The parts of the rider the closet can show (ClosetStage clones them for its preview).</summary>
         public Transform Upper => upper;
         public Transform BoardGear => boardRoot;
+        /// <summary>Everything drawn of the rider on a run: the body and whatever they ride (board, skis and poles, sled, tube).</summary>
+        public Transform Drawn => roll;
+        /// <summary>What takes the Invincible rainbow's second colour (PowerAura): the trousers and the board or skis' paint.</summary>
+        public bool Lower(Material m) => m != null && (m == pantsMat || m == boardMat || m == boardPaint);
         public Transform SkiGear => skiRoot;
         public Transform SledGear => sledRoot;
 
