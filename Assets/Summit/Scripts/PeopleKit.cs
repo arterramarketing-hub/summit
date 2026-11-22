@@ -60,7 +60,7 @@ namespace Summit
         public const int CSkin = 0, CHelmet = 1, CFrame = 2, CLens = 3, CGlove = 4, CCuff = 5, CBoot = 6, CSole = 7, CStrap = 8,
                          CBinding = 9, CBStrap = 10, CVent = 11, CNose = 12, CDeckEdge = 13, CBase = 14, CSpare = 15,
                          CPack = 16, CPackSide = 17, CPackAccent = 18, CSeam = 19, CZip = 20, CGaiter = 21, CGaiterBand = 22, CChinstrap = 23,
-                         CHair = 60, CPompom = 61;
+                         CHair = 60, CPompom = 61, CLip = 62;
         const int PalCols = 8;
         static int PalRows = 8;   // (from the palette itself: MakeHero.py now always writes 8 x 8)
         public static Vector2 CellUv(int c) => new Vector2((c % PalCols + 0.5f) / PalCols, (c / PalCols + 0.5f) / PalRows);
@@ -272,6 +272,7 @@ namespace Summit
                 }
             }
             var add = new Builder(v, n, uv, w, keep, c.head.bones, modelToMesh);
+            if (l.faceShows) Face(add, v, cell, keep, meshToModel, modelToMesh, l.female);
             if (beanie && l.hasPompom) add.Ball(HeadCentre + new Vector3(0f, 0.178f, 0.012f), 0.045f, CPompom, "Head");
             // hair from under the helmet's back edge, over the bunched hood (it stands out to 22 cm behind the neck)
             bool pack = l.pack != null;
@@ -303,6 +304,85 @@ namespace Summit
             mesh.RecalculateBounds();
             c.heads[key] = mesh;
             return mesh;
+        }
+
+        /// <summary>
+        /// The face under the goggles, with the neck warmer pulled down: the hero's head is a plain skin shape there (his
+        /// warmer comes up to the goggles), which read as a blank stump. A nose from under the goggles' bridge, and lips
+        /// (their own swatch, a shade of the person's skin: CLip), each laid on the skin where it is (found by rays from
+        /// the front); the helmet's chin straps drawn in against the cheeks instead of standing off where the warmer was.
+        /// </summary>
+        static void Face(Builder add, List<Vector3> v, int[] cell, List<int> tris, Matrix4x4 meshToModel, Matrix4x4 modelToMesh, bool female)
+        {
+            // the skin's triangles, in the model's frame (it faces -z)
+            var skin = new List<Vector3>();
+            float gogLow = float.MaxValue;
+            for (int i = 0; i < v.Count; i++)
+            {
+                int cc = cell[i];
+                if (cc != CFrame && cc != CLens) continue;
+                Vector3 p = meshToModel.MultiplyPoint3x4(v[i]);
+                if (Mathf.Abs(p.x) < 0.02f && p.z < HeadCentre.z - 0.05f) gogLow = Mathf.Min(gogLow, p.y);
+            }
+            for (int t = 0; t < tris.Count; t += 3)
+            {
+                if (cell[tris[t]] != CSkin || cell[tris[t + 1]] != CSkin || cell[tris[t + 2]] != CSkin) continue;
+                for (int j = 0; j < 3; j++) skin.Add(meshToModel.MultiplyPoint3x4(v[tris[t + j]]));
+            }
+            if (skin.Count == 0 || gogLow == float.MaxValue) return;
+            // where the skin is, straight in from the front at (x, y): its z, or NaN (a ray down a seam between two
+            // triangles can slip through: then a hair to either side)
+            float Front(float x, float y)
+            {
+                float z = Hit(x, y);
+                if (float.IsNaN(z)) z = Hit(x + 0.0007f, y);
+                if (float.IsNaN(z)) z = Hit(x - 0.0007f, y);
+                return z;
+            }
+            float Hit(float x, float y)
+            {
+                var o = new Vector3(x, y, HeadCentre.z - 0.5f); var d = Vector3.forward; float best = float.MaxValue;
+                for (int i = 0; i < skin.Count; i += 3)
+                {
+                    Vector3 e1 = skin[i + 1] - skin[i], e2 = skin[i + 2] - skin[i], pv = Vector3.Cross(d, e2);
+                    float det = Vector3.Dot(e1, pv); if (Mathf.Abs(det) < 1e-9f) continue;
+                    Vector3 tv = o - skin[i]; float u = Vector3.Dot(tv, pv) / det; if (u < 0f || u > 1f) continue;
+                    Vector3 qv = Vector3.Cross(tv, e1); float w2 = Vector3.Dot(d, qv) / det; if (w2 < 0f || u + w2 > 1f) continue;
+                    float tt = Vector3.Dot(e2, qv) / det; if (tt > 0f && tt < best) best = tt;
+                }
+                return best == float.MaxValue ? float.NaN : o.z + best;
+            }
+            float k = female ? 0.9f : 1f;
+            // the nose: flush under the goggles' bridge, standing out most at the tip, tucked in at its base
+            var nose = new List<(Vector3 c, float rx, float rz)>();
+            foreach (var (dy, proud, rx) in new[] { (0.004f, 0.002f, 0.010f), (-0.010f, 0.009f, 0.012f), (-0.022f, 0.014f, 0.016f), (-0.030f, 0.011f, 0.018f), (-0.036f, 0.002f, 0.014f) })
+            {
+                float y = gogLow + dy * k, z = Front(0f, y);
+                if (float.IsNaN(z)) return;
+                float rz = 0.016f;
+                nose.Add((new Vector3(0f, y, z + rz - proud * k), rx * k, rz));
+            }
+            add.Lump(nose, CSkin);
+            // the lips: a soft band, the corners up a touch (a half smile)
+            float my = gogLow - 0.058f * k, mw = 0.021f * k;
+            var lip = new List<(Vector3 c, float rx, float rz)>();
+            for (int i = 0; i <= 6; i++)
+            {
+                float u = -1f + 2f * i / 6f, x = u * mw, y = my + 0.003f * u * u, z = Front(x, y);
+                if (float.IsNaN(z)) return;
+                float th = 0.0042f * k * Mathf.Sqrt(Mathf.Max(0.15f, 1f - u * u));
+                lip.Add((new Vector3(x, y, z + 0.003f - 0.0022f * (1f - u * u)), th, 0.003f));
+            }
+            add.Band(lip, CLip);
+            // the chin straps, in against the cheeks
+            for (int i = 0; i < cell.Length; i++)   // (the head's own vertices: the nose and lips come after them)
+            {
+                if (cell[i] != CChinstrap) continue;
+                Vector3 p = meshToModel.MultiplyPoint3x4(v[i]);
+                if (p.y > gogLow) continue;
+                Vector3 d = new Vector3(p.x - HeadCentre.x, 0f, p.z - HeadCentre.z);
+                v[i] = modelToMesh.MultiplyPoint3x4(new Vector3(HeadCentre.x, p.y, HeadCentre.z) + d * 0.88f);
+            }
         }
 
         /// <summary>Extra skinned pieces added to the gear: hair and pompoms, made in the model's frame at rest.</summary>
@@ -356,6 +436,35 @@ namespace Summit
                 }
             }
             void Quad(int a, int b, int c, int d) { tris.Add(a); tris.Add(b); tris.Add(c); tris.Add(a); tris.Add(c); tris.Add(d); }
+            /// <summary>A shape down the face (a nose): rings across it (x wide, z deep) at each point, ends closed; on the head.</summary>
+            public void Lump(List<(Vector3 c, float rx, float rz)> rows, int cell) => Run(rows, cell, true);
+            /// <summary>A shape across the face (lips): rings in the y-z plane (y tall, z deep) at each point, ends closed; on the head.</summary>
+            public void Band(List<(Vector3 c, float rx, float rz)> rows, int cell) => Run(rows, cell, false);
+            void Run(List<(Vector3 c, float rx, float rz)> rows, int cell, bool down)
+            {
+                const int segs = 8;
+                var bw = new BoneWeight { boneIndex0 = head, weight0 = 1f };
+                var ring = new int[rows.Count, segs];
+                for (int i = 0; i < rows.Count; i++)
+                    for (int s = 0; s < segs; s++)
+                    {
+                        float a = 2f * Mathf.PI * s / segs;
+                        var (c, r1, r2) = rows[i];
+                        Vector3 d = down ? new Vector3(Mathf.Cos(a) * r1, 0f, -Mathf.Sin(a) * r2) : new Vector3(0f, Mathf.Cos(a) * r1, -Mathf.Sin(a) * r2);
+                        Vector3 nn = down ? new Vector3(Mathf.Cos(a) / r1, 0f, -Mathf.Sin(a) / r2) : new Vector3(0f, Mathf.Cos(a) / r1, -Mathf.Sin(a) / r2);
+                        ring[i, s] = Add(c + d, nn.normalized, cell, bw);
+                    }
+                int e = rows.Count - 1;
+                Vector3 along0 = (rows[0].c - rows[1].c).normalized, along1 = (rows[e].c - rows[e - 1].c).normalized;
+                int c0 = Add(rows[0].c, along0, cell, bw), c1 = Add(rows[e].c, along1, cell, bw);
+                for (int i = 0; i < e; i++)
+                    for (int s = 0; s < segs; s++)
+                    {
+                        int s1 = (s + 1) % segs;
+                        Quad(ring[i, s], ring[i + 1, s], ring[i + 1, s1], ring[i, s1]);
+                    }
+                for (int s = 0; s < segs; s++) { int s1 = (s + 1) % segs; tris.Add(c0); tris.Add(ring[0, s1]); tris.Add(ring[0, s]); tris.Add(c1); tris.Add(ring[e, s]); tris.Add(ring[e, s1]); }
+            }
             /// <summary>A tapering tube of hair along the points (a ponytail, a pigtail).</summary>
             public void Tube(Vector3[] path, float[] radius, int segs, int cell)
             {
@@ -437,6 +546,7 @@ namespace Summit
                 Set(a, it.a, it.smooth); if (b >= 0) Set(b, it.b); if (c >= 0) Set(c, it.c);
             }
             Set(CSkin, l.skin);
+            Set(CLip, new Color(l.skin.r * 0.80f, l.skin.g * 0.56f, l.skin.b * 0.56f), 0.35f);   // (the lips: a shade of the skin)
             if (l.head == PersonHead.Beanie) { Set(CHelmet, l.beanie, 0.05f); Set(CVent, l.beanie * 0.8f, 0.05f); }   // (the vents' swatch is the beanie's folded cuff)
             else Item(l.helmet, CHelmet, CVent);
             Item(l.goggles, CLens, CFrame);

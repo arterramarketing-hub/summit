@@ -105,8 +105,13 @@ public class SummitImport : AssetPostprocessor
         t.npotScale = TextureImporterNPOTScale.None; t.textureCompression = TextureImporterCompression.Uncompressed;   // (and never blended or squeezed)
         if (assetPath.EndsWith("Face.png"))
         {
-            // a painted face, laid on the head once: smooth, with mip levels, and its edge colour carried outward
+            // a painted face, laid on the head once: smooth, with mip levels, and its edge colour carried outward.
+            // 512 px, ASTC 4x4 on the phone (256 KB with its mips; uncompressed it was 1.3 MB a face)
             t.filterMode = FilterMode.Bilinear; t.mipmapEnabled = true; t.wrapMode = TextureWrapMode.Clamp;
+            t.textureCompression = TextureImporterCompression.CompressedHQ; t.maxTextureSize = 512;
+            var fios = t.GetPlatformTextureSettings("iPhone");
+            fios.overridden = true; fios.maxTextureSize = 512; fios.format = TextureImporterFormat.ASTC_4x4;
+            t.SetPlatformTextureSettings(fios);
             return;
         }
         if (assetPath.EndsWith("Pants.png"))

@@ -45,16 +45,22 @@ FEMCUT = {"hemfold": (0.94, 0.94), "hem": (0.94, 0.94), "skirt": (0.95, 0.95), "
 # --character paul: Paul, a skier: short dark hair and a moustache under a cream beanie with his goggles pushed up on
 # it, a white turtleneck under a black puffer, red ski trousers, blue ski boots. --character paulb: his second
 # outfit, a grey hoodie under a black puffer vest with a white balaclava, charcoal trousers, the same boots.
+# --character alyssa: Alyssa, at the camp's fire (never ridden): built on Breanna's body and clothes (a long loose top,
+# slim black trousers) with her own head after her photos: an oval face with a wide smile, brown eyes, fine dark brows,
+# near-black hair parted in the middle under a white ribbed beanie and worn in two long plaits over the front of her
+# shoulders, white-framed goggles with a smoked lens pushed up on the beanie; a light grey hoodie, its hood down;
+# black gloves. Writes Resources/Rider/Alyssa.fbx and AlyssaFace.png (Alyssa.cs dresses and poses her).
 if CHAR == "brianna": CHAR = "breanna"
+ALY = CHAR == "alyssa"
 VAL = CHAR == "buddy"                    # Pajama Buddy Val
-BRI = CHAR in ("breanna", "breannapj")   # Breanna (her head, hair and hands; her clothes by BRI_PJ)
+BRI = CHAR in ("breanna", "breannapj", "alyssa")   # Breanna (her head, hair and hands; her clothes by BRI_PJ); Alyssa's body is hers
 BRI_PJ = CHAR == "breannapj"
 PAUL = CHAR in ("paul", "paulb")
 PAUL_B = CHAR == "paulb"
 BUDDY = VAL or BRI or PAUL               # the riders built from photos: a bare face, their own clothes and hands
-SKIN, HAIR = ("skin3", "hair2") if BRI else ("skin4", "hair3") if PAUL else ("skin2", "hair")
+SKIN, HAIR = ("skin5", "hair2") if ALY else ("skin3", "hair2") if BRI else ("skin4", "hair3") if PAUL else ("skin2", "hair")
 # the file each one is written to (Resources/Rider/<name>.fbx), and the name in the pictures it paints
-FILE = {"hero": "Hero", "herof": "HeroF", "buddy": "Buddy", "breanna": "Breanna", "breannapj": "BreannaPJ", "paul": "Paul", "paulb": "PaulB"}[CHAR]
+FILE = {"hero": "Hero", "herof": "HeroF", "buddy": "Buddy", "breanna": "Breanna", "breannapj": "BreannaPJ", "paul": "Paul", "paulb": "PaulB", "alyssa": "Alyssa"}[CHAR]
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 scene = bpy.context.scene
@@ -175,12 +181,14 @@ PAL = [  # name, rgb, smoothness
     ("skin4", (0.54, 0.31, 0.21), 0.3), ("hair3", (0.035, 0.025, 0.020), 0.0), ("beanie", (0.60, 0.56, 0.47), 0.0),
     ("skiboot", (0.10, 0.26, 0.58), 0.55), ("buckle", (0.62, 0.64, 0.68), 0.7), ("beanie2", (0.20, 0.20, 0.21), 0.0),
     ("frame2", (0.90, 0.90, 0.91), 0.5), ("lens2", (0.95, 0.42, 0.62), 0.95), ("strap2", (0.88, 0.40, 0.56), 0.25),
-    ("balaclava", (0.92, 0.92, 0.91), 0.08), ("tache2", (0.10, 0.07, 0.05), 0.2)]
+    ("balaclava", (0.92, 0.92, 0.91), 0.08), ("tache2", (0.10, 0.07, 0.05), 0.2),
+    # Alyssa: fair, warm skin (between Breanna's and Val's), her white ribbed beanie, her goggles' smoked lens, her lips
+    # (60 and 61 are the camp people's hair and pompom, 62 their lips: PeopleKit paints them per person)
+    ("skin5", (0.80, 0.555, 0.445), 0.3), ("beanie3", (0.86, 0.86, 0.84), 0.0), ("lens3", (0.05, 0.035, 0.022), 0.95), ("lip3", (0.66, 0.33, 0.32), 0.4)]
 PALI = {p[0]: i for i, p in enumerate(PAL)}
-PAUL_FACE = (0.56, 0.34, 0.22)   # Paul's skin as measured off his photos: his painted face's base (his hands are skin4)
 assert len(PALI) == len(PAL), "two swatches share a name: the later one would take the first one's gear"
 PAL_ROWS = 8   # always 8 x 8: a size the game takes as it is. Any other height it rescales, which bleeds each row of colours into the next
-assert len(PAL) <= 64
+assert len(PAL) <= 60   # (60..63: PeopleKit's own)
 def swatch_uv(name):
     i = PALI[name]
     return ((i % 8 + 0.5) / 8.0, (i // 8 + 0.5) / PAL_ROWS)
@@ -683,7 +691,11 @@ def make_gear_buddy():
         head = [(HV(0, 0.0, -0.138), 0.040, 0.046, hd), (HV(0, -0.004, -0.115), 0.072, 0.070, hd, 0.070),
                 (HV(0, -0.006, -0.066), 0.094, 0.088, hd, 0.092), (HV(0, -0.004, 0.0), 0.104, 0.094, hd, 0.106),
                 (HV(0, 0, 0.07), 0.095, 0.088, hd, 0.100), (HV(0, 0, 0.115), 0.045, 0.045, hd)]
-    if BRI:   # hers: a longer, slimmer oval with a narrow chin
+    if ALY:   # hers (after her photos): an oval, full in the cheeks when she smiles, a small rounded chin
+        head = [(HV(0, 0.0, -0.140), 0.034, 0.036, hd), (HV(0, -0.004, -0.117), 0.070, 0.058, hd, 0.068),
+                (HV(0, -0.006, -0.064), 0.098, 0.080, hd, 0.093), (HV(0, -0.004, 0.0), 0.104, 0.089, hd, 0.106),
+                (HV(0, 0, 0.07), 0.096, 0.086, hd, 0.100), (HV(0, 0, 0.115), 0.045, 0.045, hd)]
+    elif BRI:   # hers: a longer, slimmer oval with a narrow chin
         head = [(HV(0, 0.0, -0.142), 0.032, 0.034, hd), (HV(0, -0.004, -0.118), 0.066, 0.054, hd, 0.066),
                 (HV(0, -0.006, -0.066), 0.094, 0.077, hd, 0.090), (HV(0, -0.004, 0.0), 0.104, 0.088, hd, 0.106),
                 (HV(0, 0, 0.07), 0.096, 0.086, hd, 0.100), (HV(0, 0, 0.115), 0.045, 0.045, hd)]
@@ -746,7 +758,7 @@ def make_gear_buddy():
             c_ = sum([XE.v[j_] for j_ in XE.f[i]], Vector()) / len(XE.f[i])
             if (q1 - q0).cross(q2 - q0).dot(c_ - HV(sx * 0.06, 0.008, -0.018)) < 0: XE.f[i] = tuple(reversed(XE.f[i]))
         lobe = XE.v[rings_[2][int(n_ * 0.75)]]
-        if BRI:   # a small gold hoop through each lobe
+        if BRI and not ALY:   # a small gold hoop through each lobe
             hoop = [lobe + V(sx * 0.004, -0.002 + 0.010 * math.sin(a), -0.004 - 0.010 * math.cos(a)) for a in [2 * math.pi * k / 8 for k in range(9)]]
             loft(G, [(c, 0.0026, 0.0026, hd) for c in hoop], 4, "gold", 2.0, ref=V(1, 0, 0))
         elif VAL: loft(G, [(lobe + V(sx * 0.001, -0.002, 0.006), 0.0042, 0.0042, hd), (lobe + V(sx * 0.006, -0.002, 0.006), 0.0036, 0.0036, hd)], 6, "zip", 2.0, ref=V(0, 0, 1))
@@ -808,7 +820,7 @@ def make_gear_buddy():
             u_ = -1 + 2 * i / 6
             x = ex + u_ * (ew + 0.001)
             arch = max(0.0, 1 - u_ * u_) ** 0.5
-            z_open, z_shut = ez + 0.0006 + (0.0064 if BRI else 0.0048) * arch, ez - 0.0006 - (0.0074 if BRI else 0.0064) * arch
+            z_open, z_shut = ez + 0.0006 + (0.0054 if ALY else 0.0064 if BRI else 0.0048) * arch, ez - 0.0006 - (0.0074 if BRI else 0.0064) * arch
             col_ = []
             for dz, l_, c_, moves in ((0.0055, -SUNK, SKIN, 0.0), (0.0026, 0.0027, SKIN, 0.5), (0.0, 0.0031, SKIN, 1.0),
                                       (0.0, 0.0031, HAIR, 1.0), (-0.0030 if BRI else -0.0020, 0.0027, HAIR, 1.0)):
@@ -823,13 +835,19 @@ def make_gear_buddy():
                 quad = (c0[k], c0[k + 1], c1[k + 1], c1[k])
                 q0, q1, q2 = [C_.v[j] for j in quad[:3]]
                 C_.face(*(quad if (q1 - q0).cross(q2 - q0).y < 0 else quad[::-1]))
-        if BRI:   # hers: finer, higher and arched (her glasses are gone: in her new photo she wears goggles)
-            band([(0.014 * sx, 0.0235, 0.0026), (0.029 * sx, 0.0285, 0.0034), (0.044 * sx, 0.0300, 0.0030), (0.055 * sx, 0.0262, 0.0018)], HAIR, 0.0022,
+        if ALY:   # hers: dark, fine, softly arched, level at the inner end
+            band([(0.013 * sx, 0.0276, 0.0025), (0.028 * sx, 0.0304, 0.0032), (0.043 * sx, 0.0308, 0.0027), (0.056 * sx, 0.0270, 0.0015)], HAIR, 0.0020,
+                 moved=("Brows", lambda i: 0.0065 - 0.0008 * i))
+        elif BRI:   # hers: finer, higher and arched (her glasses are gone: in her new photo she wears goggles). The inner
+            # ends sat lowest and the arch tipped up to the outside, which read as a frown: now level at the inside
+            band([(0.014 * sx, 0.0262, 0.0026), (0.029 * sx, 0.0296, 0.0032), (0.044 * sx, 0.0304, 0.0028), (0.055 * sx, 0.0270, 0.0016)], HAIR, 0.0021,
                  moved=("Brows", lambda i: 0.0065 - 0.0008 * i))
         else:
-            th_ = 0.8 if PAUL else 1.0   # (his brows a little lighter than Val's)
-            band([(0.012 * sx, 0.0205, 0.0042 * th_), (0.028 * sx, 0.0238, 0.0058 * th_), (0.045 * sx, 0.0246, 0.0056 * th_), (0.061 * sx, 0.0196, 0.0036 * th_)], HAIR, 0.0034 * th_,
-                 moved=("Brows", lambda i: 0.0075 - 0.0012 * i))
+            # (heavy, straight and low, as theirs are; a little finer than at first, when from close they read as
+            # black slabs with points at the ends)
+            th_ = 0.72 if PAUL else 0.85
+            band([(0.012 * sx, 0.0212, 0.0040 * th_), (0.028 * sx, 0.0240, 0.0056 * th_), (0.045 * sx, 0.0246, 0.0052 * th_), (0.060 * sx, 0.0204, 0.0030 * th_)], HAIR, 0.0030 * th_,
+                 tips=(1.0, 0.8), moved=("Brows", lambda i: 0.0075 - 0.0012 * i))
     if VAL: band([(-0.041, -0.0668, 0.0026), (-0.031, -0.0608, 0.0052), (-0.016, -0.0562, 0.0066), (0.0, -0.0550, 0.0062),
                   (0.016, -0.0562, 0.0066), (0.031, -0.0608, 0.0052), (0.041, -0.0668, 0.0026)], HAIR, 0.0042)
     # Paul's moustache: thin, along the top lip, dark
@@ -837,14 +855,14 @@ def make_gear_buddy():
                    (0.008, -0.0574, 0.0034), (0.020, -0.0596, 0.0030), (0.030, -0.0640, 0.0016)], HAIR, 0.0028)
     # the mouth, one shape: the lower lip under the moustache, its top line turning up a little at the corners
     # (he is usually half smiling), full in the middle and thinning to nothing at each end
-    f0 = len(XF.f); mw = 0.0240 if BRI else 0.0215; cols_ = []
+    f0 = len(XF.f); mw = 0.0262 if ALY else 0.0240 if BRI else 0.0215; cols_ = []
     for i in range(9):
         u_ = -1 + 2 * i / 8
         x = u_ * mw
-        zt = -0.0722 + (0.0048 if BRI else 0.0030) * u_ * u_
+        zt = -0.0722 + (0.0048 if BRI else 0.0030) * u_ * u_ + (0.0050 if ALY else 0.0) * u_ ** 4   # (her smile: the corners up)
         zb = zt - 0.0010 - 0.0082 * max(0.0, 1 - u_ * u_) ** 0.75
         full = 0.0020 * (0.35 + 0.65 * max(0.0, 1 - u_ * u_))
-        cols_.append([fadd(x, lerp(zt, zb, k_), l_, "lip2" if BRI else "lip") for k_, l_ in ((0, -SUNK), (0.22, full * 0.7), (0.55, full), (0.85, full * 0.6), (1, -SUNK))])
+        cols_.append([fadd(x, lerp(zt, zb, k_), l_, "lip3" if ALY else "lip2" if BRI else "lip") for k_, l_ in ((0, -SUNK), (0.22, full * 0.7), (0.55, full), (0.85, full * 0.6), (1, -SUNK))])
     for c0, c1 in zip(cols_, cols_[1:]):
         for k in range(4): XF.face(c0[k], c0[k + 1], c1[k + 1], c1[k])
     to_front(f0)
@@ -1127,7 +1145,75 @@ def make_gear_buddy():
                     GEAR_SHAPES.setdefault("MaskDown", []).append((q.copy(), V(sa * rd, 0.015 - ca * rd, lerp(1.418, zt_, t))))
                 rows_b.append(row)
             for a_, b_ in zip(rows_b, rows_b[1:]): XB.bridge(a_, b_)
-    if BRI:
+    if ALY:
+        # her hair (after her photos): near-black, parted in the middle and drawn back flat under a white ribbed beanie
+        # worn low on the forehead; two long plaits from behind the ears, over the front of her shoulders to her chest,
+        # tied off with a short loose tail. Her goggles (a white frame, a smoked lens, a black strap) are worn over the
+        # eyes as modelled; the game keeps them pushed up on the beanie ("GogglesUp").
+        cap_hair([(0.122, 0.030), (0.116, 0.068), (0.096, 0.093), (0.064, 0.103), (0.030, 0.105), (-0.010, 0.103), (-0.055, 0.094), (-0.090, 0.074)], 0.096, -0.090)
+        beanie("beanie3", 0.046, 0.022, -0.030, 0.117, 0.103, 0.122, slouch=0.012)
+        goggles(0.010, 0.106, 0.091, 0.118, ("frame2", "lens3", "strap"), a0=1.20, h=0.078, lift=0.011)
+        def wz(z):
+            if z > 1.56: return {"Head": 1.0}
+            if z > 1.47: k = (z - 1.47) / 0.09; return {"Head": k, "Neck": 1 - k}
+            if z > 1.39: k = (z - 1.39) / 0.08; return {"Neck": k, "UpperChest": 1 - k}
+            if z > 1.25: return {"UpperChest": 1.0}
+            return {"UpperChest": 0.6, "Chest": 0.4}
+        XP = Cage("Plaits", "Gear"); XP.recalc = True; XTRA.append((XP, "HeroHead"))
+        def blob(c, ax_, ay_, az_, w_, col, n_=6, m_=4):
+            """A closed ellipsoid on three axes (vectors: half lengths), faces out."""
+            top_ = XP.add(c + az_, w_, swatch_uv(col)); bot_ = XP.add(c - az_, w_, swatch_uv(col)); rings_ = []
+            for j in range(1, m_):
+                ph = math.pi * j / m_
+                rings_.append([XP.add(c + az_ * math.cos(ph) + (ax_ * math.cos(2 * math.pi * k / n_) + ay_ * math.sin(2 * math.pi * k / n_)) * math.sin(ph), w_, swatch_uv(col)) for k in range(n_)])
+            f0 = len(XP.f)
+            for k in range(n_): XP.face(top_, rings_[0][k], rings_[0][(k + 1) % n_])
+            for a_, b_ in zip(rings_, rings_[1:]):
+                for k in range(n_): XP.face(a_[k], b_[k], b_[(k + 1) % n_], a_[(k + 1) % n_])
+            for k in range(n_): XP.face(bot_, rings_[-1][(k + 1) % n_], rings_[-1][k])
+            for i in range(f0, len(XP.f)):
+                q0, q1, q2 = [XP.v[j_] for j_ in XP.f[i][:3]]
+                cc = sum([XP.v[j_] for j_ in XP.f[i]], Vector()) / len(XP.f[i])
+                if (q1 - q0).cross(q2 - q0).dot(cc - c) < 0: XP.f[i] = tuple(reversed(XP.f[i]))
+        def catmull(ctrl, m):
+            P_ = [ctrl[0]] + list(ctrl) + [ctrl[-1]]; out = []
+            for i in range(m):
+                u = i / (m - 1) * (len(ctrl) - 1); j = min(int(u), len(ctrl) - 2); t = u - j
+                p0, p1, p2, p3 = P_[j], P_[j + 1], P_[j + 2], P_[j + 3]
+                out.append(0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t * t * t))
+            return out
+        for sx in (1, -1):
+            # the plait's line: from under the beanie behind the ear, round and forward over the shoulder, down the chest
+            ctrl = [V(sx * 0.078, 0.078, 1.612), V(sx * 0.104, 0.040, 1.566), V(sx * 0.124, 0.000, 1.505), V(sx * 0.132, -0.050, 1.452),
+                    V(sx * 0.126, -0.118, 1.405), V(sx * 0.116, -0.158, 1.335), V(sx * 0.108, -0.174, 1.250), V(sx * 0.104, -0.178, 1.170)]
+            P_ = catmull(ctrl, 60)
+            L_ = [0.0]
+            for a_, b_ in zip(P_, P_[1:]): L_.append(L_[-1] + (b_ - a_).length)
+            def at_len(d):
+                for i in range(1, len(L_)):
+                    if L_[i] >= d: k = (d - L_[i - 1]) / max(1e-9, L_[i] - L_[i - 1]); return P_[i - 1].lerp(P_[i], k), (P_[i] - P_[i - 1]).normalized()
+                return P_[-1], (P_[-1] - P_[-2]).normalized()
+            # a core along it (fills between the lobes), then the plait's lobes, crossing left and right down its length
+            loft(G, [(at_len(d)[0], r_, r_, wz(at_len(d)[0].z)) for d, r_ in ((0.0, 0.021), (0.05, 0.017), (0.15, 0.0135), (0.30, 0.0125), (L_[-1] - 0.01, 0.0105))],
+                 6, HAIR, 2.2, ref=V(0, 0, 1))
+            d = 0.06; i = 0; step = 0.0170
+            while d < L_[-1] - 0.012:
+                c, t = at_len(d)
+                out_ = V(sx, 0, 0) if t.z < -0.7 else V(0, 0, 1).cross(t).normalized() * sx   # across the plait
+                if out_.length < 0.5: out_ = V(sx, 0, 0)
+                nrm = t.cross(out_).normalized()                                                # out from the body
+                if nrm.y > 0 and c.y < -0.05: nrm = -nrm
+                k_ = 1.0 - 0.28 * d / L_[-1]                                                    # thinner toward the end
+                side = 1 if i % 2 == 0 else -1
+                diag = (t * 0.86 + out_ * 0.50 * side).normalized()
+                blob(c + out_ * side * 0.0046 * k_, diag * 0.0128 * k_, out_.cross(diag).normalized() * 0.0086 * k_, nrm * 0.0098 * k_, wz(c.z), HAIR)
+                d += step * k_; i += 1
+            # the tie, and the loose tail below it
+            c, t = at_len(L_[-1])
+            loft(G, [(c + t * 0.002, 0.0085, 0.0085, wz(c.z)), (c + t * 0.010, 0.0085, 0.0085, wz(c.z))], 6, "strap", 2.0, ref=V(1, 0, 0))
+            loft(G, [(c + t * 0.010, 0.0080, 0.0080, wz(c.z)), (c + t * 0.030, 0.0125, 0.0105, wz(c.z)), (c + t * 0.055, 0.0110, 0.0090, wz(c.z)), (c + t * 0.072, 0.003, 0.003, wz(c.z))],
+                 6, HAIR, 2.2, ref=V(1, 0, 0))
+    if BRI and not ALY:
         # her hair (after her new photo): long, dark brown and curly, falling from under a grey beanie past her shoulders
         # to her chest in front and down her back. Under the locks, a close cap and a mass behind; the locks themselves
         # are tight curls (each a thin tube wound round its line), hanging from the head's bone and lying on her shoulders
@@ -1196,7 +1282,13 @@ def make_gear_buddy():
     for s in (1, -1):
         sd = SIDE[s]
         sh, u, el, f, wr, kn = arm_points(s)
-        G.cur = "hands"; bare_hand(G, s, SKIN); G.cur = "gear"
+        if ALY:
+            # black gloves (in the gear: she never takes them off), a gauntlet cuff over the end of the sleeve
+            G.cur = "gear"; bare_hand(G, s, "glove")
+            loft(G, [(wr - f * 0.080, 0.050, 0.044, {sd + "LowerArm": 0.5, sd + "ForearmTwist": 0.5}), (wr - f * 0.040, 0.050, 0.044, {sd + "ForearmTwist": 1}),
+                     (wr - f * 0.012, 0.045, 0.038, {sd + "ForearmTwist": 0.5, sd + "Hand": 0.5})], 10, "cuff", 2.4, ref=FWD)
+        else:
+            G.cur = "hands"; bare_hand(G, s, SKIN); G.cur = "gear"
         # white low-top sneakers: a chunky sole, a grey panel on the side and the heel
         hip, knee, ankle, ball, toe = leg_points(s)
         x = ankle.x
@@ -1415,6 +1507,7 @@ def make_board():
 make_jacket()
 if not BUDDY: make_hood()
 if PAUL: make_hood("Hoodie" if PAUL_B else "Jacket")   # (his puffer's hood down behind the collar; the hoodie's, under the vest)
+if ALY: make_hood("Jacket")   # (her hoodie's hood, down)
 make_pants(); make_gear(); make_board()
 
 # ----------------------------------------------------------------------------------------------- meshes
@@ -1465,47 +1558,107 @@ def plaid_print(path, n=256):
         rows.append(row)
     write_png(path, n, n, rows)
 
-def face_paint(path, n=256, her=False, base=None, beard=0.34):
-    """Val's face, painted (the picture is laid on his head from the front, see FACE_UV): warm skin, colour in the
-    cheeks and the tip of the nose, the shadow of a shaved beard over the jaw and top lip, the hollows round the
-    eyes with a crease above each lid, the top lip under the moustache, and the hair's shadow at the hairline.
-    The eyes, brows, moustache and lower lip are modelled; this is what lies under and between them."""
+def face_paint(path, who, skin, n=512):
+    """A rider's face, painted (laid on the head from the front, see FACE_UV), in the game's flat-shaded style: the
+    planes a sculptor would block in, as soft shapes of light and shade, so the face reads from the camp's camera and
+    still holds up close. The eyes, brows, moustache and lower lip are modelled; this is what lies under and between
+    them: the forehead and the bridge of the nose catching the light, the eye sockets and the sides of the nose in
+    shade, the nostrils, the top lip and the line of the mouth, a shadow under the lip, colour in the cheeks, the
+    shadow under the jaw and the hair's shadow at the hairline; and each person's own: Val's shaved beard, Paul's
+    stubble, Alyssa's smile and freckles, Breanna's fuller lips.
+    skin: the rider's skin swatch (their hands, neck and ears). The painting is scaled so its cheeks average exactly
+    that, so the face and the hands always match."""
+    import numpy as np, random
     W, H, Z0 = FACE_UV
-    beard_k = beard
-    def g(dx, dz, rx, rz): return math.exp(-((dx / rx) ** 2 + (dz / rz) ** 2))
-    def st(a, b, x):
-        t = max(0.0, min(1.0, (x - a) / (b - a)))
-        return t * t * (3 - 2 * t)
-    rows = []
-    for r in range(n):
-        z = (1 - (r + 0.5) / n) * H - Z0
-        row = []
-        for c in range(n):
-            x = ((c + 0.5) / n - 0.5) * W; ax = abs(x)
-            col = [0.82, 0.62, 0.52] if her else [0.83, 0.57, 0.45]
-            def mix(to, k):
-                k = max(0.0, min(1.0, k))
-                for i in range(3): col[i] += (to[i] - col[i]) * k
-            mix((0.90, 0.66, 0.54), 0.30 * g(x, z - 0.055, 0.075, 0.030))                # the forehead, lighter
-            mix((0.86, 0.40, 0.34), (0.26 if her else 0.46) * g(ax - (0.050 if her else 0.058), z + 0.030, 0.030, 0.024))       # cheeks
-            mix((0.86, 0.44, 0.37), 0.30 * g(x, z + 0.024, 0.018, 0.016))                # the tip of the nose
-            mix((0.64, 0.41, 0.35), 0.40 * g(ax - 0.040, z - 0.006, 0.026, 0.015))       # round the eyes
-            mix((0.46, 0.28, 0.24), 0.50 * g(ax - 0.040, z - 0.0150, 0.019, 0.0020))     # the crease above each lid
-            mix((0.60, 0.39, 0.35), 0.30 * g(ax - 0.040, z + 0.0080, 0.016, 0.0030))     # under the eyes
-            beard = st(-0.040, -0.078, z) * (1 - st(0.070, 0.102, ax))
-            beard = max(beard, 0.9 * g(x, z + 0.058, 0.040, 0.010))
-            if not her: mix((0.50, 0.39, 0.35), beard_k * beard)                          # the beard's shadow
-            lipz = -0.0722 + 0.0030 * (x / 0.0215) ** 2
-            if ax < 0.0215:                                                              # the top lip
-                mix((0.68, 0.30, 0.31) if her else (0.60, 0.30, 0.28), 0.9 * st(lipz + (0.0075 if her else 0.0058), lipz + 0.0036, z) * st(lipz - 0.012, lipz - 0.009, z) * (1 - (ax / 0.0215) ** 2) ** 0.5)
-            mix((0.58, 0.36, 0.31), 0.35 * g(x, z + 0.0840, 0.018, 0.0032))              # the shadow under the bottom lip
-            mix((0.66, 0.43, 0.35), 0.5 * st(-0.105, -0.135, z))                         # under the jaw
-            hz = (0.102 if her else 0.090) - 0.070 * (ax / 0.1) ** 2
-            mix((0.20, 0.15, 0.12), 0.75 * st(hz - 0.018, hz + 0.004, z))                # the hair's shadow at the hairline
-            if base: col = [col[i] * base[i] / (0.83, 0.57, 0.45)[i] for i in range(3)]   # (all of it in his own skin's tone)
-            row.append((srgb(col[0]), srgb(col[1]), srgb(col[2]), 1.0))
-        rows.append(row)
-    write_png(path, n, n, rows)
+    her = who in ("bri", "aly")
+    xs = ((np.arange(n) + 0.5) / n - 0.5) * W
+    zs = (1 - (np.arange(n) + 0.5) / n) * H - Z0
+    x, z = np.meshgrid(xs, zs)             # rows from the top (z high) down, as the picture is written
+    ax = np.abs(x)
+    def g(cx, cz, rx, rz, xx=None): return np.exp(-(((x if xx is None else xx) - cx) / rx) ** 2 - ((z - cz) / rz) ** 2)
+    def st(a_, b_, v): t = np.clip((v - a_) / (b_ - a_), 0.0, 1.0); return t * t * (3 - 2 * t)
+    col = np.empty((n, n, 3)); col[:] = (0.83, 0.58, 0.46)
+    def mix(to, k):
+        k = np.clip(k, 0.0, 1.0)[..., None]
+        col[:] = col + (np.array(to) - col) * k
+    # (strong: in the game the snow's bounce light all but flattens a face's own shape, so the picture carries it)
+    def shade(k, warm=(0.62, 0.38, 0.34)):   # into shadow: darker and a little redder, as skin goes
+        mix(warm, 1.7 * k)
+    def light(k): mix((0.95, 0.75, 0.63), 1.35 * k)
+    smile = 1.0 if who == "aly" else 0.45 if who == "bri" else 0.15
+    # ---- the big planes: light from above and in front; the face turns away into shade at the sides and under the jaw
+    shade(0.22 * st(0.060, 0.120, ax))                                                  # the sides of the face turning away
+    shade(0.14 * g(0.098, 0.040, 0.020, 0.040, ax))                                    # the temples
+    light(0.30 * g(0.0, 0.062, 0.060, 0.026))                                     # the forehead
+    light(0.28 * g(0.0, -0.002, 0.0062, 0.026))                                   # the bridge of the nose
+    light(0.24 * g(0.0, -0.028, 0.0085, 0.0070))                                  # the tip of the nose
+    light((0.22 + 0.10 * smile) * g(0.048, -0.016 - 0.004 * smile, 0.020, 0.014, ax))   # the tops of the cheeks
+    light(0.22 * g(0.0, -0.103, 0.018, 0.010))                                    # the chin
+    shade(0.10 * g(0.062, -0.052, 0.018, 0.028, ax) * (1 - smile))                     # under the cheekbones
+    shade(0.42 * st(-0.100, -0.132, z), (0.58, 0.36, 0.32))                            # under the jaw
+    # ---- the eyes: the sockets in soft shade under the brows, the crease above each lid, a little shade below
+    shade(0.30 * g(0.032, 0.012, 0.020, 0.012, ax))                                    # the socket, deepest by the nose
+    shade(0.16 * g(0.040, 0.020, 0.024, 0.006, ax))                                    # under the brow
+    shade(0.38 * g(0.040, 0.0150 if not her else 0.0172, 0.017, 0.0020, ax), (0.45, 0.27, 0.24))   # the crease over the lid
+    shade(0.20 * g(0.041, -0.0090, 0.015, 0.0030, ax))                                 # under the eyes
+    shade(0.14 * g(0.016, 0.004, 0.006, 0.010, ax))                                    # the inner corners, by the bridge
+    # ---- the nose: its sides in shade, the wings, the nostrils, the shadow under it on the top lip
+    shade(0.22 * g(0.0125, -0.012, 0.0050, 0.026, ax))                                  # the sides of the nose
+    shade(0.30 * g(0.0150, -0.038, 0.0060, 0.0060, ax))                                 # round each wing
+    shade(0.62 * g(0.0072, -0.0418, 0.0034, 0.0019, ax), (0.36, 0.17, 0.15))           # the nostrils
+    shade(0.30 * g(0.0, -0.0465, 0.0120, 0.0036))                                       # the shadow under the nose
+    shade(0.10 * g(0.0035, -0.056, 0.0016, 0.0080, ax))                                # the groove down to the lip
+    # ---- the cheeks: colour, fuller and higher in a smile; the smile's lines from the nose to the mouth's corners
+    ck = {"val": 0.40, "bri": 0.30, "paul": 0.18, "aly": 0.40}[who]
+    mix((0.88, 0.42, 0.36), ck * g(0.052, -0.026 - 0.006 * smile, 0.026, 0.020, ax))
+    mix((0.88, 0.46, 0.40), 0.24 * g(0.0, -0.030, 0.012, 0.010))                       # the nose, warm
+    if smile > 0.3:
+        for t_ in np.linspace(0.0, 1.0, 9):
+            cx_ = 0.018 + (0.031 - 0.018) * t_ + 0.006 * math.sin(math.pi * t_)
+            cz_ = -0.040 - 0.030 * t_
+            shade(0.22 * smile * g(cx_, cz_, 0.0040, 0.0060, ax), (0.55, 0.32, 0.29))
+    # ---- the mouth: the top lip (the bottom one is modelled), the line between them, turned up at the corners in a
+    # smile; a shadow under the bottom lip
+    mw = {"aly": 0.0262, "bri": 0.0240}.get(who, 0.0215)
+    lipz = -0.0722 + (0.0048 if her else 0.0030) * (x / mw) ** 2 + 0.0050 * smile * (x / mw) ** 4
+    inside = np.clip(1 - (ax / mw) ** 2, 0.0, 1.0)
+    lipcol = {"bri": (0.70, 0.31, 0.32), "aly": (0.68, 0.34, 0.33), "paul": (0.56, 0.30, 0.25)}.get(who, (0.60, 0.30, 0.28))
+    top = (0.0078 if who == "bri" else 0.0068 if who == "aly" else 0.0058)
+    bow = 0.0012 * np.exp(-((ax - 0.0045) / 0.0035) ** 2)                               # the cupid's bow
+    mix(lipcol, 0.92 * st(lipz + top + bow, lipz + top + bow - 0.0026, z) * st(lipz - 0.0020, lipz + 0.0004, z) * inside ** 0.4)
+    mline = np.exp(-((z - lipz) / 0.0011) ** 2) * np.clip(1 - (ax / (mw * 1.06)) ** 6, 0.0, 1.0)
+    mix((0.26, 0.11, 0.10), 0.85 * mline)                                              # the line of the mouth
+    mix((0.30, 0.13, 0.12), 0.55 * g(mw * 1.0, -0.0722 + 0.0048 + 0.0050 * smile, 0.0024, 0.0020, ax) * (0.4 + smile))   # its corners
+    shade(0.34 * g(0.0, -0.0868, 0.0150, 0.0034), (0.52, 0.30, 0.27))                  # under the bottom lip
+    # ---- the hair's shadow at the hairline (under a beanie it barely shows)
+    hz = (0.102 if her else 0.090) - 0.070 * (ax / 0.1) ** 2
+    mix((0.20, 0.15, 0.12), 0.75 * st(hz - 0.018, hz + 0.004, z))
+    # ---- in the rider's own skin: the cheeks (below the eyes, beside the nose, above any beard) average their swatch
+    cheek = (ax > 0.040) & (ax < 0.080) & (z > -0.050) & (z < -0.014)
+    have = col[cheek].mean(axis=0)
+    col *= np.array(skin) / have
+    # ---- their own: Val's shaved beard, Paul's stubble, Alyssa's freckles
+    rnd = np.random.default_rng(3)
+    if who in ("val", "paul"):
+        beard = st(-0.036, -0.070, z) * (1 - st(0.074, 0.104, ax))
+        beard = np.maximum(beard, 0.9 * g(0.0, -0.058, 0.040, 0.010))                   # over the top lip
+        if who == "paul":
+            # his: a short dark beard, close on the jaw and the chin and round the mouth, thinning up the cheeks
+            beard = np.maximum(beard, st(-0.020, -0.050, z) * st(0.040, 0.068, ax) * (1 - st(0.090, 0.110, ax)))
+            beard *= 1 - 0.85 * g(0.0, -0.072, mw * 0.95, 0.0055)                        # (not on the lips)
+            grain = rnd.random((n, n)) * 0.55 + 0.45
+            mix((0.11, 0.075, 0.06), 0.62 * beard * grain)
+        else:
+            mix((0.50, 0.39, 0.35), 0.34 * beard)
+    if who == "aly":
+        rf = random.Random(9)
+        for _ in range(26):   # a light dusting over the nose and the tops of the cheeks
+            fx = rf.gauss(0.0, 0.030); fz = rf.gauss(-0.020, 0.008) + 0.10 * fx * fx
+            if abs(fx) > 0.065: continue
+            mix((0.58, 0.36, 0.26), 0.13 * g(fx, fz, 0.0014, 0.0014))
+    rows = (np.clip(np.where(col <= 0.0031308, col * 12.92, 1.055 * np.clip(col, 0, None) ** (1 / 2.4) - 0.055), 0, 1))
+    write_png(path, n, n, [[(r_[0], r_[1], r_[2], 1.0) for r_ in row] for row in rows])
+    print("HERO face %s: cheeks %s (the skin swatch)" % (who, tuple(round(float(c), 3) for c in skin)))
 
 def bear_print(path, n=512):
     """The pyjama print, drawn after the real fleece: fat cream polar bears sat at all angles on near-black navy,
@@ -1559,7 +1712,7 @@ def bear_print(path, n=512):
     write_png(path, n, n, [[(srgb(c[0]), srgb(c[1]), srgb(c[2]), 1.0) for c in row] for row in reversed(px)])
 
 if BUDDY:
-    WHO = "Breanna" if BRI else "Paul" if PAUL else "Buddy"     # (whose face and print pictures: one each, whatever they wear)
+    WHO = "Alyssa" if ALY else "Breanna" if BRI else "Paul" if PAUL else "Buddy"     # (whose face and print pictures: one each, whatever they wear)
     RDIR = os.path.join(PROJECT, "Assets/Summit/Resources/Rider") if PROJECT else (bpy.app.tempdir or "/tmp")
     if VAL or BRI_PJ:
         PRINT_PATH = os.path.join(RDIR, "%sPants.png" % WHO)
@@ -1571,7 +1724,8 @@ if BUDDY:
     else:
         # plain trousers (the game's snowy cloth, dyed by the closet's PANTS): Paul's red ski trousers or charcoal, her black
         material("Pants", (0.60, 0.06, 0.06) if PAUL and not PAUL_B else (0.09, 0.09, 0.10) if PAUL_B else (0.025, 0.025, 0.03), 0.2)
-    if BRI: material("Jacket", (0.93, 0.90, 0.82), 0.12).name = "FleeceWhite"   # her fleece is cream all over
+    if ALY: material("Jacket", (0.80, 0.79, 0.77), 0.08)                     # her light grey hoodie
+    elif BRI: material("Jacket", (0.93, 0.90, 0.82), 0.12).name = "FleeceWhite"   # her fleece is cream all over
     elif PAUL:
         material("Jacket", (0.03, 0.03, 0.035), 0.4)                           # the black puffer (or vest)
         material("Knit", (0.92, 0.91, 0.88), 0.05)                             # the white turtleneck
@@ -1580,7 +1734,7 @@ if BUDDY:
         material("Jacket", (0.09, 0.25, 0.72), 0.12).name = "FleeceBlue"      # royal blue over cream, as the real fleece
         MATS["FleeceWhite"] = material("FleeceWhite", (0.93, 0.90, 0.82), 0.12)
     FACE_PATH = os.path.join(RDIR, "%sFace.png" % WHO)
-    face_paint(FACE_PATH, her=BRI, base=PAUL_FACE if PAUL else None, beard=0.24 if PAUL else 0.34)
+    face_paint(FACE_PATH, "aly" if ALY else "bri" if BRI else "paul" if PAUL else "val", PAL[PALI[SKIN]][1])
     face_img = bpy.data.images.load(FACE_PATH); face_img.alpha_mode = 'NONE'
     m_ = material("FaceSkin", (1, 1, 1), 0.3, face_img)
     for nd in m_.node_tree.nodes:
@@ -1732,7 +1886,13 @@ if BRI or PAUL:
         else: print("HERO detail line missed the cloth")
     def round_on(z, a0, a1, n, wd, lift, col):   # round the body at a height, between two angles (0 = the front)
         line_on([(V(0.7 * math.sin(a), 0.02 - 0.7 * math.cos(a), z), V(-math.sin(a), math.cos(a), 0)) for a in lin(math.radians(a0), math.radians(a1), n)], wd, lift, col)
-    if BRI and not BRI_PJ:
+    if ALY:
+        # the hoodie's big front pocket, and its drawstrings
+        round_on(1.06, -32, 32, 7, 0.006, 0.002, "seam")
+        for sx_ in (1, -1):
+            line_on([(V(sx_ * (0.110 - 0.012 * k), -0.7, z), V(0, 1, 0)) for k, z in enumerate(lin(1.06, 0.92, 4))], 0.006, 0.002, "seam")
+            line_on([(V(sx_ * (0.030 + 0.003 * k), -0.7, z), V(0, 1, 0)) for k, z in enumerate(lin(1.44, 1.28, 5))], 0.006, 0.008, "seam")
+    elif BRI and not BRI_PJ:
         # the half zip: down from the collar to the top of the chest, and its pull
         line_on([(V(0.0, -0.7, z), V(0, 1, 0)) for z in lin(1.488, 1.300, 6)], 0.007, 0.004, "sneakergrey")
         q, nq = JS.cast(V(0.0, -0.7, 1.305), V(0, 1, 0), 0.008)
@@ -2040,7 +2200,7 @@ if ob_.vertex_groups.get("Hood") is not None:
     # the hood tucked away inside the collar, for long hair to fall where it was
     tuck = V(0, 0.07, 1.40)
     add_key(ob_, "HoodAway", lambda v: tuck.lerp(v.co, 0.15) if hood_w(ob_, v) > 0.3 else None)
-if BRI:
+if BRI and not ALY:
     # her curls a little further out from the body: over someone else's (bulkier) jacket they'd sink into it
     hair_cell = swatch_uv(HAIR); me_ = OBJS["HeroHead"].data; uvl_ = me_.uv_layers.active; hv_ = set()
     for li, lp in enumerate(me_.loops):
@@ -2842,6 +3002,29 @@ if RENDER and ("turn" in WHAT or "all" in WHAT):
         tile([os.path.join(d, "%03d.png" % i) for i in (0, 9, 18, 27)], 4, os.path.join(RENDER, "HeroViews_" + tag + ".png"))
     OBJS["Snowboard"].hide_render = False
     print("HERO turntables written")
+
+if RENDER and "face" in WHAT:
+    # the head close, as the camp shows it (goggles up, any balaclava down): front, three-quarters, side, and the
+    # whole figure (--what face)
+    os.makedirs(RENDER, exist_ok=True)
+    render_setup(600, 600)
+    apply(Solver())
+    for ob in OBJS.values():
+        sk = ob.data.shape_keys if ob.type == 'MESH' else None
+        if sk is None: continue
+        for kb in sk.key_blocks:
+            if kb.name in ("GogglesUp", "MaskDown"): kb.value = 1.0
+    for nm_ in ("Snowboard", "Bindings"):
+        if nm_ in OBJS: OBJS[nm_].hide_render = True
+    for ob_ in bpy.data.objects:
+        if ob_.name.startswith("Bindings"): ob_.hide_render = True
+    shots_ = []
+    for tag, yaw, pitch, tgt, dist, lens in (("front", 0, 4, (0, -0.01, 1.60), 0.75, 85), ("threequarter", -35, 6, (0, -0.01, 1.60), 0.75, 85),
+                                             ("side", -88, 4, (0, 0.0, 1.58), 0.85, 85), ("figure", -20, 8, (0, 0, 0.95), 4.4, 50)):
+        look_from(yaw, pitch, V(*tgt), dist, lens)
+        f_ = os.path.join(RENDER, "%s_face_%s.png" % (FILE, tag)); shot(f_); shots_.append(f_)
+    tile(shots_, 4, os.path.join(RENDER, "%s_faces.png" % FILE))
+    print("HERO face renders written")
 
 if RENDER and ("rig" in WHAT or "all" in WHAT):
     os.makedirs(RENDER, exist_ok=True)
