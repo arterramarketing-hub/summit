@@ -111,3 +111,15 @@ shield_hit.wav: Hard Glass Impact (by deleted_user_3656686, id 418194) - Freesou
 soda.wav: Opening a can of soda (by michorvath, id 386887) - Freesound - Creative Commons 0 - https://freesound.org/people/michorvath/sounds/386887/
 music_hub.wav: Chill Out Theme (Komiku, "It's time for adventure ! vol 2") - Free Music Archive - CC0 1.0 Universal License - https://freemusicarchive.org/music/Komiku/Its_time_for_adventure__vol_2/Komiku_-_Its_time_for_adventure_vol_2_-_02_Chill_Out_Theme/
 music_run.wav: Fight, run, breath deeply (Komiku, "It's time for adventure ! vol 2") - Free Music Archive - CC0 1.0 Universal License - https://freemusicarchive.org/music/Komiku/Its_time_for_adventure__vol_2/Komiku_-_Its_time_for_adventure_vol_2_-_13_Fight_run_breath_deeply/
+Lodge surfaces (Camp/LodgeTex: colour, normal and roughness/occlusion maps; graded, resized and packed for the phone by
+  Tools/MakeLodgeTex.py, the materials by Assets/Editor/LodgeTex.cs), all CC0:
+  "Oak Veneer 01" by Jenelle van Heerden, Poly Haven - https://polyhaven.com/a/oak_veneer_01 (glulam, oak, the café's counter)
+  "Hinoki Planks" by Charlotte Baglioni, Poly Haven - https://polyhaven.com/a/hinoki_planks (wall lining, ceiling boards, floorboards)
+  "Black Painted Planks" by Dimitrios Savva, Poly Haven - https://polyhaven.com/a/black_painted_planks (the cladding)
+  "Smooth Concrete Floor" by Dimitrios Savva, Poly Haven - https://polyhaven.com/a/smooth_concrete_floor (the floor, the terrace)
+  "Stacked Stone Wall" by Dimitrios Savva, Poly Haven - https://polyhaven.com/a/stacked_stone_wall (the fire's hearth)
+  "Poly Wool Herringbone" by colormass (photography) and Rico Cilliers (processing), Poly Haven -
+    https://polyhaven.com/a/poly_wool_herringbone (the sofas, cushions, the runner)
+  "Wool Boucle" by colormass (photography) and Rico Cilliers (processing), Poly Haven - https://polyhaven.com/a/wool_boucle (the rugs)
+  "Fabric Leather 02" by Rob Tuytel, Poly Haven - https://polyhaven.com/a/fabric_leather_02 (the leather armchairs and sofas)
+  "Metal 027" from ambientCG.com (CC0) - https://ambientcg.com/a/Metal027 (the black powder-coated steel)

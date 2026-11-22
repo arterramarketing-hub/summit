@@ -36,7 +36,7 @@ public static class PeopleShot
         QualitySettings.SetQualityLevel(0, true);
         TestPrefs.Pin();
         game = Object.FindFirstObjectByType<SummitGame>();
-        bool liftSet = set == "lift";
+        bool liftSet = set == "lift" || set == "pop";
         TestBoot.Boot(game, liftSet);
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
         camp = Get<Camp>("camp"); body = Get<RiderBody>("body"); rider = Get<Rider>("rider"); meta = Get<MetaUi>("meta");
@@ -47,8 +47,9 @@ public static class PeopleShot
         ChaseCamera.TestDt = dt;
         steps.Clear(); at = 0;
         if (set == "lineup" || set == "all") Lineup();
-        if (liftSet) Lifts();
+        if (set == "lift") Lifts();
         if (set == "camp") CampShots();
+        if (set == "pop") Pop();
         steps.Add(() =>
         {
             ChaseCamera.TestDt = 0f;
@@ -252,6 +253,118 @@ public static class PeopleShot
             }
             Log($"lift budget over {n} frames down the mountain: riders aboard in range at most {aboardMax}; drawn as people {near / (float)n:0.0} on average ({nearMax} at most), mid {mid / (float)n:0.0}, far {far / (float)n:0.0}; " +
                 $"rider triangles {tris / n} on average, {trisMax} at most; rider draw calls at most {drawsMax}; SkiLift.Update with the riders {ms / n:0.00} ms on average, {msMax:0.00} at most (editor)");
+        });
+        steps.Add(() => { SkiLift.TestClock = -1.0; Physics.simulationMode = SimulationMode.FixedUpdate; });
+    }
+
+    // ---------------------------------------------------------------- lift riders from far off (liftpop)
+
+    /// <summary>
+    /// Riding down toward lifts, the chase camera's view: the riders on chairs ahead as main drew them (cut at 420 m), as
+    /// the phone drew them (no instanced riders: the build had dropped the shader's instanced variants; reproduced here
+    /// with LiftRiders.TestPhoneBefore, the editor keeps every variant), and as now. SUMMIT_PEOPLE_SET=pop.
+    /// </summary>
+    static void Pop()
+    {
+        PeopleAssets.Ensure();
+        lift = Object.FindFirstObjectByType<SkiLift>();
+        dress = Object.FindFirstObjectByType<CourseDressing>();
+        lUpd = typeof(SkiLift).GetMethod("Update", NP);
+        Physics.simulationMode = SimulationMode.Script;
+        typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
+        rider.input = null;
+        int seed = int.TryParse(System.Environment.GetEnvironmentVariable("SUMMIT_LIFT_SEED"), out int sd) ? sd : 4242;
+        Slope.Init(seed);
+        terrain.Rebuild(); props.Rebuild(); if (dress != null) dress.Rebuild();
+        // a lift's middle, its chairs going up, seen from the piste above it at 150, 350 and 600 m (the chase camera's
+        // place behind the rider, turned toward the lift, a lens 50 m across there: what the phone shows, enlarged)
+        var views = new List<(string name, Vector3 eye, Vector3 at, float fov, float riderZ)>();
+        int k = 0;
+        foreach (var l in LiftLine.Lifts)
+        {
+            if (l.second || k >= 3) continue;
+            float s = l.plan * 0.5f;
+            int span = LiftLine.SpanAt(l, s);
+            var target = l.At(s, LiftLine.Half, l.CableY(span, s) - 2.8f);
+            foreach (float dist in new[] { 150f, 350f, 600f })
+            {
+                // somewhere this far off with a clear line to them (the snow sampled along it), uphill of them first,
+                // low before high: the chairs coming up toward you
+                bool Clear(Vector3 a, Vector3 b) { for (int i = 1; i < 60; i++) { var q = Vector3.Lerp(a, b, i / 60f); if (q.y < Slope.DrawnHeight(q.x, q.z) + 2.5f) return false; } return true; }
+                Vector3 eye = Vector3.zero; bool found = false;
+                foreach (float lift in new[] { 0.06f, 0.12f, 0.2f, 0.3f, 0.45f })
+                {
+                    for (int a = 0; a < 18 && !found; a++)
+                    {
+                        float ang = (a % 2 == 0 ? 1 : -1) * ((a + 1) / 2) * 20f;   // 0, +-20, +-40 .. from straight up the line
+                        var back = Quaternion.AngleAxis(ang, Vector3.up) * -l.dir;
+                        var e = target + back * dist + Vector3.up * (dist * lift);
+                        e.y = Mathf.Max(e.y, Slope.DrawnHeight(e.x, e.z) + 3f);
+                        if (Clear(e, target)) { eye = e; found = true; }
+                    }
+                    if (found) break;
+                }
+                if (!found) continue;
+                float z = Mathf.Min(eye.z, target.z - 60f);   // (the rider somewhere the lift is in range of)
+                float d = (target - eye).magnitude;
+                views.Add(($"lift{k}-{dist:0}m", eye, target, 2f * Mathf.Atan(25f / d) * Mathf.Rad2Deg, z));
+            }
+            k++;
+        }
+        foreach (var (when, clock) in new[] { ("day", 1.4f), ("night", 3.4f) })
+            foreach (var v in views)
+                foreach (var mode in new[] { "phone-before", "main-before", "after" })
+                {
+                    var vw = v; var md = mode;
+                    if (when == "night" && md == "main-before") continue;
+                    steps.Add(() =>
+                    {
+                        TimeOfDay.TestClock = clock; dayNight.ApplyNow();
+                        LiftRiders.TestPhoneBefore = md == "phone-before"; LiftRiders.TestCutAt420 = md != "after";
+                        float x = Slope.Centre(vw.riderZ);
+                        rider.ResetAt(x, vw.riderZ); body.ResetVisual(); rider.Stop();
+                        terrain.Prewarm(); props.Prewarm(); if (dress != null) dress.Prewarm();
+                        SkiLift.TestClock = 400.0;
+                        var chase = cam.GetComponent<ChaseCamera>(); if (chase != null) chase.enabled = false;
+                        cam.fieldOfView = vw.fov;
+                        cam.transform.SetPositionAndRotation(vw.eye, Quaternion.LookRotation(vw.at - vw.eye));
+                        tUpd.Invoke(terrain, null); fUpd.Invoke(props, null);
+                        typeof(Forest).GetMethod("Draw", NP)?.Invoke(props, null);
+                        typeof(SkiLift).GetField("refreshClock", NP).SetValue(lift, 0f);
+                        for (int i = 0; i < 3; i++) lUpd.Invoke(lift, null);
+                        Shoot($"pop-{vw.name}-{when}-{md}.png");
+                        Log($"pop-{vw.name}-{when}-{md}: {(vw.at - vw.eye).magnitude:0} m, lens {vw.fov:0.0} deg; aboard {LiftRiders.Aboard}, near {LiftRiders.NearShown}, mid {LiftRiders.MidShown}, far {LiftRiders.FarShown}, distant {LiftRiders.DistantShown}; riders {LiftRiders.DrawCalls} draws {LiftRiders.Triangles} tris");
+                        LiftRiders.TestPhoneBefore = false; LiftRiders.TestCutAt420 = false;
+                    });
+                }
+        // what the riders cost now, the rider at every 30 m down the mountain (as LiftShot's budget)
+        steps.Add(() =>
+        {
+            TimeOfDay.TestClock = 1.4f; dayNight.ApplyNow();
+            var chase = cam.GetComponent<ChaseCamera>(); if (chase != null) chase.enabled = false;
+            cam.fieldOfView = 62f;
+            int n = 0, mid = 0, far = 0, dist = 0, drawsMax = 0; long tris = 0, trisMax = 0; double ms = 0, msMax = 0;
+            float zTop = float.MaxValue, zBot = float.MinValue;
+            foreach (var l in LiftLine.Lifts) { zTop = Mathf.Min(zTop, l.ZMin); zBot = Mathf.Max(zBot, l.ZMax); }
+            for (float z = Mathf.Max(0f, zTop); z < zBot; z += 30f)
+            {
+                float x = Slope.Centre(z);
+                rider.ResetAt(x, z); body.ResetVisual(); rider.Stop();
+                var at = new Vector3(x, Slope.DrawnHeight(x, z), z);
+                cam.transform.SetPositionAndRotation(at + new Vector3(0f, 3.2f, -6.5f), Quaternion.LookRotation(new Vector3(0f, -0.3f, 1f)));
+                for (int i = 0; i < 4; i++)
+                {
+                    SkiLift.TestClock = 200.0 + z * 0.37 + i * 1.3;
+                    typeof(SkiLift).GetField("refreshClock", NP).SetValue(lift, 0f);
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    lUpd.Invoke(lift, null);
+                    double t = sw.Elapsed.TotalMilliseconds;
+                    n++; ms += t; msMax = System.Math.Max(msMax, t);
+                    mid += LiftRiders.MidShown; far += LiftRiders.FarShown; dist += LiftRiders.DistantShown;
+                    tris += LiftRiders.Triangles; trisMax = System.Math.Max(trisMax, LiftRiders.Triangles); drawsMax = Mathf.Max(drawsMax, LiftRiders.DrawCalls);
+                }
+            }
+            Log($"pop budget over {n} frames: riders drawn mid {mid / (float)n:0.0}, far {far / (float)n:0.0}, distant {dist / (float)n:0.0} on average; rider triangles {tris / n} on average, {trisMax} at most; rider draw calls at most {drawsMax}; SkiLift.Update with the riders {ms / n:0.00} ms on average, {msMax:0.00} at most (editor)");
         });
         steps.Add(() => { SkiLift.TestClock = -1.0; Physics.simulationMode = SimulationMode.FixedUpdate; });
     }

@@ -568,6 +568,11 @@ namespace Summit
         Material LodgeMat(string name, Dictionary<string, Material> made)
         {
             if (made.TryGetValue(name, out var have)) return have;
+            // the lodge's PBR materials (Resources/Camp/LodgeTex: CC0 textures, a normal map and a packed metallic-gloss /
+            // occlusion mask each, Assets/Editor/LodgeTex.cs): the timber, the boards, the concrete, the stone, the steel,
+            // the fabrics and the leather. Assets, shared, not made per build.
+            var pbr = Resources.Load<Material>("Camp/LodgeTex/Materials/" + name);
+            if (pbr != null) { made[name] = pbr; return pbr; }
             var woodTex = Resources.Load<Texture2D>("Camp/Wood");
             var oakTex = Resources.Load<Texture2D>("Camp/Oak");
             Material m;

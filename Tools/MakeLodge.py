@@ -35,8 +35,17 @@ bpy.ops.wm.read_factory_settings(use_empty=True)
 # game axes -> Blender axes (a mirror: every face is turned round as it is copied in; see MakeChalet.py)
 TOB = Matrix(((1, 0, 0, 0), (0, 0, 1, 0), (0, 1, 0, 0), (0, 0, 0, 1)))
 
-TILE = {"Cladding": 0.8, "Lining": 1.2, "Glulam": 2.4, "Oak": 1.4, "Concrete": 3.0, "Plaster": 4.0, "Roof": 2.0, "Floor": 4.0}
+# metres a texture's tile spans (its UVs are the face's metres over this). The lodge's PBR textures (CampLodge.cs,
+# Resources/Camp/LodgeTex, Tools/MakeLodgeTex.py) at their real size: the oak veneer 1.83 m, the hinoki planks 1.89,
+# the black planks 1.6, the concrete and the stacked stone 2.0, the steel 1.0; the fabrics larger than life (a weave
+# at its true 27 cm shimmers on a phone): the tweed 0.6, the rug's check 1.3, the leather 0.5
+TILE = {"Cladding": 1.6, "Lining": 1.89, "Soffit": 1.89, "FloorBoards": 1.89, "Glulam": 1.83, "Oak": 1.83, "CounterTop": 1.83,
+        "Concrete": 2.0, "Floor": 2.0, "Hearth": 2.0, "Steel": 1.0, "Upholstery": 0.6, "Cushion": 0.6, "Runner": 0.6,
+        "Rug": 1.3, "Hide": 0.5, "Plaster": 4.0, "Roof": 2.0}
 TURN = {"Cladding", "Lining"}   # vertical boards: the texture's boards turned upright
+# the textures whose grain (or boards) runs along v (the veneer's, the black planks'): their UVs turned a quarter, so
+# the grain runs along a beam, a table top, a tread (and, with TURN, the black planks' boards stand upright)
+GRAIN_V = {"Glulam", "Oak", "CounterTop", "Cladding"}
 # small coloured things share one material, "Paint", each a cell of a 16-colour strip the game makes (CampLodge.cs):
 # the five board colours, the chairs' orange and green, canvas, wool, leather, charcoal, white, leaf, red, navy, cream
 PALETTE = {"Swatch1": 0, "Swatch2": 1, "Swatch3": 2, "Swatch4": 3, "Swatch5": 4, "ArtA": 5, "ArtB": 6, "Fabric": 7,
@@ -101,7 +110,7 @@ def add(src, mat, m, full_uv=False):
                 l[uv].uv = sl[src_uv].uv
             else:
                 c = (p.x / tile, p.y / tile) if ax == 2 else (p.y / tile, p.z / tile) if ax == 0 else (p.x / tile, p.z / tile)
-                l[uv].uv = (c[1], c[0]) if turn and ax != 2 else c
+                l[uv].uv = (c[1], c[0]) if (turn and ax != 2) != (mat in GRAIN_V) else c
         tris[mat] = tris.get(mat, 0) + len(f.verts) - 2
     # (for the coplanar audit: each face in game space, the way it faces; the palette's cells told apart)
     key = (mat if point is None else "Paint(%s)" % [k for k, v in PALETTE.items() if (v + 0.5) / PAL_N == point[0]][0]) + (ZONE[0] if mat in SPLIT else "")
@@ -706,9 +715,9 @@ wall("x", WZ0, 1, XW, XH, lambda x: WY + (WZ0 - WZ1) * 0.02, [])
 # ---------------------------------------------------------------- the roof: the shed, the flat roof, the wing's
 
 def roof_slab(x0, x1, z0, z1, under, mat_top="Roof"):
-    """The roof's boards (warm wood, underneath) and its build-up (charcoal metal on top), between x0..x1, z0..z1,
-    its soffit at under(x)."""
-    solid("Glulam", [(x0, under(x0), z0), (x1, under(x1), z0), (x1, under(x1), z1), (x0, under(x0), z1)],
+    """The roof's boards (warm wood, underneath: the ceiling inside, the soffit under the eaves) and its build-up
+    (charcoal metal on top), between x0..x1, z0..z1, its soffit at under(x)."""
+    solid("Soffit", [(x0, under(x0), z0), (x1, under(x1), z0), (x1, under(x1), z1), (x0, under(x0), z1)],
           [(x0, under(x0) + 0.05, z0), (x1, under(x1) + 0.05, z0), (x1, under(x1) + 0.05, z1), (x0, under(x0) + 0.05, z1)])
     solid(mat_top, [(x0, under(x0) + 0.05, z0), (x1, under(x1) + 0.05, z0), (x1, under(x1) + 0.05, z1), (x0, under(x0) + 0.05, z1)],
           [(x0, under(x0) + RT, z0), (x1, under(x1) + RT, z0), (x1, under(x1) + RT, z1), (x0, under(x0) + RT, z1)])
@@ -756,7 +765,7 @@ def wing_under(z):
     return WY + (z - WZ1) * 0.02
 
 
-solid("Glulam", [(WRX0, wing_under(WRZ0), WRZ0), (XH, wing_under(WRZ0), WRZ0), (XH, wing_under(WRZ1), WRZ1), (WRX0, wing_under(WRZ1), WRZ1)],
+solid("Soffit", [(WRX0, wing_under(WRZ0), WRZ0), (XH, wing_under(WRZ0), WRZ0), (XH, wing_under(WRZ1), WRZ1), (WRX0, wing_under(WRZ1), WRZ1)],
       [(WRX0, wing_under(WRZ0) + 0.05, WRZ0), (XH, wing_under(WRZ0) + 0.05, WRZ0), (XH, wing_under(WRZ1) + 0.05, WRZ1), (WRX0, wing_under(WRZ1) + 0.05, WRZ1)])
 solid("Roof", [(WRX0, wing_under(WRZ0) + 0.05, WRZ0), (XH, wing_under(WRZ0) + 0.05, WRZ0), (XH, wing_under(WRZ1) + 0.05, WRZ1), (WRX0, wing_under(WRZ1) + 0.05, WRZ1)],
       [(WRX0, wing_under(WRZ0) + RT, WRZ0), (XH, wing_under(WRZ0) + RT, WRZ0), (XH, wing_under(WRZ1) + RT, WRZ1), (WRX0, wing_under(WRZ1) + RT, WRZ1)])
@@ -1127,7 +1136,7 @@ def plant(x, z, hgt=1.3, y=0.0):
     helper("BLK_plant", (x - 0.38, y, z - 0.38), (x + 0.38, y + 1.6, z + 0.38))
 
 
-def sofa(x0, x1, z, face, depth=0.95, mat="Charcoal", y=0.0):
+def sofa(x0, x1, z, face, depth=0.95, mat="Upholstery", y=0.0):
     """A low modular sofa along x from x0 to x1 at z, facing +z (face 1) or -z (face -1): seat, back, arms, cushions."""
     zb = z - face * (depth / 2 - 0.13)
     lohi(mat, (x0, y, z - depth / 2), (x1, y + 0.42, z + depth / 2))
@@ -1139,11 +1148,11 @@ def sofa(x0, x1, z, face, depth=0.95, mat="Charcoal", y=0.0):
     w = (x1 - x0 - 0.44) / n
     for i in range(n):
         cx = x0 + 0.22 + w * (i + 0.5)
-        lohi("Fabric", (cx - w / 2 + 0.02, y + 0.42, za), (cx + w / 2 - 0.02, y + 0.52, zc))
+        lohi("Cushion", (cx - w / 2 + 0.02, y + 0.42, za), (cx + w / 2 - 0.02, y + 0.52, zc))
     helper("BLK_sofa", (x0, y, z - depth / 2), (x1, y + 0.9, z + depth / 2))
 
 
-def armchair(x, z, yaw, mat="Leather", y=0.0):
+def armchair(x, z, yaw, mat="Hide", y=0.0):
     c, s_ = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
 
     def P(u, h, v):
@@ -1152,7 +1161,7 @@ def armchair(x, z, yaw, mat="Leather", y=0.0):
     box(mat, P(0, 0.62, -0.33), (0.85, 0.42, 0.2), (0, yaw, 0))
     for su in (-1, 1):
         box(mat, P(su * 0.36, 0.55, 0.02), (0.14, 0.28, 0.8), (0, yaw, 0))
-    box("Fabric", P(0, 0.47, 0.05), (0.6, 0.1, 0.55), (0, yaw, 0))
+    box("Cushion", P(0, 0.47, 0.05), (0.6, 0.1, 0.55), (0, yaw, 0))
     helper("BLK_armchair", (x - 0.5, y, z - 0.5), (x + 0.5, y + 0.85, z + 0.5))
 
 
@@ -1354,7 +1363,7 @@ def tuning_bench():
 def cafe():
     """The hot chocolate café in the wing: a counter along its glass with stools, two tables, mugs on shelves, the
     menu on the back wall over where the hot-chocolate station goes (Camp.LodgeCocoaAt, kept clear for it)."""
-    lohi("Oak", (WX0 + 0.15, 1.02, WZF - 0.5), (WX1 - 0.35, 1.07, WZF))
+    lohi("CounterTop", (WX0 + 0.15, 1.02, WZF - 0.5), (WX1 - 0.35, 1.07, WZF))   # (dark: walnut-stained oak)
     lohi("Steel", (WX0 + 0.2, 0.0, WZF - 0.12), (WX1 - 0.4, 1.02, WZF - 0.04))
     helper("BLK_bar", (WX0 + 0.15, 0.0, WZF - 0.52), (WX1 - 0.35, 1.1, WZF))
     for i in range(5):
@@ -1391,8 +1400,8 @@ def hanging_fire(fx, fz, ceiling):
 
 def open_fire(fx, fz, L=2.4, W=1.0, ceiling=under_flat):
     """A low see-through fire: a long concrete hearth at knee height, glass all round the flames, a slim black hood
-    hung high above it on its flue. You see across it from any side and walk round it."""
-    lohi("Concrete", (fx - L / 2, 0.0, fz - W / 2), (fx + L / 2, 0.45, fz + W / 2))
+    hung high above it on its flue. You see across it from any side and walk round it. The hearth stacked stone."""
+    lohi("Hearth", (fx - L / 2, 0.0, fz - W / 2), (fx + L / 2, 0.45, fz + W / 2))
     lohi("Steel", (fx - L / 2 - 0.04, 0.45, fz - W / 2 - 0.04), (fx + L / 2 + 0.04, 0.5, fz + W / 2 + 0.04))
     lohi("Ember", (fx - L / 2 + 0.3, 0.48, fz - 0.16), (fx + L / 2 - 0.3, 0.54, fz + 0.16))
     for s in (-1, 1):
@@ -1408,7 +1417,7 @@ def open_fire(fx, fz, L=2.4, W=1.0, ceiling=under_flat):
 
 
 def welcome_mat():
-    lohi("Charcoal", (3.2, 0.0, 4.9), (5.8, 0.012, 6.6))
+    lohi("Runner", (3.2, 0.0, 4.9), (5.8, 0.012, 6.6))
 
 
 # ---- A: the gallery hall
@@ -1433,7 +1442,7 @@ def layout_A():
     board_shop()
     tuning_bench()
     # the lounge under the tall glass: the hanging fire, a long sofa and two armchairs round it, a rug, a low table
-    lohi("Wool", (-9.2, 0.0, 1.85), (-3.6, 0.015, 5.9))
+    lohi("Rug", (-9.2, 0.0, 1.85), (-3.6, 0.015, 5.9))
     hanging_fire(-6.4, 3.9, under_shed)
     marker("LIGHT_fire", (-6.4, 1.7, 3.0))
     sofa(-8.6, -4.2, 2.25, 1)
@@ -1453,7 +1462,7 @@ def layout_A():
 def layout_B():
     # the lounge in the middle under the clerestory, round a low fire you see through, a clear walk all round it
     FX, FZ = -1.8, -3.2
-    lohi("Wool", (-5.2, 0.0, -6.3), (1.6, 0.015, -0.2))
+    lohi("Rug", (-5.2, 0.0, -6.3), (1.6, 0.015, -0.2))
     open_fire(FX, FZ)
     marker("LIGHT_fire", (FX, 1.4, FZ + 1.2))
     sofa(-4.0, 0.4, -5.55, 1)            # behind the fire, facing it and the glass beyond
@@ -1475,7 +1484,7 @@ def layout_B():
     helper("TAP_Style", (-10.7, 0.0, MZ), (-6.8, 2.6, MZ + 1.2))
     marker("SPOT_Style", (-8.6, 0.0, MZ + 2.0))
     display_table(-8.6, -2.3)
-    lohi("Charcoal", (-10.9, 0.0, -0.4), (-6.5, 0.012, 1.9))          # the runner: the way through to the café
+    lohi("Runner", (-10.9, 0.0, -0.4), (-6.5, 0.012, 1.9))          # the runner: the way through to the café
     rail_x(-10.1, -7.2, 3.4, two_sided=True)
     rail_x(-10.2, -7.6, 5.75)
     mannequin(-9.3, 6.35, "Red"); mannequin(-8.3, 6.35, "ArtB"); mannequin(-7.3, 6.35, "Navy")
@@ -1502,7 +1511,7 @@ CSZB = CSZT + NS * TREAD                      # its foot (1.8 m clear between it
 def layout_C():
     # the mezzanine: concrete with an oak floor, a black edge and a warm strip under it, slim posts, glass rails
     lohi("Concrete", (MX0, MY - 0.3, MZ0), (MX1, MY - 0.02, MZ1))
-    lohi("Oak", (MX0, MY - 0.02, MZ0), (MX1, MY, MZ1))
+    lohi("FloorBoards", (MX0, MY - 0.02, MZ0), (MX1, MY, MZ1))
     lohi("Steel", (MX0, MY - 0.32, MZ1 - 0.02), (MX1, MY + 0.02, MZ1 + 0.04))
     lohi("Steel", (MX1 - 0.02, MY - 0.32, MZ0), (MX1 + 0.04, MY + 0.02, MZ1))
     lohi("LED", (MX0 + 0.2, MY - 0.34, MZ1 - 0.1), (CSX0 - 0.1, MY - 0.32, MZ1 - 0.05))
@@ -1562,14 +1571,14 @@ def layout_C():
     mannequin(-8.0, -2.35, "Red", y0=MY); mannequin(-4.6, -2.35, "ArtB", y0=MY)
     sign(0, (-5.0, MY + 0.55, MZ1 + 0.06), 2.8, 0.7)
     # below: the lounge, double height at the glass, the hanging fire, a quiet corner under the mezzanine
-    lohi("Wool", (-8.2, 0.0, 1.0), (-1.8, 0.015, 5.9))
+    lohi("Rug", (-8.2, 0.0, 1.0), (-1.8, 0.015, 5.9))
     hanging_fire(-5.0, 3.7, under_shed)
     marker("LIGHT_fire", (-5.0, 1.7, 2.8))
     sofa(-7.4, -2.6, 1.65, 1)
     armchair(-7.75, 4.1, 90)
     armchair(-2.25, 4.1, -90)
     low_table(-5.8, 5.55, -4.2, 6.15)
-    sofa(-10.2, -6.8, -5.9, 1, mat="Leather")      # under the mezzanine, by the back wall
+    sofa(-10.2, -6.8, -5.9, 1, mat="Hide")      # under the mezzanine, by the back wall
     low_table(-9.4, -4.75, -7.6, -4.15)
     armchair(-5.6, -4.6, -90)
     plant(-10.2, 6.1); plant(-2.0, -5.9, 1.0)
@@ -1590,7 +1599,7 @@ def b_lounge(pend=((-3.6, 4.6, -4.6), (-0.2, 4.2, -4.8), (-2.2, 5.0, -1.4), (0.6
     """B's lounge: the low open fire in the middle of the hall, sofas facing across it, armchairs at its ends (FZ the
     fire's z, back and front the sofas', rug the rug's back edge: drawn forward in B2R, its stair behind)."""
     FX = -1.8
-    lohi("Wool", (-5.2, 0.0, rug), (1.6, 0.015, -0.2))
+    lohi("Rug", (-5.2, 0.0, rug), (1.6, 0.015, -0.2))
     open_fire(FX, FZ)
     marker("LIGHT_fire", (FX, 1.4, FZ + 1.2))
     sofa(-4.0, 0.4, back, 1)
@@ -1613,7 +1622,7 @@ def b_boutique(gear_levels=(2.7, 3.7, 4.7, 5.7), gear_top=None, sign_z=0.75, sto
     helper("TAP_Style", (-10.7, 0.0, MZ), (-6.8, 2.6, MZ + 1.2))
     marker("SPOT_Style", (-8.6, 0.0, MZ + 2.0))
     display_table(-8.6, -2.3)
-    lohi("Charcoal", (-10.9, 0.0, -0.4), (-6.5, 0.012, 1.9))
+    lohi("Runner", (-10.9, 0.0, -0.4), (-6.5, 0.012, 1.9))
     if storefront:
         rail_x(-10.1, -7.2, 3.4, two_sided=True)
         rail_x(-10.2, -7.6, 5.75)
@@ -1634,9 +1643,9 @@ def b_rest(missions_x=4.0):
 
 
 def upper_floor(name, x0, x1, z0, z1, y=MY):
-    """A floor upstairs: concrete with an oak top; walked on (FLR_), and the camera keeps under or over its slab (CAM_)."""
+    """A floor upstairs: concrete with floorboards on top; walked on (FLR_), and the camera keeps under or over its slab (CAM_)."""
     lohi("Concrete", (x0, y - 0.3, z0), (x1, y - 0.02, z1))
-    lohi("Oak", (x0, y - 0.02, z0), (x1, y, z1))
+    lohi("FloorBoards", (x0, y - 0.02, z0), (x1, y, z1))
     helper("FLR_" + name, (x0, y - 0.3, z0), (x1, y, z1))
     helper("CAM_" + name + "slab", (x0, y - 0.32, z0), (x1, y - 0.01, z1))
 
@@ -1692,7 +1701,8 @@ def flight(name, x0, x1, z0, z1, up, y0, y1, glass=(True, True), end=True):
     for i in range(n):
         yt = y0 + rise * (i + 1)
         sc = foot + sgn * (i + 0.5) * run
-        box_sv("Oak", sc - run / 2 - 0.02, sc + run / 2 + 0.02, yt - 0.06, yt, v0 + 0.06, v1 - 0.06)
+        far = sc + sgn * (run / 2 + 0.02) if i < n - 1 else top   # (the top tread stops at the floor's edge, not on it)
+        box_sv("Oak", sc - sgn * (run / 2 + 0.02), far, yt - 0.06, yt, v0 + 0.06, v1 - 0.06)
         nose = sc - sgn * run / 2
         box_sv("LED", nose, nose + sgn * 0.04, yt - 0.075, yt - 0.065, v0 + 0.1, v1 - 0.1)
     fs = foot - sgn * 0.05
@@ -1802,7 +1812,7 @@ def layout_B1():
     for (r0, r1) in ((-9.6, -6.8), (-3.6, -0.4)):
         rail_x(r0, r1, MZ + 0.38, y0=MY, blk=False)
         helper("BLK_rack", (r0 - 0.1, MY, MZ), (r1 + 0.1, MY + 2.2, MZ + 0.55))
-    sofa(-10.2, -7.2, -1.35, 1, mat="Leather", y=MY)
+    sofa(-10.2, -7.2, -1.35, 1, mat="Hide", y=MY)
     armchair(-7.4, -2.9, 90, y=MY)
     low_table(-9.6, -2.9, -8.2, -2.3, y=MY)
     plant(-10.2, -3.9, 1.0, y=MY)
@@ -1816,10 +1826,10 @@ def layout_B2():
     b_lounge()
     b_rest()
     # under the loft: the snug (books, a leather sofa, armchairs) and, at the glass, the café's tables spilling out
-    lohi("Charcoal", (-10.9, 0.0, -0.4), (-6.5, 0.012, 1.9))          # the runner: the way through to the café
-    lohi("Wool", (-10.4, 0.0, -6.0), (-6.4, 0.015, -1.8))
+    lohi("Runner", (-10.9, 0.0, -0.4), (-6.5, 0.012, 1.9))          # the runner: the way through to the café
+    lohi("Rug", (-10.4, 0.0, -6.0), (-6.4, 0.015, -1.8))
     bookcase(-10.3, -6.9, MZ, h=2.4)
-    sofa(-10.0, -7.4, -5.25, 1, mat="Leather")
+    sofa(-10.0, -7.4, -5.25, 1, mat="Hide")
     low_table(-9.4, -4.2, -8.0, -3.6)
     armchair(-9.6, -2.6, 180); armchair(-7.8, -2.6, 180)
     bistro(-9.2, 3.6); bistro(-8.4, 5.6)
@@ -1862,10 +1872,10 @@ def layout_B2R():
              FZ=-2.71, back=-4.62, front=-0.8, rug=-5.05, tables=((-4.6, -4.62), (1.0, -0.45)))
     b_rest()
     # under the loft: the snug and the café's tables, as B2
-    lohi("Charcoal", (-10.9, 0.0, -0.4), (-6.5, 0.012, 1.9))
-    lohi("Wool", (-10.4, 0.0, -6.0), (-6.4, 0.015, -1.8))
+    lohi("Runner", (-10.9, 0.0, -0.4), (-6.5, 0.012, 1.9))
+    lohi("Rug", (-10.4, 0.0, -6.0), (-6.4, 0.015, -1.8))
     bookcase(-10.3, -6.9, MZ, h=2.4)
-    sofa(-10.0, -7.4, -5.25, 1, mat="Leather")
+    sofa(-10.0, -7.4, -5.25, 1, mat="Hide")
     low_table(-9.4, -4.2, -8.0, -3.6)
     armchair(-9.6, -2.6, 180); armchair(-7.8, -2.6, 180)
     bistro(-9.2, 3.6); bistro(-8.4, 5.6)

@@ -470,12 +470,17 @@ namespace Summit
             get
             {
                 if (lodMat != null) return lodMat;
-                var sh = Resources.Load<Shader>("PeopleLit");
+                // (from the instancing material in Resources: a build keeps the shader's instanced variants only because
+                // that asset uses them; a material made here from the bare shader would draw the lifts' riders as nothing)
+                var asset = Resources.Load<Material>("PeopleLit");
+                var sh = asset != null ? asset.shader : Resources.Load<Shader>("PeopleLit");
                 if (sh == null) { Debug.LogWarning("People: Resources/PeopleLit.shader is missing"); sh = Lit; }
+                if (asset == null) Debug.LogWarning("People: Resources/PeopleLit.mat is missing: a player build drops the riders' instanced shader (PeopleAssets.Ensure makes it)");
                 Atlas = new Texture2D(Slots, Rows, TextureFormat.RGBA32, false, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp, name = "PeoplePalette" };
                 for (int i = 0; i < atlasPx.Length; i++) atlasPx[i] = Color.grey;
                 Atlas.SetPixels(atlasPx); Atlas.Apply(false);
-                lodMat = new Material(sh) { name = "PeopleLit", enableInstancing = true };
+                lodMat = asset != null ? new Material(asset) : new Material(sh);
+                lodMat.name = "PeopleLit"; lodMat.enableInstancing = true;
                 lodMat.SetTexture("_Palette", Atlas);
                 lodMat.SetFloat("_Rows", Rows);
                 return lodMat;

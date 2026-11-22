@@ -185,6 +185,111 @@ public static class PeopleTest
         EditorApplication.Exit(0);
     }
 
+    // ---------------------------------------------------------------- lift riders: there from as far as their chairs
+
+    /// <summary>
+    /// Ride down the mountain past its lifts (SUMMIT_LIFT_SEED, 4242), the camera behind as the chase camera has it,
+    /// the lifts built a few pieces a frame as in the game. Each frame: the chairs in view, and of those that carry
+    /// people, how many are drawn without them; per chair, how far off it first came into view and how far off its
+    /// riders first did. And whether a build keeps the riders' instanced shader (a GPU-instancing material of it in
+    /// Resources: with "Strip Unused" instancing variants, a shader only ever used by a material made at run time loses
+    /// them, and its instanced draws come out as nothing on the phone). -executeMethod PeopleTest.LiftPop
+    /// </summary>
+    public static void LiftPop()
+    {
+        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
+        var game = Object.FindFirstObjectByType<SummitGame>();
+        TestPrefs.Pin();
+        TestBoot.Boot(game);
+        var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
+        var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
+        var terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
+        var props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        var lift = Object.FindFirstObjectByType<SkiLift>();
+        var lUpd = typeof(SkiLift).GetMethod("Update", NP);
+        Physics.simulationMode = SimulationMode.Script;
+        typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
+        rider.input = null;
+        int seed = int.TryParse(System.Environment.GetEnvironmentVariable("SUMMIT_LIFT_SEED"), out int sd) ? sd : 4242;
+        Slope.Init(seed);
+        terrain.Rebuild(); props.Rebuild();
+        SkiLift.SpreadBuild = true;   // (as in the game: a few pieces a frame)
+        var cam = Camera.main;
+        var chase = cam.GetComponent<ChaseCamera>(); if (chase != null) chase.enabled = false;
+        cam.fieldOfView = 62f;
+        var sb = new StringBuilder();
+        // what a build would keep
+        bool kept = false;
+        foreach (var m in Resources.LoadAll<Material>("")) if (m != null && m.shader != null && m.shader.name == "Summit/PeopleLit" && m.enableInstancing) kept = true;
+        sb.AppendLine($"LIFTPOP the riders' instanced shader kept by a build: {(kept ? "yes (an instancing material of it in Resources)" : "NO: no instancing material of Summit/PeopleLit in Resources, so 'Strip Unused' drops its instanced variants and every rider past the near ones draws as nothing on the phone")}");
+        sb.AppendLine($"LIFTPOP the instanced riders' material: {PeopleKit.LodMaterial.name}, GPU instancing {PeopleKit.LodMaterial.enableInstancing}");
+        // the ride
+        float zTop = float.MaxValue, zBot = float.MinValue;
+        foreach (var l in LiftLine.Lifts) { zTop = Mathf.Min(zTop, l.ZMin); zBot = Mathf.Max(zBot, l.ZMax); }
+        float z0 = Mathf.Max(0f, zTop - 100f), z1 = zBot + 50f;
+        const float dt = 1f / 30f, speed = 22f;
+        var first = new Dictionary<long, Vector2>();   // x: how far the chair was when first in view, y: its riders (-1: not yet)
+        int frames = 0, inViewWithPeople = 0, missingInView = 0, missingFrames = 0, worstMissing = 0, chairsInView = 0;
+        float missingNearest = float.MaxValue;
+        var planes = new Plane[6];
+        Vector3 eye = Vector3.zero;
+        LiftRiders.Seen = (id, c, lap, pos, count, shown) =>
+        {
+            var b = new Bounds(pos + Vector3.down * 3.0f, new Vector3(2.6f, 2.4f, 2.2f));
+            if (!GeometryUtility.TestPlanesAABB(planes, b)) return;
+            float d = (pos - eye).magnitude;
+            if (d > cam.farClipPlane) return;
+            chairsInView++;
+            long key = ((long)id << 48) ^ ((long)c << 32) ^ (long)(lap & 0xffffffff);
+            var f = first.TryGetValue(key, out var have) ? have : new Vector2(d, -1f);
+            if (count > 0)
+            {
+                inViewWithPeople++;
+                if (shown) { if (f.y < 0f) f.y = d; }
+                else { missingInView++; frameMissing++; missingNearest = Mathf.Min(missingNearest, d); }
+            }
+            else if (f.y < 0f) f.y = -2f;   // (nobody aboard: nothing to wait for)
+            first[key] = f;
+        };
+        for (float z = z0; z < z1; z += speed * dt)
+        {
+            float x = Slope.Centre(z);
+            var at = new Vector3(x, Slope.DrawnHeight(x, z), z);
+            rider.ResetAt(x, z); body.ResetVisual(); rider.Stop();
+            cam.transform.SetPositionAndRotation(at + new Vector3(0f, 3.2f, -6.5f), Quaternion.LookRotation(new Vector3(0f, -0.28f, 1f)));
+            eye = cam.transform.position;
+            GeometryUtility.CalculateFrustumPlanes(cam, planes);
+            SkiLift.TestClock = 300.0 + frames * dt;
+            frameMissing = 0;
+            lUpd.Invoke(lift, null);
+            frames++;
+            if (frameMissing > 0) missingFrames++;
+            worstMissing = Mathf.Max(worstMissing, frameMissing);
+        }
+        LiftRiders.Seen = null;
+        // how far off each chair came into view, and how much nearer it was when its riders did
+        var chairD = new List<float>(); var lateBy = new List<float>(); int neverRiders = 0;
+        foreach (var kv in first)
+        {
+            chairD.Add(kv.Value.x);
+            if (kv.Value.y >= 0f) lateBy.Add(kv.Value.x - kv.Value.y);
+            else if (kv.Value.y == -1f) neverRiders++;
+        }
+        chairD.Sort(); lateBy.Sort();
+        float Median(List<float> l) => l.Count == 0 ? 0f : l[l.Count / 2];
+        float Most(List<float> l) => l.Count == 0 ? 0f : l[l.Count - 1];
+        sb.AppendLine($"LIFTPOP seed {seed}: {LiftLine.Lifts.Length} lifts, ridden from z {z0:0} to {z1:0} at {speed} m/s, {frames} frames");
+        sb.AppendLine($"LIFTPOP chair-frames in view {chairsInView}, {inViewWithPeople} with people aboard; drawn without them {missingInView} ({(inViewWithPeople > 0 ? missingInView * 100f / inViewWithPeople : 0f):0.0}%), in {missingFrames} frames (most at once {worstMissing}; nearest {(missingNearest < float.MaxValue ? missingNearest.ToString("0") + " m" : "none")})");
+        sb.AppendLine($"LIFTPOP chairs first seen at {Median(chairD):0} m (median), {Most(chairD):0} m (furthest); their riders came in {Median(lateBy):0} m nearer than the chair (median), {Most(lateBy):0} m (most); chairs with people never shown with them: {neverRiders}");
+        Debug.Log(sb.ToString());
+        System.IO.File.WriteAllText("Logs/people-liftpop.txt", sb.ToString());
+        SkiLift.TestClock = -1.0;
+        Physics.simulationMode = SimulationMode.FixedUpdate;
+        TestPrefs.Restore();
+        EditorApplication.Exit(kept && missingInView == 0 ? 0 : 1);
+    }
+    static int frameMissing;
+
     // ---------------------------------------------------------------- the camp
 
     const System.Reflection.BindingFlags NP = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;

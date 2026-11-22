@@ -77,6 +77,9 @@ public static class LodgeShot
         // LODGE_COVERED=1: the covered section at the low end, the floor where the wing meets the hall, the café and
         // the hot chocolate, at the phone's quality (LODGE_TAG names the set: before, after)
         if (System.Environment.GetEnvironmentVariable("LODGE_COVERED") == "1") { Covered(); return; }
+        // LODGE_TEX=1: the lodge's surfaces close enough to see their textures (the hall, the café and the hot
+        // chocolate, the loft, the covered section, the outside), at the phone's quality
+        if (System.Environment.GetEnvironmentVariable("LODGE_TEX") == "1") { Textures(); return; }
         // the three layouts inside (LODGE_FULL=1 also renders the outside, the walk in and layout A's spaces as before)
         Layouts();
         if (System.Environment.GetEnvironmentVariable("LODGE_FULL") != "1") return;
@@ -383,6 +386,52 @@ public static class LodgeShot
             WalkTo(C(14.9f, 0f, -1.9f), 0.7f); Frames(12); noUi = true;
             Shoot($"{tag}_covered_7hero_racks.png");
             Debug.Log($"LODGESHOT covered: hero at {camp.ChaletPoint(0, 0, 0)} + local {Quaternion.Inverse(Quaternion.Euler(0f, cy, 0f)) * (rider.transform.position - camp.ChaletPoint(0, 0, 0))}, camera {cam.transform.position.y - C(0, 0, 0).y:0.00} above the floor");
+        }
+        finally { QualitySettings.SetQualityLevel(keepQ, true); }
+    }
+
+    /// <summary>
+    /// The default layout's surfaces at the phone's quality (Mobile, phone-size frames), by day and at dusk: the hall
+    /// from the door, the lounge (the fire's hearth, the sofas, the rug), the back wall and its stair, the ceiling; the
+    /// café, its counter and the hot chocolate; the loft; the covered section; the photo's view and the cladding close;
+    /// the hero coming in and at the racks. Files: {LODGE_TAG}_tex_*.png.
+    /// </summary>
+    static void Textures()
+    {
+        Vector3 C(float x, float y, float z) => camp.ChaletPoint(x, y, z);
+        float cy = camp.ChaletYaw;
+        string tag = System.Environment.GetEnvironmentVariable("LODGE_TAG");
+        if (string.IsNullOrEmpty(tag)) tag = "now";
+        int keepQ = QualitySettings.GetQualityLevel();
+        QualitySettings.SetQualityLevel(0, true);   // (the phone's)
+        try
+        {
+            Simulate();
+            Debug.Log($"LODGESHOT textures: layout {Camp.LodgeLayoutName}, quality {QualitySettings.names[QualitySettings.GetQualityLevel()]}");
+            foreach (var (name, clock) in new[] { Times[0], Times[1] })
+            {
+                SetTime(clock);
+                EyeCam(C(4.0f, 1.65f, 4.4f), C(-6.5f, 2.1f, -3.4f), 88f); Shoot($"{tag}_tex_hall_1door_{name}.png");
+                EyeCam(C(1.2f, 1.5f, -0.6f), C(-2.2f, 0.45f, -3.2f), 72f); Shoot($"{tag}_tex_hall_2fire_{name}.png");
+                EyeCam(C(-0.6f, 1.65f, 5.6f), C(-2.4f, 2.4f, -6.7f), 88f); Shoot($"{tag}_tex_hall_3backwall_{name}.png");
+                EyeCam(C(2.0f, 1.6f, 3.0f), C(-1.0f, 6.5f, -2.0f), 80f); Shoot($"{tag}_tex_hall_4ceiling_{name}.png");
+                EyeCam(C(-8.4f, 1.65f, 2.0f), C(-14.6f, 1.0f, -2.4f), 80f); Shoot($"{tag}_tex_cafe_1hall_{name}.png");
+                EyeCam(C(-11.6f, 1.65f, 4.0f), C(-14.0f, 0.9f, -4.4f), 80f); Shoot($"{tag}_tex_cafe_2cocoa_{name}.png");
+                EyeCam(C(-12.4f, 1.55f, 1.4f), C(-14.0f, 0.95f, 4.5f), 74f); Shoot($"{tag}_tex_cafe_3counter_{name}.png");
+                EyeCam(C(-5.8f, 5.45f, 5.3f), C(-9.6f, 4.8f, -4.6f), 88f); Shoot($"{tag}_tex_loft_1_{name}.png");
+                EyeCam(C(-6.0f, 5.45f, -5.9f), C(-9.0f, 4.6f, 4.0f), 88f); Shoot($"{tag}_tex_loft_2back_{name}.png");
+                EyeCam(C(15.0f, 1.65f, 11.6f), C(15.0f, 0.6f, -6.0f), 80f); Shoot($"{tag}_tex_covered_1front_{name}.png");
+                EyeCam(C(18.0f, 1.75f, -6.3f), C(12.0f, 0.6f, 6.0f), 84f); Shoot($"{tag}_tex_covered_2backcorner_{name}.png");
+                PhotoCam(new Vector3(11f, 0f, 29f), new Vector3(-2f, 4.0f, 0f), 46f); Shoot($"{tag}_tex_outside_1photo_{name}.png", 1200, 800);
+                EyeCam(C(9.4f, 1.6f, 9.2f), C(5.0f, 2.2f, 6.9f), 70f); Shoot($"{tag}_tex_outside_2cladding_{name}.png");
+            }
+            SetTime(1.4f);
+            camp.TeleportTo(C(4.5f, 0f, 9.0f), cy + 180f);
+            WalkTo(C(4.5f, 0f, 3.6f), 0.8f); Frames(20); noUi = true;
+            Shoot($"{tag}_tex_hero_1in.png");
+            camp.TeleportTo(C(8.6f, 0f, 3.95f), cy + 90f);
+            WalkTo(C(14.4f, 0f, 3.95f), 0.7f); WalkTo(C(14.9f, 0f, -1.9f), 0.7f); Frames(12); noUi = true;
+            Shoot($"{tag}_tex_hero_2racks.png");
         }
         finally { QualitySettings.SetQualityLevel(keepQ, true); }
     }

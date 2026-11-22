@@ -18,7 +18,9 @@ namespace Summit
     ///     looking about, at the view, at each other while they talk, down at you as you ride under them, now and
     ///     then pointing you out, the hanging feet swinging; the full model inside FullRange, the simplified past it;
     ///   - out to MidRange, the same poses baked into simplified meshes and drawn instanced, a palette row each;
-    ///   - out to FarRange, coarser bakes; past that, nobody (the fog has them anyway).
+    ///   - out to FarRange, coarser bakes; past that, the coarsest, on every chair the lift draws however far off, so
+    ///     no chair comes into view empty and fills up as you come nearer. The instanced shader's variants are kept in
+    ///     a build by Resources/PeopleLit.mat (see PeopleAssets).
     /// The seats are the chair's (Tools/MakeLift.py): nothing here goes through the seat, the back, the bar or the
     /// footrest at any of the body sizes (PeopleTest checks), and a chair never comes over a jump station's lane, so
     /// neither do its riders.
@@ -26,7 +28,7 @@ namespace Summit
     public static class LiftRiders
     {
         public static bool On = true;
-        public const float NearRange = 15f, FullRange = 8f, MidRange = 75f, FarRange = 420f;
+        public const float NearRange = 15f, FullRange = 8f, MidRange = 75f, FarRange = 250f;   // (past FarRange: the distant bakes, as far as the chairs go)
         public const int NearCap = 6;
 
         // the chair, in its own frame: the grip on the cable at the origin, +z the way it travels (Tools/MakeLift.py)
@@ -57,12 +59,13 @@ namespace Summit
         static bool playerKnown;
 
         // baked meshes: [tier][pose * Heads + head]
-        static readonly Mesh[][] baked = { new Mesh[Poses * Heads], new Mesh[Poses * Heads] };
-        static readonly float[] bakeCell = { 0.075f, 0.16f };
+        public const int Tiers = 3;   // mid, far, distant
+        static readonly Mesh[][] baked = { new Mesh[Poses * Heads], new Mesh[Poses * Heads], new Mesh[Poses * Heads] };
+        static readonly float[] bakeCell = { 0.075f, 0.16f, 0.34f };
         const float BakeHeight = 0.97f;
-        static readonly List<Matrix4x4>[][] mats = { NewLists(), NewLists() };
-        static readonly float[][][] rowArr = { NewRows(), NewRows() };
-        static readonly MaterialPropertyBlock[][] mpbs = { NewBlocks(), NewBlocks() };
+        static readonly List<Matrix4x4>[][] mats = { NewLists(), NewLists(), NewLists() };
+        static readonly float[][][] rowArr = { NewRows(), NewRows(), NewRows() };
+        static readonly MaterialPropertyBlock[][] mpbs = { NewBlocks(), NewBlocks(), NewBlocks() };
         const int MaxBatch = 500;
         static List<Matrix4x4>[] NewLists() { var a = new List<Matrix4x4>[Poses * Heads]; for (int i = 0; i < a.Length; i++) a[i] = new List<Matrix4x4>(); return a; }
         static float[][] NewRows() { var a = new float[Poses * Heads][]; for (int i = 0; i < a.Length; i++) a[i] = new float[MaxBatch]; return a; }
@@ -79,6 +82,15 @@ namespace Summit
         }
 
         /// <summary>
+        /// For the before/after pictures only: draw as main did before liftpop (riders cut at 420 m), or as the phone did
+        /// (TestPhoneBefore: no instanced riders at all, the build having dropped the shader's instanced variants).
+        /// </summary>
+        public static bool TestCutAt420, TestPhoneBefore;
+
+        /// <summary>For the tests: every chair SkiLift hands over (lift, chair, lap, where, how many aboard, drawn with them).</summary>
+        public static System.Action<int, int, int, Vector3, int, bool> Seen;
+
+        /// <summary>
         /// One chair this frame: the lift, which chair, which lap of the loop, how far round the loop it is (m), its
         /// matrix (the grip on the cable, +z the way it travels).
         /// </summary>
@@ -88,17 +100,19 @@ namespace Summit
             int n = l.Spans;
             float straight = LiftLine.StationHalfLen + LiftLine.WheelBack;
             float h = Slope.Hash01(c + l.id * 977, lap, 151);
-            int count; bool down = false;
+            int count = 0; bool down = false;
             // aboard from just past the bottom bullwheel to the unloading inside the top station
             if (d >= l.cum[0] + 0.8f && d < l.cum[n + 1] + straight * 0.45f)
                 count = h < 0.27f ? 0 : h < 0.47f ? 1 : h < 0.70f ? 2 : h < 0.85f ? 3 : 4;
             // and now and then someone riding down: on at the top, off at the bottom
             else if (h > 0.965f && d >= l.cum[n + 3] + 0.8f && d < l.cum[2 * n + 4] + straight * 0.45f) { count = h > 0.99f ? 2 : 1; down = true; }
-            else return;
-            if (count == 0) return;
             Vector3 pos = m.GetColumn(3);
             float d2 = (pos - eye).sqrMagnitude;
-            if (d2 > FarRange * FarRange) return;
+            // (on every chair the lift draws, however far: SkiLift already keeps to its own range, and a chair seen
+            // empty that fills up as you come nearer is the pop this avoids)
+            bool shown = count > 0 && (!TestCutAt420 || d2 <= 420f * 420f);
+            Seen?.Invoke(l.id, c, lap, pos, count, shown);
+            if (!shown) return;
             float h2 = Slope.Hash01(c + l.id * 977, lap, 152);
             int seats = SeatSet(count, h2);
             for (int s = 0; s < 4; s++)
@@ -153,6 +167,7 @@ namespace Summit
         public static int NearShown { get; private set; }
         public static int MidShown { get; private set; }
         public static int FarShown { get; private set; }
+        public static int DistantShown { get; private set; }
         public static long Triangles { get; private set; }
         public static int DrawCalls { get; private set; }
 
@@ -169,7 +184,7 @@ namespace Summit
             if (nearList.Count > NearCap) nearList.RemoveRange(NearCap, nearList.Count - NearCap);
             // let go of those who left (gone, or no longer among the nearest)
             foreach (var r in riders.Values) if (r.near != null && (r.seen != clock || !nearList.Contains(r))) Release(r);
-            NearShown = 0; MidShown = 0; FarShown = 0; Triangles = 0; DrawCalls = 0;
+            NearShown = 0; MidShown = 0; FarShown = 0; DistantShown = 0; Triangles = 0; DrawCalls = 0;
             foreach (var r in nearList)
             {
                 if (r.near == null && !Take(r)) continue;
@@ -179,11 +194,11 @@ namespace Summit
                 DrawCalls += r.near.Lod == 0 ? 5 : 3;
             }
             // the rest, instanced
-            for (int t = 0; t < 2; t++) foreach (var l in mats[t]) l.Clear();
+            for (int t = 0; t < Tiers; t++) foreach (var l in mats[t]) l.Clear();
             foreach (var r in now)
             {
                 if (r.near != null) continue;
-                int tier = r.d2 < MidRange * MidRange ? 0 : 1;
+                int tier = r.d2 < MidRange * MidRange ? 0 : r.d2 < FarRange * FarRange ? 1 : 2;
                 int v = r.pose * Heads + r.head;
                 var list = mats[tier][v];
                 if (list.Count >= MaxBatch) continue;
@@ -191,17 +206,17 @@ namespace Summit
                 float k = Mathf.Clamp(r.look.height, 0.95f, 1.03f) / BakeHeight;
                 rowArr[tier][v][list.Count] = r.row;
                 list.Add(r.chairM * SeatLocal(r.seat) * Matrix4x4.Scale(new Vector3(k * Mathf.Clamp(r.look.build, 0.95f, 1.06f), k, k)));
-                if (tier == 0) MidShown++; else FarShown++;
+                if (tier == 0) MidShown++; else if (tier == 1) FarShown++; else DistantShown++;
             }
             PeopleKit.Flush();
             var mat = PeopleKit.LodMaterial;
-            for (int t = 0; t < 2; t++)
+            for (int t = 0; t < Tiers; t++)
                 for (int v = 0; v < Poses * Heads; v++)
                 {
                     var list = mats[t][v];
                     if (list.Count == 0) continue;
                     var mesh = Baked(t, v);
-                    if (mesh == null) continue;
+                    if (mesh == null || TestPhoneBefore) continue;
                     var mpb = mpbs[t][v];
                     mpb.SetFloatArray("_Row", rowArr[t][v]);
                     var rp = new RenderParams(mat) { matProps = mpb, shadowCastingMode = ShadowCastingMode.Off, receiveShadows = true };
@@ -398,9 +413,9 @@ namespace Summit
             Hands(p, pose, chairM, 1);
             p.polesDir = PolesDir(pose == (int)Pose.SkiBar);
             for (int i = 0; i < 3; i++) p.Apply(0f);
-            m = PeopleLod.Bake(p, seatM.inverse, bakeCell[tier], $"LiftRider{(tier == 0 ? "Mid" : "Far")}{v}");
+            m = PeopleLod.Bake(p, seatM.inverse, bakeCell[tier], $"LiftRider{(tier == 0 ? "Mid" : tier == 1 ? "Far" : "Distant")}{v}");
             baked[tier][v] = m;
-            if (System.Environment.GetEnvironmentVariable("SUMMIT_PEOPLE_LOG") == "1") Debug.Log($"LiftRiders: {(tier == 0 ? "mid" : "far")} bake {(Pose)pose}/{(head == 1 ? "beanie" : "helmet")}: {m.vertexCount} vertices, {m.GetIndexCount(0) / 3} triangles");
+            if (System.Environment.GetEnvironmentVariable("SUMMIT_PEOPLE_LOG") == "1") Debug.Log($"LiftRiders: {(tier == 0 ? "mid" : tier == 1 ? "far" : "distant")} bake {(Pose)pose}/{(head == 1 ? "beanie" : "helmet")}: {m.vertexCount} vertices, {m.GetIndexCount(0) / 3} triangles");
             p.SetLod(2);
             p.gameObject.SetActive(false);
             return m;
@@ -410,7 +425,7 @@ namespace Summit
         public static void Prewarm()
         {
             if (!On || !PeopleKit.Load()) return;
-            for (int t = 0; t < 2; t++) for (int v = 0; v < Poses * Heads; v++) Baked(t, v);
+            for (int t = 0; t < Tiers; t++) for (int v = 0; v < Poses * Heads; v++) Baked(t, v);
         }
 
         /// <summary>For the tests: the riders on chairs this frame (and the near ones' people).</summary>
