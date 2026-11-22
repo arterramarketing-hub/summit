@@ -8,8 +8,8 @@ import AppKit
 
 let out = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "."
 let S: CGFloat = 30          // pixels a metre
-let W = 1240, H = 860
-let ox: CGFloat = 575, oy: CGFloat = 530   // where the hall's middle lands (x flipped: +x, the low end, to the left)
+let W = 1400, H = 860
+let ox: CGFloat = 735, oy: CGFloat = 530   // where the hall's middle lands (x flipped: +x, the low end, to the left)
 
 func P(_ x: CGFloat, _ z: CGFloat) -> NSPoint { NSPoint(x: ox - x * S, y: oy - z * S) }
 func R(_ x0: CGFloat, _ z0: CGFloat, _ x1: CGFloat, _ z1: CGFloat) -> NSRect {
@@ -38,19 +38,34 @@ let glassC = NSColor(calibratedRed: 0.35, green: 0.62, blue: 0.85, alpha: 1)
 
 func shell() {
     // the terrace and its steps
-    fill(R(-17.2, 7, 14, 12.6), NSColor(calibratedWhite: 0.86, alpha: 1))
+    fill(R(-17.2, 7, 19, 12.6), NSColor(calibratedWhite: 0.86, alpha: 1))
     fill(R(-17.2, 5, -11, 7), NSColor(calibratedWhite: 0.86, alpha: 1))
-    fill(R(11, -7, 14, 7), NSColor(calibratedWhite: 0.86, alpha: 1))
+    fill(R(11, -7, 19, 7), NSColor(calibratedWhite: 0.86, alpha: 1))
     for (x0, x1) in [(-5.2, 4.8), (-15.2, -11.6)] as [(CGFloat, CGFloat)] {
         for k in 0..<6 { fill(R(x0, 12.6 + CGFloat(k) * 0.36, x1, 12.6 + CGFloat(k + 1) * 0.36), NSColor(calibratedWhite: k % 2 == 0 ? 0.78 : 0.82, alpha: 1)) }
         text("steps down", P((x0 + x1) / 2, 13.9), 12, NSColor(calibratedWhite: 0.35, alpha: 1))
     }
-    for (x0, x1) in [(-17.1, -15.4), (-11.4, -5.4), (5.2, 9.4), (9.6, 13.9)] as [(CGFloat, CGFloat)] {
+    for (x0, x1) in [(-17.1, -15.4), (-11.4, -5.4), (5.2, 9.4), (9.6, 18.9)] as [(CGFloat, CGFloat)] {
         fill(R(x0, 11.3, x1, 12.6), NSColor(calibratedRed: 0.86, green: 0.9, blue: 0.95, alpha: 1)); stroke(R(x0, 11.3, x1, 12.6), NSColor(calibratedWhite: 0.6, alpha: 1), 1)
     }
     text("TERRACE", P(-3.5, 9.6), 13, NSColor(calibratedWhite: 0.4, alpha: 1), bold: true)
     text("fire table", P(-8.8, 10.4), 11, NSColor(calibratedWhite: 0.4, alpha: 1))
-    text("racks,\npicnic\ntables\n(under\nthe roof)", P(12.5, 1.5), 11, NSColor(calibratedWhite: 0.4, alpha: 1))
+    // the covered section under the roof's tail (MakeLodge.py's RACKS, TABLES, TAIL_POSTS): its roof's outline, the
+    // posts along its edge, the racks in two rows at the back, the picnic tables, the way out of the side door
+    let roofC = NSColor(calibratedRed: 0.55, green: 0.42, blue: 0.3, alpha: 1)
+    let edge = NSBezierPath(rect: R(11, -8, 19, 10)); edge.lineWidth = 1.5; edge.setLineDash([6, 4], count: 2, phase: 0); roofC.setStroke(); edge.stroke()
+    for z in [-6.55, -2.4, 2.6, 6.1, 9.6] as [CGFloat] { fill(R(18.35, z - 0.15, 18.65, z + 0.15), roofC) }
+    for (x0, x1, z) in [(11.5, 14.2, -6.2), (15.4, 18.0, -6.2), (11.5, 14.2, -3.3), (15.4, 18.0, -3.3)] as [(CGFloat, CGFloat, CGFloat)] {
+        fill(R(x0, z - 0.25, x1, z + 0.25), NSColor(calibratedWhite: 0.25, alpha: 1))
+        for k in 0..<Int((x1 - x0) / 0.24) { fill(R(x0 + 0.12 + CGFloat(k) * 0.24, z - 0.05, x0 + 0.2 + CGFloat(k) * 0.24, z + 0.15), [NSColor.systemRed, .systemOrange, .systemGreen, .systemPurple, .white][k % 5]) }
+    }
+    let wood = NSColor(calibratedRed: 0.85, green: 0.68, blue: 0.45, alpha: 1)
+    for (x, z) in [(12.9, -0.2), (16.5, -0.2), (12.9, 6.6), (16.5, 6.6), (16.5, 9.2)] as [(CGFloat, CGFloat)] {
+        fill(R(x - 1.1, z - 0.4, x + 1.1, z + 0.4), wood)
+        for s in [-1, 1] as [CGFloat] { fill(R(x - 1.1, z + s * 0.72 - 0.15, x + 1.1, z + s * 0.72 + 0.15), wood.withAlphaComponent(0.7)) }
+    }
+    text("COVERED SECTION\n(under the roof's tail)", P(14.9, -4.75), 11, NSColor(calibratedWhite: 0.3, alpha: 1), bold: true)
+    text("side door's way out", P(14.9, 3.95), 10, NSColor(calibratedWhite: 0.4, alpha: 1))
     // the tall volume (10 m), the clerestory along its front
     fill(R(-11, -7, 5, 0), NSColor(calibratedRed: 0.97, green: 0.95, blue: 0.9, alpha: 1))
     fill(R(5, -7, 11, 7), NSColor(calibratedRed: 0.99, green: 0.98, blue: 0.96, alpha: 1))

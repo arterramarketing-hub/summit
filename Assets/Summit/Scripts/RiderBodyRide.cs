@@ -42,6 +42,7 @@ namespace Summit
         bool sledGear;                                  // the toboggan and its clips are there
         Transform sledRoot, sled;                       // under the roll; the sled itself (thrown in a crash)
         int idSledIdle, idSledRide, idSledLeanL, idSledLeanR, idSledTuck, idSledAir, idSledNoHands, idSledBump;
+        bool skisHooked, sledHooked;                    // the rider's Jumped and Landed are listened to once, whichever body is built
         static readonly Vector3 SledBox = new Vector3(0.47f, 0.10f, 1.42f), SledBoxAt = new Vector3(0f, -0.02f, -0.04f);
 
         int idSkiIdle, idSkiRide, idSkiTurnL, idSkiTurnR, idSkiTuck, idSkiPlantL, idSkiPlantR, idSkiPop, idSkiAir, idSkiLand;
@@ -158,16 +159,37 @@ namespace Summit
                 // feet carry the skis: turn it the same way about the middle of the deck, once, here
                 sled.localRotation = RideTurn * sled.localRotation;
                 sled.localPosition = deck + RideTurn * (sled.localPosition - deck);
-                rider.Landed += impact => { if (hero != null && impact > 1.5f) hero.Restart(idSledBump); };
+                if (!sledHooked)
+                {
+                    sledHooked = true;   // (once: it acts on whichever body is built now)
+                    rider.Landed += impact => { if (hero != null && impact > 1.5f) hero.Restart(idSledBump); };
+                }
                 sledGear = true;
             }
             DestroyImmediate(go);   // (emptied: the meshes now live on their holders)
 
             for (int i = 0; i < g.Length; i++) skiGrabHold[i] = h.CaptureHold(idSkiGrab[i], skiGrabHand[i]);
-            rider.Jumped += () => { if (hero != null) hero.Restart(idSkiPop); };
-            rider.Landed += impact => { if (hero != null && impact > 1.5f) hero.Restart(idSkiLand); };
+            if (!skisHooked)
+            {
+                skisHooked = true;   // (once: these act on whichever body is built now)
+                rider.Jumped += () => { if (hero != null) hero.Restart(idSkiPop); };
+                rider.Landed += impact => { if (hero != null && impact > 1.5f) hero.Restart(idSkiLand); };
+            }
             rideGear = true;
             ShowRide();
+        }
+
+        /// <summary>
+        /// The old body's skis and toboggan, gone before the new body builds its own (SetCharacter). The poles were on
+        /// the old body's hands and went with it. Anything the ragdoll threw is already back on its roots (Ragdoll.End).
+        /// </summary>
+        void DropRides()
+        {
+            if (skiRoot != null) DestroyImmediate(skiRoot.gameObject);
+            if (sledRoot != null) DestroyImmediate(sledRoot.gameObject);
+            skiRoot = sledRoot = sled = null;
+            for (int s = 0; s < 2; s++) { ski[s] = null; pole[s] = null; }
+            rideGear = sledGear = false;
         }
 
         /// <summary>Snowboard, skis or toboggan (without the gear, always the snowboard).</summary>

@@ -8,8 +8,9 @@
 #     at the low end and closing to nothing where the shed reaches it; a dark gabled block on top
 #   - a lower wing at the high end with its own snowy roof and rafter tails
 #   - dark-stained vertical board cladding, floor-to-ceiling glass in black frames (two storeys at the high end)
-#   - a raised concrete terrace across the front and round the low end (under the roof's tail): wide concrete steps,
-#     low concrete planters, picnic tables, chairs, a fire table, ski and board racks, a chalkboard sign
+#   - a raised concrete terrace across the front and round the low end, wide concrete steps, low concrete planters,
+#     chairs, a fire table, a chalkboard sign; at the low end the roof's tail runs on, nearly level, over a covered
+#     section eight metres deep: ski and board racks along its back, picnic tables, the side door's way out between them
 # Inside: one open hall (22 x 14 m) under the sloping timber ceiling and the tall volume (10 m), glulam columns and
 # beams, a polished concrete floor, timber-lined walls, and the wing (5 x 10.5 m) open off its high end. Only the
 # game's three stations are fitted (missions board, tune-up bench, wardrobe); the rest is open floor, waiting for the
@@ -102,7 +103,194 @@ def add(src, mat, m, full_uv=False):
                 c = (p.x / tile, p.y / tile) if ax == 2 else (p.y / tile, p.z / tile) if ax == 0 else (p.x / tile, p.z / tile)
                 l[uv].uv = (c[1], c[0]) if turn and ax != 2 else c
         tris[mat] = tris.get(mat, 0) + len(f.verts) - 2
+    # (for the coplanar audit: each face in game space, the way it faces; the palette's cells told apart)
+    key = (mat if point is None else "Paint(%s)" % [k for k, v in PALETTE.items() if (v + 0.5) / PAL_N == point[0]][0]) + (ZONE[0] if mat in SPLIT else "")
+    for f in src.faces:
+        FACES.append((key, [tuple(m @ v.co) for v in f.verts]))
+    # (and a closed convex shape, for telling whether a face is buried inside something)
+    if src.faces and all(len(e.link_faces) == 2 for e in src.edges):
+        pts = [m @ v.co for v in src.verts]
+        planes = []
+        for f in src.faces:
+            vs = [m @ v.co for v in f.verts]
+            n = (vs[1] - vs[0]).cross(vs[2] - vs[0])
+            if n.length < 1e-9:
+                continue
+            n.normalize()
+            c = sum(vs, Vector()) / len(vs)
+            if all(n.dot(p - c) < 1e-5 for p in pts):
+                planes.append((n, n.dot(c)))
+            elif all(n.dot(p - c) > -1e-5 for p in pts):
+                planes.append((-n, -n.dot(c)))   # (wound the other way: the mirror)
+            else:
+                planes = None
+                break
+        if planes:
+            SOLIDS.append(([min(p[i] for p in pts) for i in range(3)], [max(p[i] for p in pts) for i in range(3)], planes))
     src.free()
+
+
+# ---------------------------------------------------------------- the coplanar audit
+
+# Two surfaces drawn in the same plane, facing the same way and overlapping, fight over which shows (z-fighting: a
+# flicker as the camera moves). The audit finds every such pair among the faces that lie flat on an axis (floors,
+# walls, tops): those of the shell alone, and of each layout with the shell (they are drawn together).
+FACES = []
+SOLIDS = []
+SHELL_SOLIDS = []
+SAME_LOG = True   # (list the same-material pairs by kind too)
+
+
+def buried(p):
+    """Is the point inside something solid (a closed convex shape of the lodge's)?"""
+    for lo, hi, planes in SOLIDS + SHELL_SOLIDS:
+        if not (lo[0] < p[0] < hi[0] and lo[1] < p[1] < hi[1] and lo[2] < p[2] < hi[2]):
+            continue
+        if all(n.dot(Vector(p)) < d - 1e-4 for n, d in planes):
+            return True
+    return False
+
+
+def _poly_area(P):
+    return 0.5 * abs(sum(P[i][0] * P[(i + 1) % len(P)][1] - P[(i + 1) % len(P)][0] * P[i][1] for i in range(len(P))))
+
+
+def _clip(P, Q):
+    """P clipped by the convex polygon Q (Sutherland-Hodgman), both 2D, Q counter-clockwise."""
+    out = P
+    for i in range(len(Q)):
+        a, b = Q[i], Q[(i + 1) % len(Q)]
+        inp, out = out, []
+        if not inp:
+            break
+        def side(p):
+            return (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])
+        for j in range(len(inp)):
+            cur, prv = inp[j], inp[j - 1]
+            sc, sp = side(cur), side(prv)
+            if sc >= 0:
+                if sp < 0:
+                    t = sp / (sp - sc)
+                    out.append((prv[0] + (cur[0] - prv[0]) * t, prv[1] + (cur[1] - prv[1]) * t))
+                out.append(cur)
+            elif sp >= 0:
+                t = sp / (sp - sc)
+                out.append((prv[0] + (cur[0] - prv[0]) * t, prv[1] + (cur[1] - prv[1]) * t))
+    return out
+
+
+def _flat(faces):
+    """The faces lying flat on an axis: (axis, side, offset, 2D polygon counter-clockwise, material, centre)."""
+    out = []
+    for key, pts in faces:
+        if len(pts) < 3:
+            continue
+        n = [0.0, 0.0, 0.0]
+        for i in range(len(pts)):
+            p, q = pts[i], pts[(i + 1) % len(pts)]
+            n[0] += (p[1] - q[1]) * (p[2] + q[2]); n[1] += (p[2] - q[2]) * (p[0] + q[0]); n[2] += (p[0] - q[0]) * (p[1] + q[1])
+        L = math.sqrt(sum(c * c for c in n))
+        if L < 1e-9:
+            continue
+        n = [c / L for c in n]
+        ax = max(range(3), key=lambda i: abs(n[i]))
+        if abs(n[ax]) < 0.9995:
+            continue
+        u, v = [i for i in range(3) if i != ax]
+        P = [(p[u], p[v]) for p in pts]
+        sgn = sum(P[i][0] * P[(i + 1) % len(P)][1] - P[(i + 1) % len(P)][0] * P[i][1] for i in range(len(P)))
+        if sgn < 0:
+            P = P[::-1]
+        if _poly_area(P) < 1e-6:
+            continue
+        off = sum(p[ax] for p in pts) / len(pts)
+        c = tuple(sum(p[i] for p in pts) / len(pts) for i in range(3))
+        out.append((ax, 1 if n[ax] > 0 else -1, off, P, key, c))
+    return out
+
+
+def coplanar(faces, new_from=0, tol=0.003, min_area=2e-4):
+    """Pairs of flat faces in one plane (within tol), facing the same way and overlapping by more than min_area m^2;
+    only pairs with a face at index >= new_from (the layout's own, when the shell's come first)."""
+    fl = _flat(faces[:new_from]) , _flat(faces[new_from:])
+    old, new = fl
+    allf = [(f, False) for f in old] + [(f, True) for f in new]
+    buckets = {}
+    for i, (f, isnew) in enumerate(allf):
+        k = (f[0], f[1], round(f[2] / tol))
+        buckets.setdefault(k, []).append(i)
+    hits = []
+    seen = set()
+    for (ax, sd, ko), idx in buckets.items():
+        near = []
+        for dk in (-1, 0, 1):
+            near += buckets.get((ax, sd, ko + dk), [])
+        for i in idx:
+            fi, ni = allf[i]
+            xs = [p[0] for p in fi[3]]; ys = [p[1] for p in fi[3]]
+            for j in near:
+                if j <= i or (i, j) in seen:
+                    continue
+                fj, nj = allf[j]
+                if not (ni or nj) and new_from > 0:
+                    continue
+                if abs(fi[2] - fj[2]) > tol:
+                    continue
+                xj = [p[0] for p in fj[3]]; yj = [p[1] for p in fj[3]]
+                if max(xs) <= min(xj) or max(xj) <= min(xs) or max(ys) <= min(yj) or max(yj) <= min(ys):
+                    continue
+                seen.add((i, j))
+                ov = _clip(fi[3], fj[3])
+                a = _poly_area(ov)
+                if a > min_area:
+                    # where the overlap is: its highest point (a vertical face's), or the plane's height
+                    top = fi[2] if ax == 1 else max(p[0] if ax == 0 else p[1] for p in ov)   # (an x plane's 2D is (y, z), a z plane's (x, y))
+                    hits.append((a, fi[4], fj[4], ax, fi[2], fi[5], fj[5], fi[1], top, (ov, ax, fi[2])))
+    return hits
+
+
+def _front(h, step=0.01):
+    """Points just in front of the overlap (its middle and toward its corners), off the plane the way it faces."""
+    ov, ax, off = h[9]
+    u, v = [i for i in range(3) if i != ax]
+    cu = sum(p[0] for p in ov) / len(ov); cv = sum(p[1] for p in ov) / len(ov)
+    out = []
+    for p in [(cu, cv)] + [(cu + (q[0] - cu) * 0.8, cv + (q[1] - cv) * 0.8) for q in ov]:
+        w = [0.0, 0.0, 0.0]
+        w[ax] = off + h[7] * step; w[u] = p[0]; w[v] = p[1]
+        out.append(tuple(w))
+    return out
+
+
+def seen(h):
+    """Could a player see this pair? Not a face facing down onto a floor or the ground (nobody looks up through the
+    floor), nor anything wholly below the terrace's level (inside the base, under the snow)."""
+    a, k1, k2, ax, off, c1, c2, side, top, _ = h
+    if ax == 1 and side < 0 and off < 0.05:
+        return False
+    if top <= -0.3:
+        return False
+    # something solid all over in front of it (a wall's top under the roof, a back against a wall): nobody sees it
+    return not all(buried(p) for p in _front(h))
+
+
+def report_coplanar(name, faces, new_from=0):
+    hits = coplanar(faces, new_from)
+    vis = [h for h in hits if seen(h)]
+    diff = [h for h in vis if h[1] != h[2]]
+    same = [h for h in vis if h[1] == h[2]]
+    print("LODGE %s coplanar overlaps a player could see: %d between different materials (%.3f m^2), %d within one "
+          "material (%.2f m^2: the same texture at the same place, so nothing to see); %d more out of sight" %
+          (name, len(diff), sum(h[0] for h in diff), len(same), sum(h[0] for h in same), len(hits) - len(vis)))
+    if SAME_LOG:
+        kinds = {}
+        for h in same:
+            kinds[(h[1], "xyz"[h[3]])] = kinds.get((h[1], "xyz"[h[3]]), 0) + 1
+        print("LODGE %s   within one material, by kind: %s" % (name, ", ".join("%s %s-plane %d" % (k[0], k[1], v) for k, v in sorted(kinds.items(), key=lambda kv: -kv[1]))))
+    for h in sorted(diff, key=lambda h: -h[0])[:60]:
+        print("LODGE %s   %s/%s %s=%.3f facing %s, %.4f m^2 at (%.2f, %.2f, %.2f) and (%.2f, %.2f, %.2f)" %
+              (name, h[1], h[2], "xyz"[h[3]], h[4], "+" if h[7] > 0 else "-", h[0], *h[5], *h[6]))
+    return hits
 
 
 def mat4(pos, size=(1, 1, 1), rot=(0, 0, 0)):
@@ -188,10 +376,12 @@ def samples(a, b, r, step, fracs):
     return sorted(pts)
 
 
-def snow(x0, x1, z0, z1, h, th, r=0.6, lip=0.42, drape=0.05, step=3.0, fine=True):
+def snow(x0, x1, z0, z1, h, th, r=0.6, lip=0.42, drape=0.05, step=3.0, fine=True, xbreaks=()):
     """Snow lying on a surface whose top is at height h(x, z), over x0..x1, z0..z1: th deep in the middle, its edges
-    rounded over r (a lip of lip*th left at the very edge, dropping drape below the surface: a settled, rounded load)."""
+    rounded over r (a lip of lip*th left at the very edge, dropping drape below the surface: a settled, rounded load).
+    xbreaks: where the surface kinks (a row of the snow's points there, so it follows the kink)."""
     xs = samples(x0, x1, r, step, (0.1, 0.28, 0.5, 0.75, 1.0) if fine else (0.35, 1.0))
+    xs = sorted(set(xs) | {x for x in xbreaks if x0 < x < x1})
     zs = samples(z0, z1, r, step, (0.1, 0.28, 0.5, 0.75, 1.0) if fine else (0.35, 1.0))
 
     def f(x, z):
@@ -256,15 +446,17 @@ S = (H - Y0) / (XL - XH)          # the shed's pitch (17 degrees, as steep as th
 
 
 def ru(x):
-    """The shed roof's soffit (underside of its boards) at x."""
-    return Y0 + (XL - x) * S
+    """The shed roof's soffit (underside of its boards) at x: rising from the low end's wall; past it, over the covered
+    section, its tail runs on nearly level (TP), so there's headroom out to the posts eight metres out."""
+    return Y0 + (XL - x) * S if x <= XL else Y0 - (x - XL) * TP
 
 
 RT = 0.3              # the roof's build-up over the soffit (deck, insulation, metal)
 RD, RW = 0.34, 0.16   # rafters: depth and width, under the soffit
 BD, BW = 0.5, 0.28    # beams under the rafters
 OF, OB = 3.0, 1.0     # eaves: front and back
-TAIL, XHO = 3.0, 1.4  # the shed runs on past the low end (over the side terrace) and past the high end
+TAIL, XHO = 8.0, 1.4  # the shed runs on past the low end (over the covered section) and past the high end
+TP = 0.07             # its tail's fall past the low end's wall (4 degrees: the 17 degrees on out would be 1.9 m at its edge)
 XB, ZC = 5.0, 0.0     # the tall volume: x from XH to XB, z from -D to ZC
 WZ0, WZ1 = -5.5, 5.0  # the wing's back and front
 WY = 4.4              # the wing's soffit at its front
@@ -307,8 +499,14 @@ def wall(axis, fixed, inward, a0, a1, top, holes, outer="Cladding", inner="Linin
             for mat, d0, d1 in ((outer, 0.0, T - 0.04), (inner, T - 0.04, T)):
                 if mat is None:
                     continue
-                solid(mat, [P(a, s0, d0), P(b, s0, d0), P(b, s0, d1), P(a, s0, d1)],
-                      [P(a, ta, d0), P(b, tb, d0), P(b, tb, d1), P(a, ta, d1)])
+                # (the inner boards end a centimetre short of the wall's own ends: where another wall meets this one,
+                # its outer face and their ends were one plane, fighting)
+                aa = a + 0.01 if mat == inner and abs(a - a0) < 1e-6 else a
+                bb = b - 0.01 if mat == inner and abs(b - a1) < 1e-6 else b
+                taa = ta if aa == a else ta + (tb - ta) * (aa - a) / (b - a)
+                tbb = tb if bb == b else ta + (tb - ta) * (bb - a) / (b - a)
+                solid(mat, [P(aa, s0, d0), P(bb, s0, d0), P(bb, s0, d1), P(aa, s0, d1)],
+                      [P(aa, taa, d0), P(bb, tbb, d0), P(bb, tbb, d1), P(aa, taa, d1)])
 
 
 def sheet(mat, pts, facing):
@@ -351,7 +549,8 @@ def mullion(axis, fixed, a, y0, y1, w=0.08, d=0.16):
 
 
 def transom(axis, fixed, a0, a1, y, h=0.08, d=0.16):
-    """A horizontal frame member."""
+    """A horizontal frame member (its ends just inside a0, a1: in a corner's wall face, they fought it)."""
+    a0, a1 = a0 + 0.005, a1 - 0.005
     if axis == "x":
         lohi("Steel", (a0, y - h / 2, fixed - d / 2), (a1, y + h / 2, fixed + d / 2))
     else:
@@ -377,19 +576,20 @@ def glazing(axis, fixed, a0, a1, top, bays, rows, y0=0.0):
         for a, b in zip(edges, edges[1:]):
             if r < min(top(a), top(b)) - 0.5:
                 transom(axis, gz, a, b, r)
-    # the head, along the top (sloped where the top is)
+    # the head, along the top (sloped where the top is; its ends just inside, as the transoms')
     for a, b in zip(edges, edges[1:]):
+        a, b = a + 0.005, b - 0.005
         if axis == "x":
-            solid("Steel", [(a, top(a) - 0.1, gz - 0.08), (b, top(b) - 0.1, gz - 0.08), (b, top(b) - 0.1, gz + 0.08), (a, top(a) - 0.1, gz + 0.08)],
+            solid("Steel", [(a, top(a) - 0.09, gz - 0.08), (b, top(b) - 0.09, gz - 0.08), (b, top(b) - 0.09, gz + 0.08), (a, top(a) - 0.09, gz + 0.08)],
                   [(a, top(a), gz - 0.08), (b, top(b), gz - 0.08), (b, top(b), gz + 0.08), (a, top(a), gz + 0.08)])
         else:
-            solid("Steel", [(gz - 0.08, top(a) - 0.1, a), (gz - 0.08, top(b) - 0.1, b), (gz + 0.08, top(b) - 0.1, b), (gz + 0.08, top(a) - 0.1, a)],
+            solid("Steel", [(gz - 0.08, top(a) - 0.09, a), (gz - 0.08, top(b) - 0.09, b), (gz + 0.08, top(b) - 0.09, b), (gz + 0.08, top(a) - 0.09, a)],
                   [(gz - 0.08, top(a), a), (gz - 0.08, top(b), b), (gz + 0.08, top(b), b), (gz + 0.08, top(a), a)])
     if y0 <= 0.01:
         if axis == "x":
-            lohi("Steel", (a0, 0.0, gz - 0.1), (a1, 0.1, gz + 0.1))
+            lohi("Steel", (a0 + 0.005, 0.0, gz - 0.1), (a1 - 0.005, 0.1, gz + 0.1))
         else:
-            lohi("Steel", (gz - 0.1, 0.0, a0), (gz + 0.1, 0.1, a1))
+            lohi("Steel", (gz - 0.1, 0.0, a0 + 0.005), (gz + 0.1, 0.1, a1 - 0.005))
 
 
 # ---------------------------------------------------------------- the base and the floors
@@ -400,7 +600,15 @@ BASE = 3.2   # the concrete base runs this far down into the snow (the game sets
 for (x0, x1, z0, z1) in ((XH, XL, -D, D), (XW, XH, WZ0, WZ1)):
     for s in (-1, 1):
         lohi("Concrete", (x0, -BASE, (z0 if s < 0 else z1 - T)), (x1, 0.0, (z0 + T if s < 0 else z1)))
-        lohi("Concrete", ((x0 if s < 0 else x1 - T), -BASE, z0), ((x0 + T if s < 0 else x1), 0.0, z1))
+        xa, xb = (x0, x0 + T) if s < 0 else (x1 - T, x1)
+        if XH - T - 0.01 < xa < XH + 0.01:
+            # where the wing opens off the hall the wing's floor runs on over the base (the hall's end and the wing's):
+            # the concrete's top kept under the floor there, level with it only under the walls (z-fighting otherwise)
+            for (za, zb, top) in ((z0, WZ0 + T, 0.0), (WZ0 + T, WZ1 - T, -0.25), (WZ1 - T, z1, 0.0)):
+                if zb - za > 1e-3:
+                    lohi("Concrete", (xa, -BASE, max(z0, za)), (xb, top, min(z1, zb)))
+        else:
+            lohi("Concrete", (xa, -BASE, z0), (xb, 0.0, z1))
 # the oak floor, the hall's and the wing's (one level, open between them)
 lohi("Floor", (IX0, -0.25, IZ0), (IX1, 0.0, IZ1))
 lohi("Floor", (XW + T, -0.25, WZ0 + T), (XH + T, 0.0, WZ1 - T))
@@ -471,7 +679,7 @@ helper("FLR_sidedoor", (XL - 0.5, -0.3, SIDE_DOOR[0]), (XL + 0.3, 0.0, SIDE_DOOR
 WOPEN = (-4.6, 4.1, 3.8)
 wall("z", XH, 1, -D, D, lambda z: H, [(WOPEN[0], WOPEN[1], 0.0, WOPEN[2]), (-5.6, 5.6, 5.4, 9.4)])
 glazing("z", XH + 0.15, -5.6, 5.6, lambda a: 9.4, [-1.87, 1.87], [], y0=5.4)
-lohi("Glulam", (XH - 0.02, WOPEN[2] - 0.45, WOPEN[0]), (XH + T + 0.02, WOPEN[2], WOPEN[1]))   # a glulam lintel over the opening
+lohi("Glulam", (XH - 0.02, WOPEN[2] - 0.45, WOPEN[0]), (XH + T, WOPEN[2], WOPEN[1]))   # a glulam lintel over the opening (flush inside: an upper floor meets it there)
 # the tall volume's side, over the shed roof at XB: boarded, a high window
 wall("z", XB, -1, -D, ZC, lambda z: H, [(-6.0, -1.0, 6.6, 9.2)], y0=ru(XB) + RT - 0.05)
 glazing("z", XB - 0.15, -6.0, -1.0, lambda a: 9.2, [-3.5], [], y0=6.6)
@@ -485,8 +693,9 @@ for a, b in zip([XH] + CLX, CLX + [XB]):
 for a in CLX + [XB]:
     if H - (ru(a) + RT) > 0.1:
         mullion("x", ZC, a, ru(a) + RT, H)
-solid("Steel", [(XH, ru(XH) + RT, ZC - 0.1), (XB, ru(XB) + RT, ZC - 0.1), (XB, ru(XB) + RT, ZC + 0.1), (XH, ru(XH) + RT, ZC + 0.1)],
-      [(XH, ru(XH) + RT + 0.12, ZC - 0.1), (XB, ru(XB) + RT + 0.12, ZC - 0.1), (XB, ru(XB) + RT + 0.12, ZC + 0.1), (XH, ru(XH) + RT + 0.12, ZC + 0.1)])
+CB0, CB1 = XH + 0.01, XB - 0.01   # (the clerestory's cap and beam: their ends inside the walls they run between)
+solid("Steel", [(CB0, ru(CB0) + RT, ZC - 0.1), (CB1, ru(CB1) + RT, ZC - 0.1), (CB1, ru(CB1) + RT, ZC + 0.1), (CB0, ru(CB0) + RT, ZC + 0.1)],
+      [(CB0, ru(CB0) + RT + 0.12, ZC - 0.1), (CB1, ru(CB1) + RT + 0.12, ZC - 0.1), (CB1, ru(CB1) + RT + 0.12, ZC + 0.1), (CB0, ru(CB0) + RT + 0.12, ZC + 0.1)])
 
 # the wing: glass across its front, boarded end with a window, boarded back
 glazing("x", WZ1 - 0.12, XW, XH, lambda a: WY - 0.05, [XW + 5.0 / 3, XW + 10.0 / 3], [3.1])
@@ -518,10 +727,12 @@ def fascia_z(x, z0, z1, y, out):
 SX0, SX1 = XH - XHO, XL + TAIL   # the shed's ends
 SZ0, SZ1 = -D - OB, D + OF       # its back and front edges
 # the shed: the front strip all along, and the back strip over the low end (the tall volume has the rest)
-roof_slab(SX0, SX1, ZC, SZ1, ru)
-roof_slab(XB, SX1, SZ0, ZC, ru)
-fascia_x(SX0, SX1, SZ1, ru, 1)
-fascia_x(XB, SX1, SZ0, ru, -1)
+for (xa, xb) in ((SX0, XL), (XL, SX1)):   # (in two: it kinks over the low end's wall, onto the tail)
+    roof_slab(xa, xb, ZC, SZ1, ru)
+    fascia_x(xa, xb, SZ1, ru, 1)
+for (xa, xb) in ((XB, XL), (XL, SX1)):
+    roof_slab(xa, xb, SZ0, ZC, ru)
+    fascia_x(xa, xb, SZ0, ru, -1)
 fascia_z(SX1, SZ0, SZ1, ru(SX1), 1)
 fascia_z(SX0, ZC, SZ1, ru(SX0), -1)
 # the flat roof over the tall volume
@@ -561,10 +772,11 @@ for z in [SZ0 + 0.35 + i * 1.25 for i in range(int((SZ1 - SZ0 - 0.5) / 1.25) + 1
     x0 = SX0 - 0.55 if z > ZC else XB + 0.05
     if z < ZC + 0.1 and z > ZC - 0.1:
         continue
-    a, b_ = (x0, ru(x0) - RD / 2, z), (SX1 - 0.04, ru(SX1 - 0.04) - RD / 2, z)
-    span("Glulam", a, b_, RW, RD)
+    for (xa, xb) in ((x0, XL), (XL, SX1 - 0.04)):   # (in two: the slope kinks over the low end's wall)
+        span("Glulam", (xa, ru(xa) - RD / 2, z), (xb, ru(xb) - RD / 2, z), RW, RD)
 # the front edge's own rafter, deeper: the warm wood line under the charcoal edge
-span("Glulam", (SX0 - 0.55, ru(SX0 - 0.55) - 0.24, SZ1 - 0.1), (SX1 - 0.04, ru(SX1 - 0.04) - 0.24, SZ1 - 0.1), 0.2, 0.48)
+for (xa, xb) in ((SX0 - 0.55, XL), (XL, SX1 - 0.04)):
+    span("Glulam", (xa, ru(xa) - 0.24, SZ1 - 0.1), (xb, ru(xb) - 0.24, SZ1 - 0.1), 0.2, 0.48)
 # the tall volume's rafters, level, under its flat roof
 for z in [FZ0 + 0.35 + i * 1.25 for i in range(int((FZ1 - FZ0 - 0.5) / 1.25) + 1)]:
     span("Glulam", (FX0 + 0.05, H - RD / 2, z), (FX1 - 0.05, H - RD / 2, z), RW, RD)
@@ -581,15 +793,17 @@ for x in STATIONS:
             lohi("Glulam|up", (x - 0.18, 0.0, z - 0.18), (x + 0.18, top, z + 0.18))
         helper("BLK_column", (x - 0.2, 0.0, z - 0.2), (x + 0.2, top, z + 0.2))
 # the clerestory's beam along ZC (carrying the shed's back edge and the glass above), level with the rafters' undersides
-solid("Glulam", [(XH, ru(XH) - RD - BD, ZC - 0.16), (XB, ru(XB) - RD - BD, ZC - 0.16), (XB, ru(XB) - RD - BD, ZC + 0.16), (XH, ru(XH) - RD - BD, ZC + 0.16)],
-      [(XH, ru(XH) + 0.05, ZC - 0.16), (XB, ru(XB) + 0.05, ZC - 0.16), (XB, ru(XB) + 0.05, ZC + 0.16), (XH, ru(XH) + 0.05, ZC + 0.16)])
-# posts under the roof's tail, at the side terrace's outer edge
-for z in (SZ0 + 0.5, -1.5, 3.5, SZ1 - 0.5):
-    x = SX1 - 0.5
-    lohi("Glulam|up", (x - 0.15, 0.0, z - 0.15), (x + 0.15, ru(x) - RD, z + 0.15))
-    helper("BLK_post", (x - 0.17, 0.0, z - 0.17), (x + 0.17, ru(x) - RD, z + 0.17))
-    lohi("Concrete", (x - 0.24, 0.0, z - 0.24), (x + 0.24, 0.35, z + 0.24))
-span("Steel", (SX1 - 0.5, ru(SX1 - 0.5) - RD - 0.06, SZ0 + 0.3), (SX1 - 0.5, ru(SX1 - 0.5) - RD - 0.06, SZ1 - 0.3), 0.2, 0.12)
+solid("Glulam", [(CB0, ru(CB0) - RD - BD, ZC - 0.16), (CB1, ru(CB1) - RD - BD, ZC - 0.16), (CB1, ru(CB1) - RD - BD, ZC + 0.16), (CB0, ru(CB0) - RD - BD, ZC + 0.16)],
+      [(CB0, ru(CB0) + 0.05, ZC - 0.16), (CB1, ru(CB1) + 0.05, ZC - 0.16), (CB1, ru(CB1) + 0.05, ZC + 0.16), (CB0, ru(CB0) + 0.05, ZC + 0.16)])
+# posts under the roof's tail, along the covered section's outer edge (on the terrace, clear of the side door's way
+# out), carrying a steel beam under the rafters
+PX = SX1 - 0.5
+TAIL_POSTS = (-6.55, -2.4, 2.6, 6.1, 9.6)
+for z in TAIL_POSTS:
+    lohi("Glulam|up", (PX - 0.15, 0.0, z - 0.15), (PX + 0.15, ru(PX) - RD - 0.12, z + 0.15))
+    helper("BLK_post", (PX - 0.17, 0.0, z - 0.17), (PX + 0.17, ru(PX) - RD - 0.12, z + 0.17))
+    lohi("Concrete", (PX - 0.24, 0.0, z - 0.24), (PX + 0.24, 0.35, z + 0.24))
+span("Steel", (PX, ru(PX) - RD - 0.06, SZ0 + 0.3), (PX, ru(PX) - RD - 0.06, SZ1 - 0.3), 0.2, 0.12)
 # the wing's rafters run front to back, their tails out past its roof's front edge
 for x in [WRX0 + 0.3 + i * 1.0 for i in range(int((XH - WRX0 - 0.3) / 1.0) + 1)]:
     span("Glulam", (x, wing_under(WRZ0 + 0.1) - RD / 2, WRZ0 + 0.1), (x, wing_under(WRZ1 + 0.55) - RD / 2, WRZ1 + 0.55), RW, RD)
@@ -604,7 +818,7 @@ GX0, GX1, GZ0, GZ1 = -7.0, 1.0, -6.0, -1.6
 GY0 = H + RT
 GY1 = GY0 + 1.1
 GP = 1.35   # the gable's rise
-lohi("Cladding", (GX0, GY0 - 0.05, GZ0), (GX1, GY1, GZ1))
+lohi("Cladding", (GX0, GY0 - 0.1, GZ0), (GX1, GY1, GZ1))   # (its foot down in the roof: the snow's underside was level with it)
 for z, s in ((GZ1, 1), (GZ0, -1)):
     solid("Cladding", [(GX0, GY1, z - 0.3), (GX1, GY1, z - 0.3), ((GX0 + GX1) / 2, GY1 + GP, z - 0.3)],
           [(GX0, GY1, z), (GX1, GY1, z), ((GX0 + GX1) / 2, GY1 + GP, z)])
@@ -620,17 +834,17 @@ for s in (-1, 1):
     solid("Roof", [(xa, gh(xa, 0) + 0.0, GZ0 - 0.4), (xb, gh(xb, 0), GZ0 - 0.4), (xb, gh(xb, 0), GZ1 + 0.4), (xa, gh(xa, 0), GZ1 + 0.4)],
           [(xa, gh(xa, 0) + 0.22, GZ0 - 0.4), (xb, gh(xb, 0) + 0.22, GZ0 - 0.4), (xb, gh(xb, 0) + 0.22, GZ1 + 0.4), (xa, gh(xa, 0) + 0.22, GZ1 + 0.4)])
     lohi("Steel", (xe - 0.05, ye - 0.05, GZ0 - 0.4), (xe + 0.05, ye + 0.3, GZ1 + 0.4))
-    sa, sb = (xe + 0.08, xm) if s < 0 else (xm, xe - 0.08)
+    sa, sb = (xe + 0.08, xm - 0.02) if s < 0 else (xm + 0.02, xe - 0.08)
     snow(sa, sb, GZ0 - 0.32, GZ1 + 0.32, lambda x, z, gh=gh: gh(x, z) + 0.22, 0.45, r=0.45, step=4.0)
 lohi("Steel", ((GX0 + GX1) / 2 - 0.12, GY1 + GP + 0.15, GZ0 - 0.4), ((GX0 + GX1) / 2 + 0.12, GY1 + GP + 0.3, GZ1 + 0.4))
 
 # ---------------------------------------------------------------- snow on the roofs
 
 # thick, rounded, standing a hand's width proud of the charcoal edges (the photo's heavy loads)
-snow(SX0 + 0.05, SX1 + 0.08, ZC + 0.25, SZ1 + 0.1, lambda x, z: ru(x) + RT, 0.62, r=0.7)
-snow(XB + 0.3, SX1 + 0.08, SZ0 - 0.08, ZC - 0.05, lambda x, z: ru(x) + RT, 0.62, r=0.7)
+snow(SX0 + 0.05, SX1 + 0.08, ZC + 0.25, SZ1 + 0.1, lambda x, z: ru(x) + RT, 0.62, r=0.7, xbreaks=(XL,))
+snow(XB + 0.3, SX1 + 0.08, SZ0 - 0.08, ZC - 0.05, lambda x, z: ru(x) + RT, 0.62, r=0.7, xbreaks=(XL,))
 snow(FX0 - 0.08, FX1 + 0.08, FZ0 - 0.08, FZ1 + 0.1, lambda x, z: H + RT, 0.7, r=0.75)
-snow(WRX0 - 0.06, XH - 0.05, WRZ0 - 0.06, WRZ1 + 0.1, lambda x, z: wing_under(z) + RT, 0.55, r=0.6)
+snow(WRX0 - 0.08, XH - 0.05, WRZ0 - 0.08, WRZ1 + 0.1, lambda x, z: wing_under(z) + RT, 0.55, r=0.6)
 # banked against the walls where the hill comes up behind
 for (x0, x1, z) in ((XH - 1.0, XL + TAIL - 0.6, -D - 0.6),):
     solid("Snow", [(x0, -1.6, z + 0.6), (x1, -1.6, z + 0.6), (x1, -1.6, z - 2.6), (x0, -1.6, z - 2.6)],
@@ -668,7 +882,7 @@ for (x0, x1) in STAIRS:
             lohi("Steel", (xc - 0.025, 0.45 - RISE * NSTEP * t, zz - 0.025), (xc + 0.025, 1.05 - RISE * NSTEP * t, zz + 0.025))
         for k in range(0, NSTEP, 2):   # (in pieces as it falls: the buried end blocks no one standing on the snow beside it)
             helper("BLK_cheek", (xc - 0.17, -BASE, ZT - 0.2 + k * RUN), (xc + 0.17, 1.1 - RISE * k, ZT + (k + 2) * RUN))
-        snow(xc - 0.16, xc + 0.16, ZT, ZT + L * 0.95, lambda x, z: 0.45 - RISE * NSTEP * (z - ZT) / L, 0.1, r=0.08, fine=False, step=6.0)
+        snow(xc - 0.16, xc + 0.16, ZT + 0.02, ZT + L * 0.95, lambda x, z: 0.45 - RISE * NSTEP * (z - ZT) / L, 0.1, r=0.08, fine=False, step=6.0)
 
 # snow banked against the terrace's walls, as in the photo (the game levels the ground under the lodge so that in
 # front of the terrace it is GROUND below the floor, rising to GROUND_BACK under the house: CampLodge.LodgePad)
@@ -743,25 +957,25 @@ for (a, b_) in RAILS:
 # ---------------------------------------------------------------- on the terrace
 
 def picnic(x, z, along_z=True):
-    """A picnic table: a wood top and benches on black steel A-frames."""
+    """A picnic table: a wood top (0.78) and benches (0.44) on black steel A-frames."""
     L = 2.2
     if along_z:
         lohi("Glulam", (x - 0.4, 0.72, z - L / 2), (x + 0.4, 0.78, z + L / 2))
         for s in (-1, 1):
-            lohi("Glulam", (x + s * 0.72 - 0.15, 0.42, z - L / 2), (x + s * 0.72 + 0.15, 0.47, z + L / 2))
+            lohi("Glulam", (x + s * 0.72 - 0.15, 0.39, z - L / 2), (x + s * 0.72 + 0.15, 0.44, z + L / 2))
         for zz in (z - L / 2 + 0.25, z + L / 2 - 0.25):
             for s in (-1, 1):
                 span("Steel", (x + s * 0.85, 0.0, zz), (x + s * 0.12, 0.74, zz), 0.05)
-            lohi("Steel", (x - 0.87, 0.38, zz - 0.025), (x + 0.87, 0.42, zz + 0.025))
+            lohi("Steel", (x - 0.87, 0.35, zz - 0.025), (x + 0.87, 0.39, zz + 0.025))
         helper("BLK_table", (x - 0.9, 0.0, z - L / 2), (x + 0.9, 0.8, z + L / 2))
     else:
         lohi("Glulam", (x - L / 2, 0.72, z - 0.4), (x + L / 2, 0.78, z + 0.4))
         for s in (-1, 1):
-            lohi("Glulam", (x - L / 2, 0.42, z + s * 0.72 - 0.15), (x + L / 2, 0.47, z + s * 0.72 + 0.15))
+            lohi("Glulam", (x - L / 2, 0.39, z + s * 0.72 - 0.15), (x + L / 2, 0.44, z + s * 0.72 + 0.15))
         for xx in (x - L / 2 + 0.25, x + L / 2 - 0.25):
             for s in (-1, 1):
                 span("Steel", (xx, 0.0, z + s * 0.85), (xx, 0.74, z + s * 0.12), 0.05)
-            lohi("Steel", (xx - 0.025, 0.38, z - 0.87), (xx + 0.025, 0.42, z + 0.87))
+            lohi("Steel", (xx - 0.025, 0.35, z - 0.87), (xx + 0.025, 0.39, z + 0.87))
         helper("BLK_table", (x - L / 2, 0.0, z - 0.9), (x + L / 2, 0.8, z + 0.9))
 
 
@@ -833,11 +1047,17 @@ def bistro(x, z):
         helper("BLK_bistrochair", (cx - 0.24, 0.0, cz - 0.24), (cx + 0.24, 0.85, cz + 0.24))
 
 
-# the low end, under the roof's tail: picnic tables, and the racks by the side door
-picnic(13.0, 6.0, along_z=True)
-picnic(13.0, 0.4, along_z=True)
-rack(XL + 0.45, XL + 2.6, -4.6, 1)
-rack(11.6, 13.8, -6.2, 1)
+# the covered section at the low end, under the roof's tail: ski and board racks in two rows along the back, picnic
+# tables in front of them and along the front, the side door's way out (z 3..4.9) clear between them, a way down the
+# middle (x 14..15.4) from the racks to the front terrace; a lamp under the roof for the evening (CampLodge.cs: the
+# people at the tables and the racks, Camp.LodgeFolkAt)
+RACKS = ((11.5, 14.2, -6.2), (15.4, 18.0, -6.2), (11.5, 14.2, -3.3), (15.4, 18.0, -3.3))
+TABLES = ((12.9, -0.2), (16.5, -0.2), (12.9, 6.6), (16.5, 6.6), (16.5, 9.2))
+for (x0, x1, z) in RACKS:
+    rack(x0, x1, z, 1)
+for (x, z) in TABLES:
+    picnic(x, z, along_z=False)
+marker("LIGHT_porch", (14.8, ru(14.8) - RD - 0.25, 2.0))
 # the front, by the low end: coloured chairs looking out
 chair(11.0, 9.4, 10, "ArtA")
 chair(13.0, 9.9, -15, "ArtB")
@@ -977,9 +1197,9 @@ def gear_wall(x0, x1, z=MZ, y0=0.0, levels=(2.7, 3.7, 4.7, 5.7), n=12, top=None)
         lohi("Steel", (x - 0.03, y0, z), (x + 0.03, top, z + 0.06))
     for k, yl in enumerate(levels):
         y = y0 + yl
-        lohi("Oak", (x0, y - 0.04, z), (x1, y, z + 0.42))
-        lohi("Steel", (x0, y - 0.08, z + 0.4), (x1, y, z + 0.43))
-        lohi("LED", (x0 + 0.05, y - 0.1, z + 0.36), (x1 - 0.05, y - 0.085, z + 0.4))
+        lohi("Oak", (x0, y - 0.04, z + 0.005), (x1, y, z + 0.42))
+        lohi("Steel", (x0, y - 0.08, z + 0.42), (x1, y, z + 0.45))   # (the lip in front of the oak: through it, their tops fought)
+        lohi("LED", (x0 + 0.05, y - 0.1, z + 0.355), (x1 - 0.05, y - 0.085, z + 0.395))
         for i in range(n):
             x = x0 + 0.35 + i * (x1 - x0 - 0.7) / (n - 1)
             kind = (i + k) % 4
@@ -1032,7 +1252,7 @@ def till(x0, z0, x1, z1, y0=0.0):
 
 def mannequin(mx, mz, col, y0=0.0):
     cyl("Steel", (mx, y0, mz), 0.2, 0.03, 10)
-    cyl("Steel", (mx, y0, mz), 0.02, 0.95, 6)
+    cyl("Steel", (mx, y0, mz), 0.02, 0.9, 6)
     box(col, (mx, y0 + 1.25, mz), (0.42, 0.62, 0.24))
     box("Charcoal", (mx, y0 + 0.82, mz), (0.36, 0.26, 0.22))
     sphere("White", (mx, y0 + 1.72, mz), (0.24, 0.26, 0.26), 10)
@@ -1181,7 +1401,7 @@ def open_fire(fx, fz, L=2.4, W=1.0, ceiling=under_flat):
     lohi("Steel", (fx - L / 2 + 0.1, 2.6, fz - 0.42), (fx + L / 2 - 0.1, 2.75, fz + 0.42))   # the hood, a thin black slab
     solid("Steel", [(fx - L / 2 + 0.1, 2.75, fz - 0.42), (fx + L / 2 - 0.1, 2.75, fz - 0.42), (fx + L / 2 - 0.1, 2.75, fz + 0.42), (fx - L / 2 + 0.1, 2.75, fz + 0.42)],
           [(fx - 0.2, 3.3, fz - 0.15), (fx + 0.2, 3.3, fz - 0.15), (fx + 0.2, 3.3, fz + 0.15), (fx - 0.2, 3.3, fz + 0.15)])
-    cyl("Steel", (fx, 3.3, fz), 0.13, ceiling(fx) - 3.3, 10)
+    cyl("Steel", (fx, 3.3, fz), 0.13, ceiling(fx) - 3.26, 10)   # (up into the beam: its top was level with the beam's)
     for k in range(3):
         marker("FX_fire", (fx - 0.7 + k * 0.7, 0.55, fz))
     helper("BLK_fire", (fx - L / 2 - 0.05, 0.0, fz - W / 2 - 0.05), (fx + L / 2 + 0.05, 1.05, fz + W / 2 + 0.05))
@@ -1297,7 +1517,7 @@ def layout_C():
     pane("x", MZ1 + 0.02, MX0, CSX0, MY, MY + 1.0, MY + 1.0, 0.02, "GlassIn")
     lohi("Steel", (MX0, MY + 1.0, MZ1 - 0.01), (CSX0, MY + 1.05, MZ1 + 0.05))
     helper("BLK_mezzrail", (MX0, MY, MZ1 - 0.05), (CSX0 + 0.02, MY + 1.1, MZ1 + 0.08))
-    pane("z", MX1 + 0.02, MZ0, MZ1, MY, MY + 1.0, MY + 1.0, 0.02, "GlassIn")
+    pane("z", MX1 + 0.02, MZ0, MZ1 - 0.005, MY, MY + 1.0, MY + 1.0, 0.02, "GlassIn")   # (just short of the edge's corner)
     lohi("Steel", (MX1 - 0.01, MY + 1.0, MZ0), (MX1 + 0.05, MY + 1.05, MZ1))
     helper("BLK_mezzrail", (MX1 - 0.05, MY, MZ0), (MX1 + 0.08, MY + 1.1, MZ1))
     # the stair: wide oak treads on black steel plates either side, rising beside the door to the mezzanine's front
@@ -1310,8 +1530,8 @@ def layout_C():
     for x in (CSX0, CSX1):
         solid("Steel", [(x - 0.03, 0.0, CSZB + 0.05), (x + 0.03, 0.0, CSZB + 0.05), (x + 0.03, MY - 0.35, CSZT), (x - 0.03, MY - 0.35, CSZT)],
               [(x - 0.03, 0.25, CSZB + 0.05), (x + 0.03, 0.25, CSZB + 0.05), (x + 0.03, MY + 0.02, CSZT), (x - 0.03, MY + 0.02, CSZT)])
-        solid("GlassIn", [(x - 0.01, 0.25, CSZB), (x + 0.01, 0.25, CSZB), (x + 0.01, MY, CSZT), (x - 0.01, MY, CSZT)],
-              [(x - 0.01, 1.2, CSZB), (x + 0.01, 1.2, CSZB), (x + 0.01, MY + 1.0, CSZT), (x - 0.01, MY + 1.0, CSZT)])
+        solid("GlassIn", [(x - 0.01, 0.25, CSZB), (x + 0.01, 0.25, CSZB), (x + 0.01, MY, CSZT + 0.005), (x - 0.01, MY, CSZT + 0.005)],
+              [(x - 0.01, 1.2, CSZB), (x + 0.01, 1.2, CSZB), (x + 0.01, MY + 1.0, CSZT + 0.005), (x - 0.01, MY + 1.0, CSZT + 0.005)])   # (just short of the stringers' top ends)
         span("Steel", (x, 1.25, CSZB), (x, MY + 1.05, CSZT), 0.05)
         helper("BLK_stairrail", (x - 0.06, 0.0, CSZT), (x + 0.06, MY + 1.1, CSZB + 0.06))
     # what you walk on: the slope through the treads' middles (the game sets a ramp's top half an outside riser under
@@ -1323,7 +1543,7 @@ def layout_C():
     for x in (CSX0, CSX1):
         solid("Lining", [(x - 0.025, 0.0, CSZB + 0.05), (x + 0.025, 0.0, CSZB + 0.05), (x + 0.025, 0.0, CSZT), (x - 0.025, 0.0, CSZT)],
               [(x - 0.025, 0.0, CSZB + 0.05), (x + 0.025, 0.0, CSZB + 0.05), (x + 0.025, MY - 0.36, CSZT), (x - 0.025, MY - 0.36, CSZT)])
-    lohi("Lining", (CSX0, 0.0, CSZT - 0.04), (CSX1, MY - 0.32, CSZT))
+    lohi("Lining", (CSX0, 0.0, CSZT - 0.04), (CSX1, MY - 0.35, CSZT))
     # ...and blocked, in steps each kept under a climber's feet (a body 0.38 round reaching in from below it), as far
     # as where the floor's step up onto the slope takes over
     zs = [CSZT, 1.4, 1.9, 2.4, 2.9, 3.3, CSZB - (0.5 - rise / 2) / slope]
@@ -1424,6 +1644,7 @@ def upper_floor(name, x0, x1, z0, z1, y=MY):
 def open_edge(axis, fixed, a0, a1, y=MY, side=1, rail=True, name="edge"):
     """An upper floor's open edge (along x at z=fixed, or along z at x=fixed): a black fascia, a warm strip under it,
     and a glass rail on it (walls the walker in, not the camera). side: which way the floor lies from the edge."""
+    a0, a1 = a0 + 0.005, a1 - 0.005   # (just inside: at the floor's corner its edge and theirs were one plane)
     if axis == "x":
         lohi("Steel", (a0, y - 0.32, fixed - 0.02), (a1, y + 0.02, fixed + 0.02))
         zl = fixed + side * 0.1
@@ -1479,8 +1700,9 @@ def flight(name, x0, x1, z0, z1, up, y0, y1, glass=(True, True), end=True):
         solid("Steel", [P(fs, y0, v - 0.03), P(fs, y0, v + 0.03), P(top, y1 - 0.35, v + 0.03), P(top, y1 - 0.35, v - 0.03)],
               [P(fs, y0 + 0.25, v - 0.03), P(fs, y0 + 0.25, v + 0.03), P(top, y1 + 0.02, v + 0.03), P(top, y1 + 0.02, v - 0.03)])
         if glass[k]:
-            solid("GlassIn", [P(foot, y0 + 0.25, v - 0.01), P(foot, y0 + 0.25, v + 0.01), P(top, y1, v + 0.01), P(top, y1, v - 0.01)],
-                  [P(foot, y0 + 1.2, v - 0.01), P(foot, y0 + 1.2, v + 0.01), P(top, y1 + 1.0, v + 0.01), P(top, y1 + 1.0, v - 0.01)])
+            tg = top - sgn * 0.005   # (the glass ends just short of the stringer's top end: they were one plane there)
+            solid("GlassIn", [P(foot, y0 + 0.25, v - 0.01), P(foot, y0 + 0.25, v + 0.01), P(tg, y1, v + 0.01), P(tg, y1, v - 0.01)],
+                  [P(foot, y0 + 1.2, v - 0.01), P(foot, y0 + 1.2, v + 0.01), P(tg, y1 + 1.0, v + 0.01), P(tg, y1 + 1.0, v - 0.01)])
             span("Steel", P(foot, y0 + 1.25, v), P(top, y1 + 1.05, v), 0.05)
         lo = P(min(foot, top), y0, v - 0.06); hi = P(max(foot, top), y1 + 1.1, v + 0.06)
         helper("BLK_%srail" % name, lo, hi)
@@ -1488,7 +1710,7 @@ def flight(name, x0, x1, z0, z1, up, y0, y1, glass=(True, True), end=True):
         solid("Lining", [P(fs, 0.0, v - 0.025), P(fs, 0.0, v + 0.025), P(top, 0.0, v + 0.025), P(top, 0.0, v - 0.025)],
               [P(fs, max(0.0, y0 - 0.36), v - 0.025), P(fs, max(0.0, y0 - 0.36), v + 0.025), P(top, y1 - 0.36, v + 0.025), P(top, y1 - 0.36, v - 0.025)])
     if end:
-        box_sv("Lining", top, top - sgn * 0.04, 0.0, y1 - 0.32, v0, v1)
+        box_sv("Lining", top, top - sgn * 0.04, 0.0, y1 - 0.35, v0, v1)   # (up to the stringers' undersides, not past)
     # what you walk on (the game sets a ramp's top half an outside riser under its hi: added back)
     prefix = {"-z": "RMP_", "+z": "RMPS_", "-x": "RMPW_", "+x": "RMPE_"}[up]
     yh = y1 + rise / 2 + 0.085
@@ -1753,6 +1975,9 @@ marker("MARK_right", (XL, 0, 0))
 
 # ---------------------------------------------------------------- write it out
 
+SHELL_FACES = []
+
+
 def write(path, name):
     """The meshes and helpers made so far, as one FBX (then cleared, for the next file)."""
     coll = bpy.context.scene.collection
@@ -1780,6 +2005,14 @@ def write(path, name):
         ob = bpy.data.objects.new("%s__%d" % (hname, i), me)
         coll.objects.link(ob)
         ob.parent = root
+    if name == "Lodge":
+        SHELL_FACES[:] = FACES
+        report_coplanar(name, FACES)
+        SHELL_SOLIDS[:] = SOLIDS
+        SOLIDS.clear()
+    else:
+        report_coplanar(name, SHELL_FACES + FACES, len(SHELL_FACES))
+    FACES.clear(); SOLIDS.clear()
     print("LODGE %s: %d triangles in %d meshes (%d materials), helpers: %d" % (name, sum(tris.values()), len(geo), len(tris), len(helpers)))
     print("LODGE %s by material: " % name + ", ".join("%s %d" % kv for kv in sorted(tris.items(), key=lambda kv: -kv[1])))
     bpy.ops.export_scene.fbx(filepath=path, use_selection=False, object_types={"EMPTY", "MESH"}, apply_unit_scale=True,

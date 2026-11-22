@@ -22,7 +22,7 @@ namespace Summit
         public const float LodgeDx = -7f, LodgeZ = -92f, LodgeYaw = 7f;
         // its outline in its own frame (MakeLodge.py): the hall and the wing, and everything with the terrace and eaves
         static readonly Rect LodgeHall = Rect.MinMaxRect(-11f, -7f, 11f, 7f), LodgeWing = Rect.MinMaxRect(-16f, -5.5f, -11f, 5f);
-        static readonly Rect LodgeAll = Rect.MinMaxRect(-17.6f, -8.4f, 14.4f, 12.8f);
+        static readonly Rect LodgeAll = Rect.MinMaxRect(-17.6f, -8.4f, 19.4f, 12.8f);   // (to x 19: the covered section under the roof's tail)
         const float LodgeTerraceEdge = 12.6f, LodgeRise = 0.17f, LodgeRun = 0.36f;
         const int LodgeSteps = 14;
 
@@ -31,8 +31,8 @@ namespace Summit
         static readonly Vector2[] LodgeTrees = { new Vector2(-29f, -99f), new Vector2(-19f, -104f), new Vector2(-6f, -107f), new Vector2(7f, -105f), new Vector2(19f, -101f),
                                                  new Vector2(21f, -104f), new Vector2(-30f, -82f), new Vector2(-29f, -67f), new Vector2(-28.5f, -93f), new Vector2(-27f, -74f),
                                                  new Vector2(-24f, -108f), new Vector2(13f, -110f), new Vector2(-31f, -54f),
-                                                 new Vector2(-26f, -80.5f), new Vector2(12.5f, -86f) };
-        static readonly Vector2[] LodgeBirches = { new Vector2(-24.6f, -72.8f), new Vector2(-27.8f, -87.5f), new Vector2(11f, -97f), new Vector2(-17.5f, -63f), new Vector2(-25.5f, -70f), new Vector2(13.2f, -91.5f) };
+                                                 new Vector2(-26f, -80.5f), new Vector2(17.3f, -86.6f) };   // (the last moved out past the covered section's end)
+        static readonly Vector2[] LodgeBirches = { new Vector2(-24.6f, -72.8f), new Vector2(-27.8f, -87.5f), new Vector2(15.9f, -98.3f), new Vector2(-17.5f, -63f), new Vector2(-25.5f, -70f), new Vector2(17.2f, -92.0f) };   // (two moved out past it)
 
         readonly List<Rect> lodgeInside = new List<Rect>();
         readonly Dictionary<string, Transform> lodgeTaps = new Dictionary<string, Transform>();
@@ -165,34 +165,94 @@ namespace Summit
 
         static readonly (string, Vector3, float)[] Shared =
         {
-            ("sit", new Vector3(-14.95f, 0.78f, 3.75f), 0f), ("sit", new Vector3(-14.1f, 0.78f, 3.75f), 0f), ("sit", new Vector3(-13.25f, 0.78f, 3.75f), 0f),
-            ("sit", new Vector3(-12.4f, 0.78f, 3.75f), 0f), ("sit", new Vector3(-11.55f, 0.78f, 3.75f), 0f),
-            ("sit", new Vector3(-15.1f, 0.47f, 0.7f), 90f), ("sit", new Vector3(-13.7f, 0.47f, 0.7f), -90f),
-            ("sit", new Vector3(-13.3f, 0.47f, -0.9f), 90f), ("sit", new Vector3(-11.9f, 0.47f, -0.9f), -90f),
+            ("sit", new Vector3(-14.95f, 0.8f, 3.75f), 0f), ("sit", new Vector3(-14.1f, 0.8f, 3.75f), 0f), ("sit", new Vector3(-13.25f, 0.8f, 3.75f), 0f),
+            ("sit", new Vector3(-12.4f, 0.8f, 3.75f), 0f), ("sit", new Vector3(-11.55f, 0.8f, 3.75f), 0f),
+            ("sit", new Vector3(-15.1f, 0.48f, 0.7f), 90f), ("sit", new Vector3(-13.7f, 0.48f, 0.7f), -90f),
+            ("sit", new Vector3(-13.3f, 0.48f, -0.9f), 90f), ("sit", new Vector3(-11.9f, 0.48f, -0.9f), -90f),
             ("sit", new Vector3(-10.9f, 0.38f, 10.0f), 90f), ("sit", new Vector3(-6.7f, 0.38f, 10.0f), -90f),
-            ("sit", new Vector3(7.3f, 0.45f, 9.48f), 0f), ("sit", new Vector3(8.5f, 0.45f, 10.92f), 180f),
+            ("sit", new Vector3(7.3f, 0.44f, 9.48f), 0f), ("sit", new Vector3(8.5f, 0.44f, 10.92f), 180f),
             ("browse", new Vector3(9.6f, 0f, -4.0f), 90f), ("browse", new Vector3(6.3f, 0f, -3.0f), 180f),
             ("queue", new Vector3(7.0f, 0f, -0.45f), 180f), ("queue", new Vector3(7.0f, 0f, 0.6f), 180f),
             ("staff", new Vector3(7.0f, 0f, -2.4f), 0f), ("staff", new Vector3(9.75f, 0f, 5.1f), 0f),
             ("stand", new Vector3(3.0f, 0f, 2.2f), 30f),
+            // the wing's far end, by the hot chocolate (clear of where you stand to make it): room for two to stand and talk
+            ("stand", new Vector3(-14.9f, 0f, -1.55f), 120f), ("stand", new Vector3(-13.95f, 0f, -2.1f), -60f),
         };
+        /// <summary>The covered section's picnic tables (along x: benches at z +-0.72) and racks (x0, x1, z; facing +z), as MakeLodge.py builds them.</summary>
+        public static readonly (float x, float z)[] CoveredTables = { (12.9f, -0.2f), (16.5f, -0.2f), (12.9f, 6.6f), (16.5f, 6.6f), (16.5f, 9.2f) };
+        public static readonly (float x0, float x1, float z)[] CoveredRacks = { (11.5f, 14.2f, -6.2f), (15.4f, 18.0f, -6.2f), (11.5f, 14.2f, -3.3f), (15.4f, 18.0f, -3.3f) };
+        public const float PicnicSeat = 0.44f;
+        /// <summary>
+        /// The hips' place from a picnic table's middle: toward the bench's front edge (its middle is 0.72 out, 0.3 deep).
+        /// Feet on the floor at a bench's height the thighs fall from the hips to the knees: perched forward, they fall
+        /// clear of the bench, not through its front edge.
+        /// </summary>
+        public const float PicnicHips = 0.61f;
+
+        /// <summary>
+        /// The covered section at the low end (under the roof's tail, MakeLodge.py's RACKS and TABLES): the picnic tables'
+        /// seats (both benches, three a side; the hips toward the bench's front edge, PicnicHips), in front of
+        /// each rack (browsing it), and room to stand and talk between the racks. In every layout: it's the shell's.
+        /// </summary>
+        static readonly (string, Vector3, float)[] Covered = CoveredSpots();
+        static (string, Vector3, float)[] CoveredSpots()
+        {
+            var l = new List<(string, Vector3, float)>();
+            foreach (var (tx, tz) in CoveredTables)
+                foreach (float sx in new[] { -0.55f, 0f, 0.55f })
+                {
+                    l.Add(("sit", new Vector3(tx + sx, PicnicSeat, tz - PicnicHips), 0f));
+                    l.Add(("sit", new Vector3(tx + sx, PicnicSeat, tz + PicnicHips), 180f));
+                }
+            foreach (var (x0, x1, z) in CoveredRacks)
+            {
+                l.Add(("browse", new Vector3(x0 + 0.75f, 0f, z + 0.95f), 180f));
+                l.Add(("browse", new Vector3(x1 - 0.75f, 0f, z + 0.95f), 180f));
+            }
+            l.Add(("stand", new Vector3(16.1f, 0f, -4.75f), 90f)); l.Add(("stand", new Vector3(17.3f, 0f, -4.75f), -90f));
+            return l.ToArray();
+        }
+
+        /// <summary>
+        /// The lodge's own people (LodgeFolk.cs), each at one of the places above, in every layout: how they're there
+        /// (table: on a picnic bench at the table; stool: at the café's counter with a mug; rack: choosing at a rack;
+        /// chat: talking to the next one), where (the seat's height in y, as the spots), the
+        /// way they face, and the gear they have with them. (mugchat: standing with a mug, talking to the next one.)
+        /// </summary>
+        public static readonly (string pose, Vector3 at, float yaw, PersonGear gear)[] LodgeFolkAt =
+        {
+            // the covered section: three at the first table, two across the next, two across the one in front (those
+            // across from each other half a seat apart, so their knees and feet don't meet under it)
+            ("table", new Vector3(12.35f, PicnicSeat, -0.81f), 0f, PersonGear.None), ("table", new Vector3(13.45f, PicnicSeat, -0.81f), 0f, PersonGear.None),
+            ("table", new Vector3(12.9f, PicnicSeat, 0.41f), 180f, PersonGear.None),
+            ("table", new Vector3(15.95f, PicnicSeat, -0.81f), 0f, PersonGear.None), ("table", new Vector3(16.5f, PicnicSeat, 0.41f), 180f, PersonGear.None),
+            ("table", new Vector3(12.35f, PicnicSeat, 5.99f), 0f, PersonGear.None), ("table", new Vector3(12.9f, PicnicSeat, 7.21f), 180f, PersonGear.None),
+            // at the racks: one choosing, a board under the arm; two talking between the racks, skis and a board
+            ("rack", new Vector3(12.25f, 0f, -5.25f), 180f, PersonGear.Snowboard),
+            ("chat", new Vector3(16.1f, 0f, -4.75f), 90f, PersonGear.Skis), ("chat", new Vector3(17.3f, 0f, -4.75f), -90f, PersonGear.Snowboard),
+            // the café in the wing: two at the counter with their hot chocolate, looking out; two with mugs standing
+            // talking at the far end, by where it's made
+            ("stool", new Vector3(-14.95f, 0.8f, 3.69f), 0f, PersonGear.None), ("stool", new Vector3(-14.1f, 0.8f, 3.69f), 0f, PersonGear.None),   // (the hips at the stools' backs: the knees under the counter)
+            ("mugchat", new Vector3(-14.9f, 0f, -1.55f), 120f, PersonGear.None), ("mugchat", new Vector3(-13.95f, 0f, -2.1f), -60f, PersonGear.None),
+        };
+
         static readonly (string, Vector3, float)[][] PeopleSpots =
         {
-            Join(Shared, new[] {
+            Join(Join(Shared, Covered), new[] {
                 ("sit", new Vector3(-7.8f, 0.45f, 2.35f), 0f), ("sit", new Vector3(-6.4f, 0.45f, 2.35f), 0f), ("sit", new Vector3(-5.0f, 0.45f, 2.35f), 0f),
                 ("sit", new Vector3(-8.75f, 0.45f, 4.6f), 90f), ("sit", new Vector3(-4.05f, 0.45f, 4.6f), -90f),
                 ("browse", new Vector3(-9.2f, 0f, -5.5f), 180f), ("browse", new Vector3(-7.4f, 0f, -5.6f), 180f), ("browse", new Vector3(-4.4f, 0f, -5.6f), 180f),
                 ("browse", new Vector3(-2.6f, 0f, -5.4f), 180f), ("browse", new Vector3(-8.2f, 0f, -1.55f), 180f), ("browse", new Vector3(-5.6f, 0f, -1.5f), 180f),
                 ("browse", new Vector3(6.0f, 0f, -5.6f), 180f),
                 ("stand", new Vector3(1.0f, 0f, 4.0f), 0f), ("stand", new Vector3(-1.0f, 0f, 5.9f), 0f) }),
-            Join(Shared, new[] {
+            Join(Join(Shared, Covered), new[] {
                 ("sit", new Vector3(-3.2f, 0.45f, -5.45f), 0f), ("sit", new Vector3(-1.8f, 0.45f, -5.45f), 0f), ("sit", new Vector3(-0.4f, 0.45f, -5.45f), 0f),
                 ("sit", new Vector3(-3.2f, 0.45f, -1.05f), 180f), ("sit", new Vector3(-1.8f, 0.45f, -1.05f), 180f), ("sit", new Vector3(-0.4f, 0.45f, -1.05f), 180f),
                 ("sit", new Vector3(-5.5f, 0.45f, -3.2f), 90f), ("sit", new Vector3(1.9f, 0.45f, -3.2f), -90f),
                 ("browse", new Vector3(-9.5f, 0f, -5.6f), 180f), ("browse", new Vector3(-7.8f, 0f, -5.6f), 180f), ("browse", new Vector3(-8.6f, 0f, -1.6f), 180f),
                 ("browse", new Vector3(-8.6f, 0f, 2.6f), 0f), ("browse", new Vector3(-8.6f, 0f, 4.6f), 180f), ("browse", new Vector3(6.4f, 0f, -5.6f), 180f),
                 ("stand", new Vector3(1.0f, 0f, 4.0f), 0f), ("stand", new Vector3(-4.4f, 0f, 5.9f), 0f) }),
-            Join(Shared, new[] {
+            Join(Join(Shared, Covered), new[] {
                 ("sit", new Vector3(-6.6f, 0.45f, 1.75f), 0f), ("sit", new Vector3(-5.0f, 0.45f, 1.75f), 0f), ("sit", new Vector3(-3.4f, 0.45f, 1.75f), 0f),
                 ("sit", new Vector3(-7.75f, 0.45f, 4.1f), 90f), ("sit", new Vector3(-2.25f, 0.45f, 4.1f), -90f),
                 ("sit", new Vector3(-9.4f, 0.45f, -5.8f), 0f), ("sit", new Vector3(-7.6f, 0.45f, -5.8f), 0f), ("sit", new Vector3(-5.6f, 0.45f, -4.6f), -90f),
@@ -200,7 +260,7 @@ namespace Summit
                 ("browse", new Vector3(6.0f, 0f, -5.6f), 180f),
                 ("stand", new Vector3(4.5f, 0f, 3.0f), 0f), ("stand", new Vector3(-1.2f, 0f, 5.9f), 0f) }),
             // B1: B's ground floor; up on the gallery, browsing the gear along the back wall, and the corner's sofa
-            Join(Shared, new[] {
+            Join(Join(Shared, Covered), new[] {
                 ("sit", new Vector3(-3.2f, 0.45f, -5.45f), 0f), ("sit", new Vector3(-1.8f, 0.45f, -5.45f), 0f), ("sit", new Vector3(-0.4f, 0.45f, -5.45f), 0f),
                 ("sit", new Vector3(-3.2f, 0.45f, -1.05f), 180f), ("sit", new Vector3(-1.8f, 0.45f, -1.05f), 180f), ("sit", new Vector3(-0.4f, 0.45f, -1.05f), 180f),
                 ("sit", new Vector3(-5.5f, 0.45f, -3.2f), 90f), ("sit", new Vector3(1.9f, 0.45f, -3.2f), -90f),
@@ -211,7 +271,7 @@ namespace Summit
                 ("sit", new Vector3(-9.6f, 4.25f, -1.25f), 0f), ("sit", new Vector3(-8.7f, 4.25f, -1.25f), 0f), ("sit", new Vector3(-7.4f, 4.25f, -2.9f), 90f),
                 ("stand", new Vector3(-0.4f, 3.8f, -5.1f), 0f) }),
             // B2: B's lounge and low end; under the loft the snug and the café's tables; up in the loft the outfitters
-            Join(Shared, new[] {
+            Join(Join(Shared, Covered), new[] {
                 ("sit", new Vector3(-3.2f, 0.45f, -5.45f), 0f), ("sit", new Vector3(-1.8f, 0.45f, -5.45f), 0f), ("sit", new Vector3(-0.4f, 0.45f, -5.45f), 0f),
                 ("sit", new Vector3(-3.2f, 0.45f, -1.05f), 180f), ("sit", new Vector3(-1.8f, 0.45f, -1.05f), 180f), ("sit", new Vector3(-0.4f, 0.45f, -1.05f), 180f),
                 ("sit", new Vector3(-5.5f, 0.45f, -3.2f), 90f), ("sit", new Vector3(1.9f, 0.45f, -3.2f), -90f),
@@ -222,7 +282,7 @@ namespace Summit
                 ("browse", new Vector3(-9.5f, 3.8f, -5.6f), 180f), ("browse", new Vector3(-7.8f, 3.8f, -5.6f), 180f), ("browse", new Vector3(-8.6f, 3.8f, -1.6f), 180f),
                 ("browse", new Vector3(-8.6f, 3.8f, 2.6f), 0f), ("browse", new Vector3(-8.6f, 3.8f, 4.6f), 180f) }),
             // B3: B's ground floor; up on the balcony, the window lounge at the glass and the telescope
-            Join(Shared, new[] {
+            Join(Join(Shared, Covered), new[] {
                 ("sit", new Vector3(-3.2f, 0.45f, -5.45f), 0f), ("sit", new Vector3(-1.8f, 0.45f, -5.45f), 0f), ("sit", new Vector3(-0.4f, 0.45f, -5.45f), 0f),
                 ("sit", new Vector3(-3.2f, 0.45f, -1.05f), 180f), ("sit", new Vector3(-1.8f, 0.45f, -1.05f), 180f), ("sit", new Vector3(-0.4f, 0.45f, -1.05f), 180f),
                 ("sit", new Vector3(-5.5f, 0.45f, -3.2f), 90f), ("sit", new Vector3(1.9f, 0.45f, -3.2f), -90f),
@@ -234,7 +294,7 @@ namespace Summit
                 ("stand", new Vector3(-4.1f, 3.8f, 5.0f), 0f), ("stand", new Vector3(-7.6f, 3.8f, 3.0f), 0f) }),
             // B2R: B2 with its stair along the back wall: the lounge drawn forward off it; the snug, the café's tables
             // and the loft's outfitters as B2's
-            Join(Shared, new[] {
+            Join(Join(Shared, Covered), new[] {
                 ("sit", new Vector3(-3.2f, 0.45f, -4.52f), 0f), ("sit", new Vector3(-1.8f, 0.45f, -4.52f), 0f), ("sit", new Vector3(-0.4f, 0.45f, -4.52f), 0f),
                 ("sit", new Vector3(-3.2f, 0.45f, -0.9f), 180f), ("sit", new Vector3(-1.8f, 0.45f, -0.9f), 180f), ("sit", new Vector3(-0.4f, 0.45f, -0.9f), 180f),
                 ("sit", new Vector3(-5.5f, 0.45f, -2.71f), 90f), ("sit", new Vector3(1.9f, 0.45f, -2.71f), -90f),
@@ -447,8 +507,8 @@ namespace Summit
             if (LodgeStepsShowing >= LodgeSteps) Debug.LogWarning($"Camp: the lodge's steps don't reach the snow ({LodgeFrontDrop:0.00} m below the floor)");
             stairsFoot = new Vector3(footW.x, Slope.DrawnHeight(footW.x, footW.z), footW.z);
             lodgeApex = t.TransformPoint(new Vector3(1f, 6.5f, 0f));
-            // the string of lights runs along the front eave, under its edge
-            deckR = t.TransformPoint(new Vector3(12f, 2.32f, 10.06f));
+            // the string of lights runs along the front eave, under its edge, to where it kinks onto its tail
+            deckR = t.TransformPoint(new Vector3(11f, 2.62f, 10.06f));
             deckL = t.TransformPoint(new Vector3(-3f, 6.95f, 10.06f));
             LodgeRepoint();
         }

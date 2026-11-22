@@ -155,7 +155,6 @@ namespace Summit
             {
                 // (the spray and the bow wave are particles; the head's shadow in first person is never seen)
                 if (!(r is MeshRenderer || r is SkinnedMeshRenderer) || r.shadowCastingMode == ShadowCastingMode.ShadowsOnly) continue;
-                if (Leftover(r.transform, root)) continue;
                 r.GetSharedMaterials(mats);
                 for (int i = 0; i < mats.Count; i++)
                 {
@@ -176,14 +175,6 @@ namespace Summit
                 }
             }
             found.Clear(); mats.Clear();
-        }
-
-        /// <summary>Skis and a sled left hidden under the rider by a body swapped out before (RiderBody builds new ones
-        /// for each body and keeps the old): not drawn, so not painted.</summary>
-        bool Leftover(Transform t, Transform root)
-        {
-            while (t.parent != null && t.parent != root) t = t.parent;
-            return (t.name == "Skis" && t != body.SkiGear) || (t.name == "Toboggan" && t != body.SledGear);
         }
 
         void Paint(int show)

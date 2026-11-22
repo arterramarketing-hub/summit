@@ -54,6 +54,7 @@ namespace Summit
         {
             lit = litShader;
             if (CampLife.On && GetComponent<CampLife>() == null) gameObject.AddComponent<CampLife>().Setup(this);   // the people living here (CampLife.cs)
+            if (LodgeFolk.On && GetComponent<LodgeFolk>() == null) gameObject.AddComponent<LodgeFolk>().Setup(this);   // and the lodge's own, in their places (LodgeFolk.cs)
             var woodTex = Resources.Load<Texture2D>("Camp/Wood");
             var logTex = Resources.Load<Texture2D>("Camp/Logs");
             wood = M(new Color(0.95f, 0.88f, 0.8f), 0.18f, woodTex);

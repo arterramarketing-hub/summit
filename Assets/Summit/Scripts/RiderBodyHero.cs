@@ -268,6 +268,7 @@ namespace Summit
             // the old body goes at once (not at the end of the frame: the new one is found by searching under the same parent)
             for (int i = boardRoot.childCount - 1; i >= 0; i--) if (boardRoot.GetChild(i).name == "Snowboard") DestroyImmediate(boardRoot.GetChild(i).gameObject);
             DestroyImmediate(model.gameObject);
+            DropRides();   // its skis and toboggan too (SetUpRides builds the new body's: RiderBodyRide)
             cloth.Clear(); bandages.Clear(); bandaged.Clear(); brokenThisCrash.Clear(); breaksTold = 0;   // (the receipt hooks the new ragdoll itself: HookInjuries)
             // what the limbs code read from the old body's meshes, and its hooks on the old ragdoll
             skins.Clear(); limbRadius.Clear(); limbHooks = false; Killed -= OnLimbFall;

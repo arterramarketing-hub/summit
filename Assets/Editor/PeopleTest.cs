@@ -370,6 +370,192 @@ public static class PeopleTest
         bool ok = overlapPeople == 0 && overlapOthers < frameCount / 200 && overlapHero < frameCount / 200 && inThings == 0 && nearEdge == 0 && (walkDist <= 0 || slideDist / walkDist < 0.02);
         EditorApplication.Exit(ok ? 0 : 1);
     }
+    // ---------------------------------------------------------------- the lodge's own people
+
+    /// <summary>
+    /// The lodge's people (LodgeFolk, Camp.LodgeFolkAt) as the camp builds them, each posed over a minute of their
+    /// looks, talk, sips and reaches, its full mesh (and gear, and mug) tested against what they sit at and stand by
+    /// (the picnic tables' tops, benches, A-frames and bars; the café's tables, chairs, stools and counter; the racks):
+    /// vertices into any of them, and into the floor; the seated: hips resting on the seat (none floating over it or
+    /// sunk into it), the feet on the floor (or hanging from the stool); the standing: feet on the floor; nobody into
+    /// anybody (their meshes, cell by cell). And what posing them costs a frame. Batch: -executeMethod PeopleTest.Lodge
+    /// (no graphics needed). Exit 1 on any clipping, floating or overlap.
+    /// </summary>
+    public static void Lodge()
+    {
+        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
+        var game = Object.FindFirstObjectByType<SummitGame>();
+        TestPrefs.Pin();
+        TestBoot.Boot(game);
+        var camp = (Summit.Camp)typeof(SummitGame).GetField("camp", NP).GetValue(game);
+        typeof(SummitGame).GetMethod("ToHub", NP).Invoke(game, new object[] { true });
+        var folk = LodgeFolk.Current;
+        var sb = new StringBuilder();
+        if (folk == null || folk.All.Count == 0) { Debug.LogError("PEOPLETEST no lodge folk"); EditorApplication.Exit(1); return; }
+        var toLocal = Matrix4x4.TRS(camp.ChaletPoint(0f, 0f, 0f), Quaternion.Euler(0f, camp.ChaletYaw, 0f), Vector3.one).inverse;
+        // what they sit at and stand by (MakeLodge.py's picnic(), bistro(), stool(), cafe(), rack()), in the lodge's frame
+        tubes.Clear(); boxes.Clear();
+        void B(string n, Vector3 lo, Vector3 hi) => boxes.Add(new Box { name = n, lo = lo, hi = hi });
+        void T(string n, Vector3 a, Vector3 b, float r) => tubes.Add(new Tube { name = n, a = a, b = b, r = r });
+        foreach (var (x, z) in Summit.Camp.CoveredTables)
+        {
+            B("table top", new Vector3(x - 1.1f, 0.72f, z - 0.4f), new Vector3(x + 1.1f, 0.78f, z + 0.4f));
+            foreach (float s in new[] { -1f, 1f })
+            {
+                B("bench", new Vector3(x - 1.1f, 0.39f, z + s * 0.72f - 0.15f), new Vector3(x + 1.1f, 0.44f, z + s * 0.72f + 0.15f));
+                foreach (float xx in new[] { x - 0.85f, x + 0.85f }) T("A-frame", new Vector3(xx, 0f, z + s * 0.85f), new Vector3(xx, 0.74f, z + s * 0.12f), 0.025f);
+            }
+            foreach (float xx in new[] { x - 0.85f, x + 0.85f }) B("bench bar", new Vector3(xx - 0.025f, 0.35f, z - 0.87f), new Vector3(xx + 0.025f, 0.39f, z + 0.87f));
+        }
+        var cyls = new List<(string n, Vector3 c, float r, float y0, float y1)>();
+        foreach (var (x, z) in new[] { (-14.4f, 0.7f), (-12.6f, -0.9f), (-9.2f, 3.6f), (-8.4f, 5.6f) })
+        {
+            cyls.Add(("café table", new Vector3(x, 0f, z), 0.38f, 0.72f, 0.76f));
+            cyls.Add(("café table's foot", new Vector3(x, 0f, z), 0.03f, 0f, 0.72f));
+            cyls.Add(("café table's base", new Vector3(x, 0f, z), 0.25f, 0f, 0.03f));
+            foreach (float a in new[] { 0f, 180f })
+            {
+                float cx = x + (a == 0f ? 0.7f : -0.7f), bx = cx + (a == 0f ? 0.2f : -0.2f);
+                B("chair seat", new Vector3(cx - 0.21f, 0.4f, z - 0.21f), new Vector3(cx + 0.21f, 0.43f, z + 0.21f));
+                B("chair back", new Vector3(bx - 0.015f, 0.43f, z - 0.21f), new Vector3(bx + 0.015f, 0.85f, z + 0.21f));
+                foreach (var (dx, dz) in new[] { (-0.18f, -0.18f), (0.18f, -0.18f), (0.18f, 0.18f), (-0.18f, 0.18f) })
+                    B("chair leg", new Vector3(cx + dx - 0.015f, 0f, z + dz - 0.015f), new Vector3(cx + dx + 0.015f, 0.4f, z + dz + 0.015f));
+            }
+        }
+        const float WX0 = -15.7f, WX1 = -11f, WZF = 4.7f;
+        for (int i = 0; i < 5; i++)
+        {
+            float sx = WX0 + 0.75f + i * 0.85f, sz = WZF - 0.95f;
+            cyls.Add(("stool seat", new Vector3(sx, 0f, sz), 0.19f, 0.75f, 0.8f));
+            cyls.Add(("stool pole", new Vector3(sx, 0f, sz), 0.025f, 0f, 0.75f));
+        }
+        B("counter top", new Vector3(WX0 + 0.15f, 1.02f, WZF - 0.5f), new Vector3(WX1 - 0.35f, 1.07f, WZF));
+        B("counter front", new Vector3(WX0 + 0.2f, 0f, WZF - 0.12f), new Vector3(WX1 - 0.4f, 1.02f, WZF - 0.04f));
+        foreach (var (x0, x1, z) in Summit.Camp.CoveredRacks)
+        {
+            B("rack end", new Vector3(x0, 0f, z - 0.25f), new Vector3(x0 + 0.05f, 1.1f, z + 0.25f));
+            B("rack end", new Vector3(x1 - 0.05f, 0f, z - 0.25f), new Vector3(x1, 1.1f, z + 0.25f));
+            B("rack rail", new Vector3(x0, 0.18f, z - 0.25f), new Vector3(x1, 0.24f, z + 0.25f));
+            B("rack's boards", new Vector3(x0, 0f, z - 0.3f), new Vector3(x1, 1.7f, z + 0.3f));
+        }
+        const float tol = 0.01f;
+        int bad = 0, cases = 0, floats = 0, sunk = 0, feetOff = 0, overlaps = 0;
+        float worstSeat = 0f, worstFeet = 0f;
+        var depth = new Dictionary<string, float>(); var count = new Dictionary<string, int>(); var worstCase = new Dictionary<string, string>();
+        var pos = new List<Vector3>(); var slot = new List<int>(); var tris = new List<int>();
+        var cells = new Dictionary<Vector3Int, int>[folk.All.Count];
+        // a minute of their lives, sampled every 1.5 s (each posed in the full model)
+        const float dt = 1f / 30f;
+        for (int sample = 0; sample < 40; sample++)
+        {
+            foreach (var f in folk.All) f.p.SetLod(0);
+            for (int k = 0; k < 45; k++) folk.Step(dt);
+            for (int i = 0; i < folk.All.Count; i++)
+            {
+                var f = folk.All[i];
+                cases++;
+                pos.Clear(); slot.Clear(); tris.Clear();
+                PeopleKit.Gather(f.p, toLocal, pos, slot, tris);
+                if (f.mug != null)
+                    foreach (var mf in f.mug.GetComponentsInChildren<MeshFilter>())
+                        foreach (var v in mf.sharedMesh.vertices) { pos.Add(toLocal.MultiplyPoint3x4(mf.transform.TransformPoint(v))); slot.Add(-2); }
+                string who = $"{i}:{f.pose} at ({toLocal.MultiplyPoint3x4(f.seat).x:0.00}, {toLocal.MultiplyPoint3x4(f.seat).z:0.00}) t{sample * 1.5f:0.0}s";
+                bool caseBad = false;
+                var occ = cells[i] = new Dictionary<Vector3Int, int>();
+                float lowest = 99f, lowFoot = 99f; string lowWhat = "";
+                var seatL = toLocal.MultiplyPoint3x4(f.seat);
+                bool sitting = LodgeFolk.Sits(f);
+                float seatTop = Summit.Camp.LodgeFolkAt[i].at.y;   // (the seat's top, in the lodge's frame)
+                var toPerson = f.p.transform.worldToLocalMatrix * toLocal.inverse;
+                for (int vi = 0; vi < pos.Count; vi++)
+                {
+                    var v = pos[vi];
+                    string sl = slot[vi] == -2 ? "mug" : SlotName(slot[vi]);
+                    curV = v;
+                    if (slot[vi] != -2) { var c = new Vector3Int(Mathf.FloorToInt(v.x / 0.02f), Mathf.FloorToInt(v.y / 0.02f), Mathf.FloorToInt(v.z / 0.02f)); occ[c] = 1; }
+                    if (v.y < -tol) { Note("the floor/" + sl, -v.y, who); caseBad = true; }
+                    foreach (var t in tubes) { float dd = t.r - SegDist(v, t.a, t.b); if (dd > tol) { Note(t.name + "/" + sl, dd, who); caseBad = true; } }
+                    foreach (var b in boxes)
+                    {
+                        if (v.x < b.lo.x || v.x > b.hi.x || v.y < b.lo.y || v.y > b.hi.y || v.z < b.lo.z || v.z > b.hi.z) continue;
+                        float dd = Mathf.Min(Mathf.Min(v.x - b.lo.x, b.hi.x - v.x), Mathf.Min(Mathf.Min(v.y - b.lo.y, b.hi.y - v.y), Mathf.Min(v.z - b.lo.z, b.hi.z - v.z)));
+                        if (dd > tol) { Note(b.name + "/" + sl, dd, who); caseBad = true; }
+                    }
+                    foreach (var c in cyls)
+                    {
+                        if (v.y < c.y0 || v.y > c.y1) continue;
+                        float dd = Mathf.Min(c.r - new Vector2(v.x - c.c.x, v.z - c.c.z).magnitude, Mathf.Min(v.y - c.y0, c.y1 - v.y));
+                        if (dd > tol) { Note(c.n + "/" + sl, dd, who); caseBad = true; }
+                    }
+                    // what rests on the seat: the lowest of them over the seat's top (the bench's depth, the chair's
+                    // square, the stool's round top, in their own frame: as MakeLodge.py builds them)
+                    if (sitting && slot[vi] >= 0)
+                    {
+                        var q = toPerson.MultiplyPoint3x4(v);
+                        bool over = LodgeFolk.OverSeat(f, q);
+                        if (over && v.y < lowest) { lowest = v.y; lowWhat = $"{sl} at {q.ToString("F3")} (their frame)"; }
+                    }
+                    if (sl == "boot") lowFoot = Mathf.Min(lowFoot, v.y);
+                }
+                if (sitting)
+                {
+                    float gap = lowest - seatTop;   // + floating over the seat, - into it
+                    if (sample == 0)
+                    {
+                        var rg = f.p.Rig; var tp = f.p.transform;
+                        string J(Transform t) => tp.InverseTransformPoint(t.position).ToString("F2");
+                        sb.AppendLine($"LODGEFOLK hands {who}: left {tp.InverseTransformPoint(rg.Hand[0].position).ToString("F2")} (wanted {tp.InverseTransformPoint(f.p.handAt[0]).ToString("F2")} w{f.p.handW[0]:0.0}), right {tp.InverseTransformPoint(rg.Hand[1].position).ToString("F2")} (wanted {tp.InverseTransformPoint(f.p.handAt[1]).ToString("F2")} w{f.p.handW[1]:0.0}); shoulders {J(rg.UpperArm[0])} {J(rg.UpperArm[1])}");
+                        sb.AppendLine($"LODGEFOLK seat {who}: raised {f.lift * 100f:0.0} cm, the lowest over the seat {gap * 100f:0.0} cm from its top ({lowWhat}); scale {f.p.Scale:0.00} hips {J(rg.Hips)} hip joints {J(rg.UpperLeg[0])} {J(rg.UpperLeg[1])} knees {J(rg.LowerLeg[0])} {J(rg.LowerLeg[1])} ankles {J(rg.Foot[0])} {J(rg.Foot[1])}");
+                    }
+                    if (Mathf.Abs(gap) > Mathf.Abs(worstSeat)) worstSeat = gap;
+                    if (gap > 0.02f) { floats++; caseBad = true; Note("floating over the seat", gap, who); }
+                    if (gap < -tol) { sunk++; caseBad = true; Note("sunk into the seat", -gap, who); }
+                }
+                if (f.pose != "stool")
+                {
+                    float fg = lowFoot;   // (the floor is at 0)
+                    if (Mathf.Abs(fg) > Mathf.Abs(worstFeet)) worstFeet = fg;
+                    if (fg > 0.04f || fg < -tol) { feetOff++; caseBad = true; Note(fg > 0f ? "feet off the floor" : "feet into the floor", Mathf.Abs(fg), who); }
+                }
+                if (caseBad) { bad++; if (bad <= 30) sb.AppendLine("LODGEFOLK BAD " + who + " " + Last()); }
+            }
+            // nobody into anybody: a cell of one's mesh (2 cm) in another's
+            for (int i = 0; i < folk.All.Count; i++)
+                for (int j = i + 1; j < folk.All.Count; j++)
+                {
+                    int shared = 0;
+                    foreach (var c in cells[i].Keys) if (cells[j].ContainsKey(c)) shared++;
+                    if (shared > 0) { overlaps++; if (overlaps <= 10) sb.AppendLine($"LODGEFOLK OVERLAP {i}:{folk.All[i].pose} and {j}:{folk.All[j].pose} share {shared} cells at t{sample * 1.5f:0.0}s"); }
+                }
+        }
+        // what posing them costs (the editor, this Mac): everyone in the full model, and as CampLife's levels leave them
+        var swc = System.Diagnostics.Stopwatch.StartNew();
+        foreach (var f in folk.All) f.p.SetLod(0);
+        for (int k = 0; k < 300; k++) folk.Step(dt);
+        double fullMs = swc.Elapsed.TotalMilliseconds / 300.0;
+        foreach (var f in folk.All) f.p.SetLod(1);
+        swc.Restart();
+        for (int k = 0; k < 300; k++) folk.Step(dt);
+        double simpleMs = swc.Elapsed.TotalMilliseconds / 300.0;
+        long simpleTris = 0; foreach (var f in folk.All) if (f.p.LodSkin != null) simpleTris += f.p.LodSkin.sharedMesh.GetIndexCount(0) / 3;
+        sb.AppendLine($"LODGEFOLK {folk.All.Count} people ({cases} poses over a minute of their time): {bad} with something wrong; touching furniture or the floor, deepest by part: " + string.Join(", ", Parts()));
+        sb.AppendLine($"LODGEFOLK seated: {floats} floating over the seat, {sunk} sunk into it (the worst {worstSeat * 100f:0.0} cm); feet {feetOff} off or into the floor (the worst {worstFeet * 100f:0.0} cm); into each other {overlaps}");
+        sb.AppendLine($"LODGEFOLK cost (editor, this Mac): posing all {folk.All.Count} in the full model {fullMs:0.000} ms a frame; in the simplified one (every third frame each) {simpleMs:0.000} ms a frame; simplified bodies {simpleTris} triangles together, {folk.All.Count} skins, no shadows");
+        Debug.Log(sb.ToString());
+        System.IO.File.WriteAllText("Logs/people-lodge.txt", sb.ToString());
+        TestPrefs.Restore();
+        EditorApplication.Exit(bad == 0 && overlaps == 0 ? 0 : 1);
+
+        void Note(string part, float dd, string who)
+        {
+            if (!depth.TryGetValue(part, out var d0) || dd > d0) { depth[part] = dd; worstCase[part] = who + $" at {curV.ToString("F2")}"; }
+            count[part] = (count.TryGetValue(part, out var c0) ? c0 : 0) + 1;
+            lastPart = part; lastDepth = dd;
+        }
+        string Last() => $"{lastPart} {lastDepth * 100f:0.0} cm";
+        IEnumerable<string> Parts() { foreach (var kv in depth) yield return $"\n  {kv.Key} {kv.Value * 100f:0.0} cm ({count[kv.Key]} vertices; worst {worstCase[kv.Key]})"; }
+    }
+
     static string SlotName(int s) => s < 0 || s >= slotNames.Length ? "?" : slotNames[s];
     static readonly string[] slotNames = { "skin", "jacket", "jacket2", "pants", "head", "lens", "frame", "glove", "boot", "board", "dark", "pack", "hair", "gaiter", "metal", "pompom" };
 }

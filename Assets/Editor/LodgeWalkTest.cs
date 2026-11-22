@@ -147,7 +147,7 @@ public static class LodgeWalkTest
             Leg("the counter to the tuning bench", counter, new[] { L(7.2f, 2.5f), bench }, Camp.Station.Upgrades);
             Leg("the tuning bench along the spine into the café", bench, new[] { L(6f, 1.0f), L(-6f, 0.9f), L(-10f, 0.8f), L(-13.5f, 2.2f) });
             Leg("the café back to the lounge by the fire", L(-13.5f, 2.2f), new[] { L(-10f, 0.8f), L(-2.6f, 1.2f), L(-3.0f, 3.4f) });
-            Leg("the lounge out the side door to the racks", L(-3.0f, 3.4f), new[] { L(-2.6f, 1.2f), L(0f, 1.0f), L(8f, 3.9f), L(10.4f, 3.95f), L(11.6f, 3.95f), L(11.6f, -2.8f) });
+            Leg("the lounge out the side door to the racks", L(-3.0f, 3.4f), new[] { L(-2.6f, 1.2f), L(0f, 1.0f), L(8f, 3.9f), L(10.4f, 3.95f), L(11.6f, 3.95f), L(14.75f, 3.95f), L(14.75f, -2.1f), L(14.75f, -4.6f) });
             toDropIn = new[] { L(-4.2f, -4.2f), L(-4.2f, -1.0f), L(0f, 1.0f), door, L(2f, 9f), foot, dropIn };
         }
         else if (layout == 1)
@@ -159,7 +159,7 @@ public static class LodgeWalkTest
             Leg("the tuning bench through the boutique's way into the café", bench, new[] { L(6f, 1.0f), L(-6f, 1.0f), L(-10f, 0.8f), L(-13.5f, 2.2f) });
             Leg("the café into the ring round the fire", L(-13.5f, 2.2f), new[] { L(-10f, 0.8f), L(-4.6f, 0.3f), L(-4.5f, -2.05f), L(-3.0f, -2.05f) });
             Leg("all the way round the fire", L(-3.0f, -2.05f), new[] { L(-0.1f, -2.05f), L(0.6f, -3.2f), L(-0.1f, -4.35f), L(-3.5f, -4.35f), L(-4.3f, -3.2f), L(-3.5f, -2.05f) });
-            Leg("the fire out the side door to the racks", L(-3.5f, -2.05f), new[] { L(-4.5f, -2.05f), L(-4.6f, 0.3f), L(0f, 1.0f), L(8f, 3.9f), L(10.4f, 3.95f), L(11.6f, 3.95f), L(11.6f, -2.8f) });
+            Leg("the fire out the side door to the racks", L(-3.5f, -2.05f), new[] { L(-4.5f, -2.05f), L(-4.6f, 0.3f), L(0f, 1.0f), L(8f, 3.9f), L(10.4f, 3.95f), L(11.6f, 3.95f), L(14.75f, 3.95f), L(14.75f, -2.1f), L(14.75f, -4.6f) });
             toDropIn = new[] { L(-7.1f, -3.6f), L(-7.1f, 0.9f), L(2.5f, 1.2f), door, L(2f, 9f), foot, dropIn };
         }
         else if (layout == 3)
@@ -174,7 +174,7 @@ public static class LodgeWalkTest
             Leg("the tuning bench round the stair's foot into the café", bench, new[] { L(6f, 2.4f), L(2.5f, 2.4f), L(-6f, 1.0f), L(-10f, 0.8f), L(-13.5f, 2.2f) });
             Leg("the café into the ring round the fire", L(-13.5f, 2.2f), new[] { L(-10f, 0.8f), L(-4.6f, 0.3f), L(-4.5f, -2.05f), L(-3.0f, -2.05f) });
             Leg("all the way round the fire (under the gallery behind it)", L(-3.0f, -2.05f), new[] { L(-0.1f, -2.05f), L(0.6f, -3.2f), L(-0.1f, -4.35f), L(-3.5f, -4.35f), L(-4.3f, -3.2f), L(-3.5f, -2.05f) });
-            Leg("the fire out the side door to the racks", L(-3.5f, -2.05f), new[] { L(-4.5f, -2.05f), L(-4.6f, 0.3f), L(0f, 1.0f), L(2.5f, 2.4f), L(8f, 3.9f), L(10.4f, 3.95f), L(11.6f, 3.95f), L(11.6f, -2.8f) });
+            Leg("the fire out the side door to the racks", L(-3.5f, -2.05f), new[] { L(-4.5f, -2.05f), L(-4.6f, 0.3f), L(0f, 1.0f), L(2.5f, 2.4f), L(8f, 3.9f), L(10.4f, 3.95f), L(11.6f, 3.95f), L(14.75f, 3.95f), L(14.75f, -2.1f), L(14.75f, -4.6f) });
             toDropIn = new[] { L(-7.1f, -3.6f), L(-7.1f, 0.9f), L(2.5f, 1.2f), door, L(2f, 9f), foot, dropIn };
         }
         else if (layout == 4)
@@ -192,7 +192,7 @@ public static class LodgeWalkTest
             Leg("the café to the snug under the loft", L(-13.5f, 2.2f), new[] { L(-10f, 0.8f), L(-8.6f, 0.6f), L(-8.6f, -1.6f) });
             Leg("the snug into the ring round the fire", L(-8.6f, -1.6f), new[] { L(-6.8f, -1.6f), L(-4.6f, 0.3f), L(-4.5f, -2.05f), L(-3.0f, -2.05f) });
             Leg("all the way round the fire", L(-3.0f, -2.05f), new[] { L(-0.1f, -2.05f), L(0.6f, -3.2f), L(-0.1f, -4.35f), L(-3.5f, -4.35f), L(-4.3f, -3.2f), L(-3.5f, -2.05f) });
-            Leg("the fire out the side door to the racks", L(-3.5f, -2.05f), new[] { L(-4.5f, -2.05f), L(-4.6f, 0.3f), L(0f, 1.0f), L(8f, 3.9f), L(10.4f, 3.95f), L(11.6f, 3.95f), L(11.6f, -2.8f) });
+            Leg("the fire out the side door to the racks", L(-3.5f, -2.05f), new[] { L(-4.5f, -2.05f), L(-4.6f, 0.3f), L(0f, 1.0f), L(8f, 3.9f), L(10.4f, 3.95f), L(11.6f, 3.95f), L(14.75f, 3.95f), L(14.75f, -2.1f), L(14.75f, -4.6f) });
             var tdi = new List<Vector3>(down) { door, L(2f, 9f), foot, dropIn };
             toDropIn = tdi.ToArray();
         }
@@ -211,7 +211,7 @@ public static class LodgeWalkTest
             Leg("the café to the snug under the loft", L(-13.5f, 2.2f), new[] { L(-10f, 0.8f), L(-8.6f, 0.6f), L(-8.6f, -1.6f) });
             Leg("the snug into the ring round the fire", L(-8.6f, -1.6f), new[] { L(-6.8f, -1.6f), L(-4.6f, 0.3f), L(-4.5f, -1.72f), L(-3.0f, -1.72f) });
             Leg("all the way round the fire (the stair behind the back sofa)", L(-3.0f, -1.72f), new[] { L(-0.1f, -1.72f), L(0.45f, -2.71f), L(-0.1f, -3.7f), L(-3.5f, -3.7f), L(-4.1f, -2.71f), L(-3.5f, -1.72f) });
-            Leg("the fire out the side door to the racks", L(-3.5f, -1.72f), new[] { L(-4.5f, -1.72f), L(-4.6f, 0.3f), L(0f, 1.0f), L(8f, 3.9f), L(10.4f, 3.95f), L(11.6f, 3.95f), L(11.6f, -2.8f) });
+            Leg("the fire out the side door to the racks", L(-3.5f, -1.72f), new[] { L(-4.5f, -1.72f), L(-4.6f, 0.3f), L(0f, 1.0f), L(8f, 3.9f), L(10.4f, 3.95f), L(11.6f, 3.95f), L(14.75f, 3.95f), L(14.75f, -2.1f), L(14.75f, -4.6f) });
             Leg("the stair's foot round the lounge to the couple's glass", L(1.6f, -5.9f), new[] { L(3.0f, -4.4f), L(3.6f, 0.8f), L(-1.0f, 5.0f) });
             var tdi = new List<Vector3>(down) { L(3.6f, 0.8f), door, L(2f, 9f), foot, dropIn };
             toDropIn = tdi.ToArray();
@@ -228,7 +228,7 @@ public static class LodgeWalkTest
             Leg("the tuning bench under the balcony into the café", bench, new[] { L(6f, 1.0f), L(-6f, 1.0f), L(-10f, 0.8f), L(-13.5f, 2.2f) });
             Leg("the café into the ring round the fire", L(-13.5f, 2.2f), new[] { L(-10f, 0.8f), L(-4.6f, 0.3f), L(-4.5f, -2.05f), L(-3.0f, -2.05f) });
             Leg("all the way round the fire", L(-3.0f, -2.05f), new[] { L(-0.1f, -2.05f), L(0.6f, -3.2f), L(-0.1f, -4.35f), L(-3.5f, -4.35f), L(-4.3f, -3.2f), L(-3.5f, -2.05f) });
-            Leg("the fire out the side door to the racks", L(-3.5f, -2.05f), new[] { L(-4.5f, -2.05f), L(-4.6f, 0.3f), L(0f, 1.0f), L(2.4f, 2.4f), L(8f, 3.9f), L(10.4f, 3.95f), L(11.6f, 3.95f), L(11.6f, -2.8f) });
+            Leg("the fire out the side door to the racks", L(-3.5f, -2.05f), new[] { L(-4.5f, -2.05f), L(-4.6f, 0.3f), L(0f, 1.0f), L(2.4f, 2.4f), L(8f, 3.9f), L(10.4f, 3.95f), L(11.6f, 3.95f), L(14.75f, 3.95f), L(14.75f, -2.1f), L(14.75f, -4.6f) });
             toDropIn = new[] { L(-7.1f, -3.6f), L(-7.1f, 0.9f), L(2.5f, 1.2f), door, L(2f, 9f), foot, dropIn };
         }
         else
@@ -243,12 +243,14 @@ public static class LodgeWalkTest
             Leg("the counter to the tuning bench", counter, new[] { L(7.2f, 2.5f), bench }, Camp.Station.Upgrades);
             Leg("the tuning bench under the mezzanine into the café", bench, new[] { L(6f, 1.0f), L(3.8f, 1.0f), L(3.8f, -2.8f), L(-0.5f, -2.8f), L(-9.5f, -2.8f), L(-10f, -1.0f), L(-13.5f, 2.2f) });
             Leg("the café to the lounge by the fire", L(-13.5f, 2.2f), new[] { L(-10f, 0.5f), L(-8.3f, 0.5f), L(-8.4f, 2.9f) });
-            Leg("the lounge under the mezzanine and out the side door to the racks", L(-8.4f, 2.9f), new[] { L(-7.6f, 0.6f), L(-7.4f, -2.8f), L(3.8f, -2.8f), L(3.8f, 1.0f), L(8f, 3.9f), L(10.4f, 3.95f), L(11.6f, 3.95f), L(11.6f, -2.8f) });
+            Leg("the lounge under the mezzanine and out the side door to the racks", L(-8.4f, 2.9f), new[] { L(-7.6f, 0.6f), L(-7.4f, -2.8f), L(3.8f, -2.8f), L(3.8f, 1.0f), L(8f, 3.9f), L(10.4f, 3.95f), L(11.6f, 3.95f), L(14.75f, 3.95f), L(14.75f, -2.1f), L(14.75f, -4.6f) });
             Leg("the foyer past the stair's foot to the lounge", door, new[] { L(2.9f, 5.0f), L(1.1f, 5.3f), L(-1.2f, 5.3f), L(-1.0f, 3.0f) });
             var tdi = new List<Vector3>(down) { L(2.9f, 5.0f), L(3.9f, 4.9f), door, L(2f, 9f), foot, dropIn };
             toDropIn = tdi.ToArray();
         }
-        Leg("the side terrace round the front to the wing's steps and down", L(11.6f, -2.8f), new[] { L(11.5f, 8.0f), L(6f, 8.0f), L(-10.5f, 8.2f), L(-11.9f, 9.2f), L(-11.9f, 11.6f), L(-13.0f, 12.3f), L(-13.0f, 17.5f), L(-13.0f, 20f) });
+        Leg("the covered section from the racks round the front to the wing's steps and down", L(14.75f, -4.6f), new[] { L(14.75f, 3.95f), L(14.75f, 8.15f), L(6f, 8.15f), L(-10.5f, 8.2f), L(-11.9f, 9.2f), L(-11.9f, 11.6f), L(-13.0f, 12.3f), L(-13.0f, 17.5f), L(-13.0f, 20f) });
+        Leg("into the wing, past the two talking by it, to make hot chocolate", L(-11.6f, -3.0f), new[] { L(-12.6f, -3.3f), L(-13.5f, -3.6f) }, Camp.Station.Cocoa);
+        Leg("the covered section: along the racks, out to its edge and back to the side door", L(14.75f, -4.6f), new[] { L(14.75f, -2.1f), L(17.2f, -2.1f), L(14.75f, -2.1f), L(14.75f, 3.95f), L(17.9f, 3.95f), L(11.6f, 4.2f) });
         Leg("the snow below the wing's steps back up and along to the door", L(-13.0f, 20f), new[] { L(-13.0f, 13.0f), L(-11.9f, 11.6f), L(-11.9f, 9.0f), L(-8f, 8.2f), L(3f, 8.2f), door });
         Leg("the door to the fire table and the chalkboard", door, new[] { L(4.5f, 8.2f), L(-5.5f, 8.3f), L(-5.5f, 9.0f), L(-4.4f, 10.4f) });
         float walk = Leg("the wardrobe out of the door, down the steps to DROP IN (walking)", style, toDropIn, Camp.Station.DropIn);
@@ -321,6 +323,17 @@ public static class LodgeWalkTest
             }
         }
         Debug.Log($"LODGEWALK people's standing spots checked: {n}, {bad} not clear");
+        // the lodge's own people (LodgeFolk) each at one of those places
+        int off = 0;
+        foreach (var (pose, at, yaw, gear) in Camp.LodgeFolkAt)
+        {
+            bool found = false;
+            foreach (var (what, sat, syaw) in Camp.LodgePeopleSpots)
+                if ((sat - at).magnitude < 0.1f && Mathf.Abs(Mathf.DeltaAngle(syaw, yaw)) < 1f && (what == "sit") == (pose == "table" || pose == "stool")) { found = true; break; }
+            if (!found) { off++; Debug.LogError($"LODGEWALK the lodge's {pose} person at local ({at.x}, {at.y}, {at.z}) isn't at one of the people's places"); }
+        }
+        Debug.Log($"LODGEWALK the lodge's own people: {Camp.LodgeFolkAt.Length}, {off} not at a people's place; {(LodgeFolk.Current != null ? LodgeFolk.Current.All.Count : 0)} in the camp");
+        fails += off;
         var window = ((Vector2[])typeof(Camp).GetField("LodgeWindow", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null))[layout];
         // (round B3's dog-leg: it stands between the door and the glass there)
         var toWindow = layout == 5 ? new[] { L(4.5f, 4.6f), L(2.4f, 2.6f), L(-4.0f, 2.6f), L(window.x, window.y) } : new[] { L(4.5f, 4.6f), L(window.x, window.y) };

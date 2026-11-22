@@ -74,6 +74,9 @@ public static class LodgeShot
         SetTime(1.4f);
         for (int i = 0; i < 3; i++) Shoot("Lodge_warmup.png", 400, 300);
         Debug.Log($"LODGESHOT lodge at {camp.ChaletPoint(0, 0, 0)} yaw {camp.ChaletYaw:0.0}; steps' foot {camp.StairsFoot}, front drop {camp.LodgeFrontDrop:0.00} m, {camp.LodgeStepsShowing} steps showing");
+        // LODGE_COVERED=1: the covered section at the low end, the floor where the wing meets the hall, the café and
+        // the hot chocolate, at the phone's quality (LODGE_TAG names the set: before, after)
+        if (System.Environment.GetEnvironmentVariable("LODGE_COVERED") == "1") { Covered(); return; }
         // the three layouts inside (LODGE_FULL=1 also renders the outside, the walk in and layout A's spaces as before)
         Layouts();
         if (System.Environment.GetEnvironmentVariable("LODGE_FULL") != "1") return;
@@ -320,6 +323,71 @@ public static class LodgeShot
     }
 
     /// <summary>
+    /// The default layout at the phone's quality (Mobile: render scale 0.8, its shadows; phone-size frames): the floor
+    /// where the wing (the hot chocolate) meets the hall (the café's tables under the loft) from the hall, from the wing,
+    /// close, and as the hero walks through; the covered section at the low end (the racks and picnic tables under the
+    /// roof's tail) from its front, the side door, its back corner, the snow outside, above, and the hero walking out the
+    /// side door; the café and the hot chocolate corner. Files: {LODGE_TAG}_*.png.
+    /// </summary>
+    static void Covered()
+    {
+        Vector3 C(float x, float y, float z) => camp.ChaletPoint(x, y, z);
+        float cy = camp.ChaletYaw;
+        string tag = System.Environment.GetEnvironmentVariable("LODGE_TAG");
+        if (string.IsNullOrEmpty(tag)) tag = "now";
+        int keepQ = QualitySettings.GetQualityLevel();
+        QualitySettings.SetQualityLevel(0, true);   // (the phone's: ProjectSettings' iPhone default)
+        try
+        {
+            Simulate();
+            Debug.Log($"LODGESHOT covered: layout {Camp.LodgeLayoutName}, quality {QualitySettings.names[QualitySettings.GetQualityLevel()]}");
+            foreach (var (name, clock) in new[] { Times[0], Times[1] })
+            {
+                SetTime(clock);
+                // the floor where the wing meets the hall
+                EyeCam(C(-7.6f, 1.65f, 1.6f), C(-12.6f, 0.0f, -1.6f), 70f);
+                Shoot($"{tag}_flicker_1hall_to_wing_{name}.png");
+                EyeCam(C(-13.8f, 1.65f, 2.6f), C(-9.0f, 0.0f, -0.8f), 70f);
+                Shoot($"{tag}_flicker_2wing_to_hall_{name}.png");
+                EyeCam(C(-9.9f, 2.0f, -2.4f), C(-11.3f, 0.0f, 0.4f), 58f);
+                Shoot($"{tag}_flicker_3close_{name}.png");
+                // the covered section
+                EyeCam(C(15.0f, 1.65f, 11.6f), C(15.0f, 0.6f, -6.0f), 80f);
+                Shoot($"{tag}_covered_1front_{name}.png");
+                EyeCam(C(11.7f, 1.65f, 3.95f), C(18.0f, 0.6f, -3.0f), 84f);
+                Shoot($"{tag}_covered_2sidedoor_{name}.png");
+                EyeCam(C(18.0f, 1.75f, -6.3f), C(12.0f, 0.6f, 6.0f), 84f);
+                Shoot($"{tag}_covered_3backcorner_{name}.png");
+                PhotoCam(new Vector3(27f, 0f, 21f), new Vector3(13f, 1.6f, 1.0f), 52f);
+                Shoot($"{tag}_covered_4outside_{name}.png", 960, 720);
+                EyeCam(C(31f, 20f, 24f), C(12f, 0f, 1f), 50f);
+                Shoot($"{tag}_covered_5above_{name}.png", 960, 720);
+                // the café and the hot chocolate corner
+                EyeCam(C(-8.4f, 1.65f, 2.0f), C(-14.6f, 1.0f, -2.4f), 80f);
+                Shoot($"{tag}_cafe_1hall_{name}.png");
+                EyeCam(C(-11.6f, 1.65f, 4.0f), C(-14.0f, 0.9f, -4.4f), 80f);
+                Shoot($"{tag}_cafe_2cocoa_{name}.png");
+            }
+            SetTime(1.4f);
+            // the hero's own views (the chase camera): from the café's tables into the wing and back out
+            camp.TeleportTo(C(-6.8f, 0f, 0.8f), cy - 90f);
+            WalkTo(C(-10.0f, 0f, 0.8f), 0.6f); Frames(12); noUi = true;
+            Shoot($"{tag}_flicker_4hero_into_wing.png");
+            camp.TeleportTo(C(-14.2f, 0f, -1.6f), cy + 80f);
+            WalkTo(C(-11.4f, 0f, -1.2f), 0.6f); Frames(12); noUi = true;
+            Shoot($"{tag}_flicker_5hero_out_of_wing.png");
+            // out of the side door into the covered section, and to the racks
+            camp.TeleportTo(C(8.6f, 0f, 3.95f), cy + 90f);
+            WalkTo(C(14.4f, 0f, 3.95f), 0.7f); Frames(12); noUi = true;
+            Shoot($"{tag}_covered_6hero_sidedoor.png");
+            WalkTo(C(14.9f, 0f, -1.9f), 0.7f); Frames(12); noUi = true;
+            Shoot($"{tag}_covered_7hero_racks.png");
+            Debug.Log($"LODGESHOT covered: hero at {camp.ChaletPoint(0, 0, 0)} + local {Quaternion.Inverse(Quaternion.Euler(0f, cy, 0f)) * (rider.transform.position - camp.ChaletPoint(0, 0, 0))}, camera {cam.transform.position.y - C(0, 0, 0).y:0.00} above the floor");
+        }
+        finally { QualitySettings.SetQualityLevel(keepQ, true); }
+    }
+
+    /// <summary>
     /// What each layout costs to draw, measured fairly on a busy machine: rounds of A, B, C in turn (so whatever else
     /// the Mac is doing falls on all three alike), each timing the view in from the door at dusk with its inside on
     /// and off, interleaved, and the photo's view at night with the whole lodge on and off.
@@ -524,6 +592,8 @@ public static class LodgeShot
         body.PhysicsStep();
         body.Apply(dt);
         camp.CameraStep(dt);
+        CampLife.Current?.Step(dt, cam.transform.position);   // (the camp's people and the lodge's, as in the game)
+        LodgeFolk.Current?.Step(dt);
         tUpd.Invoke(terrain, null); fUpd.Invoke(props, null);
         aLate.Invoke(atmo, null);
     }
@@ -534,6 +604,9 @@ public static class LodgeShot
     {
         var rt = new RenderTexture(w, h, 24);
         cam.targetTexture = rt; cam.aspect = w / (float)h;
+        // (the people's levels of detail from this camera, and everyone posed)
+        CampLife.Current?.Step(1e-4f, cam.transform.position);
+        if (LodgeFolk.Current != null) for (int k = 0; k < 3; k++) LodgeFolk.Current.Step(1e-4f);
         Canvas.ForceUpdateCanvases();
         var skins = Object.FindObjectsByType<SkinnedMeshRenderer>(FindObjectsSortMode.None);
         var baked = new List<GameObject>();
