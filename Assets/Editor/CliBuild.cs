@@ -66,6 +66,14 @@ public static class CliBuild
             target = BuildTarget.iOS,
             options = BuildOptions.None
         });
+        // (a build that lacks shader variants the game draws with comes out blank or wrong on the device, not here:
+        // InstancedAssets checks what went in)
+        if (report.summary.result == BuildResult.Succeeded && !InstancedAssets.Verified)
+        {
+            Debug.LogError("CLIBUILD result: Failed (shader variants missing from the build, see Logs/shader-variants.txt):\n" + InstancedAssets.Problems);
+            EditorApplication.Exit(1);
+            return;
+        }
         Debug.Log("CLIBUILD result: " + report.summary.result + " icons=" + sizes.Length);
         EditorApplication.Exit(report.summary.result == BuildResult.Succeeded ? 0 : 1);
     }

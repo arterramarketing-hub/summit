@@ -13,7 +13,9 @@ using Summit;
 ///   camp:   camp life from a few places, day and night.
 /// Run without -quit (one picture an editor frame: instanced draws stay queued for the frame in batchmode):
 ///   Unity -batchmode -projectPath . -executeMethod PeopleShot.Run -logFile x.log
-///   SUMMIT_PEOPLE_SET  lineup|lift|camp|all (all)          SUMMIT_PEOPLE_OUT  the folder (PeopleShots)
+///   pop:    lift riders from far off, the phone before liftpop and after (Pop);
+///   chairs: the lifts' chairs and towers, the phone before liftchairs and after (ChairShots).
+///   SUMMIT_PEOPLE_SET  lineup|lift|camp|pop|chairs|all (all)   SUMMIT_PEOPLE_OUT  the folder (PeopleShots)
 /// </summary>
 public static class PeopleShot
 {
@@ -36,7 +38,7 @@ public static class PeopleShot
         QualitySettings.SetQualityLevel(0, true);
         TestPrefs.Pin();
         game = Object.FindFirstObjectByType<SummitGame>();
-        bool liftSet = set == "lift" || set == "pop";
+        bool liftSet = set == "lift" || set == "pop" || set == "chairs";
         TestBoot.Boot(game, liftSet);
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
         camp = Get<Camp>("camp"); body = Get<RiderBody>("body"); rider = Get<Rider>("rider"); meta = Get<MetaUi>("meta");
@@ -50,6 +52,7 @@ public static class PeopleShot
         if (set == "lift") Lifts();
         if (set == "camp") CampShots();
         if (set == "pop") Pop();
+        if (set == "chairs") ChairShots();
         steps.Add(() =>
         {
             ChaseCamera.TestDt = 0f;
@@ -276,41 +279,7 @@ public static class PeopleShot
         int seed = int.TryParse(System.Environment.GetEnvironmentVariable("SUMMIT_LIFT_SEED"), out int sd) ? sd : 4242;
         Slope.Init(seed);
         terrain.Rebuild(); props.Rebuild(); if (dress != null) dress.Rebuild();
-        // a lift's middle, its chairs going up, seen from the piste above it at 150, 350 and 600 m (the chase camera's
-        // place behind the rider, turned toward the lift, a lens 50 m across there: what the phone shows, enlarged)
-        var views = new List<(string name, Vector3 eye, Vector3 at, float fov, float riderZ)>();
-        int k = 0;
-        foreach (var l in LiftLine.Lifts)
-        {
-            if (l.second || k >= 3) continue;
-            float s = l.plan * 0.5f;
-            int span = LiftLine.SpanAt(l, s);
-            var target = l.At(s, LiftLine.Half, l.CableY(span, s) - 2.8f);
-            foreach (float dist in new[] { 150f, 350f, 600f })
-            {
-                // somewhere this far off with a clear line to them (the snow sampled along it), uphill of them first,
-                // low before high: the chairs coming up toward you
-                bool Clear(Vector3 a, Vector3 b) { for (int i = 1; i < 60; i++) { var q = Vector3.Lerp(a, b, i / 60f); if (q.y < Slope.DrawnHeight(q.x, q.z) + 2.5f) return false; } return true; }
-                Vector3 eye = Vector3.zero; bool found = false;
-                foreach (float lift in new[] { 0.06f, 0.12f, 0.2f, 0.3f, 0.45f })
-                {
-                    for (int a = 0; a < 18 && !found; a++)
-                    {
-                        float ang = (a % 2 == 0 ? 1 : -1) * ((a + 1) / 2) * 20f;   // 0, +-20, +-40 .. from straight up the line
-                        var back = Quaternion.AngleAxis(ang, Vector3.up) * -l.dir;
-                        var e = target + back * dist + Vector3.up * (dist * lift);
-                        e.y = Mathf.Max(e.y, Slope.DrawnHeight(e.x, e.z) + 3f);
-                        if (Clear(e, target)) { eye = e; found = true; }
-                    }
-                    if (found) break;
-                }
-                if (!found) continue;
-                float z = Mathf.Min(eye.z, target.z - 60f);   // (the rider somewhere the lift is in range of)
-                float d = (target - eye).magnitude;
-                views.Add(($"lift{k}-{dist:0}m", eye, target, 2f * Mathf.Atan(25f / d) * Mathf.Rad2Deg, z));
-            }
-            k++;
-        }
+        var views = LiftViews();
         foreach (var (when, clock) in new[] { ("day", 1.4f), ("night", 3.4f) })
             foreach (var v in views)
                 foreach (var mode in new[] { "phone-before", "main-before", "after" })
@@ -367,6 +336,134 @@ public static class PeopleShot
             Log($"pop budget over {n} frames: riders drawn mid {mid / (float)n:0.0}, far {far / (float)n:0.0}, distant {dist / (float)n:0.0} on average; rider triangles {tris / n} on average, {trisMax} at most; rider draw calls at most {drawsMax}; SkiLift.Update with the riders {ms / n:0.00} ms on average, {msMax:0.00} at most (editor)");
         });
         steps.Add(() => { SkiLift.TestClock = -1.0; Physics.simulationMode = SimulationMode.FixedUpdate; });
+    }
+
+
+    /// <summary>A lift's middle, its chairs going up, seen from the piste above it at 150, 350 and 600 m (the chase
+    /// camera's place behind the rider, turned toward the lift, a lens 50 m across there: what the phone shows,
+    /// enlarged), for the first three lifts; and where the rider is for each.</summary>
+    static List<(string name, Vector3 eye, Vector3 at, float fov, float riderZ)> LiftViews()
+    {
+        // a lift's middle, its chairs going up, seen from the piste above it at 150, 350 and 600 m (the chase camera's
+        // place behind the rider, turned toward the lift, a lens 50 m across there: what the phone shows, enlarged)
+        var views = new List<(string name, Vector3 eye, Vector3 at, float fov, float riderZ)>();
+        int k = 0;
+        foreach (var l in LiftLine.Lifts)
+        {
+            if (l.second || k >= 3) continue;
+            float s = l.plan * 0.5f;
+            int span = LiftLine.SpanAt(l, s);
+            var target = l.At(s, LiftLine.Half, l.CableY(span, s) - 2.8f);
+            foreach (float dist in new[] { 150f, 350f, 600f })
+            {
+                // somewhere this far off with a clear line to them (the snow sampled along it), uphill of them first,
+                // low before high: the chairs coming up toward you
+                bool Clear(Vector3 a, Vector3 b) { for (int i = 1; i < 60; i++) { var q = Vector3.Lerp(a, b, i / 60f); if (q.y < Slope.DrawnHeight(q.x, q.z) + 2.5f) return false; } return true; }
+                Vector3 eye = Vector3.zero; bool found = false;
+                foreach (float lift in new[] { 0.06f, 0.12f, 0.2f, 0.3f, 0.45f })
+                {
+                    for (int a = 0; a < 18 && !found; a++)
+                    {
+                        float ang = (a % 2 == 0 ? 1 : -1) * ((a + 1) / 2) * 20f;   // 0, +-20, +-40 .. from straight up the line
+                        var back = Quaternion.AngleAxis(ang, Vector3.up) * -l.dir;
+                        var e = target + back * dist + Vector3.up * (dist * lift);
+                        e.y = Mathf.Max(e.y, Slope.DrawnHeight(e.x, e.z) + 3f);
+                        if (Clear(e, target)) { eye = e; found = true; }
+                    }
+                    if (found) break;
+                }
+                if (!found) continue;
+                float z = Mathf.Min(eye.z, target.z - 60f);   // (the rider somewhere the lift is in range of)
+                float d = (target - eye).magnitude;
+                views.Add(($"lift{k}-{dist:0}m", eye, target, 2f * Mathf.Atan(25f / d) * Mathf.Rad2Deg, z));
+            }
+            k++;
+        }
+        return views;
+    }
+
+    // ---------------------------------------------------------------- the lifts' chairs on the phone (liftchairs)
+
+    /// <summary>
+    /// The lifts as the phone drew them from farview on (c831890) and as now. The chairs, towers, heads, sheave trains,
+    /// pads and stations are instanced draws of one material, made at run time from Resources/FarLit.shader; the build
+    /// kept none of that shader's instanced variants, so on the device all of them came out as nothing (the cables, the
+    /// stations' near models and the riders still drawn). The editor keeps every variant: the "phone-before" pictures
+    /// leave those instanced parts out (SkiLift's own lists, not drawn), which is what the device did. "after" is what
+    /// the editor and, with Resources/FarLit.mat, the phone draw. The world's far band is on, as in the game.
+    /// Chase-camera views riding toward three lifts, and each lift's middle from 150, 350 and 600 m.
+    /// SUMMIT_PEOPLE_SET=chairs.
+    /// </summary>
+    static void ChairShots()
+    {
+        InstancedAssets.Ensure();
+        lift = Object.FindFirstObjectByType<SkiLift>();
+        dress = Object.FindFirstObjectByType<CourseDressing>();
+        lUpd = typeof(SkiLift).GetMethod("Update", NP);
+        Physics.simulationMode = SimulationMode.Script;
+        typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
+        rider.input = null;
+        int seed = int.TryParse(System.Environment.GetEnvironmentVariable("SUMMIT_LIFT_SEED"), out int sd) ? sd : 4242;
+        Slope.Init(seed);
+        terrain.Rebuild(); props.Rebuild(); if (dress != null) dress.Rebuild();
+        Farview.TestOn = true;
+        var views = LiftViews();
+        // riding down a lift's cleared swath beside its line, the chase camera behind (its place and pitch, the
+        // phone's lens): the chairs coming up toward you on one cable and going down on the other, into the distance
+        int k = 0;
+        foreach (var l in LiftLine.Lifts)
+        {
+            if (l.second || k >= 3) continue;
+            foreach (float share in new[] { 0.1f, 0.45f })
+            {
+                var g = l.At(l.plan * share, 6.5f, 0f);
+                var at = new Vector3(g.x, Slope.DrawnHeight(g.x, g.z), g.z);
+                var eye = at - l.dir * 6.5f + Vector3.up * 3.2f;
+                eye.y = Mathf.Max(eye.y, Slope.DrawnHeight(eye.x, eye.z) + 2.2f);   // (up the slope behind: above the snow, as the chase camera keeps)
+                views.Add(($"lift{k}-ride{(share < 0.2f ? "A" : "B")}", eye, eye + (l.dir + Vector3.down * 0.28f) * 100f, 62f, at.z));
+            }
+            k++;
+        }
+        var partsF = typeof(SkiLift).GetField("parts", NP);
+        var partT = typeof(SkiLift).GetNestedType("Part", BindingFlags.NonPublic);
+        var meshF = partT.GetField("mesh");
+        foreach (var (when, clock) in new[] { ("day", 1.4f), ("night", 3.4f) })
+            foreach (var v in views)
+                foreach (var mode in new[] { "phone-before", "after" })
+                {
+                    var vw = v; var md = mode;
+                    bool ride = vw.name.Contains("-ride");
+                    if (when == "night" && !vw.name.EndsWith("rideA") && !vw.name.EndsWith("150m")) continue;
+                    steps.Add(() =>
+                    {
+                        TimeOfDay.TestClock = clock; dayNight.ApplyNow();
+                        // (riding: the rider where the chase camera follows them, as in the game, the far band and what is
+                        // built counted from them; the views from afar: the rider on the piste near the lift, as liftpop's)
+                        if (ride) { var rl = vw.eye + Vector3.Scale(vw.at - vw.eye, new Vector3(1f, 0f, 1f)).normalized * 6.5f; rider.ResetAt(rl.x, rl.z); }
+                        else rider.ResetAt(Slope.Centre(vw.riderZ), vw.riderZ);
+                        body.ResetVisual(); rider.Stop();
+                        terrain.Prewarm(); props.Prewarm(); if (dress != null) dress.Prewarm();
+                        SkiLift.TestClock = 400.0;
+                        var chase = cam.GetComponent<ChaseCamera>(); if (chase != null) chase.enabled = false;
+                        cam.fieldOfView = vw.fov;
+                        cam.transform.SetPositionAndRotation(vw.eye, Quaternion.LookRotation(vw.at - vw.eye));
+                        Farview.Instance?.Apply();
+                        tUpd.Invoke(terrain, null); fUpd.Invoke(props, null);
+                        typeof(Forest).GetMethod("Draw", NP)?.Invoke(props, null);
+                        // the phone before: SkiLift's instanced parts drew nothing there
+                        var parts = (System.Collections.IList)partsF.GetValue(lift);
+                        var kept = new List<Mesh>();
+                        foreach (var part in parts) { kept.Add((Mesh)meshF.GetValue(part)); if (md == "phone-before") meshF.SetValue(part, null); }
+                        typeof(SkiLift).GetField("refreshClock", NP).SetValue(lift, 0f);
+                        for (int i = 0; i < 3; i++) lUpd.Invoke(lift, null);
+                        lift.Stats(out int draws, out long tris, out int inst);
+                        Farview.Instance?.Apply();
+                        Shoot($"chairs-{vw.name}-{when}-{md}.png");
+                        for (int i = 0; i < parts.Count; i++) meshF.SetValue(parts[i], kept[i]);
+                        Log($"chairs-{vw.name}-{when}-{md}: {(vw.at - vw.eye).magnitude:0} m, lens {vw.fov:0.0} deg; lift draws {draws}, {inst} instances, {tris} tris; riders aboard {LiftRiders.Aboard}");
+                    });
+                }
+        steps.Add(() => { SkiLift.TestClock = -1.0; Farview.TestOn = false; Physics.simulationMode = SimulationMode.FixedUpdate; });
     }
 
     // ---------------------------------------------------------------- camp life
