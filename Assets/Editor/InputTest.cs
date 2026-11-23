@@ -163,7 +163,12 @@ public static class InputTest
     {
         foreach (bool dbl in new[] { false, true })
         {
-            Slope.NextKicker(100f, out Vector3 at);
+            // the run's first jump cliff: the long air the taps need (three taps and a push to full lock are 1.8 s; a
+            // kicker gives about that and no more). (It always was the jump cliff: the kicker this asked for, at z 102,
+            // was one never built, on the cliff's in-run, until NextKicker stopped handing out kickers that are not built.)
+            Vector3 at;
+            if (Cliffs.JumpOf(0, 0, out var jc)) { float lz = Cliffs.LipZ(jc, 0f); at = new Vector3(Slope.Centre(lz), Slope.Height(Slope.Centre(lz), lz), lz); }
+            else Slope.NextKicker(100f, out at);
             Start(at.x, at.z - 30f, 30f);
             float dx = at.x - Slope.Centre(at.z - 30f);
             // the bot rides it in; the finger takes over as the board leaves the lip, holding a spin (drag) or still (tilt)

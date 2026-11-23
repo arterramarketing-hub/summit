@@ -316,4 +316,26 @@ public static class CanyonCheck
         }
         EditorApplication.Exit(0);
     }
+
+    /// <summary>The kickers each LandTest mountain's cells would hold, and whether each is built (its ramp's height),
+    /// for z 0..600. -executeMethod CanyonCheck.Kickers</summary>
+    public static void Kickers()
+    {
+        for (int k = 0; k < 3; k++)
+        {
+            int seed = 1000 + k * 77;
+            Slope.Init(seed); Course.ResetCaches();
+            var sb = new System.Text.StringBuilder($"KICK seed{k} ({seed}):");
+            for (int cell = 0; cell < 5; cell++)
+            {
+                if (Slope.Hash01(cell, 3, 9) < 0.25f) { sb.Append($" cell{cell} none;"); continue; }
+                float z0 = 60f + cell * Slope.KickPeriod + 30f;
+                float cx = Slope.Centre(z0) + (Slope.Hash01(cell, 4, 9) - 0.5f) * 18f;
+                float rise = 0f; for (float d = 0f; d <= Slope.KickRamp; d += 1f) rise = Mathf.Max(rise, Slope.Kicker(cx, z0 + d));
+                sb.Append($" z{z0 + Slope.KickRamp:0}: ramp {rise:0.0} m, {Course.At(z0)}/{Course.At(z0 + Slope.KickRamp + Slope.KickDrop)}{(Cliffs.JumpNear(z0, 30f, out _) ? ", jump cliff" : "")};");
+            }
+            Debug.Log(sb.ToString());
+        }
+        EditorApplication.Exit(0);
+    }
 }
