@@ -421,18 +421,52 @@ public class SummitImport : AssetPostprocessor
         return r * r * (3f - 2f * r);
     }
 
-    static float Grooves(float u, float v)
+    static float Grooves(float u, float v) => Grooves(u, v, out _, out _, out _);
+
+    static float Grooves(float u, float v, out float ripple, out float amount, out float pits)
     {
         // one groove field, its phase pushed around by big, slow warps: the grooves swing up to ~35 degrees
         // either way, bunch up and spread out, and bend, with no cross-hatching (integer frequencies keep
-        // the tile seamless)
+        // the tile seamless). They run down the fall line (lines of constant u: the terrain's uv is x, z), the
+        // way the groomer's corduroy does (SnowSurface.shader): two sets of lines crossing at right angles read
+        // as moire and as motion where there is none (grooves).
         float w = 26f * Tile(u, v, 2, 1.3f) + 9f * Tile(u, v, 5, 6.6f) + 2.2f * Tile(u, v, 13, 3.9f) + 0.4f * Tile(u, v, 41, 2.2f);
-        float ripple = Ridge(164f * v + w);
+        ripple = Ridge(164f * u + w);
         // the wind has scoured some places smooth and left deep grooves in others
-        float amount = Smooth(0.42f, 0.62f, Tile(u, v, 4, 4.8f) * 0.65f + Tile(u, v, 9, 8.1f) * 0.35f);
+        amount = Smooth(0.42f, 0.62f, Tile(u, v, 4, 4.8f) * 0.65f + Tile(u, v, 9, 8.1f) * 0.35f);
         amount = 0.05f + 0.95f * amount * (0.55f + 0.45f * Tile(u, v, 13, 5.2f));
         float drift = 0.6f * Tile(u, v, 5, 1.7f) + 0.3f * Tile(u, v, 11, 3.3f) + 0.1f * Tile(u, v, 23, 8.8f);
-        return drift * 0.55f + ripple * amount * 0.035f + Tile(u, v, 256, 5.5f) * 0.004f;
+        pits = Tile(u, v, 256, 5.5f);
+        return drift * 0.55f + ripple * amount * 0.035f + pits * 0.004f;
+    }
+
+    /// <summary>
+    /// The snow's groove maps made again (albedo, normal and the parallax height, all from Grooves), and the
+    /// snow material pointed at them: -executeMethod SummitImport.RegenerateGrooves. The height map is the
+    /// relief alone, as Tools/MakeSnowHeight.py describes it (the ripples where they show, and the pitting).
+    /// </summary>
+    public static void RegenerateGrooves()
+    {
+        const string dir = "Assets/Summit/Materials/";
+        MakePair(2048, dir + "SnowGroovesAlbedo.png", dir + "SnowGroovesNormal.png", Grooves, 0.9f, 0.035f, false);
+        const int N = 2048;
+        const float Pits = 0.004f / 0.035f;
+        var hm = new Texture2D(N, N, TextureFormat.RGB24, false);
+        var row = new Color32[N * N];
+        for (int y = 0; y < N; y++)
+            for (int x = 0; x < N; x++)
+            {
+                Grooves(x / (float)N, y / (float)N, out float ripple, out float amount, out float pits);
+                float relief = (ripple - 0.5f) * amount + (pits - 0.5f) * Pits;
+                byte g = (byte)Mathf.Clamp(Mathf.RoundToInt((0.5f + relief / (1f + Pits)) * 255f), 0, 255);
+                row[y * N + x] = new Color32(g, g, g, 255);
+            }
+        hm.SetPixels32(row); hm.Apply(false);
+        System.IO.File.WriteAllBytes(dir + "SnowGroovesHeight.png", hm.EncodeToPNG());
+        Object.DestroyImmediate(hm);
+        AssetDatabase.ImportAsset(dir + "SnowGroovesHeight.png");
+        EnsureSnowTextures();
+        Debug.Log("GROOVES regenerated: SnowGroovesAlbedo, SnowGroovesNormal, SnowGroovesHeight (ripples down the fall line)");
     }
 
     static void MakePair(int N, string albedoPath, string normalPath, System.Func<float, float, float> height, float bump, float contrast, bool detail)
@@ -456,7 +490,7 @@ public class SummitImport : AssetPostprocessor
                 // detail maps multiply around mid-grey (x2); the large map is the snow colour itself,
                 // a touch darker in the groove troughs and on lee faces
                 float g = detail ? 0.5f + (c - 0.5f) * contrast * 2f + (rng.NextDouble() < 0.003 ? 0.05f : 0f)
-                                 : 0.95f + (c - 0.5f) * contrast * 2f - Mathf.Max(0f, -n.y) * 0.05f;
+                                 : 0.95f + (c - 0.5f) * contrast * 2f - Mathf.Max(0f, -n.x) * 0.05f;
                 alb.SetPixel(x, y, new Color(g * 0.99f, g, Mathf.Min(1f, g * 1.015f)));
             }
         System.IO.File.WriteAllBytes(albedoPath, alb.EncodeToPNG());

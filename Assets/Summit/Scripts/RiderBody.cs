@@ -18,7 +18,6 @@ namespace Summit
         SnowTrail trail;
         ParticleSystem spray;
         ParticleSystem.EmissionModule sprayEm, wakeEm;
-        float puffShown = 1f;   // the spray's size for the snow underfoot, as last set
         float skidBurst;        // the board was just thrown across at this speed (Rider.Skidded): a burst of spray is owed
         ParticleSystem wake;
         Vector3 normal = Vector3.up;
@@ -207,6 +206,7 @@ namespace Summit
             bpr.material = sprayMat;
             bpr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             bow.Play();
+            SetUpSpray(sprayMat, jacket != null ? jacket.shader : Shader.Find("Universal Render Pipeline/Lit"));   // lit, soft, by the snow (RiderBodySpray)
 
             marks = new SnowMarks(transform.parent, Imprint(trailMat, CraterTexture()), 80);
             BuildShield(trailMat);
@@ -896,6 +896,7 @@ namespace Summit
             bandages.Clear(); bandaged.Clear(); brokenThisCrash.Clear();
             trail.Clear();
             if (sideTrail != null) foreach (var st in sideTrail) st.Clear();
+            ClearSpray();
             RagdollBelowSnow = 0f;
             RagdollMoving = false;
             Dead = false;
@@ -1113,6 +1114,7 @@ namespace Summit
                 // riding switch, the board's own sides are the other way about: the same lean in the world)
                 float leanDeg = rider.Lean * Mathf.Rad2Deg * StanceSign;
                 roll.localRotation = Tube ? Quaternion.Euler(leanDeg * 0.5f, 0f, 0f) : Quaternion.Euler(0f, 0f, -leanDeg * 0.75f);
+                roll.localPosition = Tube || RidingGear ? Vector3.zero : Vector3.up * EdgeLift(leanDeg * 0.75f);   // (onto its edge, not about its middle: RiderBodyTouch)
                 upper.localRotation = Quaternion.Euler(0f, 0f, -leanDeg * 0.25f - rider.BodyLean * StanceSign);   // (and the body into the slide: Rider.BodyLean)
                 if (RidingGear) upper.localRotation = Quaternion.identity;   // a skier's upper body angles back out of the turn (in the clips)
                 if (RidingGear && Ride == RideKind.Toboggan)
@@ -1132,32 +1134,17 @@ namespace Summit
             bool onSkis = RidingGear && Ride == RideKind.Skis;        // two narrow tracks instead of the one trench
             bool onSled = RidingGear && Ride == RideKind.Toboggan;    // a wide flat track, and the dragged heel's scuff beside it
             FeedSideTracks(p + Vector3.down * Rider.R, tracking, Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Mathf.Clamp01(rider.Underfoot.powder + 0.5f * rider.Underfoot.slush)) * (1f - 0.3f * rider.Underfoot.ice), dt);
+            trail.Mix = rider.Underfoot; trail.Bite = rider.Bite;   // (the cut's shape: the snow it is in, how hard the edge pushes)
             trail.Feed(p + Vector3.down * Rider.R, normal, rider.TravelHeading, tracking && !onSkis,
                        (Tube ? 1.25f : Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Mathf.Clamp01(rider.Underfoot.powder + 0.5f * rider.Underfoot.slush)) * (1f - 0.3f * rider.Underfoot.ice)) * (onSled ? 1.6f : 1f),
                        Tube || onSled ? 0f : rider.Lean / Rider.MaxLean, Tube ? 0.5f : onSled ? rider.Skid * 0.3f : rider.Skid, dt);   // a tube leaves a wide, shallow chute
 
-            // bow wave off the nose: more with speed, deeper snow and when the edge bites
-            bool riding = rider.Running && !rider.Crashed && !rider.Airborne && !rider.Grinding;
-            // (the snow underfoot, Surfaces: powder throws the most snow, in bigger puffs, and slush a heavy wet spray;
-            // ice gives up a few fine chips and no wake)
+            // the snow the board throws: the edge's crystals and clumps, the bow wave, the wake, a dragged hand (RiderBodySpray)
             var snow = rider.Underfoot;
-            float deep = Mathf.Clamp01(snow.powder + 0.5f * snow.slush), hard = snow.ice;
-            bowEm.rateOverTime = riding && rider.Speed > 3f && !Tube
-                ? rider.Speed * (4.5f + 4f * deep) * (1f - 0.7f * hard) * (1f + 1.2f * Mathf.Abs(rider.Lean) / Rider.MaxLean + rider.Skid)
-                : 0f;
-            float puff = 1f + 0.6f * snow.powder + 0.2f * snow.slush - 0.5f * hard;
-            if (Mathf.Abs(puff - puffShown) > 0.02f)
-            {
-                puffShown = puff;
-                var sm = spray.main; sm.startSize = new ParticleSystem.MinMaxCurve(0.12f * puff, 0.45f * puff);
-                var wm = wake.main; wm.startSize = new ParticleSystem.MinMaxCurve(0.4f * puff, 0.9f * puff);
-                var bm = bow.main; bm.startSize = new ParticleSystem.MinMaxCurve(0.12f * puff, 0.42f * puff);
-            }
+            float hard = snow.ice;
+            SprayFrame(p + Vector3.down * Rider.R, dt);
 
             GrindSparks(p, dt);   // a few sparks off a rail (RiderBodySparks)
-            sprayEm.rateOverTime = rider.Running && !rider.Crashed && !rider.Airborne
-                ? (rider.Carve * rider.Speed * 7f + rider.Bite * rider.Speed * 9f + rider.Skid * rider.Speed * 12f + Mathf.Max(0f, rider.Speed - 22f) * 1.5f) * (1f + 1.5f * snow.powder + 1.2f * snow.Deep + 0.6f * snow.slush - 0.6f * hard) + (rider.BoostTime > 0f ? 60f : 0f)   // (the edge biting builds the spray: Rider.Bite; deep powder throws the most)
-                : 0f;
             // thrown across from one way to the other (Rider.Skidded): a burst of snow off the edge, by how fast the board was going
             if (skidBurst > 0f)
             {
@@ -1165,7 +1152,6 @@ namespace Summit
                 skidBurst = 0f;
             }
 
-            wakeEm.rateOverTime = rider.Running && !rider.Crashed && !rider.Airborne ? Mathf.Clamp(rider.Speed * 2.2f, 0f, 80f) * (0.7f + 1.1f * snow.powder) * (1f - 0.85f * hard) * (1f - 0.6f * snow.slush) : 0f;
 
             // shield bubble: fuller with each shield held, flashes when it saves you
             shieldFlash = Mathf.MoveTowards(shieldFlash, 0f, dt * 2f);

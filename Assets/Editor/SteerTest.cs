@@ -74,8 +74,8 @@ public static class SteerTest
                     if (r2 < 0f || r2 > 0.32f) Fail($"{v * 3.6f:0} km/h: flipped, the board is going the other way (2 m/s) only after {T(r2)} (0.25 to 0.3 s asked)");
                     // (judged from 79 km/h: slower, a tenth of the slide is under a metre a second, and the hill's own fall
                     // line wandering under the board is as much of it as the coast)
-                    if (v >= 22f && coast < 0.25f) Fail($"{v * 3.6f:0} km/h: let go, the board coasts only {T(coast)} on its slide (0.3 to 0.4 s asked)");
-                    if (!releaseAir && (t5deg < 1.3f || t5deg > 2.3f)) Fail($"{v * 3.6f:0} km/h: let go, the board is back within 5 deg of the fall line in {T(t5deg)} (1.5 to 2 s asked)");
+                    if (v >= 22f && coast < 0.7f) Fail($"{v * 3.6f:0} km/h: let go, the board coasts only {T(coast)} on its slide (about 1 s asked)");
+                    if (!releaseAir && t5deg >= 0f && t5deg < 2f) Fail($"{v * 3.6f:0} km/h: let go, the board is back within 5 deg of the fall line in {T(t5deg)}: pulled downhill too soon (feel2: 3 to 4 s on an average pitch; this stretch is steeper)");
                 }
                 if (quick || sc != 1f) continue;   // (the slaloms at the stock setting)
                 string line = $"STEER slalom scale={sc:0.0} v={v:0} m/s ({v * 3.6f:0} km/h), speed held";
@@ -135,6 +135,16 @@ public static class SteerTest
                 foreach (var c in Courses) { Result m = BestRacer(r, c, vP); line += $" | {c.name}: racer {m.made}/{m.tried}"; if (c.name != "tight" && (!m.Clean || m.tried < c.gates / 3)) all = false; }
                 Debug.Log(line + (all ? " | the glade and the trees: every gate reached on the snow made" : " | NOT every gate made in the glade and the trees"));
                 if (!all) Fail($"slalom in deep powder at {vP * 3.6f:0} km/h: not every gate made in the glade and the trees");
+                // (and by held speed: the fastest a board in deep powder makes every glade and trees gate it reaches on the snow)
+                string sweep = ""; float bestP = 0f; bool okSoFar = true;
+                for (float vv = 15f; vv <= 27f; vv += 1f)
+                {
+                    Result g = BestRacer(r, Courses[0], vv), t = BestRacer(r, Courses[1], vv), k = BestRacer(r, Courses[2], vv);
+                    bool ok = g.Clean && g.tried >= Courses[0].gates / 3 && t.Clean && t.tried >= Courses[1].gates / 3;
+                    sweep += $" {vv * 3.6f:0}:{g.made}/{g.tried} {t.made}/{t.tried} {k.made}/{k.tried}";
+                    if (ok && okSoFar) bestP = vv; else okSoFar = false;
+                }
+                Debug.Log($"STEER slalom in deep powder by held speed (km/h: glade, trees, tight; made of reached on the snow):{sweep} | every glade and trees gate up to {bestP * 3.6f:0} km/h");
             }
             Surfaces.Force = null;
         }
@@ -163,6 +173,10 @@ public static class SteerTest
         Rider.Pace = pace0;
 
         Across(r);
+        // (feel2) letting go on the mountain's average pitch and on gentle ground: how long until the board is going down
+        // the hill again, mostly by gravity. The test stretch above is steeper than most of the run
+        foreach (var band in new[] { (28f, 38f, "an average pitch"), (20f, 30f, "gentler ground") })
+            ReleaseOn(r, band.Item1, band.Item2, band.Item3);
 
         // the snow underfoot (Surfaces): the same pushes on each kind laid everywhere. Softer snow and ice answer a
         // little later and slide on a little longer; none of them gives less sideways speed, and none lets go
@@ -229,6 +243,39 @@ public static class SteerTest
                 if (!off && t5 < 0f) Fail($"across {20f * side:+0;-0} at {v * 3.6f:0} km/h: hands off, the board did not come round to the fall line in 6 s");
                 if (tHalf >= 0f && tHalf < 0.12f) Fail($"across {20f * side:+0;-0} at {v * 3.6f:0} km/h: hands off it came half way round in {tHalf:0.00} s: a snap");
             }
+    }
+
+    /// <summary>A stretch of the run (300 m, clear of airs at 79 km/h hands off) whose pitch down it is between lo and hi
+    /// degrees: the release measured there at 54, 79 and 108 km/h (whole drag held a second, then let go).</summary>
+    static void ReleaseOn(Rider r, float lo, float hi, string what)
+    {
+        float xWas = x0, zWas = z0; bool found = false;
+        for (float z = 300f; z < Slope.FinishZ - 400f && !found; z += 50f)
+            foreach (float off in new[] { 10f, -10f, 0f })
+            {
+                float x = Slope.Centre(z) + off;
+                float pitch = Mathf.Atan2(Slope.Height(x, z) - Slope.Height(Slope.Centre(z + 300f) + off, z + 300f), 300f) * Mathf.Rad2Deg;
+                if (pitch < lo || pitch > hi) continue;
+                bool band = false; for (float d = -30f; d <= 330f && !band; d += 10f) if (Mathf.Abs(Slope.RunHeading(z + d)) > 0.02f) band = true;
+                if (band) continue;
+                x0 = x; z0 = z;
+                Place(r, 22f);
+                bool bad = false;
+                for (int i = 0; i < 120 * 10 && r.Z < z0 + 250f && !bad; i++) { r.Steer = 0f; StepHeld(r, 22f); if (r.Airborne || r.Crashed || r.Grinding) bad = true; }
+                if (bad) continue;
+                found = true;
+                string line = $"STEER release on {what} (z={z0:0}, {pitch:0} deg down the run):";
+                foreach (float v in new[] { 15f, 22f, 30f })
+                {
+                    Release(r, v, 1f, out float tTenth, out float t5deg, out _);
+                    line += $" | {v * 3.6f:0} km/h: coasts {T(releaseCoast)}, within 5 deg of the fall line in {T(t5deg)}{(releaseAir ? " (left the snow on the way)" : "")}";
+                    if (lo >= 28f && !releaseAir && t5deg >= 0f && (t5deg < 2.5f || t5deg > 5.5f)) Fail($"release on {what} at {v * 3.6f:0} km/h: within 5 deg of the fall line in {T(t5deg)} (3 to 4 s asked)");
+                }
+                Debug.Log(line);
+                break;
+            }
+        if (!found) Debug.Log($"STEER release on {what}: no clean stretch {lo:0}-{hi:0} deg found");
+        x0 = xWas; z0 = zWas;
     }
 
     /// <summary>On the stretch at v, the board and its travel both `angle` off the fall line (rad), hands off.</summary>
@@ -391,7 +438,7 @@ public static class SteerTest
         for (int i = 0; i < 120; i++) { steer = SteerTo(steer, s); r.Steer = steer; StepHeld(r, v); }
         float was = Mathf.Abs(r.Side);
         releaseCoast = -1f; releaseAir = false;
-        for (int j = 0; j < 480; j++)
+        for (int j = 0; j < 120 * 8; j++)
         {
             steer = SteerTo(steer, 0f); r.Steer = steer; StepHeld(r, v);
             back = Mathf.Max(back, Mathf.Abs(r.SideEdge));

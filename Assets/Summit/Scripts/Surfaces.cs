@@ -112,8 +112,8 @@ namespace Summit
         // (drag per (m/s)^2, on top of the air's. Ice takes a little off: the part of the board's own drag that is
         // corduroy's)
         public static readonly float[] Plough   = {          0f,  0.0042f, -0.0003f, 0.0003f, 0.0002f, 0.0022f };
-        public static readonly float[] Grip     = {          1f,     0.7f,   0.45f,  0.9f,   0.8f,   0.7f };
-        public static readonly float[] Bite     = {          1f,     0.7f,    0.8f,  0.9f,   0.8f,   0.5f };
+        public static readonly float[] Grip     = {          1f,     1f,     0.45f,  0.9f,   0.8f,   0.7f };
+        public static readonly float[] Bite     = {          1f,     1f,      0.8f,  0.9f,   0.8f,   0.5f };
         public static readonly float[] Chatter  = {          0f,       0f,   0.25f,    1f,   0.7f,     0f };
         /// <summary>Powder floats the board at speed: its plough is this much of itself from FloatTo m/s up (all of it under FloatFrom).</summary>
         public const float Float = 0.4f, FloatFrom = 8f, FloatTo = 22f;
@@ -126,10 +126,10 @@ namespace Summit
         /// deep on a day with no fresh snow (DeepOld). It comes on over the run's edge (EdgeBlend), so leaving the run is
         /// sinking into the snow, not hitting a wall.
         /// </summary>
-        public static float DeepPlough = 0.048f, DeepFloat = 0.85f, DeepOld = 0.85f;
+        public static float DeepPlough = 0.021f, DeepFloat = 0.85f, DeepOld = 0.85f;
         /// <summary>The most deep powder ever slows the board, in gravities (so riding into it fast is sinking in hard, never
         /// a wall), and how long the board takes to sink into it, and to come up out of it (s).</summary>
-        public static float DeepMost = 0.6f, DeepSinkIn = 0.8f, DeepSinkOut = 0.3f;
+        public static float DeepMost = 0.5f, DeepSinkIn = 1.3f, DeepSinkOut = 0.5f;
 
         public static SnowFeel Feel(in SnowMix m, float speed)
         {

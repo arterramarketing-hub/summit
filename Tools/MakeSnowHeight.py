@@ -65,7 +65,7 @@ def grooves():
     px = np.arange(N, dtype=np.int32).astype(F) / F(N)
     u, v = np.meshgrid(px, px)                                       # u along x (columns), v along y (rows)
     w = F(26) * tile(u, v, 2, 1.3) + F(9) * tile(u, v, 5, 6.6) + F(2.2) * tile(u, v, 13, 3.9) + F(0.4) * tile(u, v, 41, 2.2)
-    ripple = ridge(F(164) * v + w)
+    ripple = ridge(F(164) * u + w)                                   # down the fall line (lines of constant u)
     amount = smooth(0.42, 0.62, tile(u, v, 4, 4.8) * F(0.65) + tile(u, v, 9, 8.1) * F(0.35))
     amount = F(0.05) + F(0.95) * amount * (F(0.55) + F(0.45) * tile(u, v, 13, 5.2))
     drift = F(0.6) * tile(u, v, 5, 1.7) + F(0.3) * tile(u, v, 11, 3.3) + F(0.1) * tile(u, v, 23, 8.8)

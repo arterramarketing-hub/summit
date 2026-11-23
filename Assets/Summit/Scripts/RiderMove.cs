@@ -67,13 +67,14 @@ namespace Summit
         /// <summary>
         /// Let go: the board carries its slide (CoastTime s, only the edge's friction bleeding it: CoastBleed m/s^2 on
         /// corduroy), then the return to the fall line comes on over ReturnIn s and dies away with the time constant
-        /// ReturnTime: about a second and a half to two to be going down the hill again. (CoastBleed is per second: the
-        /// share of the slide the edge's friction takes in a second while it coasts.) All the while the edge holds
+        /// ReturnTime, but only as a light nudge (feel2): the board comes round mostly by gravity on the slope as the
+        /// edge goes flat, three or four seconds to be going down an average pitch again, and on flat ground hardly at
+        /// all. (CoastBleed is per second: the share of the slide the edge's friction takes while it coasts.) All the while the edge holds
         /// the board against gravity's pull across the path, less and less (HoldFade s after the coast). EaseFor s
         /// after the finger came off the return fades out (over EaseFade s): a board left to itself longer than that is
         /// gravity's alone, and the hill turns it only as gravity does.
         /// </summary>
-        public static float CoastTime = 0.35f, CoastBleed = 0.25f, ReturnIn = 0.4f, ReturnTime = 0.6f, HoldFade = 1.2f, EaseFor = 3f, EaseFade = 0.8f;
+        public static float CoastTime = 1f, CoastBleed = 0.1f, ReturnIn = 0.8f, ReturnTime = 3f, HoldFade = 1.2f, EaseFor = 6f, EaseFade = 1f;
         /// <summary>m/s^2: the most the push and the snow's resistance together ever pull the board sideways.</summary>
         public static float SideAccel = 600f;
         /// <summary>What sliding sideways costs: m/s^2 off the speed for each m/s of sideways speed. Small and smooth.</summary>

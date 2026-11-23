@@ -4,11 +4,16 @@ using UnityEngine;
 namespace Summit
 {
     /// <summary>
-    /// The board's track as real geometry: a trench cut into the snow. A packed, shaded floor, steep
-    /// inner walls, and on either side a ragged berm of snow the board has thrown up: lumpy, uneven
-    /// in height and width, with clods broken off along its crest and a frayed outer edge, never the
-    /// same twice. Carving throws a tall berm to the outside of the turn and slices a narrow cut;
-    /// skidding sweeps a wide smear and a long low ridge. Deeper and wider in powder.
+    /// The board's track as real geometry: a cut in the snow, shaped by the snow it is in (Mix, the snow underfoot)
+    /// and by how hard the edge is pushing (Bite) at the angle it is on (edge):
+    ///   corduroy  a crisp, shallow carved line: a compressed, darker, slightly glossy floor and a thin sharp wall on
+    ///             the outside of the turn, a mere lip on the inside
+    ///   powder    a wide, deep trench: tall crumbly walls, clumps thrown out along the sides, a shadowed interior
+    ///   ice       barely a scrape: a narrow polished line, no walls
+    ///   crud, crust, slush: between (crust breaks into plates, slush is wet and dark)
+    /// Skidding sweeps it wide and low; carving cuts it narrow with the tall wall to the outside of the turn.
+    /// Drawn with Resources/SnowTrack.shader in the snow's own texture (so its walls are the snow round them), lit by
+    /// the floodlights too, and faded by age and distance pixel by pixel (no popping).
     /// Built as a chain of small meshes; only the newest one is rebuilt as you ride, and in it only the newest row of
     /// the track (and the normals of the row before it, which the new row's faces touch).
     /// </summary>
@@ -17,7 +22,16 @@ namespace Summit
         const int PerChunk = 56, MaxChunks = 24, Across = 15;
         const float Step = 0.25f;
 
-        struct Pt { public Vector3 p, r, n; public float s, edge, skid, d; }
+        struct Pt { public Vector3 p, r, n; public float s, edge, skid, d, bite, born; public SnowMix mix; }
+
+        /// <summary>The snow under this stretch of the track (set before Feed: the rider's Underfoot).</summary>
+        public SnowMix Mix;
+        /// <summary>0..1: how hard the edge is pushing (Rider.Bite), set before Feed.</summary>
+        public float Bite;
+        /// <summary>The clock the track ages on (seconds): the game's, or a test tool's own (&gt;= 0).</summary>
+        public static double TestClock = -1.0;
+        public static float Clock => TestClock >= 0.0 ? (float)TestClock : Time.time;
+        static readonly int ClockId = Shader.PropertyToID("_TrackClock");
 
         readonly Material mat;
         readonly Transform root;
@@ -31,6 +45,7 @@ namespace Summit
         Vector3[] v = new Vector3[(PerChunk + 1) * Across];
         Vector3[] nrm = new Vector3[(PerChunk + 1) * Across];
         Vector2[] c = new Vector2[(PerChunk + 1) * Across];
+        Color[] col = new Color[(PerChunk + 1) * Across];
         int rowsBuilt;   // the rows of the current chunk already worked out (each depends only on its own point)
         // one side's profile, centre outward: how far out, and how high (reused from row to row)
         readonly float[] profOut = new float[7], profUp = new float[7];
@@ -63,14 +78,37 @@ namespace Summit
             return t;
         }
 
-        float sEdge, sSkid;
+        float sEdge, sSkid, sBite;
+        readonly bool tracked;
+        Material snowSeen;
+        Color colourSeen;
+
+        /// <summary>The snow's own textures and colour (the terrain's material, Surfaces.Snow), followed as the weather changes it.</summary>
+        void Snowed()
+        {
+            var snow = Surfaces.Snow;
+            if (!tracked || snow == null) return;
+            if (snow != snowSeen)
+            {
+                snowSeen = snow;
+                if (snow.HasProperty("_BaseMap")) { mat.SetTexture("_BaseMap", snow.GetTexture("_BaseMap")); mat.SetTextureScale("_BaseMap", snow.GetTextureScale("_BaseMap")); mat.SetTextureOffset("_BaseMap", snow.GetTextureOffset("_BaseMap")); }
+                if (snow.HasProperty("_DetailAlbedoMap")) { mat.SetTexture("_DetailAlbedoMap", snow.GetTexture("_DetailAlbedoMap")); mat.SetTextureScale("_DetailAlbedoMap", snow.GetTextureScale("_DetailAlbedoMap")); mat.SetTextureOffset("_DetailAlbedoMap", snow.GetTextureOffset("_DetailAlbedoMap")); }
+            }
+            var c0 = snow.HasProperty("_BaseColor") ? snow.GetColor("_BaseColor") : Color.white;
+            if (c0 != colourSeen) { colourSeen = c0; mat.SetColor("_BaseColor", c0); }
+        }
 
         public SnowTrail(Shader lit)
         {
-            mat = new Material(lit);
-            mat.SetTexture("_BaseMap", Strip());
+            var track = Resources.Load<Shader>("SnowTrack");
+            tracked = track != null && track.isSupported;
+            mat = new Material(tracked ? track : lit) { name = "SnowTrack" };
+            if (!tracked)
+            {
+                mat.SetTexture("_BaseMap", Strip());
+                mat.SetFloat("_Smoothness", 0.12f);   // matte, so every lump in the berm shades
+            }
             mat.SetColor("_BaseColor", Color.white);
-            mat.SetFloat("_Smoothness", 0.12f);   // matte, so every lump in the berm shades
             root = new GameObject("SnowTrail").transform;
             tri = new int[PerChunk * (Across - 1) * 6];
             int t = 0;
@@ -99,13 +137,16 @@ namespace Summit
         /// </summary>
         public void Feed(Vector3 at, Vector3 normal, float travel, bool onSnow, float scale, float edge, float skid, float dt)
         {
-            if (!onSnow) { if (wasOn) Break(); wasOn = false; sEdge = 0f; sSkid = 0f; return; }
+            Shader.SetGlobalFloat(ClockId, Clock);
+            Snowed();
+            if (!onSnow) { if (wasOn) Break(); wasOn = false; sEdge = 0f; sSkid = 0f; sBite = 0f; return; }
             float k = dt <= 0f ? 1f : 1f - Mathf.Exp(-dt * 10f);
             sEdge = Mathf.Lerp(sEdge, Mathf.Clamp(edge, -1f, 1f), k);
             sSkid = Mathf.Lerp(sSkid, Mathf.Clamp01(skid), k);
+            sBite = Mathf.Lerp(sBite, Mathf.Clamp01(Bite), k);
             var dir = new Vector3(Mathf.Sin(travel), 0f, Mathf.Cos(travel));
             var right = Vector3.Cross(normal, Vector3.ProjectOnPlane(dir, normal).normalized);
-            var pt = new Pt { p = at, r = right, n = normal, s = scale, edge = sEdge, skid = sSkid, d = travelled };
+            var pt = new Pt { p = at, r = right, n = normal, s = scale, edge = sEdge, skid = sSkid, d = travelled, bite = sBite, born = Clock, mix = Mix };
             if (!wasOn || pts.Count == 0) { Begin(pt); wasOn = true; return; }
             float d = Vector3.Distance(pts[pts.Count - 1].p, at);
             if (d < Step) return;
@@ -185,12 +226,38 @@ namespace Summit
         /// <summary>A clod of snow broken off the crest: 0 most of the way, bumps up now and then.</summary>
         static float Clod(float d, int seed)
         {
-            float x = d / 0.35f;
+            float x = d / 0.5f;
             int i = Mathf.FloorToInt(x);
             float h = Hash(i, seed);
             if (h < 0.55f) return 0f;
             float f = x - i;
             return (h - 0.55f) / 0.45f * Mathf.Sin(f * Mathf.PI);
+        }
+
+        /// <summary>The cut's shape for the snow it is in: blended from each kind's by how much of it there is.</summary>
+        struct Shape
+        {
+            public float hw, skidW, wallOut, wallIn, berm, crumb, clump, floorTint, wallTint, gloss, shade, lip;
+            public static Shape operator *(Shape a, float k) => new Shape { hw = a.hw * k, skidW = a.skidW * k, wallOut = a.wallOut * k, wallIn = a.wallIn * k, berm = a.berm * k, crumb = a.crumb * k, clump = a.clump * k, floorTint = a.floorTint * k, wallTint = a.wallTint * k, gloss = a.gloss * k, shade = a.shade * k, lip = a.lip * k };
+            public static Shape operator +(Shape a, Shape b) => new Shape { hw = a.hw + b.hw, skidW = a.skidW + b.skidW, wallOut = a.wallOut + b.wallOut, wallIn = a.wallIn + b.wallIn, berm = a.berm + b.berm, crumb = a.crumb + b.crumb, clump = a.clump + b.clump, floorTint = a.floorTint + b.floorTint, wallTint = a.wallTint + b.wallTint, gloss = a.gloss + b.gloss, shade = a.shade + b.shade, lip = a.lip + b.lip };
+        }
+        //                                          floor half-width, skid's extra, outer wall, inner wall, berm, crumble, clumps, floor tint, wall tint, gloss, shade, lip
+        static readonly Shape Cord   = new Shape { hw = 0.06f, skidW = 0.30f, wallOut = 0.028f, wallIn = 0.010f, berm = 0.05f, crumb = 0.08f, clump = 0.00f, floorTint = 0.90f, wallTint = 1.00f, gloss = 0.55f, shade = 0.06f, lip = 1.0f };
+        static readonly Shape Powder = new Shape { hw = 0.20f, skidW = 0.32f, wallOut = 0.15f,  wallIn = 0.11f,  berm = 0.30f, crumb = 0.55f, clump = 1.00f, floorTint = 0.80f, wallTint = 0.97f, gloss = 0.06f, shade = 0.30f, lip = 0.0f };
+        static readonly Shape Ice    = new Shape { hw = 0.035f, skidW = 0.16f, wallOut = 0.004f, wallIn = 0.002f, berm = 0.02f, crumb = 0.00f, clump = 0.00f, floorTint = 1.04f, wallTint = 1.00f, gloss = 0.30f, shade = 0.00f, lip = 0.0f };
+        static readonly Shape Crud   = new Shape { hw = 0.14f, skidW = 0.30f, wallOut = 0.08f,  wallIn = 0.05f,  berm = 0.22f, crumb = 0.65f, clump = 0.70f, floorTint = 0.86f, wallTint = 0.97f, gloss = 0.10f, shade = 0.18f, lip = 0.0f };
+        static readonly Shape Crust  = new Shape { hw = 0.10f, skidW = 0.28f, wallOut = 0.06f,  wallIn = 0.04f,  berm = 0.16f, crumb = 0.40f, clump = 0.60f, floorTint = 0.88f, wallTint = 1.00f, gloss = 0.25f, shade = 0.12f, lip = 0.5f };
+        static readonly Shape Slush  = new Shape { hw = 0.10f, skidW = 0.30f, wallOut = 0.06f,  wallIn = 0.04f,  berm = 0.12f, crumb = 0.25f, clump = 0.30f, floorTint = 0.80f, wallTint = 0.90f, gloss = 0.60f, shade = 0.10f, lip = 0.3f };
+
+        static Shape ShapeOf(SnowMix m)
+        {
+            float cord = m.Corduroy, sum = cord + m.powder + m.ice + m.crud + m.crust + m.slush;
+            if (sum < 1e-4f) return Cord;
+            // (a little powder lying on the run is not a trench: the deep kind is, Rider's Deep)
+            float deep = Mathf.Clamp01(m.powder * (0.45f + 0.55f * m.deep));
+            float light = m.powder - deep;
+            var s = Cord * (cord + light * 0.6f) + Powder * deep + Crud * (m.crud + light * 0.4f) + Ice * m.ice + Crust * m.crust + Slush * m.slush;
+            return s * (1f / sum);
         }
 
         void Rebuild()
@@ -200,48 +267,57 @@ namespace Summit
             for (int i = rowsBuilt; i < n; i++)
             {
                 var q = pts[i];
-                float a = Mathf.Abs(q.edge), sk = q.skid, s = q.s;
-                // the cut: narrow when carving, a wide sweep when the board is sideways
-                float hw = (0.13f - 0.03f * a + 0.42f * sk) * s;
-                float bwBase = 0.13f * s * (1f + 1.6f * sk);
-                float bhBase = 0.03f * s;   // low: seen from a low camera, taller berms read as walls
-                // carving throws a tall berm to the outside of the turn; skidding a long low ridge either side
-                float outBh = bhBase * (1f + 2.2f * a + 1.0f * sk), inBh = bhBase * (1f - 0.4f * a) * (1f - 0.3f * sk);
-                float outBw = bwBase * (1f + 0.9f * a), inBw = bwBase * (1f - 0.25f * a);
+                float a = Mathf.Abs(q.edge), sk = q.skid, s = q.s, bite = q.bite;
+                var sh = ShapeOf(q.mix);
+                // the cut: narrow when carving, a wide sweep when the board is sideways; a hard push opens it a little
+                float hw = (sh.hw * (1f - 0.25f * a + 0.3f * bite) + sh.skidW * sk) * s;
+                // the outside of the turn takes the tall wall (a carve's), the inside a lower one; skidding flattens both
+                // (a hard push builds the crisp wall of a carve most; deep snow is already as deep as it goes)
+                float push = 1f + (1.4f * bite + 0.6f * a) * (1f - 0.7f * sh.crumb);
+                float outWall = Mathf.Min(sh.wallOut * push * (1f - 0.45f * sk), 0.2f) * s, inWall = Mathf.Min(sh.wallIn * (1f + 0.4f * bite) * (1f - 0.3f * a) * (1f - 0.3f * sk), 0.15f) * s;
+                float bermW = sh.berm * s * (1f + 1.2f * sk);
                 bool outLeft = q.edge >= 0f;   // turning right throws snow to the left (-r)
-                float shelf = 0.03f * a * s;   // the floor slants up toward the outside edge
+                float shelf = 0.025f * a * s * (1f - sh.crumb);   // a carve's floor slants up toward the outside edge
 
                 Vector3 o = q.p + q.n * 0.012f;
                 int k = i * Across;
-                float row = 0.25f + 0.5f * sk;
+                var uv = new Vector2(q.born, 1f);
+                Color floor = new Color(sh.floorTint * (1f - sh.shade), sh.floorTint * (1f - sh.shade * 0.85f), sh.floorTint * (1f - sh.shade * 0.55f), Mathf.Clamp01(sh.gloss));
                 v[k + 7] = o + q.n * shelf * 0.4f;
-                c[k + 7] = new Vector2(U[7], row);
+                c[k + 7] = uv; col[k + 7] = floor;
                 for (int side = -1; side <= 1; side += 2)
                 {
                     bool outside = (side < 0) == outLeft;
                     int seed = side < 0 ? 11 : 37;
-                    float lump = Lumps(q.d, seed), widen = Lumps(q.d + 17.3f, seed + 3), clod = Clod(q.d, seed + 5);
-                    float bh = (outside ? outBh : inBh) * lump;
-                    float bw = (outside ? outBw : inBw) * (0.65f + 0.5f * widen);
-                    float sh = outside ? shelf : 0f;
-                    float fray = (N(q.d, 0.3f, seed + 9) - 0.5f) * 0.16f * s;   // ragged outer edge
-                    float jag = (N(q.d, 0.22f, seed + 15) - 0.5f) * 0.25f;          // the crest wanders in and out
+                    float lump = 1f + (Lumps(q.d, seed) - 1f) * (0.3f + sh.crumb), widen = Lumps(q.d + 17.3f, seed + 3);
+                    float clod = Clod(q.d, seed + 5) * sh.clump;
+                    float wall = (outside ? outWall : inWall) * lump;
+                    float bw = bermW * (0.65f + 0.5f * widen) * (outside ? 1f : 0.7f);
+                    float shf = outside ? shelf : 0f;
+                    float fray = (N(q.d, 0.3f, seed + 9) - 0.5f) * 0.16f * s * (0.3f + sh.crumb);   // a ragged outer edge
+                    float jag = (N(q.d, 0.22f, seed + 15) - 0.5f) * 0.25f * (0.2f + sh.crumb);      // the crest wanders in and out
+                    // a crisp cut has a near-vertical wall (a thin sharp edge); a crumbly one leans back
+                    float lean = Mathf.Lerp(0.012f, 0.35f * wall + 0.02f, Mathf.Clamp01(sh.crumb * 1.6f)) * (outside ? 1f : 1.4f);
                     Vector3 r = q.r * side;
-                    // centre outward: floor edge, inner wall, lip, crest, clod, outer slope, frayed edge
-                    profOut[0] = hw * 0.55f;                      profUp[0] = 0.008f + sh * 0.7f;
-                    profOut[1] = hw * 0.86f;                      profUp[1] = bh * 0.35f + sh;
-                    profOut[2] = hw * 1.00f;                      profUp[2] = bh * 0.80f + sh;
-                    profOut[3] = hw + bw * (0.22f + jag);         profUp[3] = bh * (1.00f + 0.6f * clod);
-                    profOut[4] = hw + bw * (0.42f + 0.2f * clod); profUp[4] = bh * (0.70f + 0.9f * clod);
-                    profOut[5] = hw + bw * (0.70f - jag);         profUp[5] = bh * (0.30f + 0.25f * N(q.d, 0.3f, seed + 31));
-                    profOut[6] = hw + bw * 1.05f + fray;          profUp[6] = 0.004f;
+                    // centre outward: floor, the foot of the wall, the wall's top, the crest, the berm (and its clumps), its toe, the snow
+                    profOut[0] = hw * 0.55f;                           profUp[0] = 0.004f + shf * 0.7f;
+                    profOut[1] = hw * 0.97f;                           profUp[1] = 0.006f + shf;
+                    profOut[2] = hw + lean;                            profUp[2] = wall * (0.92f + 0.1f * sh.lip) + shf;
+                    profOut[3] = hw + lean + bw * (0.18f + jag);       profUp[3] = wall * (1.0f + 0.25f * clod) + shf * 0.5f;
+                    profOut[4] = hw + lean + bw * (0.45f + 0.2f * clod); profUp[4] = wall * (0.5f + 0.45f * clod);
+                    profOut[5] = hw + lean + bw * (0.75f - jag);       profUp[5] = wall * (0.18f + 0.35f * clod + 0.2f * N(q.d, 0.3f, seed + 31) * sh.crumb);
+                    profOut[6] = hw + lean + bw * 1.05f + fray;        profUp[6] = 0.003f;
                     for (int j = 0; j < profOut.Length; j++)
                     {
-                        int col = side < 0 ? 6 - j : 8 + j;
-                        v[k + col] = o + r * profOut[j] + q.n * profUp[j];
-                        // a little colour jitter along the crest and slope, so the snow is not one flat tone
-                        float jit = j >= 3 ? (N(q.d, 0.35f, seed + 21 + j) - 0.5f) * 0.05f : 0f;
-                        c[k + col] = new Vector2(Mathf.Clamp01(U[col] + jit * -side), row);
+                        int cc = side < 0 ? 6 - j : 8 + j;
+                        v[k + cc] = o + r * profOut[j] + q.n * profUp[j];
+                        c[k + cc] = uv;
+                        // the floor and the foot of the wall in its shade, the wall's top and the thrown snow bright and
+                        // matte, a little jitter along the crumbly crest so the snow is not one flat tone
+                        float jit = j >= 3 ? (N(q.d, 0.35f, seed + 21 + j) - 0.5f) * 0.06f * sh.crumb : 0f;
+                        float t = j == 0 ? 0f : j == 1 ? 0.15f : j == 2 ? 0.85f : 1f;
+                        float w = Mathf.Lerp(1f, sh.wallTint, t) + jit;
+                        col[k + cc] = Color.Lerp(floor, new Color(w, w, w, 0.12f), t);
                     }
                 }
             }
@@ -254,6 +330,7 @@ namespace Summit
             currentMesh.SetVertices(v, 0, vc);
             currentMesh.SetNormals(nrm, 0, vc);
             currentMesh.SetUVs(0, c, 0, vc);
+            currentMesh.SetColors(col, 0, vc);
             currentMesh.SetTriangles(tri, 0, (n - 1) * (Across - 1) * 6, 0);
             currentMesh.RecalculateBounds();
         }

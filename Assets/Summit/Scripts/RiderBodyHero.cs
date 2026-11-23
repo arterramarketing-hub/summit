@@ -33,6 +33,8 @@ namespace Summit
         HeroRig hero;
         /// <summary>The hero's rig, when the hero is the rider (for the test tools).</summary>
         public HeroRig Hero => hero;
+        /// <summary>0..1: how much of the inside hand is on the snow just now (a hard lean: the hand dragged through it).</summary>
+        public float HandOnSnow { get; private set; }
         /// <summary>The bone the chest flashlight is strapped to (it tumbles with the body after a fall).</summary>
         public Transform ChestBone => hero != null ? (hero.UpperChest != null ? hero.UpperChest : hero.Chest) : rig != null ? rig.Chest : null;
         Vector3 heroRidePos;            // the model's place under the body with the Root bone on the deck
@@ -514,6 +516,7 @@ namespace Summit
             if (HandGone(1)) d.handR = 0f;
             h.Layer(d, dt);
             if (Walking && CampPose != null) CampPose.After(h, model, dt);
+            KeepOffSnow(dt, false);   // hips, knees and hands never through the snow (RiderBodyTouch)
         }
     }
 }

@@ -347,6 +347,7 @@ namespace Summit
                 bool held = !HandGone(s);
                 if (pole[s].gameObject.activeSelf != held) pole[s].gameObject.SetActive(held);
             }
+            KeepOffSnow(dt, true);   // nothing through the snow, the poles' tips on it (RiderBodyTouch)
         }
 
         /// <summary>
@@ -363,6 +364,7 @@ namespace Summit
             float turn = rider.Lean / Rider.MaxLean;
             for (int s = 0; s < 2; s++)
             {
+                sideTrail[s].Mix = rider.Underfoot; sideTrail[s].Bite = rider.Bite * 0.6f;
                 if (skis && ski[s] != null)
                     sideTrail[s].Feed(at + right * Vector3.Dot(ski[s].position - at, right), normal, travel, true, scale * 0.42f, turn, rider.Skid * 0.5f, dt);
                 else if (onSled && hero != null && (s == 0 ? turn < -0.3f : turn > 0.3f))   // the left heel in a left turn, the right in a right
@@ -418,6 +420,7 @@ namespace Summit
             if (dt <= 0f) h.Snap();
             h.Evaluate(dt, blend);
             h.Layer(d, dt);
+            KeepOffSnow(dt, false);   // nothing through the snow (RiderBodyTouch)
         }
     }
 }

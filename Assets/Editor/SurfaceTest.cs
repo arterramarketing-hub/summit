@@ -158,6 +158,7 @@ public static class SurfaceTest
         //      the run's edge blend (EdgeBlend m along the way: the shortest it is, leaving the run square on): how the
         //      speed comes down, how hard at most (a wall would be a jolt), and how long until it is most of the way
         IntoDeep(r);
+        IntoDeepOnPitch();
 
         // ---- the snow never pushes and never lets go: on each kind half a drag held gives the same sideways speed,
         //      and the way the board goes turns by the finger's push and gravity's pull and by nothing else (what
@@ -207,6 +208,35 @@ public static class SurfaceTest
             top = Mathf.Max(top, r.Speed);
         }
         secs = n * Dt; avg = (r.Z - PaceZ) / Mathf.Max(secs, 1e-3f); air = inAir / (float)Mathf.Max(1, n);
+    }
+
+    /// <summary>
+    /// Leaving the run on the mountain's mean pitch, by the board's own numbers (no terrain under it: the slowing that is
+    /// the powder's alone): from corduroy's settled speed, the snow turned to deep powder at once (the run's edge
+    /// blend passed in an instant, the hardest case), the board sinking in over Surfaces.DeepSinkIn. The most it
+    /// slows, how long until that, and how long until it is most of the way to powder's own speed. At the game's pace.
+    /// </summary>
+    static void IntoDeepOnPitch()
+    {
+        float pitch = Mathf.Atan(Slope.Fall), g = Rider.G * Rider.Pace, dt = 0.01f;
+        var fc = Surfaces.Feel(SnowMix.Only(Snow.Corduroy), 30f);
+        float v = 20f;
+        for (int i = 0; i < 6000; i++) v = Mathf.Max(0f, v + (g * Mathf.Sin(pitch) - (Rider.DragOpen + fc.drag) * v * v - Rider.Friction * fc.friction * Rider.G * Mathf.Cos(pitch)) * dt);
+        float vFrom = v, sunk = 0f, worst = 0f, tWorst = 0f, t90 = -1f;
+        var mp = SnowMix.Only(Snow.Powder);
+        float vEnd = v;
+        { float u = v; for (int i = 0; i < 20000; i++) { var f = Surfaces.Feel(mp, u); u = Mathf.Max(0f, u + (g * Mathf.Sin(pitch) - (Rider.DragOpen + f.drag) * u * u - Rider.Friction * f.friction * Rider.G * Mathf.Cos(pitch) - Mathf.Min(f.deep * u * u, Surfaces.DeepMost * Rider.G)) * dt); } vEnd = u; }
+        for (int i = 0; i < 3000; i++)
+        {
+            var f = Surfaces.Feel(mp, v);
+            sunk = Mathf.Lerp(sunk, 1f, 1f - Mathf.Exp(-dt / Surfaces.DeepSinkIn));
+            float acc = g * Mathf.Sin(pitch) - (Rider.DragOpen + f.drag) * v * v - Rider.Friction * f.friction * Rider.G * Mathf.Cos(pitch) - Mathf.Min(f.deep * v * v, Surfaces.DeepMost * Rider.G) * sunk;
+            if (-acc > worst) { worst = -acc; tWorst = i * dt; }
+            v = Mathf.Max(0f, v + acc * dt);
+            if (t90 < 0f && vFrom - v >= 0.9f * (vFrom - vEnd)) t90 = i * dt;
+        }
+        Debug.Log($"SURFACE into deep powder on the mean pitch ({pitch * Mathf.Rad2Deg:0} deg), pace {Rider.Pace:0.00}: groomed settles at {vFrom * 3.6f:0} km/h, deep powder at {vEnd * 3.6f:0} km/h; leaving the run it slows at {worst / Rider.G:0.00} g at most, {tWorst:0.0} s in, and is nine tenths of the way down to powder's speed in {(t90 < 0f ? "more than 30 s" : t90.ToString("0.0") + " s")}");
+        if (worst > 0.3f * Rider.G) Fail($"into deep powder on the mean pitch: it slows at {worst / Rider.G:0.00} g, a wall rather than sinking in");
     }
 
     static void IntoDeep(Rider r)
@@ -260,9 +290,8 @@ public static class SurfaceTest
             if (tRise1 < 0f && a - acc0 >= 0.9f * (worst - acc0)) tRise1 = i * Dt;
         }
         float rise = tRise0 >= 0f && tRise1 >= 0f ? tRise1 - tRise0 : -1f;
-        Debug.Log($"SURFACE into deep powder off corduroy (over {Surfaces.EdgeBlend:0} m of the way, then the run's line held): {vFrom * 3.6f:0} -> {vEnd * 3.6f:0} km/h; half of that shed in {(t50 < 0f ? "never" : t50.ToString("0.0") + " s")}, nine tenths in {(t90 < 0f ? "never" : t90.ToString("0.0") + " s")}; it slowed at {worst:0.0} m/s^2 ({worst / Rider.G:0.00} g) at most, that slowing coming on over {(rise < 0f ? "?" : rise.ToString("0.00") + " s")}");
-        if (worst > 0.75f * Rider.G) Fail($"into deep powder: it slowed at {worst:0.0} m/s^2: a wall rather than sinking in");
-        if (rise >= 0f && rise < 0.3f) Fail($"into deep powder: the slowing came on in {rise:0.00} s: a wall rather than sinking in");
+        Debug.Log($"SURFACE into deep powder off corduroy (over {Surfaces.EdgeBlend:0} m of the way, then the run's line held): {vFrom * 3.6f:0} -> {vEnd * 3.6f:0} km/h; half of that shed in {(t50 < 0f ? "never" : t50.ToString("0.0") + " s")}, nine tenths in {(t90 < 0f ? "never" : t90.ToString("0.0") + " s")}; it slowed at {worst:0.0} m/s^2 ({worst / Rider.G:0.00} g) at most over the ride, the terrain's own rises with it");
+        // (judged on the mean pitch, IntoDeepOnPitch: this ride's own slowing has the terrain under it in it too)
     }
 
     // where the held-speed rides are made: found once, on corduroy as the mountain lays it, clear of airs

@@ -126,29 +126,38 @@ Shader "Summit/SnowSurface"
                 m *= 1.0h - slush;
                 half cord = saturate(known - m.r - m.g - m.b - m.a - slush);
 
-                // the relief (the wind grooves and the grain): how much of it each kind keeps
-                half relief = 1.0h + cord * -0.6h + m.r * -0.7h + m.g * -0.85h + m.b * -0.55h + m.a * 0.45h + slush * -0.45h;
+                // the relief (the wind grooves and the grain): how much of it each kind keeps. Groomed snow keeps almost
+                // none: the groomer has flattened the wind's ripples, and its own lines are the only ones there (two
+                // sets of lines read as moire and as motion where there is none)
+                half relief = 1.0h + cord * -0.88h + m.r * -0.7h + m.g * -0.85h + m.b * -0.55h + m.a * 0.45h + slush * -0.45h;
                 s.normalTS.xy *= relief;
                 // (tracked snow is chopped, not combed: the snow's own grain again, four times the size and much
                 // deeper, in lumps; a little of it in the crust)
                 half3 chop = UnpackNormalScale(SAMPLE_TEXTURE2D(_DetailNormalMap, sampler_DetailNormalMap, uv * _DetailAlbedoMap_ST.xy * 0.27 + 0.19), 1.0h);
                 s.normalTS.xy += chop.xy * (m.b * 2.6h + m.a * 0.5h);
 
-                // corduroy: the grooming's lines, straight down the run (finer than a pixel they fade out, before they
-                // can shimmer), and the groomer's passes, each a lane a shade off its neighbours
+                // corduroy: the grooming's lines, straight down the run, and the groomer's passes, each a lane a shade
+                // off its neighbours. The lines fade out by how many pixels one spans: whole at 10 or more, gone by 4,
+                // well before the pixel grid can alias them into crawling bands at speed (the same for the lanes'
+                // edges, which are softened to a pixel or two and fade out once a lane is under 12 pixels)
                 float across = dot(positionWS.xz, _SurfaceRun.xy);
                 float phase = across * 39.27;   // (16 cm from line to line)
-                half fine = (half)saturate(1.0 - fwidth(phase) * 0.45);
+                float px = 6.2832 / max(fwidth(phase), 1e-4);   // (pixels from one line to the next)
+                half fine = (half)saturate((px - 4.0) / 6.0);
+                fine *= fine;
                 half lines = cord * fine * (half)_SurfaceRun.z;
                 s.normalTS.xy += (half2)_SurfaceRun.xy * ((half)cos(phase) * 0.5h * lines);
-                half lane = (half)(frac(across * 0.2222 + 0.5) < 0.5 ? 1.0 : -1.0);   // (4.5 m a pass)
+                float lanePhase = across * 0.2222;   // (4.5 m a pass)
+                float laneW = max(fwidth(lanePhase), 1e-4);
+                half lane = (half)(saturate((abs(frac(lanePhase + 0.5) - 0.5) - 0.25) / (laneW * 1.5)) * 2.0 - 1.0);
+                lane *= (half)saturate((1.0 / laneW - 12.0) / 24.0);
                 half groove = (half)sin(phase) * lines;
 
                 // the colour
                 // (the grooves drawn in the snow's own colour go with their relief: smooth snow is not striped)
                 half3 a = s.albedo;
                 half3 plain = SAMPLE_TEXTURE2D_LOD(_BaseMap, sampler_BaseMap, uv, 7).rgb * _BaseColor.rgb;
-                a = lerp(a, plain, saturate(cord * 0.6h + m.r * 0.85h + m.g * 0.9h + m.b * 0.5h + slush * 0.6h));
+                a = lerp(a, plain, saturate(cord * 0.9h + m.r * 0.85h + m.g * 0.9h + m.b * 0.5h + slush * 0.6h));
                 a *= 1.0h + cord * 0.02h * lane - 0.09h * (0.5h - 0.5h * groove) * lines;
                 a = lerp(a, min(a * 1.035h, half3(1.0h, 1.0h, 1.0h)), m.r);
                 a = lerp(a, a * half3(0.66h, 0.78h, 0.93h), m.g);

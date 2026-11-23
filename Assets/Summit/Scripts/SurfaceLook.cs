@@ -37,6 +37,10 @@ namespace Summit
                             DayId = Shader.PropertyToID("_SurfaceDay"), RunId = Shader.PropertyToID("_SurfaceRun"),
                             ColorId = Shader.PropertyToID("_BaseColor"), SmoothId = Shader.PropertyToID("_Smoothness"), BumpId = Shader.PropertyToID("_BumpScale");
 
+        /// <summary>The snow material the terrain is drawn from (null until Terrain has been asked for it): the board's
+        /// track takes its textures and colour (SnowTrail).</summary>
+        public static Material Snow => source;
+
         /// <summary>The terrain's snow material: the snow material drawn with the snow underfoot in it (with the far band
         /// or without). The snow material as it is, where the shader cannot be used.</summary>
         public static Material Terrain(Material snow, bool band)
