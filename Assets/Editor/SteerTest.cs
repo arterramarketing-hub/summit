@@ -97,7 +97,26 @@ public static class SteerTest
 
         // where the run swings across the hill (a traverse along a cliff band): a lifted thumb holds the run's line, and
         // a drag steers off it
-        if (!quick || System.Environment.GetEnvironmentVariable("STEER_TRAVERSE") == "1") Traverse(r);
+        // (on corduroy, as a band's traverse is; then on ice and on powder, which are slower to answer the finger: the
+        // line must be held hands off just the same)
+        if (!quick || System.Environment.GetEnvironmentVariable("STEER_TRAVERSE") == "1")
+            foreach (var kind in new[] { Snow.Corduroy, Snow.Ice, Snow.Powder }) Traverse(r, kind);
+
+        // the snow underfoot (Surfaces): the same response rides on each kind laid everywhere. Ice and powder are
+        // slower to come round, by design; none of them may leave the board short of the sideways speed asked for
+        Scale = 1f;
+        foreach (Snow kind in System.Enum.GetValues(typeof(Snow)))
+        {
+            Surfaces.Force = SnowMix.Only(kind);
+            foreach (float v in new[] { 22f, 30f })
+            {
+                Sideways(r, v, 1f, out float l3, out float l90, out float lss);
+                Reverse(r, v, 1f, out float r0, out float r3);
+                Debug.Log($"STEER snow {kind.ToString().ToLower(),-8} v={v:0} m/s ({v * 3.6f:0} km/h) full drag: sideways 3 m/s in {T(l3)}, 90% of its sideways speed ({lss:0.0} m/s at 1 s) in {T(l90)} | reverse left->right from -2 m/s: through zero in {T(r0)}, +2 m/s in {T(r3)}");
+                if (lss < 14.5f) Debug.Log($"STEER-FAIL snow {kind}: a full drag gives {lss:0.0} m/s sideways at {v * 3.6f:0} km/h, not 15");
+            }
+        }
+        Surfaces.Force = null;
 
         Scale = scale0;
         Physics.simulationMode = SimulationMode.FixedUpdate;
@@ -112,10 +131,12 @@ public static class SteerTest
     /// fast it leaves it. STEER traverse lines; STEER-FAIL if the line is not held within a metre or a drag does not
     /// leave it at 3 m/s within 0.2 s.
     /// </summary>
-    static void Traverse(Rider r)
+    static void Traverse(Rider r, Snow kind = Snow.Corduroy)
     {
         var was = Rider.RunHeading; float xWas = x0, zWas = z0;
         Scale = 1f;
+        Surfaces.Force = SnowMix.Only(kind);
+        string on = kind == Snow.Corduroy ? "" : " on " + kind.ToString().ToLower();
         try
         {
             foreach (float side in new[] { 1f, -1f })
@@ -169,16 +190,16 @@ public static class SteerTest
                             drags += $" | full drag {(drag < 0f ? "left" : "right")}: {across02:+0.0;-0.0} m/s across the line after 0.2 s, {off05:+0.0;-0.0} m off it after 0.5 s";
                             if (Mathf.Abs(across02) < 3f || Mathf.Sign(across02) != drag) left = false;
                         }
-                        Debug.Log($"STEER traverse 65 deg {(side > 0f ? "right" : "left")} at {v * 3.6f:0} km/h (z={z0:0}): hands off for {gone:0} m, {dev:0.00} m off the run's line at most, heading {heading:0} deg at the end, {air:0.0} s of it in the air{drags}");
-                        if (dev > 1f) Debug.Log($"STEER-FAIL traverse {(side > 0f ? "right" : "left")} {v * 3.6f:0} km/h: {dev:0.00} m off the run's line, hands off");
-                        if (!left) Debug.Log($"STEER-FAIL traverse {(side > 0f ? "right" : "left")} {v * 3.6f:0} km/h: a full drag does not leave the line at 3 m/s within 0.2 s");
+                        Debug.Log($"STEER traverse{on} 65 deg {(side > 0f ? "right" : "left")} at {v * 3.6f:0} km/h (z={z0:0}): hands off for {gone:0} m, {dev:0.00} m off the run's line at most, heading {heading:0} deg at the end, {air:0.0} s of it in the air{drags}");
+                        if (dev > 1f) Debug.Log($"STEER-FAIL traverse{on} {(side > 0f ? "right" : "left")} {v * 3.6f:0} km/h: {dev:0.00} m off the run's line, hands off");
+                        if (!left && kind == Snow.Corduroy) Debug.Log($"STEER-FAIL traverse {(side > 0f ? "right" : "left")} {v * 3.6f:0} km/h: a full drag does not leave the line at 3 m/s within 0.2 s");
                         done = true;
                         break;
                     }
                     if (!done) Debug.Log($"STEER-FAIL traverse {(side > 0f ? "right" : "left")} {v * 3.6f:0} km/h: no stretch where the ride stays up");
                 }
         }
-        finally { Rider.RunHeading = was; x0 = xWas; z0 = zWas; }
+        finally { Rider.RunHeading = was; x0 = xWas; z0 = zWas; Surfaces.Force = null; }
     }
 
     // ---- a 400 m stretch where a straight run stays on the snow (no kickers, no drops)
@@ -189,6 +210,11 @@ public static class SteerTest
             {
                 x0 = Slope.Centre(z) + off; z0 = z;
                 bool air = false;
+                // (and corduroy, as the mountain lays it, where the response times are taken: the board's own numbers)
+                for (float d = -25f; d <= 80f && !air; d += 5f)
+                    for (float a = -4f; a <= 4f; a += 4f)
+                        if (Surfaces.Surface(Slope.Centre(z + d) + off + a, z + d).Corduroy < 0.98f) { air = true; break; }
+                if (air) continue;
                 // (at every speed the test rides it at: a box boarded only at 108 km/h read as a slow response there)
                 foreach (float v in new[] { 22f, 15f, 30f })
                 {

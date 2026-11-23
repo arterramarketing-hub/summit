@@ -221,6 +221,7 @@ namespace Summit
             if (Active == this) Active = null;
             Hush = 0f; Howl = 0f;
             Rider.Friction = baseFriction;
+            Surfaces.Weathered(0f, 0f);
             TreeWind.Strength = 1f;
             DayNight.BeamGain = 1f;
             if (atmo != null) atmo.SnowAmount = 1f;
@@ -381,8 +382,8 @@ namespace Summit
                 shakeBase = game; shakeWritten = game + gustShake; chase.shake = shakeWritten;
             }
 
-            // the snow underfoot: fresh powder is slower, wind crust a touch faster (small: a percent or two of top speed)
-            Rider.Friction = baseFriction * (1f + 0.8f * l.powder - 0.15f * l.crust);
+            // the snow underfoot, by place (Surfaces): how much fresh snow lies today, and how hard the wind has worked it
+            Surfaces.Weathered(l.powder, Mathf.Max(l.crust, 0.7f * Mathf.Clamp01((l.wind - 0.3f) / 0.7f)));
             SnowSurface(l);
 
             // the falling snow (Atmosphere's): how much, how big, how fast, how driven

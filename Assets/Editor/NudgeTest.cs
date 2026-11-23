@@ -290,6 +290,23 @@ public static class NudgeTest
                 finally { foreach (var g in rocks) Object.DestroyImmediate(g); }
             }
             Print("rock garden", garden);
+
+            // across the snow underfoot (Surfaces): weaving over the groomed run's edge, corduroy to powder and back,
+            // above the tree line (so it is the snow that is ridden, not the forest)
+            var edge = new Tally();
+            foreach (int seed in new[] { 1000, 4242 })
+            {
+                TestBoot.NewMountain(game, seed, terrain, props);
+                float z0 = Course.First + 60f;
+                foreach (float side in new[] { -1f, 1f })
+                    Ride($"edge seed{seed} {(side < 0f ? "left" : "right")}", Slope.Centre(z0) + side * Slope.Half(z0), z0, 10f, 30f, rr =>
+                    {
+                        float z = rr.Z, target = Slope.Centre(z + 25f) + side * (Slope.Half(z + 25f) + 3f + 8f * Mathf.Sin(z / 30f));
+                        float err = target - rr.X;
+                        return Mathf.Abs(err) < 1.2f ? 0f : err / 1.2f / 15f;
+                    }, edge, true);
+            }
+            Print("piste edge", edge);
         }
         catch (System.Exception e) { Debug.LogError("NUDGE exception " + e); }
         Physics.simulationMode = SimulationMode.FixedUpdate;

@@ -239,19 +239,24 @@ public static class LandTest
     }
 
     /// <summary>Over the edge of one of the walls in the danger stretch (25-55 m: short of Rider.DeathFall).</summary>
+    static readonly string landTrace = System.Environment.GetEnvironmentVariable("LAND_TRACE");
     static void Die(string name, Cliffs.Wall w, float v0)
     {
         rides++;
         float z = w.z1 + 15f - 25f, x0 = Slope.Centre(z) + w.side * (w.edge - 7f);
         Start(x0, z, v0);
-        int n = 0; float midAir = 0f;
+        int n = 0; float midAir = 0f, furthest = float.MinValue;
         for (float t = 0f; t < 8f && !r.Crashed; t += Dt, n++)
         {
             r.Steer = Mathf.Clamp(w.side * 0.9f - r.Heading * 0.3f, -1f, 1f);
             Step(n);
+            // (how far out it got, not where it ends: a board that goes over, rides on and is later set back on the run
+            // from a stall in the rocks below has gone over)
+            furthest = Mathf.Max(furthest, (r.transform.position.x - Slope.Centre(r.Z)) * w.side);
+            if (landTrace != null && name.Contains(landTrace) && n % 30 == 0) { var q = r.transform.position; var u = r.Underfoot; Debug.Log($"LAND-TRACE {name} t={t:0.00} x-c={q.x - Slope.Centre(q.z):0.0} z={q.z:0.0} sp={r.Speed:0.0} heading={r.Heading:0.00} steer={r.Steer:0.00} air={r.Airborne} rock={r.OnRock} snow: powder {u.powder:0.00} ice {u.ice:0.00} crud {u.crud:0.00} crust {u.crust:0.00}; feel response {r.SnowFeel.response:0.00} pull {r.SnowFeel.pull:0.00} friction {r.SnowFeel.friction:0.00}; edge {w.edge:0.0} side {w.side:0}"); }
             if (r.Crashed) midAir = r.transform.position.y - Slope.DrawnHeight(r.transform.position.x, r.Z) - Rider.R;
         }
-        float offW = (r.transform.position.x - Slope.Centre(r.Z)) * w.side;
+        float offW = furthest;
         if (!r.Crashed)
         {
             if (offW < w.edge) Fail($"{name}: rode on without going over (x-c={r.transform.position.x - Slope.Centre(r.Z):0.0})");

@@ -281,9 +281,10 @@ namespace Summit
         void Mats()
         {
             var rock = RockFace.TerrainMaterial(snowMaterial.shader);
-            plainMats = new[] { snowMaterial, rock };
+            // (the snow underfoot is drawn into the terrain's snow by place: Surfaces, SnowSurface.shader)
+            plainMats = new[] { Surfaces.Terrain(snowMaterial, false), rock };
             // (the rock always lets the snow through pixel by pixel, so it takes the band as it is: RockLit.shader)
-            edgeMats = new[] { Farview.Snow(snowMaterial, true), rock };
+            edgeMats = new[] { Surfaces.Terrain(snowMaterial, true), rock };
         }
 
         /// <summary>Draw each chunk plainly, with the band, or not at all, for where the rider is now.</summary>

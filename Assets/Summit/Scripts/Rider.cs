@@ -248,6 +248,7 @@ namespace Summit
             Flow = 0f; Shields = 0; BoostTime = 0f; invulnerable = 0f; SuperJumpTime = 0f; InvincibleTime = 0f; superAir = false;
             Undercut = 0f; Lift = 0f; fixVy = 0f;
             wobble = 0f; slowFor = 0f; EndUnpin();
+            Underfoot = default; snowFeel = Summit.SnowFeel.Firm; sideWant = 0f;
             // (and the clocks behind the wobble and the churn: carried over, the same landing swung the board a
             // different way depending on every wobble before it, so a ride never came out the same twice)
             churnT = 0f; OnRock = false; rockScrapeT = 0f; popHold = 0f; missClock = 0f; lastMiss = 0;
@@ -459,6 +460,7 @@ namespace Summit
             // which steers itself)
             float flat = Mathf.Sqrt(v.x * v.x + v.z * v.z);
             float swung = SetStraight(p.z, v.z, flat);
+            SideStep(dt, trickAir);   // (a real air bends at its own pace; a hop steers as on the snow it left)
             bool sliding = faceSlide; faceSlide = false;   // (falling down a face too steep to ride, below: the rock has the line, not the finger)
             if (!pipeAir && !sliding && flat > 2f)
             {

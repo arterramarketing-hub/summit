@@ -23,6 +23,7 @@ namespace Summit
     public struct RideSound
     {
         public float speed, carve, skid, rough, avalanche, muffle, pan;
+        public float ice, chatter, slush;   // the snow underfoot (Surfaces): how much of it is ice, how much it chatters, how much is slush
         public bool onSnow, air, boost, riding;
         public bool camp, ended;   // walking round the summit camp; on an end screen (for the music)
         public int grind;   // 0 none, 1 rail, 2 box
@@ -292,11 +293,17 @@ namespace Summit
             Mix(windHigh, wind.y * master, 0.88f + 0.18f * gust, 1.5f, 1f, dt);
 
             // the board on the snow: snaps on when you land, cuts out the moment you leave the ground
+            // (the snow underfoot, Surfaces. Corduroy is the crisp hiss and the edge's bite, as it was. Powder (rough) is
+            // quiet: the soft crush, the glide and the edge hushed. Ice scrapes: the skid's chatter, pitched up, more
+            // on the edge, with the glide's hiss thinner and higher. Tracked snow and crust chatter: the same layer,
+            // fluttering. Slush is the powder's crush, lower and wetter)
             float snowUp = 30f, snowDown = 25f;
-            Mix(glide, snow * moving * (0.35f + 0.25f * s) * (1f - 0.6f * r.rough) * (1f - 0.5f * r.carve), 0.8f + 0.45f * s, snowUp, snowDown, dt);
-            Mix(carve, snow * moving * Mathf.Pow(r.carve, 1.3f) * 0.75f, 0.85f + 0.3f * s + 0.1f * r.carve, snowUp, 10f, dt);
-            Mix(skid, snow * Mathf.Clamp01(s * 4f) * r.skid * 0.8f, 0.8f + 0.4f * s, snowUp, 12f, dt);
-            Mix(powder, snow * r.rough * Mathf.Clamp01(s * 2f) * (0.4f + 0.4f * s), 0.8f + 0.3f * s, snowUp, snowDown, dt);
+            float flutter = 0.6f + 0.4f * Mathf.Sin(Time.time * 53f) * Mathf.Sin(Time.time * 17f);
+            float scrape = Mathf.Max(r.ice * (0.3f + 0.5f * r.carve), 0.3f * r.chatter * flutter);
+            Mix(glide, snow * moving * (0.35f + 0.25f * s) * (1f - 0.6f * r.rough) * (1f - 0.5f * r.carve) * (1f - 0.3f * r.ice), 0.8f + 0.45f * s + 0.2f * r.ice - 0.12f * r.slush, snowUp, snowDown, dt);
+            Mix(carve, snow * moving * Mathf.Pow(r.carve, 1.3f) * 0.75f * (1f - 0.45f * r.rough), 0.85f + 0.3f * s + 0.1f * r.carve, snowUp, 10f, dt);
+            Mix(skid, snow * Mathf.Clamp01(s * 4f) * Mathf.Max(r.skid * 0.8f, scrape * 0.7f), 0.8f + 0.4f * s + 0.35f * r.ice * (1f - r.skid), snowUp, 12f, dt);
+            Mix(powder, snow * r.rough * Mathf.Clamp01(s * 2f) * (0.4f + 0.4f * s), 0.8f + 0.3f * s - 0.18f * r.slush, snowUp, snowDown, dt);
             if (carve.src != null) carve.src.panStereo = Mathf.Clamp(r.pan * 0.3f, -0.3f, 0.3f);
 
             Mix(grindRail, r.grind == 1 ? 0.55f : 0f, 0.9f + 0.3f * s, 40f, 20f, dt);

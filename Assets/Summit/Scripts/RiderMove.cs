@@ -81,6 +81,37 @@ namespace Summit
         public static float LeanSpring = 30f;                        // how fast the body gets onto its edge (rad/s)
         public static float LeanAccel = 60f;                         // m/s^2 of sideways pull that puts the body fully over (the rest of the lean is the drag itself)
 
+        // ---- the snow underfoot (Surfaces): what it is under the board, and what that does to the board's own numbers.
+        //      It scales the snow's drag, and how soon the sideways speed the finger asks for is the board's to swing
+        //      onto (SideStep); it never moves the line, and the line holds what it has as tightly on ice as on
+        //      corduroy. Kept through an air (a hop steers as on the snow it left)
+        /// <summary>The snow under the board (the last it rode, while it is in the air).</summary>
+        public SnowMix Underfoot { get; private set; }
+        /// <summary>How that snow rides (Surfaces.Feel).</summary>
+        public SnowFeel SnowFeel => snowFeel;
+        SnowFeel snowFeel = Summit.SnowFeel.Firm;
+        float sideWant;   // the sideways speed the line is swinging onto now (m/s): the finger's, a moment behind it on snow with less grip
+
+        /// <summary>The sideways speed the finger asks for now (m/s, + to the right of straight).</summary>
+        float SideAsked() => Steer * SideSpeed * feel.TurnRate * Mathf.Clamp(TurnScale, 0.25f, 4f) * Mathf.Lerp(1f, 0.7f, Tuck);
+
+        /// <summary>
+        /// One step of the sideways speed the board is given to swing onto. On corduroy it is the finger's own, at once
+        /// (the board's own quickness is all there is). Snow with less grip gives it later and no faster than its edge
+        /// can pull: ice comes round in a quarter of a second, not a twelfth. That is all "less grip" is: what the board
+        /// has already been given it holds exactly as on corduroy, whatever the snow's tilt or the run does under it.
+        /// </summary>
+        void SideStep(float dt, bool free)
+        {
+            float ask = SideAsked();
+            if (free || (snowFeel.response <= 1.001f && snowFeel.pull >= 0.999f)) { sideWant = ask; return; }
+            float scale = Mathf.Clamp(TurnScale, 0.25f, 4f), root = Mathf.Sqrt(scale);
+            float edge = Mathf.Max(0.05f, feel.Grip) * Mathf.Max(1f, scale);
+            float most = Mathf.Min(SideAccel * root * feel.TurnResponse, GripLimit * edge) * snowFeel.pull;
+            float rate = (ask - sideWant) / Mathf.Max(SwingTime(1f) * (snowFeel.response - 1f), dt);
+            sideWant += Mathf.Clamp(rate, -most, most) * dt;
+        }
+
         bool groundKnown;   // groundVy is last step's: the snow's own vertical speed under the board then
         /// <summary>The snow's surface slope along the path this step: its rise per metre gone (the test tools).</summary>
         public float PathSlope { get; private set; }
@@ -106,10 +137,17 @@ namespace Summit
         /// in the air).</summary>
         float WantLine(float sp)
         {
-            float scale = Mathf.Clamp(TurnScale, 0.25f, 4f);
-            float side = Steer * SideSpeed * feel.TurnRate * scale * Mathf.Lerp(1f, 0.7f, Tuck);
+            float side = sideWant;
             float maxSin = Mathf.Sin(SideAngle);
             return Mathf.Clamp(Straight + Mathf.Asin(Mathf.Clamp(side / Mathf.Max(sp, 1f), -maxSin, maxSin)), -MaxHeading, MaxHeading);
+        }
+
+        /// <summary>The time constant of the line's swing onto the finger's (s), on snow that answers `response` times as slowly as corduroy.</summary>
+        float SwingTime(float response)
+        {
+            float scale = Mathf.Clamp(TurnScale, 0.25f, 4f), root = Mathf.Sqrt(scale);
+            float edge = Mathf.Max(0.05f, feel.Grip) * Mathf.Max(1f, scale);
+            return (SideResponse / (feel.TurnResponse * root) + 0.5f / (Grip * edge)) * response;
         }
 
         /// <summary>One step of the line swinging onto the finger's, on the snow (or in a hop off it): the new line, and the rate it swung at.</summary>
@@ -117,7 +155,7 @@ namespace Summit
         {
             float scale = Mathf.Clamp(TurnScale, 0.25f, 4f), root = Mathf.Sqrt(scale);
             float edge = Mathf.Max(0.05f, feel.Grip) * Mathf.Max(1f, scale);
-            float tau = SideResponse / (feel.TurnResponse * root) + 0.5f / (Grip * edge);
+            float tau = SwingTime(1f);
             float pull = Mathf.Min(SideAccel * root * feel.TurnResponse, GripLimit * edge);
             float cap = Mathf.Min(MaxYawRate * root, pull / Mathf.Max(sp, MinCarveSpeed));
             yaw = Mathf.Clamp((WantLine(flat) - line) / Mathf.Max(tau, dt), -cap, cap);
@@ -146,6 +184,11 @@ namespace Summit
             float sp = vIn.magnitude;
             float flat = Mathf.Sqrt(v.x * v.x + v.z * v.z);
             float line = flat > 0.5f ? Mathf.Clamp(Mathf.Atan2(v.x, v.z), -MaxHeading, MaxHeading) : Heading;
+
+            // ---- the snow underfoot here (a roof and bare rock are their own thing)
+            if (roofHere == null && !OnRock) { Underfoot = Surfaces.Surface(p.x, p.z); snowFeel = Surfaces.Feel(Underfoot, sp); }
+            else { Underfoot = default; snowFeel = Summit.SnowFeel.Firm; }
+            SideStep(dt, false);
 
             // ---- 1. the line: the finger's. Straight is straight down the mountain; crawling (out of a landing in a
             //      hollow, on a valley's wall) it is the snow's own fall line under the board instead (smoothed; a
@@ -227,8 +270,10 @@ namespace Summit
                 else if (sp < 12f) Flow = Mathf.Max(0f, Flow - dt / 3f);
                 // (momentum carries you up to about 170 km/h; past that the air takes over again, so it never runs away)
                 float flowK = Mathf.Lerp(1f, FlowDrag, Flow * Mathf.Clamp01((52f - sp) / 8f));
+                // (the snow underfoot: its own friction, and what the board has to plough through)
                 float drag = (Tube ? DragOpen * 1.15f : Mathf.Lerp(DragOpen, DragTuck, Tuck)) * feel.Drag * (BoostTime > 0f ? 0.6f : 1f) * flowK * sp * sp
-                           + (Tube ? Friction * 1.3f : Friction + (OnRock ? RockFriction : 0f)) * G * n.y;
+                           + snowFeel.drag * sp * sp
+                           + (Tube ? Friction * 1.3f * snowFeel.friction : Friction * snowFeel.friction + (OnRock ? RockFriction : 0f)) * G * n.y;
                 sp -= Mathf.Min(sp, drag * dt);
             }
             float turned = Mathf.Abs(yaw) * dt;
@@ -241,6 +286,8 @@ namespace Summit
                 bool uphill = slopeS > 0.02f && sinP / slopeS > 0.05f;
                 if (!uphill) sp += 6f * dt;
             }
+            // (tracked snow, crust and ice chatter under the board: the look and the sound only)
+            if (snowFeel.chatter > 0.05f && sp > 6f && !Tube) wobble = Mathf.Max(wobble, 0.13f * snowFeel.chatter);
             if (OnRock && sp > 3f)
             {
                 wobble = Mathf.Max(wobble, 0.3f);   // (the body chatters: the look only)

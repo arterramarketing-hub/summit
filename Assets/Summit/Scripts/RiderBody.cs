@@ -18,6 +18,7 @@ namespace Summit
         SnowTrail trail;
         ParticleSystem spray;
         ParticleSystem.EmissionModule sprayEm, wakeEm;
+        float puffShown = 1f;   // the spray's size for the snow underfoot, as last set
         ParticleSystem wake;
         Vector3 normal = Vector3.up;
         float lean, lastTravel, yawRate, crashSpin;
@@ -1128,23 +1129,35 @@ namespace Summit
             bool tracking = rider.Running && !rider.Crashed && !rider.Airborne && !rider.Grinding && rider.Undercut < 0.05f;
             bool onSkis = RidingGear && Ride == RideKind.Skis;        // two narrow tracks instead of the one trench
             bool onSled = RidingGear && Ride == RideKind.Toboggan;    // a wide flat track, and the dragged heel's scuff beside it
-            FeedSideTracks(p + Vector3.down * Rider.R, tracking, Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Slope.Rough(p.x, p.z)), dt);
+            FeedSideTracks(p + Vector3.down * Rider.R, tracking, Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Mathf.Clamp01(rider.Underfoot.powder + 0.5f * rider.Underfoot.slush)) * (1f - 0.3f * rider.Underfoot.ice), dt);
             trail.Feed(p + Vector3.down * Rider.R, normal, rider.TravelHeading, tracking && !onSkis,
-                       (Tube ? 1.25f : Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Slope.Rough(p.x, p.z))) * (onSled ? 1.6f : 1f),
+                       (Tube ? 1.25f : Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Mathf.Clamp01(rider.Underfoot.powder + 0.5f * rider.Underfoot.slush)) * (1f - 0.3f * rider.Underfoot.ice)) * (onSled ? 1.6f : 1f),
                        Tube || onSled ? 0f : rider.Lean / Rider.MaxLean, Tube ? 0.5f : onSled ? rider.Skid * 0.3f : rider.Skid, dt);   // a tube leaves a wide, shallow chute
 
             // bow wave off the nose: more with speed, deeper snow and when the edge bites
             bool riding = rider.Running && !rider.Crashed && !rider.Airborne && !rider.Grinding;
+            // (the snow underfoot, Surfaces: powder throws the most snow, in bigger puffs, and slush a heavy wet spray;
+            // ice gives up a few fine chips and no wake)
+            var snow = rider.Underfoot;
+            float deep = Mathf.Clamp01(snow.powder + 0.5f * snow.slush), hard = snow.ice;
             bowEm.rateOverTime = riding && rider.Speed > 3f && !Tube
-                ? rider.Speed * (4.5f + 4f * Slope.Rough(p.x, p.z)) * (1f + 1.2f * Mathf.Abs(rider.Lean) / Rider.MaxLean + rider.Skid)
+                ? rider.Speed * (4.5f + 4f * deep) * (1f - 0.7f * hard) * (1f + 1.2f * Mathf.Abs(rider.Lean) / Rider.MaxLean + rider.Skid)
                 : 0f;
+            float puff = 1f + 0.6f * snow.powder + 0.2f * snow.slush - 0.5f * hard;
+            if (Mathf.Abs(puff - puffShown) > 0.02f)
+            {
+                puffShown = puff;
+                var sm = spray.main; sm.startSize = new ParticleSystem.MinMaxCurve(0.12f * puff, 0.45f * puff);
+                var wm = wake.main; wm.startSize = new ParticleSystem.MinMaxCurve(0.4f * puff, 0.9f * puff);
+                var bm = bow.main; bm.startSize = new ParticleSystem.MinMaxCurve(0.12f * puff, 0.42f * puff);
+            }
 
             GrindSparks(p, dt);   // a few sparks off a rail (RiderBodySparks)
             sprayEm.rateOverTime = rider.Running && !rider.Crashed && !rider.Airborne
-                ? rider.Carve * rider.Speed * 7f + Mathf.Max(0f, rider.Speed - 22f) * 1.5f + (rider.BoostTime > 0f ? 60f : 0f)
+                ? (rider.Carve * rider.Speed * 7f + Mathf.Max(0f, rider.Speed - 22f) * 1.5f) * (1f + 1.5f * snow.powder + 0.6f * snow.slush - 0.6f * hard) + (rider.BoostTime > 0f ? 60f : 0f)
                 : 0f;
 
-            wakeEm.rateOverTime = rider.Running && !rider.Crashed && !rider.Airborne ? Mathf.Clamp(rider.Speed * 2.2f, 0f, 80f) : 0f;
+            wakeEm.rateOverTime = rider.Running && !rider.Crashed && !rider.Airborne ? Mathf.Clamp(rider.Speed * 2.2f, 0f, 80f) * (0.7f + 1.1f * snow.powder) * (1f - 0.85f * hard) * (1f - 0.6f * snow.slush) : 0f;
 
             // shield bubble: fuller with each shield held, flashes when it saves you
             shieldFlash = Mathf.MoveTowards(shieldFlash, 0f, dt * 2f);

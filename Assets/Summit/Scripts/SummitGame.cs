@@ -1069,9 +1069,14 @@ namespace Summit
             bool onSnow = state == State.Riding && !rider.Airborne && !rider.Crashed;
             bool riding = state == State.Riding;
             Vector3 rpos = rider.transform.position;
+            // the snow underfoot (Surfaces): the day's part of it, and the map the terrain draws it from kept painted
+            // round the rider (round the camera, away from the run)
+            Surfaces.Step(riding ? rpos : chase.transform.position, riding ? rider.RunNow : 0f, dt);
+            var snowNow = rider.Underfoot;
             audioFx.Set(new RideSound
             {
-                speed = rider.Speed / 36f, carve = rider.Tube ? 0f : rider.Carve, skid = rider.Tube ? 0.15f * Mathf.Clamp01(rider.Speed / 20f) : rider.Skid, rough = Slope.Rough(rpos.x, rpos.z),
+                speed = rider.Speed / 36f, carve = rider.Tube ? 0f : rider.Carve, skid = rider.Tube ? 0.15f * Mathf.Clamp01(rider.Speed / 20f) : rider.Skid,
+                rough = Mathf.Clamp01(snowNow.powder + 0.6f * snowNow.slush), ice = snowNow.ice, chatter = rider.SnowFeel.chatter, slush = snowNow.slush,
                 avalanche = riding ? slide.Closeness(rider) : 0f, pan = rider.Steer,
                 muffle = state == State.Buried ? (endBuried ? 1f : 0.45f) : rider.Crashed ? 0.3f : 0f,
                 onSnow = onSnow && !rider.Grinding, air = riding && rider.Airborne, riding = riding,
