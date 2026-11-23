@@ -66,11 +66,12 @@ public static class CliBuild
             target = BuildTarget.iOS,
             options = BuildOptions.None
         });
-        // (a build that lacks shader variants the game draws with comes out blank or wrong on the device, not here:
+        // (a build that lacks shader variants the game draws with comes out blank or wrong on the device, and one with
+        // a shader that failed for Metal, or that leaves out a shader the game looks up, draws magenta there; not here:
         // InstancedAssets checks what went in)
         if (report.summary.result == BuildResult.Succeeded && !InstancedAssets.Verified)
         {
-            Debug.LogError("CLIBUILD result: Failed (shader variants missing from the build, see Logs/shader-variants.txt):\n" + InstancedAssets.Problems);
+            Debug.LogError("CLIBUILD result: Failed (shaders or shader variants the game needs missing from the build, or failed; see Logs/shader-variants.txt):\n" + InstancedAssets.Problems);
             EditorApplication.Exit(1);
             return;
         }

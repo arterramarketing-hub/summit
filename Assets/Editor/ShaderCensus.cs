@@ -19,13 +19,15 @@ using Summit;
 /// every player build writes): missing ones would be blank (instanced) or wrong (keywords) on the device.
 /// SUMMIT_CENSUS_FIX=1 writes a keeper material (Resources/ShaderKeep) for each one missing.
 ///
+/// On the way it also looks for anything drawn magenta (PurpleWatch.Scan every 2 s).
+///
 /// Batch, without -quit (it enters play mode): -executeMethod ShaderCensus.Run. Writes Logs/shader-census.txt. Exit 1
-/// if anything is missing (before keepers are written).
+/// if anything is missing (before keepers are written) or was drawn magenta.
 /// </summary>
 [InitializeOnLoad]
 public static class ShaderCensus
 {
-    const string Phase = "SummitCensusPhase", Store = "Logs/shader-census-seen.txt";
+    const string Phase = "SummitCensusPhase", Store = "Logs/shader-census-seen.txt", PurpleStore = "Logs/shader-census-purple.txt";
     const BindingFlags NP = BindingFlags.NonPublic | BindingFlags.Instance;
 
     static ShaderCensus()
@@ -46,7 +48,8 @@ public static class ShaderCensus
 
     class Seen { public string shader, keywords, example; public bool instanced; public int count; }
     static readonly Dictionary<string, Seen> seen = new Dictionary<string, Seen>();
-    static double t0 = -1, nextLook;
+    static readonly SortedSet<string> purple = new SortedSet<string>();
+    static double t0 = -1, nextLook, nextPurple;
     static int step;
     static readonly HashSet<int> looked = new HashSet<int>();
 
@@ -57,6 +60,7 @@ public static class ShaderCensus
         if (t0 < 0) { t0 = now; nextLook = now; Debug.Log("CENSUS playing"); }
         double t = now - t0;
         if (now >= nextLook) { Look(); nextLook = now + 0.5; }
+        if (now >= nextPurple) { foreach (var l in PurpleWatch.Scan(out _, out _)) purple.Add(l); nextPurple = now + 2.0; }
         var game = Object.FindFirstObjectByType<SummitGame>();
         if (game == null) return;
         var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
@@ -111,7 +115,8 @@ public static class ShaderCensus
     {
         Directory.CreateDirectory("Logs");
         File.WriteAllLines(Store, seen.Values.Select(s => $"{s.shader}\t{s.keywords}\t{s.instanced}\t{s.count}\t{s.example}"));
-        Debug.Log($"CENSUS {seen.Count} shader/keyword combinations seen");
+        File.WriteAllLines(PurpleStore, purple);
+        Debug.Log($"CENSUS {seen.Count} shader/keyword combinations seen, {purple.Count} things magenta");
     }
 
     // ---------------------------------------------------------------- the report
@@ -149,6 +154,11 @@ public static class ShaderCensus
             sb.AppendLine($"CENSUS {f[0]} [{(kw.Length > 0 ? string.Join(" ", kw) : "-")}]{(inst ? " instanced" : "")}: {f[3]} materials (e.g. {f[4]}): {verdict}");
         }
         sb.AppendLine($"CENSUS {missing} combinations missing from the build");
+        // and anything that was drawn magenta on the way (PurpleWatch: an empty material slot, a missing or failed
+        // shader, one this GPU cannot run, one with no pass URP draws)
+        var magenta = File.Exists(PurpleStore) ? File.ReadAllLines(PurpleStore) : new string[0];
+        foreach (var l in magenta) sb.AppendLine("CENSUS " + l);
+        sb.AppendLine($"CENSUS {magenta.Length} things drawn magenta");
         if (fix)
         {
             // as few keepers as do it: one plain instanced material for a shader a build keeps no instanced variant of
@@ -165,7 +175,7 @@ public static class ShaderCensus
         }
         Debug.Log(sb.ToString());
         File.WriteAllText("Logs/shader-census.txt", sb.ToString());
-        EditorApplication.Exit(missing == 0 || fix ? 0 : 1);
+        EditorApplication.Exit((missing == 0 || fix) && magenta.Length == 0 ? 0 : 1);
     }
 
     /// <summary>

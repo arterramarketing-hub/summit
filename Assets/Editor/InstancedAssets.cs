@@ -34,6 +34,15 @@ using UnityEngine.Rendering;
 ///   Logs/shader-variants.txt lists them per shader, and the build is checked: every keeper's variant, and an
 ///   instanced variant of every project shader that declares instancing, must be in it. If not, the problems are
 ///   logged as errors (SHADERKEEP) and CliBuild reports the build as failed.
+///
+/// The same check also fails a build that would draw things magenta (Unity's error shader) on the device (purplefix):
+/// - a shader that failed to compile for the build's graphics API ("Shader error in ..." during the build, or errors
+///   on the shader for Metal);
+/// - a shader the build takes in (in a Resources folder, or used by a material it takes in) with no variant in it
+///   (e.g. none of its SubShaders runs on Metal);
+/// - a name the game's own scripts look a shader up by (Shader.Find("..."), Resources.Load&lt;Shader&gt;("...")) that is
+///   not in the build: Shader.Find gives null in a player for a shader the build left out (the editor finds them all).
+/// The game itself can look for magenta things while it runs: SUMMIT_PURPLE=1 (Summit.PurpleWatch).
 /// </summary>
 public class InstancedAssets : IPreprocessBuildWithReport, IPostprocessBuildWithReport, IPreprocessShaders
 {
@@ -44,6 +53,10 @@ public class InstancedAssets : IPreprocessBuildWithReport, IPostprocessBuildWith
     public void OnPreprocessBuild(BuildReport report)
     {
         Record.Clear();
+        lock (ShaderErrors) ShaderErrors.Clear();
+        Application.logMessageReceivedThreaded -= Listen;
+        Application.logMessageReceivedThreaded += Listen;
+        target = report.summary.platform;
         Verified = false; Problems = "not checked";
         // (SUMMIT_KEEP_OFF=1: no keepers made, to see what a build without them lacks)
         if (System.Environment.GetEnvironmentVariable("SUMMIT_KEEP_OFF") != "1") Ensure();
@@ -51,10 +64,11 @@ public class InstancedAssets : IPreprocessBuildWithReport, IPostprocessBuildWith
 
     public void OnPostprocessBuild(BuildReport report)
     {
+        Application.logMessageReceivedThreaded -= Listen;
         WriteReport("Logs/shader-variants.txt", "Logs/shader-variants-full.txt");
         Verified = Verify(out Problems);
-        if (Verified) Debug.Log("SHADERKEEP every keeper's variant and every instanced variant is in the build");
-        else Debug.LogError("SHADERKEEP the build lacks shader variants the game needs:\n" + Problems);
+        if (Verified) Debug.Log("SHADERKEEP every keeper's variant and every instanced variant is in the build, every shader the game looks up or takes in is in it, and none failed to compile");
+        else Debug.LogError("SHADERKEEP the build lacks shaders or shader variants the game needs, or has shaders that failed:\n" + Problems);
     }
 
     /// <summary>Did the last build keep everything it should (Verify, after it)?</summary>
@@ -304,10 +318,11 @@ public class InstancedAssets : IPreprocessBuildWithReport, IPostprocessBuildWith
     }
 
     /// <summary>After a build: is every keeper's variant in it, and an instanced variant of every project shader that
-    /// declares instancing (and is in the build)?</summary>
+    /// declares instancing (and is in the build)? And nothing that would be magenta on the device (Magenta)?</summary>
     public static bool Verify(out string problems)
     {
         var sb = new StringBuilder();
+        Magenta(Record, sb);
         var keepers = new List<Material>();
         foreach (var g in AssetDatabase.FindAssets("t:Material", new[] { KeepDir })) { var m = AssetDatabase.LoadAssetAtPath<Material>(AssetDatabase.GUIDToAssetPath(g)); if (m != null) keepers.Add(m); }
         var people = AssetDatabase.LoadAssetAtPath<Material>("Assets/Summit/Resources/PeopleLit.mat"); if (people != null) keepers.Add(people);
@@ -323,5 +338,152 @@ public class InstancedAssets : IPreprocessBuildWithReport, IPostprocessBuildWith
         }
         problems = sb.ToString();
         return problems.Length == 0;
+    }
+
+    // ---------------------------------------------------------------- what would be magenta on the device (purplefix)
+
+    static BuildTarget target = BuildTarget.iOS;
+
+    /// <summary>"Shader error in ..." and "... is not supported on this GPU" lines logged during the build (the compile for
+    /// the build's graphics API).</summary>
+    public static readonly List<string> ShaderErrors = new List<string>();
+
+    static void Listen(string condition, string stack, LogType type)
+    {
+        if (condition == null) return;
+        // (a compile error for the build's API, or a shader with no SubShader that runs on it: both magenta there)
+        if (condition.StartsWith("Shader error in") || condition.Contains("shader is not supported on this GPU"))
+            lock (ShaderErrors) ShaderErrors.Add(condition.Split('\n')[0]);
+    }
+
+    static ShaderCompilerPlatform[] Apis(BuildTarget t)
+    {
+        var list = new List<ShaderCompilerPlatform>();
+        foreach (var g in PlayerSettings.GetGraphicsAPIs(t))
+            switch (g)
+            {
+                case GraphicsDeviceType.Metal: list.Add(ShaderCompilerPlatform.Metal); break;
+                case GraphicsDeviceType.Vulkan: list.Add(ShaderCompilerPlatform.Vulkan); break;
+                case GraphicsDeviceType.OpenGLES3: list.Add(ShaderCompilerPlatform.GLES3x); break;
+                case GraphicsDeviceType.Direct3D11: case GraphicsDeviceType.Direct3D12: list.Add(ShaderCompilerPlatform.D3D); break;
+            }
+        if (list.Count == 0) list.Add(ShaderCompilerPlatform.Metal);
+        return list.ToArray();
+    }
+
+    /// <summary>The shaders a build takes in: those under a Resources folder, and those its materials and scenes use.</summary>
+    public static List<Shader> BuildShaders()
+    {
+        var roots = new List<string>();
+        foreach (var g in AssetDatabase.FindAssets("", new[] { "Assets" }))
+        {
+            var path = AssetDatabase.GUIDToAssetPath(g);
+            if (path.Contains("/Resources/") && !AssetDatabase.IsValidFolder(path)) roots.Add(path);
+        }
+        foreach (var sc in EditorBuildSettings.scenes) if (sc.enabled) roots.Add(sc.path);
+        if (!roots.Contains("Assets/Summit/Summit.unity")) roots.Add("Assets/Summit/Summit.unity");
+        var list = new List<Shader>();
+        foreach (var d in AssetDatabase.GetDependencies(roots.ToArray(), true))
+            if (d.EndsWith(".shader")) { var sh = AssetDatabase.LoadAssetAtPath<Shader>(d); if (sh != null && !list.Contains(sh)) list.Add(sh); }
+        foreach (var m in BuildMaterials()) if (!list.Contains(m.shader)) list.Add(m.shader);
+        return list;
+    }
+
+    /// <summary>
+    /// The names the game's own scripts (not Editor ones) look shaders up by: Shader.Find("name") gives the shader's
+    /// name, Resources.Load&lt;Shader&gt;("path") its path in a Resources folder. Lookups by a name worked out in code
+    /// cannot be checked (`loose`).
+    /// </summary>
+    public static List<(string file, int line, string name, bool byPath)> LookedUp(out List<string> loose)
+    {
+        var list = new List<(string, int, string, bool)>();
+        loose = new List<string>();
+        foreach (var f in Directory.GetFiles("Assets", "*.cs", SearchOption.AllDirectories))
+        {
+            string ff = f.Replace('\\', '/');
+            if (ff.Contains("/Editor/")) continue;
+            var lines = File.ReadAllLines(f);
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string l = lines[i];
+                int c = l.IndexOf("//"); if (c >= 0) l = l.Substring(0, c);
+                foreach (Match m in Regex.Matches(l, "Shader\\.Find\\(\\s*(\"([^\"]*)\"|[^)]*)\\)"))
+                    if (m.Groups[2].Success) list.Add((ff, i + 1, m.Groups[2].Value, false)); else loose.Add($"{ff}:{i + 1}: Shader.Find({m.Groups[1].Value})");
+                foreach (Match m in Regex.Matches(l, "Resources\\.Load<Shader>\\(\\s*(\"([^\"]*)\"|[^)]*)\\)"))
+                    if (m.Groups[2].Success) list.Add((ff, i + 1, m.Groups[2].Value, true)); else loose.Add($"{ff}:{i + 1}: Resources.Load<Shader>({m.Groups[1].Value})");
+            }
+        }
+        return list;
+    }
+
+    /// <summary>A shader under a Resources folder at this Resources path (as Resources.Load takes it), or null.</summary>
+    static Shader InResources(string resPath)
+    {
+        foreach (var g in AssetDatabase.FindAssets("t:Shader", new[] { "Assets" }))
+        {
+            var p = AssetDatabase.GUIDToAssetPath(g);
+            int r = p.LastIndexOf("/Resources/");
+            if (r < 0) continue;
+            string rel = p.Substring(r + "/Resources/".Length);
+            if (Path.ChangeExtension(rel, null) == resPath) return AssetDatabase.LoadAssetAtPath<Shader>(p);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Everything a build record shows would be drawn magenta on the device: shaders that failed to compile for the
+    /// build's graphics APIs, shaders the build takes in with no variant in it, and run-time lookups of shaders the build
+    /// left out. Appends a line per problem to `sb`.
+    /// </summary>
+    public static void Magenta(Dictionary<string, Dictionary<string, HashSet<string>>> record, StringBuilder sb)
+    {
+        lock (ShaderErrors) foreach (var e in ShaderErrors.Distinct()) sb.AppendLine("  failed: " + e);
+        var apis = Apis(target);
+        var built = BuildShaders();
+        foreach (var name in record.Keys.OrderBy(x => x))
+        {
+            var sh = Shader.Find(name);
+            if (sh == null) continue;
+            foreach (var api in apis)
+                foreach (var msg in ShaderUtil.GetShaderMessages(sh, api))
+                    if (msg.severity == ShaderCompilerMessageSeverity.Error)
+                        sb.AppendLine($"  {name}: failed to compile for {api}: {msg.message} ({msg.file}:{msg.line})");
+        }
+        foreach (var sh in built)
+        {
+            if (sh == null || record.ContainsKey(sh.name)) continue;
+            string path = AssetDatabase.GetAssetPath(sh);
+            if (!path.StartsWith("Assets/")) continue;   // (URP's and Unity's own: theirs to strip)
+            sb.AppendLine($"  {sh.name}: in the build ({path}) with no variant compiled for it: drawn magenta");
+        }
+        var lookups = LookedUp(out var loose);
+        foreach (var (file, line, name, byPath) in lookups)
+        {
+            if (byPath)
+            {
+                var sh = InResources(name);
+                if (sh == null) sb.AppendLine($"  Resources.Load<Shader>(\"{name}\") ({file}:{line}): no shader at that path in a Resources folder");
+                else if (!record.ContainsKey(sh.name)) sb.AppendLine($"  Resources.Load<Shader>(\"{name}\") ({file}:{line}): {sh.name} has no variant in the build");
+            }
+            else if (!record.ContainsKey(name))
+                sb.AppendLine($"  Shader.Find(\"{name}\") ({file}:{line}): not in the build (null in a player)");
+        }
+        foreach (var u in loose) Debug.LogWarning("SHADERKEEP a shader looked up by a name worked out in code, not checked: " + u);
+    }
+
+    /// <summary>
+    /// The magenta checks against a build record already written (SUMMIT_VARIANTS, default
+    /// Logs/shader-variants-full.txt), without building: -executeMethod InstancedAssets.CheckMagenta. Writes
+    /// Logs/shader-magenta.txt; exit 1 if anything is found.
+    /// </summary>
+    public static void CheckMagenta()
+    {
+        string varPath = System.Environment.GetEnvironmentVariable("SUMMIT_VARIANTS") ?? "Logs/shader-variants-full.txt";
+        var sb = new StringBuilder();
+        Magenta(ReadRecord(varPath), sb);
+        string text = $"MAGENTA against {varPath}: {(sb.Length == 0 ? "nothing" : "\n" + sb)}";
+        File.WriteAllText("Logs/shader-magenta.txt", text + "\n");
+        if (sb.Length == 0) Debug.Log(text); else Debug.LogError(text);
+        EditorApplication.Exit(sb.Length == 0 ? 0 : 1);
     }
 }

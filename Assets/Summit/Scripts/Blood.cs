@@ -156,7 +156,8 @@ namespace Summit
             mesh.MarkDynamic();
 
             var sh = Resources.Load<Shader>("Blood/BloodSnow");
-            mat = new Material(sh != null ? sh : Shader.Find("Universal Render Pipeline/Unlit")) { name = "BloodSnow" };
+            // (a fallback the player build has: in a player Shader.Find gives null for a shader the build left out, as URP Unlit is)
+            mat = new Material(sh != null ? sh : Shader.Find("Universal Render Pipeline/Particles/Unlit")) { name = "BloodSnow" };
             mat.SetTexture("_Noise", Noise());
             var dsh = Resources.Load<Shader>("Blood/BloodDecal");
             if (dsh != null) { rockMat = new Material(dsh) { name = "BloodDecal" }; rockMat.SetTexture("_Noise", Noise()); }

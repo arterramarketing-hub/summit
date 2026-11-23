@@ -102,6 +102,11 @@ namespace Summit
         {
             foreach (var o in made) if (o != null) { if (Application.isPlaying) Destroy(o); else DestroyImmediate(o); }
             made.Clear();
+            // and forget what a build keeps to reuse within it (made once, behind `if (x == null)`): Destroy only takes
+            // effect at the end of the frame, so in the Rebuild that follows they still test as alive, were handed to
+            // the new camp, and were gone a moment later: the cable railing, its kerb, the flags and the lodge's path
+            // drawn magenta (an empty material slot) every second camp (purplefix)
+            railMetal = kerbMat = flagMat = paver = null;
         }
         /// <summary>Test tools: how many things the current build made for itself.</summary>
         public int MadeCount => made.Count;

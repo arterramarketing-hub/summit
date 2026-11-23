@@ -723,9 +723,8 @@ namespace Summit
 
         static Material Plain(Color c, float smooth)
         {
-            var sh = Shader.Find("Universal Render Pipeline/Lit");
-            if (sh == null) sh = Shader.Find("Standard");
-            var m = new Material(sh);
+            // (no fallback: the built-in pipeline's "Standard" has no pass URP draws, and a player build leaves it out)
+            var m = new Material(Shader.Find("Universal Render Pipeline/Lit"));
             m.SetColor("_BaseColor", c);
             m.SetColor("_Color", c);
             m.SetFloat("_Smoothness", smooth);
