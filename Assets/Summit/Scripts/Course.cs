@@ -15,7 +15,7 @@ namespace Summit
     /// </summary>
     public static class Course
     {
-        public enum Section { Start, Cruise, Park, Danger, Pipe, Ridge, Band }
+        public enum Section { Start, Cruise, Park, Danger, Pipe, Ridge, Band, Bowl }
         public const float First = 60f, Cycle = 900f;
         /// <summary>The halfpipe is switched off: its stretch of each cycle is open cruising piste instead.</summary>
         public const bool HalfpipeOn = false;
@@ -36,6 +36,7 @@ namespace Summit
             if (u < PipeAt) return Section.Danger;
             if (Ridge.Has(z)) return Section.Ridge;
             if (CliffBand.Has(z)) return Section.Band;
+            if (Bowl.Has(z)) return Section.Bowl;
             if (u < PipeEnd) return HalfpipeOn ? Section.Pipe : Section.Cruise;
             return Section.Cruise;
         }
@@ -96,7 +97,7 @@ namespace Summit
         // Every crack is a straight line in plan (bowed and wandering a little), with its own along (u) and across
         // (w) axes; Opening gives its half-width and the line of its middle at a point along it.
 
-        public static void ResetCaches() { Slope.BeforeChange(); crevFor = int.MinValue; featCache.Clear(); Slope.ForgetDrops(); Cliffs.ForgetLedges(); CliffBand.Forget(); }
+        public static void ResetCaches() { Slope.BeforeChange(); crevFor = int.MinValue; featCache.Clear(); Slope.ForgetDrops(); Cliffs.ForgetLedges(); CliffBand.Forget(); Bowl.Forget(); }
 
         public enum CrevasseKind { Transverse, Chevron, Bergschrund, Splay }
 
@@ -490,6 +491,7 @@ namespace Summit
             if (Ridge.Keep(x, z, margin)) return true;
             if (Cliffs.Keep(x, z, margin)) return true;
             if (CliffBand.Keep(x, z, margin)) return true;
+            if (Bowl.Keep(x, z, margin)) return true;
             return NearFeature(x, z, margin);
         }
 

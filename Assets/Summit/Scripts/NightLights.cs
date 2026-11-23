@@ -204,7 +204,8 @@ namespace Summit
             {
                 var sec = Course.At(z);
                 if (sec == Course.Section.Danger) { Fail("wild"); continue; }   // the glacier stays dark
-                if (sec == Course.Section.Band || CliffBand.Near(z, 20f, out _)) { Fail("band"); continue; }   // (a cliff band's traverse: no poles on its bench)
+                if (sec == Course.Section.Band || CliffBand.Near(z, 20f, out _)) { Fail("band"); continue; }
+                if (sec == Course.Section.Bowl || Bowl.Near(z, 10f, out _)) { Fail("bowl"); continue; }   // (the bowl stays dark: its walls are far off)   // (a cliff band's traverse: no poles on its bench)
                 if (Cliffs.JumpNear(z, 30f, out _)) { Fail("cliff"); continue; }
                 float side = (i & 1) == 0 ? 1f : -1f;
                 for (int k = 0; k < 2; k++, side = -side)

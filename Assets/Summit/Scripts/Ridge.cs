@@ -64,6 +64,7 @@ namespace Summit
         public static Form FormOf(int cycle)
         {
             if (CliffBand.Is(cycle)) return Form.Plain;   // (its stretch is a cliff band's traverse, or an angled ledge, instead)
+            if (Bowl.Of(cycle, out _)) return Form.Plain;   // (or the alpine bowl)
             float h = Slope.Hash01(cycle, 5, 61);
             return h < 0.1f ? Form.Plain : h < 0.32f ? Form.Ridge : h < 0.45f ? Form.RidgeOneSided
                  : h < 0.65f ? Form.Valley : h < 0.78f ? Form.ValleyOneSided : Form.Ledge;

@@ -292,6 +292,7 @@ namespace Summit
             why = "park"; if (Course.At(z) == Course.Section.Park || Course.At(z + 25f) == Course.Section.Park || Course.At(z - 12f) == Course.Section.Park) return false;
             if (Course.PipeWeight(z) > 0f) return false;
             why = "ridge"; if (Ridge.Has(z) || Ridge.Keep(x, z, 4f)) return false;
+            why = "bowl"; if (Bowl.Near(z, 25f, out _)) return false;   // (none in the bowl: its roll-over is blind, its floor run flat out)
             why = "cliff"; if (Cliffs.Keep(x, z, 4f) || Deadly.Below(x, z)) return false;
             why = "kicker"; if (Mathf.Abs(Slope.Kicker(x, z)) > 0.01f || Mathf.Abs(Slope.Kicker(x, z + 18f)) > 0.01f || Mathf.Abs(Slope.Kicker(x, z - 10f)) > 0.01f) return false;
             why = "hamlet"; if (Hamlets.Taken(x, z)) return false;

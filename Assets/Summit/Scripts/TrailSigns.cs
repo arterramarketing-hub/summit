@@ -63,6 +63,7 @@ namespace Summit
                 // run from the section sign, CliffDressing's)
                 if (CliffBand.Of(c, out var band)) Add(band.z0 - 30f, Symbol.DoubleBlack, band.side);
                 if (Cliffs.LedgeOf(c, out var L)) Add(L.Start - 22f, Symbol.Black, -L.side);
+                if (Bowl.Of(c, out var bowl)) Add(bowl.zA - 25f, Symbol.DoubleBlack, 1f);   // (the alpine bowl: its roll-over is blind, its floor 40 degrees)
                 if (Ridge.Built(c))
                 {
                     var f = Ridge.FormOf(c);

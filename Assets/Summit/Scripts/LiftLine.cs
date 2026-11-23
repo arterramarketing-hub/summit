@@ -312,6 +312,7 @@ namespace Summit
             if (k == 0) zt = 40f;                                                         // beside the start
             else if (Ridge.Built(k - 1)) zt = b + Ridge.EndOf(k - 1) + Ridge.FadeAfter - Course.Cycle + 30f;   // below the canyons' foot
             else if (CliffBand.Of(k - 1, out var band)) zt = (band.ledge ? band.End : CliffBand.WideEnd(band)) + 40f;   // below a cliff band's gap and the wide run under it
+            else if (Bowl.Of(k - 1, out var bowl)) zt = bowl.zE + 40f;                     // below the bowl's funnel
             else zt = b - Course.Cycle + 640f;                                            // no ridge above: on up past it
             return zb - zt >= 180f;
         }

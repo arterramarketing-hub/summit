@@ -312,6 +312,7 @@ namespace Summit
             // from below a ridge's canyons (or from where a ridge would start, when the cycle has none) to the cycle's end
             float lateFrom = Ridge.Built(cycle) ? Ridge.EndOf(cycle) + Ridge.FadeAfter + 10f : Course.PipeAt + 10f;
             if (CliffBand.Of(cycle, out var band)) lateFrom = Course.Cycle;   // (none under a cliff band: its wide run, then the next cycle)
+            if (Bowl.Of(cycle, out _)) lateFrom = Course.Cycle;   // (nor in the bowl)
             bool lateFirst = Slope.Hash01(cycle, 7, 93) < 0.5f;
             for (int stretch = 0; stretch < 2; stretch++)
             {

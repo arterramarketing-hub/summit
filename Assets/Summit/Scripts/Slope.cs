@@ -105,7 +105,7 @@ namespace Summit
 
         /// <summary>Half the groomed run's width at z, square to it (B4: narrow through a cliff band's gap and along an angled
         /// ledge, wide open below a band; PisteHalf everywhere else).</summary>
-        public static float Half(float z) => PisteHalf * CliffBand.Width(z);
+        public static float Half(float z) => PisteHalf * CliffBand.Width(z) * Bowl.Width(z);   // (and wall to wall in the alpine bowl: Bowl)
 
         /// <summary>Half the groomed run's width measured along x at z (wider where the run crosses the hill).</summary>
         public static float HalfAt(float z) => Half(z) / Squash(z);
@@ -197,6 +197,7 @@ namespace Summit
             float zs = s * DropSeg;
             if (Course.At(zs) == Course.Section.Pipe || Course.At(zs + DropSeg) == Course.Section.Pipe) return false;
             if (CliffBand.Near(zs + DropSeg * 0.5f, DropSeg * 0.5f + 30f, out _)) return false;   // nor on a cliff band's bench
+            if (Bowl.Near(zs + DropSeg * 0.5f, DropSeg * 0.5f + 20f, out _)) return false;   // nor in the bowl (its roll-over is the drop)
             if (Ridge.Has(zs) || Ridge.Has(zs + DropSeg)) return false;   // a roll-over on a crest would throw you off it
             if (Ridge.InCanyons(zs) || Ridge.InCanyons(zs + DropSeg)) return false;   // (nor a bench under a canyon filling back in: its floor would climb)
             if (Cliffs.JumpNear(zs + DropSeg * 0.5f, DropSeg * 0.5f + 20f, out _)) return false;   // nor run into a jump cliff's bench
@@ -359,6 +360,7 @@ namespace Summit
             float broad = (Noise(x * 0.011f + 50f, z * 0.009f) - 0.5f) * 7f;
             y += broad;
             y = CliffBand.Shape(x, z, y, 0.0035f * a * a / (1f + a * a / 6400f));   // a cliff band's traverse: the run cut level into the hill, the band below it
+            y = Bowl.ShapeAt(x, z, y, a);   // the alpine bowl: a long roll-over into a wide, treeless bowl, and its funnel out
             y += Kicker(x, z);
             y += Cliffs.JumpHeight(x, z) + Cliffs.WallCut(x, z);   // cliffs to jump off, and cliffs to stay away from
             y += Cliffs.LedgeHeight(x, z);   // a staircase of ledges beside the run, once a cycle
