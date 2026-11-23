@@ -12,7 +12,10 @@ using Summit;
 /// - in a big air: three single taps while holding a spin, a double tap;
 /// - on a rail: a deliberate switch-up, then a single tap and a double tap with the finger held at full lock.
 /// Each line prints what fired: jumps off the snow, pops off a rail, grab steps, switch-ups. Lines start INPUT;
-/// expectations that fail are marked "!!" and counted.
+/// Then the camp's walk stick (CampInput, fed made-up fingers on an iPhone-sized screen): it stays the thumb's until
+/// it lifts, past the rim at full strength with the base following, through other fingers' taps, buttons and the
+/// look stick, through a dropped frame, from the station button, and nothing after it lifts.
+/// /// expectations that fail are marked "!!" and counted.
 ///
 /// Run: Unity -batchmode -nographics -quit -projectPath . -executeMethod InputTest.Run -logFile input.log
 /// </summary>
@@ -56,6 +59,8 @@ public static class InputTest
                     Air(style, tilt);
                     Rail(style, tilt);
                 }
+            Debug.Log("INPUT ==== CAMP walk stick");
+            CampStick();
             Debug.Log(fails == 0 ? $"INPUT PASS ({checks} checks)" : $"INPUT FAIL ({fails} of {checks} checks)");
         }
         catch (System.Exception e) { Debug.LogError("INPUT exception " + e); }
@@ -251,5 +256,87 @@ public static class InputTest
             onRailWatch = false;
             for (float t = 0f; t < 3f && (r.Grinding || r.Airborne); t += Dt) Step(1, lockPos);
         }
+    }
+
+    // ---------------------------------------------------------------- the camp's walk stick
+
+    static void CampStick()
+    {
+        const float w = 1170f, h = 2532f, cdt = 1f / 60f;   // an iPhone's screen, in pixels
+        // the menus up top, the station button low in the middle (as the camp's are)
+        string Hit(Vector2 p) => p.y > h - 220f && p.x > w - 450f ? "missions" : (p.y > 230f && p.y < 370f && Mathf.Abs(p.x - w * 0.5f) < 330f ? "context" : null);
+        var ci = new CampInput();
+        var list = new List<CampInput.Touch>();
+        bool panel = false;
+        void Frame(params (int id, Vector2 p)[] fs) { list.Clear(); foreach (var f in fs) list.Add(new CampInput.Touch(f.id, f.p)); ci.Step(list, cdt, w, h, Hit, panel); }
+        float R() => ci.Radius;
+        string Got() => $"move ({ci.Move.x:0.00},{ci.Move.y:0.00}) |{ci.Move.magnitude:0.00}| shown {ci.MoveShown}, fingers {ci.Count}, last {ci.LastGesture}";
+        var a = new Vector2(400f, 700f);
+
+        // the thumb down and dragged straight up past the rim, three times over: the base follows, full strength
+        Frame((1, a));
+        for (int f = 1; f <= 30; f++) Frame((1, a + Vector2.up * R() * 3f * f / 30f));
+        var thumb = a + Vector2.up * R() * 3f;
+        Expect("camp: dragged 3 radii past the rim, still the stick", ci.MoveShown && ci.Move.magnitude > 0.99f && ci.Move.y > 0.99f, Got());
+        Expect("camp: the base followed the thumb to the rim", Mathf.Abs((ci.MovePos - ci.MoveOrigin).magnitude - R()) < 1f && ci.MoveOrigin.y > a.y + R() * 1.9f, $"base {ci.MoveOrigin}, thumb {ci.MovePos}, radius {R():0}");
+        // exactly at the rim, sideways: full strength
+        var side = ci.MoveOrigin + Vector2.right * R();
+        Frame((1, side));
+        Expect("camp: at the rim, full strength", ci.Move.magnitude > 0.99f, Got());
+        thumb = side;
+
+        // another finger taps the open snow, then a button, then holds and drags (the look stick): the walk holds
+        bool held = true; bool tapped = false, button = false, looked = false;
+        for (int f = 0; f < 6; f++) { Frame((1, thumb), (2, new Vector2(900f, 1500f))); held &= ci.Move.magnitude > 0.99f; }
+        Frame((1, thumb)); tapped = ci.Tapped; held &= ci.Move.magnitude > 0.99f;
+        Frame((1, thumb), (3, new Vector2(w - 200f, h - 100f))); button = ci.Button == "missions"; held &= ci.Move.magnitude > 0.99f;
+        Frame((1, thumb));
+        for (int f = 0; f < 40; f++) { Frame((1, thumb), (4, new Vector2(800f + f * 6f, 1400f))); held &= ci.Move.magnitude > 0.99f; looked |= ci.LookShown; }
+        Frame((1, thumb)); held &= ci.Move.magnitude > 0.99f;
+        Expect("camp: a tap, a button, the look stick: none takes the walk", held && tapped && button && looked, $"held {held}, tap {tapped}, button {button}, look {looked}; {Got()}");
+
+        // the phone drops the touch for a frame and it comes back (a new touch) by the same spot: still walking
+        Frame();
+        bool dipped = ci.Move == Vector2.zero;
+        Frame((5, thumb + new Vector2(6f, -4f)));
+        Expect("camp: a touch dropped a frame picks the stick up again", dipped && ci.MoveShown && ci.Move.magnitude > 0.97f && !ci.Tapped, Got());
+        for (int f = 0; f < 20; f++) Frame((5, thumb + new Vector2(6f, -4f)));
+
+        // let go: nothing walks, nothing stays bound, and a quick tap afterwards is a tap (a jump), not a walk
+        Frame();
+        bool gone = ci.Move == Vector2.zero && !ci.MoveShown && ci.Count == 0 && !ci.Tapped;
+        bool stillGone = true;
+        for (int f = 0; f < 30; f++) { Frame(); stillGone &= ci.Move == Vector2.zero && !ci.MoveShown; }
+        Expect("camp: lifted, it lets go at once and stays let go", gone && stillGone, Got());
+        bool tap2 = false; bool walked = false;
+        for (int f = 0; f < 5; f++) { Frame((6, thumb)); walked |= ci.Move != Vector2.zero; }
+        Frame(); tap2 = ci.Tapped;
+        Expect("camp: a quick tap after the walk is a tap", tap2 && !walked, Got());
+
+        // a thumb that lands on the station button and drags off walks (and doesn't press it)
+        for (int f = 0; f < 30; f++) Frame();
+        var btn = new Vector2(w * 0.5f, 300f);
+        Frame((7, btn));
+        for (int f = 1; f <= 20; f++) Frame((7, btn + Vector2.up * R() * 1.5f * f / 20f));
+        bool walks = ci.MoveShown && ci.Move.magnitude > 0.99f;
+        Frame();
+        Expect("camp: a drag from the station button walks", walks && !ci.ContextTapped, Got());
+        // (a tap on it still presses it)
+        for (int f = 0; f < 30; f++) Frame();
+        Frame((8, btn)); Frame((8, btn)); Frame();
+        Expect("camp: a tap on the station button still presses it", ci.ContextTapped, Got());
+
+        // a panel opening mid-walk: the thumb keeps its stick (the camp stands still while the panel is up), and
+        // walks again when it closes; a finger put down on the panel never walks
+        for (int f = 0; f < 30; f++) Frame();
+        Frame((9, a)); for (int f = 1; f <= 10; f++) Frame((9, a + Vector2.up * R() * f / 10f));
+        panel = true; for (int f = 0; f < 10; f++) Frame((9, a + Vector2.up * R()), (10, new Vector2(600f, 1200f)));
+        bool bound = ci.Move.magnitude > 0.99f;
+        // closed: the thumb walks again; the finger put down on the panel, now dragged on the open snow, doesn't
+        panel = false;
+        bool again = true;
+        for (int f = 0; f < 20; f++) { Frame((9, a + Vector2.up * R()), (10, new Vector2(600f + f * 15f, 1200f))); again &= ci.Move.magnitude > 0.99f && !ci.LookShown; }
+        Frame();
+        Expect("camp: through a panel the thumb keeps its stick", bound && again && ci.Count == 0, $"bound {bound}, again {again}; {Got()}");
     }
 }

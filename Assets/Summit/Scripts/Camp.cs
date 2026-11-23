@@ -1406,6 +1406,7 @@ namespace Summit
             // a finger already down (the tap on TO CAMP or < CAMP that brought you here) is not a walk or a tap here:
             // ignore it until it lifts
             input.IgnoreCurrent(Touches());
+            EdgeGestures(true);
             moveKind = 0; moveT = 0f; jumpY = 0f; camPitch = 0f; lookRest = 99f;
             body.CampPose = this;   // sitting at the fire, a mug in hand (CampFire.cs)
             if (alyssa != null) alyssa.enabled = true;   // (still while you're out on the mountain: nothing to pose)
@@ -1425,6 +1426,26 @@ namespace Summit
             CampShadows(false);
             if (stepPool != null) { foreach (var src in stepPool) src.Stop(); stepVol = 0f; }
             if (body != null) body.SetWalking(false);
+            EdgeGestures(false);
+        }
+
+#if UNITY_IOS && !UNITY_EDITOR
+        UnityEngine.iOS.SystemGestureDeferMode gesturesWere;
+        bool gesturesHeld;
+#endif
+        /// <summary>
+        /// In camp the walk stick floats wherever the thumb lands, often down by the bottom edge: there iOS holds the
+        /// touch back for its own home swipe and may take it away mid-walk. So in camp the edges are the game's (a
+        /// swipe in from an edge goes to the game; a second one still goes home), and as they were when you leave.
+        /// </summary>
+        void EdgeGestures(bool camp)
+        {
+#if UNITY_IOS && !UNITY_EDITOR
+            if (camp == gesturesHeld) return;
+            gesturesHeld = camp;
+            if (camp) { gesturesWere = UnityEngine.iOS.Device.deferSystemGesturesMode; UnityEngine.iOS.Device.deferSystemGesturesMode = UnityEngine.iOS.SystemGestureDeferMode.All; }
+            else UnityEngine.iOS.Device.deferSystemGesturesMode = gesturesWere;
+#endif
         }
 
         /// <summary>A jump: a crouch, the push off, the air, and a landing that soaks it up. Not mid-jump or mid-roll.</summary>
@@ -1923,8 +1944,8 @@ namespace Summit
             }
             Look(input.Look + padLook, dt);
             lookRest = input.Look.sqrMagnitude > 0.0025f ? 0f : lookRest + dt;
-            ui.SetStick(input.MoveShown && !ui.PanelOpen, input.MoveOrigin, input.MovePos);
-            ui.SetLookStick(input.LookShown && !ui.PanelOpen, input.LookOrigin, input.LookPos);
+            ui.SetStick(input.MoveShown && !ui.PanelOpen, input.MoveOrigin, input.MovePos, input.Radius);
+            ui.SetLookStick(input.LookShown && !ui.PanelOpen, input.LookOrigin, input.LookPos, input.Radius);
             var stick = ui.PanelOpen ? Vector2.zero : Vector2.ClampMagnitude(input.Move + padMove + Keys(), 1f);
             if (HoldingMug) stick = Vector2.ClampMagnitude(stick, 0.9f);   // a full mug: you walk, you don't run
             Showcase = ui.PanelOpen && ui.ShopTab == 1;

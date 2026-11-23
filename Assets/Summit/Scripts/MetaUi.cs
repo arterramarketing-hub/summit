@@ -188,27 +188,36 @@ namespace Summit
         }
 
         /// <summary>The camera stick under the right thumb (screen pixels), tinted so the two sticks read apart.</summary>
-        public void SetLookStick(bool show, Vector2 origin, Vector2 pos)
+        public void SetLookStick(bool show, Vector2 origin, Vector2 pos, float radiusPx = 0f)
         {
             if (lookRing.gameObject.activeSelf != show) { lookRing.gameObject.SetActive(show); lookKnob.gameObject.SetActive(show); }
             if (!show) return;
             var cr = (RectTransform)transform;
             RectTransformUtility.ScreenPointToLocalPointInRectangle(cr, origin, UiCam, out Vector2 o);
             RectTransformUtility.ScreenPointToLocalPointInRectangle(cr, pos, UiCam, out Vector2 k);
-            float r = 150f;
+            float r = StickR(radiusPx);
             lookRing.anchoredPosition = o; lookRing.sizeDelta = Vector2.one * r * 2f;
             lookKnob.anchoredPosition = o + Vector2.ClampMagnitude(k - o, r); lookKnob.sizeDelta = Vector2.one * r * 0.9f;
         }
 
+        /// <summary>A stick's ring radius on the canvas: the input's throw (screen pixels) when given, so the knob meets
+        /// the rim just as the stick reaches full strength.</summary>
+        float StickR(float radiusPx)
+        {
+            if (radiusPx <= 0f) return 150f;
+            var cv = GetComponent<Canvas>();
+            return radiusPx / Mathf.Max(0.01f, cv != null ? cv.scaleFactor : 1f);
+        }
+
         /// <summary>The walk stick under the thumb (screen pixels).</summary>
-        public void SetStick(bool show, Vector2 origin, Vector2 pos)
+        public void SetStick(bool show, Vector2 origin, Vector2 pos, float radiusPx = 0f)
         {
             if (stickRing.gameObject.activeSelf != show) { stickRing.gameObject.SetActive(show); stickKnob.gameObject.SetActive(show); }
             if (!show) return;
             var cr = (RectTransform)transform;
             RectTransformUtility.ScreenPointToLocalPointInRectangle(cr, origin, UiCam, out Vector2 o);
             RectTransformUtility.ScreenPointToLocalPointInRectangle(cr, pos, UiCam, out Vector2 k);
-            float r = 150f;
+            float r = StickR(radiusPx);
             stickRing.anchoredPosition = o; stickRing.sizeDelta = Vector2.one * r * 2f;
             stickKnob.anchoredPosition = o + Vector2.ClampMagnitude(k - o, r); stickKnob.sizeDelta = Vector2.one * r * 0.9f;
         }

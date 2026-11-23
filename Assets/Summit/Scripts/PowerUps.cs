@@ -22,7 +22,7 @@ namespace Summit
         public System.Action<Kind> Collected;
 
         Material canLabel, canTop, bubble, core, glow, spring, arrow, star;
-        Mesh canMesh, lidMesh, coilMesh, starMesh, arrowMesh;
+        Mesh canMesh, lidMesh, rimMesh, coilMesh, starMesh, arrowMesh;
         readonly Dictionary<int, GameObject> live = new Dictionary<int, GameObject>();
         readonly Dictionary<int, Kind> kindOf = new Dictionary<int, Kind>();
         readonly HashSet<int> taken = new HashSet<int>();
@@ -50,9 +50,10 @@ namespace Summit
 
         public void Build(Shader lit, Material plain, Material soft)
         {
-            // the can's printed label glows a little, so it reads from far up the slope even in shade
+            // the can's printed label glows a little, so it reads from far up the slope even in shade; glossy, so the
+            // sun lays a bright band down its side that stays put while the can spins under it
             var label = Resources.Load<Texture2D>("PowerUps/MountainZoomLabel");
-            canLabel = Mat(lit, Color.white, 0.8f, new Color(0.35f, 0.35f, 0.35f));
+            canLabel = Mat(lit, Color.white, 0.9f, new Color(0.35f, 0.35f, 0.35f));
             if (label != null) { canLabel.SetTexture("_BaseMap", label); canLabel.SetTexture("_EmissionMap", label); }
             canTop = Mat(lit, Color.white, 0.85f, Color.black);
             canTop.SetFloat("_Metallic", 0.8f);
@@ -65,6 +66,7 @@ namespace Summit
             star.SetFloat("_Metallic", 0.6f);
             canMesh = Shapes.Tube(0.27f, 0.95f, 40, true);
             lidMesh = Shapes.Disc(0.255f, 32);
+            rimMesh = Shapes.Tube(0.262f, 0.028f, 40, false);
             coilMesh = Shapes.Coil(0.36f, 0.075f, 4.5f, 0.8f, 18, 8);
             starMesh = Shapes.Star(0.62f, 0.27f, 0.22f);
             arrowMesh = Shapes.Chevron(0.55f, 0.32f, 0.16f, 0.14f);
@@ -149,13 +151,17 @@ namespace Summit
             root.transform.SetParent(transform, false);
             if (kind == Kind.Soda)
             {
-                // a big, bright can of Mountain Zoom (its label is made by Tools/MakeCans.swift and carries the logo
+                // a big, bright can of Mountain Zoom (its label is made by Tools/MakeCans.swift and carries the design
                 // twice round, so it shows whichever way the can has spun)
                 var can = new GameObject("Can").transform;
                 can.SetParent(root.transform, false);
                 Mesh(can, canMesh, canLabel, new Vector3(0f, -0.475f, 0f), Quaternion.identity);
                 Mesh(can, lidMesh, canTop, new Vector3(0f, 0.476f, 0f), Quaternion.identity);
                 Mesh(can, lidMesh, canTop, new Vector3(0f, -0.476f, 0f), Quaternion.Euler(180f, 0f, 0f));
+                // the rolled rim round the lid, and the ring-pull tab lying on it
+                Mesh(can, rimMesh, canTop, new Vector3(0f, 0.468f, 0f), Quaternion.identity);
+                var tab = Part(PrimitiveType.Cube, can, new Vector3(0f, 0.484f, 0.05f), new Vector3(0.08f, 0.012f, 0.14f), canTop);
+                tab.localRotation = Quaternion.Euler(-5f, 0f, 0f);
             }
             else if (kind == Kind.Shield)
             {
