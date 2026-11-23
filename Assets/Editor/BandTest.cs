@@ -286,7 +286,11 @@ public static class BandTest
         System.IO.Directory.CreateDirectory(outDir);
         var cam = Camera.main; var chase = cam.GetComponent<ChaseCamera>(); if (chase != null) chase.enabled = false;
         int taken = 0;
-        foreach (int seed in new[] { 1000, 1154, 2131 })
+        // (one mountain a run gives clean pictures: in a batch run the editor never ends a frame, so the forest's
+        // instanced rocks and trees pile up from shot to shot, and a second mountain's pictures show the first one's
+        // hanging at its heights. BAND_SHOT_SEEDS=one seed)
+        var shotSeeds = System.Environment.GetEnvironmentVariable("BAND_SHOT_SEEDS");
+        foreach (int seed in shotSeeds != null ? System.Array.ConvertAll(shotSeeds.Split(','), int.Parse) : new[] { 1000, 1154, 2131 })
         {
             NewMountain(seed);
             for (int c = 0; c < 8 && taken < 4; c++)

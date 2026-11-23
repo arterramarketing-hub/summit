@@ -212,4 +212,108 @@ public static class CanyonCheck
         TestPrefs.Restore();
         EditorApplication.Exit(fails == 0 ? 0 : 1);
     }
+
+    /// <summary>Heights round a point (CANYON_PT=seed,z,a): every 0.5 m across and along, and the cliff band's weight there.</summary>
+    public static void Point()
+    {
+        var w = System.Array.ConvertAll(System.Environment.GetEnvironmentVariable("CANYON_PT").Split(';'), q => System.Array.ConvertAll(q.Split(','), float.Parse));
+        foreach (var p in w)
+        {
+            Slope.Init((int)p[0]); Course.ResetCaches();
+            float z = p[1], x = Slope.Centre(z) + p[2];
+            var sb = new System.Text.StringBuilder($"PT seed{(int)p[0]} z={z:0} a={p[2]:0} across:");
+            for (float d = -4f; d <= 4f; d += 0.5f) sb.Append($" {Slope.Height(x + d, z):0.0}");
+            sb.Append(" | along:");
+            for (float d = -4f; d <= 4f; d += 0.5f) sb.Append($" {Slope.Height(x, z + d):0.0}");
+            float y = Slope.Height(x, z);
+            sb.Append($" | weight {CliffBand.Weight(z):0.00} across {Slope.Across(x, z):0} deadly {Deadly.Below(x, z)} section {Course.At(z)}");
+            var foot = typeof(CliffBand).GetMethod("Foot", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+            for (float d = -3f; d <= 3f; d += 1f)
+            {
+                var args = new object[] { x, z + d, null, 0f, 0f, 0f, 0f };
+                bool ok = (bool)foot.Invoke(null, args);
+                var bb = (CliffBand.Band)args[2];
+                sb.Append($" | dz{d:+0;-0}: foot {ok} zc {(float)args[3]:0.0} wt {(float)args[4]:0.00} down {(float)args[5]:0.0} edge {CliffBand.EdgeAt((float)args[3]):0.0} hgt {CliffBand.HeightAt(bb, (float)args[3]):0.0} face {CliffBand.OnFace(x, z + d)} band z0 {bb.z0:0} z1 {bb.z1:0} z2 {bb.z2:0} z3 {bb.z3:0} y {Slope.Height(x, z + d):0.0} cliffs {Cliffs.Keep(x, z + d, 2f)} ridge {Ridge.Depth(z + d):0.00}");
+            }
+            Debug.Log(sb.ToString());
+        }
+        EditorApplication.Exit(0);
+    }
+
+    /// <summary>
+    /// Seams round every cliff band (and the bowl): over a 1.5 m grid from 80 m above a band to 150 m below it, 320 m
+    /// either side of the run, wherever the ground between neighbouring corners climbs more than 60 degrees (and is not
+    /// the band's own face), it must not step: no rise of 0.6 m within 0.1 m there. -executeMethod CanyonCheck.Seams (CANYON_SEEDS=...)
+    /// </summary>
+    public static void Seams()
+    {
+        int fails = 0; float worstAll = 0f;
+        try
+        {
+            foreach (int seed in Seeds)
+            {
+                Slope.Init(seed); Course.ResetCaches();
+                var spans = new List<(string, float, float)>();
+                for (int c = 0; c <= Course.CycleOf(Course.ClearFrom); c++)
+                    if (CliffBand.Of(c, out var b)) spans.Add(($"band cycle{c}", b.z0 - 80f, b.z3 + 150f));
+                if (Bowl.Of(0, out var bw)) spans.Add(("bowl", bw.zA - 60f, bw.zE + 60f));
+                foreach (var (what, z0, z1) in spans)
+                {
+                    const float q = 1.5f;
+                    int n = 0, steep = 0; float worst = 0f; string at = "";
+                    float[] prev = null;
+                    for (float z = z0; z <= z1; z += q)
+                    {
+                        float c = Slope.Centre(z);
+                        int nx = Mathf.CeilToInt(640f / q) + 1;
+                        var row = new float[nx];
+                        for (int i = 0; i < nx; i++) row[i] = Slope.Height(c - 320f + i * q, z);
+                        for (int i = 0; i < nx; i++)
+                        {
+                            float x = c - 320f + i * q;
+                            float step = 0f;
+                            if (i > 0) step = Mathf.Abs(row[i] - row[i - 1]);
+                            if (prev != null) step = Mathf.Max(step, Mathf.Abs(row[i] - Slope.Height(x, z - q)));
+                            if (step <= 2.6f + Slope.Fall * q) continue;
+                            if (CliffBand.OnFace(x, z) || CliffBand.OnFace(x - q, z) || CliffBand.OnFace(x, z - q)) continue;
+                            if (Ridge.Depth(z) > 0f || Cliffs.Keep(x, z, 2f)) continue;   // (a ridge's cliffs, the jump and deadly cliffs, the ledges)
+                            // steep, or broken? the steepest 0.1 m step along the 1.5 m either way: a seam still steps there
+                            float fine = 0f;
+                            for (float t = 0f; t < q - 0.01f; t += 0.1f)
+                            {
+                                fine = Mathf.Max(fine, Mathf.Abs(Slope.Height(x - q + t + 0.1f, z) - Slope.Height(x - q + t, z)));
+                                fine = Mathf.Max(fine, Mathf.Abs(Slope.Height(x, z - q + t + 0.1f) - Slope.Height(x, z - q + t)));
+                            }
+                            if (fine < 0.6f) { steep++; continue; }   // (steeper than 60 degrees, but no step: a band's end, a bank)
+                            n++;
+                            if (fine > worst) { worst = fine; at = $"z={z:0} {x - c:+0;-0} m off the middle"; }
+                        }
+                        prev = row;
+                    }
+                    worstAll = Mathf.Max(worstAll, worst);
+                    string line = $"seed{seed} {what}: {n} seam(s) (a step of 0.6 m or more within 0.1 m), the worst {worst:0.0} m" + (n > 0 ? $" at {at}" : "") + $"; {steep} spots steeper than 60 degrees without a step";
+                    Debug.Log((n > 0 ? "CANYON-FAIL seams " : "CANYON seams ") + line);
+                    if (n > 0) fails++;
+                }
+            }
+        }
+        catch (System.Exception e) { fails++; Debug.Log("CANYON-FAIL exception " + e); }
+        Debug.Log($"CANYON seams done: worst {worstAll:0.0} m; {fails} failure(s)");
+        EditorApplication.Exit(fails == 0 ? 0 : 1);
+    }
+
+    /// <summary>Slope.Height's cost (µs a call) on a band's stretch and away from it. -executeMethod CanyonCheck.Cost</summary>
+    public static void Cost()
+    {
+        Slope.Init(1000); Course.ResetCaches();
+        CliffBand.Of(3, out var b);
+        foreach (var (what, z0) in new[] { ("band", b.z1), ("plain", b.z0 - 600f) })
+        {
+            float sum = 0f; var sw = System.Diagnostics.Stopwatch.StartNew(); int n = 0;
+            for (int j = 0; j < 400; j++)
+                for (int i = 0; i < 500; i++, n++) sum += Slope.Height(Slope.Centre(z0) - 300f + i * 1.2f, z0 + j * 1.5f);
+            Debug.Log($"COST {what}: {sw.Elapsed.TotalMilliseconds * 1000.0 / n:0.00} us a call ({n} calls, {sum:0})");
+        }
+        EditorApplication.Exit(0);
+    }
 }

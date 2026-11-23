@@ -51,7 +51,7 @@ namespace Summit
         static Band[] bands; static bool[] has; static float[] before; static int bandSeed = int.MinValue;
 
         /// <summary>Work them out afresh (Course.ResetCaches).</summary>
-        public static void Forget() { has = null; bandSeed = int.MinValue; }
+        public static void Forget() { lines = null; linesSeed = int.MinValue; has = null; bandSeed = int.MinValue; }
 
         static void Ensure()
         {
@@ -252,28 +252,92 @@ namespace Summit
         /// bench, the band and its height go by that, not by the point's own z, which lies 30-50 m further down the hill
         /// under the band), the traverse's share there, and how far the point is out toward the downhill side.
         /// </summary>
+        // ---- where (x, z) is against a band's run (Foot)
+
+        // the run's middle every 2 m from 200 m above a band to 200 m below it, for each band (worked out once a mountain)
+        const float LineStep = 2f, LineReach = 200f;
+        static float[][] lines; static int linesSeed = int.MinValue;
+
+        static float[] Line(in Band b)
+        {
+            var ls = lines;
+            if (ls == null || linesSeed != Slope.Seed)
+            {
+                Ensure();
+                var mk = new float[bands.Length][];
+                for (int c = 0; c < bands.Length; c++)
+                {
+                    if (!has[c]) continue;
+                    var bb = bands[c];
+                    int n = Mathf.CeilToInt((bb.z3 - bb.z0 + 2f * LineReach) / LineStep) + 1;
+                    var xs = new float[n];
+                    for (int i = 0; i < n; i++) xs[i] = Slope.Centre(bb.z0 - LineReach + i * LineStep);
+                    mk[c] = xs;
+                }
+                lines = ls = mk; linesSeed = Slope.Seed;
+            }
+            return b.cycle < ls.Length ? ls[b.cycle] : null;
+        }
+
+        /// <summary>
+        /// Where (x, z) is against its band's run: zc, a point along the run square across from it (a soft average of
+        /// the run's nearest points, weighted by how little further each is than the nearest: within 6 m, mostly), the
+        /// turn's share there, and down, its true distance from the run (signed: + toward the downhill side). Both change
+        /// smoothly everywhere, so the band's shaping does too. (Before, the square-on point was found in two steps from
+        /// z: inside a turn, far out, it jumped from the run above the turn to the traverse within a metre, and the ground
+        /// stepped as much as 80 m; picking between the nearest places on the run jumps the same way wherever two or more
+        /// are about as near.)
+        /// </summary>
         static bool Foot(float x, float z, out Band b, out float zc, out float wt, out float down, out float sn)
         {
             zc = z; wt = 0f; down = 0f; sn = 0f;
-            if (!Near(z, 70f, out b)) return false;
-            // (two steps: the square-on point's own heading)
-            for (int i = 0; i < 2; i++)
+            if (!Near(z, LineReach + 20f, out b)) return false;
+            var xs = Line(b);
+            if (xs == null) return false;
+            float zs = b.z0 - LineReach;
+            int n = xs.Length, lo = Mathf.Max(0, Mathf.FloorToInt((z - 240f - zs) / LineStep)), hi = Mathf.Min(n - 1, Mathf.CeilToInt((z + 240f - zs) / LineStep));
+            if (lo > hi) return false;
+            int i1 = lo; float best = float.MaxValue;
+            for (int i = lo; i <= hi; i++)
             {
-                float k = b.side * b.k * Turn(b, zc) + Slope.BaseSlope(zc);
-                float cs = 1f / Mathf.Sqrt(1f + k * k);
-                sn = k * cs;
-                zc = z + (x - Slope.Centre(zc) - (z - zc) * k) * sn * cs;
+                float dx = x - xs[i], dz = z - (zs + i * LineStep), q = dx * dx + dz * dz;
+                if (q < best) { best = q; i1 = i; }
             }
+            // (the nearest sample, then the true nearest point between it and its neighbours)
+            float dmin = Mathf.Sqrt(best);
+            {
+                int i0 = Mathf.Max(0, i1 - 1), i2 = Mathf.Min(n - 1, i1 + 1);
+                for (int j = i0; j < i2; j++)
+                {
+                    float ax = xs[j], az = zs + j * LineStep, ex = xs[j + 1] - ax, ez = LineStep;
+                    float t = Mathf.Clamp01(((x - ax) * ex + (z - az) * ez) / (ex * ex + ez * ez));
+                    float px = x - (ax + ex * t), pz = z - (az + ez * t);
+                    dmin = Mathf.Min(dmin, Mathf.Sqrt(px * px + pz * pz));
+                }
+            }
+            float cut = dmin + 8f * Soft, sw = 0f, sz = 0f;
+            for (int i = lo; i <= hi; i++)
+            {
+                float dx = x - xs[i], dz = z - (zs + i * LineStep), q = dx * dx + dz * dz;
+                if (q > cut * cut) continue;
+                float w = Mathf.Exp(-(Mathf.Sqrt(q) - dmin) / Soft);
+                sw += w; sz += w * (zs + i * LineStep);
+            }
+            zc = sw > 0f ? sz / sw : zs + i1 * LineStep;
             wt = Turn(b, zc);
             if (wt <= 0f) return false;
             float kk = b.side * b.k * wt + Slope.BaseSlope(zc);
             float c2 = 1f / Mathf.Sqrt(1f + kk * kk);
             sn = kk * c2;
-            // square to the run: (x, z) less the run's middle at z_c, along the across direction (cs, -sn)
-            float across = (x - Slope.Centre(zc)) * c2 - (z - zc) * sn;
-            down = -across * Mathf.Sign(kk);
+            // which side: across the run at the nearest sample (+ toward +x), its downhill side against the band's side
+            int ia = Mathf.Clamp(i1, 1, n - 2);
+            float ka = (xs[ia + 1] - xs[ia - 1]) / (2f * LineStep), ca = 1f / Mathf.Sqrt(1f + ka * ka);
+            float across = (x - xs[i1]) * ca - (z - (zs + i1 * LineStep)) * ka * ca;
+            down = -Mathf.Sign(across) * b.side * dmin;
             return true;
         }
+
+        const float Soft = 6f;
 
         /// <summary>
         /// The bench and the band at (x, z), given the mountain y there without them, and the run's own cross-section
@@ -291,7 +355,11 @@ namespace Summit
             {
                 // the bench, and on the uphill side a bank up to the mountain over 24 m (a ledge's: a wall, over 6 m)
                 float up = Mathf.Clamp01((-down - Slope.Half(zc) - 2f) / (b.ledge ? 6f : 24f));
-                yOut = Mathf.Lerp(yb, Mathf.Max(y, yb), up * up * (3f - 2f * up));
+                // (where the mountain beside it lies lower than the bench, the bank tops out level with it and eases
+                // back down to the mountain beyond: before, the bench's level ran on out to the side without end)
+                float back = Mathf.Clamp01((-down - Slope.Half(zc) - 2f - (b.ledge ? 6f : 24f)) / 40f);
+                float top = Mathf.Lerp(Mathf.Max(y, yb), y, back * back * (3f - 2f * back));
+                yOut = Mathf.Lerp(yb, top, up * up * (3f - 2f * up));
             }
             else
             {

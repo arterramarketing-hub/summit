@@ -14,12 +14,13 @@ using Summit;
 ///    above the floor's middle at its edge. The profile closes: below the bowl the run is where it was.
 ///  - The reveal: from a rider's eye 1.6 m up on the shelf, 30 m above the roll's crest, how much of the snow past the
 ///    crest is out of sight (BlindRollTest's measure, over 150 m).
+///  - Nothing floating: every tree, rock and piste kit item round each bowl and band stands on the snow (Floating).
 ///  - Nothing in it: no tree or rock (Forest.At) on its floor, no crevasse, no lift or lift hill, no kicker, no drop, no
 ///    ledge.
 ///  - Rides: the real rider down the middle at 15, 22 and 28 m/s; down a line 45 m off the middle each side at 22; and
 ///    carving wall to wall (a line swinging 70 m either way) at 22: no crash, out through the funnel.
 /// Run: Unity -batchmode -nographics -projectPath . -executeMethod BowlTest.Run -logFile bowl.log (BOWL_SEEDS=...)
-/// Shots (with the GPU): -executeMethod BowlTest.Shots (BOWL_OUT=dir). Log lines: BOWL, BOWL-FAIL, BOWL done.
+/// Shots (with the GPU): -executeMethod BowlTest.Shots (BOWL_OUT=dir; the first bowl among BOWL_SEEDS: one mountain a run). Log lines: BOWL, BOWL-FAIL, BOWL done.
 /// </summary>
 public static class BowlTest
 {
@@ -88,9 +89,12 @@ public static class BowlTest
             foreach (int seed in Seeds)
             {
                 NewMountain(seed);
+                for (int c = 0; c <= Course.CycleOf(Course.ClearFrom); c++)
+                    if (CliffBand.Of(c, out var band)) Floating(seed, $"band cycle{c}", band.z0 - 40f, band.z3 + 60f);
                 if (!Bowl.Of(0, out var s)) { none++; Debug.Log($"BOWL seed{seed}: none (drawn {(Bowl.Is(0) ? "yes, no room" : "no")}); stretch is {Ridge.FormOf(0)}"); continue; }
                 bowls++;
                 Check(seed, s);
+                Floating(seed, $"bowl", s.zA - 40f, s.zE + 40f);
             }
         }
         catch (System.Exception e) { Fail("exception " + e); }
@@ -180,6 +184,43 @@ public static class BowlTest
         }
     }
 
+    /// <summary>
+    /// Nothing floating: every tree and rock of the forest (Forest.At, the same pure layout it draws), and everything the
+    /// piste kit puts up, from z0 to z1 and 300 m either side of the run, stands on the snow: its foot no more than 0.3 m
+    /// above the ground the terrain draws there (Slope.DrawnHeight), nor 1 m above the mountain itself (Slope.Height),
+    /// nor sunk more than 1 m into it.
+    /// </summary>
+    static void Floating(int seed, string what, float z0, float z1)
+    {
+        int n = 0, bad = 0; float worst = 0f; string at = "";
+        int cz0 = Mathf.FloorToInt(z0 / Forest.Cell), cz1 = Mathf.CeilToInt(z1 / Forest.Cell);
+        for (int cz = cz0; cz <= cz1; cz++)
+        {
+            float zc = (cz + 0.5f) * Forest.Cell, c = Slope.Centre(zc);
+            int cx0 = Mathf.FloorToInt((c - 300f) / Forest.Cell), cx1 = Mathf.CeilToInt((c + 300f) / Forest.Cell);
+            for (int cx = cx0; cx <= cx1; cx++)
+            {
+                var k = Forest.At(cx, cz, out var pos, out _, out _);
+                if (k == Forest.Kind.None) continue;
+                n++;
+                // (on the snow as drawn: on steep curved ground the drawn facets stand a little off the true surface)
+                float off = pos.y - Slope.DrawnHeight(pos.x, pos.z), offTrue = pos.y - Slope.Height(pos.x, pos.z);
+                float sunk = -off;
+                float e = Mathf.Max(Mathf.Max(off - 0.3f, offTrue - 1f), sunk - 1f);
+                if (e > 0f) { bad++; if (e > worst) { worst = e; at = $"{k} at z={pos.z:0} {pos.x - Slope.Centre(pos.z):+0;-0} m off the middle, {off:+0.00;-0.00} m"; } }
+            }
+        }
+        foreach (var it in PisteKit.Items)
+        {
+            if (it.foot.z < z0 || it.foot.z > z1) continue;
+            n++;
+            float off = it.foot.y - Slope.DrawnHeight(it.foot.x, it.foot.z);
+            if (off > 0.3f || off < -1f) { bad++; if (Mathf.Abs(off) > worst) { worst = Mathf.Abs(off); at = $"{it.kind} at z={it.foot.z:0}, {off:+0.00;-0.00} m"; } }
+        }
+        Debug.Log($"BOWL seed{seed} {what}: {n} trees, rocks and piste kit standing; {bad} off the snow" + (bad > 0 ? $", the worst {at}" : ""));
+        if (bad > 0) Fail($"seed{seed} {what}: {bad} things floating or sunk, the worst {at}");
+    }
+
     static string Ride(Bowl.Shape s, System.Func<float, float> line, float v0, out bool crashed, System.Action<int> frame = null)
     {
         rides++;
@@ -230,9 +271,12 @@ public static class BowlTest
         System.IO.Directory.CreateDirectory(outDir);
         var cam = Camera.main; var chase = cam.GetComponent<ChaseCamera>(); if (chase != null) chase.enabled = false;
         int taken = 0;
+        // ONE mountain a run (BOWL_SEEDS=one seed): in a batch run the editor never ends a frame, so what is drawn
+        // instanced (the forest's rocks and trees) piles up from shot to shot, and a second mountain's pictures showed the
+        // first one's rocks hanging in its sky at the first one's heights
         foreach (int seed in Seeds)
         {
-            if (taken >= 3) break;
+            if (taken >= 1) break;
             NewMountain(seed);
             if (!Bowl.Of(0, out var s)) continue;
             taken++;
@@ -272,6 +316,10 @@ public static class BowlTest
         cam.fieldOfView = 60f;
         cam.transform.SetPositionAndRotation(from, Quaternion.LookRotation(at - from));
         typeof(Forest).GetMethod("Draw", NP)?.Invoke(props, null); CliffSpires.DrawNow();
+        // (particles do not move on in a test's still pictures: the snow thrown up when the rider is set down would hang
+        // in the air where it was)
+        foreach (var ps in Object.FindObjectsByType<ParticleSystem>(FindObjectsSortMode.None))
+            if (ps.transform.parent != null && ps.transform.parent.name == "SnowFX") ps.Clear(true);
         const int W = 1100, H = 760;
         var rt = new RenderTexture(W, H, 24);
         cam.targetTexture = rt; cam.aspect = (float)W / H; cam.Render();
