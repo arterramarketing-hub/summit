@@ -99,9 +99,10 @@ public static class LiftHillCheck
                         rider.Steer = Mathf.Clamp((side * LiftLine.Half - c) * 0.12f - across * 0.15f, -1f, 1f);   // (gains for main's 3x tighter turns: 9f67fee)
                         if (direct == 1)
                         {
-                            // the sideways speed that keeps it on the cable's line: the line's own, and back onto it at 2/s
-                            float alongV = vel.x * l.dir.x + vel.z * l.dir.z, back = Mathf.Clamp((side * LiftLine.Half - c) * 2f, -6f, 6f);
-                            rider.Steer = Mathf.Clamp((alongV * l.dir.x + back * l.across.x) / (Rider.SideSpeed * Rider.TurnScale), -1f, 1f);
+                            // carving for the cable's line: an edge for the speed across it that brings the board back onto
+                            // it at 2/s (carve: the finger is an edge angle; there is no sideways speed to ask for)
+                            float back = Mathf.Clamp((side * LiftLine.Half - c) * 2f, -6f, 6f);
+                            rider.Steer = Mathf.Clamp((back - across) / 10f / Rider.TurnScale, -1f, 1f);
                         }
                         for (int k = 0; k < 2; k++) { rider.Tick(Dt / 2f); body.PhysicsStep(); Physics.Simulate(Dt / 2f); }
                         if (stepOf == $"{seed},{l.id},{speeds[vi]:0}")
@@ -140,7 +141,7 @@ public static class LiftHillCheck
                         var mo = (Vector4)args[2];
                         Debug.Log($"HILLTRACE seed {seed} lift {l.id} v {speeds[vi]:0}: game {(grind ? "GRIND" : end)}{off}; nearest the cable's height {bestRel:0.00} m (board under it: -), {bestSide:0.00} m to the side, {bestAt:0} m past the crest, boardable {bestOk}, rising {bestRise:0.0} m/s; model {(m ? "reaches" : "misses")}, took off at {mo.x - at:0.0} m from the crest, plan {mo.y:0.0} up {mo.z:0.0} m/s");
                     }
-                    if (vi == 0 && direct == 1) sb.Append(" | asking for the line's sideways speed:");
+                    if (vi == 0 && direct == 1) sb.Append(" | carving for the line's sideways speed:");
                     sb.Append($" {speeds[vi]:0}:{(grind ? "GRIND" : end)}{(touches > 0 ? "/" + touches : "")}");
                 }
                 Debug.Log($"HILLRIDE seed {seed} lift {l.id}{(l.second ? "b" : "")} {what} at {at:0} m along:{sb}");
@@ -167,7 +168,7 @@ public static class LiftHillCheck
         Debug.Log($"HILLRIDE done: {seeds} mountains, {lifts} lifts, {with} with a hill or ramp; {grinds} of {tries} rides reached a cable grind.{bs}");
         var bd = new System.Text.StringBuilder();
         for (int i = 0; i < speeds.Length; i++) bd.Append($" {speeds[i]:0} m/s {bySpeedDirect[i]}/{with};");
-        Debug.Log($"HILLRIDE done, asking for the line's sideways speed: {grindsDirect} of {tries} rides reached a cable grind.{bd}");
+        Debug.Log($"HILLRIDE done, carving for the line's sideways speed: {grindsDirect} of {tries} rides reached a cable grind.{bd}");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         EditorApplication.Exit(0);
     }

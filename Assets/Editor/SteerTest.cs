@@ -3,14 +3,21 @@ using UnityEngine;
 using Summit;
 
 /// <summary>
-/// How tight and how quick the downhill steering is, measured the way a rider feels it: a slalom between pairs of
-/// "trees" (gates 3 m wide), at a few held speeds and at a few settings of the TURN slider (Rider.TurnScale).
-/// For each: the full-lock turn radius, how long the turn takes to build (90% of its turn rate, and the line of
-/// travel swung 20 degrees), and how many gates a bot makes. The bot is not a tuned racer: for each case it tries a
-/// small sweep of its own gains and look-ahead and the best of them is reported, so the number is what the board can
-/// do, not how well one controller happens to fit it.
-/// The speed is held (the board's speed is reset to it every step) so each case rides the same line at the same
-/// pace; one free run then shows what weaving costs in speed.
+/// The carving model, measured the way a rider feels it (carve: the finger sets the board's edge angle; the edge
+/// carves an arc, and skids past its grip). At a few held speeds and settings of the TURN slider (Rider.TurnScale):
+///  - the time from the finger to the edge (90% of the angle asked for);
+///  - the arc: the radius the board's travel settles to, its slip angle, whether the edge has let go and what the
+///    skid takes off the speed, at a quarter, half, three quarters and the whole of the throw;
+///  - how soon a full drag has the board going 3 m/s sideways, and the reversal: from 2 m/s one way, the finger
+///    flipped, through zero and to 2 m/s the other way;
+///  - a slalom between pairs of "trees" (gates 3 m wide): the old pursuit bot, and a racer that rides a line through
+///    the gates with the turn fed forward, both at a held speed (a pure carve) and with the speed left to itself
+///    (it skids to take speed off when it is going too fast for the gates: a hard edge and a skid).
+/// Then: the fastest held speed at which each course is made clean (what cruising speed is comfortable in the
+/// trees), what the pace knob (Rider.Pace) does to the speed a straight run reaches, the board left to itself across
+/// a slope (gravity's drift to the fall line: how slow, how gentle) and held across it on an edge, and the same arc
+/// on each kind of snow.
+/// The speed is held (reset every step) where it says so, so each case rides the same line at the same pace.
 /// Run: Unity -batchmode -nographics -projectPath . -executeMethod SteerTest.Run -logFile steer.log
 /// </summary>
 public static class SteerTest
@@ -27,13 +34,8 @@ public static class SteerTest
     };
 
     static float x0, z0;   // where the test stretch starts
-
-    static float Scale
-    {
-        get { var p = typeof(Rider).GetProperty("TurnScale"); return p != null ? (float)p.GetValue(null) : 1f; }
-        set { var p = typeof(Rider).GetProperty("TurnScale"); if (p != null && p.CanWrite) p.SetValue(null, value); }
-    }
-    static bool HasScale => typeof(Rider).GetProperty("TurnScale") != null;
+    static float Scale { get => Rider.TurnScale; set => Rider.TurnScale = value; }
+    static readonly bool quick = System.Environment.GetEnvironmentVariable("STEER_QUICK") == "1";   // no slaloms
 
     public static void Run()
     {
@@ -42,78 +44,95 @@ public static class SteerTest
         TestPrefs.Pin();
         Slope.Init(1234);
         var r = new GameObject("Rider").AddComponent<Rider>();   // (no forest: the trees here are the gates)
-        float scale0 = Scale;
+        float scale0 = Scale, pace0 = Rider.Pace;
 
         FindStretch(r);
-        Debug.Log($"STEER stretch x={x0:0} z={z0:0} (x-centre {x0 - Slope.Centre(z0):0}) slider={(HasScale ? "yes" : "none: the old steering")}");
+        Debug.Log($"STEER stretch x={x0:0} z={z0:0} (x-centre {x0 - Slope.Centre(z0):0}), pitch {Mathf.Asin(Mathf.Sqrt(1f - Mathf.Pow(Slope.Normal(x0, z0 + 40f).y, 2f))) * Mathf.Rad2Deg:0} deg; edge time {Rider.EdgeTime:0.00} s, carve radius {Rider.CarveRadius:0.0} m, grip {Rider.EdgeGrip:0.0} g ({Rider.EdgeGrip * Rider.G:0} m/s^2), knee {Rider.EdgeKnee:0.00}, pace {Rider.Pace:0.00}");
 
         float[] speeds = { 15f, 22f, 30f };
-        float[] scales = HasScale ? new[] { 0.5f, 1f, 1.5f, 2.5f } : new[] { 1f };
-        foreach (float sc in scales)
+        foreach (float sc in new[] { 0.5f, 1f, 1.5f, 2.5f })
         {
             Scale = sc;
             foreach (float v in speeds)
             {
-                Response(r, v, out float radius, out float t90, out float t20, out float skid);
-                string line = $"STEER scale={sc:0.0} v={v:0} m/s ({v * 3.6f:0} km/h): radius {radius:0.0} m, 90% turn rate in {t90:0.00} s, travel 20 deg in {t20:0.00} s, skid {skid:0.00}";
-                foreach (float throw_ in new[] { 1f, 0.5f })
+                float tEdge = EdgeTime(r, v, 1f, out float edgeDeg);
+                Sideways(r, v, 1f, out float l3, out float acc);
+                Reverse(r, v, 1f, out float r0, out float r3);
+                Debug.Log($"STEER edge scale={sc:0.0} v={v:0} m/s ({v * 3.6f:0} km/h) full drag: finger to edge (90% of {edgeDeg:0} deg) in {T(tEdge)}; sideways 3 m/s in {T(l3)}, {acc:0} m/s^2 sideways at most | reversal from -{RevSpeed:0} m/s: through zero in {T(r0)}, +{RevSpeed:0} m/s in {T(r3)}");
+                if (sc == 1f && (tEdge < 0f || tEdge > 0.16f)) Debug.Log($"STEER-FAIL the edge takes {T(tEdge)} from the finger at {v * 3.6f:0} km/h (0.1 s asked)");
+                string arcs = "";
+                foreach (float throw_ in new[] { 0.25f, 0.5f, 0.75f, 1f })
                 {
-                    float s = RiderInput.Curve(throw_);
-                    Sideways(r, v, s, out float l3, out float l90, out float lss);
-                    Reverse(r, v, s, out float r0, out float r3);
-                    Debug.Log($"STEER side scale={sc:0.0} v={v:0} m/s ({v * 3.6f:0} km/h) drag {throw_ * 100f:0}% (steer {s:0.00}): sideways 3 m/s in {T(l3)}, 90% of its sideways speed ({lss:0.0} m/s at 1 s) in {T(l90)}{(sideAir > 0 ? $" (off the snow for {sideAir * Dt:0.00} s of it)" : "")} | reverse left->right from -{RevSpeed:0} m/s: through zero in {T(r0)}, +{RevSpeed:0} m/s in {T(r3)}");
+                    Arc(r, v, RiderInput.Curve(throw_), out float radius, out float slipDeg, out bool sliding, out float brake, out float edge);
+                    arcs += $" | drag {throw_ * 100f:0}% (edge {edge:0} deg): radius {(radius > 999f ? "straight" : radius.ToString("0.0") + " m")}, slip {slipDeg:0} deg{(sliding ? $", SKID taking {brake:0} m/s^2 off" : "")}";
                 }
+                Debug.Log($"STEER arc scale={sc:0.0} v={v:0} m/s ({v * 3.6f:0} km/h){arcs}");
+                if (quick || sc != 1f) continue;   // (the slaloms at the stock setting)
+                string line = $"STEER slalom scale={sc:0.0} v={v:0} m/s ({v * 3.6f:0} km/h)";
                 foreach (var c in Courses)
                 {
-                    if (quick) break;
-                    int best = 0; string how = "";
-                    foreach (float look in new[] { 0.12f, 0.2f, 0.3f, 0.45f })
-                        foreach (float kp in new[] { 2f, 4f, 8f, 16f })
-                            foreach (float kd in new[] { 0f, 0.25f })
-                            {
-                                int made = Slalom(r, c, v, look, kp, kd, true, out _, out _);
-                                if (made > best) { best = made; how = $"look {look:0.00}s kp {kp:0} kd {kd:0.00}"; }
-                            }
-                    line += $" | {c.name} {best}/{c.gates} ({how})";
+                    int old = BestPursuit(r, c, v);
+                    Result held = BestRacer(r, c, v, true), free = BestRacer(r, c, v, false);
+                    line += $" | {c.name}: pursuit bot {old}/{c.gates}, racer held {held.made}/{c.gates}, racer with the speed its own {free.made}/{c.gates} (down to {free.minV * 3.6f:0} km/h, {free.skid:0.0} s skidding)";
                 }
                 Debug.Log(line);
             }
         }
-
-        // what weaving costs in speed: the glade at the default setting, from 22 m/s, the speed left to itself
         Scale = 1f;
+
+        // the fastest held speed at which each course is made clean, carving: what is comfortable in the trees
+        if (!quick)
+            foreach (var c in Courses)
+            {
+                float clean = 0f, most = 0f;
+                for (float v = 8f; v <= 34f; v += 2f)
+                {
+                    var m = BestRacer(r, c, v, true);
+                    if (m.made == c.gates) most = v;
+                    if (m.made == c.gates && (clean == v - 2f || v == 8f)) clean = v;
+                }
+                Debug.Log($"STEER comfortable {c.name} ({c.swing * 2f:0} m side to side every {c.spacing:0} m): every gate at every held speed up to {clean * 3.6f:0} km/h (the fastest clean run: {most * 3.6f:0} km/h)");
+            }
+
+        // the pace knob: a straight run down the stretch from 22 m/s, the speed left to itself
+        foreach (float pace in new[] { 1f, 0.8f, 0.64f, 0.5f, 0.36f, 0.25f })
         {
-            int made = 0, bestMade = -1; float endV = 0f, bestEnd = 0f, bestStart = 0f;
-            foreach (float look in new[] { 0.12f, 0.2f, 0.3f, 0.45f })
-                foreach (float kp in new[] { 2f, 4f, 8f, 16f })
-                    foreach (float kd in new[] { 0f, 0.25f })
-                    {
-                        made = Slalom(r, Courses[0], 22f, look, kp, kd, false, out endV, out float startV);
-                        if (made > bestMade) { bestMade = made; bestEnd = endV; bestStart = startV; }
-                    }
-            float straightEnd = Straight(r, 22f, Courses[0].spacing * Courses[0].gates + 30f);
-            Debug.Log($"STEER free glade from 22 m/s along the snow: {bestMade}/{Courses[0].gates} gates, {bestStart * 3.6f:0} -> {bestEnd * 3.6f:0} km/h (straight down the same stretch: {straightEnd * 3.6f:0} km/h)");
+            Rider.Pace = pace;
+            float end = Straight(r, 22f, 400f, out float most);
+            Debug.Log($"STEER pace {pace:0.00}: straight down 400 m of the stretch from 79 km/h: {end * 3.6f:0} km/h at the end, {most * 3.6f:0} at most");
+        }
+        Rider.Pace = pace0;
+
+        // what weaving costs in speed: the glade from 22 m/s, the speed left to itself
+        if (!quick)
+        {
+            var m = BestRacer(r, Courses[0], 22f, false);
+            float straightEnd = Straight(r, 22f, Courses[0].spacing * Courses[0].gates + 30f, out _);
+            Debug.Log($"STEER free glade from 22 m/s along the snow: {m.made}/{Courses[0].gates} gates, 79 -> {m.endV * 3.6f:0} km/h (straight down the same stretch: {straightEnd * 3.6f:0} km/h)");
         }
 
-        // where the run swings across the hill (a traverse along a cliff band): a lifted thumb holds the run's line, and
-        // a drag steers off it
-        // (on corduroy, as a band's traverse is; then on ice and on powder, which are slower to answer the finger: the
-        // line must be held hands off just the same)
-        if (!quick || System.Environment.GetEnvironmentVariable("STEER_TRAVERSE") == "1")
-            foreach (var kind in new[] { Snow.Corduroy, Snow.Ice, Snow.Powder }) Traverse(r, kind);
+        Across(r);
 
-        // the snow underfoot (Surfaces): the same response rides on each kind laid everywhere. Ice and powder are
-        // slower to come round, by design; none of them may leave the board short of the sideways speed asked for
-        Scale = 1f;
+        // the snow underfoot (Surfaces): the same arcs on each kind laid everywhere. Each kind holds less than corduroy:
+        // the same edge lets go sooner on it
         foreach (Snow kind in System.Enum.GetValues(typeof(Snow)))
         {
             Surfaces.Force = SnowMix.Only(kind);
             foreach (float v in new[] { 22f, 30f })
             {
-                Sideways(r, v, 1f, out float l3, out float l90, out float lss);
-                Reverse(r, v, 1f, out float r0, out float r3);
-                Debug.Log($"STEER snow {kind.ToString().ToLower(),-8} v={v:0} m/s ({v * 3.6f:0} km/h) full drag: sideways 3 m/s in {T(l3)}, 90% of its sideways speed ({lss:0.0} m/s at 1 s) in {T(l90)} | reverse left->right from -2 m/s: through zero in {T(r0)}, +2 m/s in {T(r3)}");
-                if (lss < 14.5f) Debug.Log($"STEER-FAIL snow {kind}: a full drag gives {lss:0.0} m/s sideways at {v * 3.6f:0} km/h, not 15");
+                float lets = -1f; string arcs = "";
+                for (float throw_ = 0.1f; throw_ <= 1.001f; throw_ += 0.05f)
+                {
+                    Arc(r, v, RiderInput.Curve(throw_), out _, out _, out bool sl, out _, out _);
+                    if (sl) { lets = throw_; break; }
+                }
+                foreach (float throw_ in new[] { 0.5f, 0.75f, 1f })
+                {
+                    Arc(r, v, RiderInput.Curve(throw_), out float radius, out float slipDeg, out bool sliding, out float brake, out _);
+                    arcs += $" | drag {throw_ * 100f:0}%: radius {radius:0.0} m, slip {slipDeg:0} deg{(sliding ? $", SKID -{brake:0} m/s^2" : "")}";
+                }
+                Sideways(r, v, 1f, out float l3, out float acc);
+                Debug.Log($"STEER snow {kind.ToString().ToLower(),-8} v={v:0} m/s ({v * 3.6f:0} km/h): lets go at {(lets < 0f ? "no drag" : $"{lets * 100f:0}% of the drag")}; {acc:0} m/s^2 sideways at most, 3 m/s sideways in {T(l3)}{arcs}");
             }
         }
         Surfaces.Force = null;
@@ -125,81 +144,61 @@ public static class SteerTest
     }
 
     /// <summary>
-    /// A made-up traverse: Rider.RunHeading swung to 65 degrees across the hill (eased in over 40 m), each way, from
-    /// well to the other side of the piste so the line crosses it. Hands off for 200 m of it: how far the board comes
-    /// off the run's line (as the terrain's own heading would draw it). Then a full drag each way from the line: how
-    /// fast it leaves it. STEER traverse lines; STEER-FAIL if the line is not held within a metre or a drag does not
-    /// leave it at 3 m/s within 0.2 s.
+    /// Gravity across the path, on the stretch (its pitch is the hill's own): the board set going 35 degrees across the
+    /// fall line and left to itself: how the way it goes comes round to the fall line (the time to half way and to
+    /// within 5 degrees, the fastest it turns), then the same start held on an edge into the hill: the least edge that
+    /// holds the traverse for 3 s (within 5 degrees of how it started). STEER-FAIL if hands off it does not come round,
+    /// comes round in under a second (a snap) or turns faster than gravity alone could turn it.
     /// </summary>
-    static void Traverse(Rider r, Snow kind = Snow.Corduroy)
+    static void Across(Rider r)
     {
-        var was = Rider.RunHeading; float xWas = x0, zWas = z0;
-        Scale = 1f;
-        Surfaces.Force = SnowMix.Only(kind);
-        string on = kind == Snow.Corduroy ? "" : " on " + kind.ToString().ToLower();
-        try
-        {
+        foreach (float v in new[] { 15f, 22f, 30f })
             foreach (float side in new[] { 1f, -1f })
-                foreach (float v in new[] { 22f, 30f })
+            {
+                float a0 = 35f * Mathf.Deg2Rad * side;
+                float from = Launch(r, v, a0);
+                float tHalf = -1f, t5 = -1f, mostRate = 0f, prev = r.TravelHeading, most = 0f, gMost = 0f; bool off = false;
+                for (int i = 0; i < 120 * 10; i++)
                 {
-                    bool done = false;
-                    foreach (float z in new[] { zWas, 400f, 600f, 800f, 1000f, 1200f, 1500f, 1700f, 1900f, 2100f })
-                    {
-                        z0 = z; x0 = Slope.Centre(z) - side * 85f;
-                        float zA = z0 + 10f, rad = 65f * Mathf.Deg2Rad * side;
-                        System.Func<float, float> run = zz => rad * Mathf.SmoothStep(0f, 1f, (zz - zA) / 40f);
-                        // hands off: 200 m along it
-                        Rider.RunHeading = zz => 0f;
-                        Place(r, v);
-                        Rider.RunHeading = run;
-                        float xi = r.Body.position.x, zPrev = r.Z, gone = 0f, dev = 0f, air = 0f; int n = 0;
-                        Vector3 pPrev = r.Body.position;
-                        for (; n < 120 * 20 && gone < 200f && !r.Crashed; n++)
-                        {
-                            r.Steer = 0f; StepHeld(r, v);
-                            Vector3 p = r.Body.position;
-                            // (the line the run's heading draws from where it began, by the ground covered down the hill)
-                            float zm = 0.5f * (zPrev + p.z);
-                            xi += Mathf.Tan(run(zm)) * (p.z - zPrev);
-                            if (p.z > zA) gone += new Vector2(p.x - pPrev.x, p.z - pPrev.z).magnitude;
-                            dev = Mathf.Max(dev, Mathf.Abs(p.x - xi) * Mathf.Cos(run(p.z)));
-                            if (r.Airborne) air += Dt;
-                            zPrev = p.z; pPrev = p;
-                        }
-                        if (r.Crashed || r.Grinding) continue;   // (a tree or a rail on that line: another stretch)
-                        float heading = r.TravelHeading * Mathf.Rad2Deg;
-                        // a full drag each way, from on the line: the speed across the line 0.2 s on, and how far off it after 0.5 s
-                        string drags = ""; bool left = true;
-                        foreach (float drag in new[] { -1f, 1f })
-                        {
-                            Rider.RunHeading = zz => 0f;
-                            Place(r, v);
-                            Rider.RunHeading = run;
-                            for (int i = 0; i < 120 * 20 && r.Z < zA + 60f && !r.Crashed; i++) { r.Steer = 0f; StepHeld(r, v); }
-                            Vector3 p0 = r.Body.position; float h0 = run(p0.z), steer = 0f, across02 = 0f, off05 = 0f;
-                            var acrossDir = new Vector2(Mathf.Cos(h0), -Mathf.Sin(h0));   // (to the right of the run's line)
-                            Vector2 start = new Vector2(p0.x, p0.z), along = new Vector2(Mathf.Sin(h0), Mathf.Cos(h0));
-                            for (int i = 0; i < 60; i++)
-                            {
-                                steer = SteerTo(steer, drag); r.Steer = steer; StepHeld(r, v);
-                                Vector3 u = r.Body.linearVelocity;
-                                if (i == 23) across02 = Vector2.Dot(new Vector2(u.x, u.z), acrossDir);
-                                Vector2 q = new Vector2(r.Body.position.x, r.Body.position.z) - start;
-                                off05 = Vector2.Dot(q - along * Vector2.Dot(q, along), acrossDir);
-                            }
-                            drags += $" | full drag {(drag < 0f ? "left" : "right")}: {across02:+0.0;-0.0} m/s across the line after 0.2 s, {off05:+0.0;-0.0} m off it after 0.5 s";
-                            if (Mathf.Abs(across02) < 3f || Mathf.Sign(across02) != drag) left = false;
-                        }
-                        Debug.Log($"STEER traverse{on} 65 deg {(side > 0f ? "right" : "left")} at {v * 3.6f:0} km/h (z={z0:0}): hands off for {gone:0} m, {dev:0.00} m off the run's line at most, heading {heading:0} deg at the end, {air:0.0} s of it in the air{drags}");
-                        if (dev > 1f) Debug.Log($"STEER-FAIL traverse{on} {(side > 0f ? "right" : "left")} {v * 3.6f:0} km/h: {dev:0.00} m off the run's line, hands off");
-                        if (!left && kind == Snow.Corduroy) Debug.Log($"STEER-FAIL traverse {(side > 0f ? "right" : "left")} {v * 3.6f:0} km/h: a full drag does not leave the line at 3 m/s within 0.2 s");
-                        done = true;
-                        break;
-                    }
-                    if (!done) Debug.Log($"STEER-FAIL traverse {(side > 0f ? "right" : "left")} {v * 3.6f:0} km/h: no stretch where the ride stays up");
+                    r.Steer = 0f; StepHeld(r, v);
+                    if (r.Airborne || r.Crashed || r.Grinding) { off = true; break; }
+                    float h = r.TravelHeading - r.FallLine, rate = Mathf.Abs(r.TravelHeading - prev) / Dt; prev = r.TravelHeading;
+                    if (i > 5) mostRate = Mathf.Max(mostRate, rate);
+                    most = Mathf.Max(most, Mathf.Abs(r.SideEdge)); gMost = Mathf.Max(gMost, Mathf.Abs(r.SideSlope));
+                    if (tHalf < 0f && Mathf.Abs(h) < Mathf.Abs(a0) * 0.5f) tHalf = (i + 1) * Dt;
+                    if (t5 < 0f && Mathf.Abs(h) < 5f * Mathf.Deg2Rad) { t5 = (i + 1) * Dt; break; }
                 }
-        }
-        finally { Rider.RunHeading = was; x0 = xWas; z0 = zWas; Surfaces.Force = null; }
+                // held on an edge into the hill (the finger the way the board is already going: up the hill's side)
+                float least = -1f;
+                for (float s = 0.02f; s <= 0.6f && least < 0f; s += 0.02f)
+                {
+                    from = Launch(r, v, a0);
+                    bool held = true;
+                    for (int i = 0; i < 120 * 3 && held; i++)
+                    {
+                        r.Steer = s * side; StepHeld(r, v);
+                        if (r.Airborne || r.Crashed) break;
+                        if ((r.TravelHeading - from) * side < -5f * Mathf.Deg2Rad) held = false;
+                    }
+                    if (held) least = s;
+                }
+                Debug.Log($"STEER across {35f * side:+0;-0} deg at {v * 3.6f:0} km/h, hands off: half way to the fall line in {T(tHalf)}, within 5 deg of it in {T(t5)}{(off ? " (left the snow first)" : "")}; it turned {mostRate * Mathf.Rad2Deg:0} deg/s at most, by gravity's {gMost:0.0} m/s^2 across the path (the flat board's own edge: {most:0.0} m/s^2) | held on an edge into the hill: {(least < 0f ? "not held by 60% of the drag" : $"{least * 100f:0}% of the drag holds the traverse")}");
+                if (!off && t5 < 0f) Debug.Log($"STEER-FAIL across {35f * side:+0;-0} at {v * 3.6f:0} km/h: hands off, the board never came round to the fall line in 10 s");
+                if (tHalf >= 0f && tHalf < 0.5f) Debug.Log($"STEER-FAIL across {35f * side:+0;-0} at {v * 3.6f:0} km/h: hands off it came half way round in {tHalf:0.00} s: a snap");
+                if (mostRate * v > gMost + most + 1.5f) Debug.Log($"STEER-FAIL across {35f * side:+0;-0} at {v * 3.6f:0} km/h: it turned at {mostRate * v:0.0} m/s^2, more than gravity ({gMost:0.0}) and the flat board's edge ({most:0.0}) pull it");
+            }
+    }
+
+    /// <summary>On the stretch at v, the board and its travel both `angle` off straight down (rad), edge flat.</summary>
+    static float Launch(Rider r, float v, float angle)
+    {
+        Place(r, v);
+        for (int i = 0; i < 30; i++) { r.Steer = 0f; StepHeld(r, v); }
+        float a = r.FallLine + angle;
+        var vel = r.Body.linearVelocity; float h = new Vector2(vel.x, vel.z).magnitude;
+        r.Body.linearVelocity = new Vector3(Mathf.Sin(a) * h, vel.y, Mathf.Cos(a) * h);
+        r.Heading = a;
+        return a;
     }
 
     // ---- a 400 m stretch where a straight run stays on the snow (no kickers, no drops)
@@ -234,7 +233,7 @@ public static class SteerTest
                     foreach (float s in new[] { 1f, RiderInput.Curve(0.5f) })
                     {
                         if (air) break;
-                        Sideways(r, v, s, out _, out _, out _);
+                        Sideways(r, v, s, out _, out _);
                         if (sideAir > 0) air = true;
                     }
                 if (!air) return;
@@ -276,31 +275,12 @@ public static class SteerTest
         Physics.Simulate(Dt);
     }
 
-    // full lock from riding straight: the radius it settles to, how long it takes to get there
-    static void Response(Rider r, float v, out float radius, out float t90, out float t20, out float skid)
-    {
-        Place(r, v);
-        float tr0 = r.TravelHeading, steer = 0f;
-        var yaws = new float[180]; t20 = -1f; skid = 0f;
-        for (int i = 0; i < yaws.Length; i++)
-        {
-            steer = Mathf.Lerp(steer, 1f, 1f - Mathf.Exp(-Dt * 60f));   // (RiderInput's own low-pass)
-            r.Steer = steer; StepHeld(r, v);
-            yaws[i] = Mathf.Abs(r.YawRate);
-            skid = Mathf.Max(skid, r.Skid);
-            if (t20 < 0f && Mathf.Abs(Mathf.DeltaAngle(tr0 * Mathf.Rad2Deg, r.TravelHeading * Mathf.Rad2Deg)) >= 20f) t20 = (i + 1) * Dt;
-            if (Mathf.Abs(r.Heading) > 1.3f) { System.Array.Resize(ref yaws, i + 1); break; }   // (the heading limit, across the hill)
-        }
-        float ss = 0f; foreach (float y in yaws) ss = Mathf.Max(ss, y);
-        t90 = -1f;
-        for (int i = 0; i < yaws.Length; i++) if (yaws[i] >= 0.9f * ss) { t90 = (i + 1) * Dt; break; }
-        radius = v / Mathf.Max(1e-3f, ss);
-    }
-
     static string T(float t) => t < 0f ? "never" : $"{t:0.00} s";
 
-    // sideways speed, from what the board does left to itself: on the line, then half a second hands off (each
-    // steering's own idea of straight), and the sideways speed it has then is the zero
+    static float SteerTo(float steer, float target) => Mathf.Lerp(steer, target, 1f - Mathf.Exp(-Dt * 60f));   // (RiderInput's own low-pass)
+
+    // sideways speed, from what the board does left to itself: on the line, then half a second hands off, and the
+    // sideways speed it has then is the zero
     const float RevSpeed = 2f;   // the reversal starts going left this fast
     static float lat0;
     static float Lat(Rider r) => r.Body.linearVelocity.x - lat0;
@@ -311,26 +291,62 @@ public static class SteerTest
         lat0 = 0f; lat0 = Lat(r);
     }
 
-    static float SteerTo(float steer, float target) => Mathf.Lerp(steer, target, 1f - Mathf.Exp(-Dt * 60f));   // (RiderInput's own low-pass)
+    static int sideAir;   // steps of the last Sideways spent off the snow
 
-    // a drag held from riding straight: how soon the sideways speed comes, and how much of it there is
-    static readonly bool trace = System.Environment.GetEnvironmentVariable("STEER_TRACE") == "1";
-    static int sideAir;   // steps of the last Sideways spent off the snow (a real air there steers at AirControl, not as on the snow)
-    static readonly bool quick = System.Environment.GetEnvironmentVariable("STEER_QUICK") == "1";   // only the response times
-    static void Sideways(Rider r, float v, float s, out float t3, out float t90, out float steady)
+    /// <summary>The finger thrown to `s` from riding straight: how long until the edge is 90% of the angle it settles at (deg).</summary>
+    static float EdgeTime(Rider r, float v, float s, out float edgeDeg)
     {
         Settle(r, v);
-        var lat = new float[120]; float steer = 0f; t3 = -1f; sideAir = 0;
-        for (int i = 0; i < lat.Length; i++)
+        var lean = new float[60]; float steer = 0f;
+        for (int i = 0; i < lean.Length; i++) { steer = SteerTo(steer, s); r.Steer = steer; StepHeld(r, v); lean[i] = Mathf.Abs(r.Lean); }
+        float full = lean[lean.Length - 1];
+        edgeDeg = full * Mathf.Rad2Deg;
+        for (int i = 0; i < lean.Length; i++) if (lean[i] >= 0.9f * full) return (i + 1) * Dt;
+        return -1f;
+    }
+
+    /// <summary>A drag held from riding straight: how soon the board is going 3 m/s sideways, and the most the edge pulls it sideways (m/s^2) in the first second.</summary>
+    static void Sideways(Rider r, float v, float s, out float t3, out float acc)
+    {
+        Settle(r, v);
+        float steer = 0f; t3 = -1f; acc = 0f; sideAir = 0;
+        for (int i = 0; i < 120; i++)
         {
             steer = SteerTo(steer, s); r.Steer = steer; StepHeld(r, v);
-            lat[i] = Lat(r); if (r.Airborne || r.Grinding) sideAir++;
-            if (trace && v > 29f) { var q = r.Body.position; var u = r.Body.linearVelocity; Debug.Log($"STEER-TRACE i={i} z={q.z:0.00} x={q.x:0.00} over={q.y - Rider.R - Slope.DrawnHeight(q.x, q.z):0.000} v=({u.x:0.00},{u.y:0.00},{u.z:0.00}) grind={r.Grinding} air={r.Airborne} steer={r.Steer:0.00} drawnSlopeAhead={(Slope.DrawnHeight(q.x, q.z + 0.5f) - Slope.DrawnHeight(q.x, q.z)) / 0.5f:0.000}"); }
-            if (t3 < 0f && lat[i] >= 3f) t3 = (i + 1) * Dt;
+            if (r.Airborne || r.Grinding) sideAir++;
+            acc = Mathf.Max(acc, Mathf.Abs(r.SideEdge));
+            if (t3 < 0f && Lat(r) >= 3f) t3 = (i + 1) * Dt;
+            if (Mathf.Abs(r.Heading) > 1.2f) break;   // (round across the hill)
         }
-        steady = lat[lat.Length - 1];
-        t90 = -1f;
-        for (int i = 0; i < lat.Length; i++) if (lat[i] >= 0.9f * steady) { t90 = (i + 1) * Dt; break; }
+    }
+
+    /// <summary>
+    /// A drag held from riding straight, 0.45 s on (the arc has settled; a full edge has not yet brought the board
+    /// round across the hill): the radius of the way it is going, the slip, whether the edge has let go and what
+    /// that takes off the speed (m/s^2), and the edge angle.
+    /// </summary>
+    static void Arc(Rider r, float v, float s, out float radius, out float slipDeg, out bool sliding, out float brake, out float edgeDeg)
+    {
+        Settle(r, v);
+        float steer = 0f, turned = 0f, prev = r.TravelHeading, slip = 0f, br = 0f; int n = 0, slid = 0;
+        for (int i = 0; i < 54; i++)
+        {
+            steer = SteerTo(steer, s); r.Steer = steer;
+            float before = r.Body.linearVelocity.magnitude;
+            r.Tick(Dt);
+            float after = r.Body.linearVelocity.magnitude;
+            if (!r.Airborne && !r.Crashed) { var vel = r.Body.linearVelocity; float h = vel.magnitude; if (h > 0.5f) r.Body.linearVelocity = vel * (v / h); }
+            Physics.Simulate(Dt);
+            float th = r.TravelHeading;
+            if (i >= 42) { turned += Mathf.Abs(th - prev); slip += Mathf.Abs(r.Slip); n++; if (r.Sliding) { slid++; br += Mathf.Abs(r.SideEdge) * Mathf.Abs(Mathf.Tan(r.Slip)); } }
+            prev = th;
+        }
+        float rate = turned / (n * Dt);
+        radius = rate > 1e-4f ? v / rate : 9999f;
+        slipDeg = slip / n * Mathf.Rad2Deg;
+        sliding = slid > n / 2;
+        brake = slid > 0 ? br / slid : 0f;
+        edgeDeg = Mathf.Abs(r.Lean) * Mathf.Rad2Deg;
     }
 
     // going left at RevSpeed, then the finger flipped right: how soon the old way is gone, and how soon the new one comes
@@ -341,7 +357,7 @@ public static class SteerTest
         int i = 0;
         for (; i < 180 && Lat(r) > -RevSpeed; i++) { steer = SteerTo(steer, -s); r.Steer = steer; StepHeld(r, v); }
         if (Lat(r) > -RevSpeed) return;   // (never got going left that fast)
-        for (int j = 0; j < 180; j++)
+        for (int j = 0; j < 240; j++)
         {
             steer = SteerTo(steer, s); r.Steer = steer; StepHeld(r, v);
             float l = Lat(r);
@@ -350,10 +366,21 @@ public static class SteerTest
         }
     }
 
-    static int Slalom(Rider r, Course c, float v, float look, float kp, float kd, bool held, out float endV, out float startV)
+    // ---- the old bot: aims at the line through the gates a look-ahead ahead, steering by the angle to it. It was
+    //      written for a board that goes where the finger points; it is kept as the plainest rider there is
+    static int BestPursuit(Rider r, Course c, float v)
+    {
+        int best = 0;
+        foreach (float look in new[] { 0.12f, 0.3f })
+            foreach (float kp in new[] { 2f, 8f })
+                foreach (float kd in new[] { 0f, 0.25f })
+                    best = Mathf.Max(best, Pursuit(r, c, v, look, kp, kd));
+        return best;
+    }
+
+    static int Pursuit(Rider r, Course c, float v, float look, float kp, float kd)
     {
         Place(r, v);
-        startV = r.Speed;
         int made = 0, next = 0;
         float zEnd = z0 + 30f + (c.gates - 1) * c.spacing + 1f;
         float prevZ = r.Z, prevX = r.Body.position.x;
@@ -361,32 +388,97 @@ public static class SteerTest
         {
             float sp = Mathf.Max(5f, r.Speed);
             float la = Mathf.Max(2f, sp * look);
-            // aim at the line through the gates a look-ahead ahead, but never past the next gate's own centre
             float gz = z0 + 30f + next * c.spacing;
             float az = Mathf.Min(r.Z + la, gz);
             float ax = az >= gz - 0.01f ? GateX(next, c) : PathX(az, c.swing, c.spacing);
             if (az - r.Z < 1f) { az = r.Z + la; ax = PathX(az, c.swing, c.spacing); }
             float want = Mathf.Atan2(ax - r.Body.position.x, az - r.Z);
             r.Steer = Mathf.Clamp(kp * Mathf.DeltaAngle(r.TravelHeading * Mathf.Rad2Deg, want * Mathf.Rad2Deg) * Mathf.Deg2Rad - kd * r.YawRate, -1f, 1f);
-            StepHeld(r, held ? v : 0f);
-            float z = r.Z, x = r.Body.position.x;
-            while (next < c.gates && prevZ < gz && z >= gz)
-            {
-                float xc = Mathf.Lerp(prevX, x, (gz - prevZ) / Mathf.Max(1e-4f, z - prevZ));
-                if (Mathf.Abs(xc - GateX(next, c)) <= GateW * 0.5f) made++;
-                next++; gz = z0 + 30f + next * c.spacing;
-            }
-            prevZ = z; prevX = x;
-            if (z > zEnd) break;
+            StepHeld(r, v);
+            Gates(r, c, ref next, ref made, ref prevZ, ref prevX);
+            if (r.Z > zEnd) break;
         }
-        endV = r.Speed;
         return made;
     }
 
-    static float Straight(Rider r, float v, float len)
+    static void Gates(Rider r, Course c, ref int next, ref int made, ref float prevZ, ref float prevX)
+    {
+        float z = r.Z, x = r.Body.position.x, gz = z0 + 30f + next * c.spacing;
+        while (next < c.gates && prevZ < gz && z >= gz)
+        {
+            float xc = Mathf.Lerp(prevX, x, (gz - prevZ) / Mathf.Max(1e-4f, z - prevZ));
+            if (Mathf.Abs(xc - GateX(next, c)) <= GateW * 0.5f) made++;
+            next++; gz = z0 + 30f + next * c.spacing;
+        }
+        prevZ = z; prevX = x;
+    }
+
+    // ---- the racer: rides a cosine through the gates (inside their middles by a margin), the sideways pull that line
+    //      needs fed forward a moment early (the edge's own lag) as the arc to ask for, and its error steered out. With
+    //      the speed its own, it throws the whole edge (a skid) while it is going faster than it can make the gates at
+    struct Result { public int made; public float endV, minV, skid; }
+
+    /// <summary>The steer that asks the edge for the arc `kappa` (1/m, + right) at speed sp: ArcAt inverted.</summary>
+    static float SteerFor(Rider r, float kappa, float sp)
+    {
+        float knee = r.ArcAt(Rider.EdgeKnee, sp);   // (the arc at the knee: all the snow holds)
+        float k = Mathf.Min(Mathf.Abs(kappa) / Mathf.Max(knee, 1e-5f), Rider.SkidOver);
+        float share = k <= 1f ? Mathf.Atan(k * Mathf.Tan(Rider.MaxLean)) / Rider.MaxLean * Rider.EdgeKnee
+                              : Rider.EdgeKnee + (k - 1f) / (Rider.SkidOver - 1f) * (1f - Rider.EdgeKnee);
+        return Mathf.Clamp(Mathf.Sign(kappa) * share / Mathf.Clamp(Scale, 0.25f, 4f), -1f, 1f);
+    }
+
+    static Result Racer(Rider r, Course c, float v, float amp, float lead, float kp, float kd, bool held, float vt)
     {
         Place(r, v);
-        for (int i = 0; i < 120 * 30 && r.Z < z0 + 30f + len; i++) { r.Steer = Hold(r, PathX(r.Z + 10f, 0f, 1f)); StepHeld(r, 0f); }
+        var res = new Result { minV = v };
+        int next = 0;
+        float zEnd = z0 + 30f + (c.gates - 1) * c.spacing + 1f, g0 = z0 + 30f;
+        float prevZ = r.Z, prevX = r.Body.position.x, steer = 0f;
+        for (int i = 0; i < 120 * 40 && next < c.gates && !r.Crashed; i++)
+        {
+            float sp = Mathf.Max(5f, r.Speed), om = Mathf.PI * sp / c.spacing;
+            Vector3 p = r.Body.position, vel = r.Body.linearVelocity;
+            float baseX = PathX(p.z, 0f, 1f), baseV = (PathX(p.z + 1f, 0f, 1f) - baseX) * vel.z;
+            float zl = p.z + sp * lead;
+            float ad = zl < g0 - c.spacing ? 0f : amp * om * om * Mathf.Cos(Mathf.PI * (zl - g0) / c.spacing);
+            float xd = p.z < g0 - c.spacing ? -amp : -amp * Mathf.Cos(Mathf.PI * (p.z - g0) / c.spacing);
+            float vd = p.z < g0 - c.spacing ? 0f : amp * om * Mathf.Sin(Mathf.PI * (p.z - g0) / c.spacing);
+            float a = ad + kp * (xd - (p.x - baseX)) + kd * (vd - (vel.x - baseV));
+            float want = SteerFor(r, a / (sp * sp), sp);
+            if (!held && r.Speed > vt) want = Mathf.Abs(a) > 1f ? Mathf.Sign(a) : (steer >= 0f ? 1f : -1f);   // (too fast for these gates: the whole edge, a skid)
+            steer = SteerTo(steer, want); r.Steer = steer;
+            StepHeld(r, held ? v : 0f);
+            res.minV = Mathf.Min(res.minV, r.Speed);
+            if (r.Sliding) res.skid += Dt;
+            Gates(r, c, ref next, ref res.made, ref prevZ, ref prevX);
+            if (r.Z > zEnd) break;
+        }
+        res.endV = r.Speed;
+        return res;
+    }
+
+    static Result BestRacer(Rider r, Course c, float v, bool held)
+    {
+        var best = new Result { made = -1 };
+        foreach (float amp in new[] { c.swing - 1.1f, c.swing - 0.6f })
+            foreach (float lead in new[] { 0.06f, 0.12f, 0.2f })
+                foreach (float kp in new[] { 50f })
+                    foreach (float kd in new[] { 9f })
+                        foreach (float vt in held ? new[] { 0f } : new[] { 11f, 13f, 15f, 18f })
+                        {
+                            var m = Racer(r, c, v, amp, lead, kp, kd, held, vt);
+                            if (m.made > best.made || (m.made == best.made && m.minV > best.minV)) best = m;
+                            if (held && best.made == c.gates) return best;
+                        }
+        return best;
+    }
+
+    static float Straight(Rider r, float v, float len, out float most)
+    {
+        Place(r, v);
+        most = 0f;
+        for (int i = 0; i < 120 * 40 && r.Z < z0 + 30f + len; i++) { r.Steer = Hold(r, PathX(r.Z + 10f, 0f, 1f)); StepHeld(r, 0f); most = Mathf.Max(most, r.Speed); }
         return r.Speed;
     }
 }

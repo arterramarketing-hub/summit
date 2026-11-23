@@ -3,113 +3,149 @@ using UnityEngine;
 namespace Summit
 {
     /// <summary>
-    /// How the rider moves on the snow: the one movement model, all of it here.
+    /// How the rider moves on the snow: the one movement model, all of it here. It is a carving model: forces on a
+    /// board, nothing aimed at.
     ///
-    /// The board has two things, and both are read from its velocity each step (nothing else is remembered):
-    ///   - its speed along the snow, which is gravity's (down the slope of the path it is on), the air's and the
-    ///     snow's (drag, friction, what turning costs), never the finger's;
-    ///   - its line across the hill (the way it travels, an angle off straight down the mountain), which is the
-    ///     finger's alone: how far the thumb is dragged is how fast you go sideways, the line swings there in a few
-    ///     hundredths of a second, and with the thumb lifted it is straight down the hill (or, where the run itself
-    ///     swings across the hill, along the run: RunHeading).
-    /// The board always points along its line: there is no slip, no grip to lose and no momentum carrying it the old
-    /// way. Nothing but the finger turns it: the snow's tilt, bumps, rocks under the board and landings change the
-    /// speed and the height, not the line. (The one exception is a board at a crawl, under FallLineSlow: "straight"
-    /// is then the snow's own fall line and a stalled board is eased on, so it can never sit stuck in a hollow.)
+    /// The board has a velocity (the way it is going, and how fast), a heading (the way it points: Heading) and an
+    /// edge angle (Lean). They are three things, and the angle between the first two is the slip.
+    ///   - The finger sets the edge angle, and only that: how far the thumb is dragged (or the phone tilted) is how
+    ///     far the board is tipped onto its edge, and it gets there in a tenth of a second (EdgeTime). The TURN
+    ///     setting is how much edge the same drag gives.
+    ///   - An edged board carves: its heading turns along an arc whose radius follows from the edge angle (more edge,
+    ///     a tighter arc: CarveRadius at the least, the sidecut's) and from the speed (the faster, the wider the arc
+    ///     the snow can hold: v^2 / r is the sideways pull the edge has to find, and it has only EdgeGrip gravities
+    ///     of it). The first three quarters of the throw (EdgeKnee) are arcs the snow holds; the last quarter asks
+    ///     for more than it can (SkidOver): that is a skid.
+    ///   - The edge is what turns the velocity: it pushes across the board against any sideslip (stiffly: BiteRate),
+    ///     up to its grip. Inside the grip the velocity follows the heading a few degrees behind and nothing is lost:
+    ///     a carve. Past it the edge lets go (it holds less sliding than biting: SlideHold), the board swings on
+    ///     across the way it is going, and its push now both turns the velocity and takes speed off it: a skid, the
+    ///     way to scrub speed and to get round something a carve cannot.
+    ///   - Gravity is real along the snow, both ways: down the path it is the speed (as ever), and across the path it
+    ///     pulls the velocity round toward the snow's own fall line. A flat board has nothing to hold it against
+    ///     that (FlatHold) and its nose swings to the way it slides (FlatAlign), so hands off it drifts, and turns,
+    ///     down the path of least resistance: slowly (a second or three), never a snap. To hold a line across a
+    ///     slope, hold an edge into the hill.
+    ///   - The snow underfoot (Surfaces) sets the grip and how stiffly the edge bites: corduroy holds best, powder is
+    ///     soft and washes out, ice lets go soonest.
+    /// There is no line to hold and nothing is aimed at: no target heading, no target sideways speed, and the run's
+    /// own heading (RunHeading) is the camera's to look along, never the board's.
     ///
     /// The snow it rides is the drawn snow averaged over the board's own length (SnowUnder), so the mesh's facets and
     /// the seams between its pieces are not felt, and anything low enough to ride over is a smooth rise in that
     /// surface (RiderRideOver), not a jump. A real lip, crest or drop still throws the board into the air: when the
     /// snow falls away faster than gravity can follow.
     ///
-    /// In the air the same finger asks for the same sideways speed: in a hop too short to trick in the flight follows
-    /// it as the board does on the snow (a bump never takes the steering away); in a real air it bends toward it at
-    /// AirControl, as before. The body's lean, the edge, the trail and the spray are worked out from the motion
-    /// afterwards (LookStep) and never feed back into it.
+    /// In the air the flight is the flight's: gravity, and a little drift the finger's way (AirDrift). The finger
+    /// still tips the board onto its edge and turns its nose a little ahead of the flight (AirTurn); it comes down
+    /// with that edge and that slip, and the same model takes it from there: nothing is lined up for it.
     /// </summary>
     public partial class Rider
     {
-        // ---- the finger's line
-        // A full drag is SideSpeed (m/s) across the hill, as the angle off straight that gives that at the speed you
-        // are going (never more than SideAngle off it: slow, a full drag is a hard traverse). The line swings there
-        // with the time constant SideResponse, by no more sideways pull than SideAccel (m/s^2) and no faster than
-        // MaxYawRate: drag left and you go left, flip right and you go right, let go and you go straight down the hill
-        public static float SideSpeed = 15f, SideAngle = 1.1f, SideResponse = 0.03f, SideAccel = 260f;
-        public static float MinCarveSpeed = 7f, MaxYawRate = 12f;    // (slower than MinCarveSpeed the pull cap stops climbing; MaxYawRate caps the swing)
-        // crawling (under FallLineSlow m/s, fading out by twice that), straight is the snow's own fall line, at most
-        // FallLineMax off the mountain's, followed this slowly (s)
-        public static float FallLineSlow = 5f, FallLineMax = 1.2f, FallLineLag = 0.35f;
+        // ---- the edge: the finger's
+        /// <summary>s for the edge to be nine tenths of the way to the angle asked for (a tenth of a second from the finger itself, with the input's own smoothing).</summary>
+        public static float EdgeTime = 0.08f;
+        /// <summary>m: the tightest arc a held edge carves (at EdgeKnee of the throw, slow enough for the snow to hold it): the sidecut's.</summary>
+        public static float CarveRadius = 4.5f;
+        /// <summary>The sideways pull a full edge holds on corduroy, in gravities (of G, on the level). The SHARP EDGES upgrade and each ride's Grip scale it.</summary>
+        public static float EdgeGrip = 3.2f;
+        /// <summary>The arc asked for at EdgeKnee, as a share of what the snow holds at that speed (under 1: the last of the carve is held on any pitch).</summary>
+        public static float CarveShare = 0.85f;
+        /// <summary>The share of the throw that is carve; past it the arc asked for climbs to SkidOver times what the snow holds.</summary>
+        public static float EdgeKnee = 0.75f, SkidOver = 2.8f;
+        /// <summary>The share of a full edge by which the edge is fully in the snow (under it, its hold and its bite fade to a flat board's).</summary>
+        public static float EdgeBite = 0.25f;
+        /// <summary>1/s: how stiffly a biting edge pushes back against sideslip; and a flat board's (it has almost none), and the share of the grip a flat board has.</summary>
+        public static float BiteRate = 30f, FlatBite = 1.2f, FlatHold = 0.05f;
+        /// <summary>A sliding edge holds this share of what a biting one does, having let go over SlideFall m/s of slip.</summary>
+        public static float SlideHold = 0.8f, SlideFall = 2.5f;
+        /// <summary>How fast the nose swings to the way the board is going (1/s): flat, edged, and (a number, on grip / speed) in a skid.</summary>
+        public static float FlatAlign = 5f, EdgeAlign = 1f, SkidAlign = 1f;
+        /// <summary>At a crawl the rider can step the board round (rad/s at full edge, fading out by PivotBelow m/s).</summary>
+        public static float PivotRate = 1.2f, PivotBelow = 10f;
+        /// <summary>The fastest the board turns (rad/s), the most it can be across the way it is going (rad), and the speed under which the arc stops tightening (m/s).</summary>
+        public static float MaxYawRate = 6f, MaxSlip = 1.2f, MinCarveSpeed = 4f;
+        /// <summary>
+        /// THE PACE KNOB: gravity's pull along the snow, as a share of G (1: as it has always been). It is what sets how
+        /// fast a run is: the speed the board runs out to goes with its square root (0.64 is four fifths of the
+        /// speed, 0.36 three fifths). It does not touch the air: jumps fly and land as they do.
+        /// </summary>
+        public static float Pace = 1f;
+        /// <summary>m/s^2 a full edge drifts the flight sideways in the air; how far ahead of the flight the nose is turned (rad) and how fast (rad/s).</summary>
+        public static float AirDrift = 5f, AirTurnMost = 0.35f, AirTurnRate = 1.6f;
+
+        // the snow's own fall line under the board is followed this slowly (s), and is never taken as more than
+        // FallLineMax off the mountain's (a face falling back up the hill is no guide)
+        public static float FallLineMax = 1.2f, FallLineLag = 0.35f;
         /// <summary>
         /// Where the run itself swings across the hill (a traverse along a cliff band), its heading off the fall line at
-        /// z (rad, + to the right; 0 everywhere else). The terrain fills this in (one line where the mountain is set
-        /// up: Rider.RunHeading = Slope.RunHeading). At speed that heading is "straight": a lifted thumb holds it, and
-        /// the sideways speed a drag asks for is measured off it. (Crawling, straight is still the snow's own fall line.)
+        /// z (rad, + to the right; 0 everywhere else). The terrain fills this in (Slope.Init). The camera looks along it
+        /// and the grooming's lines follow it; the board's physics never read it.
         /// </summary>
         public static System.Func<float, float> RunHeading = z => 0f;
-        /// <summary>The run's heading is read this far ahead of the board (s of travel): as far as the line lags the
-        /// finger, so on the way into a traverse the board swings with the run and not a moment behind it.</summary>
-        public static float RunLead = 0.035f;
-        /// <summary>What straight is for the steering now (rad off the mountain's fall line): the snow's own fall line at
-        /// a crawl, the run's heading at speed.</summary>
-        public float Straight { get; private set; }
-        /// <summary>The run's own heading under the board, as much of it as counts at this speed (0 off a traverse): the
-        /// camera looks along it.</summary>
+        /// <summary>The run's own heading under the board, as much of it as counts at this speed (0 off a traverse): for the camera.</summary>
         public float RunNow { get; private set; }
 
-        /// <summary>Straight, for this step; returns how far the run's own heading swung since the last one.</summary>
-        float SetStraight(float z, float vz, float sp)
-        {
-            float run = RunHeading(z + vz * RunLead) * Mathf.Clamp01((sp - FallLineSlow) / FallLineSlow), swung = run - RunNow;
-            RunNow = run;
-            Straight = FallLine + RunNow;
-            return swung;
-        }
-
-        // the edge (the SHARP EDGES upgrade and each ride's Grip scale these): the most sideways pull it gives the
-        // line (m/s^2), and how soon it bites (1/s: half of one over it is added to the swing's time constant)
-        public static float GripLimit = 280f, Grip = 150f;
-        public static float TurnDrag = 0.24f;                        // speed lost per radian the line is turned
-        // what a turn costs, and how the body shows it, go by the swing of the line over this long (s), not step by
-        // step: a thumb that trembles (or a bot that chatters) is not turning, and must not brake the board for it
+        // what a turn shows goes by the swing of the board over this long (s), not step by step
         public static float YawEase = 0.06f;
         float yawSmooth;
-        public static float AirResponse = 0.25f;                     // s: how soon a real air's flight bends toward the finger's line (never faster than AirControl)
         // ---- the snow under the board
         public static float BoardLength = 1.5f;                      // m of snow the board bridges: the surface it rides is averaged over it
         public static float SnowSink = 0.03f;                        // m: the most that averaging may put the board under the drawn snow (the crest of a lip)
-        // ---- the look (never the motion)
-        public static float LeanSpring = 30f;                        // how fast the body gets onto its edge (rad/s)
-        public static float LeanAccel = 60f;                         // m/s^2 of sideways pull that puts the body fully over (the rest of the lean is the drag itself)
 
-        // ---- the snow underfoot (Surfaces): what it is under the board, and what that does to the board's own numbers.
-        //      It scales the snow's drag, and how soon the sideways speed the finger asks for is the board's to swing
-        //      onto (SideStep); it never moves the line, and the line holds what it has as tightly on ice as on
-        //      corduroy. Kept through an air (a hop steers as on the snow it left)
+        // ---- the snow underfoot (Surfaces): what it is under the board, and what that does to the edge's grip and
+        //      bite and the snow's drag. Kept through an air
         /// <summary>The snow under the board (the last it rode, while it is in the air).</summary>
         public SnowMix Underfoot { get; private set; }
         /// <summary>How that snow rides (Surfaces.Feel).</summary>
         public SnowFeel SnowFeel => snowFeel;
         SnowFeel snowFeel = Summit.SnowFeel.Firm;
-        float sideWant;   // the sideways speed the line is swinging onto now (m/s): the finger's, a moment behind it on snow with less grip
 
-        /// <summary>The sideways speed the finger asks for now (m/s, + to the right of straight).</summary>
-        float SideAsked() => Steer * SideSpeed * feel.TurnRate * Mathf.Clamp(TurnScale, 0.25f, 4f) * Mathf.Lerp(1f, 0.7f, Tuck);
+        float edge, edgeVel;   // the edge angle (rad, + right) and its rate: the physics' own (Lean is this, and the body's chatter on top)
+        float airTurn;         // in the air: how far the nose is turned off the flight (rad)
+        bool wasSliding;
+
+        /// <summary>The slip: how far the board points off the way it is going (rad, + to the right).</summary>
+        public float Slip { get; private set; }
+        /// <summary>This step's pull across the way the board is going (m/s^2, + right): the edge's, and gravity's (the snow's own tilt). The test tools.</summary>
+        public float SideEdge { get; private set; }
+        public float SideSlope { get; private set; }
+        /// <summary>The edge has let go: the board is skidding.</summary>
+        public bool Sliding { get; private set; }
+        /// <summary>The edge let go (how fast the board was going, m/s): the spray's burst.</summary>
+        public System.Action<float> Skidded;
+
+        /// <summary>The edge angle the finger asks for now (rad).</summary>
+        float EdgeAsked() => Mathf.Clamp(Steer * Mathf.Clamp(TurnScale, 0.25f, 4f), -1f, 1f) * MaxLean * Mathf.Lerp(1f, 0.7f, Tuck);
 
         /// <summary>
-        /// One step of the sideways speed the board is given to swing onto. On corduroy it is the finger's own, at once
-        /// (the board's own quickness is all there is). Snow with less grip gives it later and no faster than its edge
-        /// can pull: ice comes round in a quarter of a second, not a twelfth. That is all "less grip" is: what the board
-        /// has already been given it holds exactly as on corduroy, whatever the snow's tilt or the run does under it.
+        /// One step of the edge going to the finger's angle (a critically damped spring: it starts at once, is nine
+        /// tenths there in EdgeTime and never overshoots), on the snow or in the air; and the body's chatter laid on
+        /// it for the look (a knock, a hard landing, rock under the board), which the physics never see.
         /// </summary>
-        void SideStep(float dt, bool free)
+        void EdgeStep(float dt)
         {
-            float ask = SideAsked();
-            if (free || (snowFeel.response <= 1.001f && snowFeel.pull >= 0.999f)) { sideWant = ask; return; }
-            float scale = Mathf.Clamp(TurnScale, 0.25f, 4f), root = Mathf.Sqrt(scale);
-            float edge = Mathf.Max(0.05f, feel.Grip) * Mathf.Max(1f, scale);
-            float most = Mathf.Min(SideAccel * root * feel.TurnResponse, GripLimit * edge) * snowFeel.pull;
-            float rate = (ask - sideWant) / Mathf.Max(SwingTime(1f) * (snowFeel.response - 1f), dt);
-            sideWant += Mathf.Clamp(rate, -most, most) * dt;
+            float spring = 3.9f / Mathf.Max(0.02f, EdgeTime) * feel.TurnResponse;
+            float acc = spring * spring * (EdgeAsked() - edge) - 2f * spring * edgeVel;
+            edgeVel += acc * dt;
+            edge = Mathf.Clamp(edge + edgeVel * dt, -MaxLean, MaxLean);
+            if (Tube && !Airborne) { Lean = Mathf.Lerp(Lean, Steer * 0.35f, 1f - Mathf.Exp(-dt * 6f)); return; }
+            Lean = edge + (wobble > 0f ? MaxLean * 0.3f * Mathf.Min(1f, wobble / 0.35f) * Mathf.Sin(churnT * 13f) : 0f);
+        }
+
+        /// <summary>The arc asked for at this share of a full edge, in units of the arc the snow holds: up to 1 by EdgeKnee (as the tangent of the edge angle: a tilted sidecut), then on up to SkidOver.</summary>
+        public static float ArcAsked(float share)
+        {
+            if (share <= EdgeKnee) return Mathf.Tan(share / EdgeKnee * MaxLean) / Mathf.Tan(MaxLean);
+            return 1f + (SkidOver - 1f) * (share - EdgeKnee) / Mathf.Max(1e-3f, 1f - EdgeKnee);
+        }
+
+        /// <summary>The arc a ride's edge is asked for at `share` of full edge going at `sp`, on snow as steep as it is under the board now (1/m): the test tools, and the bots.</summary>
+        public float ArcAt(float share, float sp)
+        {
+            float hold0 = EdgeGrip * G * Mathf.Max(0.05f, feel.Grip), vv = Mathf.Max(sp, MinCarveSpeed);
+            float ny = rb != null ? Slope.Normal(rb.position.x, rb.position.z).y : 1f;
+            return ArcAsked(Mathf.Clamp01(share)) * Mathf.Min(feel.TurnRate / CarveRadius, CarveShare * hold0 * ny / (vv * vv));
         }
 
         bool groundKnown;   // groundVy is last step's: the snow's own vertical speed under the board then
@@ -132,44 +168,6 @@ namespace Summit
             return Mathf.Max(mean, here - SnowSink);
         }
 
-        /// <summary>The line the finger asks for (rad off straight down the mountain: Straight, and the drag off it), going at `flat` over the ground
-        /// (the speed across the map, not along the snow: the sideways speed a drag gives is the same on any pitch, and
-        /// in the air).</summary>
-        float WantLine(float sp)
-        {
-            float side = sideWant;
-            float maxSin = Mathf.Sin(SideAngle);
-            return Mathf.Clamp(Straight + Mathf.Asin(Mathf.Clamp(side / Mathf.Max(sp, 1f), -maxSin, maxSin)), -MaxHeading, MaxHeading);
-        }
-
-        /// <summary>The time constant of the line's swing onto the finger's (s), on snow that answers `response` times as slowly as corduroy.</summary>
-        float SwingTime(float response)
-        {
-            float scale = Mathf.Clamp(TurnScale, 0.25f, 4f), root = Mathf.Sqrt(scale);
-            float edge = Mathf.Max(0.05f, feel.Grip) * Mathf.Max(1f, scale);
-            return (SideResponse / (feel.TurnResponse * root) + 0.5f / (Grip * edge)) * response;
-        }
-
-        /// <summary>One step of the line swinging onto the finger's, on the snow (or in a hop off it): the new line, and the rate it swung at.</summary>
-        float SteerSnow(float dt, float line, float sp, float flat, out float yaw)
-        {
-            float scale = Mathf.Clamp(TurnScale, 0.25f, 4f), root = Mathf.Sqrt(scale);
-            float edge = Mathf.Max(0.05f, feel.Grip) * Mathf.Max(1f, scale);
-            float tau = SwingTime(1f);
-            float pull = Mathf.Min(SideAccel * root * feel.TurnResponse, GripLimit * edge);
-            float cap = Mathf.Min(MaxYawRate * root, pull / Mathf.Max(sp, MinCarveSpeed));
-            yaw = Mathf.Clamp((WantLine(flat) - line) / Mathf.Max(tau, dt), -cap, cap);
-            return Mathf.Clamp(line + yaw * dt, -MaxHeading, MaxHeading);
-        }
-
-        /// <summary>One step of a real air's flight bending toward the finger's line: no faster than AirControl.</summary>
-        float SteerAir(float dt, float line, float sp)
-        {
-            float cap = AirControl * feel.AirControl;
-            float yaw = Mathf.Clamp((WantLine(sp) - line) / Mathf.Max(AirResponse, dt), -cap, cap);
-            return Mathf.Clamp(line + yaw * dt, -MaxHeading, MaxHeading);
-        }
-
         Vector3 GroundStep(float dt, Vector3 p, Vector3 v)
         {
             // ---- where it is: which way the ground under the board faces (a roof's pitch, or the snow's)
@@ -178,67 +176,105 @@ namespace Summit
             Vector3 downS = Vector3.ProjectOnPlane(Vector3.down, n);
             float slopeS = downS.magnitude;   // (the sine of the ground's slope)
 
-            // ---- what it is doing: its speed and its line, read from its velocity (without last step's nudge onto the
-            //      snow, fixVy, which is not riding)
+            // ---- what it is doing: its speed and the way it is going, read from its velocity (without last step's
+            //      nudge onto the snow, fixVy, which is not riding)
             Vector3 vIn = v - Vector3.up * fixVy;
             float sp = vIn.magnitude;
             float flat = Mathf.Sqrt(v.x * v.x + v.z * v.z);
             float line = flat > 0.5f ? Mathf.Clamp(Mathf.Atan2(v.x, v.z), -MaxHeading, MaxHeading) : Heading;
 
-            // ---- the snow underfoot here (a roof and bare rock are their own thing)
+            // ---- the snow underfoot here (a roof is its own thing; rock gives an edge little to bite)
             if (roofHere == null && !OnRock) { Underfoot = Surfaces.Surface(p.x, p.z); snowFeel = Surfaces.Feel(Underfoot, sp); }
-            else { Underfoot = default; snowFeel = Summit.SnowFeel.Firm; }
-            SideStep(dt, false);
+            else { Underfoot = default; snowFeel = OnRock ? Summit.SnowFeel.Rock : Summit.SnowFeel.Firm; }
 
-            // ---- 1. the line: the finger's. Straight is straight down the mountain; crawling (out of a landing in a
-            //      hollow, on a valley's wall) it is the snow's own fall line under the board instead (smoothed; a
-            //      face falling well back up the hill is no guide to it), so a board left to itself there runs
-            //      downhill, not across the face. Never at speed
+            // ---- 1. the edge: the finger's
+            EdgeStep(dt);
+
+            // the snow's own fall line here (smoothed): where a stalled board is turned, where a tube's nose swings, and
+            // for the test tools. And the run's heading, for the camera
             {
-                float local = 1f - Mathf.Clamp01((sp - FallLineSlow) / FallLineSlow);
                 float fallNow = slopeS > 0.02f && downS.z > -0.5f * slopeS ? Mathf.Clamp(Mathf.Atan2(downS.x, downS.z), -FallLineMax, FallLineMax) : FallLine;
-                FallLine = Mathf.Lerp(FallLine, fallNow * local, 1f - Mathf.Exp(-dt / FallLineLag));
-                SetStraight(p.z, v.z, sp);
+                FallLine = Mathf.Lerp(FallLine, fallNow, 1f - Mathf.Exp(-dt / FallLineLag));
+                RunNow = RunHeading(p.z) * Mathf.Clamp01((sp - 5f) / 5f);
             }
-            float yaw;
+
+            // ---- 2. the forces across the way it is going: gravity's (the snow's tilt across the path, as it lies on
+            //      the map) and the edge's
+            float sinL = Mathf.Sin(line), cosL = Mathf.Cos(line);
+            float sideSlope = G * Pace * n.y * (n.x * cosL - n.z * sinL);
+            float sideEdge = 0f, brake = 0f, yaw, slide = 0f;
+            float across = Mathf.Max(flat, 2f);
             if (Tube)
             {
-                // a tube has no edge: leaning nudges its nose round, slowly, it always swings back downhill, and the
-                // way it slides follows the nose a moment behind
+                // a tube has no edge: gravity has it, leaning nudges its nose round, slowly, the nose swings back
+                // down the snow's own fall line, and the way it slides follows the nose a moment behind
                 float nose = Heading;
-                yaw = Steer * 0.75f - Mathf.Sin(nose - Straight) * 1.1f * Mathf.Clamp01(sp / 5f);
+                yaw = Steer * 0.75f - Mathf.Sin(nose - FallLine) * 1.1f * Mathf.Clamp01(sp / 5f);
                 nose = Mathf.Clamp(nose + yaw * dt, -MaxHeading, MaxHeading);
+                line = Mathf.Clamp(line + sideSlope / across * dt, -MaxHeading, MaxHeading);
                 line = Mathf.Lerp(line, nose, 1f - Mathf.Exp(-2.5f * dt));
                 Heading = nose;
+                Slip = 0f;
             }
             else
             {
-                // (its speed over the ground on the pitch it is on now, not the one it came off: over a lip the two
-                // differ, and the sideways speed a held drag gives must not)
-                float gLine = -(n.x * Mathf.Sin(line) + n.z * Mathf.Cos(line)) / Mathf.Max(n.y, 0.05f);
-                line = SteerSnow(dt, line, sp, sp / Mathf.Sqrt(1f + gLine * gLine), out yaw);
+                float beta = Mathf.Clamp(Mathf.DeltaAngle(line * Mathf.Rad2Deg, Heading * Mathf.Rad2Deg) * Mathf.Deg2Rad, -MaxSlip, MaxSlip);
+                float e = edge / MaxLean, share = Mathf.Min(1f, Mathf.Abs(e)), bite = Mathf.Clamp01(share / EdgeBite);
+                // the arc the edge is bent to: by its angle, and no tighter than the snow could hold at this speed
+                // (times what the throw asks for past the knee: more than it can)
+                float hold0 = EdgeGrip * G * Mathf.Max(0.05f, feel.Grip);
+                float vv = Mathf.Max(sp, MinCarveSpeed);
+                float arc = Mathf.Sign(e) * ArcAsked(share) * Mathf.Min(feel.TurnRate / CarveRadius, CarveShare * hold0 * n.y / (vv * vv));
+                // what the edge has to give here: by the snow, how hard the board is pressed on it, how far it is tipped
+                float most = hold0 * n.y * snowFeel.grip * Mathf.Lerp(FlatHold, 1f, bite) * (1f - 0.6f * Mathf.Clamp01(Undercut));
+                float stiff = Mathf.Min(Mathf.Lerp(FlatBite, BiteRate * snowFeel.bite, bite), 0.5f / dt);
+                float sinB = Mathf.Sin(beta), cosB = Mathf.Cos(beta);
+                float slip = Mathf.Abs(sp * sinB), peak = most / Mathf.Max(stiff, 1e-3f), push;
+                if (slip <= peak) push = stiff * slip;
+                else
+                {
+                    push = most * (SlideHold + (1f - SlideHold) * Mathf.Exp(-(slip - peak) / SlideFall));
+                    slide = Mathf.Clamp01((slip - peak) / 3f);
+                }
+                // (it pushes square to the board, against the slip: part of it turns the velocity, part of it brakes)
+                sideEdge = push * cosB * Mathf.Sign(sinB);
+                brake = push * Mathf.Abs(sinB);
+                // the board's own turn: along its arc, stepped round at a crawl, and its nose swung to the way it goes
+                float align = Mathf.Lerp(FlatAlign, EdgeAlign, bite) + SkidAlign * hold0 * n.y / vv * slide;
+                yaw = sp * cosB * arc + e * PivotRate * Mathf.Clamp01(1f - sp / PivotBelow) - align * sinB;
+                yaw = Mathf.Clamp(yaw, -MaxYawRate, MaxYawRate);
+
+                line = Mathf.Clamp(line + (sideEdge + sideSlope) / across * dt, -MaxHeading, MaxHeading);
+                float nose = Mathf.Clamp(Heading + yaw * dt, -MaxHeading - MaxSlip, MaxHeading + MaxSlip);
+                Heading = Mathf.Clamp(line + Mathf.Clamp(nose - line, -MaxSlip, MaxSlip), -MaxHeading, MaxHeading);
+                Slip = Heading - line;
             }
             // stalled: swing back downhill, down this ground's own fall line (on a valley's wall or a ridge's flank that
             // is across the mountain, not down it), as near as the board's nose may point
             if (sp < 3f)
             {
                 float fallHeading = slopeS > 0.07f ? Mathf.Clamp(Mathf.Atan2(downS.x, downS.z), -MaxHeading, MaxHeading) : 0f;
-                line = Mathf.MoveTowards(line, fallHeading, dt * 1.4f * (1f - sp / 3f));
+                float k = 1f - sp / 3f;
+                line = Mathf.MoveTowards(line, fallHeading, dt * 1.4f * k);
+                if (!Tube) { Heading = Mathf.MoveTowards(Heading, line, dt * 2.5f * k); Slip = Heading - line; }
             }
-            if (!Tube) Heading = line;
+            SideEdge = sideEdge; SideSlope = sideSlope;
+            Sliding = slide > 0f;
+            // (announced once a slide, when it is plainly one: the first step past the grip is not yet a skid)
+            if (!Sliding) wasSliding = false;
+            else if (!wasSliding && slide > 0.15f) { wasSliding = true; if (sp > 6f) Skidded?.Invoke(sp); }
             yawSmooth = Mathf.Lerp(yawSmooth, yaw, 1f - Mathf.Exp(-dt / YawEase));
-            yaw = yawSmooth;   // (from here on: the turn as it is felt, seen and paid for)
-            YawRate = yaw;
+            YawRate = yawSmooth;
             var d = new Vector2(Mathf.Sin(line), Mathf.Cos(line));
 
-            // ---- 2. the snow along that line: the slope of the path, measured on the surface the board rides
+            // ---- 3. the snow along the way it is going: the slope of the path, measured on the surface the board rides
             float g0 = -(n.x * d.x + n.z * d.y) / Mathf.Max(n.y, 0.05f);            // (the ground's own slope that way: where to look)
             float look = Mathf.Max(0.02f, sp * dt / Mathf.Sqrt(1f + g0 * g0));
             float snowHere = SnowUnder(p.x, p.z, p.y, d, out roofHere);
             float snowAhead = SnowUnder(p.x + d.x * look, p.z + d.y * look, p.y, d, out var roofNext);
             // (onto or off a roof the surface steps: that is an edge to fly off, below, not a slope to ride)
-            bool edge = roofHere != roofNext;
-            float g = edge ? g0 : (snowAhead - snowHere) / look;
+            bool roofEdge = roofHere != roofNext;
+            float g = roofEdge ? g0 : (snowAhead - snowHere) / look;
             PathSlope = g;
             float cosP = 1f / Mathf.Sqrt(1f + g * g), sinP = g * cosP;
 
@@ -253,15 +289,14 @@ namespace Summit
             // breaks at a lip, the board has tipped with it, and it only leaves if the snow still falls away from that)
             float tipped = sp * g0 / Mathf.Sqrt(1f + g0 * g0);
             Vector3 asCame = new Vector3(d.x * flat, Mathf.Clamp(groundVy, tipped - 2f, tipped + 2f), d.y * flat);
-            if (lip && sp > 7f && !edge && Undercut <= 0f && !popPending && n.y >= (Course.InPipe(p.x, p.z) ? 0.22f : 0.62f) && FallsAway(p, asCame))
+            if (lip && sp > 7f && !roofEdge && Undercut <= 0f && !popPending && n.y >= (Course.InPipe(p.x, p.z) ? 0.22f : 0.62f) && FallsAway(p, asCame))
             {
                 Speed = sp;
-                LookStep(dt, sp, yaw, true);
                 return TakeOff(p, asCame, 0.08f);
             }
 
-            // ---- 3. the speed: gravity down the path, the air, the snow, and what the turn cost
-            sp -= G * sinP * dt;
+            // ---- 4. the speed: gravity down the path, the air, the snow, and what a skidding edge takes
+            sp -= G * Pace * sinP * dt;
             if (sp < 0f) sp = 0f;   // (run out up a rise: it stops, and the stalled board's rules turn it downhill)
             if (sp > 1e-3f)
             {
@@ -274,10 +309,8 @@ namespace Summit
                 float drag = (Tube ? DragOpen * 1.15f : Mathf.Lerp(DragOpen, DragTuck, Tuck)) * feel.Drag * (BoostTime > 0f ? 0.6f : 1f) * flowK * sp * sp
                            + snowFeel.drag * sp * sp
                            + (Tube ? Friction * 1.3f * snowFeel.friction : Friction * snowFeel.friction + (OnRock ? RockFriction : 0f)) * G * n.y;
-                sp -= Mathf.Min(sp, drag * dt);
+                sp -= Mathf.Min(sp, (drag + brake) * dt);
             }
-            float turned = Mathf.Abs(yaw) * dt;
-            if (!Tube && sp > 3f) sp = Mathf.Max(0f, sp - TurnDrag * turned * sp);
             if (BoostTime > 0f) sp += BoostAccel * dt;
             if (sp < 3f)
             {
@@ -295,7 +328,7 @@ namespace Summit
                 if (rockScrapeT <= 0f) { rockScrapeT = 0.18f; Scraped?.Invoke(Mathf.Clamp(sp * 0.25f, 1f, 8f)); }
             }
 
-            // ---- 4. what stands in the way: something tall met square on is a crash, anything else is slid along
+            // ---- 5. what stands in the way: something tall met square on is a crash, anything else is slid along
             Vector3 vt = new Vector3(d.x * cosP, sinP, d.y * cosP) * sp;
             if (sp > 0.2f)
             {
@@ -307,22 +340,26 @@ namespace Summit
                     sp *= h0 > 1e-4f ? Mathf.Min(1f, h / h0) : 0f;
                     if (h > 0.05f)
                     {
-                        line = Mathf.Clamp(Mathf.Atan2(vt.x, vt.z), -MaxHeading, MaxHeading);
+                        // (slid along its face: the board is turned with the way it goes, by as much, so the face
+                        // leaves no slip behind for the edge to kick against)
+                        float turned = Mathf.Clamp(Mathf.Atan2(vt.x, vt.z), -MaxHeading, MaxHeading) - line;
+                        line += turned;
                         d = new Vector2(Mathf.Sin(line), Mathf.Cos(line));
-                        if (!Tube) Heading = line;
+                        Heading = Mathf.Clamp(Tube ? line : Heading + turned, -MaxHeading, MaxHeading);
                     }
                     vt = new Vector3(d.x * cosP, sinP, d.y * cosP) * sp;
                 }
             }
             Speed = sp;
 
-            // ---- the look of it (from the motion, never into it)
-            LookStep(dt, sp, yaw, true);
-            Skid = Mathf.Lerp(Skid, Tube ? Mathf.Clamp01(Mathf.Abs(Mathf.DeltaAngle(line * Mathf.Rad2Deg, Heading * Mathf.Rad2Deg)) * Mathf.Deg2Rad * 4f)
-                                         : Mathf.Clamp01(Mathf.Abs(yaw) / Grip * 4f), 1f - Mathf.Exp(-dt * 10f));
-            Carve = Mathf.Lerp(Carve, Mathf.Clamp01(Mathf.Abs(Lean) / MaxLean * 0.8f + Mathf.Abs(yaw) * sp / 20f) * Mathf.Clamp01(sp / 8f), 1f - Mathf.Exp(-dt * 12f));
+            // ---- the look of it (from the motion, never into it): how much the board is sliding sideways, and how hard its edge bites
+            float sliding = Tube ? Mathf.Clamp01(Mathf.Abs(Mathf.DeltaAngle(line * Mathf.Rad2Deg, Heading * Mathf.Rad2Deg)) * Mathf.Deg2Rad * 4f)
+                                 : Mathf.Max(slide, Mathf.Clamp01((Mathf.Abs(Slip) - 0.12f) / 0.5f)) * Mathf.Clamp01(sp / 6f);
+            Skid = Mathf.Lerp(Skid, sliding, 1f - Mathf.Exp(-dt * 10f));
+            float biting = Tube ? 0f : Mathf.Clamp01(Mathf.Abs(sideEdge) / (0.6f * EdgeGrip * G)) * (1f - 0.5f * slide);
+            Carve = Mathf.Lerp(Carve, Mathf.Clamp01(Mathf.Abs(edge) / MaxLean * 0.5f + biting) * Mathf.Clamp01(sp / 8f), 1f - Mathf.Exp(-dt * 12f));
 
-            // ---- 5. follow the snow: where the board is next, and the vertical speed that puts it there. Anything
+            // ---- 6. follow the snow: where the board is next, and the vertical speed that puts it there. Anything
             //      low in the way lifts it, smoothly (overLift: the legs take it up and over; it is not a slope and
             //      not a jump). What is not riding in that vertical speed is kept apart (fixVy)
             float hd = sp * cosP * dt;
@@ -330,8 +367,8 @@ namespace Summit
             float liftWas = overLift;
             OverLiftStep(dt, p.x + d.x * hd, p.z + d.y * hd, d, sp, roofNext != null);
             float hereY = snowHere + liftWas + R + churn;
-            float wantY = (edge ? snowAhead : snowHere + g * hd) + overLift + R + churn;
-            float surfVy = edge ? (snowAhead - snowHere) / dt : vt.y;   // (the snow's own rise or fall under the path: what tells a lip from a slope)
+            float wantY = (roofEdge ? snowAhead : snowHere + g * hd) + overLift + R + churn;
+            float surfVy = roofEdge ? (snowAhead - snowHere) / dt : vt.y;   // (the snow's own rise or fall under the path: what tells a lip from a slope)
             float vy = (wantY - p.y) / dt;
             float fix = vy - vt.y;
             AboveGround = 0f;
@@ -381,26 +418,6 @@ namespace Summit
             DropFrom = p;
             RoofStep(roofHere);
             return new Vector3(vt.x, vy, vt.z);
-        }
-
-        /// <summary>
-        /// The look of the ride, from the motion: the body over onto its edge the way the finger drags (most of the
-        /// lean is the drag itself, the rest the pull of the swing, so a quick move throws you over and a held one
-        /// leaves you on the edge), and the chatter of a knock, a hard landing or rock under the board. Read by the
-        /// body, the trail, the spray and the camera; nothing here goes back into the motion.
-        /// </summary>
-        void LookStep(float dt, float sp, float yaw, bool ground)
-        {
-            if (Tube && ground) { Lean = Mathf.Lerp(Lean, Steer * 0.35f, 1f - Mathf.Exp(-dt * 6f)); leanVel = 0f; return; }
-            float root = Mathf.Sqrt(Mathf.Clamp(TurnScale, 0.25f, 4f));
-            float pull = ground ? sp * yaw / LeanAccel : 0f;
-            float target = MaxLean * Mathf.Clamp(0.6f * Steer + 0.4f * pull, -1f, 1f) * Mathf.Lerp(1f, 0.65f, Tuck);
-            if (wobble > 0f) target += MaxLean * 0.3f * Mathf.Min(1f, wobble / 0.35f) * Mathf.Sin(churnT * 13f);
-            // critically damped spring: starts at once, settles in a fifth of a second, never overshoots
-            float spring = LeanSpring * feel.TurnResponse * root;
-            float acc = spring * spring * (target - Lean) - 2f * spring * leanVel;
-            leanVel += acc * dt;
-            Lean += leanVel * dt;
         }
     }
 }

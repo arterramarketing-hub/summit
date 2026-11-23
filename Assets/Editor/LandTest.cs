@@ -253,7 +253,7 @@ public static class LandTest
             // (how far out it got, not where it ends: a board that goes over, rides on and is later set back on the run
             // from a stall in the rocks below has gone over)
             furthest = Mathf.Max(furthest, (r.transform.position.x - Slope.Centre(r.Z)) * w.side);
-            if (landTrace != null && name.Contains(landTrace) && n % 30 == 0) { var q = r.transform.position; var u = r.Underfoot; Debug.Log($"LAND-TRACE {name} t={t:0.00} x-c={q.x - Slope.Centre(q.z):0.0} z={q.z:0.0} sp={r.Speed:0.0} heading={r.Heading:0.00} steer={r.Steer:0.00} air={r.Airborne} rock={r.OnRock} snow: powder {u.powder:0.00} ice {u.ice:0.00} crud {u.crud:0.00} crust {u.crust:0.00}; feel response {r.SnowFeel.response:0.00} pull {r.SnowFeel.pull:0.00} friction {r.SnowFeel.friction:0.00}; edge {w.edge:0.0} side {w.side:0}"); }
+            if (landTrace != null && name.Contains(landTrace) && n % 30 == 0) { var q = r.transform.position; var u = r.Underfoot; Debug.Log($"LAND-TRACE {name} t={t:0.00} x-c={q.x - Slope.Centre(q.z):0.0} z={q.z:0.0} sp={r.Speed:0.0} heading={r.Heading:0.00} steer={r.Steer:0.00} air={r.Airborne} rock={r.OnRock} snow: powder {u.powder:0.00} ice {u.ice:0.00} crud {u.crud:0.00} crust {u.crust:0.00}; feel response {r.SnowFeel.grip:0.00} pull {r.SnowFeel.bite:0.00} friction {r.SnowFeel.friction:0.00}; edge {w.edge:0.0} side {w.side:0}"); }
             if (r.Crashed) midAir = r.transform.position.y - Slope.DrawnHeight(r.transform.position.x, r.Z) - Rider.R;
         }
         float offW = furthest;

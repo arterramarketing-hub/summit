@@ -187,7 +187,7 @@ public static class BlindRollTest
         {
             for (float t = 0f; t < 10f && r.Z < zEnd; t += Dt, n++)
             {
-                r.Steer = Mathf.Clamp((Slope.Centre(r.Z + 6f) + line - r.X) * 0.4f, -1f, 1f);
+                r.Steer = CarveBot.Onto(r, zz => Slope.Centre(zz) + line, 1.5f, 10f, 6f);
                 if (r.Speed > v0 * 1.2f) r.Body.linearVelocity *= 0.995f;
                 r.TestContacts(Dt);
                 r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);

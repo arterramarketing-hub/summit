@@ -19,6 +19,7 @@ namespace Summit
         ParticleSystem spray;
         ParticleSystem.EmissionModule sprayEm, wakeEm;
         float puffShown = 1f;   // the spray's size for the snow underfoot, as last set
+        float skidBurst;        // the edge just let go at this speed (Rider.Skidded): a burst of spray is owed
         ParticleSystem wake;
         Vector3 normal = Vector3.up;
         float lean, lastTravel, yawRate, crashSpin;
@@ -209,6 +210,7 @@ namespace Summit
 
             marks = new SnowMarks(transform.parent, Imprint(trailMat, CraterTexture()), 80);
             BuildShield(trailMat);
+            rider.Skidded += speed => skidBurst = Mathf.Max(skidBurst, speed);
             rider.Landed += impact =>
             {
                 if (impact > 5f) spray.Emit(Mathf.Clamp((int)(impact * 2.5f), 8, 50));
@@ -1154,8 +1156,14 @@ namespace Summit
 
             GrindSparks(p, dt);   // a few sparks off a rail (RiderBodySparks)
             sprayEm.rateOverTime = rider.Running && !rider.Crashed && !rider.Airborne
-                ? (rider.Carve * rider.Speed * 7f + Mathf.Max(0f, rider.Speed - 22f) * 1.5f) * (1f + 1.5f * snow.powder + 0.6f * snow.slush - 0.6f * hard) + (rider.BoostTime > 0f ? 60f : 0f)
+                ? (rider.Carve * rider.Speed * 7f + rider.Skid * rider.Speed * 12f + Mathf.Max(0f, rider.Speed - 22f) * 1.5f) * (1f + 1.5f * snow.powder + 0.6f * snow.slush - 0.6f * hard) + (rider.BoostTime > 0f ? 60f : 0f)
                 : 0f;
+            // the edge let go (Rider.Skidded): a burst of snow thrown off it, by how fast the board was going
+            if (skidBurst > 0f)
+            {
+                if (rider.Running && !rider.Crashed && !rider.Airborne && !Tube) spray.Emit(Mathf.RoundToInt(Mathf.Clamp(skidBurst * 1.6f, 12f, 70f) * (1f + snow.powder + 0.4f * snow.slush - 0.6f * hard)));
+                skidBurst = 0f;
+            }
 
             wakeEm.rateOverTime = rider.Running && !rider.Crashed && !rider.Airborne ? Mathf.Clamp(rider.Speed * 2.2f, 0f, 80f) * (0.7f + 1.1f * snow.powder) * (1f - 0.85f * hard) * (1f - 0.6f * snow.slush) : 0f;
 

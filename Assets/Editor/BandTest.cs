@@ -10,9 +10,13 @@ using Summit;
 ///  - Shape: the heading along the traverse, the bench's pitch along the run and its tilt across it, the band's drop
 ///    below the downhill edge (tall, and at its low places), the gap's pitch, the groomed width square to the run, and
 ///    that no tree stands on the bench and the ground below the tall band is Deadly.Below.
-///  - Rides: the real rider following the run's line (a bot steering for the line ahead) from 60 m above the turn in
-///    to 60 m below the gap at 15, 22 and 30 m/s: how far it stays on the bench, whether it goes over the band, and its
-///    lowest speed. Judged: no crash and on the bench the whole traverse.
+///  - Rides: the real rider carving the run's line (a bot steering its edge for the line ahead) from 60 m above the
+///    turn in to 60 m below the gap at 15, 22 and 30 m/s: how far it stays on the bench, whether it goes over the
+///    band, its lowest speed, and how much edge into the hill the traverse took. Judged: no crash and on the bench the
+///    whole traverse. (The bench is cut level across and pitched along the run, so gravity on it runs along it: the
+///    edge into the hill is what carves the board onto the bench at the way in, and little is needed to stay on it.)
+///  - Hands off (carve: there is no line to hold; gravity and the board's own way have it): the board must NOT stay on
+///    the run. Judged: it is in danger (at the band's edge, over it, or down) within a few seconds of the turn in.
 /// Run: Unity -batchmode -nographics -projectPath . -executeMethod BandTest.Run -logFile band.log
 /// Shots (with the GPU): -executeMethod BandTest.Shots (BAND_OUT=dir). Log lines: BAND, BAND-FAIL, BAND done.
 /// </summary>
@@ -188,14 +192,15 @@ public static class BandTest
         lastCrash = ""; terrain.Prewarm(); props.Prewarm();
         { var dress = Object.FindFirstObjectByType<CourseDressing>(); if (dress != null) dress.Prewarm(); }
         float worstOff = 0f, minSpeed = 999f; bool over = false; int n = 0; bool dropping = false, dropped = false;
+        float tIn = -1f, tDanger = -1f, edgeIn = 0f, edgeMost = 0f, pullSum = 0f; int onBench = 0;
         for (float t = 0f; t < 30f && r.Z < b.z3 + 60f; t += Dt, n++)
         {
-            // the bot: aim at the run's middle 12 m ahead along the run
+            // the bot: aim at the run's middle 12 m ahead along the run, carving for it (its finger is an edge angle)
             float zA = r.Z + 12f * Slope.Squash(r.Z);
             float want = Slope.Centre(zA);
             float lead = Mathf.Atan2(want - r.X, zA - r.Z);
             r.Steer = Mathf.Clamp((lead - r.TravelHeading) * 1.5f + (want - r.X) * 0.02f, -1f, 1f);
-            if (hands) r.Steer = 0f;   // (hands off the whole way: "straight" follows the run)
+            if (hands) r.Steer = 0f;   // (hands off the whole way: nothing holds the run's line for it)
             // the optional air: off the downhill side at the first low place, steering hard for it from 12 m before
             // (steer3: a drag is a sideways speed off the run's heading, quick and strong, so held hard from 12 m before
             // it the board reached the edge well short of the low place, over the tall band; the rider aims at the low
@@ -212,14 +217,22 @@ public static class BandTest
             r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
             if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
             if (frame != null) { body.Apply(Dt); frame(n); } else if (n % 4 == 0 || r.Crashed) body.Apply(r.Crashed ? Dt : 4 * Dt);
+            if (r.Z > b.z0 && tIn < 0f) tIn = t;   // (the way in: where the run begins to swing)
+            // the edge into the turn and the hill (away from the band: b.side), from the way in to the end of the bench
+            if (r.Z > b.z0 && r.Z < b.z2 && !r.Airborne) edgeMost = Mathf.Max(edgeMost, r.Lean / Rider.MaxLean * b.side);
             if (r.Z > b.z1 && r.Z < b.z2)
             {
                 float off = Slope.Across(r.X, r.Z);
                 worstOff = Mathf.Max(worstOff, Mathf.Abs(off));
                 if (Mathf.Abs(off) > CliffBand.EdgeAt(r.Z) + 2f) over = true;
                 minSpeed = Mathf.Min(minSpeed, r.Speed);
+                // the edge held into the hill (away from the band: b.side), and gravity's pull across the path toward the band
+                if (!r.Airborne) { onBench++; edgeIn += r.Lean / Rider.MaxLean * b.side; pullSum += -r.SideSlope * b.side; }
+                if (tDanger < 0f && Mathf.Abs(off) > CliffBand.EdgeAt(r.Z) - 2f) tDanger = t;
             }
+            if (tDanger < 0f && tIn >= 0f && (r.Crashed || over)) tDanger = t;
             if (r.Crashed) break;
+            if (hands && tDanger >= 0f && t - tDanger > 2f) break;   // (hands off: seen where it leads)
             if (dropped && !dropping && r.Z > b.l0 + 30f) break;   // (down off the ledge and riding away below the band)
         }
         Vector3 p = r.transform.position;
@@ -231,20 +244,28 @@ public static class BandTest
             if (r.Crashed) { r.RequestUp = true; for (int i = 0; i < 4; i++) r.Tick(Dt); }
             return;
         }
-        Debug.Log($"BAND seed{seed} cycle{b.cycle} ride {v0:0} m/s{(hands ? " hands off" : "")}: furthest off the middle on the traverse {worstOff:0.0} m, {(over ? "WENT OVER THE BAND" : "stayed on the bench")}, lowest speed {minSpeed * 3.6f:0} km/h, " + (r.Crashed ? $"CRASHED '{lastCrash}' at z={p.z:0} ({p.z - b.z0:0} m into it)" : $"rode out at {r.Speed * 3.6f:0} km/h"));
+        if (hands)
+        {
+            // carve: nothing holds the run's line. Hands off, the board carries on the way it was going while the run
+            // swings away under it, and gravity along the bench is all that turns it: the band's edge in seconds
+            float took = tDanger >= 0f && tIn >= 0f ? tDanger - tIn : -1f;
+            Debug.Log($"BAND seed{seed} cycle{b.cycle} ride {v0:0} m/s hands off: furthest off the middle on the traverse {worstOff:0.0} m, " + (took >= 0f ? $"in danger {took:0.0} s after the way in ({(over ? "over the band" : r.Crashed ? "down: '" + lastCrash + "'" : "at the band's edge")})" : "STAYED ON THE BENCH the whole traverse") + $", gravity across its path toward the band {(onBench > 0 ? pullSum / onBench : 0f):+0.0;-0.0} m/s^2 on average");
+            if (judgeRides && frame == null && (took < 0f || took > 6f)) Fail($"seed{seed} cycle{b.cycle} ride {v0:0} m/s hands off: {(took < 0f ? "stayed on the bench the whole traverse" : $"only in danger after {took:0.0} s")}: something is holding the run's line for it");
+            if (r.Crashed) { r.RequestUp = true; for (int i = 0; i < 4; i++) r.Tick(Dt); }
+            return;
+        }
+        Debug.Log($"BAND seed{seed} cycle{b.cycle} ride {v0:0} m/s: furthest off the middle on the traverse {worstOff:0.0} m, {(over ? "WENT OVER THE BAND" : "stayed on the bench")}, lowest speed {minSpeed * 3.6f:0} km/h, edge into the hill {100f * edgeMost:0}% of full at most from the way in, {(onBench > 0 ? 100f * edgeIn / onBench : 0f):0}% on average along the bench (gravity across the path toward the band there {(onBench > 0 ? pullSum / onBench : 0f):+0.0;-0.0} m/s^2 on average), " + (r.Crashed ? $"CRASHED '{lastCrash}' at z={p.z:0} ({p.z - b.z0:0} m into it)" : $"rode out at {r.Speed * 3.6f:0} km/h"));
         if (judgeRides && frame == null)
         {
-            // (hands off the whole way is judged only on staying on the bench, never over the band: a rider who never
-            // steers drifts on the curves, 3-22 m, and at the narrower gap can drift into the trees beside it, as anywhere)
-            if (r.Crashed && !hands) Fail($"seed{seed} cycle{b.cycle} ride {v0:0} m/s{(hands ? " hands off" : "")}: crashed '{lastCrash}'");
+            if (r.Crashed) Fail($"seed{seed} cycle{b.cycle} ride {v0:0} m/s: crashed '{lastCrash}'");
             if (over) Fail($"seed{seed} cycle{b.cycle} ride {v0:0} m/s: went over the band following the run");
         }
         if (r.Crashed) { r.RequestUp = true; for (int i = 0; i < 4; i++) r.Tick(Dt); }
     }
 
     /// <summary>
-    /// A full drag either way on the bench (steer3: the drag is measured off the run's heading): following the run onto
-    /// the traverse, then the finger held hard one way for 1.5 s. It must take the rider well off the run's line (8 m
+    /// A full drag either way on the bench (carve: the whole edge, a skidded turn): following the run onto the
+    /// traverse, then the finger held hard one way for 1.5 s. It must take the rider well off the run's line (8 m
     /// or more square to it): uphill into the bank, or downhill toward the band's edge (stopped there: not judged on
     /// going over).
     /// </summary>

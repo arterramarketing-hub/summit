@@ -237,8 +237,7 @@ public static class BowlTest
         {
             for (float t = 0f; t < 40f && r.Z < zEnd; t += Dt, n++)
             {
-                float want = Slope.Centre(r.Z + 8f) + line(r.Z + 8f);
-                r.Steer = Mathf.Clamp((want - r.X) * 0.25f, -1f, 1f);
+                r.Steer = CarveBot.Onto(r, zz => Slope.Centre(zz) + line(zz), 1.2f, 10f, 8f);   // (carving for the line 8 m ahead)
                 if (r.Speed > v0 * 1.25f + 4f) r.Body.linearVelocity *= 0.995f;   // (a rider checks their speed)
                 r.TestContacts(Dt);
                 r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);

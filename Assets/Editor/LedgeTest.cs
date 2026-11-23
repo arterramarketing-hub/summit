@@ -156,8 +156,8 @@ public static class LedgeTest
         {
             for (float t = 0f; t < 20f && r.Z < L.End + 15f; t += Dt, n++)
             {
-                float want = LineX(L, r.Z + 8f);
-                r.Steer = Mathf.Clamp((want - r.X) * 0.3f, -1f, 1f);
+                var ledge = L;
+                r.Steer = CarveBot.Onto(r, zz => LineX(ledge, zz), 1.5f, 10f, 8f);   // (carving for the ledge's line 8 m ahead)
                 r.TestContacts(Dt);
                 r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
                 if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }

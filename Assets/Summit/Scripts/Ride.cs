@@ -6,25 +6,25 @@ namespace Summit
     public enum RideKind { Snowboard, Skis, Toboggan }
 
     /// <summary>
-    /// How one ride feels: a handful of multipliers on the rider's carving model (Rider.cs), so every ride goes
+    /// How one ride feels: a handful of multipliers on the rider's carving model (RiderMove.cs), so every ride goes
     /// through the same physics and the same upgrades, power-ups and avalanche. The snowboard is all ones: it is
     /// the model as it was tuned, and choosing it changes nothing.
     /// </summary>
     public class RideFeel
     {
         public string Name;
-        /// <summary>How fast the board swings onto the line and the body onto its edge (on Rider.SideResponse, SideAccel and LeanSpring). Higher: quicker, twitchier.</summary>
+        /// <summary>How fast it gets onto its edge (one over Rider.EdgeTime). Higher: quicker from edge to edge.</summary>
         public float TurnResponse = 1f;
-        /// <summary>How far sideways the same drag takes you (on Rider.SideSpeed). Lower: wider, lazier lines.</summary>
+        /// <summary>How tight an arc its edge carves (one over Rider.CarveRadius). Lower: wider, lazier arcs.</summary>
         public float TurnRate = 1f;
-        /// <summary>How much sideways pull the edges hold before they skid, and how fast a skid is caught (on
-        /// Rider.GripLimit and Rider.Grip, after the SHARP EDGES upgrade). Lower: it drifts wide.</summary>
+        /// <summary>How much sideways pull its edges hold before they skid (on Rider.EdgeGrip, after the SHARP EDGES
+        /// upgrade). Lower: it lets go sooner and drifts wide.</summary>
         public float Grip = 1f;
         /// <summary>The speed it runs out to down a steady slope, against the snowboard's (air drag goes with one over its square).</summary>
         public float TopSpeed = 1f;
         /// <summary>How hard a released tuck pops it off the snow (on the pop's speed; height goes with its square).</summary>
         public float Pop = 1f;
-        /// <summary>How far steering bends the flight in the air (on Rider.AirControl).</summary>
+        /// <summary>How far the finger drifts the flight in the air (on Rider.AirDrift).</summary>
         public float AirControl = 1f;
         /// <summary>How much of a landing's speed into the snow throws it back up again (0: the legs soak it all up).</summary>
         public float Bounce = 0f;
@@ -58,26 +58,27 @@ namespace Summit
                 Grabs = new[] { "Indy", "Melon", "Mute", "Method", "Stalefish", "Tail Grab" },
                 GrabCountsAs = new[] { "Indy", "Melon", "Mute", "Method", "Stalefish", "Tail Grab" },
             },
-            // Skis: two edges and a stance that faces the way you go. Quicker from edge to edge and a touch more
-            // hold in a carve, a little faster flat out in a tuck's low stance; but each turn is a wider arc, the
-            // pop off two long planks is smaller, and with a pole in each hand there is a little more say in the air.
+            // Skis: two edges and a stance that faces the way you go. Quicker from edge to edge, a tighter arc on
+            // their deeper sidecut and more hold in it (they carve where a board has begun to skid), a little faster
+            // flat out in a tuck's low stance; the pop off two long planks is smaller, and with a pole in each hand
+            // there is a little more say in the air.
             new RideFeel
             {
                 Name = "SKIS",
-                TurnResponse = 1.25f, TurnRate = 0.92f, Grip = 1.08f, TopSpeed = 1.03f, Pop = 0.92f, AirControl = 1.15f,
+                TurnResponse = 1.25f, TurnRate = 1.15f, Grip = 1.18f, TopSpeed = 1.03f, Pop = 0.92f, AirControl = 1.15f,
                 Grabs = new[] { "Safety", "Mute", "Tail" },
                 GrabCountsAs = new[] { "Indy Stalefish", "Mute Melon", "Method Tail Grab" },
                 BoxTrick = "Box Slide", RailTrick = "Rail Slide", Spin = 0.95f, SwitchStep = 2,
             },
-            // The toboggan: a plank of wood with no edges and nobody's legs under it. It comes round slowly, and
-            // what it is asked to turn it mostly slides (lean gently and it tracks; haul on it and it drifts wide,
-            // the dragged heel scrubbing speed). A released tuck is only a hop; it flies off kickers like anything
+            // The toboggan: a plank of wood with no edges and nobody's legs under it. It is mostly gravity's: it
+            // leans over slowly, its runners hold a wide arc and not much of one (lean gently and it tracks; haul
+            // on it and it lets go and drifts wide, the dragged heel scrubbing speed). A released tuck is only a hop; it flies off kickers like anything
             // else but there is little to steer with up there, and it lands flat and skips. A touch slower flat
             // out, which the drift more than makes up for in the trees. It slides boxes; rails knock it aside.
             new RideFeel
             {
                 Name = "TOBOGGAN",
-                TurnResponse = 0.55f, TurnRate = 0.62f, Grip = 0.18f, TopSpeed = 0.95f, Pop = 0.6f, AirControl = 0.45f,
+                TurnResponse = 0.55f, TurnRate = 0.62f, Grip = 0.4f, TopSpeed = 0.95f, Pop = 0.6f, AirControl = 0.45f,
                 Bounce = 0.35f, Rails = false,
                 Grabs = new[] { "No-Hander" },
                 GrabCountsAs = new[] { "Indy Melon Mute Method Stalefish Tail Grab" },

@@ -261,6 +261,9 @@ public static class RideOverCheck
             r.Heading = 0f; r.Steer = 0f;
             Vector3 n = Slope.Normal(xs, zs);
             r.Body.linearVelocity = Vector3.ProjectOnPlane(Vector3.forward, n).normalized * v0;
+            // (straight down the map from the first step: carve has no finger that takes a sideways start away at once,
+            // and the line into the thing is the test's own)
+            { var u = r.Body.linearVelocity; r.Body.linearVelocity = new Vector3(0f, u.y, u.z).normalized * v0; }
             Stream();
             if (only != null)
                 for (float dz = 0f; dz <= 2f; dz += 0.5f)
@@ -277,13 +280,15 @@ public static class RideOverCheck
                 // hold the line straight at it (and the speed) until there
                 if (r.Z < z - 1.5f && !glanced)
                 {
-                    // (the finger sets the sideways speed: steer2's direct steering. Held on the position alone; the old
-                    // carve's "- Heading * 2" damping now held the board off its line, a 20-degree hit met at 33)
-                    r.Steer = Mathf.Clamp((xs - r.X) * 1.5f, -1f, 1f);
+                    // (carve: the finger is an edge. Carved onto the line x = xs and held straight down it)
+                    float lineAt = xs;
+                    r.Steer = CarveBot.Onto(r, zz => lineAt, 6f, 5f, 0f, 10f);
                     if (r.Speed > v0) r.Body.linearVelocity *= v0 / r.Speed;
                     vNear = r.Speed;
                 }
-                else r.Steer = 0f;
+                // (there: no steering for or against the thing itself, only the edge that holds the board's line
+                // against gravity across it, so it meets the thing going straight, as it was aimed)
+                else r.Steer = glanced || r.Airborne ? 0f : CarveBot.ForPull(r, -r.SideSlope);
                 r.TestContacts(Dt);
                 if (!r.Crashed) r.Tick(Dt);
                 if (frame != null) { body.PhysicsStep(); }

@@ -48,15 +48,18 @@ namespace Summit
     /// How the snow at one spot rides (Surfaces.Feel): all of it scales the board's own numbers, none of it pushes.
     ///   friction  on Rider.Friction (the snow's drag at any speed)
     ///   drag      added to the air's drag, per (m/s)^2: snow the board has to plough
-    ///   response  on how soon the sideways speed the finger asks for is the board's (1 = corduroy, at once; ice is
-    ///             slower to answer): Rider.SideStep
-    ///   pull      on the most sideways pull the edge gives it to get there (1 = corduroy; ice has less to give)
+    ///   grip      on the sideways pull the edge holds before it lets go and the board skids (Rider.EdgeGrip: 1 =
+    ///             corduroy, which holds best; ice lets go soonest)
+    ///   bite      on how stiffly the edge pushes back against sideslip (Rider.BiteRate: 1 = corduroy; powder is soft,
+    ///             the board washes out further before it holds)
     ///   chatter   0..1: how much the board chatters (the look and the sound only)
     /// </summary>
     public struct SnowFeel
     {
-        public float friction, drag, response, pull, chatter;
-        public static readonly SnowFeel Firm = new SnowFeel { friction = 1f, drag = 0f, response = 1f, pull = 1f, chatter = 0f };
+        public float friction, drag, grip, bite, chatter;
+        public static readonly SnowFeel Firm = new SnowFeel { friction = 1f, drag = 0f, grip = 1f, bite = 1f, chatter = 0f };
+        /// <summary>Bare rock under the board: an edge has little to bite.</summary>
+        public static readonly SnowFeel Rock = new SnowFeel { friction = 1f, drag = 0f, grip = 0.35f, bite = 0.5f, chatter = 0f };
     }
 
     /// <summary>
@@ -64,23 +67,24 @@ namespace Summit
     /// mountain, and Feel what that does to the board. The rider's friction, grip, spray and sound and the terrain's
     /// look all read it; nothing else decides what snow is where.
     ///
-    ///   corduroy   the groomed run: the fastest, the quickest to answer the finger. The board's own numbers.
+    ///   corduroy   the groomed run: fast, and it holds an edge best. The board's own numbers.
     ///   powder     off the run, all of it, and on a snowy day over the run as well: it drags (less at speed, when the
-    ///              board floats), it is slower to come round, it throws the most snow and it is quiet.
+    ///              board floats), it is soft under an edge (the board washes out further before it holds, and holds
+    ///              less), it throws the most snow and it is quiet.
     ///   ice        scraped patches down the middle of the run where it is steepest, and under the lift lines: the
-    ///              fastest snow, with the least edge. It shines.
+    ///              fastest snow, with the least edge: it lets go soonest. It shines.
     ///   crud       tracked-out snow round the lift stations and along the hamlets: a little slower, and it chatters.
     ///   crust      wind crust and sastrugi: the alpine ridges, the rims of the bowl and the open snow above the tree
     ///              line, on a windy day (a little of it is always there).
     ///   slush      the last stretch above the finish in the afternoon and the warm evening light: sticky and slow.
     ///
-    /// Two rules, both for the steering (steer3: the line is the finger's alone):
+    /// Two rules:
     ///  - every share is a smooth function of the place, so the snow changes under the board over metres, never in a
     ///    step. Nothing here is a yes or no.
-    ///  - "low grip" is never a slide. Ice and powder are slower to give the board the sideways speed the finger asks
-    ///    for, and give it less sideways pull to get there; they never move the line themselves, never cap the
-    ///    sideways speed a held drag has already reached, and the board holds its line (a lifted thumb's straight, a
-    ///    traverse's heading, a held drag) exactly as tightly on ice as on corduroy.
+    ///  - the snow never pushes. It sets how much sideways pull the board's edge can hold (grip) and how stiffly it
+    ///    holds it (bite): with less of either the board carves a wider arc for the same edge, or lets go into a
+    ///    skid sooner. A board carving within what ice holds rides over an ice patch as it rode onto it; one carving
+    ///    at corduroy's limit lets go on it. That is the rider's doing (carve model: Rider.GroundStep).
     ///
     /// The day's part (Day: fresh snow, wind, warmth) comes from Weather and the clock through Step, once a frame. The
     /// test tools, which run neither, get a calm, cold, clear day unless they set it.
@@ -102,8 +106,8 @@ namespace Summit
         // (drag per (m/s)^2, on top of the air's. Ice takes a little off: the part of the board's own drag that is
         // corduroy's)
         public static readonly float[] Plough   = {          0f,  0.0042f, -0.0003f, 0.0003f, 0.0002f, 0.0022f };
-        public static readonly float[] Response = {          1f,     1.8f,    3.0f,  1.15f,  1.3f,   1.6f };
-        public static readonly float[] Pull     = {          1f,     0.6f,    0.3f,  0.9f,   0.7f,   0.6f };
+        public static readonly float[] Grip     = {          1f,     0.7f,   0.45f,  0.9f,   0.8f,   0.7f };
+        public static readonly float[] Bite     = {          1f,    0.45f,    0.8f,  0.9f,   0.8f,   0.5f };
         public static readonly float[] Chatter  = {          0f,       0f,   0.25f,    1f,   0.7f,     0f };
         /// <summary>Powder floats the board at speed: its plough is this much of itself from FloatTo m/s up (all of it under FloatFrom).</summary>
         public const float Float = 0.4f, FloatFrom = 8f, FloatTo = 22f;
@@ -119,8 +123,8 @@ namespace Summit
             {
                 friction = c + m.powder * (1f + (Friction[1] - 1f) * deep) + m.ice * Friction[2] + m.crud * Friction[3] + m.crust * Friction[4] + m.slush * Friction[5],
                 drag = m.powder * Plough[1] * deep * afloat + m.ice * Plough[2] + m.crud * Plough[3] + m.crust * Plough[4] + m.slush * Plough[5],
-                response = c + m.powder * Response[1] + m.ice * Response[2] + m.crud * Response[3] + m.crust * Response[4] + m.slush * Response[5],
-                pull = c + m.powder * Pull[1] + m.ice * Pull[2] + m.crud * Pull[3] + m.crust * Pull[4] + m.slush * Pull[5],
+                grip = c + m.powder * Grip[1] + m.ice * Grip[2] + m.crud * Grip[3] + m.crust * Grip[4] + m.slush * Grip[5],
+                bite = c + m.powder * Bite[1] + m.ice * Bite[2] + m.crud * Bite[3] + m.crust * Bite[4] + m.slush * Bite[5],
                 chatter = m.ice * Chatter[2] + m.crud * Chatter[3] + m.crust * Chatter[4],
             };
         }
