@@ -85,7 +85,13 @@ namespace Summit
                 density = Mathf.Lerp(0.16f, 0.62f, Mathf.Clamp01((off - Slope.PisteHalf) / 30f)) * Mathf.Lerp(0.35f, 1.3f, glade);
             if (wz < 70f && off < 34f) density *= 0.1f;                  // a clean start
             if (Slope.OnPad(wx, wz)) return Kind.None;
-            if (Slope.Hash01(cx, cz, 1) >= density) return Kind.None;
+            // how many trees grow at this height (Zone): rocks stand where they always did; above the tree line the
+            // cells that would have held a tree are open snow, a few of them a boulder (none on the piste)
+            bool rock = Slope.Hash01(cx, cz, 8) < (off < Slope.PisteHalf ? 0.25f : 0.12f);
+            float grow = rock ? 1f : Zone(wx, wz);
+            if (off < Slope.PisteHalf - 3f) grow = Mathf.Min(grow, 1f);   // (never more to hit on the piste than there was)
+            if (!rock && grow < 1f && off > Slope.PisteHalf + WildMargin && Slope.Hash01(cx, cz, 19) < Boulders * Mathf.Clamp01(1f - grow / 0.25f)) { rock = true; grow = 1f; }
+            if (Slope.Hash01(cx, cz, 1) >= density * grow) return Kind.None;
             if (Course.Keep(wx, wz, 1f)) return Kind.None;   // pipe, crevasses, park features
             if (LiftLine.Taken(wx, wz, 3.5f)) return Kind.None;   // ski lifts (LiftLine.cs): the cleared swath under a line, and its stations
             float x = wx + (Slope.Hash01(cx, cz, 2) - 0.5f) * Cell * 0.75f;
@@ -95,9 +101,8 @@ namespace Summit
             if (NightLights.Taken(x, z)) return Kind.None;   // nor at the foot of a floodlight's pole (NightLights.cs)
             if (Mathf.Abs(Slope.Kicker(x, z)) > 0.01f || Mathf.Abs(Slope.Kicker(x, z - 14f)) > 0.01f) return Kind.None;   // keep kickers clear
             variant = (int)(Slope.Hash01(cx, cz, 7) * 64f);
-            bool rock = Slope.Hash01(cx, cz, 8) < (off < Slope.PisteHalf ? 0.25f : 0.12f);
             pos = new Vector3(x, Slope.DrawnHeight(x, z), z);
-            size = rock ? 0.8f + 1.4f * Slope.Hash01(cx, cz, 4) : 0.75f + 0.6f * Slope.Hash01(cx, cz, 4);
+            size = rock ? 0.8f + 1.4f * Slope.Hash01(cx, cz, 4) : (0.75f + 0.6f * Slope.Hash01(cx, cz, 4)) * Stature(z);
             return rock ? Kind.Rock : Kind.Tree;
         }
 
@@ -113,8 +118,9 @@ namespace Summit
             float density = Mathf.Lerp(0.16f, 0.62f, Mathf.Clamp01((off - Slope.PisteHalf) / 30f)) * Mathf.Lerp(0.35f, 1.3f, glade);
             if (z < 70f && off < 34f) density *= 0.1f;
             if (Slope.OnPad(x, z)) return 0f;
-            // (about one in eight of what stands off the piste is a rock)
-            return Mathf.Clamp01(density * 0.88f / 0.62f);
+            // (about one in eight of what stands off the piste is a rock; and only so many trees grow at this height,
+            // in clumps too fine for the far field to show one by one)
+            return Mathf.Clamp01(density * 0.88f / 0.62f * Mathf.Min(1.15f, ZoneCoarse(z)));
         }
 
         // ---- what the models are made of
@@ -290,6 +296,56 @@ namespace Summit
         /// <summary>0 at the summit .. 1 at the foot of the mountain.</summary>
         public static float Low(float z) => Mathf.Clamp01(1f - Slope.AltitudeFeet(z) / Slope.VerticalFeet);
 
+        // ---- the mountain's zones, by height (Low): from the summit down,
+        //   alpine     above the tree line (the glacier's third of the mountain): open snow and rock, no trees
+        //   tree line  a band of scattered, stunted firs, crouched in clumps out of the wind
+        //   subalpine  glades: clumps of trees with open snow between, the clumps growing and closing up going down
+        //   forest     the full forest, as it always was
+        //   valley     the densest and tallest trees, in the valley bottom
+        // Only the trees change: rocks stand where they always did, and what is kept clear (the start, the course,
+        // lifts, hamlets, the camp) is kept clear as before.
+
+        /// <summary>Low() at the tree line (the glacier's foot, about two-thirds of the way up), and where each band below it ends.</summary>
+        public const float TreeLine = 0.33f, LineBand = 0.43f, Subalpine = 0.62f, Valley = 0.86f;
+        /// <summary>The height of the tree line (world y): the far views draw their forest up to it (FarMountain).</summary>
+        public static float TreeLineY => Slope.FallLine(Slope.FinishZ) + (1f - TreeLine) * Slope.Vertical;
+        /// <summary>Above the tree line, the share of the would-be tree cells that hold a boulder instead (off the piste; fading out through the tree-line band).</summary>
+        public const float Boulders = 0.08f;
+
+        /// <summary>How many of the trees the forest would plant at this height grow here, before clumping (0 .. 1.15).</summary>
+        public static float ZoneCoarse(float z)
+        {
+            float low = Low(z);
+            if (low < TreeLine) return 0f;
+            if (low < LineBand) return Mathf.Lerp(0.05f, 0.24f, Mathf.InverseLerp(TreeLine, LineBand, low));
+            if (low < Subalpine) return Mathf.Lerp(0.24f, 0.9f, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(LineBand, Subalpine, low)));
+            return Mathf.Lerp(0.9f, 1.15f, Mathf.InverseLerp(Subalpine, 0.95f, low));
+        }
+
+        /// <summary>
+        /// How many of the trees the forest would plant at (x, z) grow there (0 above the tree line, up to about 2 in a
+        /// clump high up, 1.15 in the valley): ZoneCoarse, gathered into clumps twenty-odd metres across at the tree line
+        /// and in the subalpine glades (open snow between them), evening out into the forest below.
+        /// </summary>
+        public static float Zone(float x, float z)
+        {
+            float k = ZoneCoarse(z);
+            if (k <= 0f) return 0f;
+            float clumpy = 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(LineBand + 0.04f, Subalpine + 0.06f, Low(z)));
+            if (clumpy <= 0f) return k;
+            float clump = Slope.Noise(x * 0.045f + 71f, z * 0.045f + 13f);
+            return k * Mathf.Lerp(1f, 2.3f * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.38f, 0.66f, clump)), clumpy);
+        }
+
+        /// <summary>How grown the trees are at this height: stunted at the tree line, full in the forest, tallest in the valley.</summary>
+        public static float Stature(float z)
+        {
+            float low = Low(z);
+            if (low < LineBand) return Mathf.Lerp(0.3f, 0.5f, Mathf.InverseLerp(TreeLine, LineBand, low));
+            if (low < Subalpine) return Mathf.Lerp(0.5f, 1f, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(LineBand, Subalpine, low)));
+            return Mathf.Lerp(1f, 1.12f, Mathf.InverseLerp(Valley, 1f, low));
+        }
+
         /// <summary>
         /// A realistic tree at (x, z): how tall it has grown (`full`, metres) and how much of that is under the snow
         /// (`sink`). Full-grown trees are 20-35 m at the foot of the mountain and smaller near the summit, in stands
@@ -371,7 +427,7 @@ namespace Summit
             float r = Slope.Hash01(cx, cz, 13);
             if (r >= 0.4f) return false;                                  // (the most a cell's chance can be: skip the sums)
             Stand(cx, cz, wx, wz, out float pines, out float young, out _, out _, out float edge);
-            if (r >= 0.04f + 0.26f * edge + 0.2f * Mathf.Max(0f, young - 0.25f)) return false;
+            if (r >= (0.04f + 0.26f * edge + 0.2f * Mathf.Max(0f, young - 0.25f)) * Mathf.Min(1f, Zone(wx, wz))) return false;   // (none above the tree line)
             if (Slope.OnPad(wx, wz) || Course.Keep(wx, wz, 1f)) return false;
             if (LiftLine.Taken(wx, wz, 3.5f)) return false;   // not in a ski lift's cleared swath, like the trees
             float x = wx + (Slope.Hash01(cx, cz, 17) - 0.5f) * Cell * 0.75f;
@@ -407,6 +463,7 @@ namespace Summit
                 Stand(x, z, p.x, p.z, out float pines, out float young, out float old, out float dead, out _);
                 pl.idx = RealFir.PickWild(Low(p.z), pines, young, old, dead, Slope.Hash01(x, z, 9), Slope.Hash01(x, z, 14), Slope.Hash01(x, z, 15), Slope.Hash01(x, z, 16));
                 Growth(p.x, p.z, Slope.Hash01(x, z, 4), out float full, out float sink);
+                float st = Stature(p.z); full *= st; sink *= st;
                 if (pl.idx >= 8)
                 {
                     float grown = full * RealFir.SizeOf(pl.idx);
@@ -433,6 +490,7 @@ namespace Summit
                 // a realistic tree: the kind for this height on the mountain, grown and buried for it, a few leaning
                 pl.idx = RealFir.Pick(Low(p.z), Slope.Hash01(x, z, 9));
                 Growth(p.x, p.z, Slope.Hash01(x, z, 4), out float full, out float sink);
+                float st = Stature(p.z); full *= st; sink *= st;
                 float k = full / RealFir.Heights[pl.idx], yk = 0.94f + 0.12f * Slope.Hash01(x, z, 6);
                 float lean = Mathf.Pow(Slope.Hash01(x, z, 10), 3f) * 7f;
                 var rot = Quaternion.AngleAxis(lean, Quaternion.Euler(0f, Slope.Hash01(x, z, 11) * 360f, 0f) * Vector3.right)

@@ -30,6 +30,8 @@ namespace Summit
         /// <summary>Clearance over the top of what is popped over.</summary>
         const float HopClear = 0.12f;
 
+        /// <summary>The last solid met: how far off square on the board's travel was to its face (degrees, 0 dead on).</summary>
+        public float LastHitAngle { get; private set; }
         /// <summary>A glancing blow off something solid: how fast into it (m/s).</summary>
         public System.Action<float> Glanced;
         /// <summary>Popped over something low: how high its top stood over the board.</summary>
@@ -38,6 +40,7 @@ namespace Summit
         // the low obstacles near the board, which it does not collide with (Physics.IgnoreCollision) and rides on instead
         List<Collider> over = new List<Collider>(8), overNow = new List<Collider>(8);
         readonly Collider[] overNear = new Collider[48];
+        readonly float[] pathS = new float[64], pathY = new float[64];   // (the pop's look along the way: distance, the top's height)
 
         /// <summary>Ridden over, not hit: the board's sphere ignores it and its top is ground.</summary>
         public bool RidesOver(Collider c) => c != null && over.Contains(c);
@@ -132,6 +135,7 @@ namespace Summit
             float hereTop = OverHeight(p.x, p.z);   // (already up on one: its own top is the ground, not a side)
             float face = -1f, top = 0f;
             float far = sp * 0.4f + R;
+            int nPath = 0;
             for (float s = R; s <= far; s += 0.2f)
             {
                 float x = p.x + d.x * s, z = p.z + d.z * s;
@@ -152,6 +156,7 @@ namespace Summit
                     face = s;
                 }
                 top = Mathf.Max(top, y - snow - above);
+                if (nPath < pathS.Length) { pathS[nPath] = s; pathY[nPath] = y; nPath++; }
             }
             if (face < 0f) return v;
             float need = top + HopClear;
@@ -161,6 +166,16 @@ namespace Summit
             // (left late, it takes more to clear it in the time there is)
             float t = Mathf.Max(0.02f, (face - R) / sp);
             if (t < tTop) vHop = Mathf.Max(vHop, (need + 0.5f * G * t * t) / t);
+            // and over the thing itself as the board will really fly: from its own height and the vertical speed it has
+            // now, under gravity, against the top's own height at each point (not the snow's: where the snow ahead drops
+            // away less steeply than the board is coming down, a pop measured from the snow came in short, onto its front)
+            float vy0 = v.y - fixVy;
+            for (int i = 0; i < nPath; i++)
+            {
+                float ti = Mathf.Max(0.02f, pathS[i] / sp);   // (its middle over the point: where its bottom is)
+                float rise = pathY[i] + HopClear + 0.05f - (bottom + vy0 * ti - 0.5f * G * ti * ti);   // (+ the steps' own sag)
+                vHop = Mathf.Max(vHop, rise / ti);
+            }
             vHop = Mathf.Min(vHop, Mathf.Sqrt(2f * G * (StepUp + HopClear)) * 1.6f);
             Hopped?.Invoke(top);
             Vector3 vt = new Vector3(v.x, v.y - fixVy + vHop, v.z);
@@ -171,8 +186,8 @@ namespace Summit
         float OverHeight(float x, float z) => OverTop(x, z, out float y, out _) ? y : float.NegativeInfinity;
 
         /// <summary>
-        /// The highest low thing under (x, z) and which way its top faces there (a steep side leant back toward up, as
-        /// the board rides over its edge, so it is never too steep to stand on).
+        /// The highest low thing under (x, z) and which way its top faces there (a side or rim too steep to ride taken
+        /// as level, as the board steps over its edge, so it is never too steep to stand on and never a ramp).
         /// </summary>
         bool OverTop(float x, float z, out float y, out Vector3 n)
         {
@@ -190,7 +205,8 @@ namespace Summit
                 y = hit.point.y; n = hit.normal; any = true;
             }
             if (!any) return false;
-            if (n.y < 0.8f) n = Vector3.Slerp(n.y > 0f ? n : Vector3.up, Vector3.up, Mathf.Clamp01((0.8f - n.y) / 0.8f + 0.25f)).normalized;
+            // (a side or a rim too steep to ride, met where the board clips it: level ground, stepped up onto. Leant back
+            // part way, it was a ramp's face, and a board clipping a stump's rim at speed was thrown metres into the air)
             if (n.y < 0.8f) n = Vector3.up;
             return true;
         }
@@ -225,6 +241,7 @@ namespace Summit
             float sp = vIn.magnitude;
             float into = Mathf.Max(0f, -Vector3.Dot(vIn, normal));
             bool square = sp < 1e-3f || into >= sp * DeadOnCos;
+            LastHitAngle = sp > 1e-3f ? Mathf.Acos(Mathf.Clamp(into / sp, 0f, 1f)) * Mathf.Rad2Deg : 0f;
             if (ob.always) { into = Mathf.Max(into, 10f); square = true; }   // animals always knock you down
             if (InvincibleTime > 0f && ob.Smashable && Smash(ob, col))
             {

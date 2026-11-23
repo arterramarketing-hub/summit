@@ -205,6 +205,7 @@ namespace Summit
             mat.SetFloat(FloorId, floorY); mat.SetFloat(TopId, topY);
             mat.SetFloat(PhaseId, (Slope.Seed % 628) / 100f);   // (Slope's own phase: the piste is drawn where it is ridden)
             mat.SetFloat(FinishId, Slope.FinishZ);
+            mat.SetFloat(TreeLineId, Mathf.Clamp01((Forest.TreeLineY - floorY) / Mathf.Max(1f, topY - floorY)));   // the forest's own tree line (Forest.Zone)
             BuildCore();
             BuildRing();
             bakedSun = Vector3.zero; bakeAt = -1;
@@ -444,7 +445,7 @@ namespace Summit
         }
         float shadeBlend = 1f, lastRound = 0.5f, roundTime;
         readonly System.Diagnostics.Stopwatch watch = new System.Diagnostics.Stopwatch();
-        static readonly int BlendId = Shader.PropertyToID("_ShadeBlend");
+        static readonly int BlendId = Shader.PropertyToID("_ShadeBlend"), TreeLineId = Shader.PropertyToID("_TreeLine");
         /// <summary>Milliseconds the last call to Shade spent, and how many rounds of the shadow have been finished.</summary>
         public float LastMs { get; private set; }
         public int Rounds { get; private set; }

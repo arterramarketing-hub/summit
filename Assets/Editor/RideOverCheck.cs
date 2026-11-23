@@ -19,7 +19,7 @@ public static class RideOverCheck
     const BindingFlags NP = BindingFlags.NonPublic | BindingFlags.Instance;
     const float Dt = 1f / 120f;
     static SummitGame game; static Rider r; static RiderBody body; static SlopeStreamer terrain; static Forest props;
-    static string lastCrash; static bool hopped, glanced; static float glanceInto;
+    static string lastCrash; static bool hopped, glanced, met; static float glanceInto;
     static int fails;
     static readonly string only = System.Environment.GetEnvironmentVariable("RIDEOVER_ONLY");
 
@@ -43,6 +43,7 @@ public static class RideOverCheck
         r.Crash += why => lastCrash = why;
         r.Hopped += _ => hopped = true;
         r.Glanced += into => { glanced = true; glanceInto = Mathf.Max(glanceInto, into); };
+        r.HitObstacle += (ob, at, into) => met = true;
         TestBoot.NewMountain(game, 4242, terrain, props);
     }
 
@@ -53,19 +54,19 @@ public static class RideOverCheck
         try
         {
             if (only == null) Survey();
-            float z0 = OpenSpot(Course.First + 120f);
-            Debug.Log($"RIDEOVER spot z={z0:0} slope n.y={Slope.Normal(Slope.Centre(z0), z0).y:0.00} StepUp={Rider.StepUp} deadOn={Rider.DeadOnAngle} deg crashInto={Rider.CrashInto} m/s");
+            var spots = OpenSpots(Course.First + 60f, 6);
+            Debug.Log($"RIDEOVER places z={string.Join(", ", spots.ConvertAll(q => q.ToString("0")))} slope n.y={Slope.Normal(Slope.Centre(spots[0]), spots[0]).y:0.00} StepUp={Rider.StepUp} deadOn={Rider.DeadOnAngle} deg crashInto={Rider.CrashInto} m/s");
             int i = 0;
             foreach (string shape in Shapes)
                 foreach (float h in Heights)
                     foreach (float ang in Angles)
                         foreach (float v0 in Speeds)
                         {
-                            float z = z0 + (i++ % 6) * 40f;
+                            float z = spots[i++ % 6];
                             if (only != null && only != $"{shape},{h:0.00},{ang:0},{v0:0}") continue;
                             var res = Ride(shape, h, ang, v0, z, null);
                             string key = $"{shape} h{h:0.00} a{ang:0}";
-                            Debug.Log($"RIDEOVER {shape} top {h:0.00} m, {ang:0} deg, {v0:0} m/s: {res.outcome}{(res.hop ? " (popped over)" : "")}; speed {res.vIn:0.0} -> {res.vOut:0.0} m/s, highest {res.peak:0.00} m over the snow{(res.into > 0f ? $", {res.into:0.0} m/s into it" : "")}");
+                            Debug.Log($"RIDEOVER {shape} top {h:0.00} m, {ang:0} deg, {v0:0} m/s: {res.outcome}{(res.hop ? " (popped over)" : "")}; speed {res.vIn:0.0} -> {res.vOut:0.0} m/s, highest {res.peak:0.00} m over the snow{(res.into > 0f ? $", {res.into:0.0} m/s into it" : "")}{(res.angle >= 0f ? $", met {res.angle:0} deg off square" : "")}, {res.offLine:+0.00;-0.00} m off its line");
                             table.TryGetValue(key + " " + res.outcome, out int c); table[key + " " + res.outcome] = c + 1;
                             // the rule: low enough is ridden over; taller, only dead on (and fast enough) crashes
                             bool low = h <= Rider.StepUp - 0.03f;
@@ -75,6 +76,13 @@ public static class RideOverCheck
                             string want = low ? "over" : (deadOn && !rough && v0 > 8.5f ? "crash" : null);
                             if (want != null && res.outcome != want) { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: {res.outcome}, the rule says {want}"); }
                             if (!low && !deadOn && !rough && res.outcome == "crash") { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: a crash on a glancing hit"); }
+                            if (!low && res.angle >= 0f && v0 > 8.5f)
+                            {
+                                bool sq = res.angle <= Rider.DeadOnAngle;
+                                if (sq && res.outcome != "crash" && res.into <= 0f) { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: met {res.angle:0} deg off square, {res.outcome}, not a crash"); }
+                                if (!sq && res.outcome == "crash") { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: met {res.angle:0} deg off square, a crash"); }
+                            }
+                            if (Mathf.Abs(res.offLine) > 0.05f) { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: the board came {res.offLine:+0.00;-0.00} m off its line (the angle asked for is not the one met)"); }
                         }
         }
         catch (System.Exception e) { fails++; Debug.LogError("RIDEOVER exception " + e); }
@@ -127,31 +135,58 @@ public static class RideOverCheck
 
     static int Get(Dictionary<string, int> d, string k) => d.TryGetValue(k, out int v) ? v : 0;
 
-    /// <summary>The first open stretch of plain piste from z: cruising, no park, no crevasse, no obstacle near the middle.</summary>
-    static float OpenSpot(float z)
+    /// <summary>
+    /// `count` open places on plain piste from z, at least 40 m apart, each with room for a ride into a thing: 22 m up
+    /// the hill of it and 8 m past, cruising (not the park, whose boxes and rails catch the board), solid, no crevasse,
+    /// no obstacle within 10 m of the line, no roof or lift deck to ride up on. Too few is a failure of the check, not a
+    /// quiet fallback (it once fell back into the park: a ride caught on a box there, 1 m up and off its line).
+    /// </summary>
+    static List<float> OpenSpots(float z, int count)
     {
-        for (; z < Course.First + 3f * Course.Cycle; z += 20f)
+        const float Before = 22f, After = 8f;
+        var spots = new List<float>();
+        var why = new Dictionary<string, int>();
+        void No(string k) { why.TryGetValue(k, out int n); why[k] = n + 1; }
+        for (; z < Course.First + 3f * Course.Cycle && spots.Count < count; z += 5f)
         {
-            bool ok = true;
-            for (float zz = z - 20f; zz < z + 260f && ok; zz += 5f)
+            string bad = null;
+            for (float zz = z - Before; zz < z + After && bad == null; zz += 2f)
             {
-                var s = Course.At(zz);
                 float x = Slope.Centre(zz);
-                if (s != Course.Section.Cruise || !Course.Solid(x, zz, 10f) || Course.CrevasseNear(x, zz, 8f) || Slope.Normal(x, zz).y < 0.8f) ok = false;
+                if (Course.At(zz) != Course.Section.Cruise) bad = "not cruise";
+                else if (!Course.Solid(x, zz, 10f) || Course.CrevasseNear(x, zz, 8f)) bad = "crevasse";
+                else if (Slope.Normal(x, zz).y < 0.7f) bad = "steep";
             }
-            if (!ok) continue;
-            r.ResetAt(Slope.Centre(z), z); Stream();
-            bool clear = true;
-            foreach (var c in Physics.OverlapBox(new Vector3(Slope.Centre(z + 120f), Slope.Height(Slope.Centre(z + 120f), z + 120f), z + 120f), new Vector3(10f, 60f, 150f)))
-                if (c.GetComponentInParent<Obstacle>() != null) { clear = false; break; }
-            if (clear) return z;
+            if (bad == null)
+            {
+                r.ResetAt(Slope.Centre(z), z); Stream();
+                float zm = z + (After - Before) * 0.5f;
+                foreach (var c in Physics.OverlapBox(new Vector3(Slope.Centre(zm), Slope.Height(Slope.Centre(zm), zm), zm), new Vector3(10f, 40f, (After + Before) * 0.5f)))
+                    if (c.GetComponentInParent<Obstacle>() != null) { bad = "obstacle"; break; }
+                for (float zz = z - Before; zz < z + After && bad == null; zz += 2f)
+                    for (float dx = -10f; dx <= 10f && bad == null; dx += 2f)
+                    {
+                        float x = Slope.Centre(zz) + dx;
+                        if (Roofs.Near(new Vector3(x, Slope.DrawnHeight(x, zz), zz), 3f)) bad = "roof";
+                    }
+            }
+            if (bad == null) { spots.Add(z); z += 35f; continue; }
+            No(bad);
         }
-        return Course.First + 120f;
+        if (spots.Count < count)
+        {
+            var sb = new System.Text.StringBuilder($"RIDEOVER-FAIL only {spots.Count} open places on the piste:");
+            foreach (var kv in why) sb.Append($" {kv.Key} {kv.Value}");
+            Debug.Log(sb.ToString());
+            fails++;
+            while (spots.Count < count) spots.Add(Course.First + 120f + spots.Count * 40f);
+        }
+        return spots;
     }
 
     static void Stream() { terrain.Prewarm(); props.Prewarm(); Physics.SyncTransforms(); }
 
-    struct Result { public string outcome; public bool hop; public float vIn, vOut, peak, into; }
+    struct Result { public string outcome; public bool hop; public float vIn, vOut, peak, into, angle, offLine; }
 
     /// <summary>A thing `shape` standing h over the snow at (centre, z), met at `ang` degrees off dead on at v0.</summary>
     static GameObject Make(string shape, float h, float ang, float x, float z, out float side)
@@ -214,7 +249,14 @@ public static class RideOverCheck
             Vector3 n = Slope.Normal(xs, zs);
             r.Body.linearVelocity = Vector3.ProjectOnPlane(Vector3.forward, n).normalized * v0;
             Stream();
-            lastCrash = null; hopped = false; glanced = false; glanceInto = 0f;
+            if (only != null)
+                for (float dz = 0f; dz <= 2f; dz += 0.5f)
+                    for (float dx = -0.5f; dx <= 2f; dx += 0.5f)
+                        Debug.Log($"RIDEOVER-START ground dx={dx} dz={dz}: height {Slope.Height(xs + dx, zs + dz) - Slope.Height(xs, zs):0.00} drawn {Slope.DrawnHeight(xs + dx, zs + dz) - Slope.DrawnHeight(xs, zs):0.00} hill {LiftLine.HillHeight(xs + dx, zs + dz):0.00} n.y {Slope.Normal(xs + dx, zs + dz).y:0.00} section {Course.At(zs + dz)} crev {Course.CrevasseCut(xs + dx, zs + dz):0.00}");
+            if (only != null)
+                foreach (var c in Physics.OverlapSphere(r.Body.position, 3f, ~0, QueryTriggerInteraction.Collide))
+                    Debug.Log($"RIDEOVER-START near {c.name} ({c.GetType().Name}) layer {c.gameObject.layer} trigger={c.isTrigger} at {c.bounds.center - r.Body.position} size {c.bounds.size} parent {(c.transform.parent != null ? c.transform.parent.name : "-")}");
+            lastCrash = null; hopped = false; glanced = false; glanceInto = 0f; met = false;
             float t = 0f, vNear = v0;
             int step = 0;
             while (t < 4f)
@@ -222,7 +264,9 @@ public static class RideOverCheck
                 // hold the line straight at it (and the speed) until there
                 if (r.Z < z - 1.5f && !glanced)
                 {
-                    r.Steer = Mathf.Clamp((xs - r.X) * 0.4f - r.Heading * 2f, -1f, 1f);
+                    // (the finger sets the sideways speed: steer2's direct steering. Held on the position alone; the old
+                    // carve's "- Heading * 2" damping now held the board off its line, a 20-degree hit met at 33)
+                    r.Steer = Mathf.Clamp((xs - r.X) * 1.5f, -1f, 1f);
                     if (r.Speed > v0) r.Body.linearVelocity *= v0 / r.Speed;
                     vNear = r.Speed;
                 }
@@ -238,15 +282,17 @@ public static class RideOverCheck
                 {
                     var o = r.RidingOver; string os = "";
                     foreach (var c in o) if (c != null) os += $" {c.name} top {c.bounds.max.y - Slope.DrawnHeight(c.bounds.center.x, c.bounds.center.z):0.00}";
-                    Debug.Log($"RIDEOVER-TRACE t={t:0.000} z-zo={r.Z - z:0.00} x-xo={r.X - x:0.00} up={r.Body.position.y - Rider.R - Slope.DrawnHeight(r.X, r.Z):0.00} v={r.Body.linearVelocity} air={r.Airborne} crashed={r.Crashed} over:{os}");
+                    Debug.Log($"RIDEOVER-TRACE t={t:0.000} z-zo={r.Z - z:0.00} x-xo={r.X - x:0.00} up={r.Body.position.y - Rider.R - Slope.DrawnHeight(r.X, r.Z):0.00} v={r.Body.linearVelocity} air={r.Airborne} crashed={r.Crashed} lift={r.Lift:0.00} roof={(r.OnRoof != null)} hop={hopped} speed={r.Speed:0.0} heading={r.Heading:0.00} steer={r.Steer:0.00} over:{os}");
                 }
                 if (Mathf.Abs(r.Z - z) < 2.5f) res.peak = Mathf.Max(res.peak, r.Body.position.y - Rider.R - Slope.DrawnHeight(r.X, r.Z));
+                if (r.Z < z - 1.5f) res.offLine = r.X - xs;
                 if (r.Crashed) { res.outcome = "crash"; break; }
                 if (r.Z > z + 4f) { res.outcome = glanced ? "deflect" : "over"; break; }
                 if (r.Speed < 1f && t > 0.5f) { res.outcome = glanced ? "deflect" : "stopped"; break; }
             }
             if (res.outcome == "?") res.outcome = glanced ? "deflect" : "stopped";
             res.hop = hopped; res.vIn = vNear; res.vOut = r.Speed; res.into = glanceInto;
+            res.angle = met ? r.LastHitAngle : -1f;
         }
         finally
         {
@@ -265,7 +311,7 @@ public static class RideOverCheck
         System.IO.Directory.CreateDirectory(outDir);
         var cam = Camera.main;
         var chase = cam.GetComponent<ChaseCamera>(); if (chase != null) chase.enabled = false;
-        float z0 = OpenSpot(Course.First + 120f);
+        var spots = OpenSpots(Course.First + 60f, 6);
         var cases = new (string shape, float h, float ang, float v)[]
         {
             ("rock", 0.4f, 0f, 16f), ("block", 0.5f, 0f, 16f), ("stump", 0.4f, 0f, 20f),
@@ -274,7 +320,7 @@ public static class RideOverCheck
         int k = 0;
         foreach (var c in cases)
         {
-            float z = z0 + (k % 6) * 40f;
+            float z = spots[k % 6];
             const int W = 360, H = 300, Frames = 6;
             var strip = new Texture2D(W * Frames, H, TextureFormat.RGB24, false);
             var rt = new RenderTexture(W, H, 24);

@@ -69,7 +69,9 @@ public static class ForestListTest
     {
         var refresh = typeof(Forest).GetMethod("Refresh", NP);
         var pieces = new List<Forest.Piece>();
-        float z = Course.First + 110f, xOff = 0f;
+        // (two cycles down: below the tree line, where the forest grows, so there are trees to fell, snap and clip;
+        // above it there are only rocks, Forest.Zone)
+        float z = Course.First + 2f * Course.Cycle + 110f, xOff = 0f;
         long ticks = 0, worst = 0; int relists = 0;
         var sw = new System.Diagnostics.Stopwatch();
         Vector2Int lastC = new Vector2Int(int.MinValue, 0);
@@ -122,7 +124,7 @@ public static class ForestListTest
         double ms = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
         var sw = new System.Diagnostics.Stopwatch();
         Vector2Int lastC = new Vector2Int(int.MinValue, 0);
-        float z = Course.First + 110f;
+        float z = Course.First + 2f * Course.Cycle + 110f;   // (through the forest, as Ride)
         for (int step = 0; step <= 900; step++, z += 2.2f)
         {
             t.position = new Vector3(Slope.Centre(z) + 25f * Mathf.Sin(step * 0.05f), 0f, z);
