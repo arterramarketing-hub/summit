@@ -569,7 +569,7 @@ public static class MountainAudit
         {
             Vector3 p = r.Body.position;
             r.TrickX = 0f; r.TrickY = 0f; r.GrabHeld = false;
-            float aimX = Slope.Centre(r.Z + 12f);
+            float aimX = Slope.Centre(r.Z + 12f * Slope.Squash(r.Z));   // (12 m along the run: on a cliff band's traverse, less down the hill)
             if (Slope.NextKicker(r.Z, out Vector3 kk) && kk.z - r.Z < 70f) aimX = kk.x;
             Course.FeaturesNear(r.Z, near);
             foreach (var f in near)

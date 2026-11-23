@@ -133,7 +133,7 @@ namespace Summit
 
             // the crevasses and the lifts (with their hills, which are in the height function) are laid out here, on the
             // main thread, before any worker asks where they are
-            _ = Course.Crevasses; _ = LiftLine.Lifts;
+            _ = Course.Crevasses; _ = LiftLine.Lifts; Cliffs.LedgeOf(0, out _);
 
             if (all) BuildNearNow(cx, cz);
 
@@ -431,7 +431,7 @@ namespace Summit
         public void BuildForTest(Mesh mesh, Vector2Int key)
         {
             if (quads == 0) Init();
-            _ = Course.Crevasses; _ = LiftLine.Lifts;
+            _ = Course.Crevasses; _ = LiftLine.Lifts; Cliffs.LedgeOf(0, out _);
             var w = Take(key, 0);
             w.Run();
             if (w.error != null) throw w.error;
@@ -530,7 +530,7 @@ namespace Summit
                         // facet's, so it does not jump from one corner to the next (a jump cliff's short band excepted)
                         float hl2 = grid[c - 2], hr2 = grid[c + 2], hd2 = grid[c - 2 * g], hu2 = grid[c + 2 * g];
                         float wideY = new Vector3(-(hr2 - hl2) / (4f * q), 1f, -(hu2 - hd2) / (4f * q)).normalized.y;
-                        float ny = Cliffs.OnJumpFace(x, z) ? norms[v].y : Mathf.Lerp(wideY, norms[v].y, 0.3f);
+                        float ny = Cliffs.OnJumpFace(x, z) || Cliffs.OnLedgeFace(x, z) || Slope.OnStepFace(x, z) || CliffBand.OnFace(x, z) ? norms[v].y : Mathf.Lerp(wideY, norms[v].y, 0.3f);
                         rocky[v] = RockFace.Rockiness(ny, x, z, (hl2 + hr2 + hd2 + hu2) * 0.25f - y);
                     }
                 // never at half resolution near a crevasse (its lips and hairlines lie on the snow) or where a ridge's

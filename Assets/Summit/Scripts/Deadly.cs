@@ -15,6 +15,8 @@ namespace Summit
             // the terrace under a deadly cliff (Cliffs), signed and taped off along its top: wherever its cut has
             // lowered the mountain
             if (Cliffs.WallCut(x, z) < -3f) return true;
+            // the slope below a cliff band's tall parts (its low places are an air, not a fall)
+            if (CliffBand.BelowTall(x, z)) return true;
             // a ridge's canyon on a cliff side (a one-sided ridge's snow side is a long ride down, not a fall)
             if (Ridge.InCanyons(z))
             {

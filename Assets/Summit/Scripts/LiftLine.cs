@@ -231,6 +231,8 @@ namespace Summit
                     var watch = System.Diagnostics.Stopwatch.StartNew();
                     lifts = new Lift[0];   // (so nothing that asks about the ground while they are laid sees the old ones)
                     HideHills();           // (and they are laid on the mountain without hills: LiftHill.cs)
+                    bool ledges = Cliffs.LedgesHidden;
+                    Cliffs.LedgesHidden = true;   // (nor ledge lines: those go where the lifts leave room, Cliffs)
                     var list = new List<Lift>();
                     if (On)
                     {
@@ -272,6 +274,7 @@ namespace Summit
                     SettleHills(list);
                     lifts = list.ToArray();
                     PublishHills(lifts);
+                    Cliffs.LedgesHidden = ledges;
                     LaidMs = watch.Elapsed.TotalMilliseconds;
                 }
                 return lifts;
@@ -308,6 +311,7 @@ namespace Summit
             zb = k == LastCycle ? Slope.FinishZ + 15f : b + BottomAt;
             if (k == 0) zt = 40f;                                                         // beside the start
             else if (Ridge.Built(k - 1)) zt = b + Ridge.EndOf(k - 1) + Ridge.FadeAfter - Course.Cycle + 30f;   // below the canyons' foot
+            else if (CliffBand.Of(k - 1, out var band)) zt = (band.ledge ? band.End : CliffBand.WideEnd(band)) + 40f;   // below a cliff band's gap and the wide run under it
             else zt = b - Course.Cycle + 640f;                                            // no ridge above: on up past it
             return zb - zt >= 180f;
         }
@@ -375,7 +379,7 @@ namespace Summit
         // (a lift stays out of a ridge stretch altogether, canyons, gorge and all, not just off its rock)
         // (asked with a small margin as well as a wide one: near two jump cliffs at once, Cliffs.Keep's wide look can
         // find the further one first and miss the nearer)
-        static bool Kept(float x, float z) => Ridge.InCanyons(z) || Course.Keep(x, z, 3f) || Course.Keep(x, z, 0.5f) || Cliffs.WallCut(x, z) < -0.01f || Slope.OnPad(x, z);
+        static bool Kept(float x, float z) => Ridge.InCanyons(z) || CliffBand.Near(z, 30f, out _) || Course.Keep(x, z, 3f) || Course.Keep(x, z, 0.5f) || Cliffs.WallCut(x, z) < -0.01f || Slope.OnPad(x, z);
 
         static readonly float[] StationAcross = { -StationHalfWid, -Half, 0f, Half, StationHalfWid };
 

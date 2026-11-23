@@ -382,7 +382,7 @@ public static class ScoreTest
                         if (bot == 0) r.Steer = 0f;   // hands off: what the autoplay device check does
                         else
                         {
-                            float aimX = Slope.Centre(r.Z + 12f);
+                            float aimX = Slope.Centre(r.Z + 12f * Slope.Squash(r.Z));   // (12 m along the run: on a cliff band's traverse, less down the hill)
                             if (Slope.NextKicker(r.Z, out Vector3 kk) && kk.z - r.Z < 70f) aimX = kk.x;
                             Course.FeaturesNear(r.Z, near);
                             foreach (var f in near)

@@ -13,7 +13,7 @@ namespace Summit
     /// </summary>
     public static class CliffDressing
     {
-        static Material signJump, signCliffs, tape;
+        static Material signJump, signCliffs, signLedges, signBand, tape;
 
         public static void Build(Transform root, int cycle, Shader lit, Material poleOrange, Material poleBlack, Material post, Material signBack, Rider rider)
         {
@@ -28,6 +28,8 @@ namespace Summit
                 signJump = CourseDressing.Sign(lit, "Signs/SignJump");
                 signCliffs = CourseDressing.Sign(lit, "Signs/SignCliffs");
                 tape = CourseDressing.Sign(lit, "Signs/Tape");
+                signLedges = CourseDressing.Sign(lit, "Signs/SignLedges");
+                signBand = CourseDressing.Sign(lit, "Signs/SignBand");
             }
             for (int k = 0; k < 2; k++)
             {
@@ -41,6 +43,51 @@ namespace Summit
                     Pole(root, new Vector3(x, y + 0.35f, z), new Vector3(0.035f, 0.4f, 0.035f), Mathf.Abs(a) > Slope.PisteHalf ? poleBlack : poleOrange);
                 }
                 yield return true;
+            }
+            if (Cliffs.LedgeOf(cycle, out var L))
+            {
+                // the way in: a double black diamond at the piste's edge where the strip opens, on its side
+                float zs = L.Start - 22f;
+                SignAt(root, Slope.Centre(zs) + L.side * (Slope.PisteHalf + 2.5f), zs, signLedges, post, signBack);
+                // short wands along each lip, across the strip (black: off the piste)
+                for (int i = 0; i < L.count; i++)
+                {
+                    for (float b = -L.half + 1f; b <= L.half - 0.99f; b += 3.5f)
+                    {
+                        float z = Cliffs.LedgeLipZ(L, i, b) - 0.6f;
+                        float x = Slope.Centre(z) + L.side * (L.off + b);
+                        float y = Slope.DrawnHeight(x, z);
+                        Pole(root, new Vector3(x, y + 0.35f, z), new Vector3(0.035f, 0.4f, 0.035f), poleBlack);
+                    }
+                    yield return true;
+                }
+            }
+            // (blind roll-overs: crossed poles at the lip on both edges of the piste are PisteKit's closed markers)
+            if (CliffBand.Of(cycle, out var band))
+            {
+                // the way in: a sign at the edge of the run on the band's side; then poles and caution tape along its lip,
+                // with a gap at each low place (the optional air), and black wands along those
+                float zs = band.z0 - 30f;
+                Sign(root, zs, signBand, -band.side, post, signBack);
+                Vector3 last = Vector3.zero; bool have = false;
+                for (float zc = band.z1 - 8f; zc < band.z2 + 12f; zc += 5f)
+                {
+                    float hgt = CliffBand.HeightAt(band, zc);
+                    var at = CliffBand.PointAt(band, zc, CliffBand.Edge - 1.2f);
+                    float y = Slope.DrawnHeight(at.x, at.y) - 0.05f;
+                    if (CliffBand.Low(band, zc))
+                    {
+                        Pole(root, new Vector3(at.x, y + 0.35f, at.y), new Vector3(0.035f, 0.4f, 0.035f), poleBlack);
+                        have = false; continue;
+                    }
+                    if (hgt < 6f) { have = false; continue; }
+                    Pole(root, new Vector3(at.x, y + 0.8f, at.y), new Vector3(0.06f, 0.8f, 0.06f), poleOrange);
+                    Pole(root, new Vector3(at.x, y + 1.45f, at.y), new Vector3(0.065f, 0.12f, 0.065f), poleBlack);
+                    var tie = new Vector3(at.x, y + 1.15f, at.y);
+                    if (have && rider != null) CautionTape.Make(root, last, tie, rider, tape);
+                    last = tie; have = true;
+                    yield return true;
+                }
             }
             if (Cliffs.WallOf(cycle, out var w))
             {
@@ -64,8 +111,10 @@ namespace Summit
         }
 
         static void Sign(Transform root, float z, Material face, float side, Material post, Material back)
+            => SignAt(root, Slope.Centre(z) + side * (Slope.PisteHalf - 1f), z, face, post, back);
+
+        static void SignAt(Transform root, float x, float z, Material face, Material post, Material back)
         {
-            float x = Slope.Centre(z) + side * (Slope.PisteHalf - 1f);
             float y = Slope.DrawnHeight(x, z);
             const float W = 6f, H = 1.5f, lift = 2.2f;
             for (int s = -1; s <= 1; s += 2)

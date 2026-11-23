@@ -59,6 +59,10 @@ namespace Summit
                 // (the section signs, CourseDressing's, stand on the other side at the same place)
                 if (zb + Course.ParkAt + 180f < Course.ClearFrom) Add(zb + Course.ParkAt - 30f, Symbol.Blue, -1f);
                 if (Cliffs.WallOf(c, out var w)) Add(w.z0 - 28f, Symbol.DoubleBlack, -w.side);
+                // a cliff band's traverse (or an angled ledge): double black; a ledge line beside the run: black. (Across the
+                // run from the section sign, CliffDressing's)
+                if (CliffBand.Of(c, out var band)) Add(band.z0 - 30f, Symbol.DoubleBlack, band.side);
+                if (Cliffs.LedgeOf(c, out var L)) Add(L.Start - 22f, Symbol.Black, -L.side);
                 if (Ridge.Built(c))
                 {
                     var f = Ridge.FormOf(c);
@@ -98,8 +102,8 @@ namespace Summit
         /// <summary>Where a sign stands: just off the groomed run (or the crest), on its side.</summary>
         public static Vector3 Foot(Sign s)
         {
-            float half = Ridge.Depth(s.z) > 0.05f ? Ridge.HalfWidth(s.z) : Slope.PisteHalf;
-            float x = Slope.Centre(s.z) + s.side * (half + 2.2f);
+            float half = Ridge.Depth(s.z) > 0.05f ? Ridge.HalfWidth(s.z) : Slope.HalfAt(s.z);   // (the run's own edge: wide below a band, slantwise on one)
+            float x = Slope.Centre(s.z) + s.side * (half + 2.2f / Slope.Squash(s.z));
             return new Vector3(x, Slope.DrawnHeight(x, s.z), s.z);
         }
 

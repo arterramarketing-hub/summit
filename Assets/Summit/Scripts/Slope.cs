@@ -29,6 +29,7 @@ namespace Summit
         {
             BeforeChange();
             Seed = seed;
+            Rider.RunHeading = RunHeading;   // (the rider's "straight": the run's heading, across the hill on a cliff band's traverse: steer3)
             ph = (seed % 628) / 100f;
             // small offsets only: large ones would lose float precision and step the terrain
             ox = Mathf.Repeat(seed * 37.31f, 211f);
@@ -77,14 +78,43 @@ namespace Summit
         {
             return 26f * Mathf.Sin(z * 0.0047f + ph)
                  + 11f * Mathf.Sin(z * 0.0113f + 1.3f + ph * 1.7f)
-                 + 5f * Mathf.Sin(z * 0.0240f + 0.4f + ph * 2.3f);
+                 + 5f * Mathf.Sin(z * 0.0240f + 0.4f + ph * 2.3f)
+                 + CliffBand.Swing(z);   // (and the cliff band traverses' swings across the hill: CliffBand)
         }
+
+        /// <summary>How far the line's gentle wander runs sideways per metre down the hill (the bands' swings apart).</summary>
+        public static float BaseSlope(float z) =>
+            26f * 0.0047f * Mathf.Cos(z * 0.0047f + ph) + 11f * 0.0113f * Mathf.Cos(z * 0.0113f + 1.3f + ph * 1.7f) + 5f * 0.0240f * Mathf.Cos(z * 0.0240f + 0.4f + ph * 2.3f);
+
+        /// <summary>
+        /// The run's own heading off straight down the mountain (radians, + toward +x) where a cliff band's traverse
+        /// turns it: 0 everywhere else (the line's gentle wander, under 20 degrees, does not count). The way "straight"
+        /// points for anything that follows the run there.
+        /// </summary>
+        public static float RunHeading(float z)
+        {
+            float t = CliffBand.TurnShare(z);
+            return t <= 0f ? 0f : Mathf.Atan(CliffBand.SwingSlope(z) + BaseSlope(z) * t);   // (along a band: the line's whole heading, its wander too)
+        }
+
+        /// <summary>How much a sideways step (x) is across the run (square to it): 1 except on a band's traverse.</summary>
+        public static float Squash(float z) { float k = CliffBand.SwingSlope(z); return k == 0f ? 1f : 1f / Mathf.Sqrt(1f + k * k); }
+
+        /// <summary>How far (x, z) is from the run's middle, square to the run (signed, + toward +x).</summary>
+        public static float Across(float x, float z) => (x - Centre(z)) * Squash(z);
+
+        /// <summary>Half the groomed run's width at z, square to it (B4: narrow through a cliff band's gap and along an angled
+        /// ledge, wide open below a band; PisteHalf everywhere else).</summary>
+        public static float Half(float z) => PisteHalf * CliffBand.Width(z);
+
+        /// <summary>Half the groomed run's width measured along x at z (wider where the run crosses the hill).</summary>
+        public static float HalfAt(float z) => Half(z) / Squash(z);
 
         /// <summary>0 on the groomed piste, 1 well into the rough either side.</summary>
         public static float Rough(float x, float z)
         {
-            float a = Mathf.Abs(x - Centre(z));
-            return Mathf.Clamp01((a - PisteHalf) / 10f);
+            float a = Mathf.Abs(Across(x, z));
+            return Mathf.Clamp01((a - Half(z)) / 10f);
         }
 
         /// <summary>
@@ -117,21 +147,179 @@ namespace Summit
 
         public const float DropSeg = 95f;
 
+        /// <summary>One bench and roll-over: segment s of the fall line, its height H, where its roll-over is (u0, w: in
+        /// segment lengths), and whether it is blind (a knoll whose lip hides what is below) with a rock step under it.</summary>
+        public struct Drop
+        {
+            public int s;
+            public float H, u0, w;
+            public bool blind;
+            public float knoll;                 // a blind roll's crest, how high over the bench (m)
+            public bool step;                   // a rock step across the run below it, with a clean lane
+            public float stepZ, stepH, lane;    // the step's lip (z), its height, its lane's middle (across, from the centre line)
+            public float LipZ => (s + u0 - w) * DropSeg;   // where the snow starts to roll over
+            public float FootZ => (s + u0 + w) * DropSeg;  // where it has done
+        }
+
+        public const float BlindShare = 0.27f;   // about 1 drop in 4 is a blind roll
+        public const float StepLane = 5f;        // half the clean lane through a rock step
+        const float KnollHalf = 0.09f, KnollAt = 0.06f;   // a blind roll's crest: its half-length and how far above the lip (segment lengths)
+
+        // every segment's drop, worked out once for a mountain and published as one array (asked for every height, on the
+        // terrain's workers too: no lock; a race only works them out twice)
+        static Drop[] dropTable; static bool[] dropHas; static int dropSeed = int.MinValue;
+        /// <summary>Work the drops out afresh (Course.ResetCaches: a new mountain, or its switches changed by a tool).</summary>
+        public static void ForgetDrops() { dropHas = null; dropSeed = int.MinValue; }
+
+        /// <summary>Segment s's bench and roll-over, if it has one.</summary>
+        public static bool DropOf(int s, out Drop d)
+        {
+            d = default;
+            if (s < 1) return false;
+            var has = dropHas; var table = dropTable;
+            if (has == null || dropSeed != Seed)
+            {
+                int n = Mathf.CeilToInt((FinishZ + 400f) / DropSeg) + 2;
+                table = new Drop[n]; has = new bool[n];
+                for (int i = 1; i < n; i++) has[i] = MakeDrop(i, out table[i]);
+                dropTable = table; dropHas = has; dropSeed = Seed;
+            }
+            if (s >= has.Length) return false;
+            d = table[s];
+            return has[s];
+        }
+
+        static bool MakeDrop(int s, out Drop d)
+        {
+            d = default;
+            if (s < 1) return false;   // (none before 95 m)
+            if (Hash01(s, 11, 41) < 0.25f) return false;               // some stretches just keep their pitch
+            float zs = s * DropSeg;
+            if (Course.At(zs) == Course.Section.Pipe || Course.At(zs + DropSeg) == Course.Section.Pipe) return false;
+            if (CliffBand.Near(zs + DropSeg * 0.5f, DropSeg * 0.5f + 30f, out _)) return false;   // nor on a cliff band's bench
+            if (Ridge.Has(zs) || Ridge.Has(zs + DropSeg)) return false;   // a roll-over on a crest would throw you off it
+            if (Ridge.InCanyons(zs) || Ridge.InCanyons(zs + DropSeg)) return false;   // (nor a bench under a canyon filling back in: its floor would climb)
+            if (Cliffs.JumpNear(zs + DropSeg * 0.5f, DropSeg * 0.5f + 20f, out _)) return false;   // nor run into a jump cliff's bench
+            d.s = s;
+            d.H = 2f + 7f * Hash01(s, 12, 41);
+            d.u0 = 0.35f + 0.4f * Hash01(s, 13, 41); d.w = 0.09f + 0.08f * Hash01(s, 14, 41);   // never a sudden kink
+            // a blind roll: a rounded knoll just above the lip, then a quicker, deeper roll-over, so from the bench the
+            // snow below is out of sight until you are on the lip (the real warning: crossed poles at it)
+            d.blind = Hash01(s, 15, 41) < BlindShare && zs > 150f && zs < FinishZ - 300f
+                      && Course.At(zs + d.u0 * DropSeg) != Course.Section.Park;   // (not among the park's features)
+            if (d.blind)
+            {
+                d.knoll = 1.1f + 1.3f * Hash01(s, 16, 41);
+                d.H += 1f;
+                // (its roll no steeper than about 50 degrees at its steepest: steep enough to hide what is below the knoll,
+                // never a cliff on the piste)
+                d.w = Mathf.Max(d.w, d.H / 60f);
+                // under some, a rock step across the run, with one clean lane through it (not in the park, where its
+                // features are, nor on the glacier, nor where a kicker or a jump cliff is the feature)
+                float sz = d.FootZ + 10f + 10f * Hash01(s, 17, 41);
+                var sec = Course.At(sz);
+                // (it may run on into the next segment, short of where that one's own roll could start)
+                float nextLip = (s + 1 + 0.35f + 0.4f * Hash01(s + 1, 13, 41) - (0.09f + 0.08f * Hash01(s + 1, 14, 41))) * DropSeg;
+                d.step = Hash01(s, 18, 41) < 0.7f && sz + 26f < nextLip && (sec == Course.Section.Cruise || sec == Course.Section.Danger)
+                         && !Course.InGlacier(sz) && !Cliffs.JumpNear(sz, 25f, out _) && Kicker(Centre(sz), sz - 6f) <= 0f && !NearKicker(sz);
+                if (d.step)
+                {
+                    d.stepZ = sz;
+                    d.stepH = 1.6f + 0.9f * Hash01(s, 19, 41);
+                    d.lane = (Hash01(s, 20, 41) - 0.5f) * 2f * (PisteHalf - StepLane - 3f);
+                }
+            }
+            return true;
+        }
+
+        static bool NearKicker(float z)
+        {
+            float cell = Mathf.Floor((z - 60f) / KickPeriod);
+            for (float c = cell - 1f; c <= cell + 1f; c++)
+            {
+                if (c < 0f || Hash01((int)c, 3, 9) < 0.25f) continue;
+                float z0 = 60f + c * KickPeriod + 30f;
+                if (z > z0 - 12f && z < z0 + KickRamp + KickDrop + 10f) return true;
+            }
+            return false;
+        }
+
         /// <summary>Benches and roll-overs: zero at both ends of each segment, so they never add up.</summary>
         public static float Drops(float z)
         {
             if (z < 90f) return 0f;
             int s = Mathf.FloorToInt(z / DropSeg);
-            if (Hash01(s, 11, 41) < 0.25f) return 0f;               // some stretches just keep their pitch
-            float zs = s * DropSeg;
-            if (Course.At(zs) == Course.Section.Pipe || Course.At(zs + DropSeg) == Course.Section.Pipe) return 0f;
-            if (Ridge.Has(zs) || Ridge.Has(zs + DropSeg)) return 0f;   // a roll-over on a crest would throw you off it
-            if (Cliffs.JumpNear(zs + DropSeg * 0.5f, DropSeg * 0.5f + 20f, out _)) return 0f;   // nor run into a jump cliff's bench
+            if (!DropOf(s, out var d)) return 0f;
             float u = z / DropSeg - s;
-            float H = 2f + 7f * Hash01(s, 12, 41);
-            float u0 = 0.35f + 0.4f * Hash01(s, 13, 41), w = 0.09f + 0.08f * Hash01(s, 14, 41);   // never a sudden kink
-            float t = Mathf.Clamp01((u - (u0 - w)) / (2f * w));
-            return H * (u - t * t * (3f - 2f * t));
+            float t = Mathf.Clamp01((u - (d.u0 - d.w)) / (2f * d.w));
+            float y = d.H * (u - t * t * (3f - 2f * t));
+            if (d.blind)
+            {
+                // the knoll: a smooth hump on the bench, cresting just above the lip
+                float k = (u - (d.u0 - d.w - KnollAt)) / KnollHalf;
+                if (k > -1f && k < 1f) { float q = 1f - k * k; y += d.knoll * q * q; }
+            }
+            return y;
+        }
+
+        /// <summary>The blind rolls' lips between z0 and z1 (where their crossed poles stand: CliffDressing; for the trail signs).</summary>
+        public static void BlindLips(float z0, float z1, System.Collections.Generic.List<Drop> into)
+        {
+            into.Clear();
+            for (int s = Mathf.Max(1, Mathf.FloorToInt(z0 / DropSeg)); s * DropSeg < z1; s++)
+                if (DropOf(s, out var d) && d.blind && d.LipZ >= z0 && d.LipZ < z1) into.Add(d);
+        }
+
+        /// <summary>The rock step under a blind roll that covers z, if any.</summary>
+        public static bool StepNear(float z, float margin, out Drop d)
+        {
+            d = default;
+            int s = Mathf.FloorToInt(z / DropSeg);
+            for (int k = s; k >= s - 1; k--)
+                if (k >= 1 && DropOf(k, out d) && d.step && z > d.stepZ - StepBench(d) - margin && z < d.stepZ + StepFace(d) + StepLanding + margin) return true;
+            d = default;
+            return false;
+        }
+
+        const float StepLanding = 14f, StepExtra = 0.6f;
+        static float StepRise(in Drop d) => d.stepH + StepExtra;
+        static float StepBench(in Drop d) => 2f * StepRise(d) / 0.78f;
+        static float StepFace(in Drop d) => Mathf.Max(2f, 1.1f * d.stepH);
+
+        /// <summary>How much of the step's width (x, z) is in: all of it across the piste and a little into the rough, none in its lane.</summary>
+        static float StepAcross(in Drop d, float x, float z)
+        {
+            float a = x - Centre(d.stepZ);
+            float inLane = Mathf.Clamp01((Mathf.Abs(a - d.lane) - StepLane) / 2.5f);   // (the lane's sides ease over 2.5 m)
+            float wide = 1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((Mathf.Abs(a) - PisteHalf - 4f) / 14f));
+            return inLane * inLane * (3f - 2f * inLane) * wide;
+        }
+
+        /// <summary>The step's lip across the run: it wanders a little.</summary>
+        public static float StepLipZ(in Drop d, float a) => d.stepZ + (Noise(a * 0.08f + d.s * 1.7f, 61.3f) - 0.5f) * 3f;
+
+        /// <summary>A rock step under a blind roll: the jump cliff's shape, small (a short bench, a 1.6-2.5 m band, a short landing).</summary>
+        public static float StepHeight(float x, float z)
+        {
+            if (z < 150f || !StepNear(z, 4f, out var d)) return 0f;
+            float wx = StepAcross(d, x, z);
+            if (wx <= 0f) return 0f;
+            float u = z - StepLipZ(d, x - Centre(d.stepZ));
+            float r = StepRise(d), bench = StepBench(d), face = StepFace(d), p;
+            if (u < -bench) return 0f;
+            if (u < 0f) { float t = (u + bench) / bench; p = r * t * t; }
+            else if (u < face) { float t = u / face; p = r - d.stepH * t * t * (3f - 2f * t); }
+            else if (u < face + StepLanding) { float t = (u - face) / StepLanding; p = StepExtra * (1f - t * t * (3f - 2f * t)); }
+            else return 0f;
+            return p * wx;
+        }
+
+        /// <summary>On a rock step's band (drawn as rock, piste or not).</summary>
+        public static bool OnStepFace(float x, float z)
+        {
+            if (!StepNear(z, 1f, out var d) || StepAcross(d, x, z) < 0.35f) return false;
+            float u = z - StepLipZ(d, x - Centre(d.stepZ));
+            return u > 0.15f * StepFace(d) && u < StepFace(d) + 0.4f;
         }
 
         /// <summary>The snow surface, without any crevasse cut into it.</summary>
@@ -148,22 +336,33 @@ namespace Summit
             float y = FallLine(z);
             // the cross-section: a shallow trough along the piste, walls climbing far off it,
             // and a camber that leans one way and then the other
-            float a = x - Centre(z), aa = Mathf.Abs(a);
+            float a = Across(x, z), aa = Mathf.Abs(a);   // (square to the run: on a cliff band's traverse x runs across it slantwise)
             // the run sits in a shallow valley that levels off: no walls, the mountainside goes on either side
-            y += 0.0035f * a * a / (1f + a * a / 6400f);
-            y += Mathf.Clamp(a, -80f, 80f) * 0.07f * (Noise(z * 0.009f, 51.7f) - 0.5f) * 2f;
+            float cross = 0.0035f * a * a / (1f + a * a / 6400f);
+            cross += Mathf.Clamp(a, -80f, 80f) * 0.07f * (Noise(z * 0.009f, 51.7f) - 0.5f) * 2f;
+            y += cross;
             // off the run, open mountain: spurs and gullies running down the fall line, bumps on them,
             // so you can go anywhere and every line is different
-            float wild = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((aa - PisteHalf - 6f) / 55f));
+            float half = Half(z);
+            float wild = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((aa - half - 6f) / 55f));
+            // (smoothed out of a ledge line's strip, so its ledges stand square to the line: Cliffs)
+            float calm = 1f - Cliffs.LedgeCalm(x, z);
+            wild *= calm;
+            // (nor any roll-over folding its staircase: the fall line's own benches cancelled in the strip, kept everywhere else)
+            if (calm < 1f) y -= (1f - calm) * Mathf.Clamp01((FinishZ - z) / 250f) * Drops(z);
             if (wild > 0f)
                 y += wild * (30f * (Ridged(x * 0.0075f + 3.1f, z * 0.0022f) - 0.4f) + 12f * (Noise(x * 0.017f + 9f, z * 0.006f) - 0.5f)
                              + 4f * (Noise(x * 0.05f, z * 0.03f + 7f) - 0.5f));
             // broad lumps in the rough; a little side-to-side tilt on the piste
-            float rough = Mathf.Clamp01((aa - PisteHalf) / 10f);
-            y += (Noise(x * 0.045f, z * 0.045f) - 0.5f) * 2.6f * rough;
-            y += (Noise(x * 0.011f + 50f, z * 0.009f) - 0.5f) * 7f;
+            float rough = Mathf.Clamp01((aa - half) / 10f);
+            y += (Noise(x * 0.045f, z * 0.045f) - 0.5f) * 2.6f * rough * calm;
+            float broad = (Noise(x * 0.011f + 50f, z * 0.009f) - 0.5f) * 7f;
+            y += broad;
+            y = CliffBand.Shape(x, z, y, 0.0035f * a * a / (1f + a * a / 6400f));   // a cliff band's traverse: the run cut level into the hill, the band below it
             y += Kicker(x, z);
             y += Cliffs.JumpHeight(x, z) + Cliffs.WallCut(x, z);   // cliffs to jump off, and cliffs to stay away from
+            y += Cliffs.LedgeHeight(x, z);   // a staircase of ledges beside the run, once a cycle
+            y += StepHeight(x, z);   // a rock step under some blind roll-overs, with a clean lane through it
             // the halfpipe: a U cut along the piste, with decks either side, easing in and out
             float pw = Course.PipeWeight(z);
             if (pw > 0f)
@@ -390,6 +589,10 @@ namespace Summit
                 if (Hash01((int)cell, 3, 9) < 0.25f) continue;
                 float z0 = 60f + cell * KickPeriod + 30f;
                 if (z0 + KickRamp < z) continue;
+                // (only one that is built: Kicker's own rules. A bot aimed at the cell's kicker on a cliff band's traverse,
+                // or in the park, the danger stretch or a ridge, where there is none)
+                if (z0 > FinishZ - 260f || Course.At(z0) != Course.Section.Cruise || Course.At(z0 + KickRamp + KickDrop) != Course.Section.Cruise
+                    || Cliffs.JumpNear(z0, 30f, out _)) continue;
                 float cx = Centre(z0) + (Hash01((int)cell, 4, 9) - 0.5f) * 18f;
                 at = new Vector3(cx, Height(cx, z0 + KickRamp), z0 + KickRamp);
                 return true;

@@ -63,6 +63,7 @@ namespace Summit
         /// <summary>The stretch a cycle gets: drawn from the day's mountain, the same every time for that cycle.</summary>
         public static Form FormOf(int cycle)
         {
+            if (CliffBand.Is(cycle)) return Form.Plain;   // (its stretch is a cliff band's traverse, or an angled ledge, instead)
             float h = Slope.Hash01(cycle, 5, 61);
             return h < 0.1f ? Form.Plain : h < 0.32f ? Form.Ridge : h < 0.45f ? Form.RidgeOneSided
                  : h < 0.65f ? Form.Valley : h < 0.78f ? Form.ValleyOneSided : Form.Ledge;
@@ -169,14 +170,34 @@ namespace Summit
             if (!InCanyons(z)) return 0f;
             float u = Local(z), end = EndOf(Owner(z)) + FadeAfter;
             float a = Mathf.Clamp01((u - At) / RampIn);
-            return Mathf.Min(a * a * (3f - 2f * a), Ease(Mathf.Clamp01((end - u) / (FadeBefore + FadeAfter))));
+            return Mathf.Min(a * a * (3f - 2f * a), Ease(Mathf.Clamp01((end - u) / (FillFrom + FadeAfter)), FadeRound));
+        }
+
+        // The canyons start filling back in this far before the crest's end (further than FadeBefore, the stretch's own
+        // edge for what is built beside it), with a short rounding at the ends: 198 m at most over 500, a steady 0.43
+        // against the mountain's 0.72, so a canyon floor (the open mountain smoothed: FloorLine) always falls on down.
+        // (Over 380 m, 0.61, the floor ran uphill wherever the open mountain eased off, and a rider at the foot of a face
+        // was held there: seed 1000's first stretch.)
+        const float FillFrom = 260f, FadeRound = 0.08f;
+
+        /// <summary>
+        /// What a canyon's floor is lowered from: the open mountain y, smoothed (its spurs and gullies, its rollers, its
+        /// camber gone: the mountain's own pitch and its cross-section, a little lumpy), wholly while the
+        /// canyon is deep, easing back to the open mountain itself as it fills in. The open mountain eases off in places
+        /// to well under half its pitch, and a floor laid on it while the canyon filled back in ran uphill there.
+        /// </summary>
+        static float FloorLine(float x, float z, float y, float wd)
+        {
+            float a = x - Slope.Centre(z);
+            float smooth = -z * Slope.Fall + 0.0035f * a * a / (1f + a * a / 6400f) + 2.4f * (Slope.Noise(x * 0.02f + 7.7f, z * 0.02f) - 0.5f);
+            return Mathf.Lerp(y, smooth, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(wd / 0.25f)));
         }
 
         // 0..1 at a nearly steady rate, rounded off at both ends: a smoothstep would climb half as steeply again
         // in the middle, and the canyon floor would rise faster than the mountain falls
-        static float Ease(float s)
+        static float Ease(float s, float b = 0.15f)
         {
-            const float b = 0.15f, c = 1f / (1f - b);
+            float c = 1f / (1f - b);
             if (s < b) return c * s * s / (2f * b);
             if (s > 1f - b) return 1f - c * (1f - s) * (1f - s) / (2f * b);
             return c * (b * 0.5f + s - b);
@@ -294,6 +315,7 @@ namespace Summit
                 return -SmoothMax(-side2, -y, Mathf.Min(3f, 0.3f * cut + 0.01f));
             }
             float ridge = top - Drop(e, steep);
+            float yf = FloorLine(x, z, y, wd * far);   // (the open mountain itself again out where the far wall meets it)
             // the rock is broken into buttresses and ledges (none on the crest or its shoulder), ribs and gullies
             // running down it (they vary along the ridge, not down the face), and on a wall this tall, great slabs
             // and bays a stone's throw across
@@ -305,13 +327,15 @@ namespace Summit
             // the way real ones do and not out of a crease
             if (cliff && depth > 10f)
             {
-                float fan = depth * (0.05f + 0.1f * Slope.Noise(z * 0.045f + side * 6.1f, 4.2f));
-                float foot = (top - y + depth) / steep + Shoulder * 0.5f - fan / steep;   // where the face is fan metres above the floor
-                ridge = Mathf.Max(ridge, y - depth + Mathf.Clamp(fan - (e - foot) * 0.7f, 0f, fan));
+                // (the fans swell and shrink slowly along the face: quicker, the trough at the foot of the face between one
+                // fan and the next climbed as steeply as it fell, and held whoever slid down into it)
+                float fan = depth * (0.06f + 0.06f * Slope.Noise(z * 0.01f + side * 6.1f, 4.2f));
+                float foot = (top - yf + depth) / steep + Shoulder * 0.5f - fan / steep;   // where the face is fan metres above the floor
+                ridge = Mathf.Max(ridge, yf - depth + Mathf.Clamp(fan - (e - foot) * 0.7f, 0f, fan));
             }
             // (a shallow canyon gets a tighter foot: SmoothMax of two equal heights would raise them a quarter of k;
             // the snow side's foot is a long runout onto the canyon floor, ridden out at speed, not a crease)
-            return SmoothMax(ridge, y - depth, Mathf.Min(kind == Side.Snow ? 14f : 3f, 0.3f * depth + 0.01f));
+            return SmoothMax(ridge, yf - depth, Mathf.Min(kind == Side.Snow ? 14f : 3f, 0.3f * depth + 0.01f));
         }
 
         // a wall's snow apron: about 35 degrees, rideable (a fair way to find the wall), 1.5 to 8.5 m wide

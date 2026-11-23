@@ -76,13 +76,14 @@ namespace Summit
         {
             pos = Vector3.zero; size = 1f; variant = 0;
             float wx = (cx + 0.5f) * Cell, wz = (cz + 0.5f) * Cell;
-            float off = Mathf.Abs(wx - Slope.Centre(wz));
+            float off = Mathf.Abs(Slope.Across(wx, wz));   // (square to the run: a cliff band's traverse crosses x slantwise)
             float glade = Slope.Noise(wx * 0.016f + 9f, wz * 0.016f);   // stands of forest and open glades
             float density;
-            if (off < Slope.PisteHalf - 3f)
+            float half = Slope.Half(wz);   // (the groomed run's own half-width here: B4)
+            if (off < half - 3f)
                 density = glade > 0.78f ? 0.10f : 0.012f;                 // the odd tree island on the piste
             else
-                density = Mathf.Lerp(0.16f, 0.62f, Mathf.Clamp01((off - Slope.PisteHalf) / 30f)) * Mathf.Lerp(0.35f, 1.3f, glade);
+                density = Mathf.Lerp(0.16f, 0.62f, Mathf.Clamp01((off - half) / 30f)) * Mathf.Lerp(0.35f, 1.3f, glade);
             if (wz < 70f && off < 34f) density *= 0.1f;                  // a clean start
             if (Slope.OnPad(wx, wz)) return Kind.None;
             // how many trees grow at this height (Zone): rocks stand where they always did; above the tree line the
@@ -112,7 +113,7 @@ namespace Summit
         /// </summary>
         public static float Cover(float x, float z)
         {
-            float off = Mathf.Abs(x - Slope.Centre(z));
+            float off = Mathf.Abs(Slope.Across(x, z));
             if (off < Slope.PisteHalf - 3f) return 0f;
             float glade = Slope.Noise(x * 0.016f + 9f, z * 0.016f);
             float density = Mathf.Lerp(0.16f, 0.62f, Mathf.Clamp01((off - Slope.PisteHalf) / 30f)) * Mathf.Lerp(0.35f, 1.3f, glade);
@@ -411,7 +412,7 @@ namespace Summit
         }
 
         /// <summary>Is the cell centred on (wx, wz) far enough off the piste for the patchwork forest?</summary>
-        static bool Wild(float wx, float wz) => Mathf.Abs(wx - Slope.Centre(wz)) > Slope.PisteHalf + WildMargin;
+        static bool Wild(float wx, float wz) => Mathf.Abs(Slope.Across(wx, wz)) > Slope.PisteHalf + WildMargin;
 
         /// <summary>
         /// A sapling for an empty cell, or false: the tops of young trees poking out of the snow at the edges of
@@ -422,7 +423,7 @@ namespace Summit
         {
             pl = default;
             float wx = (cx + 0.5f) * Cell, wz = (cz + 0.5f) * Cell;
-            if (Mathf.Abs(wx - Slope.Centre(wz)) < Slope.PisteHalf + 8f) return false;
+            if (Mathf.Abs(Slope.Across(wx, wz)) < Slope.PisteHalf + 8f) return false;
             if (wz < 70f) return false;                                   // a clean start
             float r = Slope.Hash01(cx, cz, 13);
             if (r >= 0.4f) return false;                                  // (the most a cell's chance can be: skip the sums)

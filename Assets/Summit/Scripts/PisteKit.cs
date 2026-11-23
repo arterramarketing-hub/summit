@@ -95,6 +95,8 @@ namespace Summit
                 LayWalls(list, rl);
                 LayRidges(list, rl);
                 LayJumpCliffs(list, rl);
+                LayBands(list, rl);
+                LayBlindLips(list);
                 for (int i = 0; i < asked.Count; i++) if (askedSeed[i] == Slope.Seed) Line(list, rl, asked[i], true, true);
                 LayEdges(list);
                 LayGuns(list);
@@ -254,6 +256,51 @@ namespace Summit
                 }
         }
 
+        static void LayBands(List<Item> list, List<Rope> rl)
+        {
+            for (int c = 0; c <= Course.CycleOf(Slope.FinishZ); c++)
+            {
+                if (!CliffBand.Of(c, out var b)) continue;
+                // a rope line along the bench's edge a step in from the caution tape (CliffDressing's) wherever the band
+                // stands tall, broken at each low place (the optional air: its lip is marked with black wands)
+                var pts = new List<Vector2>();
+                for (float zc = b.z1 - 8f; zc < b.z2 + 13f; zc += 7f)
+                {
+                    bool tall = !CliffBand.Low(b, zc) && CliffBand.HeightAt(b, zc) >= 6f;
+                    if (tall) { pts.Add(CliffBand.PointAt(b, zc, CliffBand.EdgeAt(zc) - 2.6f)); continue; }
+                    if (pts.Count >= 3) Line(list, rl, pts.ToArray(), true, true);
+                    pts.Clear();
+                }
+                if (pts.Count >= 3) Line(list, rl, pts.ToArray(), true, true);
+            }
+        }
+
+        static readonly List<Slope.Drop> blind = new List<Slope.Drop>();
+
+        static void LayBlindLips(List<Item> list)
+        {
+            // a blind roll-over: the crossed pair on both edges of the piste just above the lip ("slow down, look before
+            // you drop": the snow below is out of sight from the bench)
+            Slope.BlindLips(Course.First, Slope.FinishZ, blind);
+            foreach (var d in blind)
+            {
+                for (int e = -1; e <= 1; e += 2)
+                {
+                    // (a step up the hill, out from the edge or just in on it if something already stands there: a tree, a
+                    // floodlight, a hamlet's fence)
+                    foreach (var o in new[] { new Vector2(0f, 0f), new Vector2(0f, -2.5f), new Vector2(1.5f, 0f), new Vector2(1.5f, -2.5f), new Vector2(0f, -5f), new Vector2(3f, -2.5f),
+                                             new Vector2(-1.6f, 0f), new Vector2(-1.6f, -3f), new Vector2(0f, -9f), new Vector2(-1.6f, -9f) })
+                    {
+                        float z = d.LipZ - 4f + o.y;
+                        float x = Slope.Centre(z) + e * (Slope.HalfAt(z) + (0.8f + o.x) / Slope.Squash(z));
+                        if (Blocked(x, z, 0.8f)) continue;
+                        Add(list, Kind.Closed, Snow(x, z) - Vector3.up * 0.05f, Vector3.forward, ClosedH);
+                        break;
+                    }
+                }
+            }
+        }
+
         static void LayEdges(List<Item> list)
         {
             int i = 0;
@@ -265,13 +312,16 @@ namespace Summit
                     if (Roped(s, z)) { Fail("roped"); continue; }
                     // on a ridge's crest (or a valley's floor, or a ledge): its own edge, roped on a cliff side, and
                     // nothing against a rock wall
-                    float half = Ridge.HalfWidth(z);
+                    // (off a ridge, the groomed run's own edge: wide below a cliff band, measured along x where a band's
+                    // traverse crosses the hill; a band's bench has its own rope and caution tape)
+                    if (CliffBand.Near(z, 10f, out _)) { Fail("band"); continue; }
+                    float half = Ridge.Weight(z) > 0f ? Ridge.HalfWidth(z) : Slope.HalfAt(z);
                     if (Ridge.Weight(z) > 0.2f)
                     {
                         var side = Ridge.SideAt(z, s);
                         if (side == Ridge.Side.Cliff || side == Ridge.Side.Wall) { Fail("crest"); continue; }
                     }
-                    float x = Slope.Centre(z) + s * (half + EdgeOut);
+                    float x = Slope.Centre(z) + s * (half + EdgeOut / Slope.Squash(z));
                     if (Cliffs.Keep(x, z, 1f)) { Fail("cliff"); continue; }
                     if (Blocked(x, z, 0.4f)) continue;
                     // the disc faces up the hill (and a little in toward the run)

@@ -105,6 +105,9 @@ namespace Summit
             if (Ridge.Built(cycle)) { RidgeRock(g, cycle); yield return true; }
             if (Cliffs.WallOf(cycle, out var w)) { WallRock(g, w); yield return true; }
             for (int k = 0; k < 2; k++) if (Cliffs.JumpOf(cycle, k, out var j)) { JumpRock(g, j); yield return true; }
+            if (Cliffs.LedgeOf(cycle, out var L)) { LedgeRock(g, L); yield return true; }
+            StepRock(g, cycle); yield return true;
+            if (CliffBand.Of(cycle, out var band)) { BandRock(g, band); yield return true; }
             foreach (var kv in g.map) { Bake(root, kv.Value); yield return true; }
         }
 
@@ -471,6 +474,122 @@ namespace Summit
                     float z = Cliffs.LipZ(j, s * aa) + (0.15f + 0.7f * H(pick, 3, 79)) * j.face;
                     if (OnGetUp(s * aa, z, r)) continue;
                     g.Add(feature, s, z, Block(Pick(Kind.Outcrop, pick, 79), Slope.Centre(j.z) + s * aa, z, len, depth, h, pick));
+                }
+            }
+        }
+
+        /// <summary>
+        /// A ledge line's rock: at both ends of every ledge, where its band runs out of the strip into the open mountain,
+        /// a few outcrops standing in the band (the ledge reads as rock that the strip cuts across), and a boulder or two
+        /// fallen at the foot of its landing, out at the side. Never inside the strip's ridden middle.
+        /// </summary>
+        static void LedgeRock(Groups g, Cliffs.LedgeLine L)
+        {
+            const int feature = 7;
+            for (int i = 0; i < L.count; i++)
+            {
+                var e = L[i];
+                for (int si = 0; si < 2; si++)
+                {
+                    float end = si == 0 ? -1f : 1f;   // the strip's inner or outer end
+                    int n = 0;
+                    for (float b = L.half - 1f; b < L.half + Cliffs.LedgeFade * 0.7f; n++)
+                    {
+                        int pick = L.cycle * 3083 + i * 409 + si * 97 + n * 13;
+                        b += 1.5f + 3f * H(pick, 1, 83);
+                        if (n > 0 && H(pick, 12, 83) < 0.25f) continue;   // gaps
+                        float len = 1.2f + 2.2f * H(pick, 7, 83);
+                        float depth = len * (0.6f + 0.3f * H(pick, 8, 83));
+                        float r = Across(len, depth);
+                        float bb = Mathf.Max(b, L.half + 1.6f * r + 1f);   // (wholly out of the ridden middle: a block's mesh reaches past its spot)
+                        float a = L.off + end * bb;
+                        float fade = 1f - Mathf.Clamp01((bb - L.half) / (Cliffs.LedgeFade * 0.7f));
+                        float h = (0.8f + e.drop * (0.35f + 0.45f * H(pick, 2, 83))) * (0.55f + 0.45f * fade);
+                        float z = Cliffs.LedgeLipZ(L, i, end * bb) + (0.2f + 0.6f * H(pick, 3, 83)) * e.face;
+                        float x = Slope.Centre(z) + L.side * a;
+                        g.Add(feature, L.side, z, Block(Pick(Kind.Outcrop, pick, 83), x, z, len, depth, h, pick));
+                    }
+                    // a fallen block at the foot of the landing, out at the side
+                    int pk = L.cycle * 3083 + i * 409 + si * 97 + 777;
+                    if (H(pk, 1, 84) < 0.6f)
+                    {
+                        float z = e.z + e.face + 4f + 10f * H(pk, 2, 84);
+                        float sz = 0.8f + 0.9f * H(pk, 3, 84);
+                        float a = L.off + end * (L.half + 2f + 3f * H(pk, 4, 84));
+                        float x = Slope.Centre(z) + L.side * a;
+                        g.Add(feature, L.side, z, Block(Pick(Kind.Talus, pk, 84), x, z, sz, sz * 0.8f, sz * 0.75f, pk));
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// The rock steps under blind roll-overs in a cycle (Slope.StepHeight): outcrops along the step's band across the
+        /// run and out into the rough, and a few boulders at its foot, all clear of its lane (a board's width and more
+        /// either side), so the lane is clean snow and the rest of the step is rock to stay off.
+        /// </summary>
+        static void StepRock(Groups g, int cycle)
+        {
+            const int feature = 8;
+            float zb = Course.First + cycle * Course.Cycle;
+            for (int s = Mathf.Max(1, Mathf.FloorToInt(zb / Slope.DropSeg)); s * Slope.DropSeg < zb + Course.Cycle; s++)
+            {
+                if (!Slope.DropOf(s, out var d) || !d.step || d.stepZ < zb || d.stepZ >= zb + Course.Cycle) continue;
+                float cx = Slope.Centre(d.stepZ);
+                int i = 0;
+                for (float a = -Slope.PisteHalf - 10f; a < Slope.PisteHalf + 10f; i++)
+                {
+                    int pick = s * 4111 + i * 29;
+                    a += 1.8f + 2.6f * H(pick, 1, 85);
+                    float len = 0.8f + 1.4f * H(pick, 7, 85);
+                    float depth = len * (0.6f + 0.3f * H(pick, 8, 85));
+                    float r = Across(len, depth);
+                    if (Mathf.Abs(a - d.lane) < Slope.StepLane + 1.6f * r + 0.5f) continue;   // (the lane stays clean)
+                    if (H(pick, 12, 85) < 0.2f) continue;
+                    bool foot = H(pick, 9, 85) < 0.35f;   // a fallen block at its foot, else a block in its band
+                    float z = Slope.StepLipZ(d, a) + (foot ? Mathf.Max(2f, 1.1f * d.stepH) + 1f + 2f * H(pick, 3, 85) : (0.3f + 0.5f * H(pick, 3, 85)) * Mathf.Max(2f, 1.1f * d.stepH));
+                    float h = foot ? 0.6f + 0.7f * H(pick, 2, 85) : 0.5f + d.stepH * (0.3f + 0.4f * H(pick, 2, 85));
+                    var spot = foot ? Block(Pick(Kind.Talus, pick, 85), cx + a, z, len, depth, h, pick) : Block(Pick(Kind.Outcrop, pick, 85), cx + a, z, len, depth, h, pick);
+                    g.Add(feature, a < 0f ? -1f : 1f, z, spot);
+                }
+            }
+        }
+
+        /// <summary>
+        /// A cliff band (CliffBand): outcrops on its lip and just over it (never back on the bench), buttresses down its
+        /// tall face, lower blocks along its low places, and fallen blocks on the slope at its foot.
+        /// </summary>
+        static void BandRock(Groups g, CliffBand.Band b)
+        {
+            const int feature = 9;
+            int i = 0;
+            for (float zc = b.z1 - 10f; zc < b.z2 + 15f; i++)
+            {
+                zc += 1.6f + 2.4f * H(b.cycle, i, 86);   // (along z: some 4-9 m along the run on the traverse)
+                float hgt = CliffBand.HeightAt(b, zc);
+                if (hgt < 3f) continue;
+                int pick = b.cycle * 3911 + i * 31;
+                bool low = CliffBand.Low(b, zc);
+                float len = (1.4f + 2.6f * H(pick, 7, 86)) * (low ? 0.7f : 1f);
+                float depth = len * (0.55f + 0.35f * H(pick, 8, 86));
+                float h = low ? 0.6f + 0.6f * H(pick, 9, 86) : 1.2f + 2.4f * H(pick, 9, 86);
+                float r = Across(len, depth);
+                float down = CliffBand.Edge + 0.4f + r + 1.5f * H(pick, 10, 86);   // (on the lip and over it)
+                var at = CliffBand.PointAt(b, zc, down);
+                g.Add(feature, b.side, at.y, Block(Pick(Kind.Outcrop, pick, 86), at.x, at.y, len, depth, h, pick));
+                // a buttress down the tall face, and now and then a fallen block at its foot
+                if (!low && hgt > 12f && H(pick, 11, 86) < 0.45f)
+                {
+                    float bh = hgt * (0.35f + 0.3f * H(pick, 12, 86));
+                    float bl = bh * (0.3f + 0.2f * H(pick, 13, 86));
+                    var f = CliffBand.PointAt(b, zc, CliffBand.Edge + 0.45f * hgt * (0.45f + 0.3f * H(pick, 14, 86)));
+                    g.Add(feature, b.side, f.y, Block(Pick(Kind.Buttress, pick, 87), f.x, f.y, bl, bl * 0.5f, bh, pick + 1));
+                }
+                if (H(pick, 15, 86) < 0.3f)
+                {
+                    float sz = 0.8f + 1.2f * H(pick, 16, 86);
+                    var t = CliffBand.PointAt(b, zc, CliffBand.Edge + 0.45f * hgt + 4f + 10f * H(pick, 17, 86));
+                    g.Add(feature, b.side, t.y, Block(Pick(Kind.Talus, pick, 88), t.x, t.y, sz, sz * 0.8f, sz * 0.75f, pick + 2));
                 }
             }
         }
