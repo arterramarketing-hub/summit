@@ -370,7 +370,7 @@ namespace Summit
             var l = shown;
 
             // the wind: through the trees, the falling snow and the gusts you hear (TreeWind); a buffet on the camera
-            TreeWind.Strength = 0.6f + 1.6f * l.wind;
+            TreeWind.Strength = TreeWind.ForWeather(l.wind, l.howl);   // calm when clear, strongest in a storm
             Vector3 cp = cam != null ? cam.transform.position : Vector3.zero;
             float gust = TreeWind.Gust(cp.x, cp.z);
             gustShake = Mathf.Lerp(gustShake, l.wind * l.wind * gust * 0.16f, 1f - Mathf.Exp(-dt * 6f));

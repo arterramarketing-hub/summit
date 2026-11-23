@@ -451,7 +451,49 @@ namespace Summit
                     Log(t, to, to + new Vector3(Mathf.Cos(a + 0.6f) * len * 0.5f, len * 0.6f, Mathf.Sin(a + 0.6f) * len * 0.5f), 0.03f, darkWood);
                 }
                 Block(t, Vector3.zero, new Vector2(0.25f, 0.25f));
+                SwayFromFoot(t, TreeWind.FlexBirch);   // in the wind with the firs round it (TreeWind), looser
             }
+        }
+
+        /// <summary>
+        /// A tree built of parts (a birch: its trunk, branches and twigs, and its shadow post) made to move in the wind as
+        /// one: the parts merged into one mesh for each material and way of casting shadows, standing on the tree's own
+        /// foot, with swaying copies of their materials (TreeWind.hlsl bends a renderer by the height above its origin).
+        /// </summary>
+        void SwayFromFoot(Transform tree, float flex)
+        {
+            var groups = new Dictionary<(Material, UnityEngine.Rendering.ShadowCastingMode), List<CombineInstance>>();
+            var toLocal = tree.worldToLocalMatrix;
+            foreach (var mf in tree.GetComponentsInChildren<MeshFilter>())
+            {
+                var r = mf.GetComponent<MeshRenderer>();
+                if (r == null || mf.sharedMesh == null) continue;
+                var key = (r.sharedMaterial, r.shadowCastingMode);
+                if (!groups.TryGetValue(key, out var list)) groups[key] = list = new List<CombineInstance>();
+                list.Add(new CombineInstance { mesh = mf.sharedMesh, transform = toLocal * mf.transform.localToWorldMatrix });
+                DestroyImmediate(mf.gameObject);
+            }
+            foreach (var kv in groups)
+            {
+                var mesh = Made(new Mesh { name = tree.name + "Wood" });
+                mesh.CombineMeshes(kv.Value.ToArray(), true, true);
+                var g = new GameObject(tree.name + "Wood", typeof(MeshFilter), typeof(MeshRenderer));
+                g.transform.SetParent(tree, false);
+                g.GetComponent<MeshFilter>().sharedMesh = mesh;
+                var mr = g.GetComponent<MeshRenderer>();
+                mr.sharedMaterial = SwayingCopy(kv.Key.Item1, flex);
+                mr.shadowCastingMode = kv.Key.Item2;
+                if (kv.Key.Item2 == UnityEngine.Rendering.ShadowCastingMode.ShadowsOnly) mr.receiveShadows = false;
+            }
+        }
+
+        /// <summary>The swaying copies of the camp's own materials for its trees (TreeWind.Swaying), by material and give: made once, kept.</summary>
+        readonly Dictionary<(Material, float), Material> swayedBy = new Dictionary<(Material, float), Material>();
+        Material SwayingCopy(Material m, float flex)
+        {
+            if (m == null) return null;
+            if (!swayedBy.TryGetValue((m, flex), out var s) || s == null) swayedBy[(m, flex)] = s = TreeWind.Swaying(m, flex);
+            return s;
         }
 
         /// <summary>Deep, lumpy snow round the edges of camp.</summary>
@@ -1244,7 +1286,9 @@ namespace Summit
             g.transform.localScale = new Vector3(crown, height, crown);
             g.GetComponent<MeshFilter>().sharedMesh = FirShadowMesh();
             var mr = g.GetComponent<MeshRenderer>();
-            mr.sharedMaterial = shadowMat;
+            // (its foot where the fir's is, so its shadow sways with the fir: TreeWind)
+            var fm = r.sharedMaterial;
+            mr.sharedMaterial = SwayingCopy(shadowMat, fm != null && fm.HasProperty("_WindFlex") ? fm.GetFloat("_WindFlex") : TreeWind.FlexFir);
             mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.ShadowsOnly;
             mr.receiveShadows = false;
         }

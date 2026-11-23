@@ -12,6 +12,7 @@ Shader "Summit/FirImpostor"
         [MainColor] _BaseColor ("Colour", Color) = (1, 1, 1, 1)
         _Cutoff ("Alpha cutoff", Range(0, 1)) = 0.5
         _SunShade ("Sun let through (the near tree shades itself)", Range(0, 1)) = 0.85
+        _WindFlex ("Give in the wind (1 a fir; more: looser)", Float) = 1
     }
     SubShader
     {
@@ -27,6 +28,7 @@ Shader "Summit/FirImpostor"
             half4 _BaseColor;
             half _Cutoff;
             half _SunShade;
+            half _WindFlex;
         CBUFFER_END
         ENDHLSL
 
@@ -73,8 +75,8 @@ Shader "Summit/FirImpostor"
                 Varyings o = (Varyings)0;
                 UNITY_SETUP_INSTANCE_ID(i);
                 UNITY_TRANSFER_INSTANCE_ID(i, o);
-                // far off, only the trunk's lean in a gust (TreeWind.hlsl), as the near cards lean
-                o.positionWS = TreeSway(TransformObjectToWorld(i.positionOS.xyz), TransformObjectToWorld(float3(0, 0, 0)), 0.0, 1.0);
+                // far off, the same lean as the near cards (TreeWind.hlsl: the same heights, the same air; only the boughs' bob is left out)
+                o.positionWS = TreeSway(TransformObjectToWorld(i.positionOS.xyz), TransformObjectToWorld(float3(0, 0, 0)), 0.0, _WindFlex);
                 o.positionCS = TransformWorldToHClip(o.positionWS);
                 o.sideWS = normalize(TransformObjectToWorldDir(i.tangentOS.xyz));
                 o.upWS = normalize(TransformObjectToWorldDir(i.normalOS));
@@ -128,7 +130,7 @@ Shader "Summit/FirImpostor"
             {
                 UNITY_SETUP_INSTANCE_ID(i);
                 Varyings o;
-                o.positionCS = TransformWorldToHClip(TreeSway(TransformObjectToWorld(i.positionOS.xyz), TransformObjectToWorld(float3(0, 0, 0)), 0.0, 1.0));
+                o.positionCS = TransformWorldToHClip(TreeSway(TransformObjectToWorld(i.positionOS.xyz), TransformObjectToWorld(float3(0, 0, 0)), 0.0, _WindFlex));
                 o.uv = TRANSFORM_TEX(i.uv, _BaseMap);
                 float3 origin = TransformObjectToWorld(float3(0, 0, 0));
                 o.fade = min(FirFade(origin), FarviewShown(origin));

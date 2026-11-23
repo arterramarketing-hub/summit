@@ -58,6 +58,8 @@ namespace Summit
         public static Material StandaloneOfAtlas(int a) => standaloneMats != null ? standaloneMats[Mathf.Clamp(a, 0, 1)] : null;
         public static Material PlainOf(int variant) => IsSapling(variant) ? decoMats[atlas[variant]] : plainMats[atlas[variant]];
 
+        /// <summary>How far an atlas's trees give in the wind (the shaders' _WindFlex): the firs', or the pines' and snags'.</summary>
+        public static float FlexOfAtlas(int a) => a == 1 ? TreeWind.FlexPine : TreeWind.FlexFir;
         /// <summary>A dead snag: dry and brittle, it snaps easily (TreeBreak). Kind 6 is the fir whose top has gone.</summary>
         public static bool IsSnag(int variant) => variant == Snag || (flags[variant] & FlagSnag) != 0;
         public const int Snag = 6;
@@ -82,6 +84,7 @@ namespace Summit
             {
                 var m = new Material(from) { enableInstancing = true };
                 m.SetFloat("_FadeIn", fadeIn); m.SetFloat("_FadeOut", fadeOut);
+                m.SetFloat("_WindFlex", from == pine ? TreeWind.FlexPine : TreeWind.FlexFir);   // (the one wind: TreeWind)
                 return m;
             }
             var src = new[] { fir, pine };
@@ -358,6 +361,7 @@ namespace Summit
                 var mat = new Material(impostorTemplate) { enableInstancing = true };
                 mat.SetTexture("_BaseMap", shots[i]); mat.mainTexture = shots[i];
                 mat.SetTexture("_NormalMap", normalShots[i]);
+                mat.SetFloat("_WindFlex", FlexOfAtlas(atlas[i]));   // leans as far as its card tree (TreeWind.hlsl)
                 ImpostorMats[i] = mat;
                 Impostors[i] = Cross(bnd.center.y, half);
             }
@@ -369,6 +373,10 @@ namespace Summit
             }
         }
 
+        // (in three rows up its height, so the picture curves in the wind as its card tree does: TreeWind.hlsl bends
+        // a tree by the height above its foot, more toward the top, and one tall quad could only lean straight)
+        const int CrossRows = 3;
+
         static Mesh Cross(float cy, float half)
         {
             float w = half * ShotW / ShotH;
@@ -378,11 +386,19 @@ namespace Summit
             {
                 var side = k == 0 ? Vector3.right : Vector3.forward;
                 int s = v.Count;
-                v.Add(-side * w + Vector3.up * (cy - half)); v.Add(side * w + Vector3.up * (cy - half));
-                v.Add(-side * w + Vector3.up * (cy + half)); v.Add(side * w + Vector3.up * (cy + half));
-                uv.Add(new Vector2(0, 0)); uv.Add(new Vector2(1, 0)); uv.Add(new Vector2(0, 1)); uv.Add(new Vector2(1, 1));
-                for (int q = 0; q < 4; q++) { n.Add(Vector3.up); tan.Add(new Vector4(side.x, side.y, side.z, 1f)); }
-                t.Add(s); t.Add(s + 2); t.Add(s + 1); t.Add(s + 1); t.Add(s + 2); t.Add(s + 3);
+                for (int row = 0; row <= CrossRows; row++)
+                {
+                    float f = row / (float)CrossRows;
+                    v.Add(-side * w + Vector3.up * (cy - half + 2f * half * f)); v.Add(side * w + Vector3.up * (cy - half + 2f * half * f));
+                    uv.Add(new Vector2(0, f)); uv.Add(new Vector2(1, f));
+                    n.Add(Vector3.up); n.Add(Vector3.up);
+                    tan.Add(new Vector4(side.x, side.y, side.z, 1f)); tan.Add(new Vector4(side.x, side.y, side.z, 1f));
+                }
+                for (int row = 0; row < CrossRows; row++)
+                {
+                    int a = s + row * 2;
+                    t.Add(a); t.Add(a + 2); t.Add(a + 1); t.Add(a + 1); t.Add(a + 2); t.Add(a + 3);
+                }
             }
             var m = new Mesh { name = "FirImpostor" };
             m.SetVertices(v); m.SetUVs(0, uv); m.SetNormals(n); m.SetTangents(tan); m.SetTriangles(t, 0);

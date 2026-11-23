@@ -285,7 +285,7 @@ namespace Summit
             // the wind is ambience, kept low: the speed is heard in the board (glide, carve), not in a roar. wind_low is
             // the everyday bed, a little more with speed, in the air, in a gust and in a storm; wind_high is only the
             // weather's (Weather.Howl, 0 in calm weather, so never from speed), swelling with each gust as the trees bend
-            float gust = TreeWind.Strength > 0.01f ? Mathf.Clamp01(TreeWind.Here / TreeWind.Strength) : 0f;
+            float gust = TreeWind.Strength > 0.01f ? TreeWind.Here : 0f;   // the gust the trees by the camera are bending to
             float howl = Weather.Howl;
             var wind = WindLevels(s, r.air, gust, howl);
             Mix(windLow, wind.x * master, 0.93f + 0.1f * s + 0.04f * gust, 2f, 2f, dt);

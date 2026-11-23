@@ -68,6 +68,7 @@ Material:
     - _SrcBlendAlpha: 1
     - _SunShade: 0.85
     - _Surface: 0
+    - _WindFlex: 1
     - _XRMotionVectorsPass: 1
     - _ZWrite: 1
     m_Colors:

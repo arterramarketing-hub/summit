@@ -1,6 +1,7 @@
-// The original (low-poly) trees, lit as URP Lit lights them, moved by the wind like the realistic ones
-// (Shaders/TreeWind.hlsl). The forest swaps this in for the models' own material (Forest.Add, Forest.SwayLike),
-// keeping their colour, texture and finish. _Sway 0 holds a felled piece still; _Snow below 1 drops the snow
+// The original (low-poly) trees, lit as URP Lit lights them, moved by the one wind like the realistic ones
+// (Shaders/TreeWind.hlsl); and the camp's birches and its firs' shadow stand-ins (Camp.SwayFromFoot, FirShadow). The
+// forest swaps this in for the models' own material (Forest.Add, TreeWind.Swaying), keeping their colour, texture,
+// finish and culling; _WindFlex is the kind's give (TreeWind.Flex*). _Sway 0 holds a felled piece still; _Snow below 1 drops the snow
 // (the models' pale snow parts) from a snapped or smashed tree's top. In Resources so it ships (loaded by name).
 Shader "Summit/TreeSway"
 {
@@ -11,11 +12,14 @@ Shader "Summit/TreeSway"
         _Smoothness ("Smoothness", Range(0, 1)) = 0.2
         _Metallic ("Metallic", Range(0, 1)) = 0
         _Sway ("Moves in the wind (0: a felled piece lying still)", Float) = 1
+        _WindFlex ("Give in the wind (1 a fir; more: looser)", Float) = 1
         _Snow ("Snow left on it", Range(0, 1)) = 1
+        [Enum(UnityEngine.Rendering.CullMode)] _Cull ("Cull (kept from the material copied)", Float) = 2
     }
     SubShader
     {
         Tags { "RenderType" = "Opaque" "Queue" = "Geometry" "RenderPipeline" = "UniversalPipeline" }
+        Cull [_Cull]
 
         HLSLINCLUDE
         #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
@@ -27,10 +31,11 @@ Shader "Summit/TreeSway"
             half _Smoothness;
             half _Metallic;
             half _Sway;
+            half _WindFlex;
             half _Snow;
         CBUFFER_END
 
-        float3 SwayWS(float3 positionOS) { return TreeSway(TransformObjectToWorld(positionOS), TransformObjectToWorld(float3(0, 0, 0)), 1.0, _Sway); }
+        float3 SwayWS(float3 positionOS) { return TreeSway(TransformObjectToWorld(positionOS), TransformObjectToWorld(float3(0, 0, 0)), 1.0, _Sway * _WindFlex); }
 
         // the snow parts of a model (pale and colourless) go when the snow has fallen off
         void ClipSnow(half3 c)

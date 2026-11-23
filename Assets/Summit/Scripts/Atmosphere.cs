@@ -480,7 +480,7 @@ namespace Summit
             // the falling snow drifts with the wind, and a gust through the trees drives it sideways (TreeWind)
             if (snow != null)
             {
-                Vector2 w = TreeWind.Dir * ((0.9f + 3.2f * TreeWind.Here) * TreeWind.Strength);
+                Vector2 w = TreeWind.Dir * ((0.9f + 3.2f * TreeWind.Here * TreeWind.Strength) * TreeWind.Strength);   // (Here: the gust the trees by the camera bend to)
                 if (Mathf.Abs(w.x - lastDrift.x) + Mathf.Abs(w.y - lastDrift.y) > 0.05f)
                 {
                     lastDrift = w;

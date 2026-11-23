@@ -5,7 +5,8 @@
 // dissolves away over (1 the far one, into its picture; 2 the near one: the rich tree), _FadeIn that it appears
 // over the near band (the plain tree). The camp's and the start tape's own trees leave both off.
 // _Bake is for RealFir.BakeImpostors only: 1 writes the plain colour, 2 the normal, for the far pictures.
-// Every pass moves the vertices with the wind (TreeWind.hlsl); _Sway 0 holds a felled piece still, and _Snow below 1
+// Every pass moves the vertices with the one wind (TreeWind.hlsl), as far as _WindFlex gives (the firs' atlas or the
+// pines': TreeWind.Flex*); _Sway 0 holds a felled piece still, and _Snow below 1
 // shows boughs that have lost their snow (a snapped or smashed tree's top). _CutTop, _Gap0 and _Gap1 are a tree's
 // damage: its top clipped off, branches torn out where a rider went through them (Forest.cs).
 Shader "Summit/FirCards"
@@ -21,6 +22,7 @@ Shader "Summit/FirCards"
         _NeedleTint ("Needles graded toward the dark blue-green of the Cascades' firs", Color) = (0.62, 0.78, 0.86, 1)
         _CutY ("Nothing drawn below this height (model space): a felled tree's buried part", Float) = -10000
         _Sway ("Moves in the wind (0: a felled piece lying still)", Float) = 1
+        _WindFlex ("Give in the wind (1 a fir; more: looser)", Float) = 1
         _Snow ("Snow left on the boughs (1 all of it; less: shaken off, bare and darker)", Range(0, 1)) = 1
         _CutTop ("Nothing drawn above this height (model space): a tree whose top has been clipped off", Float) = 1000000
         _Gap0 ("Branches torn out round here (model space xyz, radius w; 0 none)", Vector) = (0, 0, 0, 0)
@@ -44,6 +46,7 @@ Shader "Summit/FirCards"
             float _CutY;
             half4 _NeedleTint;
             half _Sway;
+            half _WindFlex;
             half _Snow;
             float _CutTop;
             float4 _Gap0;
@@ -135,7 +138,7 @@ Shader "Summit/FirCards"
                 UNITY_SETUP_INSTANCE_ID(i);
                 UNITY_TRANSFER_INSTANCE_ID(i, o);
                 float3 origin = TransformObjectToWorld(float3(0, 0, 0));
-                o.positionWS = TreeSway(TransformObjectToWorld(i.positionOS.xyz), origin, 1.0, _Sway);
+                o.positionWS = TreeSway(TransformObjectToWorld(i.positionOS.xyz), origin, 1.0, _Sway * _WindFlex);
                 o.positionCS = TransformWorldToHClip(o.positionWS);
                 o.normalWS = TransformObjectToWorldNormal(i.normalOS);
                 o.uv = TRANSFORM_TEX(i.uv, _BaseMap);
@@ -211,7 +214,7 @@ Shader "Summit/FirCards"
                 UNITY_SETUP_INSTANCE_ID(i);
                 Varyings o;
                 o.objPos = i.positionOS.xyz;
-                float3 pos = TreeSway(TransformObjectToWorld(i.positionOS.xyz), TransformObjectToWorld(float3(0, 0, 0)), 1.0, _Sway);
+                float3 pos = TreeSway(TransformObjectToWorld(i.positionOS.xyz), TransformObjectToWorld(float3(0, 0, 0)), 1.0, _Sway * _WindFlex);
                 float3 nrm = TransformObjectToWorldNormal(i.normalOS);
             #if _CASTING_PUNCTUAL_LIGHT_SHADOW
                 float3 toLight = normalize(_LightPosition - pos);
@@ -261,7 +264,7 @@ Shader "Summit/FirCards"
                 UNITY_SETUP_INSTANCE_ID(i);
                 Varyings o;
                 float3 origin = TransformObjectToWorld(float3(0, 0, 0));
-                o.positionCS = TransformWorldToHClip(TreeSway(TransformObjectToWorld(i.positionOS.xyz), origin, 1.0, _Sway));
+                o.positionCS = TransformWorldToHClip(TreeSway(TransformObjectToWorld(i.positionOS.xyz), origin, 1.0, _Sway * _WindFlex));
                 o.uv = TRANSFORM_TEX(i.uv, _BaseMap);
                 o.fades = Fades(origin);
                 o.objPos = i.positionOS.xyz;
