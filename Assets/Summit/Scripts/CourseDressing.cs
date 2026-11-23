@@ -45,26 +45,29 @@ namespace Summit
 
         public void Build(Shader lit, Material snowSurface)
         {
-            snow = snowSurface;
+            // everything the course is dressed with comes in through the world's far band (Farview): it is built well
+            // over a kilometre ahead, out past the terrain, and is let in as the rider comes within reach of it. (The
+            // builders handed `post.shader` below make their own materials from it, so they come in the same way.)
+            snow = Farview.Snow(snowSurface, true);
             Material M(Color c, float smooth, float metallic = 0f, Color emit = default)
             {
                 var m = new Material(lit);
                 m.SetColor("_BaseColor", c); m.SetFloat("_Smoothness", smooth); m.SetFloat("_Metallic", metallic);
                 if (emit.maxColorComponent > 0f) { m.EnableKeyword("_EMISSION"); m.SetColor("_EmissionColor", emit); }
-                return m;
+                return Farview.Adopt(m);
             }
             metal = M(new Color(0.78f, 0.80f, 0.84f), 0.75f, 0.8f);
             boxSide = M(new Color(0.10f, 0.42f, 0.85f), 0.4f);
             railMat = M(new Color(0.85f, 0.86f, 0.9f), 0.85f, 0.9f);
             post = M(new Color(0.15f, 0.15f, 0.17f), 0.3f);
-            ice = IceMaterial(lit);
-            lipBand = LipMaterial(lit);
-            bridgeSnow = BridgeMaterial(lit);
+            ice = Farview.Adopt(IceMaterial(lit));
+            lipBand = Farview.Adopt(LipMaterial(lit));
+            bridgeSnow = Farview.Adopt(BridgeMaterial(lit));
             // the lip, and the hairline a crack runs out into: the snow's own material (its grain, its grooming lines
             // carried on to the edge), only darker. A painted band fading to white read as a ring round a pool
-            lipDark = Shade(snowSurface, 0.56f, 0.64f, 0.78f);
-            lipMid = Shade(snowSurface, 0.80f, 0.85f, 0.93f);
-            hairDark = Shade(snowSurface, 0.36f, 0.43f, 0.57f);
+            lipDark = Farview.Adopt(Shade(snowSurface, 0.56f, 0.64f, 0.78f));
+            lipMid = Farview.Adopt(Shade(snowSurface, 0.80f, 0.85f, 0.93f));
+            hairDark = Farview.Adopt(Shade(snowSurface, 0.36f, 0.43f, 0.57f));
             poleOrange = M(new Color(1f, 0.42f, 0.05f), 0.4f);
             poleBlack = M(new Color(0.08f, 0.08f, 0.09f), 0.3f);
             signBack = M(new Color(0.35f, 0.36f, 0.4f), 0.3f);
@@ -93,7 +96,7 @@ namespace Summit
             if (t != null) m.SetTexture("_BaseMap", t);
             m.SetColor("_BaseColor", Color.white);
             m.SetFloat("_Smoothness", 0.25f);
-            return m;
+            return Farview.Adopt(m);   // (SignLit takes the band itself; this is for the plain fallback)
         }
         static Shader signShader;
 

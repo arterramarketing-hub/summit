@@ -128,6 +128,9 @@ namespace Summit
         class Part
         {
             public Mesh mesh; public Matrix4x4 local = Matrix4x4.identity; public bool shadows;
+            // with the world's far band on (Farview), a part with a near and a far version hands over by distance:
+            // both drawn through the hand-over, each pixel one or the other (Shaders/Farview.hlsl, _FarviewNearFar)
+            public MaterialPropertyBlock props;
             public readonly List<Matrix4x4> list = new List<Matrix4x4>();
             public int Tris => mesh != null ? (int)(mesh.GetIndexCount(0) / 3) : 0;
         }
@@ -168,6 +171,8 @@ namespace Summit
                 ridersLod[i] = P("Riders" + (char)('A' + i) + "Lod", false);
             }
             if (chair.mesh == null || mast.mesh == null) return;
+            Pair(mast, mastLod, NearRange); Pair(head, headLod, NearRange); Pair(sheaves, sheavesLod, TrainNear); Pair(chair, chairLod, ChairNear);
+            for (int i = 0; i < 4; i++) Pair(riders[i], ridersLod[i], ChairNear);
 
             // The file is made in metres, but it says its unit is the centimetre (UnitScaleFactor 1), so the importer
             // brings every part in a hundred times too small: towers, heads, chairs and stations a few centimetres
@@ -205,6 +210,7 @@ namespace Summit
             paint.EnableKeyword("_EMISSION");
             if (glowTex != null) paint.SetTexture("_EmissionMap", glowTex);
             paint.SetColor("_EmissionColor", Color.black);
+            Farview.Adopt(paint);   // (the towers, chairs and stations come in through the world's far band)
             // the haul rope has a shader of its own (Resources/LiftRope.shader): stranded steel up close, a thin dark
             // line far off. Two materials of it: near spans opaque, far ones blended (a rope kept a pixel and a half
             // wide on screen is drawn fainter by as much)
@@ -229,6 +235,7 @@ namespace Summit
             postMat = new Material(lit) { name = "LiftPost" };
             postMat.SetColor("_BaseColor", new Color(0.13f, 0.13f, 0.14f));
             postMat.SetFloat("_Smoothness", 0.5f); postMat.SetFloat("_Metallic", 0.6f);
+            Farview.Adopt(postMat);
             rampMat = new Material(paint) { name = "LiftRamp" };   // (the palette again, seen from both sides: no winding to get wrong)
             rampMat.SetFloat("_Cull", 0f);
             litShader = lit;
@@ -364,10 +371,10 @@ namespace Summit
                     // (an invincible rider switches off what it rides through: back on once it has gone by)
                     if (lv.tower[i] != null && d2 > 8f * 8f) foreach (var c in lv.towerCols[i]) if (c != null && !c.enabled) c.enabled = true;
                     if (!drawn) continue;
-                    bool near = d2 < NearRange * NearRange;
+                    float d = Flat(f, p);
                     var mastM = Frame(f - axis * 1.5f, l.across, axis * (l.h[i] + 1.5f), fwd);
-                    (near ? mast : mastLod).list.Add(mastM * (near ? mast : mastLod).local);
-                    (near ? head : headLod).list.Add(Frame(h, l.across, axis, fwd) * (near ? head : headLod).local);
+                    Put(mast, mastLod, NearRange, d, mastM, Slack);
+                    Put(head, headLod, NearRange, d, Frame(h, l.across, axis, fwd), Slack);
                     if (d2 < 320f * 320f) pad.list.Add(Frame(f, l.across, axis, fwd) * pad.local);
                     // the sheave trains: along the cable as it crosses the tower, under it; or over it, where the
                     // cable would otherwise lift off (a hollow in the line)
@@ -378,9 +385,8 @@ namespace Summit
                     Vector3 t = (l.dir + Vector3.up * (0.5f * (slopeIn + slopeOut))).normalized;
                     Vector3 n = Vector3.Cross(t, l.across).normalized;   // square to the cable, upward
                     float k = slopeOut > slopeIn + 0.01f ? -1f : 1f;      // a hold-down train is the same one turned over
-                    var train = d2 < TrainNear * TrainNear ? sheaves : sheavesLod;
                     for (int side = -1; side <= 1; side += 2)
-                        train.list.Add(Frame(h + l.across * (side * LiftLine.Half), l.across * side, n * k, t * (side * k)) * train.local);
+                        Put(sheaves, sheavesLod, TrainNear, d, Frame(h + l.across * (side * LiftLine.Half), l.across * side, n * k, t * (side * k)), Slack);
                 }
                 // the stations
                 bool topIn = InRange(l.top.z - 8f, l.top.z + 8f, p.z), bottomIn = InRange(l.bottom.z - 8f, l.bottom.z + 8f, p.z);
@@ -391,6 +397,32 @@ namespace Summit
             }
             // (pieces left to build: on with them next frame)
             if (buildMore) refreshClock = 0f;
+        }
+
+        // ---------------------------------------------------------------- near and far versions
+
+        /// <summary>How wide a hand-over between a part's near and far versions is, either side of its range (m); and
+        /// how much further each list reaches, for the rider's ride between two refreshes (Refresh: 12 m, a quarter second).</summary>
+        const float Hand = 8f, Slack = 14f;
+
+        static void Pair(Part near, Part far, float range)
+        {
+            if (near == null || far == null) return;
+            near.props = new MaterialPropertyBlock(); near.props.SetVector(NearFarId, new Vector4(range - Hand, range + Hand, 1f, 0f));
+            far.props = new MaterialPropertyBlock(); far.props.SetVector(NearFarId, new Vector4(range - Hand, range + Hand, -1f, 0f));
+        }
+        static readonly int NearFarId = Shader.PropertyToID("_FarviewNearFar");
+
+        /// <summary>Across the ground, as the shader measures the hand-over (Shaders/Farview.hlsl).</summary>
+        static float Flat(Vector3 a, Vector3 b) { float x = a.x - b.x, z = a.z - b.z; return Mathf.Sqrt(x * x + z * z); }
+
+        /// <summary>Something `d` metres off with a near and a far version: in one list, or (the band on) in both while it
+        /// may be handing over.</summary>
+        static void Put(Part near, Part far, float range, float d, Matrix4x4 m, float slack)
+        {
+            if (!Farview.On) { var p = d < range ? near : far; p.list.Add(m * p.local); return; }
+            if (d < range + Hand + slack) near.list.Add(m * near.local);
+            if (d > range - Hand - slack) far.list.Add(m * far.local);
         }
 
         /// <summary>A matrix from a place and three axes (the second may carry a stretch).</summary>
@@ -777,14 +809,15 @@ namespace Summit
                     var m = Matrix4x4.TRS(pos, rot, Vector3.one);
                     float d2 = (pos - p).sqrMagnitude;
                     bool near = d2 < ChairNear * ChairNear;
-                    (near ? chair : chairLod).list.Add(m * (near ? chair : chairLod).local);
+                    float dc = Flat(pos, p);
+                    Put(chair, chairLod, ChairNear, dc, m, 0f);
                     // who is aboard: drawn when the chair left the bottom station, and gone at the top
                     if (LiftRiders.On) LiftRiders.Chair(l, c, lap, (float)(along - lap * (double)l.loop), m);
                     else
                     {
                         float h = Slope.Hash01(c + l.id * 977, lap, 151);
                         int who = up ? (h < 0.56f ? Mathf.Min(3, (int)(h / 0.56f * 4f)) : -1) : (h > 0.95f ? 2 : -1);
-                        if (who >= 0) { var r = near ? riders[who] : ridersLod[who]; r.list.Add(m * r.local); }
+                        if (who >= 0) Put(riders[who], ridersLod[who], ChairNear, dc, m, 0f);
                     }
                     // jumped into: the seat, its frame and whoever is on it, as a box under the grip
                     if (canHit && d2 < 8f * 8f)
@@ -808,6 +841,7 @@ namespace Summit
             {
                 if (part.mesh == null || part.list.Count == 0) continue;
                 var rp = new RenderParams(paint) { shadowCastingMode = part.shadows ? ShadowCastingMode.On : ShadowCastingMode.Off, receiveShadows = true };
+                if (part.props != null && Farview.On) rp.matProps = part.props;
                 for (int i = 0; i < part.list.Count; i += 1000)
                     Graphics.RenderMeshInstanced(rp, part.mesh, 0, part.list, Mathf.Min(1000, part.list.Count - i), i);
             }

@@ -57,6 +57,7 @@ Shader "Summit/IceWall"
             #pragma multi_compile_fragment _ _SHADOWS_SOFT
             #pragma multi_compile_fog
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+            #include "../Shaders/Farview.hlsl"   // (it comes in through the world's far band, pixel by pixel)
             TEXTURE2D(_BaseMap); SAMPLER(sampler_BaseMap);
             TEXTURE2D(_BumpMap); SAMPLER(sampler_BumpMap);
 
@@ -86,6 +87,7 @@ Shader "Summit/IceWall"
 
             half4 frag(Varyings i, FRONT_FACE_TYPE face : FRONT_FACE_SEMANTIC) : SV_Target
             {
+                FarviewClip(i.positionWS, i.positionCS);
                 float3 p = i.positionWS;
                 float3 n = normalize(i.normalWS) * IS_FRONT_VFACE(face, 1.0, -1.0);
                 float3 toCam = GetCameraPositionWS() - p;

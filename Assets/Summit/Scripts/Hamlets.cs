@@ -386,6 +386,9 @@ namespace Summit
             glass = Shining("Cabins/Windows", "Cabins/WindowsGlow", 0.85f); glass.name = "Glass";
             farMat = Shining("Cabins/Far", "Cabins/FarGlow", 0.2f); farMat.name = "Far";
             if (soft != null) { smokeMat = new Material(soft); smokeMat.SetColor("_BaseColor", Color.white); }
+            // all of it comes in through the world's far band, and hands over between near and far over half a second
+            foreach (var m in new[] { larch, darkWood, stone, metal, snow, glass, farMat }) Farview.Adopt(m);
+            foreach (var m in paints) Farview.Adopt(m);
         }
 
         Material MatFor(string name, int pick)
@@ -460,12 +463,12 @@ namespace Summit
                 bool near = d2 < range * range, shown = !h.yard || d2 < YardRange * YardRange;
                 if (near == h.isNear && shown == h.shown) continue;
                 h.isNear = near; h.shown = shown;
-                foreach (var r in h.near) if (r != null) r.enabled = near && shown;
-                if (h.far != null) h.far.enabled = !near && shown;
+                foreach (var r in h.near) if (r != null) Farview.Fade(r, near && shown);
+                if (h.far != null) Farview.Fade(h.far, !near && shown);
             }
             float cx = b.centre.x - p.x, cz = b.centre.z - p.z, c2 = cx * cx + cz * cz;
             bool fence = c2 < (YardRange + 40f) * (YardRange + 40f);
-            if (fence != b.fenceShown && b.fence != null) { b.fenceShown = fence; foreach (var r in b.fence) r.enabled = fence; }
+            if (fence != b.fenceShown && b.fence != null) { b.fenceShown = fence; foreach (var r in b.fence) Farview.Fade(r, fence); }
             foreach (var l in b.lamps)
             {
                 float lx = l.transform.position.x - p.x, lz = l.transform.position.z - p.z;

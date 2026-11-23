@@ -416,6 +416,7 @@ namespace Summit
             props.foliage = foliage;
             props.bark = bark;
             props.target = rg.transform;
+            Farview.Create(rg.transform, snow, foliage);   // the world's far band and the far field beyond it (Farview.cs)
 
             power = new GameObject("PowerUps").AddComponent<PowerUps>();
             power.rider = rider;
@@ -587,6 +588,7 @@ namespace Summit
             BuildMeta();
             dayNight.Hook(rider, fx, camp, spray, trail);
             weather = Weather.Build(rider, camp, cam, atmo, fx, snow, audioFx, () => start);   // the weather on top of the time of day (Weather.cs)
+            NightLights.Build(rider, cam, dayNight, atmo, spray);   // floodlights down the mountain at dusk and night (NightLights.cs)
             ToHub();
             // the game opens on the start page (StartPage.cs), over the camp it has just set up. Not for the
             // device-test autoplay, which carries straight on into a run, nor for the editor's test tools, which

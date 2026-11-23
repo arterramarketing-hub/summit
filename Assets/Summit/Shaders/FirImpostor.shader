@@ -46,6 +46,7 @@ Shader "Summit/FirImpostor"
             #pragma multi_compile_instancing
             #include "Fir.hlsl"
             #include "TreeWind.hlsl"
+            #include "Farview.hlsl"
 
             struct Attributes
             {
@@ -79,7 +80,8 @@ Shader "Summit/FirImpostor"
                 o.upWS = normalize(TransformObjectToWorldDir(i.normalOS));
                 o.uv = TRANSFORM_TEX(i.uv, _BaseMap);
                 float3 origin = TransformObjectToWorld(float3(0, 0, 0));
-                o.fadeFogLift = half4(FirFade(origin), ComputeFogFactor(o.positionCS.z), FirLiftShare(origin), 0);
+                // (and through the world's far band, as a whole: Farview.hlsl)
+                o.fadeFogLift = half4(min(FirFade(origin), FarviewShown(origin)), ComputeFogFactor(o.positionCS.z), FirLiftShare(origin), 0);
                 if (o.fadeFogLift.x <= 0.0h) o.positionCS = FirGone();   // still all cards
             #if defined(_ADDITIONAL_LIGHTS_VERTEX)
                 o.vertexLight = VertexLighting(o.positionWS, o.upWS);
@@ -119,6 +121,7 @@ Shader "Summit/FirImpostor"
             #pragma multi_compile_instancing
             #include "Fir.hlsl"
             #include "TreeWind.hlsl"
+            #include "Farview.hlsl"
             struct Attributes { float4 positionOS : POSITION; float2 uv : TEXCOORD0; UNITY_VERTEX_INPUT_INSTANCE_ID };
             struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; half fade : TEXCOORD1; };
             Varyings vert(Attributes i)
@@ -127,7 +130,8 @@ Shader "Summit/FirImpostor"
                 Varyings o;
                 o.positionCS = TransformWorldToHClip(TreeSway(TransformObjectToWorld(i.positionOS.xyz), TransformObjectToWorld(float3(0, 0, 0)), 0.0, 1.0));
                 o.uv = TRANSFORM_TEX(i.uv, _BaseMap);
-                o.fade = FirFade(TransformObjectToWorld(float3(0, 0, 0)));
+                float3 origin = TransformObjectToWorld(float3(0, 0, 0));
+                o.fade = min(FirFade(origin), FarviewShown(origin));
                 if (o.fade <= 0.0h) o.positionCS = FirGone();
                 return o;
             }

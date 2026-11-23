@@ -44,6 +44,8 @@ Shader "Summit/Backdrop"
             half4 _BackdropSea;               // x: the sea's top (v); y: how much its top undulates
             half4 _BackdropCap;               // xy: the summit (uv); z: a cap cloud sitting on it; w: a plume of spindrift off it
             half4 _BackdropCloud;             // rgb: cloud lit by the sun (linear); a: the plume's clock
+            // set by Farview.cs; x: how much of the day's haze lies between the camera and the photo's foot (0: none)
+            float4 _FarviewHaze;
             TEXTURE2D(_WeatherCloudTex); SAMPLER(sampler_WeatherCloudTex);   // the weather's cloud noise (r masses, g detail)
             float4 _WeatherCloudScroll;
             float Hash21(float2 p) { p = frac(p * float2(123.34, 456.21)); p += dot(p, p + 45.32); return frac(p.x * p.y); }
@@ -80,6 +82,12 @@ Shader "Summit/Backdrop"
                 half3 hz = half3(0.604, 0.708, 0.871);
                 hz = lerp(dot(hz, half3(0.3, 0.59, 0.11)).xxx, hz, _BackdropSat) * tint;
                 graded += haze * (unity_FogColor.rgb - hz);
+                // aerial perspective: as much air between the camera and the photo as between it and the far edge of the
+                // streamed world, and more down at the photo's foot (the valleys, looked down into through the most of
+                // it) than up at the summit, which stays clear; so the photo is never crisper than the world before it
+                // (its foot, v 0.28, is where the mountain's 36-degree fall line meets it: the far field lies there in
+                // the fog's own colour, and the photo is as hazy; the horizon, v 0.82, through a third as much)
+                graded = lerp(graded, unity_FogColor.rgb, (half)_FarviewHaze.x * lerp(0.8h, 0.1h, smoothstep(0.24h, 0.82h, (half)i.uv.y)));
                 c.rgb = graded;
                 c.a *= 1 - SAMPLE_TEXTURE2D(_SkyMask, sampler_SkyMask, i.uv).r * _BackdropKey;
                 if (dot(_BackdropVeil, 1) + _BackdropCap.z + _BackdropCap.w > 0.001)

@@ -38,6 +38,7 @@ Shader "Summit/PeopleLit"
             #pragma multi_compile_fragment _ _SHADOWS_SOFT
             #pragma multi_compile_fog
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+            #include "../Shaders/Farview.hlsl"   // (far off, on a chair coming into reach, through the world's far band)
             TEXTURE2D(_Palette); SAMPLER(sampler_Palette);
 
             struct Attributes { float4 positionOS : POSITION; float3 normalOS : NORMAL; float2 uv : TEXCOORD0; UNITY_VERTEX_INPUT_INSTANCE_ID };
@@ -60,6 +61,7 @@ Shader "Summit/PeopleLit"
             }
             half4 frag(Varyings i) : SV_Target
             {
+                FarviewClip(i.positionWS, i.positionCS);
                 half4 pal = SAMPLE_TEXTURE2D(_Palette, sampler_Palette, i.uv);
                 half3 albedo = pal.rgb;
                 half smooth = pal.a;

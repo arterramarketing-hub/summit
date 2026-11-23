@@ -8,6 +8,9 @@
 //     up its sloping sides softens the line where rock meets snow (never on upright faces or under overhangs)
 // Lit like the cliffs and the firs (the sun or moon with its shadows, the sky's light, the headlamp and other lamps,
 // fog), so it works at night too. Two texture samples and a few lines of arithmetic.
+// Each rock comes in through the world's far band (Shaders/Farview.hlsl), as a whole, by where it stands; far off it
+// is drawn as a cheap stand-in of the same shape (Forest.cs), the two handing over across _NearFar by distance with
+// the same screen pattern the opposite way round.
 Shader "Summit/ScanRock"
 {
     Properties
@@ -20,6 +23,7 @@ Shader "Summit/ScanRock"
         _Snow ("Snow on faces up from, to (normal.y)", Vector) = (0.48, 0.66, 0, 0)
         _SnowColor ("Snow", Color) = (0.86, 0.9, 0.96, 1)
         _Drift ("Snow banked at the foot: all below, none above (m up the model)", Vector) = (0.34, 0.62, 0, 0)
+        _NearFar ("Hand-over by distance: from, to (m), +1 the near version, -1 the far one, 0 none", Vector) = (0, 0, 0, 0)
     }
     SubShader
     {
@@ -34,7 +38,24 @@ Shader "Summit/ScanRock"
             float4 _Snow;
             half4 _SnowColor;
             float4 _Drift;
+            float4 _NearFar;
         CBUFFER_END
+        ENDHLSL
+        HLSLINCLUDE
+        #include "../Shaders/Farview.hlsl"
+        // which of the dither's values the rock standing at `foot` is drawn with: the band, and its hand-over between
+        // near and far versions (Farview.hlsl: the two exactly complementary)
+        half2 RockWindow(float3 foot)
+        {
+            half2 w = half2(0.0h, FarviewShown(foot));
+            if (_NearFar.z != 0.0 && _FarviewCentre.w > 0.5)
+            {
+                float d = length(foot.xz - _FarviewCentre.xz);
+                half f = (half)saturate((d - _NearFar.x) / max(_NearFar.y - _NearFar.x, 1e-3));
+                w = FarviewAnd(w, _NearFar.z > 0.0 ? half2(f, 1.0h) : half2(0.0h, f));
+            }
+            return w;
+        }
         ENDHLSL
         Pass
         {
@@ -67,7 +88,7 @@ Shader "Summit/ScanRock"
                 float3 positionWS : TEXCOORD1;
                 half3 normalWS : TEXCOORD2;
                 half4 tangentWS : TEXCOORD3;      // w: which way the bitangent runs
-                half4 fogUp : TEXCOORD4;          // x fog, y metres up the model from its foot
+                half4 fogUp : TEXCOORD4;          // x fog, y metres up the model from its foot, zw the dither window drawn
                 half3 vertexLight : TEXCOORD5;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
@@ -86,7 +107,9 @@ Shader "Summit/ScanRock"
                 // from the pivot, and divided by the size it was drawn at
                 float3 foot = TransformObjectToWorld(float3(0, 0, 0));
                 float drawn = length(TransformObjectToWorldDir(float3(1, 0, 0), false));
-                o.fogUp = half4(ComputeFogFactor(o.positionCS.z), (o.positionWS.y - foot.y) / max(drawn, 1e-4), 0, 0);
+                half2 win = RockWindow(foot);
+                o.fogUp = half4(ComputeFogFactor(o.positionCS.z), (o.positionWS.y - foot.y) / max(drawn, 1e-4), win);
+                if (!FarviewAny(win)) o.positionCS = FarviewGone();
             #if defined(_ADDITIONAL_LIGHTS_VERTEX)
                 o.vertexLight = VertexLighting(o.positionWS, o.normalWS);
             #endif
@@ -96,6 +119,7 @@ Shader "Summit/ScanRock"
             half4 frag(Varyings i) : SV_Target
             {
                 UNITY_SETUP_INSTANCE_ID(i);
+                FarviewClipWindow(i.fogUp.zw, i.positionCS);
                 float3 p = i.positionWS;
                 half3 albedo = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, i.uv).rgb;
                 // (the atlas is sRGB, so its colours arrive linear: for the snow's ragged edge, its tone as painted,
@@ -193,12 +217,16 @@ Shader "Summit/ScanRock"
             #pragma fragment frag
             #pragma multi_compile_instancing
             struct Attributes { float4 positionOS : POSITION; UNITY_VERTEX_INPUT_INSTANCE_ID };
-            float4 vert(Attributes i) : SV_POSITION
+            struct V { float4 positionCS : SV_POSITION; half2 win : TEXCOORD0; };
+            V vert(Attributes i)
             {
                 UNITY_SETUP_INSTANCE_ID(i);
-                return TransformObjectToHClip(i.positionOS.xyz);
+                V o;
+                o.win = RockWindow(TransformObjectToWorld(float3(0, 0, 0)));
+                o.positionCS = FarviewAny(o.win) ? TransformObjectToHClip(i.positionOS.xyz) : FarviewGone();
+                return o;
             }
-            half frag() : SV_Target { return 0; }
+            half frag(V i) : SV_Target { FarviewClipWindow(i.win, i.positionCS); return 0; }
             ENDHLSL
         }
     }

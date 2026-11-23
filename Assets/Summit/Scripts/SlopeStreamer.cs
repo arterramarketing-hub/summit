@@ -85,7 +85,7 @@ namespace Summit
         }
 
         void Start() { Refresh(true); }
-        void Update() { Refresh(false); }
+        void Update() { Refresh(false); Look(); }
 
         /// <summary>Build everything around the target now (on a respawn or at start).</summary>
         public void Prewarm() { Refresh(true); }
@@ -125,7 +125,7 @@ namespace Summit
                     if (kv.Key.x < cx - sideChunks - 1 || kv.Key.x > cx + sideChunks + 1 ||
                         kv.Key.y < cz - behindChunks - 1 || kv.Key.y > cz + aheadChunks + 1)
                         drop.Add(kv.Key);
-                foreach (var k in drop) { live[k].SetActive(false); spare.Enqueue(live[k]); live.Remove(k); lodOf.Remove(k); }
+                foreach (var k in drop) { EndGhost(k); live[k].SetActive(false); spare.Enqueue(live[k]); live.Remove(k); lodOf.Remove(k); lookOf.Remove(k); }
                 // what has come into view (built ahead while it was just outside) is shown; what has left it stays
                 // until it is dropped, as before
                 foreach (var k in wanted) if (live.TryGetValue(k, out var go) && !go.activeSelf) go.SetActive(true);
@@ -221,8 +221,19 @@ namespace Summit
                     go.name = "Chunk " + k.x + "," + k.y;
                     live[k] = go;
                     go.SetActive(InView(k, cx, cz));
+                    lookOf[k] = -1;
                 }
-                w.Apply(go.GetComponent<MeshFilter>().sharedMesh);
+                var mf = go.GetComponent<MeshFilter>();
+                if (lodOf.TryGetValue(k, out int was) && was > w.lod && go.activeSelf && Farview.On && lookOf.TryGetValue(k, out int look) && look != Hidden)
+                {
+                    // rebuilt finer where it can be seen: the coarse one stays a moment and the two hand over
+                    var old = mf.sharedMesh;
+                    var fresh = spareMeshes.Count > 0 ? spareMeshes.Pop() : NewMesh();
+                    w.Apply(fresh);
+                    mf.sharedMesh = fresh;
+                    StartGhost(k, go, old);
+                }
+                else w.Apply(mf.sharedMesh);
                 lodOf[k] = w.lod;
             }
             pool.Push(w);
@@ -257,17 +268,138 @@ namespace Summit
             }
         }
 
+        // ---------------------------------------------------------------- the far band (Farview)
+
+        // how each chunk is drawn: plainly, with the band (the chunks it crosses, and those handing over), or not at all
+        // (wholly past the band's outer edge: nothing of it would show)
+        const int Plain = 0, Edge = 1, Hidden = 2;
+        readonly Dictionary<Vector2Int, int> lookOf = new Dictionary<Vector2Int, int>();
+        Material[] plainMats, edgeMats;
+        Material[] PlainMats { get { if (plainMats == null) Mats(); return plainMats; } }
+        Material[] EdgeMats { get { if (edgeMats == null) Mats(); return edgeMats; } }
+
+        void Mats()
+        {
+            var rock = RockFace.TerrainMaterial(snowMaterial.shader);
+            plainMats = new[] { snowMaterial, rock };
+            // (the rock always lets the snow through pixel by pixel, so it takes the band as it is: RockLit.shader)
+            edgeMats = new[] { Farview.Snow(snowMaterial, true), rock };
+        }
+
+        /// <summary>Draw each chunk plainly, with the band, or not at all, for where the rider is now.</summary>
+        void Look()
+        {
+            if (target == null || live.Count == 0) return;
+            bool on = Farview.On;
+            Vector3 p = target.position;
+            const float Margin = 4f;   // (a chunk drawn plainly is clear of the band by this much: a frame's ride and more)
+            foreach (var kv in live)
+            {
+                var go = kv.Value;
+                if (!go.activeSelf) continue;
+                var k = kv.Key;
+                int want = Plain;
+                if (on)
+                {
+                    float x0 = k.x * chunkSize - p.x, x1 = x0 + chunkSize, z0 = k.y * chunkSize - p.z, z1 = z0 + chunkSize;
+                    float across = Mathf.Max(Mathf.Abs(x0), Mathf.Abs(x1)), acrossNear = x0 > 0f ? x0 : x1 < 0f ? -x1 : 0f;
+                    if (acrossNear >= Farview.AcrossOut || z0 >= Farview.DownOut) want = Hidden;
+                    else if (across > Farview.AcrossIn - Margin || z1 > Farview.DownIn - Margin) want = Edge;
+                    if (GhostOf(k) >= 0) want = Edge;
+                }
+                if (lookOf.TryGetValue(k, out int now) && now == want) continue;
+                lookOf[k] = want;
+                var mr = go.GetComponent<MeshRenderer>();
+                mr.enabled = want != Hidden;
+                if (want != Hidden) mr.sharedMaterials = want == Edge ? EdgeMats : PlainMats;
+            }
+            StepGhosts();
+        }
+
+        // a chunk rebuilt finer, handing over from its coarse self: the coarse mesh drawn by a ghost for SwapTime
+        class Ghost { public Vector2Int key; public GameObject go; public MeshRenderer chunk; public float t0; }
+        readonly List<Ghost> ghosts = new List<Ghost>();
+        readonly Stack<GameObject> spareGhosts = new Stack<GameObject>();
+        readonly Stack<Mesh> spareMeshes = new Stack<Mesh>();
+        MaterialPropertyBlock swapBlock;
+        static readonly int SwapId = Shader.PropertyToID("_FarviewSwap");
+
+        static Mesh NewMesh() { var m = new Mesh(); m.MarkDynamic(); return m; }
+
+        int GhostOf(Vector2Int k)
+        {
+            for (int i = 0; i < ghosts.Count; i++) if (ghosts[i].key == k) return i;
+            return -1;
+        }
+
+        void StartGhost(Vector2Int k, GameObject chunk, Mesh old)
+        {
+            EndGhost(k);
+            GameObject go;
+            if (spareGhosts.Count > 0) go = spareGhosts.Pop();
+            else
+            {
+                go = new GameObject("Ghost");
+                go.transform.SetParent(transform, false);
+                go.AddComponent<MeshFilter>();
+                var r = go.AddComponent<MeshRenderer>();
+                r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                r.receiveShadows = true;
+            }
+            go.name = "Ghost " + k.x + "," + k.y;
+            go.GetComponent<MeshFilter>().sharedMesh = old;
+            var gr = go.GetComponent<MeshRenderer>();
+            gr.sharedMaterials = EdgeMats;
+            go.SetActive(true);
+            var cr = chunk.GetComponent<MeshRenderer>();
+            float t0 = Farview.Clock;
+            if (swapBlock == null) swapBlock = new MaterialPropertyBlock();
+            swapBlock.Clear(); swapBlock.SetVector(SwapId, new Vector4(t0, -1f, 0f, 0f)); gr.SetPropertyBlock(swapBlock);
+            swapBlock.Clear(); swapBlock.SetVector(SwapId, new Vector4(t0, 1f, 0f, 0f)); cr.SetPropertyBlock(swapBlock);
+            ghosts.Add(new Ghost { key = k, go = go, chunk = cr, t0 = t0 });
+            // (drawn with the band until it is done: Look keeps it so)
+            cr.enabled = true; cr.sharedMaterials = EdgeMats; lookOf[k] = Edge;
+        }
+
+        void EndGhost(Vector2Int k)
+        {
+            int i = GhostOf(k);
+            if (i < 0) return;
+            var g = ghosts[i];
+            ghosts.RemoveAt(i);
+            var mf = g.go.GetComponent<MeshFilter>();
+            if (mf.sharedMesh != null) spareMeshes.Push(mf.sharedMesh);
+            mf.sharedMesh = null;
+            g.go.SetActive(false);
+            spareGhosts.Push(g.go);
+            if (g.chunk != null) g.chunk.SetPropertyBlock(null);
+            lookOf[k] = -1;
+        }
+
+        void StepGhosts()
+        {
+            float now = Farview.Clock;
+            for (int i = ghosts.Count - 1; i >= 0; i--)
+                if (now - ghosts[i].t0 >= Farview.SwapTime || !Farview.On) EndGhost(ghosts[i].key);
+        }
+
+        /// <summary>How many chunks are drawn with the band, and how many hand over now (the test tools log it).</summary>
+        public void BandStats(out int edge, out int hidden, out int handing)
+        {
+            edge = hidden = 0;
+            foreach (var v in lookOf.Values) { if (v == Edge) edge++; else if (v == Hidden) hidden++; }
+            handing = ghosts.Count;
+        }
+
         GameObject Take()
         {
             if (spare.Count > 0) return spare.Dequeue();
             var go = new GameObject("Chunk");
             go.transform.SetParent(transform, false);
-            var mesh = new Mesh();
-            mesh.MarkDynamic();
-            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            go.AddComponent<MeshFilter>().sharedMesh = NewMesh();
             var mr = go.AddComponent<MeshRenderer>();
             // snow, and bare rock on the faces too steep to hold it (the second submesh: see Work.SplitRock)
-            mr.sharedMaterials = new[] { snowMaterial, RockFace.TerrainMaterial(snowMaterial.shader) };
+            mr.sharedMaterials = PlainMats;
             mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
             mr.receiveShadows = true;
             return go;
@@ -288,8 +420,9 @@ namespace Summit
         public void Rebuild()
         {
             Settle();
+            for (int i = ghosts.Count - 1; i >= 0; i--) EndGhost(ghosts[i].key);
             foreach (var kv in live) { kv.Value.SetActive(false); spare.Enqueue(kv.Value); }
-            live.Clear(); lodOf.Clear();
+            live.Clear(); lodOf.Clear(); lookOf.Clear();
             lastCx = lastCz = int.MinValue;
             Refresh(true);
         }

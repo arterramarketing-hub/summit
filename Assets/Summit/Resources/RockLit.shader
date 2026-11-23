@@ -20,6 +20,9 @@
 // colour's alpha: RockFace.Rockiness), and the rock's own patches and cracks move the line about, so the snow line
 // wanders through gullies and round blocks instead of following the mesh's triangles, with a fringe of patchy
 // dusting and a drift's lip along it.
+// Everything streamed comes in through the world's far band (Shaders/Farview.hlsl): the terrain's rock with its chunk,
+// the crags and outcrops as the rider comes within reach of them. The crags' near and far looks cross-fade (their
+// LODGroup, LOD_FADE_CROSSFADE).
 Shader "Summit/Rock"
 {
     Properties
@@ -69,7 +72,12 @@ Shader "Summit/Rock"
             // (multi_compile, not shader_feature: the terrain's material is made at run time, so no saved material
             // would keep the variant in a build)
             #pragma multi_compile_local _ SUMMIT_ROCK_TERRAIN
+            #pragma multi_compile _ LOD_FADE_CROSSFADE
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+            #if defined(LOD_FADE_CROSSFADE)
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/LODCrossFade.hlsl"
+            #endif
+            #include "../Shaders/Farview.hlsl"
             TEXTURE2D(_BaseMap); SAMPLER(sampler_BaseMap);
             TEXTURE2D(_ReliefMap); SAMPLER(sampler_ReliefMap);
 
@@ -199,6 +207,10 @@ Shader "Summit/Rock"
 
             half4 frag(Varyings i) : SV_Target
             {
+                FarviewClip(i.positionWS, i.positionCS);
+                #if defined(LOD_FADE_CROSSFADE)
+                LODFadeCrossFade(i.positionCS);
+                #endif
                 float3 p = i.positionWS;
                 float3 n = normalize(i.normalWS);
                 float3 w = pow(abs(n), 4.0); w /= (w.x + w.y + w.z);
@@ -370,8 +382,27 @@ Shader "Summit/Rock"
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
-            float4 vert(float4 positionOS : POSITION) : SV_POSITION { return TransformObjectToHClip(positionOS.xyz); }
-            half frag() : SV_Target { return 0; }
+            #pragma multi_compile _ LOD_FADE_CROSSFADE
+            #if defined(LOD_FADE_CROSSFADE)
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/LODCrossFade.hlsl"
+            #endif
+            #include "../Shaders/Farview.hlsl"
+            struct V { float4 positionCS : SV_POSITION; float3 positionWS : TEXCOORD0; };
+            V vert(float4 positionOS : POSITION)
+            {
+                V o;
+                o.positionWS = TransformObjectToWorld(positionOS.xyz);
+                o.positionCS = TransformWorldToHClip(o.positionWS);
+                return o;
+            }
+            half frag(V i) : SV_Target
+            {
+                FarviewClip(i.positionWS, i.positionCS);
+                #if defined(LOD_FADE_CROSSFADE)
+                LODFadeCrossFade(i.positionCS);
+                #endif
+                return 0;
+            }
             ENDHLSL
         }
     }

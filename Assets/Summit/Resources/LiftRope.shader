@@ -43,6 +43,7 @@ Shader "Summit/LiftRope"
             #pragma multi_compile_fog
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+            #include "../Shaders/Farview.hlsl"   // (a span comes in through the world's far band, pixel by pixel)
             CBUFFER_START(UnityPerMaterial)
                 half4 _Color, _Groove, _FarColor;
                 float _Radius, _MinPixels, _MinAlpha, _Strands, _Lay, _Bump, _Speed;
@@ -78,6 +79,7 @@ Shader "Summit/LiftRope"
 
             half4 frag(Varyings i) : SV_Target
             {
+                FarviewClip(i.positionWS, i.positionCS);
                 float3 n = normalize(i.normalWS);
                 float3 t = normalize(i.alongWS);
                 float3 c = cross(t, n);                                   // round the rope

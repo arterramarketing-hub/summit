@@ -99,7 +99,8 @@ namespace Summit
             if (!On || cycle < 0) yield break;
             Init(lit);
             // drifts wear the ground's own snow (same grooves and sparkle, same mapping), so they run on into it
-            if (driftMat == null) { var t = Object.FindFirstObjectByType<SlopeStreamer>(); if (t != null) driftMat = t.snowMaterial; }
+            // (a copy that comes in through the world's far band, as the rock it lies on does: Farview)
+            if (driftMat == null) { var t = Object.FindFirstObjectByType<SlopeStreamer>(); if (t != null) driftMat = Farview.Snow(t.snowMaterial, true); }
             var g = new Groups();
             if (Ridge.Built(cycle)) { RidgeRock(g, cycle); yield return true; }
             if (Cliffs.WallOf(cycle, out var w)) { WallRock(g, w); yield return true; }
@@ -569,8 +570,13 @@ namespace Summit
                 var near = Part(go.transform, "Near", nearV, nearN, nearT, driftT, own);
                 var far = Part(go.transform, "Far", farV, farN, farT, null, own);
                 var lods = go.AddComponent<LODGroup>();
-                lods.SetLODs(new[] { new LOD(NearLod, new Renderer[] { near }), new LOD(0f, new Renderer[] { far }) });
+                // the two looks hand over pixel by pixel (RockLit and the drift's FarLit take URP's LOD cross-fade), not
+                // all at once: across the nearer part of the near look's range, by distance (an eighth of it: a few
+                // metres, a few tenths of a second at speed), so the hand-over is the same whenever it is looked at
+                lods.SetLODs(new[] { new LOD(NearLod, new Renderer[] { near }) { fadeTransitionWidth = 0.5f }, new LOD(0f, new Renderer[] { far }) });
                 lods.RecalculateBounds();
+                lods.fadeMode = Farview.Disabled ? LODFadeMode.None : LODFadeMode.CrossFade;   // (Disabled: the "before" pictures)
+                lods.animateCrossFading = false;
             }
             if (talus != null) { var td = go.AddComponent<TalusDraw>(); td.lists = talus; td.bounds = tb; }
         }

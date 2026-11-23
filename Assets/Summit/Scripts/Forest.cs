@@ -32,6 +32,14 @@ namespace Summit
         const float LodRange = 300f;   // beyond this, trees are drawn as simple low-poly firs
         readonly List<Matrix4x4> distL = new List<Matrix4x4>();
         Mesh lodMesh; Material lodFoliage, lodBark;
+        // the rocks far off (with the world's far band on: Farview): each as a cheap stand-in of its own size (FarRock),
+        // out to the forest's edge, handing over from the scanned boulder across RockNear..RockFar by distance (both
+        // drawn through the band, the shader picking each pixel's: ScanRockLit's _NearFar). Without the band they end
+        // at LodRange, as they always did
+        public const float RockNear = 240f, RockFar = 285f;
+        readonly List<Matrix4x4> rockFarL = new List<Matrix4x4>();
+        Mesh farRock; Material farRockMat;
+        bool farRocks;   // (the lists were filled with them)
 
         // ---- which trees: the original low-poly ones, or realistic card trees
         public const string TreesPref = "summit_trees";
@@ -84,12 +92,29 @@ namespace Summit
             float z = wz + (Slope.Hash01(cx, cz, 3) - 0.5f) * Cell * 0.75f;
             if (Course.Keep(x, z, 0.5f)) return Kind.None;   // (where it really stands, too: the long park features)
             if (Hamlets.Taken(x, z)) return Kind.None;       // hamlets (Hamlets.cs): nothing grows in a house, its fence or its clearing
+            if (NightLights.Taken(x, z)) return Kind.None;   // nor at the foot of a floodlight's pole (NightLights.cs)
             if (Mathf.Abs(Slope.Kicker(x, z)) > 0.01f || Mathf.Abs(Slope.Kicker(x, z - 14f)) > 0.01f) return Kind.None;   // keep kickers clear
             variant = (int)(Slope.Hash01(cx, cz, 7) * 64f);
             bool rock = Slope.Hash01(cx, cz, 8) < (off < Slope.PisteHalf ? 0.25f : 0.12f);
             pos = new Vector3(x, Slope.DrawnHeight(x, z), z);
             size = rock ? 0.8f + 1.4f * Slope.Hash01(cx, cz, 4) : 0.75f + 0.6f * Slope.Hash01(cx, cz, 4);
             return rock ? Kind.Rock : Kind.Tree;
+        }
+
+        /// <summary>
+        /// How thickly trees stand round (x, z), 0..1, as At plants them (its density, without the odd cell kept clear
+        /// for a feature, a lift or a house): the far field's forest tint (FarField). Pure, so any thread may ask.
+        /// </summary>
+        public static float Cover(float x, float z)
+        {
+            float off = Mathf.Abs(x - Slope.Centre(z));
+            if (off < Slope.PisteHalf - 3f) return 0f;
+            float glade = Slope.Noise(x * 0.016f + 9f, z * 0.016f);
+            float density = Mathf.Lerp(0.16f, 0.62f, Mathf.Clamp01((off - Slope.PisteHalf) / 30f)) * Mathf.Lerp(0.35f, 1.3f, glade);
+            if (z < 70f && off < 34f) density *= 0.1f;
+            if (Slope.OnPad(x, z)) return 0f;
+            // (about one in eight of what stands off the piste is a rock)
+            return Mathf.Clamp01(density * 0.88f / 0.62f);
         }
 
         // ---- what the models are made of
@@ -122,7 +147,18 @@ namespace Summit
                 // photo-scanned boulders (Tools/MakeScanRocks.py), all wearing the one snowy rock material
                 foreach (var g in Resources.LoadAll<GameObject>("ScanRocks")) Add(g, rockParts, rockH);
                 var scan = ScanRockMaterial();
-                if (scan != null) foreach (var parts in rockParts) foreach (var part in parts) part.mat = scan;
+                if (scan != null)
+                {
+                    foreach (var parts in rockParts) foreach (var part in parts) part.mat = scan;
+                    scan.SetVector("_NearFar", new Vector4(RockNear, RockFar, 1f, 0f));
+                    farRockMat = new Material(scan) { name = "ScanRockFar", enableInstancing = true };
+                    farRockMat.SetVector("_NearFar", new Vector4(RockNear, RockFar, -1f, 0f));
+                    // (far off, the atlas's grain is far below a pixel: its average grey, and the snow on top, are what show)
+                    farRockMat.SetTexture("_BaseMap", Texture2D.whiteTexture);
+                    farRockMat.SetTexture("_BumpMap", null);
+                    farRockMat.SetColor("_BaseColor", new Color(0.36f, 0.35f, 0.34f));
+                    farRock = FarRock();
+                }
             }
             if (treeParts.Count == 0) { treeParts.Add(Fallback(FirMesh(), new[] { foliage, bark })); treeH.Add(6.3f); }
             if (lodMesh == null && foliage != null && bark != null)
@@ -132,6 +168,52 @@ namespace Summit
                 lodBark = new Material(bark) { enableInstancing = true };
             }
             if (rockParts.Count == 0) { rockParts.Add(Fallback(RockMesh(), new[] { bark })); rockH.Add(1f); }
+            // (the classic look's far firs are plain lit: they come in through the band as the rest do)
+            if (lodFoliage != null) { Farview.Adopt(lodFoliage); Farview.Adopt(lodBark); }
+        }
+
+        /// <summary>
+        /// A far rock: an 80-triangle rounded block filling the unit cube round its middle (scaled to each scanned
+        /// boulder's own box when it is placed), a little flat-bottomed, as the boulders sit sunk into the snow.
+        /// </summary>
+        static Mesh FarRock()
+        {
+            float t = (1f + Mathf.Sqrt(5f)) / 2f;
+            var v = new List<Vector3> {
+                new Vector3(-1, t, 0), new Vector3(1, t, 0), new Vector3(-1, -t, 0), new Vector3(1, -t, 0),
+                new Vector3(0, -1, t), new Vector3(0, 1, t), new Vector3(0, -1, -t), new Vector3(0, 1, -t),
+                new Vector3(t, 0, -1), new Vector3(t, 0, 1), new Vector3(-t, 0, -1), new Vector3(-t, 0, 1) };
+            var f = new List<int> { 0,11,5, 0,5,1, 0,1,7, 0,7,10, 0,10,11, 1,5,9, 5,11,4, 11,10,2, 10,7,6, 7,1,8,
+                                    3,9,4, 3,4,2, 3,2,6, 3,6,8, 3,8,9, 4,9,5, 2,4,11, 6,2,10, 8,6,7, 9,8,1 };
+            var mid = new Dictionary<long, int>();
+            int Mid(int a, int b)
+            {
+                long key = a < b ? ((long)a << 32) | (uint)b : ((long)b << 32) | (uint)a;
+                if (mid.TryGetValue(key, out int i)) return i;
+                v.Add((v[a] + v[b]) * 0.5f); mid[key] = v.Count - 1; return v.Count - 1;
+            }
+            var g = new List<int>();
+            for (int i = 0; i < f.Count; i += 3)
+            {
+                int a = f[i], b = f[i + 1], c = f[i + 2], ab = Mid(a, b), bc = Mid(b, c), ca = Mid(c, a);
+                g.AddRange(new[] { a, ab, ca, b, bc, ab, c, ca, bc, ab, bc, ca });
+            }
+            var n = new Vector3[v.Count]; var uv = new Vector2[v.Count]; var tg = new Vector4[v.Count];
+            for (int i = 0; i < v.Count; i++)
+            {
+                var d = v[i].normalized;
+                // lumpy, and flatter underneath
+                float lump = 1f + 0.12f * (Slope.Hash01(i, 3, 41) - 0.5f);
+                var p = d * 0.5f * lump;
+                if (p.y < -0.2f) p.y = -0.2f + (p.y + 0.2f) * 0.4f;
+                v[i] = p; n[i] = d; uv[i] = new Vector2(0.5f, 0.5f);
+                var side = Vector3.Cross(Vector3.up, d); if (side.sqrMagnitude < 1e-4f) side = Vector3.right;
+                tg[i] = new Vector4(side.normalized.x, side.normalized.y, side.normalized.z, 1f);
+            }
+            var m = new Mesh { name = "FarRock" };
+            m.SetVertices(v); m.normals = n; m.uv = uv; m.tangents = tg; m.SetTriangles(g, 0);
+            m.RecalculateBounds();
+            return m;
         }
 
         void Add(GameObject prefab, List<List<Part>> into, List<float> heights)
@@ -296,6 +378,7 @@ namespace Summit
             float z = wz + (Slope.Hash01(cx, cz, 18) - 0.5f) * Cell * 0.75f;
             if (Course.Keep(x, z, 0.5f)) return false;
             if (Hamlets.Taken(x, z)) return false;            // nor in a hamlet's houses, fence or clearing
+            if (NightLights.Taken(x, z)) return false;
             if (Mathf.Abs(Slope.Kicker(x, z)) > 0.01f || Mathf.Abs(Slope.Kicker(x, z - 14f)) > 0.01f) return false;
             int idx = RealFir.PickSapling(Slope.Hash01(cx, cz, 15) < pines, Slope.Hash01(cx, cz, 9));
             if (idx < 0) return false;
@@ -427,6 +510,11 @@ namespace Summit
                     int n = impL[v].Count; if (n == 0) continue;
                     draws += (n + 999) / 1000; tris += 4L * n; instances += n;
                 }
+            if (farRock != null && rockFarL.Count > 0 && farRocks)
+            {
+                draws += (rockFarL.Count + 999) / 1000; instances += rockFarL.Count;
+                tris += (long)farRock.GetIndexCount(0) / 3 * rockFarL.Count;
+            }
             if (!real && lodMesh != null && distL.Count > 0)
             {
                 int d = (distL.Count + 999) / 1000;
@@ -562,6 +650,13 @@ namespace Summit
                     e.parts = parts.Count;
                     // (the classic look's far firs)
                     if (pl.kind == Kind.Tree && !real && lodMesh != null) { s.Mat(pl.m * Matrix4x4.Scale(Vector3.one * (treeH[pl.idx] / 6.3f)), null, null); e.far = true; }
+                    // (a rock's far stand-in, filling its boulder's box)
+                    if (pl.kind == Kind.Rock && farRock != null)
+                    {
+                        var box = parts[0].mesh.bounds;
+                        s.Mat(pl.m * parts[0].local * Matrix4x4.TRS(box.center, Quaternion.identity, box.size), null, null);
+                        e.far = true;
+                    }
                 }
                 s.Add(e);
             }
@@ -609,12 +704,15 @@ namespace Summit
             foreach (var l in farL.Values) l.Clear();
             foreach (var l in richL.Values) l.Clear();
             distL.Clear();
+            rockFarL.Clear();
             damagedL.Clear();
             if (impL != null) foreach (var l in impL) l.Clear();
             // shadows for every tree within the shadow range, so none pops a shadow on as it nears
             float shadow2 = ShadowRange * ShadowRange, detail2 = DetailRange * DetailRange;
             float band0 = (FadeStart - FadeSlack) * (FadeStart - FadeSlack), band1 = (FadeEnd + FadeSlack) * (FadeEnd + FadeSlack);
             float rich = (RichEnd + FadeSlack) * (RichEnd + FadeSlack), lod = LodRange * LodRange;
+            farRocks = farRock != null && Farview.On;
+            float rockFar0 = (RockNear - FadeSlack) * (RockNear - FadeSlack), rockNear1 = (RockFar + FadeSlack) * (RockFar + FadeSlack);
             int zFrom = c.y - behindCells, zTo = c.y + farAhead, xFrom = c.x - farSide, xTo = c.x + farSide;
             for (int z = zFrom; z <= zTo; z++)
             {
@@ -646,10 +744,16 @@ namespace Summit
                         // close by, the rich tree as well (the plain one below still casts the shadow for both)
                         if (d2 < rich) e.one.Add(mats[e.mat0]);
                     }
-                    if (d2 > lod)
+                    if (e.kind == Kind.Rock && farRocks)
+                    {
+                        // a rock with the band on: its stand-in from RockNear out, the boulder in to RockFar
+                        if (d2 > rockFar0 && e.far) rockFarL.Add(mats[e.mat0 + 1 + e.parts]);
+                        if (d2 > rockNear1) continue;
+                    }
+                    else if (d2 > lod)
                     {
                         // far away: one cheap fir the same height instead of the full model (rocks are left out)
-                        if (e.far) distL.Add(mats[e.mat0 + 1 + e.parts]);
+                        if (e.far && e.kind == Kind.Tree) distL.Add(mats[e.mat0 + 1 + e.parts]);
                         continue;
                     }
                     var lists = d2 < shadow2 ? s.near : s.far;
@@ -692,7 +796,7 @@ namespace Summit
                 for (int i = e.mat0 + 1; i <= e.mat0 + e.parts; i++) { DropFrom(s.near[i], s.mats[i]); DropFrom(s.far[i], s.mats[i]); }
                 if (e.one != null) DropFrom(e.one, s.mats[e.mat0]);
                 if (e.two != null) DropFrom(e.two, s.mats[e.mat0]);
-                if (e.far) DropFrom(distL, s.mats[e.mat0 + 1 + e.parts]);
+                if (e.far) { DropFrom(distL, s.mats[e.mat0 + 1 + e.parts]); DropFrom(rockFarL, s.mats[e.mat0 + 1 + e.parts]); }
                 return;
             }
         }
@@ -727,6 +831,12 @@ namespace Summit
                     for (int i = 0; i < list.Count; i += 1000)
                         Graphics.RenderMeshInstanced(rp, RealFir.Impostors[v], 0, list, Mathf.Min(1000, list.Count - i), i);
                 }
+            }
+            if (rockFarL.Count > 0 && farRock != null && farRocks)
+            {
+                var rr = new RenderParams(farRockMat) { shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off, receiveShadows = false };
+                for (int i = 0; i < rockFarL.Count; i += 1000)
+                    Graphics.RenderMeshInstanced(rr, farRock, 0, rockFarL, Mathf.Min(1000, rockFarL.Count - i), i);
             }
             if (distL.Count > 0 && lodMesh != null)
             {
