@@ -1554,6 +1554,7 @@ namespace Summit
                 if (d < s.radius && d < best && Mathf.Abs(s.at.y - pos.y) < 1.5f) { best = d; Near = s.st; }   // on its floor
             }
             if (Near == Station.Lookout) { OnLookout = true; Near = Station.None; }
+            if (Near == Station.None && UseLodge && LodgeLookoutAt(pos)) OnLookout = true;   // (the lodge's deck on the wing's roof: CampLodge)
             // feet on the snow: footsteps and prints (a jump or a roll makes its own marks)
             if (moveKind == 0) { Footsteps(dt); Footprints(dt); }
             else lastStep = body.WalkPhase;

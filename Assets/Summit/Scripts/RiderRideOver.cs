@@ -7,12 +7,15 @@ namespace Summit
     /// What the board meets that is not snow: anything low enough is ridden like terrain, and the rest only knocks you
     /// down when it is hit square on.
     ///  - Low (its top no more than StepUp above the board's bottom: a boulder, a talus block, a stump, a crag's foot;
-    ///    or anything under a board in the air): no collision at all. Its top is ground (GroundAt): the board rides up
-    ///    a gentle side and off its far edge as off any lip; a side too steep to ride up is popped over, the board
-    ///    lifted just in time to clear it (or to land on its top), as an ollie would.
+    ///    or anything under a board in the air): no collision at all. It is part of the surface the board rides: the
+    ///    board rises smoothly before it, glides over its top and settles back onto the snow behind it (OverLiftStep).
+    ///    It never leaves the snow's line for it, is never thrown by it, and the finger steers all the way over.
     ///  - Taller: a crash only when hit within DeadOnAngle of square on (and faster than CrashInto into it). Anything
-    ///    glancing turns the board off along it, a little slower and wobbling (Glance). Animals still always knock you
+    ///    glancing is slid along: the part of the speed into its face is taken away (and a little more, GlanceKeep),
+    ///    nothing is added, and the board goes on along the face until it is past. Animals still always knock you
     ///    down; invincible, a shield, the tube's bounce and a moment's invulnerability work as before.
+    /// The board finds what it is about to meet itself, each step, before it moves (Contact): it never sinks into a
+    /// thing and is pushed back out by the physics engine, which is what a sideways kick was.
     /// </summary>
     public partial class Rider
     {
@@ -25,22 +28,17 @@ namespace Summit
         public const float CrashInto = 6f;
         /// <summary>A glancing blow: this share of the speed kept, the part into the face taken away.</summary>
         public const float GlanceKeep = 0.88f;
-        /// <summary>A side steeper than this (rise over run) is popped over, not ridden up.</summary>
-        const float HopSlope = 0.75f;
-        /// <summary>Clearance over the top of what is popped over.</summary>
-        const float HopClear = 0.12f;
 
         /// <summary>The last solid met: how far off square on the board's travel was to its face (degrees, 0 dead on).</summary>
         public float LastHitAngle { get; private set; }
         /// <summary>A glancing blow off something solid: how fast into it (m/s).</summary>
         public System.Action<float> Glanced;
-        /// <summary>Popped over something low: how high its top stood over the board.</summary>
+        /// <summary>Riding over something low: how high it lifts the board over the snow.</summary>
         public System.Action<float> Hopped;
 
         // the low obstacles near the board, which it does not collide with (Physics.IgnoreCollision) and rides on instead
         List<Collider> over = new List<Collider>(8), overNow = new List<Collider>(8);
         readonly Collider[] overNear = new Collider[48];
-        readonly float[] pathS = new float[64], pathY = new float[64];   // (the pop's look along the way: distance, the top's height)
 
         /// <summary>Ridden over, not hit: the board's sphere ignores it and its top is ground.</summary>
         public bool RidesOver(Collider c) => c != null && over.Contains(c);
@@ -103,10 +101,10 @@ namespace Summit
         }
 
         /// <summary>
-        /// Each step, before the board moves: which low things are near enough to meet (collisions with them off, the
-        /// rest back on), and on the snow, a pop over the next one whose side is too steep to ride up.
+        /// Each step, before the board moves: which low things are near enough to meet. The board does not collide
+        /// with them (they are part of the ground it rides: OverLiftStep) and collides with the rest as ever.
         /// </summary>
-        Vector3 RideOverStep(float dt, Vector3 p, Vector3 v)
+        void OverStep(Vector3 p, Vector3 v)
         {
             float bottom = p.y - R - Lift;
             float above = bottom - Slope.DrawnHeight(p.x, p.z);   // (over the snow: in the air, or up on a rock)
@@ -126,60 +124,57 @@ namespace Summit
             for (int i = 0; i < overNow.Count; i++)
                 if (!over.Contains(overNow[i])) Physics.IgnoreCollision(ownCol, overNow[i], true);
             (over, overNow) = (overNow, over);
-            if (over.Count == 0 || Airborne || Grinding || Crashed || sp < 3f) return v;
+        }
 
-            // the next steep side on the way: popped over at the moment that puts the top of the jump over its face.
-            // (Heights over the snow under each point: the board in the air keeps falling with the slope, so what it
-            // has to clear is how far the thing stands out of the snow, less how high it already is)
-            Vector3 d = flat / sp;
-            float hereTop = OverHeight(p.x, p.z);   // (already up on one: its own top is the ground, not a side)
-            float face = -1f, top = 0f;
-            float far = sp * 0.4f + R;
-            int nPath = 0;
-            for (float s = R; s <= far; s += 0.2f)
+        // how far the low things under and ahead of the board lift it over the snow now (m), and whether it is on its
+        // way over one (for Hopped, once a thing)
+        float overLift, overLiftVel; bool overRiding;
+        /// <summary>How long before a low thing the board starts to rise for it, and after it to come down (s of
+        /// travel; never less than OverLeadMin m nor more than OverLeadMax).</summary>
+        public static float OverLead = 0.22f, OverLeadMin = 1.5f, OverLeadMax = 6f;
+        /// <summary>The fastest the lift may change (m/s): only a limit on what the rise itself never reaches (a rock
+        /// come down beside, a thing that moves).</summary>
+        public static float OverLiftRate = 7f, OverLiftEase = 0.04f;
+        /// <summary>How high the board is carried over the snow by what it is riding over (m): the test tools.</summary>
+        public float OverLift => overLift;
+
+        /// <summary>
+        /// Riding over low things, smoothly: how far the board is lifted over the snow at (x, z), going along d at sp.
+        /// Each thing's top, as far as it stands out of the snow, is spread along the board's line into a rise that
+        /// begins OverLead before it, is level over it and falls away as gently after: the board glides up and over
+        /// (the rider's legs take it), it does not leave the snow's line, is not thrown, and steers all the way.
+        /// </summary>
+        void OverLiftStep(float dt, float x, float z, Vector2 d, float sp, bool onRoof)
+        {
+            float target = 0f;
+            if (over.Count > 0 && !onRoof)
             {
-                float x = p.x + d.x * s, z = p.z + d.z * s;
-                float y = OverHeight(x, z);
-                if (float.IsNegativeInfinity(y)) { if (face >= 0f) break; continue; }
-                float snow = Slope.DrawnHeight(x, z);
-                float under = float.IsNegativeInfinity(hereTop) ? snow : Mathf.Max(snow, hereTop - (p.y - R - Lift) + snow);
-                float rise = y - under;
-                if (face < 0f)
+                float lead = Mathf.Clamp(sp * OverLead, OverLeadMin, OverLeadMax);
+                float sx = d.y * 0.22f, sz = -d.x * 0.22f;   // (the board's width: a rock clipped by an edge is ridden over too)
+                // (looked at on marks fixed to the ground along the line, not to the board: sampled at points that moved
+                // with it, each step read the same rock a little differently, and the lift shook)
+                const float Mark = 0.2f;
+                float along = x * d.x + z * d.y;
+                for (float s = Mathf.Ceil((along - lead) / Mark) * Mark - along; s <= lead; s += Mark)
                 {
-                    if (rise < 0.08f) continue;
-                    // how steeply it rises out of the snow: from a little before, where it was lower (or not there)
-                    float run = Mathf.Clamp(rise / HopSlope, 0.05f, 0.2f);
-                    float xb = x - d.x * run, zb = z - d.z * run;
-                    float before = OverHeight(xb, zb);
-                    float riseBefore = float.IsNegativeInfinity(before) ? 0f : Mathf.Max(0f, before - Slope.DrawnHeight(xb, zb) - (under - snow));
-                    if ((rise - riseBefore) / run < HopSlope) return v;   // a side to ride up: the ground does it
-                    face = s;
+                    float c = Mathf.Cos(0.5f * Mathf.PI * Mathf.Abs(s) / lead), w = c * c;
+                    if (w * (StepUp + 0.6f) <= target) continue;   // (nothing there could stand higher than what is found already)
+                    float px = x + d.x * s, pz = z + d.y * s;
+                    float top = Mathf.Max(OutOfSnow(px, pz), Mathf.Max(OutOfSnow(px + sx, pz + sz), OutOfSnow(px - sx, pz - sz)));
+                    if (top * w > target) target = top * w;
                 }
-                top = Mathf.Max(top, y - snow - above);
-                if (nPath < pathS.Length) { pathS[nPath] = s; pathY[nPath] = y; nPath++; }
             }
-            if (face < 0f) return v;
-            float need = top + HopClear;
-            float vHop = Mathf.Sqrt(2f * G * need);
-            float tTop = vHop / G;   // (the moment it is highest over the snow)
-            if (face - R > sp * tTop + 0.05f) return v;   // not yet: popped later, the top of the jump comes at its face
-            // (left late, it takes more to clear it in the time there is)
-            float t = Mathf.Max(0.02f, (face - R) / sp);
-            if (t < tTop) vHop = Mathf.Max(vHop, (need + 0.5f * G * t * t) / t);
-            // and over the thing itself as the board will really fly: from its own height and the vertical speed it has
-            // now, under gravity, against the top's own height at each point (not the snow's: where the snow ahead drops
-            // away less steeply than the board is coming down, a pop measured from the snow came in short, onto its front)
-            float vy0 = v.y - fixVy;
-            for (int i = 0; i < nPath; i++)
-            {
-                float ti = Mathf.Max(0.02f, pathS[i] / sp);   // (its middle over the point: where its bottom is)
-                float rise = pathY[i] + HopClear + 0.05f - (bottom + vy0 * ti - 0.5f * G * ti * ti);   // (+ the steps' own sag)
-                vHop = Mathf.Max(vHop, rise / ti);
-            }
-            vHop = Mathf.Min(vHop, Mathf.Sqrt(2f * G * (StepUp + HopClear)) * 1.6f);
-            Hopped?.Invoke(top);
-            Vector3 vt = new Vector3(v.x, v.y - fixVy + vHop, v.z);
-            return TakeOff(p, vt, 0.1f);
+            if (target > 0.08f && !overRiding) { overRiding = true; Hopped?.Invoke(target); }
+            // (eased: where one thing's rise hands over to the next's the rise has a corner, and the board must not feel it)
+            overLift = Mathf.SmoothDamp(overLift, target, ref overLiftVel, OverLiftEase, OverLiftRate, dt);
+            if (overRiding && target <= 0.01f && overLift <= 0.01f) overRiding = false;
+        }
+
+        /// <summary>How far the low things at (x, z) stand out of the drawn snow there (0: none).</summary>
+        float OutOfSnow(float x, float z)
+        {
+            if (!OverTop(x, z, out float y, out _)) return 0f;
+            return Mathf.Max(0f, y - Slope.DrawnHeight(x, z));
         }
 
         /// <summary>The top of the low things under (x, z), as a board would ride it (-infinity where there are none).</summary>
@@ -223,145 +218,161 @@ namespace Summit
         void RideOverReset()
         {
             if (ownCol != null) for (int i = 0; i < over.Count; i++) if (over[i] != null) Physics.IgnoreCollision(ownCol, over[i], false);
-            over.Clear(); overNow.Clear(); testWas.Clear();
+            over.Clear(); overNow.Clear(); touched.Clear(); overLift = 0f; overLiftVel = 0f; overRiding = false;
+        }
+
+        // the tall things the board is in touch with, and when it last was (a touch is one meeting: its first step
+        // decides crash or glance; after that it is only slid along)
+        readonly Dictionary<Collider, float> touched = new Dictionary<Collider, float>();
+        readonly RaycastHit[] castBuf = new RaycastHit[24];
+        float contactClock;
+        const float TouchGap = 0.3f;      // s out of touch before meeting the same thing is a new meeting
+        const float ContactSkin = 0.04f;  // m the look ahead reaches past the step's own move
+
+        /// <summary>
+        /// What this step's move runs into: the board's sphere swept along v for the step. Something tall in the way is
+        /// met (Meet): v comes back as the board goes on (slid along its face, bounced off it, or as it was into a
+        /// crash). True if it knocked the rider down. The same on the phone and in the test tools.
+        /// </summary>
+        bool Contact(float dt, Vector3 p, ref Vector3 v)
+        {
+            contactClock += dt;
+            if (!Running || Crashed || rb == null || !rb.detectCollisions) return false;
+            // (the test tools' rides of the bare mountain: as ever, only a tool that asks for what the board meets,
+            // by TestContacts before the step, has anything in its way)
+            if (Application.isBatchMode && !contactsAsked) return false;
+            for (int pass = 0; pass < 2; pass++)
+            {
+                float sp = v.magnitude;
+                if (sp < 0.2f) return false;
+                Vector3 dir = v / sp;
+                int m = Physics.SphereCastNonAlloc(p, R, dir, castBuf, sp * dt + ContactSkin, ~0, QueryTriggerInteraction.Ignore);
+                Collider best = null; Obstacle bestOb = null; float bestD = float.PositiveInfinity; Vector3 q = default, nrm = default;
+                for (int i = 0; i < m; i++)
+                {
+                    var c = castBuf[i].collider;
+                    if (c == null || c == ownCol || (c.attachedRigidbody != null && c.attachedRigidbody == rb)) continue;
+                    if (Physics.GetIgnoreLayerCollision(gameObject.layer, c.gameObject.layer) || (ownCol != null && (ownCol.excludeLayers.value & (1 << c.gameObject.layer)) != 0)) continue;
+                    if (RidesOver(c) || castBuf[i].distance >= bestD) continue;
+                    var ob = c.GetComponentInParent<Obstacle>();
+                    if (ob == null) continue;
+                    Vector3 hq = castBuf[i].point, hn = castBuf[i].normal;
+                    if (castBuf[i].distance <= 0f)
+                    {
+                        // already in touch: the nearest point of its surface, and the way out from it
+                        hq = Obstacle.Nearest(c, p); hn = p - hq;
+                        if (hn.sqrMagnitude < 1e-6f) hn = -dir;
+                        if (Vector3.Dot(hn, dir) >= 0f) continue;   // (moving away from it)
+                    }
+                    best = c; bestOb = ob; bestD = castBuf[i].distance; q = hq; nrm = hn;
+                }
+                if (best == null) return false;
+                Vector3 was = v;
+                v = Meet(bestOb, best, nrm, q, v);
+                if (Crashed) return true;
+                if (v == was) return false;
+            }
+            return false;
         }
 
         /// <summary>
-        /// The board met a solid obstacle (OnCollisionEnter; the test tools: TestContacts). `normal` is the face's,
-        /// out toward the board; `at` where they met.
+        /// The board meets something solid and tall, going at v: `normal` is its face's, out toward the board; `at`
+        /// where they meet. Returns the velocity it goes on with.
         /// </summary>
-        public void Hit(Obstacle ob, Collider col, Vector3 normal, Vector3 at)
+        Vector3 Meet(Obstacle ob, Collider col, Vector3 normal, Vector3 at, Vector3 v)
         {
-            if (!Running || Crashed || ob == null) return;
-            if (RidesOver(col)) return;   // (ridden over, not into: see RideOverStep)
-            Vector3 vIn = lastV.sqrMagnitude > 1e-4f ? lastV : rb.linearVelocity;
-            if (normal.sqrMagnitude < 1e-8f) normal = -vIn;
+            if (normal.sqrMagnitude < 1e-8f) normal = -v;
             normal.Normalize();
             if (Vector3.Dot(normal, rb.position - at) < 0f && (rb.position - at).sqrMagnitude > 1e-6f) normal = -normal;
-            float sp = vIn.magnitude;
-            float into = Mathf.Max(0f, -Vector3.Dot(vIn, normal));
+            bool first = !touched.TryGetValue(col, out float last) || contactClock - last > TouchGap;
+            touched[col] = contactClock;
+            if (touched.Count > 64) touched.Clear();
+            float sp = v.magnitude;
+            float into = Mathf.Max(0f, -Vector3.Dot(v, normal));
             bool square = sp < 1e-3f || into >= sp * DeadOnCos;
-            LastHitAngle = sp > 1e-3f ? Mathf.Acos(Mathf.Clamp(into / sp, 0f, 1f)) * Mathf.Rad2Deg : 0f;
+            if (first) LastHitAngle = sp > 1e-3f ? Mathf.Acos(Mathf.Clamp(into / sp, 0f, 1f)) * Mathf.Rad2Deg : 0f;
             if (ob.always) { into = Mathf.Max(into, 10f); square = true; }   // animals always knock you down
-            if (InvincibleTime > 0f && ob.Smashable && Smash(ob, col))
-            {
-                // the step ahead missed it (it came from the side, or the bear ran into you): carry on as if it
-                // were never there, minus the smash's toll
-                rb.linearVelocity = lastV * SmashKeep;
-                return;
-            }
+            // invincible: smashed and ridden on through, minus the smash's toll
+            if (InvincibleTime > 0f && ob.Smashable && Smash(ob, col)) return v * SmashKeep;
             if (InvincibleTime > 0f && !ob.Smashable)
             {
                 // a building, a car, a fence, a lift tower: invincible doesn't go through it. Thrown off it with a
                 // good part of the speed gone, still on the board
-                Vector3 v = lastV.sqrMagnitude > rb.linearVelocity.sqrMagnitude ? lastV : rb.linearVelocity;
-                Vector3 nh = new Vector3(normal.x, 0f, normal.z);
-                if (nh.sqrMagnitude < 1e-4f) nh = -new Vector3(v.x, 0f, v.z);
-                nh.Normalize();
-                if (Vector3.Dot(v, nh) < 0f) v -= nh * Vector3.Dot(v, nh) * 1.6f;
-                rb.linearVelocity = v * 0.6f;
-                Heading = Mathf.Clamp(Mathf.Atan2(v.x, v.z), -MaxHeading, MaxHeading);
+                Vector3 nb = new Vector3(normal.x, 0f, normal.z);
+                if (nb.sqrMagnitude < 1e-4f) nb = -new Vector3(v.x, 0f, v.z);
+                nb.Normalize();
+                if (Vector3.Dot(v, nb) < 0f) v -= nb * Vector3.Dot(v, nb) * 1.6f;
                 invulnerable = Mathf.Max(invulnerable, 0.4f);
-                Scraped?.Invoke(into);
-                return;
+                if (first) Scraped?.Invoke(into);
+                return v * (first ? 0.6f : 1f);
             }
-            HitCollider = col; HitPoint = at;
-            HitObstacle?.Invoke(ob, col.bounds.center, into);
-            if (invulnerable > 0f) return;
-            // glancing: turned off along it, never down (met from above, on its top, it is a touch, as before: a scrape)
-            if (!square && normal.y < 0.7f) { Glance(normal, into); return; }
+            if (first) { HitCollider = col; HitPoint = at; HitObstacle?.Invoke(ob, col.bounds.center, into); }
+            // glancing (or still in touch after the first meeting, or just back on your feet): slid along its face,
+            // never down. (Met from above, on its top, it is a touch, as before: a scrape, or a crash come down on hard)
+            bool glancing = !square && normal.y < 0.7f;
+            if (!first || invulnerable > 0f || glancing)
+            {
+                v = Slide(v, normal);
+                if (first && glancing)
+                {
+                    v = new Vector3(v.x * GlanceKeep, v.y, v.z * GlanceKeep);
+                    Scraped?.Invoke(Mathf.Max(into, 1f));
+                    Glanced?.Invoke(into);
+                }
+                return v;
+            }
             if (Tube && into > 6f && into < 16f && !ob.always)
             {
                 // the tube is a big rubber ring: it bounces off, spinning, and you keep going
                 invulnerable = 0.5f;
-                Vector3 v = rb.linearVelocity;
-                Vector3 nh = new Vector3(normal.x, 0f, normal.z).normalized;
-                if (Vector3.Dot(v, nh) < 0f) v -= nh * Vector3.Dot(v, nh) * 1.7f;
-                rb.linearVelocity = v * 0.75f;
+                Vector3 nb = new Vector3(normal.x, 0f, normal.z).normalized;
+                if (Vector3.Dot(v, nb) < 0f) v -= nb * Vector3.Dot(v, nb) * 1.7f;
+                v *= 0.75f;
                 Heading = Mathf.Clamp(Mathf.Atan2(v.x, v.z), -MaxHeading, MaxHeading);
                 Bounced?.Invoke(into);
-                return;
+                return v;
             }
             if (into > CrashInto && Shields > 0)
             {
                 Shields--;
                 invulnerable = 0.9f;
-                Vector3 v = rb.linearVelocity;
-                Vector3 nh = new Vector3(normal.x, 0f, normal.z).normalized;
-                if (Vector3.Dot(v, nh) < 0f) v -= nh * Vector3.Dot(v, nh) * 1.6f;
-                rb.linearVelocity = v * 0.8f;
+                Vector3 nb = new Vector3(normal.x, 0f, normal.z).normalized;
+                if (Vector3.Dot(v, nb) < 0f) v -= nb * Vector3.Dot(v, nb) * 1.6f;
                 ShieldHit?.Invoke();
+                return v * 0.8f;
             }
-            else if (into > CrashInto) DoCrash(ob.label);
-            else
-            {
-                Scraped?.Invoke(into);
-                rb.linearVelocity *= 0.85f;
-            }
+            if (into > CrashInto) { DoCrash(ob.label); return v; }
+            Scraped?.Invoke(into);
+            return Slide(v, normal) * 0.85f;
         }
 
-        /// <summary>A glancing blow: the part of the speed into the face taken away (and a touch more, off it), a little
-        /// of the rest lost, the board turned to its new line and wobbling as you find your feet.</summary>
-        void Glance(Vector3 normal, float into)
+        /// <summary>Along a face: the part of v into it taken away (on the snow, sideways only: the snow has the rest).</summary>
+        Vector3 Slide(Vector3 v, Vector3 normal)
         {
-            Vector3 v = lastV.sqrMagnitude > 1e-4f ? lastV : rb.linearVelocity;
             Vector3 nh = new Vector3(normal.x, Airborne ? normal.y : 0f, normal.z);
             if (nh.sqrMagnitude < 1e-4f) nh = normal;
             nh.Normalize();
             float vn = Vector3.Dot(v, nh);
-            if (vn < 0f) v -= nh * vn * 1.15f;
-            v = new Vector3(v.x * GlanceKeep, v.y, v.z * GlanceKeep);
-            rb.linearVelocity = v; lastV = v;
-            if (v.x * v.x + v.z * v.z > 1f) Heading = Mathf.Clamp(Mathf.Atan2(v.x, v.z), -MaxHeading, MaxHeading);
-            wobble = Mathf.Max(wobble, Mathf.Clamp(into / 14f, 0.2f, 0.6f));
-            Scraped?.Invoke(Mathf.Max(into, 1f));
-            Glanced?.Invoke(into);
+            return vn < 0f ? v - nh * vn : v;
         }
-
-        // the test tools' stand-in for OnCollisionEnter (batchmode sends no collision messages): what the board's
-        // step overlaps, each thing once while it stays in touch
-        readonly HashSet<Collider> testWas = new HashSet<Collider>(), testNowSet = new HashSet<Collider>();
-        readonly Collider[] testNear = new Collider[32];
-        readonly RaycastHit[] testCast = new RaycastHit[32];
 
         /// <summary>
-        /// The test tools: what the physics step's move runs into, handed to Hit as OnCollisionEnter would on the phone
-        /// (the face where the board meets it, once a touch). True if it knocked the rider down.
+        /// Something solid ran into the board (the physics engine's own report: an animal, a chair, anything the step's
+        /// look ahead did not see coming). Met by the same rules.
         /// </summary>
-        public bool TestContacts(float dt)
+        public void Hit(Obstacle ob, Collider col, Vector3 normal, Vector3 at)
         {
-            if (!Running || Crashed) { testWas.Clear(); return false; }
-            Vector3 p = rb.position, v = rb.linearVelocity;
-            int k = Physics.OverlapCapsuleNonAlloc(p, p + v * dt, R + 0.05f, testNear, ~0, QueryTriggerInteraction.Ignore);
-            testNowSet.Clear();
-            bool down = false;
-            for (int i = 0; i < k && !down; i++)
-            {
-                var c = testNear[i];
-                if (c.attachedRigidbody != null && c.attachedRigidbody == rb) continue;
-                if ((ownCol != null && Physics.GetIgnoreLayerCollision(gameObject.layer, c.gameObject.layer)) || (ownCol != null && (ownCol.excludeLayers.value & (1 << c.gameObject.layer)) != 0)) continue;
-                var ob = c.GetComponentInParent<Obstacle>();
-                if (ob == null || RidesOver(c)) continue;
-                testNowSet.Add(c);
-                if (testWas.Contains(c)) continue;
-                if (InvincibleTime > 0f) continue;   // (the step ahead smashes it: SmashAhead)
-                // where the board's sphere first touches it on this step's move (the face PhysX would report), or, already
-                // in touch, the nearest point of its surface
-                Vector3 q = Obstacle.Nearest(c, p), nrm = p - q;
-                float len = v.magnitude * dt + 0.05f;
-                if (len > 0.06f)
-                {
-                    int m = Physics.SphereCastNonAlloc(p, R, v.normalized, testCast, len, ~0, QueryTriggerInteraction.Ignore);
-                    for (int j = 0; j < m; j++)
-                        if (testCast[j].collider == c && testCast[j].distance > 0f) { q = testCast[j].point; nrm = testCast[j].normal; break; }
-                }
-                if (nrm.sqrMagnitude < 1e-6f) nrm = -v;
-                Hit(ob, c, nrm, q);
-                down = Crashed;
-            }
-            testWas.Clear();
-            foreach (var c in testNowSet) testWas.Add(c);
-            return down;
+            if (!Running || Crashed || ob == null || RidesOver(col)) return;
+            if (touched.TryGetValue(col, out float last) && contactClock - last <= TouchGap) return;   // (met already: Contact)
+            Vector3 v = lastV.sqrMagnitude > 1e-4f ? lastV : rb.linearVelocity;
+            v = Meet(ob, col, normal, at, v);
+            if (!Crashed) { rb.linearVelocity = v; lastV = v; }
         }
+
+        /// <summary>The test tools call this before a step for the board to meet what stands in its way on that step
+        /// (batchmode never reported collisions, and the tools that ride the bare mountain never asked): the board's own
+        /// look ahead (Contact), which on the phone runs every step. True while the rider is down.</summary>
+        public bool TestContacts(float dt) { contactsAsked = true; return Crashed; }
+        bool contactsAsked;
     }
 }

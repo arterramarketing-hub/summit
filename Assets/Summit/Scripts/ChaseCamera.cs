@@ -5,7 +5,9 @@ namespace Summit
     /// <summary>
     /// Sits behind and above the rider, looking down the line of travel.
     /// Position tracks the rider exactly in the horizontal plane (no lag that
-    /// grows with speed); only height and yaw are smoothed.
+    /// grows with speed); only height and yaw are smoothed. Everything of its own (its swing onto the line, its
+    /// height, its distance, where it looks) is eased on a damped spring, never stepped toward: its speed never
+    /// jumps, so the view never jolts when the snow under it, a tree behind the rider or the rider's line changes.
     ///
     /// It is also the first-person view (the pause menu's VIEW: FIRST PERSON, `pov`): a helmet camera at
     /// the rider's eyes, wide, tipped down so the board and the leading arm sit in the bottom of the frame,
@@ -90,6 +92,14 @@ namespace Summit
 
         Camera cam;
         float speedCam = 5f, yaw, height, fov = 62f, focusVy, camDist = 6f, lookDrop, roll;
+        float yawVel, heightVel, distVel, dropVel;   // (the springs' own speeds)
+        // how soon each settles (s): the swing onto the rider's line, the height, sliding in front of a trunk and back
+        // out again, the look down the slope ahead
+        public static float YawEase = 0.2f, HeightEase = 0.13f, DistIn = 0.07f, DistOut = 0.3f, DropEase = 0.3f;
+        public static float HardFloor = 0.7f;   // m over the snow under the lens it is never below, eased or not
+        public static float FloorEase = 0.15f;  // s: how soon the height it keeps over the snow under it follows that snow (a lip passing under is not a step)
+        public static float TrunkSlow = 7f;     // m/s: slower than this it slides in front of a trunk in the way; not at all by twice it
+        float floorH, floorVel;
         Vector3 focus;
         bool first = true;
 
@@ -115,8 +125,11 @@ namespace Summit
             // look where the rider is going, not just where the board points
             // follow the line you are travelling, part way and a little behind: you see the rider carve
             // across the frame instead of the whole world swinging round with the board
-            float wantYaw = rider.Crashed ? yaw : Mathf.Clamp(rider.TravelHeading, -1.4f, 1.4f) * 0.7f;   // never round to face uphill
-            yaw = first ? wantYaw : Mathf.Lerp(yaw, wantYaw, 1f - Mathf.Exp(-dt * 4f));
+            // (where the run itself swings across the hill, along the run: the part way is measured off that)
+            float run = rider.RunNow;
+            float wantYaw = rider.Crashed ? yaw : Mathf.Clamp(run + (Mathf.Clamp(rider.TravelHeading, -1.4f, 1.4f) - run) * 0.7f, -1.4f, 1.4f);   // never round to face uphill
+            if (first) { yaw = wantYaw; yawVel = 0f; }
+            else yaw = Mathf.SmoothDamp(yaw, wantYaw, ref yawVel, YawEase, Mathf.Infinity, Mathf.Max(dt, 1e-4f));
             var f = new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw));
 
             // low and close when slow; the faster you go the further back it pulls, to show what is coming
@@ -124,11 +137,22 @@ namespace Summit
             float speedDist = Mathf.Lerp(4.4f, 10.5f, Mathf.SmoothStep(0f, 1f, s01)) * distScale;
             speedCam = first ? speedDist : Mathf.Lerp(speedCam, speedDist, 1f - Mathf.Exp(-dt * 1.8f));
             float dist = speedCam;
-            // never behind a tree trunk: slide in front of it (quickly), and ease back out after
-            if (Physics.SphereCast(focus, 0.35f, -f, out RaycastHit hit, dist, ~0, QueryTriggerInteraction.Ignore) &&
-                hit.collider.GetComponentInParent<Obstacle>() != null)
-                dist = Mathf.Max(2.5f, hit.distance);
-            camDist = first ? dist : Mathf.Lerp(camDist, dist, 1f - Mathf.Exp(-dt * (dist < camDist ? 20f : 3f)));
+            // never left behind a tree trunk: slide in front of it, and ease back out after. Looked for along the line
+            // from the rider up to where the lens is (level back from the rider, on a steep pitch, it ran into the
+            // hill, and every rock and stump just passed pulled the view in), never for what the board rides over, and
+            // only at a crawl: at speed a trunk is behind the rider for a frame or two, and the view lurching in and
+            // out for it was worse than the trunk
+            float slow = 1f - Mathf.Clamp01((rider.Speed - TrunkSlow) / TrunkSlow);
+            if (slow > 0f && !first)
+            {
+                Vector3 back = -f * dist + Vector3.up * (height - focus.y);
+                float len = back.magnitude;
+                if (len > 0.5f && Physics.SphereCast(focus, 0.35f, back / len, out RaycastHit hit, len, ~0, QueryTriggerInteraction.Ignore) &&
+                    hit.collider.GetComponentInParent<Obstacle>() != null && !rider.RidesOver(hit.collider))
+                    dist = Mathf.Lerp(dist, Mathf.Max(2.5f, hit.distance * dist / len), slow);
+            }
+            if (first) { camDist = dist; distVel = 0f; }
+            else camDist = Mathf.SmoothDamp(camDist, dist, ref distVel, dist < camDist ? DistIn : DistOut, Mathf.Infinity, Mathf.Max(dt, 1e-4f));
             dist = camDist;
             Vector3 pos = focus - f * dist;
             float hs = Mathf.SmoothStep(0f, 1f, s01);
@@ -141,10 +165,16 @@ namespace Summit
             // the bottom bending away from the rest of the picture). Now it keeps a clear height over the snow under it,
             // set by the angle setting and growing with speed, so the near snow stays well away from the lens.
             float snowUnder = Slope.Height(pos.x, pos.z);
-            wantH = Mathf.Max(wantH, snowUnder + Mathf.Max(1.3f, Mathf.Lerp(ClearSlow, ClearFast, hs) * heightScale));
+            float floorWant = snowUnder + Mathf.Max(1.3f, Mathf.Lerp(ClearSlow, ClearFast, hs) * heightScale);
+            if (first) { floorH = floorWant; floorVel = 0f; }
+            else floorH = Mathf.SmoothDamp(floorH, floorWant, ref floorVel, FloorEase, Mathf.Infinity, Mathf.Max(dt, 1e-4f));
+            wantH = Mathf.Max(wantH, floorH);
             // ...or inside the avalanche's debris: ride up over it
             if (floor != null) wantH = Mathf.Max(wantH, Slope.Height(pos.x, pos.z) + floor(pos.x, pos.z) + 2.4f);
-            height = first ? wantH : Mathf.Lerp(height, wantH, 1f - Mathf.Exp(-dt * 7f));
+            if (first) { height = wantH; heightVel = 0f; }
+            else height = Mathf.SmoothDamp(height, wantH, ref heightVel, HeightEase, Mathf.Infinity, Mathf.Max(dt, 1e-4f));
+            // (eased, it may lag snow rising under it: never into it)
+            if (height < snowUnder + HardFloor) { height = snowUnder + HardFloor; heightVel = Mathf.Max(heightVel, 0f); }
             pos.y = height;
 
             if (shake > 0f)
@@ -156,7 +186,8 @@ namespace Summit
             // aim along the slope ahead, but only part way down it, so the horizon and the far ranges stay in view
             Vector3 ahead = focus + f * 12f;
             float drop = Slope.Height(ahead.x, ahead.z) - Slope.Height(focus.x, focus.z);
-            lookDrop = first ? drop : Mathf.Lerp(lookDrop, drop, 1f - Mathf.Exp(-dt * 3f));
+            if (first) { lookDrop = drop; dropVel = 0f; }
+            else lookDrop = Mathf.SmoothDamp(lookDrop, drop, ref dropVel, DropEase, Mathf.Infinity, Mathf.Max(dt, 1e-4f));
             // held up by the snow behind, it aims up by part of that, so the horizon sits where the angle setting puts it
             // instead of the view tipping down at the slope under the lens
             // (capped: off a lift-station lip the rider drops far below a camera still over the lip, and must stay in frame)

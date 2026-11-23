@@ -80,6 +80,8 @@ public static class LodgeShot
         // LODGE_TEX=1: the lodge's surfaces close enough to see their textures (the hall, the café and the hot
         // chocolate, the loft, the covered section, the outside), at the phone's quality
         if (System.Environment.GetEnvironmentVariable("LODGE_TEX") == "1") { Textures(); return; }
+        // LODGE5=1: the lounge, the loft, the balcony over the wing and its view, the lodge's details, at the phone's quality
+        if (System.Environment.GetEnvironmentVariable("LODGE5") == "1") { Lodge5(); return; }
         // the three layouts inside (LODGE_FULL=1 also renders the outside, the walk in and layout A's spaces as before)
         Layouts();
         if (System.Environment.GetEnvironmentVariable("LODGE_FULL") != "1") return;
@@ -432,6 +434,54 @@ public static class LodgeShot
             camp.TeleportTo(C(8.6f, 0f, 3.95f), cy + 90f);
             WalkTo(C(14.4f, 0f, 3.95f), 0.7f); WalkTo(C(14.9f, 0f, -1.9f), 0.7f); Frames(12); noUi = true;
             Shoot($"{tag}_tex_hero_2racks.png");
+        }
+        finally { QualitySettings.SetQualityLevel(keepQ, true); }
+    }
+
+    /// <summary>
+    /// The default layout at the phone's quality (Mobile, phone-size frames), by day and at dusk: the lounge round the
+    /// fire from the door, from the glass, from the low end and from the loft's rail; the loft and its end (the doors
+    /// out); the balcony over the wing: its view (the slope and the mountain), back at the doors, and from the snow; the
+    /// photo's view; the hero walking up into the loft and out onto the balcony. Files: {LODGE_TAG}_*.png.
+    /// </summary>
+    static void Lodge5()
+    {
+        Vector3 C(float x, float y, float z) => camp.ChaletPoint(x, y, z);
+        float cy = camp.ChaletYaw;
+        string tag = System.Environment.GetEnvironmentVariable("LODGE_TAG");
+        if (string.IsNullOrEmpty(tag)) tag = "now";
+        int keepQ = QualitySettings.GetQualityLevel();
+        QualitySettings.SetQualityLevel(0, true);   // (the phone's)
+        try
+        {
+            Simulate();
+            Debug.Log($"LODGESHOT lodge5: layout {Camp.LodgeLayoutName}, quality {QualitySettings.names[QualitySettings.GetQualityLevel()]}");
+            foreach (var (name, clock) in new[] { Times[0], Times[1] })
+            {
+                SetTime(clock);
+                EyeCam(C(4.0f, 1.65f, 4.4f), C(-3.0f, 0.9f, -2.2f), 84f); Shoot($"{tag}_lounge_1door_{name}.png");
+                EyeCam(C(-4.9f, 1.7f, 6.3f), C(0.2f, 0.7f, -2.6f), 84f); Shoot($"{tag}_lounge_2glass_{name}.png");
+                EyeCam(C(4.4f, 1.7f, -1.2f), C(-5.0f, 0.8f, 0.4f), 84f); Shoot($"{tag}_lounge_3lowend_{name}.png");
+                EyeCam(C(-5.7f, 5.5f, 4.2f), C(-1.2f, 0.0f, -1.2f), 76f); Shoot($"{tag}_lounge_4fromloft_{name}.png");
+                EyeCam(C(-5.8f, 5.45f, 5.3f), C(-9.6f, 4.8f, -4.6f), 88f); Shoot($"{tag}_loft_1_{name}.png");
+                EyeCam(C(-6.0f, 5.45f, -1.4f), C(-12.0f, 5.0f, 1.4f), 84f); Shoot($"{tag}_loft_2end_{name}.png");
+                EyeCam(C(-12.2f, 5.45f, -0.6f), C(-24.0f, 3.0f, 22.0f), 84f); Shoot($"{tag}_balcony_1view_{name}.png");
+                EyeCam(C(-16.4f, 5.45f, 5.9f), C(-11.0f, 4.9f, -1.0f), 84f); Shoot($"{tag}_balcony_2back_{name}.png");
+                EyeCam(C(-15.0f, 5.45f, -4.6f), C(-17.0f, 3.0f, 30.0f), 84f); Shoot($"{tag}_balcony_3front_{name}.png");
+                PhotoCam(new Vector3(-27f, 0f, 22f), new Vector3(-13f, 4.2f, 0f), 50f); Shoot($"{tag}_balcony_4outside_{name}.png", 960, 720);
+                PhotoCam(new Vector3(11f, 0f, 29f), new Vector3(-2f, 4.0f, 0f), 46f); Shoot($"{tag}_outside_photo_{name}.png", 1200, 800);
+            }
+            SetTime(1.4f);
+            // the hero: up the stair into the loft, across it and out onto the balcony, to its corner
+            camp.TeleportTo(C(-6.4f, 3.8f, -5.6f), cy - 90f);
+            WalkTo(C(-7.6f, 3.8f, -3.6f), 0.7f); WalkTo(C(-9.6f, 3.8f, -0.4f), 0.7f); Frames(12); noUi = true;
+            Shoot($"{tag}_hero_1loft.png");
+            WalkTo(C(-12.4f, 3.8f, -0.4f), 0.7f); WalkTo(C(-14.6f, 3.8f, 3.6f), 0.7f); Frames(16); noUi = true;
+            Shoot($"{tag}_hero_2balcony.png");
+            camp.TeleportTo(C(4.5f, 0f, 9.0f), cy + 180f);
+            WalkTo(C(4.0f, 0f, 3.2f), 0.8f); Frames(20); noUi = true;
+            Shoot($"{tag}_hero_3lounge.png");
+            Debug.Log($"LODGESHOT lodge5: hero at {Quaternion.Inverse(Quaternion.Euler(0f, cy, 0f)) * (rider.transform.position - camp.ChaletPoint(0, 0, 0))} in the lodge's frame");
         }
         finally { QualitySettings.SetQualityLevel(keepQ, true); }
     }

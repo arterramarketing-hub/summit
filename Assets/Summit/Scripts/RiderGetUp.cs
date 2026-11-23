@@ -161,7 +161,7 @@ namespace Summit
                 {
                     // free: on your way down the hill again
                     rb.detectCollisions = true;
-                    Heading = 0f; Lean = 0f; leanVel = 0f; groundVy = 0f; fixVy = 0f;
+                    Heading = 0f; Lean = 0f; leanVel = 0f; groundVy = 0f; fixVy = 0f; groundKnown = false;
                     v = Vector3.ProjectOnPlane(Vector3.forward, Slope.Normal(p.x, p.z)).normalized * 3f;
                     invulnerable = Mathf.Max(invulnerable, 0.8f);
                 }

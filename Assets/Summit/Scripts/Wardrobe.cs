@@ -17,11 +17,12 @@ namespace Summit
     {
         // (Rider and Outfit were added after the rest, at the end, so the saved keys and the gear's places in the
         // palette keep their numbers: who you ride as, and which whole set of clothes they have on)
-        public enum Cat { Jacket, Pants, Helmet, Goggles, Gloves, Boots, Pack, Board, Ride, Rider, Outfit }
-        public const int Count = 11;
+        // (Graphic, the board's and skis' printed top sheets, came after those, at the end too)
+        public enum Cat { Jacket, Pants, Helmet, Goggles, Gloves, Boots, Pack, Board, Ride, Rider, Outfit, Graphic }
+        public const int Count = 12;
         public enum Pattern { Plain, Stripes, Camo, Block, Plaid, Nordic }
         /// <summary>The closet's tabs, in the order shown: who you are and what set of clothes first, then their colours.</summary>
-        public static readonly Cat[] Order = { Cat.Rider, Cat.Outfit, Cat.Jacket, Cat.Pants, Cat.Helmet, Cat.Goggles, Cat.Gloves, Cat.Boots, Cat.Pack, Cat.Board, Cat.Ride };
+        public static readonly Cat[] Order = { Cat.Rider, Cat.Outfit, Cat.Jacket, Cat.Pants, Cat.Helmet, Cat.Goggles, Cat.Gloves, Cat.Boots, Cat.Pack, Cat.Board, Cat.Graphic, Cat.Ride };
 
         public class Item
         {
@@ -31,7 +32,9 @@ namespace Summit
             public Pattern pattern;
             public float scale = 7f, at = 1.3f;   // the pattern's repeats a metre; a colour block's height (negative: below it)
             public float smooth = -1f;       // sheen, 0..1 (-1: the garment's own)
-            public float metal;              // boards only
+            public float metal;              // boards and graphics only
+            public string art;               // graphics: the design's texture (Resources/BoardArt/art)
+            public int tier;                 // graphics: 0 the everyday ones, 1 premium, 2 rare
             public bool Patterned => pattern != Pattern.Plain;
         }
 
@@ -203,6 +206,34 @@ namespace Summit
             new Item { name = "CHROME", cost = 1500, a = C(0.85f, 0.87f, 0.90f), b = Keep, c = Keep, smooth = 0.95f, metal = 1f },
         };
 
+        // the board's graphics: printed top sheets and bases, also on the skis (and the poles and the tube's trim take
+        // the design's rail colour). The first row is none: the board in the colour picked under BOARDS. Each one is
+        // painted by Tools/MakeBoardArt.py; rows are only ever added at the end (saves keep the row's number).
+        static Item G(string n, int cost, string art, int tier, Color chip, float smooth, float metal = 0f)
+            => new Item { name = n, cost = cost, a = chip, b = Keep, c = Keep, art = art, tier = tier, smooth = smooth, metal = metal };
+        static readonly Item[] graphics =
+        {
+            I("PLAIN", 0, C(0.10f, 0.45f, 0.90f)),
+            G("SUNSET STACK", 500, "SunsetStack", 0, C(1.00f, 0.55f, 0.26f), 0.6f),
+            G("TOPO", 400, "Topo", 0, C(0.12f, 0.24f, 0.18f), 0.45f),
+            G("TIMBER", 550, "Timber", 0, C(0.79f, 0.56f, 0.32f), 0.35f),
+            G("TIDE", 600, "Tide", 0, C(0.11f, 0.16f, 0.34f), 0.55f),
+            G("RIDGELINE", 650, "Ridgeline", 0, C(0.55f, 0.42f, 0.62f), 0.55f),
+            G("BACKCOUNTRY CAMO", 450, "Camo", 0, C(0.34f, 0.39f, 0.23f), 0.3f),
+            G("PRIMARY", 600, "Primary", 0, C(0.84f, 0.16f, 0.16f), 0.55f),
+            G("CHECKMATE", 400, "Checkmate", 0, C(0.07f, 0.07f, 0.07f), 0.6f),
+            G("NORDIC", 500, "Nordic", 0, C(0.70f, 0.13f, 0.16f), 0.4f),
+            G("POP DOTS", 450, "PopDots", 0, C(0.90f, 0.22f, 0.27f), 0.6f),
+            G("VOLT", 550, "Volt", 0, C(0.97f, 0.91f, 0.20f), 0.65f),
+            G("MELT", 1200, "Melt", 1, C(0.48f, 0.17f, 0.75f), 0.65f),
+            G("FOX", 1400, "Fox", 1, C(0.91f, 0.45f, 0.16f), 0.55f),
+            G("SNOW LEOPARD", 1100, "Leopard", 1, C(0.85f, 0.84f, 0.81f), 0.5f),
+            G("KOI", 1300, "Koi", 1, C(0.89f, 0.34f, 0.18f), 0.65f),
+            G("AURORA", 2800, "Aurora", 2, C(0.18f, 0.77f, 0.71f), 0.7f),
+            G("GOLD LEAF", 3200, "GoldLeaf", 2, C(0.83f, 0.65f, 0.23f), 0.8f, 0.7f),
+            G("PRISM", 4000, "Prism", 2, C(0.80f, 0.70f, 0.95f), 0.92f, 0.8f),
+        };
+
         static Item[] rides;
         static Item[] RideItems()
         {
@@ -226,6 +257,7 @@ namespace Summit
                 case Cat.Board: return boards;
                 case Cat.Rider: return riders;
                 case Cat.Outfit: return outfits;
+                case Cat.Graphic: return graphics;
                 default: return RideItems();
             }
         }
@@ -247,6 +279,7 @@ namespace Summit
                 case Cat.Board: return Progress.Ride == RideKind.Snowboard ? "BOARDS" : Rides.Of(Progress.Ride).Name;
                 case Cat.Rider: return "RIDER";
                 case Cat.Outfit: return "OUTFIT";
+                case Cat.Graphic: return "GRAPHICS";
                 default: return "RIDE";
             }
         }

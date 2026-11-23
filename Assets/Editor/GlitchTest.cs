@@ -46,6 +46,7 @@ public static class GlitchTest
             {
                 TestBoot.NewMountain(game, 1000 + seed * 77, terrain, props);
                 // the halfpipe: weave wall to wall at different speeds
+                if (traceEdge) { RidgeRides(seed, rider, body, terrain, props); break; }
                 foreach (float v0 in new[] { 14f, 22f, 30f })
                     Ride($"seed{seed} pipe v{v0}", rider, body, terrain, props, Course.First + Course.PipeAt + 40f, 0f, v0, 7f,
                          (t, r) => Mathf.Sin(t * 1.3f) * 0.9f);
@@ -438,6 +439,7 @@ public static class GlitchTest
     /// mid-air), then a tumble down the wall, and from its full height, dead and buried in the canyon's snow. Over
     /// the snow side of a one-sided ridge: ridden all the way down into the canyon.
     /// </summary>
+    static readonly bool traceEdge = System.Environment.GetEnvironmentVariable("GLITCH_EDGE") == "1";
     static void OffTheEdge(string name, Rider r, RiderBody body, SlopeStreamer terrain, Forest props, float z, float side)
     {
         var kind = Ridge.SideAt(z, side);
@@ -451,6 +453,7 @@ public static class GlitchTest
             // over the edge, or diagonally down the snow side toward the canyon floor
             r.Steer = t < 1.5f ? FollowCrest(r, 0f) : cliff ? side * 0.8f : Mathf.Clamp((side * 0.75f - r.Heading) * 2f, -1f, 1f);
             Step(r, body, terrain, props, n);
+            if (traceEdge && n % 20 == 0) { var q = r.transform.position; Debug.Log($"GLITCH-EDGE {name} t={t:0.00} z={q.z:0.0} off={q.x - Slope.Centre(q.z):0.0} v={r.Velocity} speed={r.Speed:0.0} head={r.Heading:0.00} steer={r.Steer:0.00} air={r.Airborne} n.y={Slope.Normal(q.x, q.z).y:0.00}"); }
             if (r.Airborne) airT += Dt;
             if (r.Crashed) midAir = r.transform.position.y - Slope.DrawnHeight(r.transform.position.x, r.Z) - Rider.R;
         }

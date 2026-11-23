@@ -42,6 +42,8 @@ public static class LodgeTex
         new Def("Runner", "Tweed", new Color(0.22f, 0.23f, 0.26f), 0.4f, 1f, 1f),          // the runner, the door mat
         new Def("Rug", "Check", new Color(0.95f, 0.88f, 0.76f), 0.4f, 1f, 1f, 1f, 0.81f),   // the wool rugs (its weave 24% taller than wide)
         new Def("Hide", "Leather", Color.white, 1f, 1f, 0.6f),                             // the leather armchairs and sofas
+        new Def("Decking", "Planks", new Color(0.66f, 0.56f, 0.47f), 0.55f, 1f, 0.8f),     // lodge5: the lookout's deck boards outside (weathered)
+        new Def("Throw", "Check", new Color(0.74f, 0.2f, 0.16f), 0.3f, 1f, 1f),            // lodge5: the wool throws over the sofas (red check)
     };
 
     public static void Make()
@@ -54,6 +56,22 @@ public static class LodgeTex
             Import($"{Dir}/{s}_Albedo.jpg", TextureImporterType.Default, true, TextureImporterFormat.ASTC_6x6);
             Import($"{Dir}/{s}_Normal.jpg", TextureImporterType.NormalMap, false, TextureImporterFormat.ASTC_6x6);
             Import($"{Dir}/{s}_Mask.png", TextureImporterType.Default, false, TextureImporterFormat.ASTC_8x8);
+        }
+        // the art on the lodge's walls (Tools/MakeLodgeSigns.swift: the trail map, the posters, the LOOKOUT sign): one
+        // 1K sheet, ASTC 6x6 on the phone, clamped (its pieces run to its edges)
+        {
+            const string artPath = "Assets/Summit/Resources/Camp/LodgeArt.png";
+            var ti = (TextureImporter)AssetImporter.GetAtPath(artPath);
+            if (ti == null) Debug.LogError("LODGETEX missing " + artPath);
+            else
+            {
+                ti.textureType = TextureImporterType.Default; ti.sRGBTexture = true; ti.mipmapEnabled = true;
+                ti.wrapMode = TextureWrapMode.Clamp; ti.filterMode = FilterMode.Trilinear; ti.anisoLevel = 2;
+                ti.alphaSource = TextureImporterAlphaSource.None;
+                ti.textureCompression = TextureImporterCompression.Compressed; ti.maxTextureSize = 1024;
+                ti.SetPlatformTextureSettings(new TextureImporterPlatformSettings { name = "iPhone", overridden = true, maxTextureSize = 1024, format = TextureImporterFormat.ASTC_6x6, compressionQuality = 50 });
+                ti.SaveAndReimport();
+            }
         }
         // the materials
         var lit = Shader.Find("Universal Render Pipeline/Lit");

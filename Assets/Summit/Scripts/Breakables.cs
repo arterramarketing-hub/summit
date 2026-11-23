@@ -20,7 +20,7 @@ namespace Summit
         // a sign, from a gentle knock (Easy, m/s into it) to a hard one (Hard): the speed kept, the seconds of being
         // knocked about, and how hard (m/s) you are knocked aside (over a fifth of a second: Rider.Knock)
         public const float SignEasy = 6f, SignHard = 30f;
-        public const float SignKeepEasy = 0.85f, SignKeepHard = 0.6f, SignWobbleEasy = 0.5f, SignWobbleHard = 1.2f, SignKnockEasy = 1.5f, SignKnockHard = 5f;
+        public const float SignKeepEasy = 0.85f, SignKeepHard = 0.6f, SignWobbleEasy = 0.5f, SignWobbleHard = 1.2f;
         public const float BannerKeep = 0.97f, BannerWobble = 0.12f;   // a strip of cloth: you hardly feel it
         public const float StakeHurts = 15f;      // m/s: catching a banner's stake faster than this is a bruise
         public const float FenceKeep = 0.9f, FenceWobble = 0.3f;   // a fence span: flimsy, it hardly checks you
@@ -104,12 +104,8 @@ namespace Summit
                     if (invincible) rider.Breakthrough(SignKeepHard, 0f, 0f, float.MaxValue, "");   // (Rider: straight through at SmashKeep)
                     else
                     {
-                        // you stay up: slowed, staggered and knocked off your line, away from the post or the board you hit
+                        // you stay up: slowed and staggered, on the line you were on (nothing shoves the board aside)
                         rider.Breakthrough(Mathf.Lerp(SignKeepEasy, SignKeepHard, k), Mathf.Lerp(SignWobbleEasy, SignWobbleHard, k), 0f, float.MaxValue, "");
-                        Vector3 ahead = flat.sqrMagnitude > 0.01f ? flat.normalized : Vector3.forward, aside = Vector3.Cross(Vector3.up, ahead);
-                        float off = Vector3.Dot(at - from, aside);
-                        float s = Mathf.Abs(off) > 0.05f ? Mathf.Sign(off) : (Random.value < 0.5f ? -1f : 1f);
-                        rider.Knock(aside * s * Mathf.Lerp(SignKnockEasy, SignKnockHard, k));
                         RiderHit?.Invoke(b.kind, along, mid, part, SignCost(hard));
                     }
                 }

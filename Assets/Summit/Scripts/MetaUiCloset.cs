@@ -41,7 +41,7 @@ namespace Summit
         RectTransform closetRoot, listView, listContent, buyBtn, backBtn, previewZone;
         Image dimImg, buyImg, buyCoin;
         Text buyText, catText, countText, detailText, msgText, balText;
-        class RowView { public RectTransform rt; public Image bg, chip, chip2, coin; public Text name, stat; public int item; }
+        class RowView { public RectTransform rt; public Image bg, chip, chip2, coin, thumb; public Text name, stat; public int item; }
         readonly List<RowView> rows = new List<RowView>();
         class TabView { public RectTransform rt; public Image bg; public Text text; public Wardrobe.Cat c; }
         readonly List<TabView> tabs = new List<TabView>();
@@ -192,7 +192,15 @@ namespace Summit
                 rt.anchorMin = new Vector2(0f, 1f); rt.anchorMax = new Vector2(1f, 1f); rt.pivot = new Vector2(0.5f, 1f);
                 rt.offsetMin = new Vector2(0f, -(n * (RowH + RowGap) + RowH)); rt.offsetMax = new Vector2(0f, -n * (RowH + RowGap));
                 var v = new RowView { rt = rt, bg = bg, item = i };
-                if (cat != Wardrobe.Cat.Ride)
+                var art = cat == Wardrobe.Cat.Graphic && i > 0 ? BoardArt.Thumb(i - 1) : null;
+                if (art != null)
+                {
+                    // a graphic: the deck itself, seen from above
+                    v.thumb = Img("Deck", rt, Color.white, art);
+                    v.thumb.preserveAspect = true;
+                    Place(v.thumb.rectTransform, new Vector2(0f, 0.5f), new Vector2(12f, 0f), new Vector2(136f, 26f), new Vector2(0f, 0.5f));
+                }
+                else if (cat != Wardrobe.Cat.Ride)
                 {
                     // a swatch: the colour, with the pattern's (or the trim's) inside it
                     v.chip = Img("Chip", rt, it.a, disc);
@@ -203,10 +211,12 @@ namespace Summit
                         Place(v.chip2.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(26f, 26f), new Vector2(0.5f, 0.5f));
                     }
                 }
-                v.name = Label(rt, new Vector2(0f, 0.5f), new Vector2(cat == Wardrobe.Cat.Ride ? 28f : 96f, 0f), new Vector2(270f, 70f), 34, TextAnchor.MiddleLeft);
+                // (a graphic's name sits right of its little board, short of the price's coin)
+                float nameX = cat == Wardrobe.Cat.Ride ? 28f : cat == Wardrobe.Cat.Graphic ? 158f : 96f;
+                v.name = Label(rt, new Vector2(0f, 0.5f), new Vector2(nameX, 0f), new Vector2(cat == Wardrobe.Cat.Graphic ? 150f : 270f, 70f), 34, TextAnchor.MiddleLeft);
                 v.name.text = it.name;
                 v.name.horizontalOverflow = HorizontalWrapMode.Wrap; v.name.verticalOverflow = VerticalWrapMode.Truncate;
-                v.name.resizeTextForBestFit = true; v.name.resizeTextMinSize = 22; v.name.resizeTextMaxSize = 34;   // (the long names shrink, short of the price)
+                v.name.resizeTextForBestFit = true; v.name.resizeTextMinSize = cat == Wardrobe.Cat.Graphic ? 18 : 22; v.name.resizeTextMaxSize = cat == Wardrobe.Cat.Graphic ? 30 : 34;   // (the long names shrink, short of the price)
                 v.stat = Label(rt, new Vector2(1f, 0.5f), new Vector2(-22f, 0f), new Vector2(170f, 60f), 30, TextAnchor.MiddleRight);
                 v.coin = Img("Coin", rt, Color.white, coin);
                 Place(v.coin.rectTransform, new Vector2(1f, 0.5f), new Vector2(-110f, 0f), new Vector2(40f, 40f), new Vector2(1f, 0.5f));
@@ -227,7 +237,10 @@ namespace Summit
             TryOn = Wardrobe.Worn();   // every other category back to what's worn
             if (Stage != null)
             {
-                Stage.ShowRide(Progress.Ride, c == Wardrobe.Cat.Board || c == Wardrobe.Cat.Ride);
+                // (a graphic is printed on the board and the skis: on the toboggan, show it on the board)
+                bool art = c == Wardrobe.Cat.Graphic;
+                Stage.ShowRide(art && Progress.Ride == RideKind.Toboggan ? RideKind.Snowboard : Progress.Ride, c == Wardrobe.Cat.Board || c == Wardrobe.Cat.Ride || art);
+                Stage.SpinRide(art);
                 Stage.Face(c == Wardrobe.Cat.Pack ? 160f : -22f);   // the pack is on their back: turn them round for it
             }
             for (int k = 0; k < tabs.Count; k++) tabs[k].text.text = Wardrobe.Title(tabs[k].c);
@@ -252,8 +265,9 @@ namespace Summit
             {
                 TryOn[(int)cat] = item;
                 // a rider shows in their own clothes, and a set of clothes in the colours it was last worn in
-                if (cat == Wardrobe.Cat.Rider) Progress.TryOutfit(TryOn, Wardrobe.OwnOutfit(item));
+                if (cat == Wardrobe.Cat.Rider) { Progress.TryOutfit(TryOn, Wardrobe.OwnOutfit(item)); TryOn[(int)Wardrobe.Cat.Graphic] = Progress.GraphicFor(item); }
                 if (cat == Wardrobe.Cat.Outfit) Progress.TryOutfit(TryOn, item);
+                if (cat == Wardrobe.Cat.Board) TryOn[(int)Wardrobe.Cat.Graphic] = 0;   // (a colour shows plain: wearing it takes the graphic off)
             }
             TriedOn?.Invoke();
             if (click) Clicked?.Invoke();
@@ -283,6 +297,7 @@ namespace Summit
             }
             var items = Wardrobe.Items(cat);
             int worn = Progress.Worn(cat);
+            if (cat == Wardrobe.Cat.Board && Progress.Worn(Wardrobe.Cat.Graphic) != 0) worn = -1;   // (under a graphic no colour is on show)
             foreach (var r in rows)
             {
                 var it = Shown(r.item);
@@ -291,6 +306,8 @@ namespace Summit
                 r.bg.color = sel ? new Color(1f, 1f, 1f, 0.94f) : Row;
                 r.name.color = sel ? Ink : afford ? Color.white : new Color(1f, 1f, 1f, 0.42f);
                 if (r.chip != null) r.chip.color = afford || sel ? it.a : new Color(it.a.r, it.a.g, it.a.b, 0.45f);
+                if (r.thumb != null) r.thumb.color = afford || sel ? Color.white : new Color(1f, 1f, 1f, 0.45f);
+                if (cat == Wardrobe.Cat.Graphic && r.item == 0 && r.chip != null) r.chip.color = Wardrobe.Get(Wardrobe.Cat.Board, Progress.Worn(Wardrobe.Cat.Board)).a;   // (plain: the colour under BOARDS)
                 var sh = r.name.GetComponent<Shadow>(); if (sh != null) sh.enabled = !sel;
                 sh = r.stat.GetComponent<Shadow>(); if (sh != null) sh.enabled = !sel;
                 bool price = !owns;
@@ -316,6 +333,8 @@ namespace Summit
                 buyImg.color = can ? Green : new Color(0.02f, 0.03f, 0.07f, 0.55f); buyText.color = can ? Color.white : new Color(1f, 1f, 1f, 0.6f);
             }
             detailText.text = hi == 0 && cur != items[0] ? "The pyjamas as they were made" : Detail(cat, cur);
+            if (cat == Wardrobe.Cat.Graphic) { detailText.text = cur.tier >= 2 ? "RARE" : cur.tier == 1 ? "PREMIUM" : ""; detailText.color = cur.tier >= 1 ? Gold : Dim; }
+            else detailText.color = Dim;
         }
 
         static string Detail(Wardrobe.Cat c, Wardrobe.Item it)
@@ -349,8 +368,8 @@ namespace Summit
                 Progress.PickRide((RideKind)hi); Clicked?.Invoke();
                 Say(it.name + " at the gate", true);
             }
-            else if (hi == Progress.Worn(cat)) return;
-            else if (Progress.Owns(cat, hi)) { Progress.Wear(cat, hi); Clicked?.Invoke(); Say((cat == Wardrobe.Cat.Rider ? "Riding as " : "Wearing ") + it.name, true); }
+            else if (hi == Progress.Worn(cat) && !(cat == Wardrobe.Cat.Board && Progress.Worn(Wardrobe.Cat.Graphic) != 0)) return;
+            else if (Progress.Owns(cat, hi)) { Progress.Wear(cat, hi); Clicked?.Invoke(); Say((cat == Wardrobe.Cat.Rider ? "Riding as " : cat == Wardrobe.Cat.Graphic ? "Riding " : "Wearing ") + it.name, true); }
             else if (Progress.Wear(cat, hi)) { Bought?.Invoke(); Say(it.name + ": yours", true); }
             else { Denied?.Invoke(); Say("Need " + (it.cost - Progress.Points).ToString("N0") + " more points: ride to earn them", false); }
             for (int k = 0; k < tabs.Count; k++) tabs[k].text.text = Wardrobe.Title(tabs[k].c);   // (the board's tab follows the ride)

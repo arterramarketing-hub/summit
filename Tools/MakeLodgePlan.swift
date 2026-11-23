@@ -215,10 +215,16 @@ plan("LodgePlanB3", "B3 — Balcony (built, LODGE: B3)", "B, with a balcony at +
      [[(-0.2, 12.6), (2.5, 8.2), (4.5, 7), (2.4, 2.6), (-4.0, 2.6), (-4.0, 5.2), (0.7, 5.0), (0.7, 3.8), (-6.0, 3.0)], [(4.5, 7), (2.5, 1.2), (-6, 0.9), (-13.5, 1.0)]]) {
     upstairs([(-10.7, 0.8, -3.08, 6.5)], "UPSTAIRS +3.8: the window lounge, a telescope", (-6.5, 7.6), [(-3.08, 4.6, 0.0, 5.8), (0.0, 3.2, 1.4, 5.8), (-3.08, 3.2, 0.0, 4.4)])
 }
-// B2R: B2 with its stair along the back wall (the user's pick, revised: the default lodge)
-plan("LodgePlanB2R", "B2R — Loft, back stair (built, LODGE: B2R, the default)", "B2's loft and snug as they were; its stair moved to the back wall, behind the lounge, arriving at the loft's back corner by the gear wall; the front glass clear again",
-     [Zone(name: "LOUNGE + FIRE", x0: -6.2, z0: -5.1, x1: 2.7, z1: -0.3, col: lounge, note: "drawn forward off the wall\nthe ring round the fire")] + Array(bGround.dropFirst()) + [snug],
-     [[(-0.2, 12.6), (2.5, 8.2), (4.5, 7), (3.6, 0.8), (3.0, -4.4), (1.6, -5.9), (-5.0, -5.9), (-7.2, -4.4), (-8.6, -4.0)], [(4.5, 7), (2.4, 2.4), (-6, 0.9), (-13.5, 1.0)],
-      [(-0.1, -1.72), (0.45, -2.71), (-0.1, -3.7), (-3.5, -3.7), (-4.1, -2.71), (-3.5, -1.72), (-0.1, -1.72)]]) {
-    upstairs([(-10.7, -6.7, -5.4, 6.5)], "UPSTAIRS +3.8: the outfitters' loft (wardrobe + closet)", (-8.0, 7.6), [(-5.4, -6.64, 0.76, -5.14)])
+// B2R: B2 with its stair along the back wall (the user's pick, revised: the default lodge); lodge5: the lounge bigger
+// (round the fire and facing the front glass), the loft opening onto the lookout deck on the wing's roof
+plan("LodgePlanB2R", "B2R — Loft, back stair, lookout deck (built, LODGE: B2R, the default)", "B2's loft and snug; its stair along the back wall; the lounge bigger, round the fire and facing the glass; the loft's doors out onto a lookout deck on the wing's roof",
+     [Zone(name: "LOUNGE + FIRE", x0: -6.4, z0: -5.1, x1: 2.7, z1: 0.3, col: lounge, note: "sofas across the fire\narmchair pairs at its ends · lamps"),
+      Zone(name: "WINDOW LOUNGE", x0: -5.2, z0: 2.05, x1: 1.2, z1: 5.15, col: lounge, note: "a sofa facing the glass\nand the view")] + Array(bGround.dropFirst()) + [snug],
+     [[(-0.2, 12.6), (2.5, 8.2), (4.5, 7), (3.6, 0.8), (3.0, -4.4), (1.6, -5.9), (-5.0, -5.9), (-7.2, -4.4), (-8.6, -4.0)], [(4.5, 7), (3.6, 1.2), (-4.6, 1.0), (-10, 0.8), (-13.5, 1.0)],
+      [(-0.1, -1.72), (0.45, -2.71), (-0.1, -3.7), (-3.5, -3.7), (-4.1, -2.71), (-3.5, -1.72), (-0.1, -1.72)],
+      [(-7.2, -4.4), (-7.3, -0.7), (-9.8, -0.1), (-12.2, 0.0), (-13.0, 2.0), (-13.2, 4.7)]]) {
+    upstairs([(-10.7, -6.7, -5.4, 6.5), (-16.9, -5.8, -11.0, 6.6)], "UPSTAIRS +3.8: the outfitters' loft (wardrobe + closet)", (-8.0, 7.6), [(-5.4, -6.64, 0.76, -5.14)])
+    text("LOOKOUT DECK +3.8 (on the wing's roof)\nglass rails · ledge + stools · telescope", P(-13.9, -7.35), 12, upCol, bold: true)
+    fill(R(-11.15, -0.95, -10.55, 0.95), NSColor(calibratedRed: 0.36, green: 0.55, blue: 0.85, alpha: 1))
+    text("doors", P(-10.85, -1.35), 10, upCol, bold: true)
 }

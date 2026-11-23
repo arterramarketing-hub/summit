@@ -71,6 +71,8 @@ public static class RainbowTest
                     var o = (int[])Wardrobe.Worn().Clone();
                     o[(int)Wardrobe.Cat.Rider] = r; o[(int)Wardrobe.Cat.Outfit] = set;
                     o[(int)Wardrobe.Cat.Jacket] = (r + set) % 2 == 1 && patterned >= 0 ? patterned : 0;
+                    // a board graphic on most looks (every design in turn, and now and then none): it flashes too
+                    o[(int)Wardrobe.Cat.Graphic] = (r * Wardrobe.OutfitCount + set) % Wardrobe.Items(Wardrobe.Cat.Graphic).Length;
                     body.Wear(o);
                     for (int k = 0; k < 4; k++) { Case($"rider{r} outfit{set} jacket{o[(int)Wardrobe.Cat.Jacket]} {RideName(k)}", k, cases == 0); cases++; }
                 }
@@ -83,6 +85,7 @@ public static class RainbowTest
             Crash();
             Restart();
             Swap();
+            Debug.Log($"RAINBOW graphics: {artCases} cases with a board graphic seen, {artSlots} printed slots, all painted over the print");
             Debug.Log(fails == 0 ? $"RAINBOW PASS: {cases} riders, outfits and rides, and the crash, restart and swap; 0 failures"
                                  : $"RAINBOW FAIL: {fails} failure(s) over {cases} cases");
         }
@@ -168,9 +171,11 @@ public static class RainbowTest
         Color last = default; bool lastPainted = false;
         var probeR = FirstSeen(out int probeI);
         long bytes = 0; var watch = new System.Diagnostics.Stopwatch();
+        bool artChecked = false;
         while (rider.InvincibleTime > 0f)
         {
             float left = rider.InvincibleTime;
+            if (!artChecked && aura.Painted && left > 2f) { artChecked = true; ArtFlashes(tag, k); }
             long b0 = System.GC.GetAllocatedBytesForCurrentThread();
             watch.Start(); aura.Step(t); watch.Stop();
             if (frames > 5) bytes += System.GC.GetAllocatedBytesForCurrentThread() - b0;
@@ -210,6 +215,32 @@ public static class RainbowTest
             Debug.Log($"RAINBOW {tag}: {aura.Slots} slots, seen painted {worstCover}/{seenAtWorst}, {colours.Count} colours, {fastRate:0.0} changes/s, " +
                       $"last 2 s {warnRate:0.0} changes/s and own colours {ownShare:P0}, {bytes} B allocated, {watch.Elapsed.TotalMilliseconds * 1000.0 / frames:0.0} us a frame");
         else Debug.Log($"RAINBOW {tag}: {aura.Slots} slots, {seenAtWorst} seen all painted, {colours.Count} colours, {fastRate:0.0}/s, last 2 s {warnRate:0.0}/s own {ownShare:P0}, {bytes} B");
+    }
+
+    /// <summary>
+    /// A board graphic on: every seen slot printed with it (the deck, the skis, the tube's trim) is painted too, tinted
+    /// over the print (a picture's tint, not a flat colour), and on the trousers' side of the rainbow.
+    /// </summary>
+    static int artSlots, artCases;
+    static void ArtFlashes(string tag, int k)
+    {
+        if (body.ShownGraphic <= 0) return;
+        var key = Wardrobe.Get(Wardrobe.Cat.Graphic, body.ShownGraphic).art;
+        int printed = 0;
+        foreach (var w in Snapshot())
+        {
+            if (!w.r.enabled || !w.r.gameObject.activeInHierarchy || w.r.shadowCastingMode == ShadowCastingMode.ShadowsOnly) continue;
+            var tex = w.m.HasProperty("_BaseMap") ? w.m.GetTexture("_BaseMap") : null;
+            if (tex == null || tex.name != key) continue;
+            printed++;
+            if (!Blocked(w.r, w.i)) { Fail($"{tag}: the {key} print on {w.r.name} isn't painted"); continue; }
+            w.r.GetPropertyBlock(probe, w.i);
+            var c = probe.GetColor("_BaseColor");
+            if (c.r > 0.99f && c.g > 0.99f && c.b > 0.99f) Fail($"{tag}: the {key} print on {w.r.name} is painted white");
+            if (!body.Lower(w.m)) Fail($"{tag}: the {key} print on {w.r.name} isn't on the board's side of the rainbow");
+        }
+        if (printed == 0 && k != (int)RideKind.Toboggan) Fail($"{tag}: {key} on, but nothing drawn wears it");
+        if (printed > 0) { artSlots += printed; artCases++; }
     }
 
     /// <summary>A seen slot of the rider's jacket-side colour (not the trousers or board), to follow the colour on.</summary>

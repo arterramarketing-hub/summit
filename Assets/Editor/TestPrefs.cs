@@ -35,6 +35,7 @@ public static class TestPrefs
         foreach (Summit.Progress.Up u in System.Enum.GetValues(typeof(Summit.Progress.Up))) keys["summit_up_" + u] = Kind.Int;
         foreach (Wardrobe.Cat c in System.Enum.GetValues(typeof(Wardrobe.Cat))) { keys["summit_wear_" + c] = Kind.Int; keys["summit_own_" + c] = Kind.Int; }
         foreach (var k in Summit.Progress.SetKeys()) keys[k] = Kind.Int;   // (each set of clothes' own colours)
+        foreach (var k in Summit.Progress.RiderKeys()) keys[k] = Kind.Int;   // (each rider's own board graphic)
         keys["summit_clock"] = Kind.Float;
         keys["summit_music"] = Kind.Float;
         keys[SteerPrefs.TurnKey] = Kind.Float;

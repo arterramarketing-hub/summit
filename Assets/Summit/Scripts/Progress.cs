@@ -62,6 +62,17 @@ namespace Summit
         {
             for (int o = 0; o < kept.GetLength(0); o++) for (int k = 0; k < Dyes.Length; k++) yield return KeptKey(o, k);
         }
+        // The board's graphic is each rider's own: Paul keeps his skis' print, Breanna hers. Worn[Graphic] is the one of
+        // whoever is riding now; what the others last had on is kept here, a row of GRAPHICS for each RIDER row.
+        static int[] graphicBy = new int[0];
+        static string GraphicKey(int rider) => "summit_wear_Graphic_r" + rider;
+        /// <summary>Test tools: every key the riders' own graphics are saved under.</summary>
+        public static System.Collections.Generic.IEnumerable<string> RiderKeys()
+        {
+            for (int r = 0; r < Wardrobe.Items(Wardrobe.Cat.Rider).Length; r++) yield return GraphicKey(r);
+        }
+        /// <summary>The graphic a rider (a RIDER row) rides with.</summary>
+        public static int GraphicFor(int rider) { Load(); return rider >= 0 && rider < graphicBy.Length ? graphicBy[rider] : 0; }
         static string OwnedKey(Wardrobe.Cat c) => c == Wardrobe.Cat.Jacket ? "summit_jackets" : c == Wardrobe.Cat.Board ? "summit_boards" : "summit_own_" + c;
 
         static void Load()
@@ -86,6 +97,14 @@ namespace Summit
                     int w = PlayerPrefs.GetInt(KeptKey(o, k), 0);
                     kept[o, k] = w > 0 && w < Wardrobe.Items(Dyes[k]).Length && (owned[(int)Dyes[k]] & (1 << w)) != 0 ? w : 0;
                 }
+            int gi = (int)Wardrobe.Cat.Graphic;
+            graphicBy = new int[Wardrobe.Items(Wardrobe.Cat.Rider).Length];
+            for (int r = 0; r < graphicBy.Length; r++)
+            {
+                int w = PlayerPrefs.GetInt(GraphicKey(r), 0);
+                graphicBy[r] = w > 0 && w < Wardrobe.Items(Wardrobe.Cat.Graphic).Length && (owned[gi] & (1 << w)) != 0 ? w : 0;
+            }
+            worn[gi] = GraphicFor(worn[(int)Wardrobe.Cat.Rider]);
         }
 
         static void Save()
@@ -102,6 +121,7 @@ namespace Summit
                 PlayerPrefs.SetInt(OwnedKey(cat), owned[c]);
             }
             for (int o = 0; o < kept.GetLength(0); o++) for (int k = 0; k < Dyes.Length; k++) PlayerPrefs.SetInt(KeptKey(o, k), kept[o, k]);
+            for (int r = 0; r < graphicBy.Length; r++) PlayerPrefs.SetInt(GraphicKey(r), graphicBy[r]);
             PlayerPrefs.Save();
         }
 
@@ -173,6 +193,11 @@ namespace Summit
             // Paul is a skier: picking him puts him on his skis (the RIDE tab still changes it)
             if (c == Wardrobe.Cat.Rider && i == Wardrobe.PaulRow && worn[(int)c] != i) ride = (int)RideKind.Skis;
             if (c == Wardrobe.Cat.Outfit) PutOn(i); else worn[(int)c] = i;
+            // the graphic goes with the rider: each keeps their own; a plain colour picked under BOARDS takes it off
+            int g = (int)Wardrobe.Cat.Graphic, who = worn[(int)Wardrobe.Cat.Rider];
+            if (c == Wardrobe.Cat.Rider) worn[g] = GraphicFor(i);
+            if (c == Wardrobe.Cat.Graphic && who < graphicBy.Length) graphicBy[who] = i;
+            if (c == Wardrobe.Cat.Board) { worn[g] = 0; if (who < graphicBy.Length) graphicBy[who] = 0; }
             Save(); Changed?.Invoke();
             return true;
         }
@@ -266,6 +291,7 @@ namespace Summit
             ride = 0;
             for (int c = 0; c < Wardrobe.Count; c++) { worn[c] = 0; owned[c] = 1; }
             System.Array.Clear(kept, 0, kept.Length);
+            System.Array.Clear(graphicBy, 0, graphicBy.Length);
             Save(); Changed?.Invoke();
         }
 

@@ -31,6 +31,14 @@ namespace Summit
                 heel = m.GetBlendShapeIndex("WindHeel"), flapA = m.GetBlendShapeIndex("FlapA"), flapB = m.GetBlendShapeIndex("FlapB"),
             };
             public static readonly Shapes None = new Shapes { billow = -1, nose = -1, toe = -1, heel = -1, flapA = -1, flapB = -1 };
+
+            /// <summary>No wind in it: the cloth at rest (the trousers of someone sitting, lying on the seat).</summary>
+            public void Still(SkinnedMeshRenderer smr)
+            {
+                if (smr == null || !Ok) return;
+                smr.SetBlendShapeWeight(billow, 0f); smr.SetBlendShapeWeight(nose, 0f); smr.SetBlendShapeWeight(toe, 0f);
+                smr.SetBlendShapeWeight(heel, 0f); smr.SetBlendShapeWeight(flapA, 0f); smr.SetBlendShapeWeight(flapB, 0f);
+            }
         }
 
         /// <summary>The air on someone standing in the weather's wind, m/s: a breeze between gusts, a storm's gust about two

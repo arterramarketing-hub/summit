@@ -92,8 +92,9 @@ namespace Summit
                 }
                 f.pose = pose;
                 var floor = camp.ChaletPoint(at.x, 0f, at.z);
+                if (at.y >= Camp.LodgeUpper - 0.01f) floor += Vector3.up * Camp.LodgeUpper;   // (up on the lookout's deck: its floor)
                 f.floorY = floor.y;
-                f.seat = floor + Vector3.up * at.y;
+                f.seat = camp.ChaletPoint(at.x, at.y, at.z);
                 f.yaw = cy + yaw;
                 f.p.gameObject.SetActive(true);
                 f.p.transform.SetPositionAndRotation(f.seat, Quaternion.Euler(0f, f.yaw, 0f));

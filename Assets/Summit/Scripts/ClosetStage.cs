@@ -95,6 +95,17 @@ namespace Summit
         }
 
         bool rideShown = true;
+
+        /// <summary>The GRAPHICS tab: the ride standing beside the hero turns slowly round, its top sheet then its base.</summary>
+        public void SpinRide(bool on)
+        {
+            if (on && !spinRide) spinAngle = 0f;
+            spinRide = on;
+        }
+        bool spinRide;
+        float spinAngle;
+        /// <summary>Test tools: how far round the ride has turned (0: its top sheet to the camera).</summary>
+        public float RideTurn { get => spinAngle; set => spinAngle = value; }
         /// <summary>The rider was rebuilt (another rider or set of clothes tried on): copy them afresh, as they stand now.</summary>
         public void Recopy()
         {
@@ -149,6 +160,8 @@ namespace Summit
                 head.rotation = Quaternion.AngleAxis(look, Vector3.up) * Quaternion.AngleAxis(Mathf.Sin(t * 0.31f) * 4f, spin.right) * head.rotation;
             }
             if (holder != null) holder.localRotation = Quaternion.Euler(0f, 0f, Mathf.Sin(t * 0.8f) * 0.8f);   // the weight shifting foot to foot
+            spinAngle = spinRide ? Mathf.Repeat(spinAngle + dt * 50f, 360f) : Mathf.LerpAngle(spinAngle, 0f, 1f - Mathf.Exp(-dt * 6f));
+            for (int i = 0; i < gear.Length; i++) if (gear[i] != null) gear[i].localRotation = Quaternion.Euler(0f, spinAngle, 0f);
         }
 
         /// <summary>
@@ -236,8 +249,14 @@ namespace Summit
                 // stood in front of the hero, a little to the list's side, as if being shown to you
                 Vector3 spot = At + new Vector3(i == 2 ? 0.22f : 0.2f, 0f, i == 2 ? 0.55f : 0.45f);
                 g.position += new Vector3(spot.x - b.center.x, At.y - b.min.y, spot.z - b.center.z);
-                SetLayer(g);
-                gear[i] = g;
+                // on a turntable of its own (the GRAPHICS tab turns it round about its middle: SpinRide)
+                b = Bounds(g);
+                var pv = new GameObject("Turn" + src[i].name).transform;
+                pv.SetPositionAndRotation(new Vector3(b.center.x, At.y, b.center.z), Quaternion.identity);
+                pv.SetParent(stage, true);
+                g.SetParent(pv, true);
+                SetLayer(pv);
+                gear[i] = pv;
             }
         }
 

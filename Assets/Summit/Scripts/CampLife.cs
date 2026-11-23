@@ -723,6 +723,7 @@ namespace Summit
                 {
                     var o = agents[j];
                     if (o == a || o.doing == Doing.Ride || o.doing == Doing.Inside || !o.p.gameObject.activeSelf) continue;
+                    if (Mathf.Abs(a.pos.y - o.pos.y) > OtherFloor) continue;   // (one over the other: the lodge's deck over its café)
                     Vector3 d = a.pos - o.pos; d.y = 0f;
                     float m = d.magnitude;
                     const float gap = 0.56f;
@@ -744,6 +745,7 @@ namespace Summit
                 if (a.held || a.doing == Doing.Ride || a.doing == Doing.Inside || a.doing == Doing.Sit || a.doing == Doing.Strap || !a.p.gameObject.activeSelf) continue;
                 foreach (var o in others)
                 {
+                    if (Mathf.Abs(a.pos.y - o.y) > OtherFloor) continue;
                     Vector3 d = a.pos - o; d.y = 0f;
                     float m = d.magnitude;
                     const float gap = 0.62f;
@@ -1156,12 +1158,18 @@ namespace Summit
 
         // ---------------------------------------------------------------- the hero among them
 
+        /// <summary>Further apart in height than this, two people are on different floors (the lodge's deck over its café,
+        /// its loft over the snug): neither is in the other's way. (A seat is lower; a floor is 3.8 m.)</summary>
+        public const float OtherFloor = 1.5f;
+
         /// <summary>The hero, pushed out of anyone in the way (Camp.PushWalker).</summary>
         Vector2 PushHero(Vector2 p)
         {
+            float feet = camp.WalkerPosition.y;
             foreach (var a in agents)
             {
                 if (a.p == null || !a.p.gameObject.activeSelf || a.doing == Doing.Ride || a.doing == Doing.Inside) continue;
+                if (Mathf.Abs(a.pos.y - feet) > OtherFloor) continue;   // (on another floor: up on the lodge's deck, down in its café)
                 var d = p - new Vector2(a.pos.x, a.pos.z);
                 float r = a.doing == Doing.Sit ? 0.55f : 0.62f, m = d.magnitude;
                 if (m < r) p = new Vector2(a.pos.x, a.pos.z) + (m > 1e-4f ? d / m : Vector2.right) * r;

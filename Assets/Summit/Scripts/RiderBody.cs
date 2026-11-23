@@ -448,6 +448,8 @@ namespace Summit
         }
         float tubeSpin, tubeSpinRate;
         public bool Tube { get; private set; }
+        Material tubeBand;
+        static readonly Color TubeBandWhite = new Color(0.98f, 0.97f, 0.94f);
 
         void BuildTube(Material accent, Material dark)
         {
@@ -466,6 +468,7 @@ namespace Summit
             stripe.transform.localPosition = new Vector3(0f, 0.43f, 0f);
             stripe.GetComponent<MeshFilter>().sharedMesh = Torus(0.62f, 0.035f, 40, 8);
             stripe.GetComponent<MeshRenderer>().sharedMaterial = band;
+            tubeBand = band;   // (a board graphic paints it in the design's rail colour: RiderBodyWalk.Wear)
             // handles either side of the rider (the rider faces +X here, so the sides are +-Z)
             for (int s = -1; s <= 1; s += 2)
                 Part(PrimitiveType.Cylinder, tubeRoot, new Vector3(-0.05f, 0.47f, s * 0.6f), new Vector3(0.05f, 0.14f, 0.05f), new Vector3(0f, 0f, 90f), dark);

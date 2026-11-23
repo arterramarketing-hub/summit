@@ -396,6 +396,7 @@ public static class PeopleTest
                 foreach (var o in life.Agents)
                 {
                     if (o == a || !o.p.gameObject.activeSelf || o.doing == CampLife.Doing.Ride) continue;
+                    if (Mathf.Abs(a.pos.y - o.pos.y) > CampLife.OtherFloor) continue;   // (on different floors: the lodge's deck over its café)
                     float d = new Vector2(a.pos.x - o.pos.x, a.pos.z - o.pos.z).magnitude;
                     if (d < 0.5f) { overlapPeople++; if (0.5f - d > worstPeople) { worstPeople = 0.5f - d; worstPeopleWhat = $"{a.role}:{a.doing} and {o.role}:{o.doing} at {a.pos}"; } }
                 }
@@ -536,6 +537,20 @@ public static class PeopleTest
         }
         B("counter top", new Vector3(WX0 + 0.15f, 1.02f, WZF - 0.5f), new Vector3(WX1 - 0.35f, 1.07f, WZF));
         B("counter front", new Vector3(WX0 + 0.2f, 0f, WZF - 0.12f), new Vector3(WX1 - 0.4f, 1.02f, WZF - 0.04f));
+        // the lookout's deck on the wing's roof (MakeLodge.py's deck()): its stools, the oak ledge on the front rail and
+        // its brackets, the rail itself (glass, posts, the top rail), the viewer, the telescope
+        const float MY = Summit.Camp.LodgeUpper, DX0 = -16.9f, DZ1 = 6.6f, XH = -11f;
+        foreach (float sx in new[] { DX0 + 1.35f, DX0 + 2.2f, DX0 + 3.05f, DX0 + 3.9f })
+        {
+            cyls.Add(("deck stool seat", new Vector3(sx, MY, DZ1 - 0.81f), 0.19f, 0.75f, 0.8f));
+            cyls.Add(("deck stool pole", new Vector3(sx, MY, DZ1 - 0.81f), 0.025f, 0f, 0.75f));
+        }
+        B("deck ledge", new Vector3(DX0 + 0.9f, MY + 1.02f, DZ1 - 0.36f), new Vector3(XH - 1.3f, MY + 1.07f, DZ1 - 0.06f));
+        foreach (float bx in new[] { DX0 + 1.1f, (DX0 + XH) / 2f - 0.2f, XH - 1.5f })
+            B("deck ledge bracket", new Vector3(bx - 0.02f, MY + 0.72f, DZ1 - 0.3f), new Vector3(bx + 0.02f, MY + 1.02f, DZ1 - 0.05f));
+        B("deck rail", new Vector3(DX0, MY, DZ1 - 0.035f), new Vector3(XH, MY + 1.05f, DZ1 + 0.035f));
+        B("deck viewer", new Vector3(DX0 + 0.38f - 0.22f, MY, 2.6f - 0.22f), new Vector3(DX0 + 0.38f + 0.22f, MY + 1.42f, 2.6f + 0.22f));
+        B("deck telescope", new Vector3(DX0 + 0.42f - 0.35f, MY, DZ1 - 0.5f - 0.35f), new Vector3(DX0 + 0.42f + 0.35f, MY + 1.45f, DZ1 - 0.5f + 0.35f));
         foreach (var (x0, x1, z) in Summit.Camp.CoveredRacks)
         {
             B("rack end", new Vector3(x0, 0f, z - 0.25f), new Vector3(x0 + 0.05f, 1.1f, z + 0.25f));
@@ -569,6 +584,7 @@ public static class PeopleTest
                 var occ = cells[i] = new Dictionary<Vector3Int, int>();
                 float lowest = 99f, lowFoot = 99f; string lowWhat = "";
                 var seatL = toLocal.MultiplyPoint3x4(f.seat);
+                float floorL = f.floorY - camp.ChaletPoint(0f, 0f, 0f).y;   // (their floor: the hall's, or the deck's)
                 bool sitting = LodgeFolk.Sits(f);
                 float seatTop = Summit.Camp.LodgeFolkAt[i].at.y;   // (the seat's top, in the lodge's frame)
                 var toPerson = f.p.transform.worldToLocalMatrix * toLocal.inverse;
@@ -578,7 +594,7 @@ public static class PeopleTest
                     string sl = slot[vi] == -2 ? "mug" : SlotName(slot[vi]);
                     curV = v;
                     if (slot[vi] != -2) { var c = new Vector3Int(Mathf.FloorToInt(v.x / 0.02f), Mathf.FloorToInt(v.y / 0.02f), Mathf.FloorToInt(v.z / 0.02f)); occ[c] = 1; }
-                    if (v.y < -tol) { Note("the floor/" + sl, -v.y, who); caseBad = true; }
+                    if (v.y < floorL - tol) { Note("the floor/" + sl, floorL - v.y, who); caseBad = true; }
                     foreach (var t in tubes) { float dd = t.r - SegDist(v, t.a, t.b); if (dd > tol) { Note(t.name + "/" + sl, dd, who); caseBad = true; } }
                     foreach (var b in boxes)
                     {
@@ -618,7 +634,7 @@ public static class PeopleTest
                 }
                 if (f.pose != "stool")
                 {
-                    float fg = lowFoot;   // (the floor is at 0)
+                    float fg = lowFoot - floorL;   // (above their floor)
                     if (Mathf.Abs(fg) > Mathf.Abs(worstFeet)) worstFeet = fg;
                     if (fg > 0.04f || fg < -tol) { feetOff++; caseBad = true; Note(fg > 0f ? "feet off the floor" : "feet into the floor", Mathf.Abs(fg), who); }
                 }

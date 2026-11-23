@@ -6,7 +6,9 @@
 #     eaves carried on exposed warm glulam rafters and beams, thin charcoal metal edges and a thick rounded snow load
 #   - behind it, a tall volume under a flat roof; between the rising shed roof and that roof, a glazed clerestory, tall
 #     at the low end and closing to nothing where the shed reaches it; a dark gabled block on top
-#   - a lower wing at the high end with its own snowy roof and rafter tails
+#   - a lower wing at the high end with its rafter tails, its roof a lookout deck level with the upper floors inside
+#     (glass rails with snow along them, a ledge and stools at the front rail, a telescope, a binocular viewer, lounge
+#     chairs and a fire bowl), out through sliding doors in the high end's glass
 #   - dark-stained vertical board cladding, floor-to-ceiling glass in black frames (two storeys at the high end)
 #   - a raised concrete terrace across the front and round the low end, wide concrete steps, low concrete planters,
 #     chairs, a fire table, a chalkboard sign; at the low end the roof's tail runs on, nearly level, over a covered
@@ -23,6 +25,7 @@
 #   FLR_ floors   RMP_ steps (top falls by its height from its -z end to its +z end)
 #   TAP_/SPOT_ the stations   FX_fire the fire table's flames   LIGHT_ lamps   MARK_ which way it faces
 #   AREA_ the inside (for the camera and the footsteps), STEP_ the stairs' centre lines (for the way down)
+#   LOOK_ the lookout's deck (standing still there the camera takes in the mountain, as at the camp's lookout)
 
 import bpy, bmesh, math, sys
 from mathutils import Vector, Matrix, Euler
@@ -39,7 +42,7 @@ TOB = Matrix(((1, 0, 0, 0), (0, 0, 1, 0), (0, 1, 0, 0), (0, 0, 0, 1)))
 # Resources/Camp/LodgeTex, Tools/MakeLodgeTex.py) at their real size: the oak veneer 1.83 m, the hinoki planks 1.89,
 # the black planks 1.6, the concrete and the stacked stone 2.0, the steel 1.0; the fabrics larger than life (a weave
 # at its true 27 cm shimmers on a phone): the tweed 0.6, the rug's check 1.3, the leather 0.5
-TILE = {"Cladding": 1.6, "Lining": 1.89, "Soffit": 1.89, "FloorBoards": 1.89, "Glulam": 1.83, "Oak": 1.83, "CounterTop": 1.83,
+TILE = {"Cladding": 1.6, "Lining": 1.89, "Soffit": 1.89, "FloorBoards": 1.89, "Decking": 1.89, "Throw": 0.5, "Glulam": 1.83, "Oak": 1.83, "CounterTop": 1.83,
         "Concrete": 2.0, "Floor": 2.0, "Hearth": 2.0, "Steel": 1.0, "Upholstery": 0.6, "Cushion": 0.6, "Runner": 0.6,
         "Rug": 1.3, "Hide": 0.5, "Plaster": 4.0, "Roof": 2.0}
 TURN = {"Cladding", "Lining"}   # vertical boards: the texture's boards turned upright
@@ -430,7 +433,8 @@ def pillow(pos, size, inset=0.06):
         if v.co.z > 0:
             v.co.x *= kx
             v.co.y *= kz
-    add(b, "Snow", mat4(pos) @ Matrix(((size[0], 0, 0, 0), (0, 0, size[1], 0), (0, size[2], 0, 0), (0, 0, 0, 1))))
+    # (the cube's top, chamfered, up the game's y; turned, not mirrored: a mirror here turned the pad inside out)
+    add(b, "Snow", mat4(pos) @ Matrix(((size[0], 0, 0, 0), (0, 0, size[1], 0), (0, -size[2], 0, 0), (0, 0, 0, 1))))
 
 
 helpers = []
@@ -468,7 +472,8 @@ TAIL, XHO = 8.0, 1.4  # the shed runs on past the low end (over the covered sect
 TP = 0.07             # its tail's fall past the low end's wall (4 degrees: the 17 degrees on out would be 1.9 m at its edge)
 XB, ZC = 5.0, 0.0     # the tall volume: x from XH to XB, z from -D to ZC
 WZ0, WZ1 = -5.5, 5.0  # the wing's back and front
-WY = 4.4              # the wing's soffit at its front
+MY = 3.8              # the upper floors' top (C's mezzanine, B1's gallery, B2's loft, B3's balcony; 3.5 m clear under them)
+WY = MY - RT          # the wing's soffit (its ceiling): its roof is the lookout's deck, level with the loft's floor
 ZT = D + 5.6          # the terrace's front edge
 STATIONS = [-6.37, -1.73, 2.9, 8.6]   # the glulam frames (beams along z, columns at the glass and at ZC)
 DOOR = (3.1, 5.9, 2.9)                # the front door: x0, x1, height
@@ -684,11 +689,48 @@ for a in SIDE_DOOR[:2]:
     mullion("z", XL - 0.15, a, 0.0, SIDE_DOOR[2], 0.12, 0.24)
 lohi("Steel", (XL - 0.2, SIDE_DOOR[2] - 0.05, SIDE_DOOR[0]), (XL - 0.1, SIDE_DOOR[2] + 0.05, SIDE_DOOR[1]))
 helper("FLR_sidedoor", (XL - 0.5, -0.3, SIDE_DOOR[0]), (XL + 0.3, 0.0, SIDE_DOOR[1]))
-# the high end: open to the wing below its roof, a big window above it, boarded either side
-WOPEN = (-4.6, 4.1, 3.8)
-wall("z", XH, 1, -D, D, lambda z: H, [(WOPEN[0], WOPEN[1], 0.0, WOPEN[2]), (-5.6, 5.6, 5.4, 9.4)])
-glazing("z", XH + 0.15, -5.6, 5.6, lambda a: 9.4, [-1.87, 1.87], [], y0=5.4)
+# the high end: open to the wing below its roof (the wing's ceiling level with the upper floors' undersides); above
+# it glass from the upper floors' level to the flat roof, onto the lookout's deck on the wing's roof, with sliding
+# doors out onto it in the middle (open: both leaves slid aside over the panes beside them); boarded either side
+WOPEN = (-4.6, 4.1, WY)
+DOORW = (-0.95, 0.95, MY + 2.3)   # the doors out to the deck: z0, z1, their head
+wall("z", XH, 1, -D, D, lambda z: H, [(WOPEN[0], WOPEN[1], 0.0, WOPEN[2]), (-5.6, 5.6, MY, 9.4)])
+glazing("z", XH + 0.15, -5.6, DOORW[0], lambda a: 9.4, [-3.27], [DOORW[2]], y0=MY)
+glazing("z", XH + 0.15, DOORW[1], 5.6, lambda a: 9.4, [3.27], [DOORW[2]], y0=MY)
+pane("z", XH + 0.15, DOORW[0], DOORW[1], DOORW[2] + 0.04, 9.4 - 0.04, 9.4 - 0.04)
+transom("z", XH + 0.15, DOORW[0], DOORW[1], DOORW[2], 0.1, 0.18)
+solid("Steel", [(XH + 0.07, 9.31, DOORW[0] + 0.005), (XH + 0.07, 9.31, DOORW[1] - 0.005), (XH + 0.23, 9.31, DOORW[1] - 0.005), (XH + 0.23, 9.31, DOORW[0] + 0.005)],
+      [(XH + 0.07, 9.4, DOORW[0] + 0.005), (XH + 0.07, 9.4, DOORW[1] - 0.005), (XH + 0.23, 9.4, DOORW[1] - 0.005), (XH + 0.23, 9.4, DOORW[0] + 0.005)])
+lohi("Steel", (XH - 0.02, MY - 0.03, -5.6), (XH + T + 0.02, MY + 0.01, 5.6))   # the sill all along, the doors' threshold
+for s_, a in ((-1, DOORW[0]), (1, DOORW[1])):
+    # a leaf slid aside: a black frame round its glass, just outside the fixed panes
+    b0, b1 = (a - 0.97, a + 0.02) if s_ < 0 else (a - 0.02, a + 0.97)
+    lohi("Steel", (XH + 0.02, MY + 0.01, b0), (XH + 0.08, MY + 2.27, b0 + 0.07))
+    lohi("Steel", (XH + 0.02, MY + 0.01, b1 - 0.07), (XH + 0.08, MY + 2.27, b1))
+    lohi("Steel", (XH + 0.02, MY + 0.01, b0 + 0.07), (XH + 0.08, MY + 0.1, b1 - 0.07))
+    lohi("Steel", (XH + 0.02, MY + 2.19, b0 + 0.07), (XH + 0.08, MY + 2.27, b1 - 0.07))
+    pane("z", XH + 0.05, b0 + 0.07, b1 - 0.07, MY + 0.1, MY + 2.19, MY + 2.19, 0.012, "GlassIn")
+    lohi("Steel", (XH + 0.08, MY + 0.95, b1 - 0.16 if s_ < 0 else b0 + 0.12), (XH + 0.11, MY + 1.35, b1 - 0.12 if s_ < 0 else b0 + 0.16))   # its pull
 lohi("Glulam", (XH - 0.02, WOPEN[2] - 0.45, WOPEN[0]), (XH + T, WOPEN[2], WOPEN[1]))   # a glulam lintel over the opening (flush inside: an upper floor meets it there)
+
+
+def casing(axis, fixed, inward, a0, a1, y0, y1, glass=0.235):
+    """Oak round a window's opening inside: a sill standing a little proud of the wall, a head and two jambs lining the
+    opening's sides from the glass's frame to the wall's inside face (a wall along x at z=fixed, or along z at x=fixed,
+    inward toward the inside; the opening a0..a1 along it, y0..y1)."""
+    def box_ad(ya, yb, aa, ab, da, db):
+        p = (aa, ya, fixed + inward * da) if axis == "x" else (fixed + inward * da, ya, aa)
+        q = (ab, yb, fixed + inward * db) if axis == "x" else (fixed + inward * db, yb, ab)
+        lohi("Oak", tuple(min(p[i], q[i]) for i in range(3)), tuple(max(p[i], q[i]) for i in range(3)))
+    box_ad(y0 - 0.03, y0 + 0.025, a0 - 0.06, a1 + 0.06, glass, T + 0.06)
+    box_ad(y1 - 0.025, y1, a0, a1, glass, T + 0.02)
+    box_ad(y0 + 0.025, y1 - 0.025, a0, a0 + 0.025, glass, T + 0.02)
+    box_ad(y0 + 0.025, y1 - 0.025, a1 - 0.025, a1, glass, T + 0.02)
+
+
+casing("z", XL, -1, -2.6, 1.6, 0.9, 2.7)            # the low end's window by the side door
+casing("x", -D, 1, 7.8, 10.2, 1.4, 2.7)             # the back wall's over the tuning bench
+
 # the tall volume's side, over the shed roof at XB: boarded, a high window
 wall("z", XB, -1, -D, ZC, lambda z: H, [(-6.0, -1.0, 6.6, 9.2)], y0=ru(XB) + RT - 0.05)
 glazing("z", XB - 0.15, -6.0, -1.0, lambda a: 9.2, [-3.5], [], y0=6.6)
@@ -707,10 +749,11 @@ solid("Steel", [(CB0, ru(CB0) + RT, ZC - 0.1), (CB1, ru(CB1) + RT, ZC - 0.1), (C
       [(CB0, ru(CB0) + RT + 0.12, ZC - 0.1), (CB1, ru(CB1) + RT + 0.12, ZC - 0.1), (CB1, ru(CB1) + RT + 0.12, ZC + 0.1), (CB0, ru(CB0) + RT + 0.12, ZC + 0.1)])
 
 # the wing: glass across its front, boarded end with a window, boarded back
-glazing("x", WZ1 - 0.12, XW, XH, lambda a: WY - 0.05, [XW + 5.0 / 3, XW + 10.0 / 3], [3.1])
-wall("z", XW, 1, WZ0, WZ1, lambda z: WY + (z - WZ1) * 0.02, [(-2.6, 2.4, 0.9, 3.0)])
-glazing("z", XW + 0.15, -2.6, 2.4, lambda a: 3.0, [-0.1], [], y0=0.9)
-wall("x", WZ0, 1, XW, XH, lambda x: WY + (WZ0 - WZ1) * 0.02, [])
+glazing("x", WZ1 - 0.12, XW, XH, lambda a: WY - 0.05, [XW + 5.0 / 3, XW + 10.0 / 3], [2.7])
+wall("z", XW, 1, WZ0, WZ1, lambda z: WY, [(-2.6, 2.4, 0.9, 2.9)])
+glazing("z", XW + 0.15, -2.6, 2.4, lambda a: 2.9, [-0.1], [], y0=0.9)
+casing("z", XW, 1, -2.6, 2.4, 0.9, 2.9)              # the café's end window
+wall("x", WZ0, 1, XW, XH, lambda x: WY, [])
 
 # ---------------------------------------------------------------- the roof: the shed, the flat roof, the wing's
 
@@ -757,18 +800,19 @@ fascia_x(FX0, FX1, FZ1, flat, 1)
 fascia_x(FX0, FX1, FZ0, flat, -1)
 fascia_z(FX0, FZ0, FZ1, H, -1)
 fascia_z(FX1, FZ0, FZ1, H, 1)
-# the wing's: nearly flat, falling a little to the back, deep at the front over the terrace
+# the wing's: level, its top the lookout's deck (boards over the roof, level with the floors inside: MY), deep at the
+# front over the terrace
 WRX0, WRZ0, WRZ1 = XW - 1.2, WZ0 - 0.6, D - 0.1
+DK = 0.03   # the deck's boards
 
 
 def wing_under(z):
-    return WY + (z - WZ1) * 0.02
+    return WY
 
 
-solid("Soffit", [(WRX0, wing_under(WRZ0), WRZ0), (XH, wing_under(WRZ0), WRZ0), (XH, wing_under(WRZ1), WRZ1), (WRX0, wing_under(WRZ1), WRZ1)],
-      [(WRX0, wing_under(WRZ0) + 0.05, WRZ0), (XH, wing_under(WRZ0) + 0.05, WRZ0), (XH, wing_under(WRZ1) + 0.05, WRZ1), (WRX0, wing_under(WRZ1) + 0.05, WRZ1)])
-solid("Roof", [(WRX0, wing_under(WRZ0) + 0.05, WRZ0), (XH, wing_under(WRZ0) + 0.05, WRZ0), (XH, wing_under(WRZ1) + 0.05, WRZ1), (WRX0, wing_under(WRZ1) + 0.05, WRZ1)],
-      [(WRX0, wing_under(WRZ0) + RT, WRZ0), (XH, wing_under(WRZ0) + RT, WRZ0), (XH, wing_under(WRZ1) + RT, WRZ1), (WRX0, wing_under(WRZ1) + RT, WRZ1)])
+lohi("Soffit", (WRX0, WY, WRZ0), (XH, WY + 0.05, WRZ1))
+lohi("Roof", (WRX0, WY + 0.05, WRZ0), (XH, MY - DK, WRZ1))
+lohi("Decking", (WRX0, MY - DK, WRZ0), (XH, MY, WRZ1))
 lohi("Steel", (WRX0, wing_under(WRZ1) - 0.06, WRZ1), (XH, wing_under(WRZ1) + RT + 0.06, WRZ1 + 0.06))
 lohi("Steel", (WRX0 - 0.06, wing_under(WRZ0) - 0.06, WRZ0), (WRX0, wing_under(WRZ1) + RT + 0.06, WRZ1))
 lohi("Steel", (WRX0, wing_under(WRZ0) - 0.06, WRZ0 - 0.06), (XH, wing_under(WRZ0) + RT + 0.06, WRZ0))
@@ -847,13 +891,162 @@ for s in (-1, 1):
     snow(sa, sb, GZ0 - 0.32, GZ1 + 0.32, lambda x, z, gh=gh: gh(x, z) + 0.22, 0.45, r=0.45, step=4.0)
 lohi("Steel", ((GX0 + GX1) / 2 - 0.12, GY1 + GP + 0.15, GZ0 - 0.4), ((GX0 + GX1) / 2 + 0.12, GY1 + GP + 0.3, GZ1 + 0.4))
 
+
+# ---------------------------------------------------------------- the lookout: a deck on the wing's roof
+
+# Out of the loft's doors in the high end's glass (B2R, B2: the upper floor runs to that wall; in the other layouts
+# it's seen from outside and from below): the wing's roof is a deck at the upper floors' level, glass rails round its
+# three open sides (black posts, a black top rail with snow along it), the roof's edge outside them under a rounded
+# load of snow, drifts in its corners. At the front rail, looking down the mountain past the gate: an oak bar ledge
+# with stools, the telescope at its far corner; a binocular viewer on the end rail; two lounge chairs with sheepskins
+# and a fire bowl by the back rail; potted firs and lanterns either side of the doors; a shovel in the corner.
+# Standing still at the front (LOOK_deck) the camera stands back and takes in the mountain, as at the camp's lookout.
+RI = 0.3                                     # the rails set in from the roof's edges
+DX0, DZ0, DZ1 = WRX0 + RI, WRZ0 + RI, WRZ1 - RI   # the rails' lines: the end, the back, the front
+
+
+def glass_rail(axis, fixed, a0, a1, y=0.0, name="deckrail", posts=1.6, snowy=True):
+    """A glass balustrade along x (at z=fixed) or along z (at x=fixed): black posts, glass between them, a black top
+    rail, snow lying along its top; the walker kept in."""
+    n = max(1, int(math.ceil((a1 - a0) / posts)))
+    xs = [a0 + (a1 - a0) * i / n for i in range(n + 1)]
+
+    def P(a, yy, d=0.0):
+        return (a, yy, fixed + d) if axis == "x" else (fixed + d, yy, a)
+
+    def bx(mat, a, b, ya, yb, d0, d1):
+        p, q = P(a, ya, d0), P(b, yb, d1)
+        lohi(mat, (min(p[0], q[0]), ya, min(p[2], q[2])), (max(p[0], q[0]), yb, max(p[2], q[2])))
+    for i, a in enumerate(xs):
+        a = min(max(a, a0 + 0.03), a1 - 0.03)
+        bx("Steel", a - 0.03, a + 0.03, y, y + 1.0, -0.03, 0.03)
+    for a, b in zip(xs, xs[1:]):
+        pane(axis, fixed, a + 0.035, b - 0.035, y + 0.05, y + 0.97, y + 0.97, 0.02, "GlassIn")
+    bx("Steel", a0, a1, y + 1.0, y + 1.05, -0.035, 0.035)
+    if snowy:
+        for k, (a, b) in enumerate(zip(xs, xs[1:])):
+            hh = 0.05 + 0.025 * ((k * 7) % 3) / 2
+            c = P((a + b) / 2, y + 1.05 + hh / 2)
+            sz = (b - a - 0.04, hh, 0.1) if axis == "x" else (0.1, hh, b - a - 0.04)
+            pillow(c, sz, 0.035)
+    lo, hi = P(a0, y, -0.12), P(a1, y + 1.1, 0.12)
+    helper("BLK_" + name, (min(lo[0], hi[0]), y, min(lo[2], hi[2])), (max(lo[0], hi[0]), y + 1.1, max(lo[2], hi[2])))
+
+
+def lounger(x, z, yaw, y=0.0):
+    """An outdoor lounge chair (a slatted oak seat and back on a black frame, low and raked), a sheepskin on it."""
+    c, s_ = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
+
+    def P(u, h, v):
+        return (x + u * c + v * s_, y + h, z - u * s_ + v * c)
+    for su in (-1, 1):
+        box("Steel", P(su * 0.33, 0.2, -0.05), (0.04, 0.4, 0.86), (0, yaw, 0))   # (its sides: legs and arm in one)
+        box("Steel", P(su * 0.33, 0.6, 0.0), (0.09, 0.03, 0.62), (0, yaw, 0))
+    box("Glulam", P(0, 0.34, 0.08), (0.62, 0.05, 0.6), (-6, yaw, 0))
+    box("Glulam", P(0, 0.66, -0.36), (0.62, 0.6, 0.05), (18, yaw, 0))
+    box("White", P(0, 0.4, 0.02), (0.5, 0.05, 0.62), (-6, yaw, 0))   # the sheepskin over seat
+    box("White", P(0, 0.72, -0.32), (0.48, 0.48, 0.05), (18, yaw, 0))   # and back
+    helper("BLK_lounger", (x - 0.48, y, z - 0.48), (x + 0.48, y + 0.9, z + 0.48))
+
+
+def fire_bowl(x, z, y=0.0):
+    """A low black steel fire bowl on a stone plinth, its embers glowing (flames in it: FX_fire)."""
+    lohi("Hearth", (x - 0.38, y, z - 0.38), (x + 0.38, y + 0.18, z + 0.38))
+    cyl("Steel", (x, y + 0.18, z), 0.22, 0.2, 16, r2=0.42)
+    cyl("Ember", (x, y + 0.33, z), 0.36, 0.03, 16)
+    marker("FX_fire", (x, y + 0.42, z))
+    helper("BLK_firebowl", (x - 0.45, y, z - 0.45), (x + 0.45, y + 0.5, z + 0.45))
+
+
+def viewer(x, z, yaw, y=0.0):
+    """A coin-op binocular viewer on its post, looking out the way yaw faces."""
+    c, s_ = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
+    cyl("Steel", (x, y, z), 0.2, 0.04, 12)
+    cyl("Navy", (x, y + 0.04, z), 0.06, 1.05, 10)
+    box("Navy", (x, y + 1.25, z), (0.36, 0.26, 0.3), (-8, yaw, 0))
+    for su in (-1, 1):
+        cyl("Steel", (x + su * 0.09 * c + 0.17 * s_, y + 1.19, z - su * 0.09 * s_ + 0.17 * c), 0.05, 0.12, 10)
+        box("Charcoal", (x + su * 0.09 * c - 0.17 * s_, y + 1.29, z - su * 0.09 * s_ - 0.17 * c), (0.08, 0.06, 0.06), (0, yaw, 0))
+    pillow((x, y + 1.4, z), (0.32, 0.05, 0.26), 0.04)
+    helper("BLK_viewer", (x - 0.25, y, z - 0.25), (x + 0.25, y + 1.45, z + 0.25))
+
+
+def potted_fir(x, z, hgt=1.5, y=0.0):
+    """A small fir in a black planter, snow on its tiers."""
+    lohi("Steel", (x - 0.34, y, z - 0.34), (x + 0.34, y + 0.5, z + 0.34))
+    lohi("Snow", (x - 0.3, y + 0.46, z - 0.3), (x + 0.3, y + 0.52, z + 0.3))
+    cyl("Bark", (x, y + 0.5, z), 0.04, 0.3, 6)
+    for k in range(3):
+        yb = y + 0.68 + k * hgt * 0.26
+        r = 0.42 * (1 - k * 0.28)
+        th = hgt * 0.34
+        cyl("Fir", (x, yb, z), r, th, 12, r2=0.02)
+        # snow lying on the tier's shoulders: a band standing just proud of its slope
+        cyl("Snow", (x, yb + th * 0.42, z), r * 0.6 + 0.02, th * 0.26, 12, r2=r * 0.34 + 0.015)
+    helper("BLK_fir", (x - 0.38, y, z - 0.38), (x + 0.38, y + hgt + 0.6, z + 0.38))
+
+
+def lantern(x, z, y=0.0, h=0.55):
+    """A black lantern standing on the deck, a warm light in it."""
+    lohi("Steel", (x - 0.13, y, z - 0.13), (x + 0.13, y + 0.04, z + 0.13))
+    for (sx, sz) in ((-1, -1), (-1, 1), (1, -1), (1, 1)):
+        lohi("Steel", (x + sx * 0.12 - 0.015, y, z + sz * 0.12 - 0.015), (x + sx * 0.12 + 0.015, y + h, z + sz * 0.12 + 0.015))
+    cyl("Steel", (x, y + h, z), 0.16, 0.08, 4, r2=0.02)
+    cyl("LED", (x, y + 0.06, z), 0.05, h * 0.45, 8)
+    helper("BLK_lantern", (x - 0.16, y, z - 0.16), (x + 0.16, y + h + 0.1, z + 0.16))
+
+
+def deck():
+    # the edges outside the rails, under snow; the rails; drifts in the corners
+    snow(WRX0 - 0.07, XH - 0.02, DZ1 + 0.03, WRZ1 + 0.08, lambda x, z: MY, 0.3, r=0.13, lip=0.55, drape=0.03, step=2.6, fine=False)
+    snow(WRX0 - 0.08, DX0 - 0.03, WRZ0 - 0.07, WRZ1 + 0.07, lambda x, z: MY, 0.3, r=0.13, lip=0.55, drape=0.03, step=2.6, fine=False)
+    snow(WRX0 - 0.07, XH - 0.02, WRZ0 - 0.08, DZ0 - 0.03, lambda x, z: MY, 0.3, r=0.13, lip=0.55, drape=0.03, step=2.6, fine=False)
+    glass_rail("x", DZ1, DX0, XH - 0.02, MY)
+    glass_rail("z", DX0, DZ0, DZ1, MY)
+    glass_rail("x", DZ0, DX0, XH - 0.02, MY)
+    snow(DX0 + 0.06, DX0 + 1.5, DZ0 + 0.06, DZ0 + 1.3, lambda x, z: MY, 0.34, r=0.65, lip=0.12, drape=0.02, step=0.7, fine=False)
+    snow(DX0 + 0.06, DX0 + 0.8, DZ1 - 0.9, DZ1 - 0.06, lambda x, z: MY, 0.2, r=0.38, lip=0.12, drape=0.02, step=0.7, fine=False)
+    snow(XH - 1.7, XH - 0.04, DZ0 + 0.06, DZ0 + 0.7, lambda x, z: MY, 0.22, r=0.33, lip=0.15, drape=0.02, step=0.8, fine=False)
+    helper("BLK_drift", (DX0, MY, DZ0), (DX0 + 1.45, MY + 0.4, DZ0 + 1.25))
+    helper("BLK_drift", (XH - 1.7, MY, DZ0), (XH - 0.04, MY + 0.3, DZ0 + 0.72))
+    # the front rail: an oak ledge inside it at bar height, black brackets, four stools; the telescope at its far end
+    lohi("Oak", (DX0 + 0.9, MY + 1.02, DZ1 - 0.36), (XH - 1.3, MY + 1.07, DZ1 - 0.06))
+    for bx_ in (DX0 + 1.1, (DX0 + XH) / 2 - 0.2, XH - 1.5):
+        lohi("Steel", (bx_ - 0.02, MY + 0.72, DZ1 - 0.3), (bx_ + 0.02, MY + 1.02, DZ1 - 0.05))
+    helper("BLK_ledge", (DX0 + 0.88, MY + 0.85, DZ1 - 0.38), (XH - 1.28, MY + 1.1, DZ1))
+    for i in range(4):
+        stool(DECK_STOOLS[i], DZ1 - 0.81, y=MY)
+    telescope(DX0 + 0.42, DZ1 - 0.5, MY, yaw=-12)
+    viewer(DX0 + 0.38, 2.6, -55, MY)   # (aimed out over the front's far corner, at the peak)
+    # by the back rail: two lounge chairs with sheepskins, angled to the view, a fire bowl between them
+    lounger(DX0 + 1.0, -2.1, 25, MY)
+    lounger(DX0 + 2.55, -2.7, 5, MY)
+    fire_bowl(DX0 + 1.85, -1.0, MY)
+    # either side of the doors: potted firs, lanterns; lights on the wall over them
+    for zz in (DOORW[0] - 1.55, DOORW[1] + 1.55):
+        potted_fir(XH - 0.45, zz, 1.4, MY)
+        lohi("Steel", (XH - 0.08, MY + 2.35, zz - 0.1), (XH, MY + 2.6, zz + 0.1))
+        lohi("LED", (XH - 0.1, MY + 2.37, zz - 0.07), (XH - 0.08, MY + 2.58, zz + 0.07))
+    lantern(XH - 0.4, DOORW[0] - 0.4, MY)
+    lantern(XH - 0.4, DOORW[1] + 0.4, MY)
+    # a snow shovel against the back rail, by the shovelled pile
+    span("Bark", (XH - 2.1, MY + 0.05, DZ0 + 0.14), (XH - 2.25, MY + 1.15, DZ0 + 0.08), 0.035)
+    box("Red", (XH - 2.08, MY + 0.17, DZ0 + 0.17), (0.4, 0.3, 0.03), (-15, 0, 0))
+    # the deck: walked on (inside the rails), its lookout at the front, its lamp for the evening
+    helper("FLR_deck", (DX0 - 0.1, MY - 0.3, DZ0 - 0.1), (XH, MY, DZ1 + 0.1))
+    helper("LOOK_deck", (DX0, MY, 1.2), (XH - 0.6, MY + 2.0, DZ1))
+    marker("LIGHT_deck", (XH - 2.5, MY + 2.4, 0.0))
+
+
+DECK_STOOLS = (DX0 + 1.35, DX0 + 2.2, DX0 + 3.05, DX0 + 3.9)
+
 # ---------------------------------------------------------------- snow on the roofs
 
 # thick, rounded, standing a hand's width proud of the charcoal edges (the photo's heavy loads)
 snow(SX0 + 0.05, SX1 + 0.08, ZC + 0.25, SZ1 + 0.1, lambda x, z: ru(x) + RT, 0.62, r=0.7, xbreaks=(XL,))
 snow(XB + 0.3, SX1 + 0.08, SZ0 - 0.08, ZC - 0.05, lambda x, z: ru(x) + RT, 0.62, r=0.7, xbreaks=(XL,))
 snow(FX0 - 0.08, FX1 + 0.08, FZ0 - 0.08, FZ1 + 0.1, lambda x, z: H + RT, 0.7, r=0.75)
-snow(WRX0 - 0.08, XH - 0.05, WRZ0 - 0.08, WRZ1 + 0.1, lambda x, z: wing_under(z) + RT, 0.55, r=0.6)
+# (the wing's roof: the lookout's deck, its snow along its edges: deck(), below)
 # banked against the walls where the hill comes up behind
 for (x0, x1, z) in ((XH - 1.0, XL + TAIL - 0.6, -D - 0.6),):
     solid("Snow", [(x0, -1.6, z + 0.6), (x1, -1.6, z + 0.6), (x1, -1.6, z - 2.6), (x0, -1.6, z - 2.6)],
@@ -1171,11 +1364,11 @@ def low_table(x0, z0, x1, z1, y=0.0):
     helper("BLK_lowtable", (x0 - 0.05, y, z0 - 0.05), (x1 + 0.05, y + 0.45, z1 + 0.05))
 
 
-def stool(x, z, h=0.75):
-    cyl("Steel", (x, 0.0, z), 0.2, 0.02, 10)
-    cyl("Steel", (x, 0.0, z), 0.025, h, 6)
-    cyl("Glulam", (x, h, z), 0.19, 0.05, 12)
-    helper("BLK_stool", (x - 0.22, 0.0, z - 0.22), (x + 0.22, h + 0.05, z + 0.22))
+def stool(x, z, h=0.75, y=0.0):
+    cyl("Steel", (x, y, z), 0.2, 0.02, 10)
+    cyl("Steel", (x, y, z), 0.025, h, 6)
+    cyl("Glulam", (x, y + h, z), 0.19, 0.05, 12)
+    helper("BLK_stool", (x - 0.22, y, z - 0.22), (x + 0.22, y + h + 0.05, z + 0.22))
 
 
 def helmet(x, y, z, mat):
@@ -1501,7 +1694,6 @@ def layout_B():
 
 # ---- C: two levels
 
-MY = 3.8                                    # the mezzanine's floor (3.5 m clear under it)
 MX0, MX1, MZ0, MZ1 = XH + T, 2.2, MZ, -1.8  # its extent
 NS, TREAD = 22, 0.28                        # the stair's steps (17 cm risers) and their depth
 CSX0, CSX1, CSZT = 0.0, 2.2, -1.8              # the stair: x0..x1, its top at the mezzanine's front edge
@@ -1523,7 +1715,7 @@ def layout_C():
     helper("FLR_mezz", (MX0, MY - 0.3, MZ0), (MX1, MY, MZ1))
     helper("CAM_mezzslab", (MX0, MY - 0.32, MZ0), (MX1 + 0.04, MY - 0.01, MZ1 + 0.04))
     # glass rails: along its front (left of the stair) and down its open side over the hall
-    pane("x", MZ1 + 0.02, MX0, CSX0, MY, MY + 1.0, MY + 1.0, 0.02, "GlassIn")
+    pane("x", MZ1 + 0.02, MX0 + 0.005, CSX0, MY, MY + 1.0, MY + 1.0, 0.02, "GlassIn")   # (its end off the high end's wall: glass there now, the edge's end and its were one plane)
     lohi("Steel", (MX0, MY + 1.0, MZ1 - 0.01), (CSX0, MY + 1.05, MZ1 + 0.05))
     helper("BLK_mezzrail", (MX0, MY, MZ1 - 0.05), (CSX0 + 0.02, MY + 1.1, MZ1 + 0.08))
     pane("z", MX1 + 0.02, MZ0, MZ1 - 0.005, MY, MY + 1.0, MY + 1.0, 0.02, "GlassIn")   # (just short of the edge's corner)
@@ -1659,7 +1851,7 @@ def open_edge(axis, fixed, a0, a1, y=MY, side=1, rail=True, name="edge"):
         zl = fixed + side * 0.1
         lohi("LED", (a0 + 0.15, y - 0.34, min(zl, zl + side * 0.05)), (a1 - 0.15, y - 0.32, max(zl, zl + side * 0.05)))
         if rail:
-            pane("x", fixed + side * 0.04, a0, a1, y, y + 1.0, y + 1.0, 0.02, "GlassIn")
+            pane("x", fixed + side * 0.04, a0 + 0.004, a1 - 0.004, y, y + 1.0, y + 1.0, 0.02, "GlassIn")   # (its ends just short of the edge's: at a wall's glass they were one plane)
             lohi("Steel", (a0, y + 1.0, fixed + side * 0.04 - 0.03), (a1, y + 1.05, fixed + side * 0.04 + 0.03))
             helper("BLK_" + name, (a0, y, fixed - 0.1), (a1, y + 1.1, fixed + 0.1))
     else:
@@ -1667,7 +1859,7 @@ def open_edge(axis, fixed, a0, a1, y=MY, side=1, rail=True, name="edge"):
         xl = fixed + side * 0.1
         lohi("LED", (min(xl, xl + side * 0.05), y - 0.34, a0 + 0.15), (max(xl, xl + side * 0.05), y - 0.32, a1 - 0.15))
         if rail:
-            pane("z", fixed + side * 0.04, a0, a1, y, y + 1.0, y + 1.0, 0.02, "GlassIn")
+            pane("z", fixed + side * 0.04, a0 + 0.004, a1 - 0.004, y, y + 1.0, y + 1.0, 0.02, "GlassIn")
             lohi("Steel", (fixed + side * 0.04 - 0.03, y + 1.0, a0), (fixed + side * 0.04 + 0.03, y + 1.05, a1))
             helper("BLK_" + name, (fixed - 0.1, y, a0), (fixed + 0.1, y + 1.1, a1))
 
@@ -1860,6 +2052,197 @@ def layout_B2():
     marker("LIGHT_hall", (-4.6, 7.6, -1.0))
 
 
+# ---- lodge5: the lounge's and the hall's finishing (B2R): lamps, side tables, throws, mugs, books, art, skis
+
+# the art sheet (Resources/Camp/LodgeArt.png, Tools/MakeLodgeSigns.swift): its pieces' rectangles (u0, v0, u1, v1)
+ART = {"map": (0.0, 0.5, 1.0, 1.0), "posterA": (0.0, 0.0, 340 / 1024, 510 / 1024), "posterB": (342 / 1024, 0.0, 682 / 1024, 510 / 1024),
+       "lookout": (684 / 1024, 386 / 1024, 1.0, 510 / 1024), "topo": (684 / 1024, 0.0, 1.0, 384 / 1024)}
+
+
+def art(key, pos, w, h, yaw=0.0, frame="Oak", depth=0.03):
+    """A piece of the art sheet on a wall, facing +z turned by yaw (its frame behind it, a little bigger)."""
+    u0, v0, u1, v1 = ART[key]
+    b = bmesh.new()
+    uv = b.loops.layers.uv.new("UVMap")
+    vs = [b.verts.new(c) for c in ((-0.5, -0.5, 0), (0.5, -0.5, 0), (0.5, 0.5, 0), (-0.5, 0.5, 0))]
+    f = b.faces.new(vs)
+    for l, c in zip(f.loops, ((u1, v0), (u0, v0), (u0, v1), (u1, v1))):
+        l[uv].uv = c
+    add(b, "Art", mat4(pos, (w, h, 1), (0, yaw, 0)), full_uv=True)
+    if frame:
+        nx, nz = math.sin(math.radians(yaw)), math.cos(math.radians(yaw))
+        d = depth / 2 + 0.004
+        box(frame, (pos[0] - nx * d, pos[1], pos[2] - nz * d), (w + 0.09, h + 0.09, depth), (0, yaw, 0))
+
+
+def side_table(x, z, r=0.26, h=0.52, y=0.0):
+    cyl("Oak", (x, y + h - 0.04, z), r, 0.04, 18)
+    cyl("Steel", (x, y + 0.02, z), 0.03, h - 0.06, 6)
+    cyl("Steel", (x, y, z), r * 0.7, 0.02, 14)
+    helper("BLK_sidetable", (x - r - 0.02, y, z - r - 0.02), (x + r + 0.02, y + h + 0.05, z + r + 0.02))
+
+
+def table_lamp(x, z, y):
+    """A lamp on a table (its top at y): a dark ceramic base, a warm-lit linen shade."""
+    cyl("Charcoal", (x, y, z), 0.075, 0.24, 12, r2=0.05)
+    cyl("Shade", (x, y + 0.24, z), 0.16, 0.2, 16, r2=0.12)
+
+
+def floor_lamp(x, z, h=1.55, y=0.0):
+    """A floor lamp: a black stem on a round foot, a warm-lit drum shade."""
+    cyl("Steel", (x, y, z), 0.17, 0.025, 14)
+    cyl("Steel", (x, y + 0.025, z), 0.014, h - 0.1, 6)
+    cyl("Shade", (x, y + h - 0.12, z), 0.24, 0.3, 18, r2=0.21)
+    helper("BLK_lamp", (x - 0.2, y, z - 0.2), (x + 0.2, y + h + 0.2, z + 0.2))
+
+
+def arc_lamp(x0, z0, x1, z1, top=2.15, y1=1.85):
+    """An arc floor lamp: a heavy dark block, a black arm arching over to a dome over (x1, z1) at y1."""
+    lohi("Charcoal", (x0 - 0.17, 0.0, z0 - 0.17), (x0 + 0.17, 0.3, z0 + 0.17))
+    pts = []
+    for k in range(9):
+        t = k / 8
+        x = x0 + (x1 - x0) * (1 - (1 - t) ** 2)
+        z = z0 + (z1 - z0) * (1 - (1 - t) ** 2)
+        y = 0.3 + (top - 0.3) * math.sin(min(1.0, t * 1.25) * math.pi / 2) - (top - y1 - 0.12) * max(0.0, (t - 0.7) / 0.3) ** 2
+        pts.append((x, y, z))
+    for a, b in zip(pts, pts[1:]):
+        span("Steel", a, b, 0.025)
+    sphere("Steel", (x1, y1 + 0.05, z1), (0.44, 0.26, 0.44), 14)
+    cyl("Shade", (x1, y1 - 0.04, z1), 0.17, 0.04, 14)
+    helper("BLK_lamp", (x0 - 0.2, 0.0, z0 - 0.2), (x0 + 0.2, 0.35, z0 + 0.2))
+
+
+def mug(x, z, y, col="Cream"):
+    cyl(col, (x, y, z), 0.045, 0.1, 10)
+    lohi(col, (x + 0.04, y + 0.03, z - 0.008), (x + 0.07, y + 0.08, z + 0.008))
+
+
+def books(x, z, y, n=3, yaw=0.0):
+    hh = y
+    for k in range(n):
+        th = 0.035 + 0.012 * (k % 2)
+        box(("Navy", "Red", "Cream", "ArtB", "Charcoal")[(k * 3 + int(x * 7)) % 5], (x, hh + th / 2, z), (0.3 - 0.03 * k, th, 0.22 - 0.01 * k), (0, yaw + 9 * k, 0))
+        hh += th
+
+
+def throw_over(x0, x1, z, face, depth=0.95, y=0.0):
+    """A wool throw folded over a sofa's back (sofa(): along x at z, facing +z or -z), hanging down its front."""
+    zb = z - face * (depth / 2 - 0.13)
+    lohi("Throw", (x0, y + 0.85, zb - 0.15), (x1, y + 0.875, zb + 0.15))
+    zf = zb + face * 0.135
+    lohi("Throw", (x0, y + 0.53, min(zf, zf + face * 0.025)), (x1, y + 0.875, max(zf, zf + face * 0.025)))
+
+
+def cushions(x0, x1, z, face, cols, depth=0.95, y=0.0):
+    """Accent cushions leaning on a sofa's back."""
+    zb = z - face * (depth / 2 - 0.13)
+    for k, c in enumerate(cols):
+        cx = x0 + (x1 - x0) * (k + 0.5) / len(cols)
+        box(c, (cx, y + 0.69, zb + face * 0.24), (0.42, 0.4, 0.13), (face * 16, 6 * (k % 2 * 2 - 1), 0))
+
+
+def log_basket(x, z, r=0.32):
+    """A black steel ring of split logs for the fire."""
+    cyl("Steel", (x, 0.0, z), r, 0.04, 14)
+    for k in range(9):
+        a = k * 2.4
+        rr = 0.18 * ((k * 5) % 3) / 2
+        cyl("Bark", (x + rr * math.cos(a), 0.04 + 0.11 * (k // 3), z + rr * math.sin(a)), 0.065, 0.55 - 0.03 * (k % 3), 7)
+    for a in (0.6, 2.7, 4.8):
+        span("Steel", (x + r * math.cos(a), 0.0, z + r * math.sin(a)), (x + r * math.cos(a), 0.45, z + r * math.sin(a)), 0.02)
+    helper("BLK_logs", (x - r - 0.03, 0.0, z - r - 0.03), (x + r + 0.03, 0.65, z + r + 0.03))
+
+
+def ski_wall(x0, x1, y0, n):
+    """Old wooden and painted skis in pairs up the back wall, tips turned out, bindings on, a strap round each pair."""
+    for i in range(n):
+        x = x0 + (x1 - x0) * (i + 0.5) / n
+        mat = ("Glulam", "Red", "Glulam", "Navy", "Glulam", "ArtB", "Glulam", "ArtA")[i % 8]
+        for sx in (-1, 1):
+            xx = x + sx * 0.065
+            lohi(mat, (xx - 0.04, y0, MZ + 0.02), (xx + 0.04, y0 + 1.85, MZ + 0.045))
+            box(mat, (xx, y0 + 1.92, MZ + 0.065), (0.08, 0.17, 0.022), (-35, 0, 0))
+            lohi("Steel", (xx - 0.046, y0 + 0.78, MZ + 0.045), (xx + 0.046, y0 + 0.92, MZ + 0.085))
+        lohi("Charcoal", (x - 0.15, y0 + 1.25, MZ + 0.045), (x + 0.15, y0 + 1.3, MZ + 0.055))
+        lohi("Steel", (x - 0.03, y0 + 1.2, MZ), (x + 0.03, y0 + 1.36, MZ + 0.02))
+
+
+def coat_rack(z0, z1, x=XL - T):
+    """By the side door (on the low end's wall, facing in): an oak rail of black pegs, jackets, a beanie and a scarf
+    hung on it, an oak bench under it with boots beneath and a helmet on it."""
+    lohi("Oak", (x - 0.04, 1.62, z0), (x, 1.78, z1))
+    n = 5
+    for k in range(n):
+        zh = z0 + 0.15 + (z1 - z0 - 0.3) * k / (n - 1)
+        lohi("Steel", (x - 0.13, 1.68, zh - 0.015), (x - 0.04, 1.71, zh + 0.015))
+        if k % 2 == 0:
+            box(JACKETS[(k * 3) % len(JACKETS)], (x - 0.16, 1.26, zh), (0.17, 0.78, 0.4), (0, 0, -4))
+        elif k == 1:
+            sphere("Red", (x - 0.16, 1.62, zh), (0.2, 0.17, 0.2), 10)
+            box("Navy", (x - 0.12, 1.25, zh), (0.05, 0.75, 0.13))
+        else:
+            box("Cream", (x - 0.12, 1.3, zh), (0.05, 0.7, 0.16))
+    lohi("Oak", (x - 0.42, 0.42, z0 + 0.02), (x - 0.02, 0.47, z1 - 0.02))
+    for zz in (z0 + 0.08, z1 - 0.08):
+        lohi("Steel", (x - 0.38, 0.0, zz - 0.02), (x - 0.06, 0.42, zz + 0.02))
+    helmet(x - 0.24, 0.47, z0 + 0.4, "White")
+    for k in range(3):
+        bz = z0 + 0.35 + k * 0.32
+        for sx in (-0.05, 0.05):
+            box("Charcoal", (x - 0.24, 0.09, bz + sx * 1.4), (0.26, 0.18, 0.1))
+    helper("BLK_coats", (x - 0.45, 0.0, z0), (x, 1.9, z1))
+
+
+def window_lounge():
+    """B2R's lounge's second half: a sofa facing the front glass and the view, armchairs angled in at its ends, a long
+    low table with books and mugs between them and the glass, lamps at its ends, an arc lamp over it; on its own rug."""
+    lohi("Rug", (-5.05, 0.0, 2.15), (1.05, 0.015, 5.15))
+    sofa(-3.9, -0.1, 2.9, 1)
+    armchair(-4.6, 3.9, 64)
+    armchair(0.6, 3.9, -64)
+    low_table(-3.0, 3.87, -1.0, 4.57)
+    books(-2.55, 4.2, 0.42, 3, 8)
+    mug(-1.5, 4.1, 0.42); mug(-1.25, 4.35, 0.42, "Red")
+    side_table(-4.32, 2.7)
+    side_table(0.32, 2.7)
+    table_lamp(-4.32, 2.7, 0.52)
+    table_lamp(0.32, 2.7, 0.52)
+    arc_lamp(-5.0, 1.85, -2.4, 4.0)
+    throw_over(-0.95, -0.25, 2.9, 1)
+    cushions(-3.6, -1.2, 2.9, 1, ("Red", "Cream", "Navy"))
+
+
+def fire_lounge():
+    """B2R's lounge round the fire, bigger: the two sofas across it, a pair of armchairs angled in at each end with a
+    side table between them and a floor lamp behind, lamps on the side tables at the back sofa's ends, throws,
+    cushions and mugs; a log basket by it; one big rug under all of it."""
+    FX, FZ = -1.8, -2.71
+    lohi("Rug", (-5.95, 0.0, -5.05), (2.4, 0.015, 0.25))
+    open_fire(FX, FZ)
+    marker("LIGHT_fire", (FX, 0.8, FZ + 1.35))
+    sofa(-3.85, 0.25, -4.62, 1)
+    sofa(-3.85, 0.25, -0.8, -1)
+    for (ax, az, yaw) in ((-5.35, -3.65, 72), (-5.35, -1.75, 108), (1.75, -3.65, -72), (1.75, -1.75, -108)):
+        armchair(ax, az, yaw)
+    for (tx, tz) in ((-4.55, -4.62), (0.95, -4.62), (-5.45, -2.7), (1.85, -2.7)):
+        side_table(tx, tz)
+    table_lamp(-4.55, -4.62, 0.52)
+    table_lamp(0.95, -4.62, 0.52)
+    mug(-5.5, -2.6, 0.52); books(1.85, -2.72, 0.52, 2, -20)
+    mug(1.75, -2.55, 0.6, "Red")
+    floor_lamp(-6.1, -2.7)
+    floor_lamp(2.45, -2.7)
+    floor_lamp(-5.6, -4.55)
+    log_basket(-6.25, -3.95)
+    throw_over(-3.75, -3.0, -4.62, 1)
+    throw_over(-0.6, 0.15, -0.8, -1)
+    cushions(-3.5, 0.0, -4.62, 1, ("Cream", "Red", "Cream"))
+    cushions(-3.5, 0.0, -0.8, -1, ("Navy", "Cream", "Red"))
+    pendants(((-3.6, 4.6, -3.9), (-0.2, 4.2, -4.0), (-2.2, 5.0, -1.5), (0.6, 4.8, -2.0)), under_flat)
+    pendants(((-2.6, 3.5, 4.15), (-2.0, 3.1, 3.85), (-1.4, 3.65, 4.3)), under_shed)
+
+
 # ---- B2R: B2 revised, the user's pick with its stair moved to the back wall (the default lodge). The loft, the
 # outfitters up there and the snug under it as B2; the stair is B2's (the same flight, climbing toward the loft) but
 # along the back wall, arriving at the loft's back corner by the gear wall; the lounge drawn forward off the wall for it
@@ -1868,8 +2251,9 @@ def layout_B2():
 def layout_B2R():
     LX = -5.4
     SZ0, SZ1 = MZ + 0.06, MZ + 1.56       # the stair: off the back wall's face, 1.5 m wide (as B2's)
-    b_lounge(pend=((-3.6, 4.6, -3.9), (-0.2, 4.2, -4.0), (-2.2, 5.0, -1.5), (0.6, 4.8, -2.0)),
-             FZ=-2.71, back=-4.62, front=-0.8, rug=-5.05, tables=((-4.6, -4.62), (1.0, -0.45)))
+    # the lounge (lodge5: bigger): round the fire, and its second half facing the front glass
+    fire_lounge()
+    window_lounge()
     b_rest()
     # under the loft: the snug and the café's tables, as B2
     lohi("Runner", (-10.9, 0.0, -0.4), (-6.5, 0.012, 1.9))
@@ -1880,7 +2264,7 @@ def layout_B2R():
     armchair(-9.6, -2.6, 180); armchair(-7.8, -2.6, 180)
     bistro(-9.2, 3.6); bistro(-8.4, 5.6)
     plant(-6.0, -6.1, 1.2)
-    plant(-2.9, 6.15, 1.1); plant(1.6, 6.15, 1.5)   # (the front glass clear again, as B's)
+    plant(-5.15, 6.15, 1.3); plant(1.6, 6.15, 1.5)   # (the front glass clear again, as B's; the window lounge's view between them)
     # the loft, open along its edge but where the stair comes up at its back corner
     upper_floor("loft", XH + T, LX, MZ, 6.5)
     open_edge("z", LX, SZ1, 6.5, side=-1, name="loftrail")
@@ -1904,9 +2288,21 @@ def layout_B2R():
     display_table(-8.6, -2.3, y0=MY)
     rail_x(-10.1, -7.2, 3.4, y0=MY, two_sided=True)
     mannequin(-9.3, 6.0, "Red", y0=MY); mannequin(-8.3, 6.0, "ArtB", y0=MY); mannequin(-7.3, 6.0, "Navy", y0=MY)
-    till(-10.6, 0.3, -9.9, 1.5, y0=MY)
+    till(-10.6, 1.75, -9.9, 2.95, y0=MY)   # (lodge5: moved off the way to the doors out to the deck)
     hanging_sign(0, LX + 0.15, MY + 2.0, 1.0, 3.0, 0.75, lambda x: ru(x) - RD, yaw=90)
     marker("LIGHT_hall", (-4.6, 7.6, -1.0))
+    # the doors out to the lookout: its sign over them (on their head), a runner up to them
+    lohi("Steel", (XH + T, MY + 2.36, -0.72), (XH + T + 0.04, MY + 2.86, 0.72))
+    art("lookout", (XH + T + 0.045, MY + 2.61, 0.0), 1.36, 0.46, 90, frame=None)
+    lohi("Runner", (XH + T + 0.05, MY, -0.8), (XH + T + 3.0, MY + 0.012, 0.8))
+    # the hall's details: old skis up the back wall over the stair, the trail map at its foot, art in the snug and the
+    # café, the coats by the side door
+    ski_wall(-4.9, 0.1, 4.95, 7)
+    art("map", (2.0, 1.85, MZ + 0.04), 1.7, 0.85)
+    art("topo", (XH + T + 0.04, 1.75, -5.7), 0.95, 1.07, 90)
+    art("posterA", (WX0 + 0.04, 1.75, -4.1), 0.62, 0.93, 90)
+    art("posterB", (WX0 + 0.04, 1.9, 3.3), 0.62, 0.93, 90)
+    coat_rack(1.68, 2.95)
 
 
 # ---- B3: the balcony (a floor at +3.8 along the front glass, the stair a dog-leg standing in the hall)
@@ -1945,6 +2341,9 @@ def layout_B3():
 
 LAYOUTS = {"A": layout_A, "B": layout_B, "C": layout_C, "B1": layout_B1, "B2": layout_B2, "B3": layout_B3, "B2R": layout_B2R}
 
+# the lookout's deck on the wing's roof (the shell's: seen in every layout; walked onto from B2's and B2R's loft)
+deck()
+
 # warm light: a strip along the clerestory beam
 solid("LED", [(XH + 0.2, ru(XH + 0.2) - RD - BD - 0.03, ZC + 0.15), (XB, ru(XB) - RD - BD - 0.03, ZC + 0.15), (XB, ru(XB) - RD - BD - 0.03, ZC + 0.19), (XH + 0.2, ru(XH + 0.2) - RD - BD - 0.03, ZC + 0.19)],
       [(XH + 0.2, ru(XH + 0.2) - RD - BD, ZC + 0.15), (XB, ru(XB) - RD - BD, ZC + 0.15), (XB, ru(XB) - RD - BD, ZC + 0.19), (XH + 0.2, ru(XH + 0.2) - RD - BD, ZC + 0.19)])
@@ -1965,7 +2364,11 @@ wcol("low_b", (XL - T, 0.0, SIDE_DOOR[1] + 0.02), (XL, Y0, D))
 wcol("low_top", (XL - T, SIDE_DOOR[2], SIDE_DOOR[0]), (XL, Y0, SIDE_DOOR[1]))
 wcol("high_a", (XH, 0.0, -D), (XH + T, H, WOPEN[0] - 0.02))
 wcol("high_b", (XH, 0.0, WOPEN[1] + 0.02), (XH + T, H, D))
-wcol("high_top", (XH, WOPEN[2] - 0.45, WOPEN[0]), (XH + T, H, WOPEN[1]))
+wcol("high_top_a", (XH, WOPEN[2] - 0.45, WOPEN[0]), (XH + T, H, DOORW[0]))
+wcol("high_top_b", (XH, WOPEN[2] - 0.45, DOORW[1]), (XH + T, H, WOPEN[1]))
+wcol("high_sill", (XH, WOPEN[2] - 0.45, DOORW[0]), (XH + T, MY - 0.05, DOORW[1]))
+wcol("high_head", (XH, DOORW[2], DOORW[0]), (XH + T, H, DOORW[1]))
+helper("FLR_deckdoor", (XH - 0.1, MY - 0.3, DOORW[0]), (XH + T + 0.1, MY, DOORW[1]))
 wcol("wing_front", (XW, 0.0, WZ1 - T), (XH, WY, WZ1))
 wcol("wing_end", (XW, 0.0, WZ0), (XW + T, WY, WZ1))
 wcol("wing_back", (XW, 0.0, WZ0), (XH, WY, WZ0 + T))
@@ -1979,7 +2382,7 @@ while x < SX1 - 1e-3:
         helper("CAM_shed", (max(x, XB), ru(x1) - RD - 0.1, SZ0 - 0.1), (x1, ru(max(x, XB)) + RT + 0.4, ZC))
     x = x1
 helper("CAM_flat", (FX0, H - RD - 0.1, FZ0), (FX1, H + RT + 0.5, FZ1))
-helper("CAM_wing", (WRX0, WY - RD - 0.2 - 0.25, WRZ0), (XH, WY + RT + 0.5, WRZ1 + 0.6))
+helper("CAM_wing", (WRX0, WY - RD - 0.2 - 0.25, WRZ0), (XH, MY - 0.02, WRZ1 + 0.6))
 marker("MARK_front", (0, 0, D))
 marker("MARK_right", (XL, 0, 0))
 
@@ -2039,5 +2442,7 @@ write(OUT, "Lodge")
 for key, build in LAYOUTS.items():
     with inside():
         build()
+        if key != "B2R":   # (the doors out to the deck are B2R's way out; elsewhere they're not walked through)
+            helper("BLK_deckdoor", (XH + T, MY, DOORW[0]), (XH + T + 0.12, DOORW[2], DOORW[1]))
     marker("MARK_front", (0, 0, D))
     write(OUT[:-4] + key + ".fbx", "Lodge" + key)

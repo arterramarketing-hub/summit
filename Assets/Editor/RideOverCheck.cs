@@ -6,13 +6,16 @@ using UnityEngine;
 using Summit;
 
 /// <summary>
-/// Rides into things at several heights, angles and speeds and reports what each did: ridden over (and whether
-/// popped over), glanced off, or a crash. The things are made here on open piste, sat on the snow's own slope: a
+/// Rides into things at several heights, angles and speeds and reports what each did: ridden over (the board lifted
+/// smoothly over it, never off the snow's line, never thrown, never turned), slid along, or a crash. The things are made here on open piste, sat on the snow's own slope: a
 /// rock (a squat egg, its sides rising out of the snow), a stump (a flat-topped post) and a block (a slab with square sides).
 /// The angle is between the way the board goes and straight into the face it meets (0 is dead on).
 /// Run: Unity -batchmode -nographics -projectPath . -executeMethod RideOverCheck.Run -logFile rideover.log
 /// Strips (with the GPU): -executeMethod RideOverCheck.Strips (RIDEOVER_OUT=dir): frames from beside a few rides.
 /// Log lines: RIDEOVER (one per ride), RIDEOVER-TABLE (the summary), RIDEOVER-FAIL (against the rule).
+/// The rule: low (under Rider.StepUp) is ridden over, on the snow all the way (no air), on its line (no sideways move),
+/// its height changing no faster than MaxLiftAcc; taller is a crash only within Rider.DeadOnAngle of square on, and a
+/// glancing hit takes speed and adds none (the board is never faster after, nor thrown off sideways faster than it came in).
 /// </summary>
 public static class RideOverCheck
 {
@@ -20,6 +23,7 @@ public static class RideOverCheck
     const float Dt = 1f / 120f;
     static SummitGame game; static Rider r; static RiderBody body; static SlopeStreamer terrain; static Forest props;
     static string lastCrash; static bool hopped, glanced, met; static float glanceInto;
+    const float MaxLiftAcc = 160f;   // m/s^2: the most the board's height may be hurried over a low thing (a pop was a step: thousands)
     static int fails;
     static readonly string only = System.Environment.GetEnvironmentVariable("RIDEOVER_ONLY");
 
@@ -66,7 +70,7 @@ public static class RideOverCheck
                             if (only != null && only != $"{shape},{h:0.00},{ang:0},{v0:0}") continue;
                             var res = Ride(shape, h, ang, v0, z, null);
                             string key = $"{shape} h{h:0.00} a{ang:0}";
-                            Debug.Log($"RIDEOVER {shape} top {h:0.00} m, {ang:0} deg, {v0:0} m/s: {res.outcome}{(res.hop ? " (popped over)" : "")}; speed {res.vIn:0.0} -> {res.vOut:0.0} m/s, highest {res.peak:0.00} m over the snow{(res.into > 0f ? $", {res.into:0.0} m/s into it" : "")}{(res.angle >= 0f ? $", met {res.angle:0} deg off square" : "")}, {res.offLine:+0.00;-0.00} m off its line");
+                            Debug.Log($"RIDEOVER {shape} top {h:0.00} m, {ang:0} deg, {v0:0} m/s: {res.outcome}{(res.hop ? $" (lifted {res.lift:0.00} m, {res.vAcc:0} m/s^2 at most{(res.air ? ", OFF THE SNOW" : "")}, {res.side:0.00} m/s sideways at most, {Mathf.Max(0f, res.sunk):0.00} m into it)" : "")}; speed {res.vIn:0.0} -> {res.vOut:0.0} m/s, highest {res.peak:0.00} m over the snow{(res.into > 0f ? $", {res.into:0.0} m/s into it" : "")}{(res.angle >= 0f ? $", met {res.angle:0} deg off square" : "")}, {res.offLine:+0.00;-0.00} m off its line");
                             table.TryGetValue(key + " " + res.outcome, out int c); table[key + " " + res.outcome] = c + 1;
                             // the rule: low enough is ridden over; taller, only dead on (and fast enough) crashes
                             bool low = h <= Rider.StepUp - 0.03f;
@@ -82,6 +86,15 @@ public static class RideOverCheck
                                 if (sq && res.outcome != "crash" && res.into <= 0f) { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: met {res.angle:0} deg off square, {res.outcome}, not a crash"); }
                                 if (!sq && res.outcome == "crash") { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: met {res.angle:0} deg off square, a crash"); }
                             }
+                            if (low && res.outcome == "over")
+                            {
+                                if (res.air) { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: left the snow riding over it"); }
+                                if (res.side > 0.3f) { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: moved sideways at {res.side:0.00} m/s riding over it"); }
+                                if (res.vAcc > MaxLiftAcc) { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: its height hurried at {res.vAcc:0} m/s^2 (a step, not a rise)"); }
+                                if (res.sunk > 0.1f) { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: the board went {res.sunk:0.00} m into it (lifted {res.lift:0.00} m)"); }
+                            }
+                            if (res.outcome == "deflect" && res.vAfter > res.vIn + 0.3f) { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: faster straight after a glancing hit ({res.vIn:0.0} -> {res.vAfter:0.0} m/s)"); }
+                            if (res.outcome == "deflect" && res.side > res.vIn * Mathf.Sin(Mathf.Min(89f, res.angle < 0f ? 89f : 90f - res.angle + 8f) * Mathf.Deg2Rad) + 0.5f) { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: thrown sideways at {res.side:0.0} m/s by a glancing hit (more than sliding along its face gives)"); }
                             if (Mathf.Abs(res.offLine) > 0.05f) { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: the board came {res.offLine:+0.00;-0.00} m off its line (the angle asked for is not the one met)"); }
                         }
         }
@@ -186,7 +199,7 @@ public static class RideOverCheck
 
     static void Stream() { terrain.Prewarm(); props.Prewarm(); Physics.SyncTransforms(); }
 
-    struct Result { public string outcome; public bool hop; public float vIn, vOut, peak, into, angle, offLine; }
+    struct Result { public string outcome; public bool hop, air; public float vIn, vOut, peak, into, angle, offLine, lift, vAcc, side, sunk, vAfter; }
 
     /// <summary>A thing `shape` standing h over the snow at (centre, z), met at `ang` degrees off dead on at v0.</summary>
     static GameObject Make(string shape, float h, float ang, float x, float z, out float side)
@@ -257,7 +270,7 @@ public static class RideOverCheck
                 foreach (var c in Physics.OverlapSphere(r.Body.position, 3f, ~0, QueryTriggerInteraction.Collide))
                     Debug.Log($"RIDEOVER-START near {c.name} ({c.GetType().Name}) layer {c.gameObject.layer} trigger={c.isTrigger} at {c.bounds.center - r.Body.position} size {c.bounds.size} parent {(c.transform.parent != null ? c.transform.parent.name : "-")}");
             lastCrash = null; hopped = false; glanced = false; glanceInto = 0f; met = false;
-            float t = 0f, vNear = v0;
+            float t = 0f, vNear = v0, vyPrev = r.Body.linearVelocity.y; bool sawGlance = false;
             int step = 0;
             while (t < 4f)
             {
@@ -285,6 +298,23 @@ public static class RideOverCheck
                     Debug.Log($"RIDEOVER-TRACE t={t:0.000} z-zo={r.Z - z:0.00} x-xo={r.X - x:0.00} up={r.Body.position.y - Rider.R - Slope.DrawnHeight(r.X, r.Z):0.00} v={r.Body.linearVelocity} air={r.Airborne} crashed={r.Crashed} lift={r.Lift:0.00} roof={(r.OnRoof != null)} hop={hopped} speed={r.Speed:0.0} heading={r.Heading:0.00} steer={r.Steer:0.00} over:{os}");
                 }
                 if (Mathf.Abs(r.Z - z) < 2.5f) res.peak = Mathf.Max(res.peak, r.Body.position.y - Rider.R - Slope.DrawnHeight(r.X, r.Z));
+                // riding over: how high it is lifted, whether it ever leaves the snow, how hard its height is hurried,
+                // and whether it is moved sideways (from where it starts to rise until it is back down)
+                if (step > 2 && !r.Crashed && r.Z > z - 8f && r.Z < z + 4f)
+                {
+                    res.lift = Mathf.Max(res.lift, r.OverLift);
+                    if (r.Airborne) res.air = true;
+                    float vyNow = r.Body.linearVelocity.y;
+                    if (r.OverLift > 0.005f && !r.Airborne) res.vAcc = Mathf.Max(res.vAcc, Mathf.Abs(vyNow - vyPrev) / Dt);
+                    res.side = Mathf.Max(res.side, Mathf.Abs(r.Body.linearVelocity.x));
+                    // (never through it: the board's bottom against the thing's own surface under it)
+                    var gc = g.GetComponent<Collider>();
+                    Vector3 bp = r.Body.position;
+                    if (gc != null && gc.Raycast(new Ray(new Vector3(bp.x, bp.y + 3f, bp.z), Vector3.down), out var under, 8f))
+                        res.sunk = Mathf.Max(res.sunk, under.point.y - (bp.y - Rider.R));
+                }
+                if (glanced && !sawGlance) { sawGlance = true; res.vAfter = r.Speed; }
+                vyPrev = r.Body.linearVelocity.y;
                 if (r.Z < z - 1.5f) res.offLine = r.X - xs;
                 if (r.Crashed) { res.outcome = "crash"; break; }
                 if (r.Z > z + 4f) { res.outcome = glanced ? "deflect" : "over"; break; }
@@ -348,7 +378,7 @@ public static class RideOverCheck
             strip.Apply();
             string file = $"{outDir}/RideOver_{c.shape}_{c.h:0.0}m_{c.ang:0}deg_{c.v:0}ms_{res.outcome}.png";
             System.IO.File.WriteAllBytes(file, strip.EncodeToPNG());
-            Debug.Log($"RIDEOVER-STRIP {file}: {res.outcome}{(res.hop ? " (popped over)" : "")}, {taken} frames");
+            Debug.Log($"RIDEOVER-STRIP {file}: {res.outcome}{(res.hop ? $" (lifted {res.lift:0.00} m)" : "")}, {taken} frames");
             k++;
         }
         Physics.simulationMode = SimulationMode.FixedUpdate;

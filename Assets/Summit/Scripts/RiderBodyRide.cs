@@ -96,6 +96,9 @@ namespace Summit
             Material wood = Plain(new Color(0.66f, 0.47f, 0.26f), 0.3f), woodDark = Plain(new Color(0.38f, 0.24f, 0.12f), 0.3f), rope = Plain(new Color(0.84f, 0.78f, 0.60f), 0.1f);
             foreach (var mr in go.GetComponentsInChildren<MeshRenderer>(true))
             {
+                // the graphics' uvs: a ski's top sheet; a pole's shaft takes the design's rail colour (before the skis are copied)
+                if (mr.name == "Ski") BoardArt.Map(mr, BoardArt.Kind.Ski);
+                else if (mr.name == "Pole") BoardArt.Map(mr, BoardArt.Kind.Solid);
                 var mats = mr.sharedMaterials;
                 for (int i = 0; i < mats.Length; i++)
                 {

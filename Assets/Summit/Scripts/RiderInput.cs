@@ -156,7 +156,7 @@ namespace Summit
                 float d = on ? Mathf.Clamp((fingerPos.x - StickOrigin.x) / radius, -1f, 1f) : 0f;
                 float a = Mathf.Abs(d);
                 a = a < 0.025f ? 0f : (a - 0.025f) / 0.975f;
-                // how far you drag is how fast you go sideways (Rider.CarveTurn): nearly in proportion, a little
+                // how far you drag is how fast you go sideways (Rider.WantLine): nearly in proportion, a little
                 // finer in the middle for small corrections (half the throw is 42% of the sideways speed)
                 target = Mathf.Sign(d) * Curve(a);
                 holding = !on && TrickMode && gesture.SinceUp <= FingerGesture.DoubleGap;

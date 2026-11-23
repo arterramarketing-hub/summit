@@ -79,6 +79,7 @@ public static class LodgeWalkTest
     }
 
     static Vector3 L(float x, float z) => camp.ChaletPoint(x, 0f, z);
+    static Vector3 cam(Camp c) => Camera.main != null ? Camera.main.transform.position : Vector3.zero;
     /// <summary>A point upstairs (the floors at +3.8).</summary>
     static Vector3 U(float x, float z) => camp.ChaletPoint(x, 3.8f, z);
 
@@ -209,10 +210,20 @@ public static class LodgeWalkTest
             Leg("the counter to the tuning bench", counter, new[] { L(7.2f, 2.5f), bench }, Camp.Station.Upgrades);
             Leg("the tuning bench through the snug's way into the café", bench, new[] { L(6f, 1.0f), L(-6f, 1.0f), L(-10f, 0.8f), L(-13.5f, 2.2f) });
             Leg("the café to the snug under the loft", L(-13.5f, 2.2f), new[] { L(-10f, 0.8f), L(-8.6f, 0.6f), L(-8.6f, -1.6f) });
-            Leg("the snug into the ring round the fire", L(-8.6f, -1.6f), new[] { L(-6.8f, -1.6f), L(-4.6f, 0.3f), L(-4.5f, -1.72f), L(-3.0f, -1.72f) });
+            // (lodge5: the lounge bigger, a pair of armchairs at each end of the fire: into its ring past the front sofa's end)
+            Leg("the snug into the ring round the fire", L(-8.6f, -1.6f), new[] { L(-6.8f, -1.6f), L(-6.0f, -0.75f), L(-4.4f, -0.75f), L(-4.4f, -1.72f), L(-3.0f, -1.72f) });
             Leg("all the way round the fire (the stair behind the back sofa)", L(-3.0f, -1.72f), new[] { L(-0.1f, -1.72f), L(0.45f, -2.71f), L(-0.1f, -3.7f), L(-3.5f, -3.7f), L(-4.1f, -2.71f), L(-3.5f, -1.72f) });
-            Leg("the fire out the side door to the racks", L(-3.5f, -1.72f), new[] { L(-4.5f, -1.72f), L(-4.6f, 0.3f), L(0f, 1.0f), L(8f, 3.9f), L(10.4f, 3.95f), L(11.6f, 3.95f), L(14.75f, 3.95f), L(14.75f, -2.1f), L(14.75f, -4.6f) });
-            Leg("the stair's foot round the lounge to the couple's glass", L(1.6f, -5.9f), new[] { L(3.0f, -4.4f), L(3.6f, 0.8f), L(-1.0f, 5.0f) });
+            Leg("the fire out the side door to the racks", L(-3.5f, -1.72f), new[] { L(-4.4f, -1.72f), L(-4.4f, -0.75f), L(-4.6f, 1.0f), L(0f, 1.1f), L(8f, 3.9f), L(10.4f, 3.95f), L(11.6f, 3.95f), L(14.75f, 3.95f), L(14.75f, -2.1f), L(14.75f, -4.6f) });
+            Leg("the stair's foot round the lounge to the couple's glass", L(1.6f, -5.9f), new[] { L(3.0f, -4.4f), L(3.6f, 0.8f), L(2.4f, 5.0f), L(-1.0f, 5.6f) });
+            Leg("the door between the lounge's two halves to the café", door, new[] { L(3.6f, 1.2f), L(-4.6f, 1.0f), L(-10f, 0.8f), L(-13.5f, 2.2f) });
+            // the lookout's deck on the wing's roof: from the wardrobe across the loft, out of its doors in the high end's
+            // glass, to the front rail (standing still there the camera takes in the mountain); and back down to the hall
+            Leg("the wardrobe across the loft, out of its doors onto the lookout's deck, to the front rail", style, new[] { L(-7.3f, -3.4f), L(-7.3f, -0.7f), L(-9.8f, -0.1f), L(-12.2f, 0.0f), L(-13.0f, 2.0f), L(-13.2f, 4.7f) });
+            for (int i = 0; i < 90; i++) { camp.Walk(Vector2.zero, dt); body.Apply(dt); camp.CameraStep(dt); }
+            if (!camp.OnLookout) { fails++; problems.Add(((Vector3)fPos.GetValue(camp), "the deck's lookout")); Debug.LogError("LODGEWALK standing at the deck's front rail: not on the lookout"); }
+            else Debug.Log($"LODGEWALK standing at the deck's front rail: on the lookout; feet {((Vector3)fPos.GetValue(camp)).y - camp.ChaletPoint(0, 0, 0).y:0.00} above the lodge's floor, the camera at {cam(camp) - camp.ChaletPoint(0, 0, 0)}");
+            Leg("round the deck: past the two talking by the viewer, round the fire bowl and the lounge chairs, by the drift, back to the doors", U(-13.2f, 4.7f), new[] { L(-13.0f, 2.6f), L(-14.2f, 2.3f), L(-15.4f, 1.9f), L(-16.2f, 0.6f), L(-14.0f, 0.2f), L(-13.4f, -1.6f), L(-13.4f, -3.9f), L(-14.6f, -4.3f), L(-12.4f, -3.4f), L(-12.2f, 0.0f) });
+            Leg("the deck back in through the doors, across the loft and down the stair to its foot", U(-12.2f, 0.0f), new[] { L(-9.8f, -0.1f), L(-7.3f, -0.7f), L(-7.3f, -3.4f), L(-7.2f, -4.4f), L(-6.4f, -5.6f), L(-5.0f, -5.9f), L(0.4f, -5.9f), L(1.6f, -5.9f) });
             var tdi = new List<Vector3>(down) { L(3.6f, 0.8f), door, L(2f, 9f), foot, dropIn };
             toDropIn = tdi.ToArray();
         }

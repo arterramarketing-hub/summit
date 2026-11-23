@@ -403,7 +403,8 @@ namespace Summit
             Vector3 back = Model.rotation * Vector3.forward, right = Model.rotation * Vector3.left;   // (the model faces -z)
             air.Step(dt, Windless ? Vector3.zero : ClothWind.WeatherAt(transform.position, 1f - Mathf.Clamp01(Shelter)), back, right);
             air.Apply(BodySkin, cut.BodyWind);
-            air.Apply(LegsSkin, cut.LegsWind);
+            // (sitting, the trousers lie on the seat: wind in them billowed them down through it, a bench's or a stool's)
+            if (mode == Mode.Sit) cut.LegsWind.Still(LegsSkin); else air.Apply(LegsSkin, cut.LegsWind);
         }
 
         // a foot on the ground stays where it landed (the clip's own drift and the turns would slide it)

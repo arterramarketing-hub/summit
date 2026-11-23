@@ -221,6 +221,7 @@ namespace Summit
                 var mr = deck.GetComponent<MeshRenderer>();
                 if (mr != null)
                 {
+                    BoardArt.Map(mr, BoardArt.Kind.Deck);   // (the graphics' uvs on its top sheet and base: by the file's own material names)
                     var mats = mr.sharedMaterials;
                     for (int i = 0; i < mats.Length; i++) mats[i] = mats[i] != null && mats[i].name.StartsWith("Board") ? boardPaint : gearM;
                     mr.sharedMaterials = mats;

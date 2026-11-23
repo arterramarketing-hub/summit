@@ -177,6 +177,7 @@ public static class ClosetShot
     {
         foreach (var k in Keys) yield return k;
         foreach (var k in Progress.SetKeys()) yield return k;
+        foreach (var k in Progress.RiderKeys()) yield return k;
         for (int c = 0; c < Wardrobe.Count; c++) { yield return "summit_wear_" + (Wardrobe.Cat)c; yield return "summit_own_" + (Wardrobe.Cat)c; }
     }
 

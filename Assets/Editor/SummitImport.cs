@@ -98,6 +98,25 @@ public class SummitImport : AssetPostprocessor
             r.SetPlatformTextureSettings(ios);
             return;
         }
+        if (assetPath.Contains("Summit/Resources/BoardArt/"))
+        {
+            // the board graphics (Tools/MakeBoardArt.py): 512 x 256, mip levels and a little anisotropy so the top sheet
+            // still reads from the chase camera's low angle, ASTC 4x4 on the phone (about 170 KB each with its mips).
+            // The closet's thumbnails: one 512 x 512 sheet with clear edges, drawn flat on the screen (no mips).
+            var b = (TextureImporter)assetImporter;
+            bool sheet = assetPath.EndsWith("BoardArtThumbs.png");
+            b.textureType = TextureImporterType.Default;
+            b.sRGBTexture = true; b.npotScale = TextureImporterNPOTScale.None;
+            b.alphaSource = sheet ? TextureImporterAlphaSource.FromInput : TextureImporterAlphaSource.None;
+            b.alphaIsTransparency = sheet;
+            b.mipmapEnabled = !sheet; b.filterMode = sheet ? FilterMode.Bilinear : FilterMode.Trilinear; b.anisoLevel = sheet ? 1 : 4;
+            b.wrapMode = TextureWrapMode.Clamp;
+            b.textureCompression = TextureImporterCompression.CompressedHQ; b.maxTextureSize = 512;
+            var bios = b.GetPlatformTextureSettings("iPhone");
+            bios.overridden = true; bios.maxTextureSize = 512; bios.format = TextureImporterFormat.ASTC_4x4;
+            b.SetPlatformTextureSettings(bios);
+            return;
+        }
         if (!assetPath.Contains("Summit/Resources/Rider")) return;
         var t = (TextureImporter)assetImporter;
         t.filterMode = FilterMode.Point;    // a flat-colour palette: keep the colours crisp

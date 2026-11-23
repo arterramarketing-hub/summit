@@ -135,13 +135,16 @@ namespace Summit
             new[] { 16, 17, 18 },   // the pack, its side panels, its accent
         };
 
+        /// <summary>The GRAPHICS row on the board now (0: none, its plain colour).</summary>
+        public int ShownGraphic { get; private set; }
+
         /// <summary>The parts of the rider the closet can show (ClosetStage clones them for its preview).</summary>
         public Transform Upper => upper;
         public Transform BoardGear => boardRoot;
         /// <summary>Everything drawn of the rider on a run: the body and whatever they ride (board, skis and poles, sled, tube).</summary>
         public Transform Drawn => roll;
         /// <summary>What takes the Invincible rainbow's second colour (PowerAura): the trousers and the board or skis' paint.</summary>
-        public bool Lower(Material m) => m != null && (m == pantsMat || m == boardMat || m == boardPaint);
+        public bool Lower(Material m) => m != null && (m == pantsMat || m == boardMat || m == boardPaint || m == tubeBand);
         public Transform SkiGear => skiRoot;
         public Transform SledGear => sledRoot;
 
@@ -158,12 +161,18 @@ namespace Summit
             if (pantsMat != null) Cloth(pantsMat, Wardrobe.Shown(Wardrobe.Cat.Pants, o[(int)Wardrobe.Cat.Pants], heroOutfit), 1f);
             WearFleece(o);   // (pyjamas: the fleece as made, or dyed by the jacket's row, RiderBodyHero)
             var b = Wardrobe.Get(Wardrobe.Cat.Board, o[(int)Wardrobe.Cat.Board]);
+            // a graphic, when one is on, in place of the plain colour (on the hero's own deck and skis: the previous
+            // rider's board was never laid out for one)
+            var art = !Wardrobe.Classic && hero != null ? Wardrobe.Get(Wardrobe.Cat.Graphic, o[(int)Wardrobe.Cat.Graphic]) : null;
             if (boardMat != null)
             {
-                boardMat.SetColor("_BaseColor", b.a);
+                bool printed = BoardArt.Put(boardMat, art, b.a);
+                if (printed) b = art;
                 Sheen(boardMat, b.smooth);
                 if (boardMat.HasProperty("_Metallic")) boardMat.SetFloat("_Metallic", b.metal);
             }
+            ShownGraphic = art != null && art.art != null ? o[(int)Wardrobe.Cat.Graphic] : 0;
+            BoardArt.Put(tubeBand, art, TubeBandWhite);   // (the tube's stripe: no uvs, so the design's rail colour)
             if (gearPalette != null)
             {
                 System.Array.Copy(palBase, palNow, palBase.Length);
