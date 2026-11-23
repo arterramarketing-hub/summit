@@ -589,6 +589,7 @@ namespace Summit
             dayNight.Hook(rider, fx, camp, spray, trail);
             weather = Weather.Build(rider, camp, cam, atmo, fx, snow, audioFx, () => start);   // the weather on top of the time of day (Weather.cs)
             NightLights.Build(rider, cam, dayNight, atmo, spray);   // floodlights down the mountain at dusk and night (NightLights.cs)
+            PisteKit.Build(rider);   // piste poles, rope lines, snow guns, the patrol hut, trail signs (PisteKit.cs, TrailSigns.cs)
             ToHub();
             // the game opens on the start page (StartPage.cs), over the camp it has just set up. Not for the
             // device-test autoplay, which carries straight on into a run, nor for the editor's test tools, which

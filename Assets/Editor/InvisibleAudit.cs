@@ -282,6 +282,7 @@ public static class InvisibleAudit
         typeof(Forest).GetMethod("Update", NP).Invoke(props, null);
         if (lights == null) lights = Object.FindFirstObjectByType<NightLights>();
         if (lights != null) lights.Prewarm();   // (the floodlights' poles: solid, and streamed with the rider)
+        if (PisteKit.Instance != null) PisteKit.Instance.Prewarm();   // (the snow guns, hydrants and patrol hut: solid)
         Sweep();
         Physics.SyncTransforms();   // (moved colliders reach the physics scene on its next step; the queries here come first)
     }

@@ -853,7 +853,7 @@ namespace Summit
                 float a = 1f / Mathf.Max(ci - co, 0.001f);
                 nearPos[i] = new Vector4(l.head.x, l.head.y, l.head.z, l.power * on);
                 nearDir[i] = new Vector4(l.dir.x, l.dir.y, l.dir.z, 1f / (l.range * l.range));
-                nearCone[i] = new Vector4(a, -co * a, 0f, 0f);
+                nearCone[i] = new Vector4(a, -co * a, l.id, 0f);   // (z: its id, for _NLReal: PisteKit.shader)
             }
             for (int i = n; i < MaxNear; i++) { nearPos[i] = Vector4.zero; nearDir[i] = new Vector4(0f, -1f, 0f, 1f); nearCone[i] = Vector4.zero; }
             NearCount = n;

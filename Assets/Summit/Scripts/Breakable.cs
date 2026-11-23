@@ -51,6 +51,19 @@ namespace Summit
             return b;
         }
 
+        /// <summary>
+        /// A flag drawn as part of a mesh shared with others (PisteKit) until it is hit: reveal (called as it is hit,
+        /// before it goes down) hides it in the shared mesh and gives the holder pieces of its own to topple; conceal
+        /// (a new run, once it stands again) takes them away and shows it in the shared mesh.
+        /// </summary>
+        public static Breakable Flag(Transform holder, float height, System.Action reveal, System.Action conceal)
+        {
+            var b = Flag(holder, height);
+            b.reveal = reveal; b.putBack = conceal;
+            return b;
+        }
+        System.Action reveal;
+
         /// <summary>A piece of wood to throw when a fence span breaks: where it was, its size, what it is painted with.</summary>
         public struct Plank { public Vector3 at; public Quaternion rot; public Vector3 size; public Material mat; }
 
@@ -203,6 +216,7 @@ namespace Summit
             if (Down) return transform.position;
             Down = true;
             foreach (var bc in triggers) bc.enabled = false;
+            reveal?.Invoke();
             Vector3 flat = new Vector3(vel.x, 0f, vel.z);
             Vector3 dir = flat.sqrMagnitude > 0.04f ? flat.normalized : transform.forward;
             float speed = flat.magnitude;
@@ -479,7 +493,11 @@ namespace Summit
         {
             moving.Clear();
             foreach (var b in all) if (b != null) b.Restore();
+            Restored?.Invoke();
         }
+
+        /// <summary>Everything was put back for a new run (PisteKit ties its rope lines up again).</summary>
+        public static event System.Action Restored;
 
         void Restore()
         {
