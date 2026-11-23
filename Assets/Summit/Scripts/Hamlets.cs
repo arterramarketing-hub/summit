@@ -672,7 +672,11 @@ namespace Summit
             // what is drawn is what is solid: the way in along a side wall is a stone landing at the floor with a rail
             // round it a metre high (Tools/MakeCabins.py, stoop), not a block 2.5 m up; the lodge's outside stair climbs
             // from the hill to the first balcony, its rail a metre over the steps, not a block as high as the top
-            if (name.StartsWith("COL_terrace") || name.StartsWith("COL_landing")) hi.y = Mathf.Min(hi.y, StoopTop);
+            // (and solid only where it is drawn: the landing's stone block and its rail, not a box a metre over the open
+            // landing; a deck's planks and rail, not a block down to the hill under them: InvisibleAudit)
+            if (name.StartsWith("COL_terrace") || name.StartsWith("COL_landing")) { Landing(b, t, kind, name, lo, hi); return; }
+            if (name.StartsWith("COL_deck") && kind.house) { Deck(b, t, kind, name, lo, hi); return; }
+            if (name.StartsWith("COL_car")) { Car(b, t, kind, name, lo, hi); return; }
             if (name.StartsWith("COL_stair")) { Stair(t, kind, lo, hi); return; }
             Vector3 c = (lo + hi) * 0.5f, size = hi - lo;
             if (name.StartsWith("COL_"))
@@ -701,19 +705,77 @@ namespace Summit
 
         const float StoopTop = 1.15f;   // a landing's rail, and the snow on it
 
-        /// <summary>The lodge's stair (its helper box, lo..hi): a ramp up the steps' rail to the balcony, and the balcony's end.</summary>
+        /// <summary>A solid box of a building (lo..hi in its own space), hit as the building.</summary>
+        void SolidBox(Built b, Transform t, Kind kind, string name, Vector3 lo, Vector3 hi)
+        {
+            var g = new GameObject(name);
+            g.transform.SetParent(t, false); g.transform.localPosition = (lo + hi) * 0.5f;
+            var box = g.AddComponent<BoxCollider>(); box.size = hi - lo;
+            g.AddComponent<Obstacle>().label = kind.label;
+            b.solid.Add(box);
+        }
+
+        /// <summary>
+        /// The way in along a side wall (Tools/MakeCabins.py, stoop: its helper box lo..hi): the stone block of the landing
+        /// itself, from the snow up to the floor, and the rail along its outer edge, from 1.2 m past where it runs into
+        /// the hill (the landing is open there: the way in), with the rail across its far end (not the cabins': where
+        /// theirs ends depends on the layout, past the helper box on some).
+        /// </summary>
+        void Landing(Built b, Transform t, Kind kind, string name, Vector3 lo, Vector3 hi)
+        {
+            const float Floor = 0.08f, Rail = 0.14f;   // (the floor's own snow; the rail's posts and bars, snow on top)
+            SolidBox(b, t, kind, name, lo, new Vector3(hi.x, Floor, hi.z));
+            bool outLo = Mathf.Abs(lo.x) > Mathf.Abs(hi.x);   // (the outer edge is the one away from the wall)
+            float xo = outLo ? lo.x : hi.x, xi = outLo ? hi.x : lo.x, so = outLo ? 1f : -1f;
+            SolidBox(b, t, kind, name + "Rail", new Vector3(Mathf.Min(xo, xo + so * Rail), Floor, lo.z + 1.15f), new Vector3(Mathf.Max(xo, xo + so * Rail), StoopTop, hi.z));
+            if (!kind.name.StartsWith("Cabin"))
+                SolidBox(b, t, kind, name + "End", new Vector3(Mathf.Min(xo, xi), Floor, hi.z - Rail), new Vector3(Mathf.Max(xo, xi), StoopTop, hi.z));
+        }
+
+        /// <summary>The car on its deck (its helper box lo..hi, Tools/MakeCabins.py car_deck): its body from the wheels' foot
+        /// (over its wheels) to the bonnet's snow, and the glasshouse with the roof's load on it (was one box 1.9 m high over all of it).</summary>
+        void Car(Built b, Transform t, Kind kind, string name, Vector3 lo, Vector3 hi)
+        {
+            SolidBox(b, t, kind, name, new Vector3(lo.x + 0.05f, lo.y + 0.3f, lo.z + 0.1f), new Vector3(hi.x - 0.05f, lo.y + 1.15f, hi.z - 0.1f));
+            SolidBox(b, t, kind, name + "Top", new Vector3(lo.x + 0.45f, lo.y + 1.0f, lo.z + 0.25f), new Vector3(lo.x + 2.95f, lo.y + 1.75f, hi.z - 0.25f));
+        }
+
+        /// <summary>A cabin's front deck (its helper box lo..hi): the planks and the rail round its three open sides; under
+        /// it there is nothing drawn, and nothing solid.</summary>
+        void Deck(Built b, Transform t, Kind kind, string name, Vector3 lo, Vector3 hi)
+        {
+            const float Rail = 0.12f;
+            SolidBox(b, t, kind, name, new Vector3(lo.x, -0.3f, lo.z), new Vector3(hi.x, 0.08f, hi.z));
+            SolidBox(b, t, kind, name + "RailL", new Vector3(lo.x, 0.08f, lo.z), new Vector3(lo.x + Rail, hi.y, hi.z));
+            SolidBox(b, t, kind, name + "RailR", new Vector3(hi.x - Rail, 0.08f, lo.z), new Vector3(hi.x, hi.y, hi.z));
+            SolidBox(b, t, kind, name + "RailF", new Vector3(lo.x, 0.08f, hi.z - Rail), new Vector3(hi.x, hi.y, hi.z));
+        }
+
+        /// <summary>
+        /// The lodge's stair (its helper box, lo..hi; Tools/MakeCabins.py): its stone foot on the hill, then the flight
+        /// itself, from just under the steps to its rail a metre over them, up to the first balcony, and the balcony's end
+        /// (its planks to its rail). Under the flight and the balcony there is nothing drawn, and nothing solid (it was a
+        /// block from the hill to the rail all the way along: a metre and more of nothing at the snow).
+        /// </summary>
         void Stair(Transform t, Kind kind, Vector3 lo, Vector3 hi)
         {
             float zTop = hi.z - 1.4f;   // where the steps reach the balcony (the box runs on along it)
-            Vector3[] Block(float za, float zb, float ya, float yb) => new[]
+            float fh = hi.y - 1.1f;     // the first floor (the box's top is its rail)
+            float za = lo.z + 1.0f;     // the foot's far side, where the flight starts
+            Vector3[] Block(float z0, float z1, float y0a, float y0b, float y1a, float y1b) => new[]
             {
-                new Vector3(lo.x, lo.y, za), new Vector3(hi.x, lo.y, za), new Vector3(hi.x, lo.y, zb), new Vector3(lo.x, lo.y, zb),
-                new Vector3(lo.x, ya, za), new Vector3(hi.x, ya, za), new Vector3(hi.x, yb, zb), new Vector3(lo.x, yb, zb),
+                new Vector3(lo.x, y0a, z0), new Vector3(hi.x, y0a, z0), new Vector3(hi.x, y0b, z1), new Vector3(lo.x, y0b, z1),
+                new Vector3(lo.x, y1a, z0), new Vector3(hi.x, y1a, z0), new Vector3(hi.x, y1b, z1), new Vector3(lo.x, y1b, z1),
             };
-            var parts = new[] { Block(lo.z, zTop, StoopTop, hi.y), Block(zTop, hi.z, hi.y, hi.y) };
+            var parts = new[]
+            {
+                Block(lo.z + 0.1f, za, lo.y, lo.y, 0.05f, 0.05f),                    // the stone foot
+                Block(za, zTop, -0.3f, fh - 0.3f, StoopTop, hi.y),                   // the flight, under its steps to its rail
+                Block(zTop, hi.z, fh - 0.25f, fh - 0.25f, hi.y, hi.y),               // the balcony's end
+            };
             for (int i = 0; i < parts.Length; i++)
             {
-                string key = kind.name + " stair " + i;
+                string key = kind.name + " stair2 " + i;
                 if (!roofMeshes.TryGetValue(key, out var ms))
                 {
                     ms = new[] { new Mesh { name = key, vertices = parts[i], triangles = HexTris } };

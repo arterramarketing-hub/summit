@@ -19,14 +19,21 @@ namespace Summit
         float GroundAt(float x, float z, float refY, out Vector3 n, out Roofs.Roof roof)
         {
             if (Roofs.Under(x, z, refY, out float y, out n, out roof)) return y;
+            float snow = Slope.DrawnHeight(x, z);
+            if (OverGround(x, z, snow, out y, out n)) return y;   // a rock, a stump, a block low enough to ride (RiderRideOver)
             n = Slope.Normal(x, z);
-            return Slope.DrawnHeight(x, z);
+            return snow;
         }
 
-        float GroundAt(float x, float z, float refY) => Roofs.Under(x, z, refY, out float y, out _, out _) ? y : Slope.DrawnHeight(x, z);
+        float GroundAt(float x, float z, float refY) => GroundAt(x, z, refY, out _, out _);
 
-        /// <summary>Which way the ground under the board faces (a roof's pitch, or the snow's): for drawing the board on it.</summary>
-        public Vector3 GroundNormal(Vector3 p) => Roofs.Under(p.x, p.z, p.y, out _, out Vector3 n, out _) ? n : Slope.Normal(p.x, p.z);
+        /// <summary>Which way the ground under the board faces (a roof's pitch, a rock's top, or the snow's): for drawing the board on it.</summary>
+        public Vector3 GroundNormal(Vector3 p)
+        {
+            if (Roofs.Under(p.x, p.z, p.y, out _, out Vector3 n, out _)) return n;
+            if (OverGround(p.x, p.z, Slope.DrawnHeight(p.x, p.z), out _, out n)) return n;
+            return Slope.Normal(p.x, p.z);
+        }
 
         /// <summary>Each step on the ground: which roof (if any) the board is on, and the points for getting up there.</summary>
         void RoofStep(Roofs.Roof roof)

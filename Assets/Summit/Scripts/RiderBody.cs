@@ -1044,6 +1044,7 @@ namespace Summit
             }
             snowy?.Step(dt, rider.Crashed, rider.Speed);
             LimbsStep(dt);   // the wounds bleed for a while (RiderBodyLimbs)
+            BloodStep(dt);   // drips and a pool after a hard crash (RiderBodyBlood)
             if (rider.Crashed && ((ragdoll != null && ragdoll.Active) || ragdollPending)) { }
             else if (rider.Crashed)
             {

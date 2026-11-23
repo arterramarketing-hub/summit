@@ -13,9 +13,9 @@ namespace Summit
     public class RideFeel
     {
         public string Name;
-        /// <summary>How fast the body gets from one edge to the other (on Rider.LeanSpring). Higher: quicker, twitchier.</summary>
+        /// <summary>How fast the board swings onto the line and the body onto its edge (on Rider.SideResponse, SideAccel and LeanSpring). Higher: quicker, twitchier.</summary>
         public float TurnResponse = 1f;
-        /// <summary>How tight a turn the same lean draws (on Rider.CarveRate and Rider.MaxYawRate). Lower: wider arcs.</summary>
+        /// <summary>How far sideways the same drag takes you (on Rider.SideSpeed). Lower: wider, lazier lines.</summary>
         public float TurnRate = 1f;
         /// <summary>How much sideways pull the edges hold before they skid, and how fast a skid is caught (on
         /// Rider.GripLimit and Rider.Grip, after the SHARP EDGES upgrade). Lower: it drifts wide.</summary>

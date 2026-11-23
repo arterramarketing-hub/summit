@@ -19,7 +19,7 @@ namespace Summit
 
     /// <summary>
     /// The TURN setting, kept between sessions with the sound's (the pause menu's GAME tab and the start page set it):
-    /// how sharp the carve is, Rider.TurnScale. Eleven stops, the stock feel (1.0) in the middle: fine steps below it
+    /// how far and how quick a drag moves you sideways, Rider.TurnScale. Eleven stops, the stock feel (1.0) in the middle: fine steps below it
     /// (0.5 to 1.0 by 0.1) and bigger ones above (to 2.5 by 0.3). Set mid-run, it is felt the moment the run resumes.
     /// </summary>
     public static class SteerPrefs

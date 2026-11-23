@@ -82,7 +82,7 @@ namespace Summit
         bool wasDown, swallow;
 
         /// <summary>Thumb throw (0..1, past the dead zone) to edge: fine near the middle, full lock at the end.</summary>
-        public static float Curve(float a) => a * (0.55f + 0.45f * a);   // the whole throw does something
+        public static float Curve(float a) => a * (0.7f + 0.3f * a);   // the whole throw does something, the middle a touch finer
 
         void OnEnable()
         {
@@ -156,8 +156,8 @@ namespace Summit
                 float d = on ? Mathf.Clamp((fingerPos.x - StickOrigin.x) / radius, -1f, 1f) : 0f;
                 float a = Mathf.Abs(d);
                 a = a < 0.025f ? 0f : (a - 0.025f) / 0.975f;
-                // expo response: the first half of the throw is gentle fine carving (a fifth of the edge at
-                // half throw); only the outer part opens to a full edge
+                // how far you drag is how fast you go sideways (Rider.CarveTurn): nearly in proportion, a little
+                // finer in the middle for small corrections (half the throw is 42% of the sideways speed)
                 target = Mathf.Sign(d) * Curve(a);
                 holding = !on && TrickMode && gesture.SinceUp <= FingerGesture.DoubleGap;
                 if (holding) target = heldSteer; else heldSteer = target;

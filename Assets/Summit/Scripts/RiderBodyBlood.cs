@@ -4,7 +4,8 @@ namespace Summit
 {
     /// <summary>
     /// Where the rider's crashes feed the blood (see Blood): the rider slamming into a tree or rock, the thrown
-    /// body striking anything, and the body sliding on after a hard hit on the snow. Kept apart from RiderBody's
+    /// body striking anything, the body sliding on after a hard hit on the snow (the drag trail), and the body in
+    /// the air or come to rest (drips, a pool). Kept apart from RiderBody's
     /// riding code, which only hooks these up.
     /// </summary>
     public partial class RiderBody
@@ -47,11 +48,18 @@ namespace Summit
             blood.Hit(at, normal, into, ragdoll.IsSnow(other), ragdoll.Velocity, ob != null && ob.always ? null : other);   // (no marks on an animal)
         }
 
-        void BleedAlong(Transform bone, Vector3 down, float v)
+        void BleedAlong(Transform bone, Vector3 down, float press)
         {
-            // the smear follows the middle of the body
+            // the trail follows the middle of the body, as wide as it presses in
             if (blood == null || rig == null || (bone != rig.BodyBone && bone != rig.Hips)) return;
-            blood.Slide(bone.position, ragdoll.Velocity, Time.fixedDeltaTime);
+            blood.Slide(bone.position, ragdoll.Velocity, press);
+        }
+
+        /// <summary>Every frame: the body down after a hard crash drips between its bounces and pools where it stops.</summary>
+        void BloodStep(float dt)
+        {
+            if (blood == null || ragdoll == null || !ragdoll.Active || !rider.Crashed || dt <= 0f) return;
+            blood.Body(ragdoll.Centre, ragdoll.Velocity, dt);
         }
     }
 }

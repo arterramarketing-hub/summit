@@ -485,11 +485,43 @@ namespace Summit
         /// an eight-sided frustum. The plain box's corners stood up to a metre clear of a big rounded boulder, at
         /// the height a board passes: a hit on nothing.
         /// </summary>
+        static Mesh[] talusSurfaces;
+
+        /// <summary>
+        /// A talus block's hit shape: the scanned boulder's own surface (its 900 triangles, its parts together in the
+        /// prefab's space), a static mesh like the spires' near look. Its convex hull, however fitted, stood 0.4 m clear of
+        /// an undercut boulder's foot. Null if the scans are not CPU-readable (their import setting).
+        /// </summary>
+        static Mesh TalusSurface(int v)
+        {
+            if (talusSurfaces == null || talusSurfaces.Length != scanBox.Length) talusSurfaces = new Mesh[scanBox.Length];
+            if (talusSurfaces[v] != null) return talusSurfaces[v];
+            var verts = new List<Vector3>(); var tris = new List<int>(); var pv = new List<Vector3>(); var pt = new List<int>();
+            var meshes = new HashSet<Mesh>();
+            foreach (var part in scans[v])
+            {
+                if (part.mesh == null || !part.mesh.isReadable) return null;
+                if (!meshes.Add(part.mesh)) continue;   // (one entry a sub-mesh: each mesh once, all its triangles)
+                pv.Clear(); part.mesh.GetVertices(pv);
+                int o = verts.Count;
+                foreach (var q in pv) verts.Add(part.local.MultiplyPoint3x4(q));
+                for (int sm = 0; sm < part.mesh.subMeshCount; sm++) { pt.Clear(); part.mesh.GetTriangles(pt, sm); foreach (int i in pt) tris.Add(o + i); }
+            }
+            if (tris.Count == 0) return null;
+            var m = new Mesh { name = "TalusSurface" + v };
+            if (verts.Count > 65000) m.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+            m.SetVertices(verts); m.SetTriangles(tris, 0); m.RecalculateBounds();
+            talusSurfaces[v] = m;
+            return m;
+        }
+
         static Mesh TalusHull(int v)
         {
             if (talusHulls == null || talusHulls.Length != scanBox.Length) talusHulls = new Mesh[scanBox.Length];
             if (talusHulls[v] != null) return talusHulls[v];
-            talusHulls[v] = Frustum(scanBox[v], 0.75f, "TalusHull" + v);
+            var parts = new List<(Mesh, Matrix4x4)>();
+            foreach (var part in scans[v]) if (part.sub == 0) parts.Add((part.mesh, part.local));
+            talusHulls[v] = ScanHull(parts, scanBox[v], 0.75f, "TalusHull" + v);
             return talusHulls[v];
         }
 
@@ -520,6 +552,53 @@ namespace Summit
         }
 
         static readonly List<int> bt = new List<int>();
+        static readonly List<Vector3> hv = new List<Vector3>();
+
+        /// <summary>
+        /// A boulder's hit shape from the scan itself: the convex hull of its own surface (its furthest points in 98
+        /// directions), drawn in 8% (a graze of its drawn edge is no hit), so it fits the rock as drawn and not its box (a box-fitted frustum stood up to
+        /// a metre clear of a rounded boulder's foot: a hit on nothing). The meshes must be CPU-readable (the scans'
+        /// import setting); if one is not, the frustum inside its box as before.
+        /// </summary>
+        public static Mesh ScanHull(IList<(Mesh mesh, Matrix4x4 local)> parts, Bounds box, float shrink, string name)
+        {
+            const int Dirs = 98;
+            var best = new Vector3[Dirs]; var bestD = new float[Dirs];
+            for (int i = 0; i < Dirs; i++) bestD[i] = float.NegativeInfinity;
+            var dirs = new Vector3[Dirs];
+            for (int i = 0; i < Dirs; i++)
+            {
+                float y = 1f - 2f * (i + 0.5f) / Dirs, r = Mathf.Sqrt(1f - y * y), a = i * 2.39996323f;
+                dirs[i] = new Vector3(Mathf.Cos(a) * r, y, Mathf.Sin(a) * r);
+            }
+            bool any = false;
+            foreach (var (mesh, local) in parts)
+            {
+                if (mesh == null || !mesh.isReadable) return Frustum(box, shrink, name);
+                hv.Clear(); mesh.GetVertices(hv);
+                for (int k = 0; k < hv.Count; k++)
+                {
+                    Vector3 q = local.MultiplyPoint3x4(hv[k]);
+                    for (int i = 0; i < Dirs; i++)
+                    {
+                        float d = Vector3.Dot(q, dirs[i]);
+                        if (d > bestD[i]) { bestD[i] = d; best[i] = q; any = true; }
+                    }
+                }
+            }
+            if (!any) return Frustum(box, shrink, name);
+            var pts = new List<Vector3>();
+            Vector3 mid = Vector3.zero;
+            foreach (var q in best) if (!pts.Contains(q)) { pts.Add(q); mid += q; }
+            mid /= pts.Count;
+            for (int i = 0; i < pts.Count; i++) pts[i] = mid + (pts[i] - mid) * 0.92f;   // (a little inside: a graze of its edge is no hit)
+            // (PhysX builds the convex hull from the points: the triangles only have to hold them)
+            var tri = new List<int>();
+            for (int i = 1; i + 1 < pts.Count; i++) { tri.Add(0); tri.Add(i); tri.Add(i + 1); }
+            var m = new Mesh { name = name };
+            m.SetVertices(pts); m.SetTriangles(tri, 0); m.RecalculateBounds();
+            return m;
+        }
 
         static void Bake(Transform root, List<Spot> spots)
         {
@@ -542,7 +621,8 @@ namespace Summit
                 c.transform.localScale = s.scale;
                 if (s.scan)
                 {
-                    // a scanned boulder: drawn instanced (TalusDraw), hit as a box a little inside it
+                    // a scanned boulder: drawn instanced (TalusDraw), hit as drawn: the scan's own surface (TalusSurface; a
+                    // convex hull a little inside it where the scans can't be read)
                     if (talus == null) { talus = new List<Matrix4x4>[scans.Length]; for (int i = 0; i < talus.Length; i++) talus[i] = new List<Matrix4x4>(); }
                     talus[s.v].Add(m);
                     var wb = new Bounds(m.MultiplyPoint3x4(scanBox[s.v].center), Vector3.zero);
@@ -550,8 +630,9 @@ namespace Summit
                         wb.Encapsulate(m.MultiplyPoint3x4(scanBox[s.v].center + Vector3.Scale(scanBox[s.v].extents, new Vector3((i & 1) == 0 ? -1 : 1, (i & 2) == 0 ? -1 : 1, (i & 4) == 0 ? -1 : 1))));
                     if (anyTalus) tb.Encapsulate(wb); else { tb = wb; anyTalus = true; }
                     var hull = c.AddComponent<MeshCollider>();
-                    hull.convex = true;
-                    hull.sharedMesh = TalusHull(s.v);
+                    var surface = TalusSurface(s.v);
+                    hull.convex = surface == null;
+                    hull.sharedMesh = surface != null ? surface : TalusHull(s.v);
                     hull.sharedMaterial = Slick;
                     continue;
                 }

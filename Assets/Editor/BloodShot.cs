@@ -157,14 +157,8 @@ public static class BloodShot
         }
         // the mark on it, close up, and the scene
         // the mark left on it: the one nearest the hit that is not lying on the snow
-        Transform mk = null; float md = 1e9f;
-        foreach (Transform m in blood.transform.Find("BloodMarks"))
-        {
-            if (!m.gameObject.activeSelf || Vector3.Dot(-m.forward, Vector3.up) > 0.8f) continue;
-            float d = (m.position - lastHitAt).sqrMagnitude;
-            if (d < md) { md = d; mk = m; }
-        }
-        Vector3 aim = mk != null ? mk.position : lastHitAt, n = mk != null ? -mk.forward : (lastHitN.sqrMagnitude > 0.01f ? lastHitN.normalized : Vector3.back);
+        bool mk = blood.ObstacleMark(lastHitAt, out var mAt, out var mN);
+        Vector3 aim = mk ? mAt : lastHitAt, n = mk ? mN : (lastHitN.sqrMagnitude > 0.01f ? lastHitN.normalized : Vector3.back);
         Vector3 nh = new Vector3(n.x, 0f, n.z).normalized;
         Vector3 eye = aim + nh * 5f + Vector3.up * 1.0f + Vector3.Cross(Vector3.up, nh) * 1.5f;
         Look(eye, aim, 40f); Shoot(file + "Close.png", true);
@@ -175,20 +169,12 @@ public static class BloodShot
         return true;
     }
 
-    /// <summary>Where the marks are, and the middle of them.</summary>
+    /// <summary>What marks there are, and the middle of them.</summary>
     static Vector3 LogMarks(bool smearOnly = false)
     {
-        Vector3 sum = Vector3.zero; int n = 0; Vector3 first = Vector3.zero;
-        foreach (Transform m in blood.transform.Find("BloodMarks"))
-        {
-            if (!m.gameObject.activeSelf) continue;
-            bool smear = m.GetComponent<MeshRenderer>().sharedMaterial.GetTexture("_BaseMap")?.name == "Smear";
-            if (smearOnly && !smear) continue;
-            if (n > 0 && (m.position - first).sqrMagnitude > 64f) continue;   // the first stretch only
-            if (n == 0) first = m.position;
-            sum += m.position; n++; Log($"  mark {m.position} size {m.localScale.x:0.00}x{m.localScale.y:0.00} {(smear ? "Smear" : "Splats")}");
-        }
-        return n > 0 ? sum / n : body.RagdollCentre;
+        var c = blood.Counts;
+        Log($"  marks: {c.stains} stains, {c.trail} trail pieces ({blood.TrailLaid:0.0} m), {c.drops} drops");
+        return blood.MarksMiddle(body.RagdollCentre);
     }
 
     /// <summary>A crash in the air, a few metres up, onto the snow: it hits hard and smears as it slides.</summary>
@@ -211,10 +197,7 @@ public static class BloodShot
             if (firstGround >= 0f && t - firstGround >= 0.1f && t - firstGround < 0.1f + Dt) Shoot(file + "Burst.png", true);
         }
         Log($"big fall: {blood.Shown} marks, {struck} body contacts, first blood at t={firstGround:0.00}");
-        int smears = 0;
-        foreach (Transform m in blood.transform.Find("BloodMarks"))
-            if (m.gameObject.activeSelf && m.GetComponent<MeshRenderer>().sharedMaterial.GetTexture("_BaseMap")?.name == "Smear") smears++;
-        if (smears < 3) { Log($"  only {smears} smear strips: another throw"); return false; }
+        if (blood.TrailLaid < 1.5f) { Log($"  only {blood.TrailLaid:0.0} m of trail: another throw"); return false; }
         Vector3 c = LogMarks(), sm = LogMarks(true);
         // the splat and the smear from above and to the side, and the smear close, from down the hill
         Look(c + new Vector3(3f, 6f, -3f), c, 50f); Shoot(file + ".png", true);
@@ -239,6 +222,7 @@ public static class BloodShot
         late.Invoke(chase, null);
         typeof(Atmosphere).GetMethod("LateUpdate", NP).Invoke(atmo, null);
         foreach (var ps in blood.GetComponentsInChildren<ParticleSystem>()) ps.Simulate(Dt, true, false, false);
+        blood.Advance(Dt);   // the drops land, the marks soak in
     }
 
     static List<Rigidbody> Parts()
@@ -324,6 +308,7 @@ public static class BloodShot
                 sk.enabled = false; hidden.Add(sk); baked.Add(g);
             }
         typeof(Forest).GetMethod("Draw", NP)?.Invoke(props, null);
+        blood.Draw();   // the blood on rocks
         int w = 590, h = 1278;
         var rt = new RenderTexture(w, h, 24);
         cam.targetTexture = rt; cam.aspect = w / (float)h; cam.Render();

@@ -177,6 +177,9 @@ namespace Summit
             for (int i = 0; i < n; i++)
             {
                 if (near[i].attachedRigidbody == rider.Body) continue;
+                // only square on: a trunk met glancing turns the board off along it (Rider.Hit), it never snaps you down
+                Vector3 toTrunk = near[i].transform.position - p; toTrunk.y = 0f;
+                if (toTrunk.sqrMagnitude > 1e-4f && Vector3.Dot(flat.normalized, toTrunk.normalized) < Rider.DeadOnCos) continue;
                 if (!TrySnap(near[i], p, flat, out float into, out Vector3 at)) continue;
                 TrunkSnaps++;
                 rider.CrashCarry = RiderKeep;   // read by the thrown body as it is thrown (RiderBody)

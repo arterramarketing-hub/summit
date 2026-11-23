@@ -94,17 +94,7 @@ public static class StressTest
         // what OnCollisionEnter does on the phone (batchmode sends no collision messages): the board into an obstacle
         if (!r.Crashed && r.Running)
         {
-            Vector3 p = r.Body.position, v = r.Velocity;
-            foreach (var c in Physics.OverlapCapsule(p, p + v * dt, Rider.R + 0.05f, ~0, QueryTriggerInteraction.Ignore))
-            {
-                if (c.attachedRigidbody == r.Body) continue;
-                var ob = c.GetComponentInParent<Obstacle>();
-                // (as Rider.OnCollisionEnter: not while invincible or just up again, and only into it faster than 6 m/s)
-                if (ob == null || r.InvincibleTime > 0f || r.Invulnerable) continue;
-                Vector3 to = c.ClosestPoint(p) - p;
-                float into = to.sqrMagnitude > 1e-6f ? Vector3.Dot(v, to.normalized) : v.magnitude;
-                if (into > 6f || ob.always) { r.DoCrash(ob.label); break; }
-            }
+            r.TestContacts(dt);   // (as Rider.OnCollisionEnter: ridden over, glanced off or crashed into)
         }
         r.Tick(dt); body.PhysicsStep(); Physics.Simulate(dt);
         if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }

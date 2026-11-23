@@ -699,6 +699,7 @@ public static class LimbShot
         late.Invoke(chase, null);
         typeof(Atmosphere).GetMethod("LateUpdate", NP).Invoke(atmo, null);
         foreach (var ps in blood.GetComponentsInChildren<ParticleSystem>()) ps.Simulate(Dt, true, false, false);
+        blood.Advance(Dt);   // the drops land, the marks soak in
         if (fx != null) foreach (var ps in fx.GetComponentsInChildren<ParticleSystem>()) ps.Simulate(Dt, true, false, false);
     }
 

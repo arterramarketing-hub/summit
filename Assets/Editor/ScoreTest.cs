@@ -424,16 +424,7 @@ public static class ScoreTest
                         // batchmode sends no collision messages: the board into an obstacle, as Rider.OnCollisionEnter
                         if (!r.Crashed && r.Running)
                         {
-                            Vector3 v = r.Velocity;
-                            foreach (var c in Physics.OverlapCapsule(p, p + v * Dt, Rider.R + 0.05f, ~0, QueryTriggerInteraction.Ignore))
-                            {
-                                if (c.attachedRigidbody == r.Body) continue;
-                                var ob = c.GetComponentInParent<Obstacle>();
-                                if (ob == null || r.InvincibleTime > 0f || r.Invulnerable) continue;
-                                Vector3 to = c.ClosestPoint(p) - p;
-                                float into = to.sqrMagnitude > 1e-6f ? Vector3.Dot(v, to.normalized) : v.magnitude;
-                                if (into > 6f || ob.always) { r.DoCrash(ob.label); break; }
-                            }
+                            r.TestContacts(Dt);   // (as Rider.OnCollisionEnter: ridden over, glanced off or crashed into)
                         }
                         if (r.Crashed && r.CanGetUp) r.RequestUp = true;
                         maxZ = Mathf.Max(maxZ, r.Z);

@@ -266,16 +266,7 @@ public static class DeckTest
         r.Tick(dt);
         if (!r.Crashed && r.Running)
         {
-            Vector3 p = r.Body.position, v = r.Velocity;
-            foreach (var c in Physics.OverlapCapsule(p, p + v * dt, Rider.R + 0.05f, ~0, QueryTriggerInteraction.Ignore))
-            {
-                if (c.attachedRigidbody == r.Body) continue;
-                var ob = c.GetComponentInParent<Obstacle>();
-                if (ob == null || r.InvincibleTime > 0f || r.Invulnerable) continue;
-                Vector3 to = c.ClosestPoint(p) - p;
-                float into = to.sqrMagnitude > 1e-6f ? Vector3.Dot(v, to.normalized) : v.magnitude;
-                if (into > 6f || ob.always) { r.DoCrash(ob.label); break; }
-            }
+            r.TestContacts(dt);   // (as Rider.OnCollisionEnter: ridden over, glanced off or crashed into)
         }
         Vector3 vSet = r.Body.linearVelocity;
         body.PhysicsStep(); Physics.Simulate(dt);

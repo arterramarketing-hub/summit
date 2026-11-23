@@ -23,6 +23,7 @@ public static class SteerTest
     {
         new Course { name = "glade", spacing = 14f, swing = 3f, gates = 16 },     // 6 m side to side every 14 m
         new Course { name = "trees", spacing = 9f, swing = 2.5f, gates = 20 },    // the forest's own 6.5 m grid, weaving
+        new Course { name = "tight", spacing = 7f, swing = 2.5f, gates = 24 },    // tight trees: 5 m side to side every 7 m
     };
 
     static float x0, z0;   // where the test stretch starts
@@ -55,11 +56,18 @@ public static class SteerTest
             {
                 Response(r, v, out float radius, out float t90, out float t20, out float skid);
                 string line = $"STEER scale={sc:0.0} v={v:0} m/s ({v * 3.6f:0} km/h): radius {radius:0.0} m, 90% turn rate in {t90:0.00} s, travel 20 deg in {t20:0.00} s, skid {skid:0.00}";
+                foreach (float throw_ in new[] { 1f, 0.5f })
+                {
+                    float s = RiderInput.Curve(throw_);
+                    Sideways(r, v, s, out float l3, out float l90, out float lss);
+                    Reverse(r, v, s, out float r0, out float r3);
+                    Debug.Log($"STEER side scale={sc:0.0} v={v:0} m/s ({v * 3.6f:0} km/h) drag {throw_ * 100f:0}% (steer {s:0.00}): sideways 3 m/s in {T(l3)}, 90% of its sideways speed ({lss:0.0} m/s at 1 s) in {T(l90)} | reverse left->right from -{RevSpeed:0} m/s: through zero in {T(r0)}, +{RevSpeed:0} m/s in {T(r3)}");
+                }
                 foreach (var c in Courses)
                 {
                     int best = 0; string how = "";
                     foreach (float look in new[] { 0.12f, 0.2f, 0.3f, 0.45f })
-                        foreach (float kp in new[] { 2f, 4f, 8f })
+                        foreach (float kp in new[] { 2f, 4f, 8f, 16f })
                             foreach (float kd in new[] { 0f, 0.25f })
                             {
                                 int made = Slalom(r, c, v, look, kp, kd, true, out _, out _);
@@ -76,7 +84,7 @@ public static class SteerTest
         {
             int made = 0, bestMade = -1; float endV = 0f, bestEnd = 0f, bestStart = 0f;
             foreach (float look in new[] { 0.12f, 0.2f, 0.3f, 0.45f })
-                foreach (float kp in new[] { 2f, 4f, 8f })
+                foreach (float kp in new[] { 2f, 4f, 8f, 16f })
                     foreach (float kd in new[] { 0f, 0.25f })
                     {
                         made = Slalom(r, Courses[0], 22f, look, kp, kd, false, out endV, out float startV);
@@ -165,6 +173,55 @@ public static class SteerTest
         t90 = -1f;
         for (int i = 0; i < yaws.Length; i++) if (yaws[i] >= 0.9f * ss) { t90 = (i + 1) * Dt; break; }
         radius = v / Mathf.Max(1e-3f, ss);
+    }
+
+    static string T(float t) => t < 0f ? "never" : $"{t:0.00} s";
+
+    // sideways speed, from what the board does left to itself: on the line, then half a second hands off (each
+    // steering's own idea of straight), and the sideways speed it has then is the zero
+    const float RevSpeed = 2f;   // the reversal starts going left this fast
+    static float lat0;
+    static float Lat(Rider r) => r.Body.linearVelocity.x - lat0;
+    static void Settle(Rider r, float v)
+    {
+        Place(r, v);
+        for (int i = 0; i < 60; i++) { r.Steer = 0f; StepHeld(r, v); }
+        lat0 = 0f; lat0 = Lat(r);
+    }
+
+    static float SteerTo(float steer, float target) => Mathf.Lerp(steer, target, 1f - Mathf.Exp(-Dt * 60f));   // (RiderInput's own low-pass)
+
+    // a drag held from riding straight: how soon the sideways speed comes, and how much of it there is
+    static void Sideways(Rider r, float v, float s, out float t3, out float t90, out float steady)
+    {
+        Settle(r, v);
+        var lat = new float[120]; float steer = 0f; t3 = -1f;
+        for (int i = 0; i < lat.Length; i++)
+        {
+            steer = SteerTo(steer, s); r.Steer = steer; StepHeld(r, v);
+            lat[i] = Lat(r);
+            if (t3 < 0f && lat[i] >= 3f) t3 = (i + 1) * Dt;
+        }
+        steady = lat[lat.Length - 1];
+        t90 = -1f;
+        for (int i = 0; i < lat.Length; i++) if (lat[i] >= 0.9f * steady) { t90 = (i + 1) * Dt; break; }
+    }
+
+    // going left at RevSpeed, then the finger flipped right: how soon the old way is gone, and how soon the new one comes
+    static void Reverse(Rider r, float v, float s, out float t0, out float t3)
+    {
+        Settle(r, v);
+        float steer = 0f; t0 = -1f; t3 = -1f;
+        int i = 0;
+        for (; i < 180 && Lat(r) > -RevSpeed; i++) { steer = SteerTo(steer, -s); r.Steer = steer; StepHeld(r, v); }
+        if (Lat(r) > -RevSpeed) return;   // (never got going left that fast)
+        for (int j = 0; j < 180; j++)
+        {
+            steer = SteerTo(steer, s); r.Steer = steer; StepHeld(r, v);
+            float l = Lat(r);
+            if (t0 < 0f && l >= 0f) t0 = (j + 1) * Dt;
+            if (l >= RevSpeed) { t3 = (j + 1) * Dt; break; }
+        }
     }
 
     static int Slalom(Rider r, Course c, float v, float look, float kp, float kd, bool held, out float endV, out float startV)

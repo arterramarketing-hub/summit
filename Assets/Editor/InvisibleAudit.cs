@@ -32,11 +32,12 @@ public static class InvisibleAudit
     static SummitGame game; static Rider r; static RiderBody body; static SlopeStreamer terrain; static Forest props;
     static CourseDressing dress; static Hamlets hamlets; static SkiLift lifts; static Camera cam;
     static MethodInfo hamUpd, liftUpd;
+    static NightLights lights;
     static string lastCrash = "";
     static int n;
 
     // what is drawn: a mesh's triangles where they are this frame
-    struct Drawn { public Mesh mesh; public int sub; public Matrix4x4 m; public Bounds wb; public string what; }
+    struct Drawn { public Mesh mesh; public int sub; public Matrix4x4 m; public Bounds wb; public string what, shader; public bool instanced; }
     static readonly List<Drawn> drawn = new List<Drawn>();
     static readonly Dictionary<long, Vector3[]> worldTris = new Dictionary<long, Vector3[]>();
     static readonly Dictionary<(Mesh, int), (Vector3[] v, int[] t)> meshCache = new Dictionary<(Mesh, int), (Vector3[], int[])>();
@@ -45,6 +46,7 @@ public static class InvisibleAudit
     class Finding { public string kind, label, path, detail; public float gap; public Vector3 at; public float xc; public int seed; }
     static readonly List<Finding> colFindings = new List<Finding>();
     static readonly Dictionary<string, int> colCount = new Dictionary<string, int>(), colChecked = new Dictionary<string, int>();
+    static readonly Dictionary<string, int> strictCount = new Dictionary<string, int>();
     static readonly Dictionary<string, int> crashCount = new Dictionary<string, int>(), invisibleCount = new Dictionary<string, int>();
     static int crashes, invisible;
 
@@ -70,11 +72,32 @@ public static class InvisibleAudit
         night = System.Environment.GetEnvironmentVariable("AUDIT_NIGHT") == "1";
         withSlide = System.Environment.GetEnvironmentVariable("AUDIT_SLIDE") == "1";
         if (night) { TimeOfDay.TestClock = 3.4f; F<DayNight>("dayNight").ApplyNow(); }
+        // AUDIT_STORM=1: a storm (Weather's STORM held), the trees bent by its wind. Nothing solid moves with the wind:
+        // the trunks' posts stand still while the drawn trunks sway (Shaders/TreeWind.hlsl), so how far a trunk is carried
+        // at board and body height, the storm's worst over a minute, is the gap that opens between them
+        storm = System.Environment.GetEnvironmentVariable("AUDIT_STORM") == "1";
+        if (storm)
+        {
+            Weather.TestChoice = 4;
+            var w = Object.FindFirstObjectByType<Weather>(); if (w != null) w.Step(0f);
+            float k = TreeWind.ForWeather(1f, 1f), worst06 = 0f, worst18 = 0f;
+            for (float t = 0f; t < 60f; t += 0.1f)
+            {
+                TreeWind.Set(t, k);
+                for (int i = 0; i < 40; i++)
+                {
+                    Vector3 o = new Vector3(i * 37.3f, 0f, i * 91.7f);
+                    worst06 = Mathf.Max(worst06, (TreeWind.Sway(o + Vector3.up * 0.6f, o, 1f, TreeWind.FlexBirch) - (o + Vector3.up * 0.6f)).magnitude);
+                    worst18 = Mathf.Max(worst18, (TreeWind.Sway(o + Vector3.up * 1.8f, o, 1f, TreeWind.FlexBirch) - (o + Vector3.up * 1.8f)).magnitude);
+                }
+            }
+            Debug.Log($"AUDIT storm: wind strength {k:0.00}; a trunk (the loosest kind) carried at most {worst06 * 100f:0.0} cm at 0.6 m up, {worst18 * 100f:0.0} cm at 1.8 m, against its still post");
+        }
         // AUDIT_MOBILE=1: the phone's quality level (its LOD bias picks the crags' and lifts' LODs)
         int quality = QualitySettings.GetQualityLevel();
         if (System.Environment.GetEnvironmentVariable("AUDIT_MOBILE") == "1") QualitySettings.SetQualityLevel(0, true);
         Debug.Log($"AUDIT quality {QualitySettings.names[QualitySettings.GetQualityLevel()]} lodBias {QualitySettings.lodBias}");
-        Debug.Log($"AUDIT setup: night={night} slide={withSlide}");
+        Debug.Log($"AUDIT setup: night={night} slide={withSlide} storm={System.Environment.GetEnvironmentVariable("AUDIT_STORM") == "1"}");
         bool rides = System.Environment.GetEnvironmentVariable("AUDIT_RIDES") != "0";
         bool classic = System.Environment.GetEnvironmentVariable("AUDIT_CLASSIC") == "1";
         try
@@ -95,12 +118,12 @@ public static class InvisibleAudit
         catch (System.Exception e) { Debug.LogError("AUDIT exception " + e); }
         Report();
         Physics.simulationMode = SimulationMode.FixedUpdate;
-        TimeOfDay.TestClock = -1f;
+        TimeOfDay.TestClock = -1f; Weather.TestChoice = -1;
         QualitySettings.SetQualityLevel(quality, false);   // (the editor saves the current level into ProjectSettings)
         TestPrefs.Restore();
         EditorApplication.Exit(0);
     }
-    static bool night, withSlide;
+    static bool night, withSlide, storm;
     static Avalanche slide;
     static int caught;
 
@@ -257,6 +280,8 @@ public static class InvisibleAudit
         if (hamlets != null) for (int i = 0; i < (full ? 120 : 6); i++) hamUpd.Invoke(hamlets, null);
         if (lifts != null) liftUpd.Invoke(lifts, null);
         typeof(Forest).GetMethod("Update", NP).Invoke(props, null);
+        if (lights == null) lights = Object.FindFirstObjectByType<NightLights>();
+        if (lights != null) lights.Prewarm();   // (the floodlights' poles: solid, and streamed with the rider)
         Sweep();
         Physics.SyncTransforms();   // (moved colliders reach the physics scene on its next step; the queries here come first)
     }
@@ -302,6 +327,193 @@ public static class InvisibleAudit
     }
 
     static List<Transform> Children(Transform t) { var l = new List<Transform>(); foreach (Transform c in t) l.Add(c); return l; }
+
+    // ================================================================ pictures of hit shapes against what is drawn
+
+    /// <summary>
+    /// Pictures (needs the GPU: no -nographics) of the hit shapes of what the audit flags and what was fitted with them:
+    /// the hamlets' landings, terraces, decks and the lodge's stair, talus blocks, forest rocks and floodlight poles. Each
+    /// from beside at board height, plain and with every solid surface near it dotted in red (rays onto each collider from
+    /// all round and along its axes: where the board would meet it). $SHOT_TAG names the files (AuditFit_{tag}_{kind}_{n}
+    /// _plain/_hit.png), $AUDIT_NIGHT=1 at night (the poles' light), $SHOT_PER kind (default 2).
+    /// </summary>
+    public static void ColliderShot()
+    {
+        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
+        game = Object.FindFirstObjectByType<SummitGame>();
+        TestPrefs.Pin();
+        TestBoot.Boot(game);
+        r = F<Rider>("rider"); terrain = F<SlopeStreamer>("terrain"); props = F<Forest>("props"); body = F<RiderBody>("body");
+        typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
+        cam = Camera.main; cam.GetComponent<ChaseCamera>().enabled = false;
+        hamlets = Object.FindFirstObjectByType<Hamlets>(); lifts = Object.FindFirstObjectByType<SkiLift>();
+        hamUpd = typeof(Hamlets).GetMethod("Update", NP); liftUpd = typeof(SkiLift).GetMethod("Update", NP);
+        string tag = System.Environment.GetEnvironmentVariable("SHOT_TAG") ?? "now";
+        int per = int.TryParse(System.Environment.GetEnvironmentVariable("SHOT_PER"), out int pv) ? pv : 2;
+        if (System.Environment.GetEnvironmentVariable("AUDIT_NIGHT") == "1") { TimeOfDay.TestClock = 3.4f; F<DayNight>("dayNight").ApplyNow(); }
+        string[] kinds = { "landing", "terrace", "stair", "deck", "talus", "rock", "pole" };
+        var done = new Dictionary<string, int>();
+        var shot = new HashSet<Collider>();
+        try
+        {
+            for (int seed = 0; seed < 3; seed++)
+            {
+                NewMountain(seed);
+                float zEnd = Course.First + 2f * Course.Cycle;
+                for (float z = Course.First - 40f; z < zEnd; z += 15f)
+                {
+                    float cx = Slope.Centre(z);
+                    r.ResetAt(cx, z); Stream(false);
+                    foreach (var c in Physics.OverlapBox(new Vector3(cx, Slope.Height(cx, z + 7.5f), z + 7.5f), new Vector3(Slope.PisteHalf + 45f, 600f, 7.5f), Quaternion.identity, ~0, QueryTriggerInteraction.Ignore))
+                    {
+                        if (!Relevant(c) || shot.Contains(c)) continue;
+                        string k = FitKind(c);
+                        if (k == null) continue;
+                        done.TryGetValue(k, out int nk);
+                        if (nk >= per) continue;
+                        done[k] = nk + 1; shot.Add(c);
+                        FitShot(c, $"AuditFit_{tag}_{k}_{nk}");
+                    }
+                }
+            }
+        }
+        catch (System.Exception e) { Debug.LogError("AUDIT fit shot exception " + e); }
+        foreach (var k in kinds) { done.TryGetValue(k, out int nk); Debug.Log($"AUDIT fit shot {tag}: {k} x{nk}"); }
+        TimeOfDay.TestClock = -1f;
+        TestPrefs.Restore();
+        EditorApplication.Exit(0);
+    }
+
+    static string FitKind(Collider c)
+    {
+        string n = c.name;
+        if (n.StartsWith("COL_landing")) return "landing";
+        if (n.StartsWith("COL_terrace")) return "terrace";
+        if (n.StartsWith("COL_stair")) return "stair";
+        if (n.StartsWith("COL_deck") && c.GetComponentInParent<Obstacle>()?.label == "Cabin!") return "deck";
+        if (n == "SpireHit" && c is MeshCollider m && m.sharedMesh != null && m.sharedMesh.name.StartsWith("Talus")) return "talus";
+        if (n == "RockHit") return "rock";
+        if (n == "LightPole") return "pole";
+        return null;
+    }
+
+    static Material dotMat;
+
+    static void FitShot(Collider target, string file)
+    {
+        var b = target.bounds;
+        // the thing and its own pieces (a landing's rail, a car's top: the same building or rock), not a whole crag behind it
+        var group = new List<Collider>();
+        var near = b; near.Expand(3f);
+        var owner = target.GetComponentInParent<Obstacle>();
+        foreach (var c in Physics.OverlapBox(near.center, near.extents, Quaternion.identity, ~0, QueryTriggerInteraction.Ignore))
+        {
+            if (!Relevant(c) || c.GetComponentInParent<Obstacle>() == null) continue;
+            if (c != target && c.transform.parent != target.transform.parent && c.GetComponentInParent<Obstacle>() != owner) continue;
+            if (c != target && c.bounds.size.magnitude > 3f * b.size.magnitude + 4f) continue;
+            if (c != target && c.name.StartsWith("COL_body")) continue;   // (the house itself: not what is being shown)
+            group.Add(c);
+        }
+        var all = b; foreach (var c in group) all.Encapsulate(c.bounds);
+        float snow = Slope.DrawnHeight(all.center.x, all.center.z);
+        Vector3 look = new Vector3(all.center.x, Mathf.Max(snow + 0.7f, Mathf.Min(all.center.y, snow + 1.5f)), all.center.z);
+        float dist = Mathf.Clamp(Mathf.Max(all.extents.x, all.extents.z) * 2.2f + 3.5f, 6f, 18f);
+        // from whichever side has a clear view (the piste's side first), at a skier's eye height over the snow there
+        Vector3 from = look; bool clear = false;
+        float side = Mathf.Sign(Slope.Centre(all.center.z) - all.center.x);
+        for (int i = 0; i < 16 && !clear; i++)
+        {
+            float a = Mathf.Atan2(-0.6f, side * 0.8f) + (i % 2 == 0 ? 1f : -1f) * ((i + 1) / 2) * 0.5f;
+            from = look + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * dist * (i < 8 ? 1f : 1.6f);
+            from.y = Mathf.Max(Slope.DrawnHeight(from.x, from.z) + 1.7f, look.y + 0.6f);
+            clear = !Physics.Linecast(from, look + (from - look).normalized * (Mathf.Max(all.extents.x, all.extents.z) + 0.3f), ~0, QueryTriggerInteraction.Ignore)
+                && !Physics.CheckSphere(from, 0.5f, ~0, QueryTriggerInteraction.Ignore)
+                && !Physics.Raycast(from, Vector3.down, from.y - Slope.DrawnHeight(from.x, from.z), ~0, QueryTriggerInteraction.Ignore);   // (not on a building)
+        }
+        cam.fieldOfView = 50f;
+        cam.transform.SetPositionAndRotation(from, Quaternion.LookRotation(look - from));
+        Render2(file + "_plain.png");
+        if (dotMat == null) { dotMat = new Material(Shader.Find("Universal Render Pipeline/Unlit")); dotMat.SetColor("_BaseColor", new Color(1f, 0.08f, 0.08f, 1f)); }
+        var ghosts = new List<GameObject>();
+        foreach (var c in group)
+        {
+            var pts = SurfaceDots(c);
+            if (pts.Count == 0) continue;
+            var g = new GameObject("FitGhost", typeof(MeshFilter), typeof(MeshRenderer));
+            g.GetComponent<MeshFilter>().sharedMesh = DotMesh(pts, 0.022f);
+            g.GetComponent<MeshRenderer>().sharedMaterial = dotMat;
+            ghosts.Add(g);
+        }
+        Render2(file + "_hit.png");
+        foreach (var g in ghosts) { Object.DestroyImmediate(g.GetComponent<MeshFilter>().sharedMesh); Object.DestroyImmediate(g); }
+        Debug.Log($"AUDIT fit shot {file}: {target.name} {PathOf(target.transform)} at z={b.center.z:0.0} x-c={b.center.x - Slope.Centre(b.center.z):0.0}, size {b.size}; {group.Count} solids dotted; view clear={clear}");
+    }
+
+    /// <summary>A landscape picture (Render's is the phone's portrait).</summary>
+    static void Render2(string file)
+    {
+        typeof(Forest).GetMethod("Draw", NP).Invoke(props, null); if (lifts != null) liftUpd.Invoke(lifts, null);
+        // the talus (OnEnable, which lists its draws for DrawNow, never runs here: found by type, as CollectDrawn does)
+        var tdType = typeof(CliffSpires).GetNestedType("TalusDraw", BindingFlags.NonPublic);
+        foreach (var td in Object.FindObjectsByType(tdType, FindObjectsSortMode.None)) tdType.GetMethod("Draw").Invoke(td, null);
+        const int W = 1100, H = 760;
+        var rt = new RenderTexture(W, H, 24);
+        cam.targetTexture = rt; cam.aspect = (float)W / H; cam.Render();
+        RenderTexture.active = rt;
+        var tex = new Texture2D(W, H, TextureFormat.RGB24, false);
+        tex.ReadPixels(new Rect(0, 0, W, H), 0, 0); tex.Apply();
+        System.IO.File.WriteAllBytes(file, tex.EncodeToPNG());
+        cam.targetTexture = null; RenderTexture.active = null; Object.DestroyImmediate(rt); Object.DestroyImmediate(tex);
+    }
+
+    /// <summary>Points on a collider's surface: rays onto it from a sphere round it, and along each axis on a grid.</summary>
+    static List<Vector3> SurfaceDots(Collider c)
+    {
+        var pts = new List<Vector3>();
+        var b = c.bounds;
+        float reach = b.extents.magnitude + 1f;
+        const int Dirs = 700;
+        for (int i = 0; i < Dirs; i++)
+        {
+            float y = 1f - 2f * (i + 0.5f) / Dirs, rr = Mathf.Sqrt(1f - y * y), a = i * 2.39996323f;
+            var d = new Vector3(Mathf.Cos(a) * rr, y, Mathf.Sin(a) * rr);
+            if (c.Raycast(new Ray(b.center + d * reach, -d), out var hit, reach * 2f)) pts.Add(hit.point);
+        }
+        const int G = 22;
+        for (int axis = 0; axis < 3; axis++)
+            for (int sgn = -1; sgn <= 1; sgn += 2)
+                for (int i = 0; i < G; i++)
+                    for (int j = 0; j < G; j++)
+                    {
+                        int a1 = (axis + 1) % 3, a2 = (axis + 2) % 3;
+                        Vector3 o = Vector3.zero, d = Vector3.zero;
+                        o[axis] = sgn > 0 ? b.max[axis] + 0.5f : b.min[axis] - 0.5f;
+                        o[a1] = Mathf.Lerp(b.min[a1], b.max[a1], (i + 0.5f) / G);
+                        o[a2] = Mathf.Lerp(b.min[a2], b.max[a2], (j + 0.5f) / G);
+                        d[axis] = -sgn;
+                        if (c.Raycast(new Ray(o, d), out var hit, b.size[axis] + 1f)) pts.Add(hit.point);
+                    }
+        // (only what a board or a body could meet: above the snow, below head height over it)
+        pts.RemoveAll(q => { float s = Slope.DrawnHeight(q.x, q.z); return q.y < s - 0.05f || q.y > s + 2.2f; });
+        return pts;
+    }
+
+    static Mesh DotMesh(List<Vector3> pts, float s)
+    {
+        var v = new List<Vector3>(pts.Count * 8); var t = new List<int>(pts.Count * 36);
+        int[] cube = { 0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7 };
+        var corner = new[] { new Vector3(-s, -s, -s), new Vector3(s, -s, -s), new Vector3(s, -s, s), new Vector3(-s, -s, s),
+                             new Vector3(-s, s, -s), new Vector3(s, s, -s), new Vector3(s, s, s), new Vector3(-s, s, s) };
+        foreach (var p in pts)
+        {
+            int o = v.Count;
+            foreach (var k in corner) v.Add(p + k);
+            foreach (int i in cube) t.Add(o + i);
+        }
+        var m = new Mesh { indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
+        m.SetVertices(v); m.SetTriangles(t, 0, true); m.RecalculateNormals();
+        return m;
+    }
 
     // ================================================================ 1. colliders against what is drawn
 
@@ -360,6 +572,7 @@ public static class InvisibleAudit
         string label = Label(c), path = PathOf(c.transform);
         string kind = label + " :: " + Group(c);
         Bump(colChecked, kind);
+        votes.Clear();
         var b = c.bounds;
         float snowAt = Slope.DrawnHeight(b.center.x, b.center.z);
         float worst = 0f, worstLow = 0f; Vector3 worstAt = b.center; int far = 0, samples = 0;
@@ -377,12 +590,21 @@ public static class InvisibleAudit
                 if (q.y < snow + 0.02f || q.y > snow + 1.8f) continue;   // under the snow, or above anyone's reach
                 samples++;
                 float gap = Nearest(q, 3f);
+                if (lastNearest >= 0) { string k = DrawnKey(lastNearest); votes.TryGetValue(k, out int nv); votes[k] = nv + 1; }
                 if (gap > 0.6f) far++;
                 if (gap > worst) { worst = gap; worstAt = q; }
                 if (h <= 0.6f && gap > worstLow) worstLow = gap;
             }
         }
+        NoteDrawnWith(label + " :: " + Group(c));
         if (samples == 0) return;
+        // (and the stricter line: anything more than 0.3 m clear of what is drawn where a board meets it)
+        if (worstLow > 0.3f)
+        {
+            string sk = label + " :: " + Group(c);
+            Bump(strictCount, sk);
+            if (strictCount[sk] <= 3) Debug.Log($"AUDIT-COL03 seed{seed} {sk}: {worstLow:0.00} m clear of anything drawn at board height, {path}{(c is MeshCollider mm && mm.sharedMesh != null ? " mesh " + mm.sharedMesh.name : "")} size={b.size} centre {b.center.y - snowAt:0.0} m up at z={b.center.z:0.0} x-c={b.center.x - Slope.Centre(b.center.z):0.0}; drawn nearby: {NearbyDrawn(b.center, 6f)}");
+        }
         // a hit on nothing: its surface well clear of anything drawn where a board meets it (up to 0.6 m above the
         // snow), or (counted apart) higher, where only a board in the air does
         if (worstLow > 0.9f) kind += " [board height]";
@@ -501,7 +723,10 @@ public static class InvisibleAudit
             if (mf == null || mf.sharedMesh == null) continue;
             if (mr.sharedMaterial != null && mr.sharedMaterial.HasProperty("_BaseColor") && mr.sharedMaterial.GetColor("_BaseColor").a < 0.05f && mr.sharedMaterial.renderQueue > 2500) continue;   // see-through
             for (int s = 0; s < mf.sharedMesh.subMeshCount; s++)
-                drawn.Add(new Drawn { mesh = mf.sharedMesh, sub = s, m = mr.localToWorldMatrix, wb = mr.bounds, what = mr.name });
+            {
+                var mat = s < mr.sharedMaterials.Length ? mr.sharedMaterials[s] : mr.sharedMaterial;
+                drawn.Add(new Drawn { mesh = mf.sharedMesh, sub = s, m = mr.localToWorldMatrix, wb = mr.bounds, what = mr.name, shader = ShaderOf(mat), instanced = mat != null && mat.enableInstancing });
+            }
         }
         foreach (var sk in Object.FindObjectsByType<SkinnedMeshRenderer>(FindObjectsSortMode.None))
         {
@@ -520,7 +745,8 @@ public static class InvisibleAudit
                 var part = parts[kv.Key & 15];
                 var pt = part.GetType();
                 var mesh = (Mesh)pt.GetField("mesh").GetValue(part); int sub = (int)pt.GetField("sub").GetValue(part);
-                foreach (var m in kv.Value) AddInstanced(mesh, sub, m, "forest");
+                var fmat = (Material)pt.GetField("mat").GetValue(part);
+                foreach (var m in kv.Value) AddInstanced(mesh, sub, m, "forest", fmat);
             }
         // trees with damage (branches torn, a top clipped), drawn one by one out of the instanced batches (Forest.DrawDamaged)
         var damaged = (List<Vector2Int>)typeof(Forest).GetField("damagedL", NP)?.GetValue(props);
@@ -532,7 +758,7 @@ public static class InvisibleAudit
                 var m = (Matrix4x4)pl.GetType().GetField("m").GetValue(pl);
                 var parts = (System.Collections.IList)partsOf.Invoke(props, new object[] { idx * 16 });
                 var part = parts[0]; var pt = part.GetType();
-                AddInstanced((Mesh)pt.GetField("mesh").GetValue(part), (int)pt.GetField("sub").GetValue(part), m, "forest (damaged)");
+                AddInstanced((Mesh)pt.GetField("mesh").GetValue(part), (int)pt.GetField("sub").GetValue(part), m, "forest (damaged)", (Material)pt.GetField("mat").GetValue(part));
             }
         // the stumps of snapped trees
         var stumps = (List<Matrix4x4>)typeof(Forest).GetField("stumpL", NP)?.GetValue(props);
@@ -553,7 +779,7 @@ public static class InvisibleAudit
                     {
                         var pt = part.GetType();
                         var mesh = (Mesh)pt.GetField("mesh").GetValue(part); int sub = (int)pt.GetField("sub").GetValue(part); var local = (Matrix4x4)pt.GetField("local").GetValue(part);
-                        foreach (var m in lists[v]) AddInstanced(mesh, sub, m * local, "talus");
+                        foreach (var m in lists[v]) AddInstanced(mesh, sub, m * local, "talus", (Material)typeof(CliffSpires).GetField("scanMat", NS).GetValue(null));
                     }
             }
         }
@@ -567,17 +793,46 @@ public static class InvisibleAudit
                 var mesh = (Mesh)pt.GetField("mesh").GetValue(part);
                 var list = (List<Matrix4x4>)pt.GetField("list").GetValue(part);
                 if (mesh == null) continue;
-                foreach (var m in list) AddInstanced(mesh, 0, m, "lift");
+                foreach (var m in list) AddInstanced(mesh, 0, m, "lift", (Material)typeof(SkiLift).GetField("paint", NP).GetValue(lifts));
             }
         }
     }
 
-    static void AddInstanced(Mesh mesh, int sub, Matrix4x4 m, string what)
+    static void AddInstanced(Mesh mesh, int sub, Matrix4x4 m, string what, Material mat = null)
     {
         if (mesh == null) return;
         Vector3 p = m.GetColumn(3);
         if (Mathf.Abs(p.z - r.transform.position.z) > 160f) return;
-        drawn.Add(new Drawn { mesh = mesh, sub = sub, m = m, wb = WorldBox(m, mesh.bounds), what = what });
+        drawn.Add(new Drawn { mesh = mesh, sub = sub, m = m, wb = WorldBox(m, mesh.bounds), what = what, shader = ShaderOf(mat), instanced = true });
+    }
+
+    static string ShaderOf(Material m) => m == null || m.shader == null ? "?" : m.shader.name;
+
+    // ---- what each solid is drawn with, against the shaders the iOS build has been stripping the instanced variants of
+    // (Summit/ScanRock, Summit/TreeSway, Summit/FarLit: the lift session's finding). On the phone, a solid whose nearest
+    // drawn surface is one of those, drawn instanced, would be blank where it still knocks you down. (Summit/FirCards,
+    // the realistic forest, also sways in the wind and is drawn instanced: listed apart, to confirm.)
+    static readonly string[] Stripped = { "Summit/ScanRock", "Summit/TreeSway", "Summit/FarLit" };
+    static readonly Dictionary<string, Dictionary<string, int>> drawnWith = new Dictionary<string, Dictionary<string, int>>();
+    static readonly Dictionary<string, int> votes = new Dictionary<string, int>();
+
+    static string DrawnKey(int i)
+    {
+        var d = drawn[i];
+        string sh = d.shader ?? "?";
+        bool hit = System.Array.IndexOf(Stripped, sh) >= 0;
+        return (hit && d.instanced ? "STRIPPED " : "") + sh + (d.instanced ? " (instanced)" : "") + " [" + d.what.Split(' ')[0] + "]";
+    }
+
+    /// <summary>A kind's collider: what its samples' nearest drawn surfaces were drawn with (the most of them).</summary>
+    static void NoteDrawnWith(string kind)
+    {
+        if (votes.Count == 0) return;
+        string top = null; int most = -1;
+        foreach (var kv in votes) if (kv.Value > most) { most = kv.Value; top = kv.Key; }
+        votes.Clear();
+        if (!drawnWith.TryGetValue(kind, out var d)) drawnWith[kind] = d = new Dictionary<string, int>();
+        d.TryGetValue(top, out int n); d[top] = n + 1;
     }
 
     static Bounds WorldBox(Matrix4x4 m, Bounds b)
@@ -589,16 +844,19 @@ public static class InvisibleAudit
     }
 
     /// <summary>How far the nearest drawn triangle is from this point (up to `limit`; `limit` if none is nearer).</summary>
+    static int lastNearest = -1;   // (the drawn thing whose surface Nearest found)
+
     static float Nearest(Vector3 q, float limit)
     {
         float best = limit;
+        lastNearest = -1;
         for (int i = 0; i < drawn.Count; i++)
         {
             var d = drawn[i];
             if (d.wb.SqrDistance(q) > best * best) continue;
-            if (d.mesh == null) { best = Mathf.Min(best, Mathf.Sqrt(d.wb.SqrDistance(q))); continue; }
+            if (d.mesh == null) { float bd = Mathf.Sqrt(d.wb.SqrDistance(q)); if (bd < best) { best = bd; lastNearest = i; } continue; }
             var tris = Tris(i, d);
-            if (tris == null) { best = Mathf.Min(best, Mathf.Sqrt(d.wb.SqrDistance(q))); continue; }
+            if (tris == null) { float bd = Mathf.Sqrt(d.wb.SqrDistance(q)); if (bd < best) { best = bd; lastNearest = i; } continue; }
             for (int t = 0; t < tris.Length; t += 3)
             {
                 Vector3 a = tris[t], b = tris[t + 1], c = tris[t + 2];
@@ -610,7 +868,7 @@ public static class InvisibleAudit
                 float mnz = Mathf.Min(a.z, Mathf.Min(b.z, c.z)) - best, mxz = Mathf.Max(a.z, Mathf.Max(b.z, c.z)) + best;
                 if (q.z < mnz || q.z > mxz) continue;
                 float dd = (ClosestOnTri(q, a, b, c) - q).magnitude;
-                if (dd < best) best = dd;
+                if (dd < best) { best = dd; lastNearest = i; }
             }
         }
         return best;
@@ -673,6 +931,7 @@ public static class InvisibleAudit
     // ================================================================ 2. crashes
 
     static Collider hitBy;
+    static readonly MethodInfo testContacts = typeof(Rider).GetMethod("TestContacts");
     static HashSet<Renderer> riderParts = new HashSet<Renderer>();
 
     static void Step()
@@ -684,7 +943,10 @@ public static class InvisibleAudit
         if (withSlide && slide != null) slide.Step(dt, r, body);
         r.Tick(dt);
         hitBy = r.Crashed ? was : null;
-        if (!r.Crashed && r.Running)
+        // (ridden over, glanced off or crashed into, as on the phone: Rider.Hit; on code from before that, any touch of
+        // an obstacle, as the rider then took it: so the same audit measures both)
+        if (testContacts != null) { if ((bool)testContacts.Invoke(r, new object[] { dt })) hitBy = (Collider)typeof(Rider).GetProperty("HitCollider").GetValue(r); }
+        else if (!r.Crashed && r.Running)
         {
             Vector3 p = r.Body.position, v = r.Velocity;
             foreach (var c in Physics.OverlapCapsule(p, p + v * dt, Rider.R + 0.05f, ~0, QueryTriggerInteraction.Ignore))
@@ -813,7 +1075,17 @@ public static class InvisibleAudit
         foreach (var k in kinds) { colCount.TryGetValue(k, out int f); if (f > 0) sb.Append($"  {f}/{colChecked[k]}  {k}\n"); }
         sb.Append("  clean kinds: ");
         foreach (var k in kinds) { colCount.TryGetValue(k, out int f); if (f == 0) sb.Append($"{k} ({colChecked[k]}); "); }
-        sb.Append($"\nAUDIT crashes: {crashes}, with nothing drawn within 1.5 m of the contact: {invisible} (night={night} slide={withSlide}, caught by the slide {caught})\n  by cause: ");
+        sb.Append("\n  more than 0.3 m clear at board height: ");
+        int strict = 0; foreach (var kv in strictCount) { strict += kv.Value; sb.Append($"{kv.Key}={kv.Value}; "); }
+        sb.Append($"({strict} in all)");
+        sb.Append("\nAUDIT drawn-with (per solid kind: what its nearest drawn surface is drawn with, on how many of them; STRIPPED = drawn instanced with a shader whose instanced variants the iOS build has been stripping):");
+        foreach (var kv in drawnWith)
+        {
+            int all = 0, hit = 0; foreach (var e in kv.Value) { all += e.Value; if (e.Key.StartsWith("STRIPPED")) hit += e.Value; }
+            sb.Append($"\n  {(hit > 0 ? $"AFFECTED {hit}/{all} " : "")}{kv.Key}: ");
+            foreach (var e in kv.Value) sb.Append($"{e.Key} x{e.Value}; ");
+        }
+        sb.Append($"\nAUDIT crashes: {crashes}, with nothing drawn within 1.5 m of the contact: {invisible} (night={night} slide={withSlide} storm={storm}, caught by the slide {caught})\n  by cause: ");
         foreach (var kv in crashCount) sb.Append($"{kv.Key}={kv.Value} ");
         sb.Append("\n  invisible: ");
         foreach (var kv in invisibleCount) sb.Append($"{kv.Key}={kv.Value}; ");

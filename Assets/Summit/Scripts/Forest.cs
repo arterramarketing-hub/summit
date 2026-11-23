@@ -986,7 +986,9 @@ namespace Summit
                 }
             }
             if (!any) b = new Bounds(Vector3.up * 0.5f, Vector3.one);
-            m = CliffSpires.Frustum(b, 0.8f, "RockHull" + idx);
+            var parts = new List<(Mesh, Matrix4x4)>();
+            foreach (var part in rockParts[idx]) if (part.sub == 0) parts.Add((part.mesh, part.local));
+            m = any ? CliffSpires.ScanHull(parts, b, 0.8f, "RockHull" + idx) : CliffSpires.Frustum(b, 0.8f, "RockHull" + idx);
             rockHulls[idx] = m;
             return m;
         }
@@ -1022,6 +1024,24 @@ namespace Summit
                     into.Add(new Piece { mesh = part.mesh, sub = part.sub, mat = part.mat, m = pl.m * part.local, cut = pl.kind == Kind.Tree ? pl.cut : 0f });
                 damage.Remove(kv.Key);
                 Unplace(kv.Key);   // drawn without it from now on
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// The pieces the rock behind this collider is drawn with (left standing, unlike Fell), so blood can be drawn
+        /// over its very surface. False if it is not one of our rocks.
+        /// </summary>
+        public bool RockPieces(Collider hit, List<Piece> into)
+        {
+            if (hit == null) return false;
+            foreach (var kv in live)
+            {
+                if (kv.Value != hit.gameObject) continue;
+                var pl = Get(kv.Key.x, kv.Key.y);
+                if (pl.kind != Kind.Rock) return false;
+                foreach (var part in rockParts[pl.idx]) into.Add(new Piece { mesh = part.mesh, sub = part.sub, mat = part.mat, m = pl.m * part.local });
                 return true;
             }
             return false;
@@ -1326,9 +1346,12 @@ namespace Summit
         /// bounds alone (their meshes are not kept readable), so marks left there sit on what you see rather
         /// than floating on an invisible capsule. False if the collider is not one of ours.
         /// </summary>
-        public bool SurfaceOf(Collider hit, Vector3 from, out Vector3 at, out Vector3 normal)
+        public bool SurfaceOf(Collider hit, Vector3 from, out Vector3 at, out Vector3 normal) => SurfaceOf(hit, from, out at, out normal, out _);
+
+        /// <summary>As SurfaceOf, and how round the surface is there (m): a trunk's radius, the branches' cone's, a rock's.</summary>
+        public bool SurfaceOf(Collider hit, Vector3 from, out Vector3 at, out Vector3 normal, out float round)
         {
-            at = normal = Vector3.zero;
+            at = normal = Vector3.zero; round = 1f;
             if (hit == null) return false;
             foreach (var kv in live)
             {
@@ -1368,14 +1391,14 @@ namespace Summit
                     {
                         float y = Mathf.Clamp(from.y, trunk.min.y + 0.3f, crown.min.y);
                         at = new Vector3(trunk.center.x, y, trunk.center.z) + d * (tr * 0.9f);
-                        normal = d;
+                        normal = d; round = tr * 0.9f;
                     }
                     else
                     {
                         float h = crown.size.y, r0 = cr * 0.75f;
                         float y = Mathf.Clamp(from.y, crown.min.y + 0.15f, crown.min.y + 0.35f * h);
                         at = new Vector3(crown.center.x, y, crown.center.z) + d * (r0 * (1f - (y - crown.min.y) / h));
-                        normal = (d * h + Vector3.up * r0).normalized;
+                        normal = (d * h + Vector3.up * r0).normalized; round = r0 * (1f - (y - crown.min.y) / h);
                     }
                     return true;
                 }
@@ -1389,6 +1412,8 @@ namespace Summit
                 Vector3 nLocal = new Vector3(ps.x / ext.x, ps.y / ext.y, ps.z / ext.z);
                 at = M.MultiplyPoint3x4(pLocal);
                 normal = inv.transpose.MultiplyVector(nLocal).normalized;
+                Vector3 we = WorldBox(M, new Bounds(c, ext * 2f)).extents;
+                round = Mathf.Min(we.x, Mathf.Min(we.y, we.z));
                 return true;
             }
             return false;
