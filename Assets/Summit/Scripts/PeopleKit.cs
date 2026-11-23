@@ -36,6 +36,7 @@ namespace Summit
             public SkinnedMeshRenderer body, legs, gear, head;
             public Matrix4x4 meshToModel, modelToMesh;
             public Mesh Body, Legs;                    // with the rest pose in uv2/uv3 (and smoothed normals in the tangents)
+            public ClothWind.Shapes BodyWind, LegsWind;   // their shapes for the air to blow into (ClothWind)
             public Mesh gearSrc, headSrc;
             public int[] gearCell, headCell;           // each vertex's palette swatch (MakeHero.py's PAL index)
             public readonly Dictionary<int, Mesh> gears = new Dictionary<int, Mesh>(), heads = new Dictionary<int, Mesh>();
@@ -142,6 +143,11 @@ namespace Summit
             c.modelToMesh = c.meshToModel.inverse;
             // the jacket and trousers: the rest pose for the patterns (as SnowyClothes bakes the hero's)
             c.Body = RestBaked(t, c.body); c.Legs = RestBaked(t, c.legs);
+            // the wind's shapes, once for everyone in this cut (weights are each person's own: Person.Apply). Its model
+            // faces -z: the back is +z, the right side -x
+            Vector3 back = t.transform.TransformDirection(Vector3.forward), right = t.transform.TransformDirection(Vector3.left), up = t.transform.up;
+            c.BodyWind = ClothWind.Add(c.Body, ClothWind.MeshToWorld(c.body), back, right, up, false);
+            c.LegsWind = ClothWind.Add(c.Legs, ClothWind.MeshToWorld(c.legs), back, right, up, true);
             c.gearSrc = c.gear.sharedMesh;
             c.headSrc = c.head != null ? c.head.sharedMesh : null;
             if (!c.gearSrc.isReadable || (c.headSrc != null && !c.headSrc.isReadable)) { Debug.LogWarning("People: the hero's gear can't be read"); Object.DestroyImmediate(t); return null; }

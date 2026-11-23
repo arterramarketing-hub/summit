@@ -422,7 +422,9 @@ namespace Summit
         public Vector3 ChaletPoint(float x, float y, float z) => chalet != null ? chalet.TransformPoint(new Vector3(x, y, z)) : Vector3.zero;
         public float ChaletYaw => chalet != null ? chalet.eulerAngles.y : 0f;
         /// <summary>True inside the chalet's walls.</summary>
-        bool Indoors => chalet != null && (UseLodge ? LodgeInsideAt(chalet.InverseTransformPoint(pos)) : InHouse(chalet.InverseTransformPoint(pos)));
+        bool Indoors => InsideAt(pos);
+        /// <summary>Is this point (world) inside the lodge (or the chalet)? (No weather in there: the people's clothes, ClothWind.)</summary>
+        public bool InsideAt(Vector3 world) => chalet != null && (UseLodge ? LodgeInsideAt(chalet.InverseTransformPoint(world)) : InHouse(chalet.InverseTransformPoint(world)));
         static bool InHouse(Vector3 l) => Mathf.Abs(l.x) < ChaletHalfX - 0.2f && Mathf.Abs(l.z) < ChaletHalfZ - 0.2f;
 
         // ---------------------------------------------------------------- birches, lumpy snow, the trodden path
@@ -1703,6 +1705,7 @@ namespace Summit
             }
             float run = Mathf.Clamp01((speed - MaxSpeed) / (RunSpeed - MaxSpeed));
             stepIn = Mathf.MoveTowards(stepIn, Indoors ? 1f : 0f, dt * 4f);
+            RiderBody.Shelter = stepIn;   // (and no wind in the clothes indoors)
             for (int i = 0; i < stepTones.Length; i++) stepTones[i].cutoffFrequency = Mathf.Lerp(22000f, 1400f, stepIn);
             // how fast the cycle turns (it moves on in the body's own frame update, after this one)
             float ph = body.WalkPhase;

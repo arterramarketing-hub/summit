@@ -402,7 +402,7 @@ namespace Summit
             look.hasPompom = head == 1;
             look.hairStyle = PersonHair.None; look.pack = null; look.faceShows = false;
             look.gear = pose < 2 ? PersonGear.Skis : PersonGear.Snowboard;
-            if (bakePerson == null) { bakePerson = Person.Make(look, PeopleKit.Root, "LiftBake"); if (bakePerson == null) return null; bakePerson.Shadows(false); }
+            if (bakePerson == null) { bakePerson = Person.Make(look, PeopleKit.Root, "LiftBake"); if (bakePerson == null) return null; bakePerson.Shadows(false); bakePerson.Windless = true; }
             else { bakePerson.gameObject.SetActive(true); bakePerson.Dress(look); }
             var p = bakePerson;
             // on a chair standing still, out of sight

@@ -107,6 +107,16 @@ namespace Summit
             var faceM = FaceMaterial();
             foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>())
             {
+                // her hoodie and snow pants: shapes for the weather's wind to blow into (ClothWind; on her own copy of the mesh)
+                var src = smr.sharedMesh;
+                var kinds = src != null && src.isReadable ? ClothWind.KindsByMaterial(src, smr.sharedMaterials) : null;
+                if (kinds != null)
+                {
+                    var own = Instantiate(src); own.name = src.name + " (wind)";
+                    var shapes = ClothWind.Add(own, ClothWind.MeshToWorld(smr), model.TransformDirection(Vector3.forward), model.TransformDirection(Vector3.left), model.up, false, kinds);
+                    smr.sharedMesh = own;
+                    cloth.Add((smr, shapes));
+                }
                 var mats = smr.sharedMaterials;
                 for (int i = 0; i < mats.Length; i++)
                 {
@@ -181,6 +191,8 @@ namespace Summit
         public Vector3 FaceDir => h != null ? h.Head.rotation * faceLocal : face;
         // a blink now and then (her model's "Blink" shape)
         SkinnedMeshRenderer faceSmr; int blinkShape = -1; float nextBlink = 1.7f, blinkT = 1f;
+        readonly System.Collections.Generic.List<(SkinnedMeshRenderer smr, ClothWind.Shapes shapes)> cloth = new System.Collections.Generic.List<(SkinnedMeshRenderer, ClothWind.Shapes)>();
+        ClothWind.Air air;
         void Blink(float dt)
         {
             if (faceSmr == null || blinkShape < 0) return;
@@ -195,7 +207,8 @@ namespace Summit
         void OnDestroy() { Release(); }
 
         /// <summary>
-        /// What she made for herself, gone with her: her marshmallow (and its material) and her phone's screen. The camp
+        /// What she made for herself, gone with her: her marshmallow (and its material), her phone's screen and her clothes'
+        /// meshes (with the wind's shapes). The camp
         /// calls it before it is rebuilt (every run start; a change of the lodge's layout), as the editor's tools get no
         /// OnDestroy.
         /// </summary>
@@ -203,6 +216,8 @@ namespace Summit
         {
             mm?.Destroy(); mm = null;
             Marshmallow.Kill(screenMat); screenMat = null;
+            foreach (var (smr, _) in cloth) if (smr != null && smr.sharedMesh != null && smr.sharedMesh.name.EndsWith(" (wind)")) Marshmallow.Kill(smr.sharedMesh);   // (her own copies)
+            cloth.Clear();
         }
 
         /// <summary>How many times she's been moved on (test tools: still while you're out on the mountain).</summary>
@@ -216,6 +231,17 @@ namespace Summit
         {
             if (!built) return;
             Steps++;
+            // the weather's wind in her hoodie and snow pants (out at the fire), close enough to see
+            if (cloth.Count > 0 && dt > 0f)
+            {
+                var c = Camera.main;
+                Vector3 at = h != null && h.Hips != null ? h.Hips.position : model.position;   // (where she is drawn: her own object stays at the camp's)
+                if (c == null || (c.transform.position - at).sqrMagnitude < 45f * 45f)
+                {
+                    air.Step(dt, ClothWind.WeatherAt(at), model.TransformDirection(Vector3.forward).normalized, model.TransformDirection(Vector3.left).normalized);
+                    foreach (var (smr, shapes) in cloth) air.Apply(smr, shapes);
+                }
+            }
             lastT = t;
             t += dt;
             if (t >= Cycle) { t -= Cycle; lastT = -1f; }

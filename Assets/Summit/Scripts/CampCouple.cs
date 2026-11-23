@@ -127,9 +127,20 @@ namespace Summit
             for (int i = 0; i < all.Length; i++) if (all[i] != null && all[i].shown) Pose(all[i], dt, all[i] == paul ? 0 : every);
             if (together && val.posed && bri.posed) Hands(dt); else if (!together) holdW = 0f;
             for (int i = 0; i < all.Length; i++) if (all[i] != null && all[i].shown && all[i].posed) Extras(all[i], dt);
+            for (int i = 0; i < all.Length; i++) if (all[i] != null && all[i].shown) Wind(all[i], dt);
             if (waver != null && !waver.shown) { waver = null; wave = 0f; }
             waveCool -= dt;
         }
+        /// <summary>The weather's wind in their jacket and trousers (ClothWind), close by and out of doors (none in the lodge).</summary>
+        void Wind(Person p, float dt)
+        {
+            if (p.cloth.Count == 0 || p.model == null) return;
+            if (cam != null && (cam.transform.position - p.pos).sqrMagnitude > 45f * 45f) return;   // (further off it can't be seen)
+            float outside = camp != null && camp.InsideAt(p.pos + Vector3.up * 0.5f) ? 0f : 1f;
+            p.air.Step(dt, ClothWind.WeatherAt(p.pos, outside), p.model.TransformDirection(Vector3.forward).normalized, p.model.TransformDirection(Vector3.left).normalized);
+            foreach (var (smr, shapes) in p.cloth) p.air.Apply(smr, shapes);
+        }
+
         int tick;
         Person joiner;   // the one walking over to join the other
         readonly Person[] all = new Person[3];   // Val, Breanna, Paul (kept, not made afresh each frame)
@@ -658,6 +669,9 @@ namespace Summit
             public string at, doing = "";
             public float stay;
             public Vector3 lookAt; public float lookW, warm; public int waveSide;
+            // the jacket and trousers in the weather's wind (ClothWind), as the hero's
+            public readonly List<(SkinnedMeshRenderer smr, ClothWind.Shapes shapes)> cloth = new List<(SkinnedMeshRenderer, ClothWind.Shapes)>();
+            public ClothWind.Air air;
 
             /// <summary>One of them, built from their own model, dressed as the hero is.</summary>
             public static Person Make(CampCouple home, int who)
@@ -801,13 +815,18 @@ namespace Summit
                 var main = set == 1 ? blue : set == 3 || set == 4 ? jacketM : white;
                 if (main != null) Paint(main, Wardrobe.Shown(Wardrobe.Cat.Jacket, jacket, set));
                 if (plain != null) Paint(plain, Wardrobe.Shown(Wardrobe.Cat.Pants, pants, set));
-                // the snowy cloth's rest frame, and the clothes a little looser, as on the hero
-                if (snowy != null)
-                {
-                    snowy.SetFrame(p.model, p.rig.Hips);
-                    foreach (var smr in p.model.GetComponentsInChildren<SkinnedMeshRenderer>(true))
-                        if (smr.name.Contains("Body") || smr.name.Contains("Legs")) Loosen(smr, snowy, 0.35f);
-                }
+                // the snowy cloth's rest frame, the clothes a little looser, as on the hero, and shapes for the wind to blow
+                // into (fixed to them: the model faces -z, its back +z, its right side -x)
+                snowy?.SetFrame(p.model, p.rig.Hips);
+                p.cloth.Clear();
+                foreach (var smr in p.model.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                    if (smr.name.Contains("Body") || smr.name.Contains("Legs"))
+                    {
+                        Loosen(smr, snowy, 0.35f);
+                        var shapes = ClothWind.Add(smr.sharedMesh, ClothWind.MeshToWorld(smr), p.model.TransformDirection(Vector3.forward),
+                                                   p.model.TransformDirection(Vector3.left), p.model.up, smr.name.Contains("Legs"));
+                        p.cloth.Add((smr, shapes));
+                    }
             }
 
             static void Paint(Material m, Wardrobe.Item it)
@@ -825,6 +844,7 @@ namespace Summit
             {
                 var src = smr.sharedMesh;
                 if (src == null || !src.isReadable) return;
+                if (snowy == null) { var copy = Object.Instantiate(src); copy.name = src.name + " (camp)"; smr.sharedMesh = copy; return; }   // (its own copy: the wind's shapes go on it)
                 var mesh = Object.Instantiate(src);
                 mesh.name = src.name + " (camp)";
                 float m = 1f / Mathf.Max(1e-5f, smr.transform.lossyScale.x);

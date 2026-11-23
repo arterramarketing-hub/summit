@@ -97,6 +97,7 @@ namespace Summit
                 f.yaw = cy + yaw;
                 f.p.gameObject.SetActive(true);
                 f.p.transform.SetPositionAndRotation(f.seat, Quaternion.Euler(0f, f.yaw, 0f));
+                f.p.Shelter = camp.InsideAt(floor + Vector3.up * 0.5f) ? 1f : 0f;   // (no wind in their clothes indoors: ClothWind)
                 f.acc = 0f;
             }
             // who they're with: the others at their table or the counter (within reach), the one they're talking to

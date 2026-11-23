@@ -27,6 +27,11 @@ namespace Summit
         public HeroRig Rig { get; private set; }
         public Transform Model { get; private set; }
         public SkinnedMeshRenderer BodySkin, LegsSkin, GearSkin, HeadSkin, HandsSkin, LodSkin;
+        /// <summary>How far indoors they are, 0 out in the weather .. 1 inside (the lodge's own set it): no wind in the clothes in there.</summary>
+        public float Shelter;
+        /// <summary>No wind in the clothes at all (a body posed for baking: LiftRiders).</summary>
+        public bool Windless;
+        ClothWind.Air air;
         readonly SkinnedMeshRenderer[] skins = new SkinnedMeshRenderer[4];
         public SkinnedMeshRenderer[] Skins => skins;
         public readonly List<MeshRenderer> Rigid = new List<MeshRenderer>();
@@ -385,6 +390,20 @@ namespace Summit
             if (mode == Mode.Walk && Lod == 0 && dt > 0f) LockFeet(); else locked[0] = locked[1] = false;
             Hands();
             Gear();
+            Wind(dt);
+        }
+
+        /// <summary>The weather's wind in the jacket and trousers (ClothWind), up close only (further off the plain body
+        /// shows, which has none).</summary>
+        void Wind(float dt)
+        {
+            if (Lod != 0 || dt <= 0f || BodySkin == null) return;
+            var cut = PeopleKit.CutOf(Look);
+            if (cut == null || !cut.LegsWind.Ok) return;
+            Vector3 back = Model.rotation * Vector3.forward, right = Model.rotation * Vector3.left;   // (the model faces -z)
+            air.Step(dt, Windless ? Vector3.zero : ClothWind.WeatherAt(transform.position, 1f - Mathf.Clamp01(Shelter)), back, right);
+            air.Apply(BodySkin, cut.BodyWind);
+            air.Apply(LegsSkin, cut.LegsWind);
         }
 
         // a foot on the ground stays where it landed (the clip's own drift and the turns would slide it)

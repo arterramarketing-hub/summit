@@ -232,7 +232,7 @@ namespace Summit
             r.CaptureBind();
             snowy?.SetFrame(model, h.Hips);
             snowy?.BakeRigid(go.transform);
-            Loosen(go, 0.35f);   // already baggy: only a little looser, but the wind shapes are wanted
+            Loosen(go, h.Hips, 0.35f);   // already baggy: only a little looser, but the wind shapes are wanted
             SetUpRides(h, gearM);   // the skis and poles and the toboggan, on the bones at rest (RiderBodyRide)
             rig = r; hero = h;
 
@@ -413,6 +413,7 @@ namespace Summit
             }
             else if (Walking)
             {
+                Flutter(dt);   // (the weather's wind in the clothes, standing about in the camp)
                 // on foot: the Root bone stands on the snow, the clips stride in time with the camp's footsteps
                 model.localPosition = heroRidePos - new Vector3(0f, BoardTop, 0f);
                 int move = CampMove == 1 ? idCampJump : CampMove == 2 ? idCampRoll : -1;
