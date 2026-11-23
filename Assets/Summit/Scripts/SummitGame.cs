@@ -151,6 +151,15 @@ namespace Summit
             hud.SetMusic(v * 10 + "%");
         }
 
+        // the GAME tab's TURN: how sharp the carve is (SteerPrefs, Rider.TurnScale), felt the moment the run resumes
+        void StepTurn(int dir) => SetTurnStop(SteerPrefs.Stop + dir);
+        void SetTurnStop(int k)
+        {
+            SteerPrefs.Stop = k;
+            hud.SetTurn(SteerPrefs.Label, SteerPrefs.Fraction);
+        }
+        bool turnDrag;   // a finger that went down on the TURN bar, sliding it
+
         // ---- every setting has one method here, which the pause menu and the start page's settings both call
         //      (BuildStart hands them to StartPage as rows), so the two can never disagree and a change made in
         //      one shows in the other
@@ -199,6 +208,7 @@ namespace Summit
             start.AddRow(look, "FILTER STRENGTH", () => filterStrength * 10 + "%", StepStrength);
             start.AddRow(look, "HALATION", () => LensFX.HalationName[halation], StepHalation);
             start.AddRow(look, "LODGE (PLAYTEST)", () => Camp.LodgeLayoutShort, d => camp.StepLodgeLayout(d));   // (a playtest switch: the camp's lodge, three ways inside)
+            start.AddRow(game, "TURN", () => SteerPrefs.Label, StepTurn);
             start.AddRow(game, "STEERING", () => input.useTilt ? "TILT" : "DRAG", d => ToggleSteer(), true);
             start.AddRow(game, "JUMP", () => JumpName, StepJump);
             start.AddRow(game, "INVERT TILT", () => OnOff(input.invertTilt), d => ToggleInvert(), true, () => input.useTilt);
@@ -277,6 +287,8 @@ namespace Summit
             hud.SetVoiceLines(SoundMix.VoiceLines);
             hud.SetTime(TimeOfDay.LockLabel);
             hud.SetMusic(Mathf.RoundToInt(AudioPrefs.MusicVolume * 10f) * 10 + "%");
+            hud.SetTurn(SteerPrefs.Label, SteerPrefs.Fraction);
+            turnDrag = false;
             input.SwallowCurrentPress();
         }
 
@@ -329,6 +341,7 @@ namespace Summit
             Screen.orientation = ScreenOrientation.Portrait;
             Slope.Init(Slope.TodaysSeed());
             best = PlayerPrefs.GetInt("summit_best", 0);
+            SteerPrefs.Apply();   // (the TURN setting)
             MakeMissingMaterials();
             SetUpWorld();
 
@@ -914,10 +927,26 @@ namespace Summit
                 case State.Riding:
                     if (paused)
                     {
+                        // the TURN bar, slid: it follows the finger, a click at each stop it passes
+                        if (turnDrag)
+                        {
+                            if (!RiderInput.PointerHeld()) turnDrag = false;
+                            else
+                            {
+                                int k = Mathf.RoundToInt(hud.TurnBarAt(RiderInput.PointerPosition()) * (SteerPrefs.Stops.Length - 1));
+                                if (k != SteerPrefs.Stop) { audioFx.Play(Sfx.Click); SetTurnStop(k); }
+                            }
+                        }
                         if (input.AnyPress())
                         {
                             var pp = RiderInput.PointerPosition();
                             if (hud.OnResume(pp)) { audioFx.Play(Sfx.Click); SetPaused(false); }
+                            else if (hud.OnTurnMinus(pp) || hud.OnTurnPlus(pp)) { audioFx.Play(Sfx.Click); StepTurn(hud.OnTurnPlus(pp) ? 1 : -1); }
+                            else if (hud.OnTurnBar(pp))
+                            {
+                                turnDrag = true; audioFx.Play(Sfx.Click);
+                                SetTurnStop(Mathf.RoundToInt(hud.TurnBarAt(pp) * (SteerPrefs.Stops.Length - 1)));
+                            }
                             else if (hud.OnPauseTab(pp)) audioFx.Play(Sfx.Click);
                             else if (hud.OnHalationMinus(pp) || hud.OnHalationPlus(pp)) { audioFx.Play(Sfx.Click); StepHalation(hud.OnHalationPlus(pp) ? 1 : -1); }
                             else if (hud.OnMusicMinus(pp) || hud.OnMusicPlus(pp)) { audioFx.Play(Sfx.Click); StepMusic(hud.OnMusicPlus(pp) ? 1 : -1); }

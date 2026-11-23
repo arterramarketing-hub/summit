@@ -15,7 +15,7 @@ namespace Summit
         public string Name;
         /// <summary>How fast the body gets from one edge to the other (on Rider.LeanSpring). Higher: quicker, twitchier.</summary>
         public float TurnResponse = 1f;
-        /// <summary>How tight a turn the same lean draws (on Rider.CarveK and Rider.MaxYawRate). Lower: wider arcs.</summary>
+        /// <summary>How tight a turn the same lean draws (on Rider.CarveRate and Rider.MaxYawRate). Lower: wider arcs.</summary>
         public float TurnRate = 1f;
         /// <summary>How much sideways pull the edges hold before they skid, and how fast a skid is caught (on
         /// Rider.GripLimit and Rider.Grip, after the SHARP EDGES upgrade). Lower: it drifts wide.</summary>

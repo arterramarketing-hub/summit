@@ -336,6 +336,18 @@ namespace Summit
             Calibrate();
         }
 
+        /// <summary>A finger (or the mouse button) is down right now.</summary>
+        public static bool PointerHeld()
+        {
+            if (TestDrive) return TestFingers > 0;
+#if ENABLE_INPUT_SYSTEM
+            if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.isPressed) return true;
+            return Mouse.current != null && Mouse.current.leftButton.isPressed;
+#else
+            return Input.touchCount > 0 || Input.GetMouseButton(0);
+#endif
+        }
+
         static bool PointerDown()
         {
             if (TestDrive) return TestFingers > 0;

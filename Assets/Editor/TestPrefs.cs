@@ -37,6 +37,7 @@ public static class TestPrefs
         foreach (var k in Summit.Progress.SetKeys()) keys[k] = Kind.Int;   // (each set of clothes' own colours)
         keys["summit_clock"] = Kind.Float;
         keys["summit_music"] = Kind.Float;
+        keys[SteerPrefs.TurnKey] = Kind.Float;
         keys["summit_missions"] = Kind.String;
     }
 

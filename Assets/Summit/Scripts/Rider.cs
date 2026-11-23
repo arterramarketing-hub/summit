@@ -23,12 +23,22 @@ namespace Summit
         public static float Friction = 0.035f;                       // snow friction coefficient
         public static float AirControl = 0.6f;                       // how fast steering bends the flight in the air (rad/s)
         public static float MaxLean = 0.72f;                         // full-thumb edge angle (rad, ~41 degrees)
-        public static float LeanSpring = 17f;                        // how fast the body gets onto its edge (rad/s)
-        public static float CarveK = 27f;                            // turn rate = CarveK * tan(lean) / speed
-        public static float MinCarveSpeed = 7f, MaxYawRate = 2.4f;
-        public static float GripLimit = 37f;                         // sideways acceleration the edge can hold (m/s^2)
-        public static float Grip = 42f;                              // 1/s: how fast slip dies when the edge holds (high: the edge bites, no drifting)
-        public static float TurnDrag = 0.12f;                        // speed lost per radian of turning
+        public static float LeanSpring = 21f;                        // how fast the body gets onto its edge (rad/s)
+        // the carve's turn rate: CarveRate (rad/s) on a full edge at CarveRefSpeed, in proportion to the edge, and falling
+        // off only as the square root of the speed (CarveSpeedFalloff): a faster board still draws a wider arc, but at
+        // 110 km/h a full edge is a 12 m turn, not the 38 m it once was (that was 1/speed: the radius grew with the speed
+        // squared, and nothing short of a crawl could get through the trees)
+        public static float CarveRate = 2.9f, CarveRefSpeed = 25f, CarveSpeedFalloff = 0.5f;
+        public static float MinCarveSpeed = 7f, MaxYawRate = 3.4f;   // (slower than MinCarveSpeed the rate stops climbing; MaxYawRate caps it)
+        public static float GripLimit = 95f;                         // sideways acceleration the edge can hold (m/s^2): a full edge at speed, with room
+        public static float Grip = 60f;                              // 1/s: how fast slip dies when the edge holds (high: the edge bites, no drifting)
+        public static float TurnDrag = 0.08f;                        // speed lost per radian of turning
+        /// <summary>
+        /// The TURN setting (the pause menu's SETTINGS, saved by SteerPrefs): how tight and how quick every carve is,
+        /// 0.5 to 2.5, 1 the stock feel. It scales the turn rate, the edge's hold (never below stock, so a gentle setting
+        /// is not a slidey one) and, by its square root, how fast the body gets onto the edge. Applies at once, mid-run.
+        /// </summary>
+        public static float TurnScale { get; set; } = 1f;
         public static float TakeoffClearance = 0.22f;
         public static float FallLinePull = 2.2f;                     // 1/s: how fast a flat board swings back down the hill
         /// <summary>
@@ -391,12 +401,17 @@ namespace Summit
         float CarveTurn(float dt, float sp)
         {
             float target = Steer * MaxLean * Mathf.Lerp(1f, 0.65f, Tuck);
-            // critically damped spring: starts at once, settles in about 0.4 s, never overshoots
-            float spring = LeanSpring * feel.TurnResponse;
+            float scale = Mathf.Clamp(TurnScale, 0.25f, 4f);
+            // critically damped spring: starts at once, settles in about 0.3 s, never overshoots
+            float spring = LeanSpring * feel.TurnResponse * Mathf.Sqrt(scale);
             float acc = spring * spring * (target - Lean) - 2f * spring * leanVel;
             leanVel += acc * dt;
             Lean += leanVel * dt;
-            float yaw = Mathf.Sign(Lean) * Mathf.Min(MaxYawRate * feel.TurnRate, CarveK * feel.TurnRate * Mathf.Tan(Mathf.Abs(Lean)) / Mathf.Max(sp, MinCarveSpeed));
+            // the turn rate goes with the edge (half an edge, half the rate: the thumb's whole throw does something) and
+            // falls off gently with speed
+            float edge = Mathf.Abs(Lean) / MaxLean;
+            float rate = CarveRate * Mathf.Pow(CarveRefSpeed / Mathf.Max(sp, MinCarveSpeed), CarveSpeedFalloff);
+            float yaw = Mathf.Sign(Lean) * feel.TurnRate * Mathf.Min(MaxYawRate * Mathf.Sqrt(scale), rate * scale) * edge;
             YawRate = yaw;
             return yaw;
         }
@@ -466,12 +481,12 @@ namespace Summit
             //    sideways pull is within its grip; beyond that the board skids
             float lost = 0f, demand = sp * Mathf.Abs(yaw);
             float rockGrip = OnRock ? RockGrip : 1f;
-            float hold = Mathf.Min(1f, GripLimit * feel.Grip * rockGrip / Mathf.Max(demand, 1e-3f));
+            float hold = Mathf.Min(1f, GripLimit * Mathf.Max(1f, TurnScale) * feel.Grip * rockGrip / Mathf.Max(demand, 1e-3f));
             sp = vt.magnitude;
             if (sp > 0.05f)
             {
                 float beta = Mathf.Clamp(Mathf.Atan2(Vector3.Dot(vt, r), Vector3.Dot(vt, f)), -1.5f, 1.5f);
-                float beta2 = beta * Mathf.Exp(-(Tube ? 2.5f : Grip * feel.Grip * rockGrip * hold * (1f - 0.85f * Undercut)) * dt);   // a tube has no edge: it slides
+                float beta2 = beta * Mathf.Exp(-(Tube ? 2.5f : Grip * Mathf.Max(1f, TurnScale) * feel.Grip * rockGrip * hold * (1f - 0.85f * Undercut)) * dt);   // a tube has no edge: it slides
                 float scrub = Mathf.Abs(beta - beta2);
                 lost = scrub * sp;
                 sp *= 1f - 0.18f * scrub;

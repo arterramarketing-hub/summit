@@ -257,7 +257,8 @@ namespace Summit
 
         // ---- the pause menu: RESUME always, then four tabs. VIEW: chase camera or first person, camera distance,
         //      angle (those two are for the chase camera: greyed out in first person), lens, lens type.
-        //      LOOK: filter, filter strength, halation, time of day. GAME: steering, blood, trees, restart run.
+        //      LOOK: filter, filter strength, halation, time of day. GAME: turn (how sharp the carve is), steering, jump,
+        //      blood, trees, flashlight, restart run.
         //      SOUND: music volume. A hidden tab's buttons are inactive, so they can't be hit.
 
         GameObject pausePanel;
@@ -325,13 +326,25 @@ namespace Summit
             timeLabel = Row(1, "TIME OF DAY", -420f, out timeMinus, out timePlus);   // CYCLE, or one phase held
             // GAME
             var game = tabPage[2].transform;
-            // (five rows and the restart, 132 apart)
-            steerBtn = Button(game, "STEERING", new Vector2(0f, 250f), new Vector2(700f, 112f), grey, out steerLabel, 38);
-            jumpBtn = Button(game, "JUMP", new Vector2(0f, 118f), new Vector2(700f, 112f), grey, out jumpLabel, 38);
-            bloodBtn = Button(game, "BLOOD", new Vector2(0f, -14f), new Vector2(700f, 112f), grey, out bloodLabel, 38);
-            treesBtn = Button(game, "TREES", new Vector2(0f, -146f), new Vector2(700f, 112f), grey, out treesLabel, 38);
-            torchBtn = Button(game, "FLASHLIGHT", new Vector2(0f, -278f), new Vector2(700f, 112f), grey, out torchLabel, 38);
-            againBtn = Button(game, "RESTART RUN", new Vector2(0f, -420f), new Vector2(560f, 112f), new Color(0.8f, 0.2f, 0.15f, 0.9f), out _, 48);
+            // TURN on top: a slider, - and + either side of its value and a bar under it (tap or drag along it), its
+            // middle the stock feel. Then five rows and the restart, 120 apart
+            turnLabel = Row(2, "TURN", 203f, out turnMinus, out turnPlus);
+            turnBar = NewImage("TurnBar", game, new Color(1f, 1f, 1f, 0f)).rectTransform;   // (the bar's hit area: taller than it looks)
+            Place(turnBar, new Vector2(0.5f, 0.5f), new Vector2(0f, 148f), new Vector2(TurnBarW, 56f), new Vector2(0.5f, 0.5f));
+            var track = NewImage("TurnTrack", turnBar, grey).rectTransform;
+            Place(track, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(TurnBarW, 12f), new Vector2(0.5f, 0.5f));
+            var mid = NewImage("TurnMiddle", turnBar, new Color(1f, 1f, 1f, 0.45f)).rectTransform;
+            Place(mid, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(4f, 28f), new Vector2(0.5f, 0.5f));
+            turnFill = NewImage("TurnFill", turnBar, TabOn).rectTransform;
+            Place(turnFill, new Vector2(0.5f, 0.5f), new Vector2(-TurnBarW * 0.5f, 0f), new Vector2(0f, 12f), new Vector2(0f, 0.5f));
+            turnKnob = NewImage("TurnKnob", turnBar, Color.white).rectTransform;
+            Place(turnKnob, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(26f, 44f), new Vector2(0.5f, 0.5f));
+            steerBtn = Button(game, "STEERING", new Vector2(0f, 64f), new Vector2(700f, 104f), grey, out steerLabel, 38);
+            jumpBtn = Button(game, "JUMP", new Vector2(0f, -56f), new Vector2(700f, 104f), grey, out jumpLabel, 38);
+            bloodBtn = Button(game, "BLOOD", new Vector2(0f, -176f), new Vector2(700f, 104f), grey, out bloodLabel, 38);
+            treesBtn = Button(game, "TREES", new Vector2(0f, -296f), new Vector2(700f, 104f), grey, out treesLabel, 38);
+            torchBtn = Button(game, "FLASHLIGHT", new Vector2(0f, -416f), new Vector2(700f, 104f), grey, out torchLabel, 38);
+            againBtn = Button(game, "RESTART RUN", new Vector2(0f, -544f), new Vector2(560f, 104f), new Color(0.8f, 0.2f, 0.15f, 0.9f), out _, 48);
             // SOUND
             musicLabel = Row(3, "MUSIC", 180f, out musicMinus, out musicPlus);
             voiceBtn = Button(tabPage[3].transform, "VOICE LINES", new Vector2(0f, -60f), new Vector2(700f, 120f), grey, out voiceLabel, 38);
@@ -400,6 +413,26 @@ namespace Summit
         public bool OnHalationMinus(Vector2 p) => Inside(halationMinus, p);
         public bool OnHalationPlus(Vector2 p) => Inside(halationPlus, p);
         public void SetMusic(string value) { musicLabel.text = value; }
+        // ---- the TURN slider (GAME tab)
+        const float TurnBarW = 360f;
+        RectTransform turnMinus, turnPlus, turnBar, turnFill, turnKnob; Text turnLabel;
+        /// <summary>The TURN value, and where along the bar (0..1) it sits.</summary>
+        public void SetTurn(string value, float fraction)
+        {
+            turnLabel.text = value;
+            float f = Mathf.Clamp01(fraction);
+            turnFill.sizeDelta = new Vector2(TurnBarW * f, 12f);
+            turnKnob.anchoredPosition = new Vector2(TurnBarW * (f - 0.5f), 0f);
+        }
+        public bool OnTurnMinus(Vector2 p) => Inside(turnMinus, p);
+        public bool OnTurnPlus(Vector2 p) => Inside(turnPlus, p);
+        public bool OnTurnBar(Vector2 p) => Inside(turnBar, p);
+        /// <summary>How far along the TURN bar (0..1) a screen point is (past either end: that end).</summary>
+        public float TurnBarAt(Vector2 p)
+        {
+            RectTransformUtility.ScreenPointToLocalPointInRectangle(turnBar, p, null, out Vector2 local);
+            return Mathf.Clamp01(local.x / TurnBarW + 0.5f);
+        }
         public bool OnMusicMinus(Vector2 p) => Inside(musicMinus, p);
         public bool OnMusicPlus(Vector2 p) => Inside(musicPlus, p);
         public int PauseTab => tab;
