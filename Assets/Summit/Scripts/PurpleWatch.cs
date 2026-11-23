@@ -17,7 +17,10 @@ namespace Summit
     ///    a shader with no SubShader that compiled for this GPU is drawn with the error shader);
     ///  - a shader with no pass URP draws (built-in pipeline shaders: magenta in the editor and development builds,
     ///    nothing in a release build);
-    ///  - every material loaded (instanced draws through Graphics.RenderMesh*), the terrains' and the sky's.
+    ///  - the terrains', the sky's and the UI's materials, and every one of the game's own materials loaded (instanced
+    ///    draws through Graphics.RenderMesh* have no renderer to find them by).
+    /// The engine's and URP's own materials (the error material, blits, XR) are loaded whether or not anything draws with
+    /// them, so they count only where a renderer, a terrain, the sky or the UI uses them (purplequiet).
     /// Without the variable it does nothing (no object is made). The editor's checks use Scan directly (ShaderCensus).
     /// </summary>
     public class PurpleWatch : MonoBehaviour
@@ -62,9 +65,16 @@ namespace Summit
             if (!sh.isSupported) return "not supported on this GPU";
             bool drawn = false;
             for (int p = 0; p < sh.passCount && !drawn; p++) drawn = urpPasses.Contains(sh.FindPassTagValue(p, LightMode).name);
-            if (!drawn) return "no pass URP draws";
+            if (!drawn) return NoUrpPass;
             return null;
         }
+
+        const string NoUrpPass = "no pass URP draws";
+
+        /// <summary>The engine's or URP's own shader (Hidden/..., the error shader too), not one of the game's: the
+        /// game's hidden shaders are named Hidden/Summit/... or Hidden/NightLights... (a new one goes under Hidden/Summit/).</summary>
+        static bool Internal(Shader sh) =>
+            sh.name.StartsWith("Hidden/") && !sh.name.StartsWith("Hidden/Summit/") && !sh.name.StartsWith("Hidden/NightLights");
 
         /// <summary>Every renderer, terrain, the sky and every loaded material that would come out magenta.</summary>
         public static List<string> Scan(out int renderers, out int materials)
@@ -98,16 +108,26 @@ namespace Summit
             foreach (var t in Terrain.activeTerrains)
                 if (t != null && t.materialTemplate != null && Why(t.materialTemplate) is string tw) Note(PathOf(t.transform) + " (terrain)", t.materialTemplate, tw);
             if (RenderSettings.skybox != null && Why(RenderSettings.skybox) is string sw) Note("(sky)", RenderSettings.skybox, sw);
+            // the UI (the canvas draws it its own way: only a shader that is missing, failed or unsupported is magenta)
+            foreach (var cr in Object.FindObjectsByType<CanvasRenderer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+            {
+                if (cr.cull || cr.materialCount == 0) continue;
+                renderers++;
+                for (int i = 0; i < cr.materialCount; i++)
+                    if (cr.GetMaterial(i) is Material um && Why(um) is string uw && uw != NoUrpPass)
+                        Note(PathOf(cr.transform) + (cr.materialCount > 1 ? $"[{i}]" : "") + " (UI)", um, uw);
+            }
             materials = 0;
             foreach (var m in Resources.FindObjectsOfTypeAll<Material>())
             {
                 if (m == null || m.shader == null) continue;
-                // (the engine's own error material, which it draws magenta things with: unnamed, hidden, never saved)
-                if (m.hideFlags == HideFlags.HideAndDontSave && string.IsNullOrEmpty(m.name)) continue;
+                // (the engine's and URP's own, the error material among them: on a renderer, a terrain, the sky or the
+                // UI they are caught above; loaded and unused they draw nothing. On the phone: the error material,
+                // XRMirrorView, XRMotionVector, XROcclusionMesh and BlitHDROverlay, none of them drawn)
+                if (Internal(m.shader)) continue;
                 materials++;
                 // only what cannot be drawn at all (a material left lying about with a built-in shader draws nothing)
-                var sh = m.shader;
-                if (sh.name == "Hidden/InternalErrorShader" || !sh.isSupported) Note("material:" + m.name, m, Why(m));
+                if (!m.shader.isSupported) Note("material:" + m.name, m, Why(m));
             }
             return found;
         }
