@@ -176,6 +176,7 @@ namespace Summit
                 y = Mathf.Lerp(y, yp, pw);
             }
             y = Ridge.Shape(x, z, y);   // a narrow crest with cliffs either side, once a cycle
+            y += LiftLine.HillHeight(x, z);   // the hills under the lift lines that carry a rider up to the cables (LiftHill.cs)
             if (cut) y -= Course.CrevasseCut(x, z);
             return Start(x, z, y);
         }

@@ -234,16 +234,17 @@ public static class ScoreTest
         Ride(RideKind.Snowboard, false);
     }
 
-    /// <summary>Up a lift's ramp and onto its cable, with switch-ups; then whatever the towers and the next spans give.</summary>
+    /// <summary>Over a lift's hill and onto its cable, with switch-ups; then whatever the towers and the next spans give.</summary>
     static void Cable(string label, Script script)
     {
         foreach (var l in LiftLine.Lifts)
         {
-            var rp = l.ramp;
+            var rp = l.hill;
             if (rp == null) continue;
-            Vector3 foot = LiftLine.RampPoint(l, rp, 0f), d = LiftLine.RampDir(l, rp, 0f);
-            Vector3 flat = new Vector3(d.x, 0f, d.z).normalized;
-            Vector3 from = foot - flat * 10f;
+            Vector3 foot = l.At(rp.s - rp.rise, rp.side * LiftLine.Half, 0f);
+            foot.y = Slope.Height(foot.x, foot.z);
+            Vector3 flat = l.dir;
+            Vector3 from = foot - flat * 12f;
             Start(from.x, from.z, rp.needSpeed + 4f);
             r.Heading = Mathf.Atan2(flat.x, flat.z);
             r.Body.linearVelocity = Vector3.ProjectOnPlane(flat, Slope.Normal(from.x, from.z)).normalized * (rp.needSpeed + 4f);
@@ -269,12 +270,12 @@ public static class ScoreTest
             Say($"{label,-34} on the cable {on:0.00}s |{(links == "" ? " -" : links)} | {(crash != null ? "CRASH '" + crash + "'" : "rode away")} | combo peaked x{topMult} at {topTotal} | banked {game.Points.Banked}");
             return;
         }
-        Say($"{label}: no lift with a ramp on this mountain");
+        Say($"{label}: no lift with a hill on this mountain");
     }
 
     static void Cables()
     {
-        Say("---- a lift cable, off its ramp");
+        Say("---- a lift cable, off its hill");
         r.ResetAt(Slope.Centre(Course.First), Course.First); terrain.Prewarm(); props.Prewarm();
         Cable("cable, no input", (t, t0) => default);
         Cable("cable, switch-ups and presses", (t, t0) => new In { x = Mathf.Repeat(t, 1.2f) > 0.5f && Mathf.Repeat(t, 1.2f) < 0.6f ? 1f : 0f, y = Mathf.Repeat(t, 1.2f) > 1f && Mathf.Repeat(t, 1.2f) < 1.1f ? 1f : 0f });

@@ -3,8 +3,8 @@ using UnityEngine;
 namespace Summit
 {
     /// <summary>
-    /// Grinding the lift cables, and riding the launch ramps that reach them (LiftRamp.cs). Every tuning number is
-    /// in CableTune.
+    /// Grinding the lift cables, reached off the hills that rise under the lines (LiftHill.cs). Every tuning number
+    /// is in CableTune.
     ///
     /// It is the game's own grind, on a line the lifts supply: while on a cable the rider is Grinding, and its
     /// GrindFeature is a stand-in rail a metre long, laid along the cable under the board and moved with it. So
@@ -12,8 +12,9 @@ namespace Summit
     /// boardslide pose and the arms out, the rail's sound, no snow trail or spray, no crevasse underfoot, the
     /// cameras. A stand-in's id is negative, which is how Rider.OnCable tells it from a real rail.
     ///
-    ///   1. Getting up there. A lift's ramp is boarded like a park box: ride into its foot, lined up, and it
-    ///      carries you up its curve and throws you off the lip along the cable's own line.
+    ///   1. Getting up there. Each lift has a hill of snow under one cable: ride over its crest along the line and
+    ///      the snow drops away under you, as off any roll-over, with the cable ahead and above. Nothing special
+    ///      happens on the hill itself: it is the mountain, ridden as the mountain is.
     ///   2. Boarding. A rider in the air, going down the line within 45 degrees, whose board comes within the
     ///      catch distance of either cable, is put on it (not on the last span, which runs into the bottom
     ///      station, nor right beside a tower).
@@ -25,26 +26,27 @@ namespace Summit
     ///      land on the next span, or the other cable, and the game's combo carries on (Combo.cs), with whatever
     ///      was spun or grabbed on the way between them.
     ///   6. Chairs. On the cable the board skims over each chair's grip: a tick and a few points, never a crash.
-    ///      (SkiLift asks ChairsHit; chairs stay solid for anyone who is not grinding or fresh off a ramp.)
+    ///      (SkiLift asks ChairsHit; chairs stay solid for anyone who is not grinding, just off a cable, or in the
+    ///      air off a lift's hill.)
     ///
     /// Rides: the snowboard and skis grind. The toboggan cannot balance on a rope any more than on a rail: it
-    /// clatters off it, slowed and wobbling, for a few points. The snow tube takes neither ramp nor cable, as it
-    /// takes no rail. A cable counts as a rail for the day's missions and plays the rail's sound.
+    /// clatters off it, slowed and wobbling, for a few points. The snow tube takes no cable, as it takes no rail. A cable counts as a rail for the day's missions and plays the rail's sound.
     /// </summary>
     public static class CableGrind
     {
-        enum Mode { None, Ramp, Cable }
+        enum Mode { None, Cable }
         static Mode mode;
         static LiftLine.Lift lift;
-        static int span;                 // the span being ridden (or the ramp's)
+        static int span;                 // the span being ridden
         static float side;               // which cable, +1 or -1
-        static float along;              // where the board is: m along the line (cable), or down the ramp
+        static float along;              // where the board is: m along the line
         static float speed, slid, landedAt;
         static Vector3 offset;           // from the line to where the board came on: eased away over a few frames
         static int chain;                // spans ridden in a row without touching snow
         static int lastKey = int.MinValue, bonkKey = int.MinValue, chairs;
         static float graceUntil;
-        static bool offRamp;             // in the air off a ramp: chairs cannot hit until the snow (or a cable)
+        static bool offHill;             // in the air off a lift's hill: chairs cannot hit until the snow (or a cable)
+        static bool wasAirborne;
         static Rider hooked;
 
         /// <summary>The span in hand: for SkiLift, which bends that span's cable under the rider.</summary>
@@ -57,23 +59,23 @@ namespace Summit
             return true;
         }
 
-        /// <summary>May a chair knock this rider down just now? Not on a cable, just off one, or in the air off a ramp.</summary>
-        public static bool ChairsHit => mode == Mode.None && !offRamp && Time.time > graceUntil;
+        /// <summary>May a chair knock this rider down just now? Not on a cable, just off one, or in the air off a lift's hill.</summary>
+        public static bool ChairsHit => mode == Mode.None && !offHill && Time.time > graceUntil;
 
         /// <summary>Follow this rider: touching snow, or a crash, ends a chain. (SkiLift calls it once.)</summary>
         public static void Hook(Rider r)
         {
             if (r == null || hooked == r) return;
             hooked = r;
-            r.Landed += impact => { chain = 0; offRamp = false; lastKey = int.MinValue; };
-            r.Crash += why => { chain = 0; offRamp = false; mode = Mode.None; lastKey = int.MinValue; };
+            r.Landed += impact => { chain = 0; offHill = false; lastKey = int.MinValue; };
+            r.Crash += why => { chain = 0; offHill = false; mode = Mode.None; lastKey = int.MinValue; };
             Reset();
         }
 
         /// <summary>A new run or a new mountain: nothing in hand.</summary>
         public static void Reset()
         {
-            mode = Mode.None; lift = null; chain = 0; offRamp = false; graceUntil = 0f;
+            mode = Mode.None; lift = null; chain = 0; offHill = false; graceUntil = 0f;
             lastKey = int.MinValue; bonkKey = int.MinValue;
         }
 
@@ -82,20 +84,23 @@ namespace Summit
         /// <summary>The stand-in rail under the board: a metre of the line, which is all the pose and the sounds ask of it.</summary>
         static Course.Feature Feature(Vector3 at, Vector3 dir, bool cable, float above) => new Course.Feature
         {
-            kind = cable ? Course.Kind.Rail : Course.Kind.Box, a = at, b = at + dir, halfWidth = cable ? 0.04f : CableTune.RampHalfWidth,
+            kind = cable ? Course.Kind.Rail : Course.Kind.Box, a = at, b = at + dir, halfWidth = 0.04f,
             height = above, id = cable ? -1 : -2,
         };
 
         // ---------------------------------------------------------------- getting on
 
         /// <summary>
-        /// Rider.Tick asks this each step it is neither crashed nor on a rail: is the board at a ramp's foot, or
-        /// at a cable? If so the rider is put on it (and Step carries on from there).
+        /// Rider.Tick asks this each step it is neither crashed nor on a rail: is the board at a cable? If so the
+        /// rider is put on it (and Step carries on from there).
         /// </summary>
         public static bool TryBoard(Rider r, Vector3 p, Vector3 v)
         {
             if (!LiftLine.On) return false;
             if (mode != Mode.None) mode = Mode.None;   // (left it some other way: a crash, a reset)
+            // just left the snow on a lift's hill: on the way up to the cable, the chairs let it by (until the snow)
+            if (r.Airborne && !wasAirborne && LiftLine.OnHill(p.x, p.z, 2f)) offHill = true;
+            wasAirborne = r.Airborne;
             var flat = new Vector2(v.x, v.z);
             float flatSpeed = flat.magnitude;
             foreach (var l in LiftLine.Lifts)
@@ -108,22 +113,6 @@ namespace Summit
                 if (r.Tube || flatSpeed < CableTune.CatchMinSpeed) continue;
                 if (down < CableTune.CatchAlign * flatSpeed) continue;   // across the line, or up it
                 if (Mathf.Abs(c) > LiftLine.Half + CableTune.CatchSide + 0.5f) continue;
-
-                // its ramp: ridden into at the foot, on the snow (or just off it), like a park box
-                var ramp = l.ramp;
-                if (ramp != null && (!r.Airborne || r.AboveGround < 0.6f) && down >= CableTune.RampMinSpeed
-                    && s > ramp.s0 - 1.5f && s < ramp.s0 + ramp.length * 0.35f && Mathf.Abs(c - ramp.side * LiftLine.Half) < CableTune.RampHalfWidth + 0.5f)
-                {
-                    float t = Mathf.Max(0f, s - ramp.s0);
-                    Vector3 on = LiftLine.RampPoint(l, ramp, t) + Vector3.up * Rider.R;
-                    if (p.y < on.y + 1.2f)
-                    {
-                        mode = Mode.Ramp; lift = l; span = ramp.span; side = ramp.side; along = t;
-                        speed = Mathf.Max(down, CableTune.RampMinSpeed); offset = p - on; slid = 0f;
-                        r.CableBoard(Feature(on, LiftLine.RampDir(l, ramp, t), false, 0f), false);
-                        return true;
-                    }
-                }
 
                 // a cable: only from the air
                 if (!r.Airborne) continue;
@@ -149,7 +138,7 @@ namespace Summit
                     }
                     mode = Mode.Cable; lift = l; span = i; side = e; along = s;
                     speed = Mathf.Max(Vector3.Dot(v, dir), CableTune.CatchMinSpeed); offset = p - on; slid = 0f;
-                    landedAt = Time.time; offRamp = false;
+                    landedAt = Time.time; offHill = false;
                     lastKey = key;
                     chairs = ChairsBehind();
                     r.CableBoard(Feature(on, dir, true, on.y - Slope.DrawnHeight(on.x, on.z)), true);
@@ -161,31 +150,13 @@ namespace Summit
 
         // ---------------------------------------------------------------- on it
 
-        /// <summary>One physics step on a ramp or a cable: the velocity that puts the board where it should be next.</summary>
+        /// <summary>One physics step on a cable: the velocity that puts the board where it should be next.</summary>
         public static Vector3 Step(Rider r, float dt, Vector3 p, Vector3 v)
         {
             if (lift == null || mode == Mode.None) return r.CableLeave(p, v);
             bool pop = r.TakePop(out bool super);
             float hop = CableTune.PopHop * (super ? Mathf.Sqrt(Rider.SuperJumpLift) : 1f);
             offset *= Mathf.Exp(-dt * 12f);
-
-            if (mode == Mode.Ramp)
-            {
-                var ramp = lift.ramp;
-                Vector3 d = LiftLine.RampDir(lift, ramp, along);
-                speed = Mathf.Max(CableTune.MinSpeed, speed + LiftLine.SlideAccel(speed, d.y) * dt);
-                along += speed * Mathf.Sqrt(Mathf.Max(0f, 1f - d.y * d.y)) * dt;
-                if (along >= ramp.length || pop)
-                {
-                    // off the lip, along the cable's own line (a pop on the ramp adds its hop to that)
-                    mode = Mode.None; offRamp = true;
-                    d = LiftLine.RampDir(lift, ramp, Mathf.Min(along, ramp.length));
-                    return r.CableLeave(p, d * speed + (pop ? Vector3.up * hop : Vector3.zero));
-                }
-                Vector3 at = LiftLine.RampPoint(lift, ramp, along) + Vector3.up * Rider.R;
-                r.CableRide(Feature(at, d, false, 0f), speed, at.y - Slope.DrawnHeight(at.x, at.z));
-                return (at + offset - p) / dt;
-            }
 
             // a cable
             float slope = LiftLine.CableSlope(lift, span, along);

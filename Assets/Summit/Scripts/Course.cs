@@ -137,6 +137,8 @@ namespace Summit
         const float RowLen = 8f;
         static int crevFor = int.MinValue;
         static bool laying;
+        /// <summary>The crevasses are being laid out just now (Glacier.Build reads the snow: it reads it without the lifts' hills, LiftLine.HillHeight).</summary>
+        public static bool Laying => laying;
 
         /// <summary>Every crevasse on today's mountain (laid out the first time it is asked for).</summary>
         public static Crevasse[] Crevasses { get { Lay(); return crevs; } }

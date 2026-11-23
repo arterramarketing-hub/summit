@@ -21,8 +21,8 @@ namespace Summit
     ///     other's cable by OverTop + OverClear (5 m: a tower's head with its catwalk and beacon stands 3 m over
     ///     its cable, and 2 m to spare), for which its towers may be taller (HMaxOver). It never passes over
     ///     another line's station, nor crosses one within CrossFromStation of a portal, and none of its towers
-    ///     or stations stands in another line's swath or in the lane to another line's launch ramp.
-    ///   - Its own launch ramp (LiftRamp.cs) goes only on a span that crosses no other line, and is given up if
+    ///     or stations stands in another line's swath or in the lane to another line's hill.
+    ///   - Its own hill (LiftHill.cs) goes only on a span that crosses no other line, and is given up if
     ///     the lane to it would run into another line's tower.
     /// Like the first lines it is a pure function of the day's mountain. The first lines are laid exactly as they
     /// were before there were second ones. Tools/LiftHarness checks every pair of lines that cross.
@@ -81,7 +81,7 @@ namespace Summit
                             if (l == null) continue;
                             if (z0 + len > danger && !ClearOfDanger(l, danger)) continue;
                             l.tries = tries;
-                            PlaceRamp(l, laid);
+                            PlaceHill(l, laid);
                             return l;
                         }
                     }
@@ -113,7 +113,7 @@ namespace Summit
         static bool Meets(Lift l, IList<Lift> laid)
         {
             if (Crowds(l, laid)) return false;
-            // its stations: clear of every other line's swath and stations, and of the lanes to their ramps
+            // its stations: clear of every other line's swath and stations, and of the lanes to their hills
             for (int end = 0; end < 2; end++)
             {
                 Vector3 st = end == 0 ? l.top : l.bottom;
@@ -221,7 +221,7 @@ namespace Summit
             return roof;
         }
 
-        /// <summary>Does span i of l cross another line (over it or under it)? No launch ramp goes there.</summary>
+        /// <summary>Does span i of l cross another line (over it or under it)? No hill goes there.</summary>
         static bool Tangled(Lift l, int i, IList<Lift> laid)
         {
             if (laid == null) return false;
@@ -235,19 +235,7 @@ namespace Summit
             return false;
         }
 
-        /// <summary>Would this ramp stand in another line's swath, or in the lane to its ramp?</summary>
-        static bool RampInTheWay(Lift l, Ramp r, IList<Lift> laid)
-        {
-            for (int k = 0; k <= 4; k++)
-                for (int e = -1; e <= 1; e += 2)
-                {
-                    Vector3 p = l.At(r.s0 + r.length * 0.25f * k, r.side * Half + e * CableTune.RampHalfWidth, 0f);
-                    if (TakenBy(laid, p.x, p.z, 4f)) return true;
-                }
-            return false;
-        }
-
-        /// <summary>Does the lane to l's ramp run into another line's tower or station?</summary>
+        /// <summary>Does the lane to l's hill run into another line's tower or station?</summary>
         static bool LaneBlocked(Lift l, IList<Lift> laid)
         {
             for (int q = 0; q < laid.Count; q++)

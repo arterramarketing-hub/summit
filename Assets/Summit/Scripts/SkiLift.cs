@@ -38,8 +38,8 @@ namespace Summit
     /// the piste is a crash like a tree ("Lift tower", "Lift station"). A station is solid where it is drawn: its
     /// deck, legs, bracing and railings, not the air under its deck (Stream). A chair is solid too: a jump high enough to
     /// reach one is a crash ("Chairlift!", or a shield spent), found by a simple test against the few nearest
-    /// chairs. The cable never knocks anyone down: it is there to be ground (CableGrind.cs), from the launch ramp
-    /// that stands under each lift (LiftRamp.cs), and while a rider is on it the chairs skim under the board and the
+    /// chairs. The cable never knocks anyone down: it is there to be ground (CableGrind.cs), reached off the hill that
+    /// rises under each lift (LiftHill.cs), and while a rider is on it the chairs skim under the board and the
     /// rope dips and bounces with them. Nothing hangs within 9 m of the piste's snow (LiftLine).
     ///
     /// At dusk and night the work lamps under each crossarm, the red beacon on each tower and the stations'
@@ -70,9 +70,9 @@ namespace Summit
         public static double TestClock = -1.0;
 
         /// <summary>
-        /// A lift coming into range is built a few pieces a frame (its cable span by span, its ramp), not all in one:
-        /// it comes into range 650 m ahead, long before any of it is near. The ramp's collider is baked off the main
-        /// thread before it is put on. (The batch tools, which call Update a few times and look, get it all at once.)
+        /// A lift coming into range is built a few pieces a frame (its cable span by span, its hill's sign), not all in
+        /// one: it comes into range 650 m ahead, long before any of it is near. Colliders made here are baked off the
+        /// main thread before they are put on. (The batch tools, which call Update a few times and look, get it all at once.)
         /// </summary>
         public static bool SpreadBuild;
         const int BuildsPerRefresh = 2;
@@ -232,7 +232,7 @@ namespace Summit
             rampMat = new Material(paint) { name = "LiftRamp" };   // (the palette again, seen from both sides: no winding to get wrong)
             rampMat.SetFloat("_Cull", 0f);
             litShader = lit;
-            // the rider's own sphere never touches a launch ramp's collider (it is carried over the ramp by CableGrind)
+            // the rider's own sphere never touches the body-only colliders on the ice layer (CourseDressing)
             if (target != null && target.TryGetComponent<Collider>(out var own)) own.excludeLayers |= 1 << CourseDressing.IceLayer;
             CableGrind.Hook(rider);
             CableGrind.ChairTick = at => { if (sound != null) sound.LiftClack(at, 0.6f); };
@@ -244,7 +244,7 @@ namespace Summit
             lamp.enabled = false;
             ready = true;
             LiftRiders.Prewarm();   // the riders' poses baked for distance, now rather than when first seen
-            if (System.Environment.GetEnvironmentVariable("SUMMIT_LIFTCHECK") == "1") Debug.Log("SkiLift\n" + LiftLine.Report() + LiftLine.RampReport());
+            if (System.Environment.GetEnvironmentVariable("SUMMIT_LIFTCHECK") == "1") Debug.Log("SkiLift\n" + LiftLine.Report() + LiftLine.HillReport());
         }
 
         // ---------------------------------------------------------------- what is built near the rider
@@ -258,7 +258,7 @@ namespace Summit
             public Roofs.Roof deckTop, deckBottom;  // their decks, ridden (Roofs)
             public Collider[] stationTopCols, stationBottomCols;
             public Collider[][] towerCols;          // (kept, so the look round for switched-off colliders allocates nothing)
-            public bool rampBuilt;
+            public bool signBuilt;
         }
         readonly List<Live> live = new List<Live>();
         float refreshClock;
@@ -302,7 +302,7 @@ namespace Summit
         {
             Roofs.Remove(lv.deckTop); Roofs.Remove(lv.deckBottom); lv.deckTop = lv.deckBottom = null;
             if (lv.root == null) return;
-            // the cables' and the ramp's meshes are ours (the sign's are Unity's); one still being baked is let go once that is done
+            // the cables' meshes are ours (the sign's are Unity's); one still being baked is let go once that is done
             foreach (var mf in lv.root.GetComponentsInChildren<MeshFilter>(true)) if (mf.sharedMesh != null && mf.sharedMesh.name.StartsWith("Lift") && !Baking_(mf.sharedMesh)) Destroy(mf.sharedMesh);
             Destroy(lv.root);
             lv.root = null;
@@ -334,7 +334,7 @@ namespace Summit
             {
                 var l = lv.lift;
                 Vector3 axis = l.Axis, fwd = l.dir * Mathf.Cos(l.lean) - Vector3.up * Mathf.Sin(l.lean);
-                if (!lv.rampBuilt) { if (buildBudget > 0) { buildBudget--; lv.rampBuilt = true; Ramp(lv); } else buildMore = true; }
+                if (!lv.signBuilt) { if (buildBudget > 0) { buildBudget--; lv.signBuilt = true; HillSign(lv); } else buildMore = true; }
                 // the cable, span by span
                 for (int i = 0; i < l.Spans; i++)
                 {
@@ -520,71 +520,34 @@ namespace Summit
             bent = now;
         }
 
-        // ---------------------------------------------------------------- the launch ramp (LiftRamp.cs)
-
         static Vector2 Paint(int cell) => new Vector2((cell % 8 + 0.5f) / 8f, 1f - (cell / 8 + 0.5f) / 8f);   // a colour of LiftPaint.png (Tools/MakeLift.py's palette)
 
-        /// <summary>
-        /// A lift's launch ramp: a steel kicker standing under one cable, its sides
-        /// running down into the snow; and a jump sign at the piste's edge where the cleared lane to it starts.
-        /// The rider is carried over it by CableGrind, so its collider is only for a thrown body and the board.
-        /// </summary>
-        void Ramp(Live lv)
-        {
-            var l = lv.lift; var r = l.ramp;
-            if (r == null) return;
-            const int N = 8;
-            const int Deck = 7, Steel = 0, Accent = 6, Dark = 1;
-            var v = new List<Vector3>(); var uv = new List<Vector2>(); var tri = new List<int>();
-            Vector3 origin = LiftLine.RampPoint(l, r, 0f);
-            System.Action<Vector3, Vector3, Vector3, Vector3, int> Quad = (a, b, c, d, cell) =>
-            {
-                int n = v.Count;
-                v.Add(a - origin); v.Add(b - origin); v.Add(c - origin); v.Add(d - origin);
-                for (int q = 0; q < 4; q++) uv.Add(Paint(cell));
-                tri.Add(n); tri.Add(n + 1); tri.Add(n + 2); tri.Add(n); tri.Add(n + 2); tri.Add(n + 3);
-            };
-            Vector3 w = l.across * CableTune.RampHalfWidth;
-            for (int k = 0; k < N; k++)
-            {
-                Vector3 p0 = LiftLine.RampPoint(l, r, r.length * k / N), p1 = LiftLine.RampPoint(l, r, r.length * (k + 1f) / N);
-                // (the sides go down to a metre under the snow, wherever the snow is)
-                Vector3 g0 = new Vector3(0f, Mathf.Min(p0.y, Slope.Height(p0.x, p0.z)) - 1f - p0.y, 0f), g1 = new Vector3(0f, Mathf.Min(p1.y, Slope.Height(p1.x, p1.z)) - 1f - p1.y, 0f);
-                Vector3 rim = Vector3.down * 0.18f;
-                Quad(p0 - w, p0 + w, p1 + w, p1 - w, Deck);                                   // the top: steel plate, like a park box
-                for (int e = -1; e <= 1; e += 2)
-                {
-                    Quad(p0 + w * e, p1 + w * e, p1 + w * e + rim, p0 + w * e + rim, k % 2 == 0 ? Accent : Dark);   // a striped rim
-                    Quad(p0 + w * e + rim, p1 + w * e + rim, p1 + w * e + g1, p0 + w * e + g0, Steel);              // the side
-                }
-                if (k == N - 1) Quad(p1 - w, p1 + w, p1 + w + g1, p1 - w + g1, Steel);        // the back, under the lip
-            }
-            var mesh = new Mesh { name = "LiftRamp" };
-            mesh.SetVertices(v); mesh.SetUVs(0, uv); mesh.SetTriangles(tri, 0);
-            mesh.RecalculateNormals(); mesh.RecalculateBounds();
-            var go = new GameObject("LaunchRamp") { layer = CourseDressing.IceLayer };
-            go.transform.SetParent(lv.root.transform, false);
-            go.transform.position = origin;
-            go.AddComponent<MeshFilter>().sharedMesh = mesh;
-            go.AddComponent<MeshRenderer>().sharedMaterial = rampMat;
-            BakeCollider(go, mesh);
+        // ---------------------------------------------------------------- the hill's sign (LiftHill.cs)
 
+        /// <summary>
+        /// A jump sign at the piste's edge where the cleared lane down to a lift's hill starts. (The hill itself is the
+        /// mountain's own snow: Slope.Height has it, so the terrain draws it and the rider rides it.)
+        /// </summary>
+        void HillSign(Live lv)
+        {
+            var l = lv.lift; var h = l.hill;
+            if (h == null) return;
             // the sign: a board on a post, facing up the hill
             if (signMat == null) signMat = CourseDressing.Sign(litShader, "Signs/SignJump");
             var post = GameObject.CreatePrimitive(PrimitiveType.Cube);
             Destroy(post.GetComponent<Collider>());
-            post.name = "LiftRampSignPost";
+            post.name = "LiftHillSignPost";
             post.transform.SetParent(lv.root.transform, false);
-            post.transform.position = r.sign + Vector3.up * 1.2f;
+            post.transform.position = h.sign + Vector3.up * 1.2f;
             post.transform.localScale = new Vector3(0.12f, 3.4f, 0.12f);
             post.GetComponent<MeshRenderer>().sharedMaterial = postMat;
             var board = GameObject.CreatePrimitive(PrimitiveType.Quad);
             Destroy(board.GetComponent<Collider>());
-            board.name = "LiftRampSign";
+            board.name = "LiftHillSign";
             board.transform.SetParent(lv.root.transform, false);
             // (a quad shows its face to whoever looks along its own +z: turned to face the rider coming down the lane)
-            Vector3 lane = LiftLine.RampPoint(l, r, 0f) - r.laneFrom; lane.y = 0f;
-            board.transform.SetPositionAndRotation(r.sign + Vector3.up * 2.4f - lane.normalized * 0.08f, Quaternion.LookRotation(lane.normalized, Vector3.up));
+            Vector3 lane = l.At(h.s - h.rise, h.side * LiftLine.Half, 0f) - h.laneFrom; lane.y = 0f;
+            board.transform.SetPositionAndRotation(h.sign + Vector3.up * 2.4f - lane.normalized * 0.08f, Quaternion.LookRotation(lane.normalized, Vector3.up));
             board.transform.localScale = new Vector3(1.7f, 1.7f, 1f);
             board.GetComponent<MeshRenderer>().sharedMaterial = signMat;
         }

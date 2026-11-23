@@ -285,15 +285,15 @@ public static class PointsShot
         Run(0.4f, null); Shot("07-bank-counted");
     }
 
-    /// <summary>Up a lift's ramp and along its cable, switching up as it goes.</summary>
+    /// <summary>Over a lift's hill and along its cable, switching up as it goes.</summary>
     static void Cable()
     {
         foreach (var l in LiftLine.Lifts)
         {
-            var rp = l.ramp;
+            var rp = l.hill;
             if (rp == null) continue;
-            Vector3 foot = LiftLine.RampPoint(l, rp, 0f), d = LiftLine.RampDir(l, rp, 0f);
-            Vector3 flat = new Vector3(d.x, 0f, d.z).normalized, from = foot - flat * 10f;
+            Vector3 foot = l.At(rp.s - rp.rise, rp.side * LiftLine.Half, 0f);
+            Vector3 flat = l.dir, from = foot - flat * 12f;
             Begin(from.x, from.z, rp.needSpeed + 4f, flat);
             float on = 0f; bool shot = false;
             for (float t = 0f; t < 30f && !r.Crashed; t += Dt)

@@ -2,15 +2,15 @@ namespace Summit
 {
     /// <summary>
     /// Every number that tunes grinding the lift cables, in one place: catching a cable, sliding it, leaving it,
-    /// what it scores, and the launch ramps that put a rider within reach. LiftLine places the ramps and works out
-    /// what each one reaches from these; CableGrind is the grind itself; SkiLift draws it.
+    /// what it scores, and the hills under the lines that put a rider within reach. LiftLine places the hills and
+    /// works out what each one reaches from these (LiftHill.cs); CableGrind is the grind itself; SkiLift draws it.
     /// </summary>
     public static class CableTune
     {
         // ---- catching a cable (CableGrind.TryBoard; LiftLine.Reaches uses the same window)
         public const float CatchSide = 1.2f;        // m to either side of the cable that the board still finds it
         public const float CatchAbove = 1.5f;       // m: the board's underside may be this far above the cable
-        public const float CatchBelow = 1.0f;       // m: or this far below it (a jump that tops out just short still gets on)
+        public const float CatchBelow = 1.5f;       // m: or this far below it (a jump that tops out just short still gets on: eased up onto it)
         public const float CatchAlign = 0.707f;     // the flight must be within 45 degrees of the line, going down it
         public const float CatchMinSpeed = 6f;      // m/s along the cable, at least
         public const float CatchMaxRise = 9f;       // m/s: rising through the cable faster than this, you go on past it
@@ -31,7 +31,7 @@ namespace Summit
         public const float TowerHop = 9.5f;         // m/s upward at the tower: clears the crossarm and the sheaves
         public const float TowerNudge = 2.5f;       // m/s outward at the tower: the next span has to be steered back onto
         public const float PopHop = 6.5f;           // m/s upward for a pop off the cable mid-span (doubled by a Super Jump)
-        public const float ChairGrace = 1.6f;       // s after leaving a cable (or a ramp, until landing) that chairs cannot hit you
+        public const float ChairGrace = 1.6f;       // s after leaving a cable (or a lift's hill, until landing) that chairs cannot hit you
 
         // ---- what it scores (a 45 m rail is worth 1,275)
         public const int SpanPoints = 400;          // a span begun
@@ -41,20 +41,36 @@ namespace Summit
         public const int BonkPoints = 80;           // a toboggan clattering off the cable
         public const float BonkKeep = 0.8f;         // the share of its speed it keeps
 
-        // ---- launch ramps (LiftLine.PlaceRamp)
-        public const float RampLength = 13f;        // m in plan, down the line
-        public const float RampHalfWidth = 1.1f;    // m
-        public static readonly float[] RampHeights = { 3f, 3.75f, 4.5f, 5.25f };   // m at the lip: the lowest that reaches
-        public const float RampWantSpeed = 24f;     // m/s (86 km/h): a ramp is good if this speed into it reaches the cable
-        public const float RampMaxSpeed = 30f;      // m/s: no ramp is built that needs more than this
-        public const float RampTopSpeed = 40f;      // m/s: and every speed from the least up to this must reach it too
-        public const float RampMinSpeed = 8f;       // m/s into it to be carried up it at all
-        public const float RampHeadroom = 1.9f;     // m between the lip and the chairs' lowest point: a rider's height
-        public const float RampFromTower = 10f;     // m down the line from a tower before a ramp may start
-        public const float RampMinSlide = 20f;      // m of cable left to slide where a ramp's flight meets it, at least
-        public const float RampOffPiste = 3f;       // m outside the groomed edge, at least
-        public const float RampLane = 7f;           // m: half the width cleared of trees from the piste's edge to the ramp
-        public const float RampLaneLength = 55f;    // m up the hill that lane starts
+        // ---- the hills under the lines (LiftHill.cs: LiftLine.PlaceHill)
+        public static readonly float[] HillHeights = { 1.5f, 2f, 2.5f, 3f, 3.5f, 4f, 4.5f, 5f, 5.5f, 6f, 7f, 8f, 9f, 10f };   // m over the slope at its lip: the lowest that reaches
+        public static readonly float[] HillLips = { 0.3f, 0.5f, 0.7f, 0.9f };     // its face's slope at the lip (per m over the slope's own): the gentlest that reaches
+        public const float HillRiseK = 2.4f;        // its face's length in plan: this times its height over its lip slope
+        public const float HillRiseMin = 10f;       // m, at least
+        public const float HillFallMin = 12f;       // m in plan from the lip, over the crest, back down to the slope's own line, at least (or 3 times its height)
+        public const float HillTop = 2.5f;          // m either side of its middle line that it stands at full height
+        public const float HillBlendMin = 3f;       // m beyond that over which it eases into the slope: this,
+        public const float HillBlendK = 1.0f;       // and this many metres for each metre of its height,
+        public const float HillBlendMax = 10f;      // up to this
+        public const float HillEdge = 0.3f;         // m: its snow lower than this over the slope (its faint edges) may come onto the piste,
+        public const float HillEdgeOnPiste = 8f;    // m in from the groomed edge at most;
+        public const float HillRunUp = 1.5f;        // and its run-up while it is lower than this (a gentle swell to aim at),
+        public const float HillRunUpOnPiste = 4f;   // m in from the groomed edge at most
+        public const float HillSpeedKeep = 0.92f;   // the share of the model's speed over the crest that the game's rider keeps,
+        public const float HillRiseLoss = 1.5f;     // and the m/s less it rises leaving it (LiftHillCheck, with main's 9f67fee steering)
+        public const float HillCatchMargin = 0.4f;  // m inside the catch window that its flight must pass, worked out (the rider's own line is never quite it)
+        public const float HillWantSpeed = 18f;     // m/s (65 km/h): a hill is as good as can be if this speed into it reaches the cable
+        public const float HillTypical = 22f;       // m/s (79 km/h): every hill reaches the cable from this speed, the speed most riders bring
+        public const float HillMaxSpeed = 30f;      // m/s: no hill is made that needs more than this
+        public const float HillTopSpeed = 34f;      // m/s (122 km/h): and most speeds from the least up to this must reach it too:
+        public const float HillShare = 0.6f;        // this share of them, at least
+        public const float HillHeadroom = 1.9f;     // m between its snow and the chairs' lowest point, everywhere: a rider's height
+        public const float HillReachMax = 9f;       // m: no crest is made further under the cable than this (out of reach at the typical speed)
+        public const float HillStep = 3f;           // m between the spots tried for its lip along a span
+        public const float HillFromTower = 6f;      // m from any tower's foot to the nearest of its snow
+        public const float HillMinSlide = 20f;      // m of cable left to slide where its flight meets it, at least
+        public const float HillOffPiste = 1f;       // m outside the groomed edge, all of it that stands over HillRunUp
+        public const float HillLane = 7f;           // m: half the width cleared of trees from the piste's edge to it
+        public const float HillLaneLength = 55f;    // m up the hill that lane starts
 
     }
 }

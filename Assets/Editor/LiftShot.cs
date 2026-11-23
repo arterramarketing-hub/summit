@@ -55,7 +55,7 @@ public static class LiftShot
         Slope.Init(seed);
         terrain.Rebuild(); props.Rebuild(); if (dress != null) dress.Rebuild();
         SkiLift.TestClock = 100.0;
-        Log($"seed {seed}: {LiftLine.Lifts.Length} lifts\n" + LiftLine.Report() + LiftLine.RampReport());
+        Log($"seed {seed}: {LiftLine.Lifts.Length} lifts\n" + LiftLine.Report() + LiftLine.HillReport());
         var poses = posesIn != null && File.Exists(posesIn) ? Read(posesIn) : Find();
         Write(Path.Combine(outDir, "LiftShot_poses.txt"), poses);
         // One picture to an editor frame: what SkiLift asks the GPU to draw (Graphics.RenderMeshInstanced) stays

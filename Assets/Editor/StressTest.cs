@@ -505,36 +505,37 @@ public static class StressTest
 
     static int crossed, fellIn, onCable;
 
-    /// <summary>Up each lift's launch ramp and onto its cable, lined up, at and above the speed it needs.</summary>
+    /// <summary>Over each lift's hill and onto its cable, lined up, at and above the speed it needs.</summary>
     static void LiftRides(int seed)
     {
         foreach (var l in LiftLine.Lifts)
         {
-            var rp = l.ramp;
+            var rp = l.hill;
             if (rp == null) continue;
-            Vector3 foot = LiftLine.RampPoint(l, rp, 0f), d = LiftLine.RampDir(l, rp, 0f);
-            Vector3 flat = new Vector3(d.x, 0f, d.z).normalized;
+            Vector3 foot = l.At(rp.s - rp.rise, rp.side * LiftLine.Half, 0f);
+            foot.y = Slope.Height(foot.x, foot.z);
+            Vector3 flat = l.dir;
             float head = Mathf.Atan2(flat.x, flat.z);
             foreach (float v0 in new[] { rp.needSpeed, rp.needSpeed + 4f, 30f })
             {
-                string name = $"seed{seed} lift k{l.k} ramp v{v0:0}";
+                string name = $"seed{seed} lift k{l.k} hill v{v0:0}";
                 if (only != null && !name.StartsWith(only)) continue;
                 rides++;
-                StartAt(foot - flat * 10f, head, v0);
-                bool cable = false, ramp = false;
+                StartAt(foot - flat * 12f, head, v0);
+                bool cable = false, flew = false;
                 for (float t = 0f; t < 6f && !r.Crashed; t += RealStep)
                 {
-                    // aim at the ramp's foot (and on along the line once past it), lined up as a park box is ridden into
+                    // aim at the hill's foot under the cable (and on along the line once past it)
                     Vector3 p = r.transform.position;
                     float ahead = Vector3.Dot(foot - p, flat);
                     Vector3 aim = ahead > 2f ? foot + flat * 2f : p + flat * 10f;
                     float want = Mathf.Atan2(aim.x - p.x, aim.z - p.z);
                     r.Steer = r.Grinding ? 0f : Mathf.Clamp((want - r.Heading) * 3f - r.YawRate * 0.2f, -1f, 1f);
                     Step();
-                    ramp |= r.Grinding; cable |= r.OnCable && r.AboveGround > 5f;
+                    flew |= r.Airborne; cable |= r.OnCable && r.AboveGround > 5f;
                 }
                 if (cable) onCable++;
-                Debug.Log($"STRESS-LIFT {name}: needs {rp.needSpeed:0} m/s, {(cable ? "onto the cable" : ramp ? "up the ramp, not onto the cable" : "never boarded the ramp")}, crashed={r.Crashed} '{(r.Crashed ? lastCrash : "")}', {r.Speed * 3.6f:0} km/h");
+                Debug.Log($"STRESS-LIFT {name}: needs {rp.needSpeed:0} m/s, {(cable ? "onto the cable" : flew ? "off the hill, not onto the cable" : "never left the snow")}, crashed={r.Crashed} '{(r.Crashed ? lastCrash : "")}', {r.Speed * 3.6f:0} km/h");
                 if (r.Crashed) PlayOut(name);
             }
         }

@@ -110,7 +110,7 @@ namespace Summit
             public Vector3[] foot, head;          // each tower's foot on the snow, and where the cable's centre line crosses it
             public float[] nodeS, nodeY;          // what the cable hangs between: top portal, towers, bottom portal
             public int tries;
-            public Ramp ramp;                     // its launch ramp, if a spot was found for one (LiftRamp.cs)
+            public Hill hill;                     // the hill under its cable, if a spot was found for one (LiftHill.cs)
             public int gorge = -1;                // the span that crosses a ridge's gorge, if it does (LiftGorge.cs)
             public float gorgeDrop;               // and the most its chairs are over the ground there
             // the chairs' loop: its pieces in the order the chairs travel them, from leaving the bottom bullwheel
@@ -228,7 +228,9 @@ namespace Summit
                 if (lifts == null || laidFor != Slope.Seed)
                 {
                     laidFor = Slope.Seed;
+                    var watch = System.Diagnostics.Stopwatch.StartNew();
                     lifts = new Lift[0];   // (so nothing that asks about the ground while they are laid sees the old ones)
+                    HideHills();           // (and they are laid on the mountain without hills: LiftHill.cs)
                     var list = new List<Lift>();
                     if (On)
                     {
@@ -267,7 +269,10 @@ namespace Summit
                             if (l != null) list.Add(l);
                         }
                     for (int i = 0; i < list.Count; i++) list[i].id = i;
+                    SettleHills(list);
                     lifts = list.ToArray();
+                    PublishHills(lifts);
+                    LaidMs = watch.Elapsed.TotalMilliseconds;
                 }
                 return lifts;
             }
@@ -277,7 +282,7 @@ namespace Summit
         /// True under a lift's line or on one of its stations: its cleared swath, where no tree, rock or building
         /// may stand. The same shape as Course.Keep, so placement can ask both alike.
         /// </summary>
-        public static bool Taken(float x, float z, float margin) => TakenBy(Lifts, x, z, margin);
+        public static bool Taken(float x, float z, float margin) => TakenBy(Lifts, x, z, margin) || OnHill(x, z, margin);
 
         static bool TakenBy(IList<Lift> all, float x, float z, float margin)
         {
@@ -285,7 +290,7 @@ namespace Summit
             {
                 var l = all[i];
                 if (z < l.ZMin - 60f || z > l.ZMax + 60f) continue;
-                if (l.ramp != null && InLane(l, x, z, margin)) return true;   // the way in to its launch ramp
+                if (l.hill != null && InLane(l, x, z, margin)) return true;   // the way in to its hill (the hill itself: Taken)
                 float along = (x - l.top.x) * l.dir.x + (z - l.top.z) * l.dir.z;
                 if (along < -StationHalfLen - 6f - margin || along > l.plan + StationHalfLen + 6f + margin) continue;
                 float side = (x - l.top.x) * l.across.x + (z - l.top.z) * l.across.z;
@@ -347,7 +352,7 @@ namespace Summit
                     tries++;
                     var l = Try(k, zt, zb, st * pairs[i].x, sb * pairs[i].y);
                     if (l == null) continue;
-                    l.tries = tries; PlaceRamp(l); return l;
+                    l.tries = tries; PlaceHill(l); return l;
                 }
             }
             return null;
@@ -411,7 +416,7 @@ namespace Summit
                         if (Occupied(xt + l.dir.x * s + l.across.x * side * Swath, zt + l.dir.z * s + l.across.z * side * Swath)) return null;
             l.lean = 0.5f * Mathf.Atan2(deckT - deckB, plan);
             float sl = Mathf.Sin(l.lean);
-            // a second line: clear of the lines already laid (their stations, their ramps' lanes), and over them
+            // a second line: clear of the lines already laid (their stations, their hills' lanes), and over them
             // only where it can be (LiftNetwork.cs)
             float hMax = HMax;
             if (gorge != 0f && !GorgeSide(l, gorge)) return null;
@@ -442,7 +447,7 @@ namespace Summit
                     : GroundOk(xt + l.dir.x * s, zt + l.dir.z * s, TowerOff)
                       && GroundOk(xt + l.dir.x * (s - HMin * sl), zt + l.dir.z * (s - HMin * sl), TowerOff)
                       && GroundOk(xt + l.dir.x * (s - hMax * sl), zt + l.dir.z * (s - hMax * sl), TowerOff);
-                // (and no tower of a second line in another line's swath, under its chairs, or in the lane to its ramp)
+                // (and no tower of a second line in another line's swath, under its chairs, or in the lane to its hill)
                 // (its towers may be taller, so its foot may be further up the line: looked at every few metres of that)
                 if (ok[i] && laid != null)
                     for (float back = 0f; back <= hMax + 0.01f && ok[i]; back += hMax * (gorge != 0f ? 0.25f : 0.125f))

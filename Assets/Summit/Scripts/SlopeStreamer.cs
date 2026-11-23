@@ -131,8 +131,9 @@ namespace Summit
                 foreach (var k in wanted) if (live.TryGetValue(k, out var go) && !go.activeSelf) go.SetActive(true);
             }
 
-            // the crevasses are laid out here, on the main thread, before any worker asks where they are
-            _ = Course.Crevasses;
+            // the crevasses and the lifts (with their hills, which are in the height function) are laid out here, on the
+            // main thread, before any worker asks where they are
+            _ = Course.Crevasses; _ = LiftLine.Lifts;
 
             if (all) BuildNearNow(cx, cz);
 
@@ -297,7 +298,7 @@ namespace Summit
         public void BuildForTest(Mesh mesh, Vector2Int key)
         {
             if (quads == 0) Init();
-            _ = Course.Crevasses;
+            _ = Course.Crevasses; _ = LiftLine.Lifts;
             var w = Take(key, 0);
             w.Run();
             if (w.error != null) throw w.error;

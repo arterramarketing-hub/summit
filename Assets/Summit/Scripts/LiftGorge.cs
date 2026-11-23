@@ -22,7 +22,7 @@ namespace Summit
     ///   - somewhere under that span the chairs are at least GorgeDrop over the canyon floor: a fall off the cable
     ///     there is a fall past Rider.DeathFall, judged like any other drop.
     /// It is laid after the lines above it and keeps clear of them (LiftNetwork.Crowds, Meets): no other line
-    /// beside it, no station near another's. Its launch ramp, where it gets one, is on
+    /// beside it, no station near another's. Its hill, where it gets one, is on
     /// the span before the gorge, so the grind leads over the rim tower onto the gorge span (CableGrind throws the
     /// rider straight on over that tower, not out to the side). Where no such line will go the cycle's first line is
     /// laid as before. Tools/LiftHarness checks every gorge line, and rides its cable across.
@@ -98,11 +98,11 @@ namespace Summit
                 var l = Try(k, c.zt, c.zb, c.ot, c.ob, laid, c.cs);
                 if (l == null) continue;
                 l.tries = tries;
-                PlaceRamp(l, laid);
-                // the grind must lead onto the gorge: a line with its ramp there is the one; one without is kept in case
+                PlaceHill(l, laid);
+                // the grind must lead onto the gorge: a line with its hill there is the one; one without is kept in case
                 // none has
-                if (l.ramp != null && l.ramp.span < l.gorge) return l;
-                if (fallback == null) { PlaceRamp(l, laid, true); fallback = l; }
+                if (l.hill != null && l.hill.span < l.gorge) return l;
+                if (fallback == null) { PlaceHill(l, laid, true); fallback = l; }
             }
             return fallback;
         }
@@ -216,7 +216,7 @@ namespace Summit
                 float len = l.nodeS[i + 1] - l.nodeS[i];
                 Vector3 a = l.At(l.nodeS[i], 0f, 0f), b = l.At(l.nodeS[i + 1], 0f, 0f);
                 float tall = 0f; foreach (float h in l.h) tall = Mathf.Max(tall, h);
-                sb.AppendLine($"lift {l.k}: over the gorge of the ridge above it, top station z={l.top.z:0} ({l.offTop:+0;-0} m off the piste); gorge span {i} from z={a.z:0} to {b.z:0}, {len:0} m, sag {Sag(len):0.0} m, chairs up to {l.gorgeDrop:0} m over the ground; towers either end {(i > 0 ? l.h[i - 1] : 0f):0.0} and {(i < l.h.Length ? l.h[i] : 0f):0.0} m, tallest {tall:0.0} m; {(l.ramp != null ? $"launch ramp on span {l.ramp.span}, reached at {l.ramp.needSpeed:0} m/s" : "no launch ramp")}");
+                sb.AppendLine($"lift {l.k}: over the gorge of the ridge above it, top station z={l.top.z:0} ({l.offTop:+0;-0} m off the piste); gorge span {i} from z={a.z:0} to {b.z:0}, {len:0} m, sag {Sag(len):0.0} m, chairs up to {l.gorgeDrop:0} m over the ground; towers either end {(i > 0 ? l.h[i - 1] : 0f):0.0} and {(i < l.h.Length ? l.h[i] : 0f):0.0} m, tallest {tall:0.0} m; {(l.hill != null ? $"hill on span {l.hill.span}, reached at {l.hill.needSpeed:0} m/s" : "no hill")}");
             }
             return sb.ToString();
         }
