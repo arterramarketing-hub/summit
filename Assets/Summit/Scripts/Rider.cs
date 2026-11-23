@@ -243,7 +243,8 @@ namespace Summit
             HasCrashFollow = false; rb.detectCollisions = true; StayDown = false; HoldCrash = false;
             AirTime = 0f; Tuck = 0f; Carve = 0f; Skid = 0f; Peak = 0f; AboveGround = 0f;
             Lean = 0f; edge = 0f; edgeVel = 0f; airTurn = 0f; YawRate = 0f; FallLine = 0f; PathSlope = 0f; groundKnown = false; faceSlide = false; yawSmooth = 0f; RunNow = 0f;
-            Slip = 0f; Side = 0f; sideNow = 0f; easeFor = 99f; fallSeen = 0f; fallClock = 0; SideEdge = 0f; SideSlope = 0f; Sliding = false; wasSliding = false;
+            Slip = 0f; Side = 0f; sideNow = 0f; easeFor = 99f; fallSeen = 0f; fallClock = 0;
+            latSmooth = 0f; biteNow = 0f; deepIn = 0f; bodyLean = 0f; bodyLeanVel = 0f; crouchNow = 0f; crouchVel = 0f; Sink = 0f; SideEdge = 0f; SideSlope = 0f; Sliding = false; wasSliding = false;
             ClearTrick(); SwitchOff(); grindScoring = false; LandSpin = 0f; LandFlip = 0f; GrindYaw = 0f; GrindPress = 0f; TrickX = TrickY = 0f; GrabHeld = false;
             popPending = false; airLock = 0f; lastGrind = -1;
             Flow = 0f; Shields = 0; BoostTime = 0f; invulnerable = 0f; SuperJumpTime = 0f; InvincibleTime = 0f; superAir = false;

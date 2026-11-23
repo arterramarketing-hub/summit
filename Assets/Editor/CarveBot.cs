@@ -23,12 +23,12 @@ public static class CarveBot
     {
         Vector3 v = r.Velocity; float flat = Mathf.Sqrt(v.x * v.x + v.z * v.z);
         float full = Mathf.Max(0.5f, r.SideFull(r.Speed));
-        if (flat < 1f) return Mathf.Clamp(side / full, -1f, 1f);
+        if (flat < 1f) return Mathf.Clamp(Rider.Unshape(Mathf.Clamp(side / full, -1f, 1f)), -1f, 1f);
         // (in the air the finger only drifts the flight, AirDrift at the whole drag: ask for the drift that closes on
         // the sideways speed wanted in about a second, no more)
         if (r.Airborne) return Mathf.Clamp((side - v.x) / Mathf.Max(1f, Rider.AirDrift) / Mathf.Clamp(Rider.TurnScale, 0.25f, 4f), -1f, 1f);
         float way = Mathf.Atan2(side, Mathf.Max(v.z, 1f));
-        float across = flat * Mathf.Sin(way - r.FallLine) - (r.Airborne ? 0f : r.SideSlope * Rider.PushTime);
-        return Mathf.Clamp(across / full / Mathf.Clamp(Rider.TurnScale, 0.25f, 4f), -1f, 1f);
+        float across = flat * Mathf.Sin(way - r.FallLine) - (r.Airborne ? 0f : r.SideSlope * Rider.SettleTime);
+        return Mathf.Clamp(Rider.Unshape(Mathf.Clamp(across / full, -1f, 1f)) / Mathf.Clamp(Rider.TurnScale, 0.25f, 4f), -1f, 1f);   // (the throw that asks for it: the input's curve undone)
     }
 }

@@ -544,7 +544,7 @@ namespace Summit
             bool flip = air && Mathf.Abs(rider.TrickFlip) > 0f && rider.TrickProgress < 0.97f;
             float toe = Mathf.Clamp(rider.Lean / Rider.MaxLean * StanceSign, -1f, 1f);
             float chatterV = idle || air ? 0f : (Mathf.PerlinNoise(t * 9f, 1.3f) - 0.5f) * 0.1f * Mathf.Clamp01(rider.Speed / 30f);
-            float crouch = idle ? 0.15f + 0.04f * Mathf.Sin(t * 2.1f) : 0.45f + 0.35f * rider.Tuck + comp + Mathf.Abs(toe) * 0.2f + chatterV;
+            float crouch = idle ? 0.15f + 0.04f * Mathf.Sin(t * 2.1f) : 0.45f + 0.35f * rider.Tuck + comp + Mathf.Abs(toe) * 0.2f + 0.35f * rider.Crouch + chatterV;   // (the knees bend into a hard push: Rider.Crouch)
             if (grab || flip) crouch = 1f;
             Vector3 bl = roll.TransformPoint(new Vector3(0f, BoardTop + 0.09f, 0.27f));
             Vector3 br = roll.TransformPoint(new Vector3(0f, BoardTop + 0.09f, -0.27f));
@@ -1107,13 +1107,13 @@ namespace Summit
                 }
                 Vector3 mid = new Vector3(0f, 0.9f, 0f);
                 pivot.rotation = rot;
-                pivot.position = p + Vector3.down * Rider.R + baseRot * mid - rot * mid;
+                pivot.position = p + Vector3.down * (Rider.R + rider.Sink) + baseRot * mid - rot * mid;   // (sunk a little into deep powder: Rider.Sink)
 
                 // the lean IS the steering readout: the body is on exactly the edge the thumb asked for (turned round,
                 // riding switch, the board's own sides are the other way about: the same lean in the world)
                 float leanDeg = rider.Lean * Mathf.Rad2Deg * StanceSign;
                 roll.localRotation = Tube ? Quaternion.Euler(leanDeg * 0.5f, 0f, 0f) : Quaternion.Euler(0f, 0f, -leanDeg * 0.75f);
-                upper.localRotation = Quaternion.Euler(0f, 0f, -leanDeg * 0.25f);
+                upper.localRotation = Quaternion.Euler(0f, 0f, -leanDeg * 0.25f - rider.BodyLean * StanceSign);   // (and the body into the slide: Rider.BodyLean)
                 if (RidingGear) upper.localRotation = Quaternion.identity;   // a skier's upper body angles back out of the turn (in the clips)
                 if (RidingGear && Ride == RideKind.Toboggan)
                 {
@@ -1156,7 +1156,7 @@ namespace Summit
 
             GrindSparks(p, dt);   // a few sparks off a rail (RiderBodySparks)
             sprayEm.rateOverTime = rider.Running && !rider.Crashed && !rider.Airborne
-                ? (rider.Carve * rider.Speed * 7f + rider.Skid * rider.Speed * 12f + Mathf.Max(0f, rider.Speed - 22f) * 1.5f) * (1f + 1.5f * snow.powder + 0.6f * snow.slush - 0.6f * hard) + (rider.BoostTime > 0f ? 60f : 0f)
+                ? (rider.Carve * rider.Speed * 7f + rider.Bite * rider.Speed * 9f + rider.Skid * rider.Speed * 12f + Mathf.Max(0f, rider.Speed - 22f) * 1.5f) * (1f + 1.5f * snow.powder + 1.2f * snow.Deep + 0.6f * snow.slush - 0.6f * hard) + (rider.BoostTime > 0f ? 60f : 0f)   // (the edge biting builds the spray: Rider.Bite; deep powder throws the most)
                 : 0f;
             // thrown across from one way to the other (Rider.Skidded): a burst of snow off the edge, by how fast the board was going
             if (skidBurst > 0f)

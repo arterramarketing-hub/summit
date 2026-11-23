@@ -12,14 +12,19 @@ namespace Summit
     public struct SnowMix
     {
         public float powder, ice, crud, crust, slush;
+        /// <summary>0..1: how far off the groomed run this is (feel): the powder here is deep, not fresh snow lying on
+        /// the run. Not a share of its own: it says what kind of powder the powder is.</summary>
+        public float deep;
         public float Corduroy => Mathf.Max(0f, 1f - powder - ice - crud - crust - slush);
+        /// <summary>The share of deep powder here (off the run).</summary>
+        public float Deep => Mathf.Min(powder, deep);
 
         public float this[Snow s] =>
             s == Snow.Powder ? powder : s == Snow.Ice ? ice : s == Snow.Crud ? crud : s == Snow.Crust ? crust : s == Snow.Slush ? slush : Corduroy;
 
         /// <summary>All of one kind (the test tools).</summary>
         public static SnowMix Only(Snow s) => new SnowMix
-        { powder = s == Snow.Powder ? 1f : 0f, ice = s == Snow.Ice ? 1f : 0f, crud = s == Snow.Crud ? 1f : 0f, crust = s == Snow.Crust ? 1f : 0f, slush = s == Snow.Slush ? 1f : 0f };
+        { powder = s == Snow.Powder ? 1f : 0f, ice = s == Snow.Ice ? 1f : 0f, crud = s == Snow.Crud ? 1f : 0f, crust = s == Snow.Crust ? 1f : 0f, slush = s == Snow.Slush ? 1f : 0f, deep = s == Snow.Powder ? 1f : 0f };
 
         /// <summary>The kind there is most of here.</summary>
         public Snow Most
@@ -56,6 +61,9 @@ namespace Summit
     public struct SnowFeel
     {
         public float friction, drag, grip, bite, chatter;
+        /// <summary>Deep powder's drag per (m/s)^2 at full depth (feel): the rider sinks into it (Rider.GroundStep), so it
+        /// comes on over a moment, never in a step.</summary>
+        public float deep;
         public static readonly SnowFeel Firm = new SnowFeel { friction = 1f, drag = 0f, grip = 1f, bite = 1f, chatter = 0f };
         /// <summary>Bare rock under the board: an edge has little to bite.</summary>
         public static readonly SnowFeel Rock = new SnowFeel { friction = 1f, drag = 0f, grip = 0.35f, bite = 0.5f, chatter = 0f };
@@ -105,12 +113,23 @@ namespace Summit
         // corduroy's)
         public static readonly float[] Plough   = {          0f,  0.0042f, -0.0003f, 0.0003f, 0.0002f, 0.0022f };
         public static readonly float[] Grip     = {          1f,     0.7f,   0.45f,  0.9f,   0.8f,   0.7f };
-        public static readonly float[] Bite     = {          1f,    0.45f,    0.8f,  0.9f,   0.8f,   0.5f };
+        public static readonly float[] Bite     = {          1f,     0.7f,    0.8f,  0.9f,   0.8f,   0.5f };
         public static readonly float[] Chatter  = {          0f,       0f,   0.25f,    1f,   0.7f,     0f };
         /// <summary>Powder floats the board at speed: its plough is this much of itself from FloatTo m/s up (all of it under FloatFrom).</summary>
         public const float Float = 0.4f, FloatFrom = 8f, FloatTo = 22f;
         /// <summary>Old powder (no fresh snow on it) drags this much of what a snowy day's does.</summary>
         public const float OldPowder = 0.7f;
+        /// <summary>
+        /// Deep powder, off the groomed run and through the trees (feel): far more drag than fresh snow lying on the run
+        /// (DeepPlough per (m/s)^2, at full depth), so a board settles at a tree-weaving pace there and the groomed run
+        /// is where the speed is. It floats a little at speed (DeepFloat of itself from FloatTo up) and is a little less
+        /// deep on a day with no fresh snow (DeepOld). It comes on over the run's edge (EdgeBlend), so leaving the run is
+        /// sinking into the snow, not hitting a wall.
+        /// </summary>
+        public static float DeepPlough = 0.048f, DeepFloat = 0.85f, DeepOld = 0.85f;
+        /// <summary>The most deep powder ever slows the board, in gravities (so riding into it fast is sinking in hard, never
+        /// a wall), and how long the board takes to sink into it, and to come up out of it (s).</summary>
+        public static float DeepMost = 0.6f, DeepSinkIn = 0.8f, DeepSinkOut = 0.3f;
 
         public static SnowFeel Feel(in SnowMix m, float speed)
         {
@@ -120,7 +139,9 @@ namespace Summit
             return new SnowFeel
             {
                 friction = c + m.powder * (1f + (Friction[1] - 1f) * deep) + m.ice * Friction[2] + m.crud * Friction[3] + m.crust * Friction[4] + m.slush * Friction[5],
-                drag = m.powder * Plough[1] * deep * afloat + m.ice * Plough[2] + m.crud * Plough[3] + m.crust * Plough[4] + m.slush * Plough[5],
+                drag = (m.powder - m.Deep) * Plough[1] * deep * afloat
+                     + m.ice * Plough[2] + m.crud * Plough[3] + m.crust * Plough[4] + m.slush * Plough[5],
+                deep = DeepPlough * Mathf.Lerp(DeepOld, 1f, Day.fresh) * Mathf.Lerp(1f, DeepFloat, Mathf.Clamp01((speed - FloatFrom) / (FloatTo - FloatFrom))),
                 grip = c + m.powder * Grip[1] + m.ice * Grip[2] + m.crud * Grip[3] + m.crust * Grip[4] + m.slush * Grip[5],
                 bite = c + m.powder * Bite[1] + m.ice * Bite[2] + m.crud * Bite[3] + m.crust * Bite[4] + m.slush * Bite[5],
                 chatter = m.ice * Chatter[2] + m.crud * Chatter[3] + m.crust * Chatter[4],
@@ -176,6 +197,7 @@ namespace Summit
             var m = new SnowMix();
             // ---- powder: off the run, and fresh snow over it
             m.powder = Mathf.Clamp01(rough + groomed * FreshOnRun * Day.fresh);
+            m.deep = rough;
 
             // ---- crust: the wind's, on what stands in it
             float wind = Mathf.Lerp(CalmCrust, 1f, Day.wind);

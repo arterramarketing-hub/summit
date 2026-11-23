@@ -1075,7 +1075,7 @@ namespace Summit
             var snowNow = rider.Underfoot;
             audioFx.Set(new RideSound
             {
-                speed = rider.Speed / 36f, carve = rider.Tube ? 0f : rider.Carve, skid = rider.Tube ? 0.15f * Mathf.Clamp01(rider.Speed / 20f) : rider.Skid,
+                speed = rider.Speed / 36f, carve = rider.Tube ? 0f : Mathf.Max(rider.Carve, rider.Bite), skid = rider.Tube ? 0.15f * Mathf.Clamp01(rider.Speed / 20f) : rider.Skid,
                 rough = Mathf.Clamp01(snowNow.powder + 0.6f * snowNow.slush), ice = snowNow.ice, chatter = rider.SnowFeel.chatter, slush = snowNow.slush,
                 avalanche = riding ? slide.Closeness(rider) : 0f, pan = rider.Steer,
                 muffle = state == State.Buried ? (endBuried ? 1f : 0.45f) : rider.Crashed ? 0.3f : 0f,

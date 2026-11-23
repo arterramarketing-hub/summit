@@ -483,10 +483,9 @@ namespace Summit
                     h.Want(idTuck, tuck);
                     if (landT < h.Length(idLand)) h.Want(idLand, landK * 2f * (1f - Sm(0.3f, 1f, landT / h.Length(idLand))));
                     if (rider.Grinding) h.Want(idAir, 0.6f);   // arms out for balance on a rail
-                    // the back leans into the turn with the sideways pull (scaled down: it reads, it doesn't topple),
+                    // the back leans into the slide with its pull and the slide itself (Rider.BodyLean, on its own spring),
                     // the shoulders lead the board round, and the eyes go where the turn is taking you
-                    float lateral = rider.Speed * rider.YawRate;
-                    d.lean = Mathf.Clamp(Mathf.Atan2(lateral, 9.81f) * Mathf.Rad2Deg * 0.45f, -15f, 15f) * StanceSign;
+                    d.lean = rider.BodyLean * StanceSign;
                     d.twist = Mathf.Clamp(-rider.YawRate * Mathf.Rad2Deg * 0.12f, -14f, 14f);
                     Vector3 v = rider.Velocity; v.y = 0f;
                     if (v.sqrMagnitude > 9f)
@@ -496,7 +495,7 @@ namespace Summit
                     }
                     SwitchLook(ref d, v);
                     float chatter = (Mathf.PerlinNoise(t * 9f, 1.3f) - 0.5f) * 0.02f * speed01;
-                    d.drop = chatter;
+                    d.drop = chatter + 0.13f * rider.Crouch;   // (the hips sink into a hard push: Rider.Crouch)
                 }
                 d.drop += Mathf.Max(0f, comp) * 0.18f;
                 d.feet = !down;

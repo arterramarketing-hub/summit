@@ -144,7 +144,7 @@ public static class SurfaceTest
             for (int i = 0; i < 4000; i++)
             {
                 var f = Surfaces.Feel(Surfaces.Force.Value, v);
-                float acc = Rider.G * Mathf.Sin(pitch) - (Rider.DragOpen + f.drag) * v * v - Rider.Friction * f.friction * Rider.G * Mathf.Cos(pitch);
+                float acc = Rider.G * Mathf.Sin(pitch) - (Rider.DragOpen + f.drag) * v * v - Rider.Friction * f.friction * Rider.G * Mathf.Cos(pitch) - Mathf.Min(f.deep * v * v, Surfaces.DeepMost * Rider.G) * Surfaces.Force.Value.Deep;
                 v = Mathf.Max(0f, v + acc * 0.02f);
             }
             // (and ridden: the same line, hands off but for holding it, from a standing start, 1500 m of the run)
@@ -154,10 +154,15 @@ public static class SurfaceTest
         }
         foreach (var l in lines) Debug.Log(l);
 
+        // ---- off the groomed run into deep powder (feel): from corduroy's cruise, the snow turning to deep powder over
+        //      the run's edge blend (EdgeBlend m along the way: the shortest it is, leaving the run square on): how the
+        //      speed comes down, how hard at most (a wall would be a jolt), and how long until it is most of the way
+        IntoDeep(r);
+
         // ---- the snow never pushes and never lets go: on each kind half a drag held gives the same sideways speed,
         //      and the way the board goes turns by the finger's push and gravity's pull and by nothing else (what
         //      NudgeTest counts as a nudge is 2.5 m/s^2 of anything else)
-        float halfSide = 0.5f * r.SideFull(22f);
+        float halfSide = Rider.Shape(0.5f) * r.SideFull(22f);   // (half the throw, as the input's curve shapes it)
         foreach (var k in Kinds)
         {
             Surfaces.Force = SnowMix.Only(k);
@@ -202,6 +207,62 @@ public static class SurfaceTest
             top = Mathf.Max(top, r.Speed);
         }
         secs = n * Dt; avg = (r.Z - PaceZ) / Mathf.Max(secs, 1e-3f); air = inAir / (float)Mathf.Max(1, n);
+    }
+
+    static void IntoDeep(Rider r)
+    {
+        r.ResetAt(Slope.Centre(PaceZ) + PaceOff, PaceZ); r.Begin();
+        r.Body.linearVelocity = new Vector3(0f, 0f, 30f);
+        Surfaces.Force = SnowMix.Only(Snow.Corduroy);
+        float zFrom = float.NaN, vFrom = 0f, worst = 0f, prevV = 0f, t = 0f, t50 = -1f, t90 = -1f, vEnd = 0f;
+        var decel = new System.Collections.Generic.List<float>();
+        var speeds = new System.Collections.Generic.List<float>();
+        for (int n = 0; n < 120 * 40 && !r.Crashed; n++)
+        {
+            r.Steer = Hold(r, Slope.Centre(r.Z + 12f) + PaceOff);
+            if (float.IsNaN(zFrom) && r.Z > PaceZ + 250f && !r.Airborne) { zFrom = r.Z; vFrom = r.Speed; }
+            if (!float.IsNaN(zFrom))
+            {
+                float k = Mathf.Clamp01((r.Z - zFrom) / Surfaces.EdgeBlend); k = k * k * (3f - 2f * k);
+                Surfaces.Force = new SnowMix { powder = k, deep = k };
+            }
+            r.Tick(Dt); Physics.Simulate(Dt);
+            if (!float.IsNaN(zFrom))
+            {
+                // (the slowing, over a tenth of a second: what it feels like, not one step's)
+                decel.Add(r.Airborne ? 0f : (prevV - r.Speed) / Dt);
+                if (decel.Count >= 12) { float a = 0f; for (int j = decel.Count - 12; j < decel.Count; j++) a += decel[j]; worst = Mathf.Max(worst, a / 12f); }
+                speeds.Add(r.Airborne ? -1f : r.Speed);
+                t += Dt;
+                if (t > 25f) break;
+            }
+            prevV = r.Speed;
+        }
+        Surfaces.Force = null;
+        // (where it settled: the last 3 s on the snow)
+        float sum = 0f; int m = 0;
+        for (int i = speeds.Count - 1; i >= 0 && m < 360; i--) if (speeds[i] >= 0f) { sum += speeds[i]; m++; }
+        vEnd = m > 0 ? sum / m : 0f;
+        for (int i = 0; i < speeds.Count; i++)
+        {
+            if (speeds[i] < 0f) continue;
+            float lost = (vFrom - speeds[i]) / Mathf.Max(0.1f, vFrom - vEnd);
+            if (t50 < 0f && lost >= 0.5f) t50 = (i + 1) * Dt;
+            if (t90 < 0f && lost >= 0.9f) { t90 = (i + 1) * Dt; break; }
+        }
+        // (how the slowing comes on: from a tenth of its most to nine tenths of it)
+        float tRise0 = -1f, tRise1 = -1f, acc0 = 0f;
+        for (int i = 0; i < decel.Count; i++)
+        {
+            float a = 0f; int c = 0; for (int j = Mathf.Max(0, i - 11); j <= i; j++) { a += decel[j]; c++; } a /= c;
+            if (i == 0) acc0 = a;
+            if (tRise0 < 0f && a - acc0 >= 0.1f * (worst - acc0)) tRise0 = i * Dt;
+            if (tRise1 < 0f && a - acc0 >= 0.9f * (worst - acc0)) tRise1 = i * Dt;
+        }
+        float rise = tRise0 >= 0f && tRise1 >= 0f ? tRise1 - tRise0 : -1f;
+        Debug.Log($"SURFACE into deep powder off corduroy (over {Surfaces.EdgeBlend:0} m of the way, then the run's line held): {vFrom * 3.6f:0} -> {vEnd * 3.6f:0} km/h; half of that shed in {(t50 < 0f ? "never" : t50.ToString("0.0") + " s")}, nine tenths in {(t90 < 0f ? "never" : t90.ToString("0.0") + " s")}; it slowed at {worst:0.0} m/s^2 ({worst / Rider.G:0.00} g) at most, that slowing coming on over {(rise < 0f ? "?" : rise.ToString("0.00") + " s")}");
+        if (worst > 0.75f * Rider.G) Fail($"into deep powder: it slowed at {worst:0.0} m/s^2: a wall rather than sinking in");
+        if (rise >= 0f && rise < 0.3f) Fail($"into deep powder: the slowing came on in {rise:0.00} s: a wall rather than sinking in");
     }
 
     // where the held-speed rides are made: found once, on corduroy as the mountain lays it, clear of airs

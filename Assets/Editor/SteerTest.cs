@@ -52,7 +52,7 @@ public static class SteerTest
         float pace0 = Rider.Pace;
 
         FindStretch(r);
-        Debug.Log($"STEER stretch x={x0:0} z={z0:0} (x-centre {x0 - Slope.Centre(z0):0}), pitch {Mathf.Asin(Mathf.Sqrt(1f - Mathf.Pow(Slope.Normal(x0, z0 + 40f).y, 2f))) * Mathf.Rad2Deg:0} deg; push time {Rider.PushTime:0.00} s, ease time {Rider.EaseTime:0.00} s, a whole drag {Rider.SideShare:0.00} of the speed ({Rider.SideLeast:0} to {Rider.SideCap:0} m/s), side drag {Rider.SideDrag:0.000}, pace {Rider.Pace:0.00}");
+        Debug.Log($"STEER stretch x={x0:0} z={z0:0} (x-centre {x0 - Slope.Centre(z0):0}), pitch {Mathf.Asin(Mathf.Sqrt(1f - Mathf.Pow(Slope.Normal(x0, z0 + 40f).y, 2f))) * Mathf.Rad2Deg:0} deg; ramp {Rider.RampTime:0.00} s, coast {Rider.CoastTime:0.00} s, return {Rider.ReturnIn:0.00} + {Rider.ReturnTime:0.00} s, a whole drag {Rider.SideShare:0.00} of the speed ({Rider.SideLeast:0} to {Rider.SideCap:0} m/s), side drag {Rider.SideDrag:0.000}, pace {Rider.Pace:0.00}");
 
         float[] speeds = { 15f, 22f, 30f };
         foreach (float sc in new[] { 0.5f, 1f, 1.5f, 2.5f })
@@ -61,14 +61,21 @@ public static class SteerTest
             foreach (float v in speeds)
             {
                 First(r, v, 1f, out float t1, out float t3, out float at05, out float steady);
+                float t90 = firstT90;
                 Reverse(r, v, 1f, out float r0, out float r2, out float rHalf);
                 Release(r, v, 1f, out float tTenth, out float t5deg, out float back);
-                Debug.Log($"STEER push scale={sc:0.0} v={v:0} m/s ({v * 3.6f:0} km/h) whole drag: sideways 1 m/s in {T(t1)}, 3 m/s in {T(t3)}, {at05:0.0} m/s after 0.05 s; it settles at {steady:0.0} m/s sideways ({100f * steady / v:0}% of the speed, {Mathf.Asin(Mathf.Clamp(steady / v, -1f, 1f)) * Mathf.Rad2Deg:0} deg off the fall line) | flipped the other way: through zero in {T(r0)}, 2 m/s the other way in {T(r2)}, half of the whole in {T(rHalf)} | let go: a tenth of the sideways speed left in {T(tTenth)}, within 5 deg of the fall line in {T(t5deg)}, pulled back at {back:0} m/s^2 at most");
+                float coast = releaseCoast;
+                First(r, v, RiderInput.Curve(0.25f), out _, out _, out _, out float quarter);
+                Debug.Log($"STEER push scale={sc:0.0} v={v:0} m/s ({v * 3.6f:0} km/h) whole drag: sideways 1 m/s in {T(t1)}, 3 m/s in {T(t3)}, {at05:0.0} m/s after 0.05 s, 90% of what it settles at in {T(t90)}; it settles at {steady:0.0} m/s sideways ({100f * steady / v:0}% of the speed, {Mathf.Asin(Mathf.Clamp(steady / v, -1f, 1f)) * Mathf.Rad2Deg:0} deg off the fall line); a quarter of the drag settles at {quarter:0.0} m/s | flipped the other way: through zero in {T(r0)}, 2 m/s the other way in {T(r2)}, half of the whole in {T(rHalf)} | let go: it coasts {T(coast)} before a tenth of its sideways speed is gone, a tenth of it left in {T(tTenth)}, within 5 deg of the fall line in {T(t5deg)}{(releaseAir ? " (it left the snow on the way)" : "")}, pulled back at {back:0} m/s^2 at most");
                 if (sc == 1f)
                 {
-                    if (t1 < 0f || t1 > 0.05f) Fail($"{v * 3.6f:0} km/h: the first sideways motion (1 m/s) takes {T(t1)} from the finger (0.05 s asked)");
-                    if (r2 < 0f || r2 > 0.12f) Fail($"{v * 3.6f:0} km/h: flipped, the board is going the other way (2 m/s) only after {T(r2)} (0.12 s asked)");
-                    if (t5deg < 0.5f || t5deg > 1.1f) Fail($"{v * 3.6f:0} km/h: let go, the board is back within 5 deg of the fall line in {T(t5deg)} (0.6 to 1.0 s asked)");
+                    if (t1 < 0f || t1 > 0.08f) Fail($"{v * 3.6f:0} km/h: the first sideways motion (1 m/s) takes {T(t1)} from the finger (0.08 s asked)");
+                    if (t90 < 0.2f || t90 > 0.45f) Fail($"{v * 3.6f:0} km/h: a whole drag's sideways speed is there (90%) in {T(t90)} (0.3 to 0.4 s asked)");
+                    if (r2 < 0f || r2 > 0.32f) Fail($"{v * 3.6f:0} km/h: flipped, the board is going the other way (2 m/s) only after {T(r2)} (0.25 to 0.3 s asked)");
+                    // (judged from 79 km/h: slower, a tenth of the slide is under a metre a second, and the hill's own fall
+                    // line wandering under the board is as much of it as the coast)
+                    if (v >= 22f && coast < 0.25f) Fail($"{v * 3.6f:0} km/h: let go, the board coasts only {T(coast)} on its slide (0.3 to 0.4 s asked)");
+                    if (!releaseAir && (t5deg < 1.3f || t5deg > 2.3f)) Fail($"{v * 3.6f:0} km/h: let go, the board is back within 5 deg of the fall line in {T(t5deg)} (1.5 to 2 s asked)");
                 }
                 if (quick || sc != 1f) continue;   // (the slaloms at the stock setting)
                 string line = $"STEER slalom scale={sc:0.0} v={v:0} m/s ({v * 3.6f:0} km/h), speed held";
@@ -106,6 +113,30 @@ public static class SteerTest
             for (int k = 0; k < Courses.Length; k++)
                 Debug.Log($"STEER comfortable {Courses[k].name} ({Courses[k].swing * 2f:0} m side to side every {Courses[k].spacing:0} m): every gate at every held speed up to {clean[k] * 3.6f:0} km/h");
             Debug.Log($"STEER comfortable all three courses: every gate at every held speed up to {all * 3.6f:0} km/h");
+        }
+
+        // deep powder (off the groomed run, through the trees): the speed a board settles at there, and the slaloms
+        // at that speed, held
+        {
+            Surfaces.Force = SnowMix.Only(Snow.Powder);
+            float cruiseP = Straight(r, 22f, 400f, out _);
+            Surfaces.Force = SnowMix.Only(Snow.Corduroy);
+            float cruiseC = Straight(r, 22f, 400f, out _);
+            Surfaces.Force = SnowMix.Only(Snow.Ice);
+            float cruiseI = Straight(r, 22f, 400f, out _);
+            Debug.Log($"STEER cruise down 400 m of the stretch from 79 km/h, pace {Rider.Pace:0.00}: groomed {cruiseC * 3.6f:0} km/h, ice {cruiseI * 3.6f:0} km/h, deep powder {cruiseP * 3.6f:0} km/h");
+            if (!quick)
+            {
+                Surfaces.Force = SnowMix.Only(Snow.Powder);
+                float vP = Mathf.Max(12f, cruiseP);
+                string line = $"STEER slalom in deep powder at its own cruise, {vP * 3.6f:0} km/h, speed held";
+                bool all = true;
+                // (judged on the glade and the forest's own grid; the tight trees, 5 m side to side every 7 m, are reported)
+                foreach (var c in Courses) { Result m = BestRacer(r, c, vP); line += $" | {c.name}: racer {m.made}/{m.tried}"; if (c.name != "tight" && (!m.Clean || m.tried < c.gates / 3)) all = false; }
+                Debug.Log(line + (all ? " | the glade and the trees: every gate reached on the snow made" : " | NOT every gate made in the glade and the trees"));
+                if (!all) Fail($"slalom in deep powder at {vP * 3.6f:0} km/h: not every gate made in the glade and the trees");
+            }
+            Surfaces.Force = null;
         }
 
         // what a sustained whole drag costs: the stretch from 79 km/h with the speed its own, straight, and thrown
@@ -301,11 +332,14 @@ public static class SteerTest
     static void Settle(Rider r, float v)
     {
         Place(r, v);
-        for (int i = 0; i < 60; i++) { r.Steer = 0f; StepHeld(r, v); }
+        // (hands off long enough for any slide left from settling onto the line to have died away: feel's slide coasts
+        // and returns over a second and a half)
+        for (int i = 0; i < 240; i++) { r.Steer = 0f; StepHeld(r, v); }
         lat0 = 0f; lat0 = Lat(r);
     }
 
     static int sideAir;   // steps of the last First spent off the snow
+    static float firstT90, releaseCoast; static bool releaseAir;   // (First: how soon 90% of what it settles at; Release: how long it coasts)
 
     /// <summary>The finger thrown to `s` from riding straight: how soon the board is going 1 and 3 m/s sideways, how much
     /// 0.05 s on, and what it settles at (the mean of 0.8 to 1 s).</summary>
@@ -321,10 +355,14 @@ public static class SteerTest
             if (t1 < 0f && l >= 1f) t1 = (i + 1) * Dt;
             if (t3 < 0f && l >= 3f) t3 = (i + 1) * Dt;
             if (i == 5) at05 = l;
+            trace[i] = l;
             if (i >= 96) { sum += l; n++; }
         }
         steady = (float)(sum / Mathf.Max(1, n));
+        firstT90 = -1f;
+        for (int i = 0; i < trace.Length; i++) if (trace[i] >= 0.9f * steady) { firstT90 = (i + 1) * Dt; break; }
     }
+    static readonly float[] trace = new float[120];
 
     /// <summary>A whole drag held one way for a second, then flipped: how soon the sideways speed is through zero, 2 m/s the
     /// other way, and half of the whole the other way.</summary>
@@ -352,10 +390,13 @@ public static class SteerTest
         float steer = 0f; tTenth = -1f; t5deg = -1f; back = 0f;
         for (int i = 0; i < 120; i++) { steer = SteerTo(steer, s); r.Steer = steer; StepHeld(r, v); }
         float was = Mathf.Abs(r.Side);
-        for (int j = 0; j < 360; j++)
+        releaseCoast = -1f; releaseAir = false;
+        for (int j = 0; j < 480; j++)
         {
             steer = SteerTo(steer, 0f); r.Steer = steer; StepHeld(r, v);
             back = Mathf.Max(back, Mathf.Abs(r.SideEdge));
+            if (releaseCoast < 0f && Mathf.Abs(r.Side) <= 0.9f * was) releaseCoast = (j + 1) * Dt;
+            if (r.Airborne) releaseAir = true;
             if (tTenth < 0f && Mathf.Abs(r.Side) <= 0.1f * was) tTenth = (j + 1) * Dt;
             if (t5deg < 0f && Mathf.Abs(r.TravelHeading - r.FallLine) <= 5f * Mathf.Deg2Rad) t5deg = (j + 1) * Dt;
             if (tTenth >= 0f && t5deg >= 0f) break;
@@ -467,7 +508,7 @@ public static class SteerTest
     {
         var best = new Result { made = -1 };
         foreach (float amp in new[] { c.swing - 1.1f, c.swing - 0.6f, c.swing - 1.4f })
-            foreach (float lead in new[] { 0.04f, 0.08f, 0.13f })
+            foreach (float lead in new[] { 0.04f, 0.08f, 0.13f, 0.19f })
                 foreach (float kp in new[] { 6f, 14f })
                 {
                     var m = Racer(r, c, v, amp, lead, kp);

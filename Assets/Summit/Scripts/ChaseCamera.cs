@@ -96,6 +96,8 @@ namespace Summit
         // how soon each settles (s): the swing onto the rider's line, the height, sliding in front of a trunk and back
         // out again, the look down the slope ahead
         public static float YawEase = 0.2f, HeightEase = 0.13f, DistIn = 0.07f, DistOut = 0.3f, DropEase = 0.3f;
+        /// <summary>deg: how far the camera rolls with the edge biting hardest (Rider.Bite).</summary>
+        public static float BiteRoll = 3.5f;
         public static float HardFloor = 0.7f;   // m over the snow under the lens it is never below, eased or not
         public static float FloorEase = 0.15f;  // s: how soon the height it keeps over the snow under it follows that snow (a lip passing under is not a step)
         public static float TrunkSlow = 7f;     // m/s: slower than this it slides in front of a trunk in the way; not at all by twice it
@@ -222,6 +224,8 @@ namespace Summit
             // bank with a hard carve: nothing on gentle turns, up to about 9 degrees on a full-edge turn at speed
             float hard = Mathf.Clamp01((Mathf.Abs(rider.Lean) - 0.3f) / 0.42f) * Mathf.Clamp01((rider.Speed - 8f) / 17f);
             float wantRoll = rider.Crashed || rider.Airborne || peek > 0.001f || hold > 0.001f ? 0f : -Mathf.Sign(rider.Lean) * 9f * hard * hard;
+            // (and a small kick with the edge biting: the camera rolls a few degrees with the sideways pull, Rider.Bite)
+            if (!rider.Crashed && !rider.Airborne && peek <= 0.001f && hold <= 0.001f) wantRoll -= Mathf.Sign(rider.LateralAccel) * BiteRoll * rider.Bite * Mathf.Clamp01((rider.Speed - 6f) / 10f);
             roll = first ? wantRoll : Mathf.Lerp(roll, wantRoll, 1f - Mathf.Exp(-dt * 3f));
             Quaternion rot = Quaternion.LookRotation(look - pos, Vector3.up) * Quaternion.Euler(0f, 0f, roll);
 

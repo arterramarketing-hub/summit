@@ -106,7 +106,7 @@ public static class NudgeTest
 
     static bool Open(Vector3 p) => Course.At(p.z) == Course.Section.Cruise && Mathf.Abs(p.x - Slope.Centre(p.z)) < Slope.PisteHalf - 2f && !Course.InPipe(p.x, p.z);
 
-    static float Quant(float s) => Mathf.Round(Mathf.Clamp(s, -1f, 1f) * 8f) / 8f;
+    static float Quant(float s) => Mathf.Round(Mathf.Clamp(s, -1f, 1f) * 16f) / 16f;   // (sixteenths: with the input's curve, an eighth was too coarse to hold a line with)
     static readonly bool logDrift = System.Environment.GetEnvironmentVariable("NUDGE_DRIFTS") != "0";
 
     /// <summary>The bots' finger: for the line x = line(z), by the sideways speed that closes on it with the line's own
@@ -116,7 +116,7 @@ public static class NudgeTest
         float z = rr.Z, err = line(z) - rr.X;
         float swing = (line(z + 1f) - line(z)) * rr.Velocity.z;
         if (Mathf.Abs(err) < 1.2f && Mathf.Abs(rr.Velocity.x - swing) < 1.5f) return 0f;
-        return Mathf.Clamp(CarveBot.Onto(rr, line, 1.2f, 8f), -0.75f, 0.75f);
+        return Mathf.Clamp(CarveBot.Onto(rr, line, 0.9f, 8f), -0.8f, 0.8f);
     }
 
     /// <summary>

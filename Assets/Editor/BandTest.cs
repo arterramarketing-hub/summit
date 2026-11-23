@@ -199,7 +199,7 @@ public static class BandTest
             float zA = r.Z + 12f * Slope.Squash(r.Z);
             float want = Slope.Centre(zA);
             float lead = Mathf.Atan2(want - r.X, zA - r.Z);
-            r.Steer = Mathf.Clamp((lead - r.TravelHeading) * 1.5f + (want - r.X) * 0.02f, -1f, 1f);
+            r.Steer = Rider.Unshape(Mathf.Clamp((lead - r.TravelHeading) * 1.5f + (want - r.X) * 0.02f, -1f, 1f));   // (feel: the input's curve undone, so the bot asks for what it always did)
             if (hands) r.Steer = 0f;   // (hands off the whole way: nothing holds the run's line for it)
             // the optional air: off the downhill side at the first low place, steering hard for it from 12 m before
             // (steer3: a drag is a sideways speed off the run's heading, quick and strong, so held hard from 12 m before
@@ -210,7 +210,7 @@ public static class BandTest
             {
                 var lip = CliffBand.PointAt(b, b.l0, CliffBand.EdgeAt(b.l0) + 2f);
                 float aim = Mathf.Atan2(lip.x - r.X, lip.y - r.Z);
-                r.Steer = Mathf.Clamp((aim - r.TravelHeading) * 2.5f, -1f, 1f);
+                r.Steer = Rider.Unshape(Mathf.Clamp((aim - r.TravelHeading) * 2.5f, -1f, 1f));
                 if (r.Airborne) dropped = true; if (dropped && !r.Airborne) dropping = false;
             }
             r.TestContacts(Dt);
@@ -280,7 +280,7 @@ public static class BandTest
         for (float t = 0f; t < 30f && held < 1.5f; t += Dt, n++)
         {
             float zA = r.Z + 12f * Slope.Squash(r.Z), want = Slope.Centre(zA), lead = Mathf.Atan2(want - r.X, zA - r.Z);
-            r.Steer = Mathf.Clamp((lead - r.TravelHeading) * 1.5f + (want - r.X) * 0.02f, -1f, 1f);
+            r.Steer = Rider.Unshape(Mathf.Clamp((lead - r.TravelHeading) * 1.5f + (want - r.X) * 0.02f, -1f, 1f));   // (feel: the input's curve undone, so the bot asks for what it always did)
             if (r.Z > zGo) { if (float.IsNaN(start)) start = Slope.Across(r.X, r.Z); r.Steer = dir; held += Dt; }
             r.TestContacts(Dt);
             r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
