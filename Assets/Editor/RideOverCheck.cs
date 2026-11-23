@@ -94,7 +94,7 @@ public static class RideOverCheck
                                 if (res.sunk > 0.1f) { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: the board went {res.sunk:0.00} m into it (lifted {res.lift:0.00} m)"); }
                             }
                             if (res.outcome == "deflect" && res.vAfter > res.vIn + 0.3f) { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: faster straight after a glancing hit ({res.vIn:0.0} -> {res.vAfter:0.0} m/s)"); }
-                            if (res.outcome == "deflect" && res.side > res.vIn * Mathf.Sin(Mathf.Min(89f, res.angle < 0f ? 89f : 90f - res.angle + 8f) * Mathf.Deg2Rad) + 0.5f) { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: thrown sideways at {res.side:0.0} m/s by a glancing hit (more than sliding along its face gives)"); }
+                            if (res.outcome == "deflect" && res.side > Mathf.Max(res.vIn, res.sideAt) * Mathf.Sin(Mathf.Min(89f, res.angle < 0f ? 89f : 90f - res.angle + 8f) * Mathf.Deg2Rad) + 0.5f) { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: thrown sideways at {res.side:0.0} m/s by a glancing hit (more than sliding along its face gives)"); }
                             if (Mathf.Abs(res.offLine) > 0.05f) { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: the board came {res.offLine:+0.00;-0.00} m off its line (the angle asked for is not the one met)"); }
                         }
         }
@@ -199,7 +199,7 @@ public static class RideOverCheck
 
     static void Stream() { terrain.Prewarm(); props.Prewarm(); Physics.SyncTransforms(); }
 
-    struct Result { public string outcome; public bool hop, air; public float vIn, vOut, peak, into, angle, offLine, lift, vAcc, side, sunk, vAfter; }
+    struct Result { public string outcome; public bool hop, air; public float vIn, vOut, peak, into, angle, offLine, lift, vAcc, side, sideAt, sunk, vAfter; }
 
     /// <summary>A thing `shape` standing h over the snow at (centre, z), met at `ang` degrees off dead on at v0.</summary>
     static GameObject Make(string shape, float h, float ang, float x, float z, out float side)
@@ -282,13 +282,13 @@ public static class RideOverCheck
                 {
                     // (carve: the finger is an edge. Carved onto the line x = xs and held straight down it)
                     float lineAt = xs;
-                    r.Steer = CarveBot.Onto(r, zz => lineAt, 6f, 5f, 0f, 10f);
+                    r.Steer = CarveBot.Onto(r, zz => lineAt, 6f, 5f);
                     if (r.Speed > v0) r.Body.linearVelocity *= v0 / r.Speed;
                     vNear = r.Speed;
                 }
                 // (there: no steering for or against the thing itself, only the edge that holds the board's line
                 // against gravity across it, so it meets the thing going straight, as it was aimed)
-                else r.Steer = glanced || r.Airborne ? 0f : CarveBot.ForPull(r, -r.SideSlope);
+                else r.Steer = glanced || r.Airborne ? 0f : CarveBot.ForSide(r, 0f);
                 r.TestContacts(Dt);
                 if (!r.Crashed) r.Tick(Dt);
                 if (frame != null) { body.PhysicsStep(); }
@@ -311,7 +311,7 @@ public static class RideOverCheck
                     if (r.Airborne) res.air = true;
                     float vyNow = r.Body.linearVelocity.y;
                     if (r.OverLift > 0.005f && !r.Airborne) res.vAcc = Mathf.Max(res.vAcc, Mathf.Abs(vyNow - vyPrev) / Dt);
-                    res.side = Mathf.Max(res.side, Mathf.Abs(r.Body.linearVelocity.x));
+                    if (Mathf.Abs(r.Body.linearVelocity.x) > res.side) { res.side = Mathf.Abs(r.Body.linearVelocity.x); res.sideAt = r.Body.linearVelocity.magnitude; }
                     // (never through it: the board's bottom against the thing's own surface under it)
                     var gc = g.GetComponent<Collider>();
                     Vector3 bp = r.Body.position;

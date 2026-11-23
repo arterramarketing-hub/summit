@@ -19,7 +19,7 @@ namespace Summit
         ParticleSystem spray;
         ParticleSystem.EmissionModule sprayEm, wakeEm;
         float puffShown = 1f;   // the spray's size for the snow underfoot, as last set
-        float skidBurst;        // the edge just let go at this speed (Rider.Skidded): a burst of spray is owed
+        float skidBurst;        // the board was just thrown across at this speed (Rider.Skidded): a burst of spray is owed
         ParticleSystem wake;
         Vector3 normal = Vector3.up;
         float lean, lastTravel, yawRate, crashSpin;
@@ -1158,7 +1158,7 @@ namespace Summit
             sprayEm.rateOverTime = rider.Running && !rider.Crashed && !rider.Airborne
                 ? (rider.Carve * rider.Speed * 7f + rider.Skid * rider.Speed * 12f + Mathf.Max(0f, rider.Speed - 22f) * 1.5f) * (1f + 1.5f * snow.powder + 0.6f * snow.slush - 0.6f * hard) + (rider.BoostTime > 0f ? 60f : 0f)
                 : 0f;
-            // the edge let go (Rider.Skidded): a burst of snow thrown off it, by how fast the board was going
+            // thrown across from one way to the other (Rider.Skidded): a burst of snow off the edge, by how fast the board was going
             if (skidBurst > 0f)
             {
                 if (rider.Running && !rider.Crashed && !rider.Airborne && !Tube) spray.Emit(Mathf.RoundToInt(Mathf.Clamp(skidBurst * 1.6f, 12f, 70f) * (1f + snow.powder + 0.4f * snow.slush - 0.6f * hard)));

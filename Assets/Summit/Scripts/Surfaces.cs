@@ -48,10 +48,9 @@ namespace Summit
     /// How the snow at one spot rides (Surfaces.Feel): all of it scales the board's own numbers, none of it pushes.
     ///   friction  on Rider.Friction (the snow's drag at any speed)
     ///   drag      added to the air's drag, per (m/s)^2: snow the board has to plough
-    ///   grip      on the sideways pull the edge holds before it lets go and the board skids (Rider.EdgeGrip: 1 =
-    ///             corduroy, which holds best; ice lets go soonest)
-    ///   bite      on how stiffly the edge pushes back against sideslip (Rider.BiteRate: 1 = corduroy; powder is soft,
-    ///             the board washes out further before it holds)
+    ///   grip      how well an edge holds on it (1 = corduroy, which holds best; ice the least): with less, the board
+    ///             answers the finger's push a little later and slides on a little longer once it is let go
+    ///   bite      how firm it is under an edge (1 = corduroy; powder is soft): with less, it answers a little later
     ///   chatter   0..1: how much the board chatters (the look and the sound only)
     /// </summary>
     public struct SnowFeel
@@ -81,10 +80,9 @@ namespace Summit
     /// Two rules:
     ///  - every share is a smooth function of the place, so the snow changes under the board over metres, never in a
     ///    step. Nothing here is a yes or no.
-    ///  - the snow never pushes. It sets how much sideways pull the board's edge can hold (grip) and how stiffly it
-    ///    holds it (bite): with less of either the board carves a wider arc for the same edge, or lets go into a
-    ///    skid sooner. A board carving within what ice holds rides over an ice patch as it rode onto it; one carving
-    ///    at corduroy's limit lets go on it. That is the rider's doing (carve model: Rider.GroundStep).
+    ///  - the snow never pushes, and it never lets go (slide: Rider.GroundStep). Grip and bite only set how soon
+    ///    the board answers the finger's push and how long a slide lasts once it is let go: ice and powder are a
+    ///    little slower both ways. The sideways speed a held drag gives is the same on every kind.
     ///
     /// The day's part (Day: fresh snow, wind, warmth) comes from Weather and the clock through Step, once a frame. The
     /// test tools, which run neither, get a calm, cold, clear day unless they set it.

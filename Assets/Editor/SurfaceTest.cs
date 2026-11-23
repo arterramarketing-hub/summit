@@ -16,10 +16,9 @@ using Summit;
 ///  - that the snow never changes in a step: the most any kind's share changes over a metre, anywhere;
 ///  - what each kind does to the pace: the same line ridden hands off on each kind laid everywhere, and the speed a
 ///    board settles at on the mountain's mean pitch;
-///  - that the snow never pushes (carve): on each kind, a quarter of the drag held (an arc every kind holds) and
-///    hands off, the way the board goes turns by its edge's pull and gravity's and by nothing else; riding from
-///    corduroy onto each kind with that edge held the edge's pull stays what it was and does not let go; and an
-///    edge at corduroy's limit, ridden onto ice, does let go (ice holds less: a skid, the rider's to back off).
+///  - that the snow never pushes and never lets go (slide): on each kind half a drag held gives the same sideways
+///    speed, the way the board goes turns by the finger's push and gravity's pull and by nothing else, and riding
+///    from corduroy onto each kind with the finger held leaves the sideways speed as it was.
 ///
 /// Shots (needs the GPU):
 ///   Unity -batchmode -projectPath . -executeMethod SurfaceTest.Shots -logFile shots.log
@@ -155,31 +154,26 @@ public static class SurfaceTest
         }
         foreach (var l in lines) Debug.Log(l);
 
-        // ---- the snow never pushes: with the finger still, the way the board goes turns by its edge's pull and by
-        //      gravity's across the path, and by nothing else (what NudgeTest counts as a nudge is 2.5 m/s^2 of anything else)
+        // ---- the snow never pushes and never lets go: on each kind half a drag held gives the same sideways speed,
+        //      and the way the board goes turns by the finger's push and gravity's pull and by nothing else (what
+        //      NudgeTest counts as a nudge is 2.5 m/s^2 of anything else)
+        float halfSide = 0.5f * r.SideFull(22f);
         foreach (var k in Kinds)
         {
             Surfaces.Force = SnowMix.Only(k);
-            Carved(r, 22f, 0.25f, null, out float acc, out _, out float off, out bool slid);
-            Carved(r, 22f, 0f, null, out float acc0, out _, out float off0, out _);
-            Debug.Log($"SURFACE carve {k.ToString().ToLower(),-8}: a quarter of the drag held at 79 km/h, the edge pulls {acc:0.0} m/s^2 across the path{(slid ? " (and lets go)" : "")}, {off:0.00} m/s^2 of the turn is nothing of the edge's or gravity's; hands off the flat board's edge pulls {acc0:0.00}, {off0:0.00} not accounted for");
-            if (off > 0.5f || off0 > 0.5f) Fail($"{k}: the way the board goes turns by {Mathf.Max(off, off0):0.00} m/s^2 that is not its edge's or gravity's, the finger still");
-            if (slid) Fail($"{k}: a quarter of the drag lets go at 79 km/h");
+            Carved(r, 22f, 0.5f, null, out _, out float side, out float off, out _);
+            Carved(r, 22f, 0f, null, out _, out float side0, out float off0, out _);
+            Debug.Log($"SURFACE held {k.ToString().ToLower(),-8}: half a drag held at 79 km/h gives {side:0.0} m/s sideways (the board's own: {halfSide:0.0}), {off:0.00} m/s^2 of the turn is nothing of the push's or gravity's; hands off {side0:0.00} m/s sideways, {off0:0.00} not accounted for");
+            if (off > 0.5f || off0 > 0.5f) Fail($"{k}: the way the board goes turns by {Mathf.Max(off, off0):0.00} m/s^2 that is not the push's or gravity's, the finger still");
+            if (side < 0.9f * halfSide) Fail($"{k}: halfSide a drag gives {side:0.0} m/s sideways, not {halfSide:0.0}");
         }
-        // from corduroy onto each kind over 4 m, that edge held: the pull as it was, and it holds
+        // from corduroy onto each kind over 4 m, half a drag held: the sideways speed as it was
         foreach (var k in Kinds)
         {
-            Carved(r, 22f, 0.25f, SnowMix.Only(k), out float before, out float after, out float off, out bool slid);
-            Debug.Log($"SURFACE onto {k.ToString().ToLower(),-8} off corduroy over 4 m at 79 km/h, a quarter of the drag held: the edge's pull {before:0.0} -> {after:0.0} m/s^2{(slid ? " (it let go)" : "")}, {off:0.00} m/s^2 not accounted for");
-            if (off > 0.5f) Fail($"onto {k}: the way the board goes turns by {off:0.00} m/s^2 that is not its edge's or gravity's");
-            if (slid) Fail($"onto {k}: a quarter of the drag lets go");
-            if (Mathf.Abs(after - before) > 0.35f * Mathf.Max(before, 1f)) Fail($"onto {k}: the edge's pull goes from {before:0.0} to {after:0.0} m/s^2 with the finger still");
-        }
-        // an edge at corduroy's limit (just under the knee of the throw), ridden onto ice: it lets go. By design
-        {
-            Carved(r, 22f, Rider.EdgeKnee - 0.03f, SnowMix.Only(Snow.Ice), out float before, out float after, out _, out bool slid);
-            Debug.Log($"SURFACE onto ice at corduroy's limit ({(Rider.EdgeKnee - 0.03f) * 100f:0}% of the edge held, 79 km/h): the edge's pull {before:0.0} -> {after:0.0} m/s^2, {(slid ? "it lets go: a skid" : "it holds")}");
-            if (!slid) Fail("an edge at corduroy's limit holds on ice: ice should let go sooner");
+            Carved(r, 22f, 0.5f, SnowMix.Only(k), out float before, out float after, out float off, out _);
+            Debug.Log($"SURFACE onto {k.ToString().ToLower(),-8} off corduroy over 4 m at 79 km/h, half a drag held: sideways {before:0.0} -> {after:0.0} m/s, {off:0.00} m/s^2 not accounted for");
+            if (off > 0.5f) Fail($"onto {k}: the way the board goes turns by {off:0.00} m/s^2 that is not the push's or gravity's");
+            if (Mathf.Abs(after - before) > 0.1f * Mathf.Max(before, 1f)) Fail($"onto {k}: the sideways speed goes from {before:0.0} to {after:0.0} m/s with the finger still");
         }
         Surfaces.Force = null;
 
@@ -246,9 +240,9 @@ public static class SurfaceTest
 
     /// <summary>
     /// The finger thrown to `s` and held for a second at v, on the snow as it is forced (or, with `to`, going from
-    /// corduroy to `to` over 4 m of the ride from half a second in): the edge's pull across the path before (0.3 to
-    /// 0.5 s in) and after (the last 0.2 s) in m/s^2, the most of the way it goes turning that is neither the
-    /// edge's pull nor gravity's (m/s^2, over a tenth of a second), and whether the edge let go.
+    /// corduroy to `to` over 4 m of the ride from half a second in): the sideways speed across the fall line before
+    /// (0.3 to 0.5 s in) and after (the last 0.2 s) in m/s, the most of the way it goes turning that is neither the
+    /// finger's push nor gravity's pull (m/s^2, over a tenth of a second), and whether the board was thrown across.
     /// </summary>
     static void Carved(Rider r, float v, float s, SnowMix? to, out float before, out float after, out float off, out bool slid)
     {
@@ -275,8 +269,8 @@ public static class SurfaceTest
             float g = path - (r.SideEdge + r.SideSlope);
             gapSum += g - gap[i % gap.Length]; gap[i % gap.Length] = g;
             if (i >= gap.Length) off = Mathf.Max(off, Mathf.Abs(gapSum) / gap.Length);
-            if (i >= 36 && i < 60) { b += Mathf.Abs(r.SideEdge); nb++; }
-            if (i >= 96) { a += Mathf.Abs(r.SideEdge); na++; }
+            if (i >= 36 && i < 60) { b += Mathf.Abs(r.Side); nb++; }
+            if (i >= 96) { a += Mathf.Abs(r.Side); na++; }
             if (r.Sliding) slid = true;
             vPrev = u;
         }

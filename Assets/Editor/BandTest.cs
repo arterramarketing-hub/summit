@@ -195,7 +195,7 @@ public static class BandTest
         float tIn = -1f, tDanger = -1f, edgeIn = 0f, edgeMost = 0f, pullSum = 0f; int onBench = 0;
         for (float t = 0f; t < 30f && r.Z < b.z3 + 60f; t += Dt, n++)
         {
-            // the bot: aim at the run's middle 12 m ahead along the run, carving for it (its finger is an edge angle)
+            // the bot: aim at the run's middle 12 m ahead along the run
             float zA = r.Z + 12f * Slope.Squash(r.Z);
             float want = Slope.Centre(zA);
             float lead = Mathf.Atan2(want - r.X, zA - r.Z);
@@ -219,7 +219,7 @@ public static class BandTest
             if (frame != null) { body.Apply(Dt); frame(n); } else if (n % 4 == 0 || r.Crashed) body.Apply(r.Crashed ? Dt : 4 * Dt);
             if (r.Z > b.z0 && tIn < 0f) tIn = t;   // (the way in: where the run begins to swing)
             // the edge into the turn and the hill (away from the band: b.side), from the way in to the end of the bench
-            if (r.Z > b.z0 && r.Z < b.z2 && !r.Airborne) edgeMost = Mathf.Max(edgeMost, r.Lean / Rider.MaxLean * b.side);
+            if (r.Z > b.z0 && r.Z < b.z2 && !r.Airborne) edgeMost = Mathf.Max(edgeMost, r.Steer * b.side);
             if (r.Z > b.z1 && r.Z < b.z2)
             {
                 float off = Slope.Across(r.X, r.Z);
@@ -227,7 +227,7 @@ public static class BandTest
                 if (Mathf.Abs(off) > CliffBand.EdgeAt(r.Z) + 2f) over = true;
                 minSpeed = Mathf.Min(minSpeed, r.Speed);
                 // the edge held into the hill (away from the band: b.side), and gravity's pull across the path toward the band
-                if (!r.Airborne) { onBench++; edgeIn += r.Lean / Rider.MaxLean * b.side; pullSum += -r.SideSlope * b.side; }
+                if (!r.Airborne) { onBench++; edgeIn += r.Steer * b.side; pullSum += -r.SideSlope * b.side; }
                 if (tDanger < 0f && Mathf.Abs(off) > CliffBand.EdgeAt(r.Z) - 2f) tDanger = t;
             }
             if (tDanger < 0f && tIn >= 0f && (r.Crashed || over)) tDanger = t;
@@ -254,7 +254,7 @@ public static class BandTest
             if (r.Crashed) { r.RequestUp = true; for (int i = 0; i < 4; i++) r.Tick(Dt); }
             return;
         }
-        Debug.Log($"BAND seed{seed} cycle{b.cycle} ride {v0:0} m/s: furthest off the middle on the traverse {worstOff:0.0} m, {(over ? "WENT OVER THE BAND" : "stayed on the bench")}, lowest speed {minSpeed * 3.6f:0} km/h, edge into the hill {100f * edgeMost:0}% of full at most from the way in, {(onBench > 0 ? 100f * edgeIn / onBench : 0f):0}% on average along the bench (gravity across the path toward the band there {(onBench > 0 ? pullSum / onBench : 0f):+0.0;-0.0} m/s^2 on average), " + (r.Crashed ? $"CRASHED '{lastCrash}' at z={p.z:0} ({p.z - b.z0:0} m into it)" : $"rode out at {r.Speed * 3.6f:0} km/h"));
+        Debug.Log($"BAND seed{seed} cycle{b.cycle} ride {v0:0} m/s: furthest off the middle on the traverse {worstOff:0.0} m, {(over ? "WENT OVER THE BAND" : "stayed on the bench")}, lowest speed {minSpeed * 3.6f:0} km/h, the finger up the hill {100f * edgeMost:0}% of the whole drag at most from the way in, {(onBench > 0 ? 100f * edgeIn / onBench : 0f):0}% on average along the bench (gravity across the path toward the band there {(onBench > 0 ? pullSum / onBench : 0f):+0.0;-0.0} m/s^2 on average), " + (r.Crashed ? $"CRASHED '{lastCrash}' at z={p.z:0} ({p.z - b.z0:0} m into it)" : $"rode out at {r.Speed * 3.6f:0} km/h"));
         if (judgeRides && frame == null)
         {
             if (r.Crashed) Fail($"seed{seed} cycle{b.cycle} ride {v0:0} m/s: crashed '{lastCrash}'");

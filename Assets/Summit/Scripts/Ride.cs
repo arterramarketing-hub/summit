@@ -13,12 +13,12 @@ namespace Summit
     public class RideFeel
     {
         public string Name;
-        /// <summary>How fast it gets onto its edge (one over Rider.EdgeTime). Higher: quicker from edge to edge.</summary>
+        /// <summary>How soon it answers the finger's push (one over Rider.PushTime). Higher: quicker from side to side.</summary>
         public float TurnResponse = 1f;
-        /// <summary>How tight an arc its edge carves (one over Rider.CarveRadius). Lower: wider, lazier arcs.</summary>
+        /// <summary>How far sideways a whole drag takes it (on Rider.SideShare). Lower: lazier lines.</summary>
         public float TurnRate = 1f;
-        /// <summary>How much sideways pull its edges hold before they skid (on Rider.EdgeGrip, after the SHARP EDGES
-        /// upgrade). Lower: it lets go sooner and drifts wide.</summary>
+        /// <summary>How soon a slide dies away once the finger lets go (one over Rider.EaseTime, by its root).
+        /// Lower: it slides on longer.</summary>
         public float Grip = 1f;
         /// <summary>The speed it runs out to down a steady slope, against the snowboard's (air drag goes with one over its square).</summary>
         public float TopSpeed = 1f;
@@ -58,21 +58,20 @@ namespace Summit
                 Grabs = new[] { "Indy", "Melon", "Mute", "Method", "Stalefish", "Tail Grab" },
                 GrabCountsAs = new[] { "Indy", "Melon", "Mute", "Method", "Stalefish", "Tail Grab" },
             },
-            // Skis: two edges and a stance that faces the way you go. Quicker from edge to edge, a tighter arc on
-            // their deeper sidecut and more hold in it (they carve where a board has begun to skid), a little faster
-            // flat out in a tuck's low stance; the pop off two long planks is smaller, and with a pole in each hand
-            // there is a little more say in the air.
+            // Skis: two edges and a stance that faces the way you go. Quicker from side to side, a little further
+            // across for the same drag and quicker to stop sliding, a little faster flat out in a tuck's low stance;
+            // the pop off two long planks is smaller, and with a pole in each hand there is a little more say in
+            // the air.
             new RideFeel
             {
                 Name = "SKIS",
-                TurnResponse = 1.25f, TurnRate = 1.15f, Grip = 1.18f, TopSpeed = 1.03f, Pop = 0.92f, AirControl = 1.15f,
+                TurnResponse = 1.25f, TurnRate = 1.08f, Grip = 1.18f, TopSpeed = 1.03f, Pop = 0.92f, AirControl = 1.15f,
                 Grabs = new[] { "Safety", "Mute", "Tail" },
                 GrabCountsAs = new[] { "Indy Stalefish", "Mute Melon", "Method Tail Grab" },
                 BoxTrick = "Box Slide", RailTrick = "Rail Slide", Spin = 0.95f, SwitchStep = 2,
             },
             // The toboggan: a plank of wood with no edges and nobody's legs under it. It is mostly gravity's: it
-            // leans over slowly, its runners hold a wide arc and not much of one (lean gently and it tracks; haul
-            // on it and it lets go and drifts wide, the dragged heel scrubbing speed). A released tuck is only a hop; it flies off kickers like anything
+            // answers a push late, goes less far across for it, and slides on a good while after. A released tuck is only a hop; it flies off kickers like anything
             // else but there is little to steer with up there, and it lands flat and skips. A touch slower flat
             // out, which the drift more than makes up for in the trees. It slides boxes; rails knock it aside.
             new RideFeel

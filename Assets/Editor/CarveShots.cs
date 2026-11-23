@@ -6,12 +6,12 @@ using UnityEngine;
 using Summit;
 
 /// <summary>
-/// Frame strips of the carving model from the chase camera (needs the GPU: never with -nographics):
+/// Frame strips of the steering (slide) from the chase camera (needs the GPU: never with -nographics):
 ///   Unity -batchmode -projectPath . -executeMethod CarveShots.Run -logFile shots.log     (CARVE_OUT=dir, default carve-renders)
-///  - Carve: linked turns on open piste at 79 km/h, 60% of the drag each way (inside the grip: a thin line);
-///  - Skid: the whole drag thrown at 100 km/h (the edge lets go: the board across its way, the wide smear, the spray);
-///  - Slalom: the racer from SteerTest through gates of stand-in trees (3 m gaps), 5 m side to side every 9 m, at 54 km/h;
-///  - Band: the bot carving a cliff band's traverse at 79 km/h, the edge into the hill.
+///  - Carve: side to side on open piste at 79 km/h, 60% of the drag each way;
+///  - Skid: the whole drag at 100 km/h, flipped the other way after half a second, then let go (the ease back);
+///  - Slalom: the racer from SteerTest through gates of stand-in trees (3 m gaps), 5 m side to side every 9 m, at 79 km/h;
+///  - Band: the bot riding a cliff band's traverse from 79 km/h.
 /// Each strip is 12 frames, left to right and top to bottom; the log has what the board was doing at each (CARVE-FRAME).
 /// One mountain (seed 1000): in a batch run the editor never ends a frame, and a second mountain's props pile on the first's.
 /// </summary>
@@ -50,27 +50,25 @@ public static class CarveShots
         try
         {
             float z = OpenStretch(Course.First + 60f, 150f);
-            // 1. a carve: linked turns, 60% of the drag each way
+            // 1. side to side: 60% of the drag each way, 0.75 s a side
             Strip("Carve", Slope.Centre(z), z, 22f, 22f, 0.5f, 0.15f, (t, n) => t < 0.5f ? 0f : RiderInput.Curve(0.6f) * (Mathf.Sin((t - 0.5f) * Mathf.PI * 2f / 1.5f) > 0f ? 1f : -1f));
-            // 2. a skid: the whole drag, thrown at 100 km/h
-            Strip("Skid", Slope.Centre(z), z, 28f, 0f, 0.55f, 0.09f, (t, n) => t < 0.6f ? 0f : 1f);
+            // 2. the whole drag one way at 100 km/h, flipped after half a second, then let go
+            Strip("Skid", Slope.Centre(z), z, 28f, 0f, 0.5f, 0.1f, (t, n) => t < 0.6f ? 0f : t < 1.1f ? 1f : t < 1.5f ? -1f : 0f);
             // 3. the tree slalom: gates 3 m wide, 5 m side to side every 9 m
             {
-                const float spacing = 9f, swing = 2.5f, v = 15f; const int gates = 8;
+                const float spacing = 9f, swing = 2.5f, v = 22f; const int gates = 8;
                 float g0 = z + 34f, amp = swing - 1.1f;
                 var made = Gates(z, g0, spacing, swing, gates);
                 try
                 {
-                    Strip("Slalom", Slope.Centre(z) - amp, z, v, v, 1.7f, 0.24f, (t, n) =>
+                    Strip("Slalom", Slope.Centre(z) - amp, z, v, v, 1.2f, 0.16f, (t, n) =>
                     {
                         Vector3 p = r.Body.position, vel = r.Body.linearVelocity;
-                        float sp = Mathf.Max(5f, r.Speed), om = Mathf.PI * sp / spacing, zl = p.z + sp * 0.12f;
+                        float sp = Mathf.Max(5f, r.Speed), om = Mathf.PI * sp / spacing, zl = p.z + sp * 0.06f;
                         float baseX = Slope.Centre(p.z) , baseV = (Slope.Centre(p.z + 1f) - baseX) * vel.z;
-                        float ad = zl < g0 - spacing ? 0f : amp * om * om * Mathf.Cos(Mathf.PI * (zl - g0) / spacing);
                         float xd = p.z < g0 - spacing ? -amp : -amp * Mathf.Cos(Mathf.PI * (p.z - g0) / spacing);
-                        float vd = p.z < g0 - spacing ? 0f : amp * om * Mathf.Sin(Mathf.PI * (p.z - g0) / spacing);
-                        float a = ad + 50f * (xd - (p.x - baseX)) + 9f * (vd - (vel.x - baseV));
-                        return SteerFor(a / (sp * sp), sp);
+                        float vd = zl < g0 - spacing ? 0f : amp * om * Mathf.Sin(Mathf.PI * (zl - g0) / spacing);
+                        return CarveBot.ForSide(r, baseV + vd + 10f * (xd - (p.x - baseX)));
                     });
                 }
                 finally { foreach (var g in made) Object.DestroyImmediate(g); }
@@ -92,16 +90,6 @@ public static class CarveShots
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
         EditorApplication.Exit(0);
-    }
-
-    /// <summary>The steer that asks the edge for the arc `kappa` (1/m, + right) at sp (as SteerTest's racer).</summary>
-    static float SteerFor(float kappa, float sp)
-    {
-        float knee = r.ArcAt(Rider.EdgeKnee, sp);
-        float k = Mathf.Min(Mathf.Abs(kappa) / Mathf.Max(knee, 1e-5f), Rider.SkidOver);
-        float share = k <= 1f ? Mathf.Atan(k * Mathf.Tan(Rider.MaxLean)) / Rider.MaxLean * Rider.EdgeKnee
-                              : Rider.EdgeKnee + (k - 1f) / (Rider.SkidOver - 1f) * (1f - Rider.EdgeKnee);
-        return Mathf.Clamp(Mathf.Sign(kappa) * share / Mathf.Clamp(Rider.TurnScale, 0.25f, 4f), -1f, 1f);
     }
 
     /// <summary>Open cruising piste with `len` m clear down the middle: no crevasse, nothing standing within 12 m, no air.</summary>
@@ -192,14 +180,14 @@ public static class CarveShots
             cam.targetTexture = rt; cam.aspect = (float)W / H; cam.Render();
             RenderTexture.active = rt; tex.ReadPixels(new Rect(0, 0, W, H), 0, 0); tex.Apply();
             strip.SetPixels((taken % 6) * W, (1 - taken / 6) * H, W, H, tex.GetPixels());
-            Debug.Log($"CARVE-FRAME {name} {taken + 1}/{Frames} t={t:0.00}: {r.Speed * 3.6f:0} km/h, finger {r.Steer:+0.00;-0.00}, edge {r.Lean * Mathf.Rad2Deg:+0;-0} deg, board {r.Heading * Mathf.Rad2Deg:+0;-0} deg, going {r.TravelHeading * Mathf.Rad2Deg:+0;-0} deg (slip {r.Slip * Mathf.Rad2Deg:+0;-0}), {(r.Airborne ? "in the air" : r.Sliding ? "SKIDDING" : "carving")}, skid {r.Skid:0.00} carve {r.Carve:0.00}, edge pulls {r.SideEdge:+0;-0} gravity {r.SideSlope:+0.0;-0.0} m/s^2 across the path, x-centre {r.X - Slope.Centre(r.Z):+0.0;-0.0}");
+            Debug.Log($"CARVE-FRAME {name} {taken + 1}/{Frames} t={t:0.00}: {r.Speed * 3.6f:0} km/h, finger {r.Steer:+0.00;-0.00}, edge {r.Lean * Mathf.Rad2Deg:+0;-0} deg, board {r.Heading * Mathf.Rad2Deg:+0;-0} deg, going {r.TravelHeading * Mathf.Rad2Deg:+0;-0} deg (slip {r.Slip * Mathf.Rad2Deg:+0;-0}), {(r.Airborne ? "in the air" : r.Sliding ? "THROWN ACROSS" : "sliding")}, sideways {r.Side:+0.0;-0.0} m/s, fall line {r.FallLine * Mathf.Rad2Deg:+0;-0} deg, skid {r.Skid:0.00}, push {r.SideEdge:+0;-0} gravity {r.SideSlope:+0.0;-0.0} m/s^2 across the path, x-centre {r.X - Slope.Centre(r.Z):+0.0;-0.0}");
             taken++;
         }
         cam.targetTexture = null; RenderTexture.active = null; ChaseCamera.TestDt = 0f;
         strip.Apply();
         string file = $"{outDir}/Carve_{name}.png";
         System.IO.File.WriteAllBytes(file, strip.EncodeToPNG());
-        Debug.Log($"CARVE-STRIP {file}: {taken} frames{(note != null ? " (" + note + ")" : "")}; the edge let go {skids} time(s), skid {skidMost:0.00} at most{(r.Crashed ? "; CRASHED" : "")}");
+        Debug.Log($"CARVE-STRIP {file}: {taken} frames{(note != null ? " (" + note + ")" : "")}; thrown across {skids} time(s), skid {skidMost:0.00} at most{(r.Crashed ? "; CRASHED" : "")}");
         Object.DestroyImmediate(strip); Object.DestroyImmediate(tex); rt.Release(); Object.DestroyImmediate(rt);
         if (r.Crashed) { r.RequestUp = true; for (int i = 0; i < 400 && r.Crashed; i++) { r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt); if (r.CanGetUp) r.RequestUp = true; } }
     }

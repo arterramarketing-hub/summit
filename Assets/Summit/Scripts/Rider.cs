@@ -7,11 +7,11 @@ namespace Summit
     /// steps); this script supplies riding a board (or skis, or a toboggan: the same model with each
     /// ride's own numbers on it, see Ride.cs).
     ///
-    /// How it moves on the snow is one model, in RiderMove.cs, and it is a carving model: the finger sets the
-    /// board's edge angle; an edged board carves an arc, its edge turning the velocity up to the grip the
-    /// snow gives it and skidding past that; gravity pulls along the snow both down the path and across
-    /// it. The board's heading and the way it is going are two things. What it rides over and what it
-    /// runs into is in RiderRideOver.cs; the air, landings, rails and falls are here.
+    /// How it moves on the snow is one model, in RiderMove.cs (slide): gravity along the snow sets the
+    /// speed and pulls the way the board goes toward the fall line; the finger is a push sideways across
+    /// the fall line, answered at once, against the snow's resistance to the slide; let go, the board
+    /// eases back down the fall line. Nothing lets go or washes out, and nothing is aimed at. What it
+    /// rides over and what it runs into is in RiderRideOver.cs; the air, landings, rails and falls are here.
     ///
     /// Heading 0 is the board pointing straight down the mountain (+Z); positive turns right (+X).
     /// </summary>
@@ -25,9 +25,9 @@ namespace Summit
         public static float Friction = 0.035f;                       // snow friction coefficient
         public static float MaxLean = 0.72f;                         // full-thumb edge angle (rad, ~41 degrees)
         /// <summary>
-        /// The TURN setting (the pause menu's SETTINGS, saved by SteerPrefs): the edge's sensitivity, 0.5 to 2.5, 1 the
-        /// stock feel. It is how much edge the same drag (or tilt) gives: at 2 half the throw is a full edge, at 0.5 the
-        /// whole throw is half of one. Applies at once, mid-run.
+        /// The TURN setting (the pause menu's SETTINGS, saved by SteerPrefs): how hard the same drag (or tilt) pushes
+        /// the board sideways, 0.5 to 2.5, 1 the stock feel: at 2 half the throw is the whole push, at 0.5 the whole
+        /// throw is half of it. Applies at once, mid-run.
         /// </summary>
         public static float TurnScale { get; set; } = 1f;
         public static float TakeoffClearance = 0.22f;
@@ -243,7 +243,7 @@ namespace Summit
             HasCrashFollow = false; rb.detectCollisions = true; StayDown = false; HoldCrash = false;
             AirTime = 0f; Tuck = 0f; Carve = 0f; Skid = 0f; Peak = 0f; AboveGround = 0f;
             Lean = 0f; edge = 0f; edgeVel = 0f; airTurn = 0f; YawRate = 0f; FallLine = 0f; PathSlope = 0f; groundKnown = false; faceSlide = false; yawSmooth = 0f; RunNow = 0f;
-            Slip = 0f; SideEdge = 0f; SideSlope = 0f; Sliding = false; wasSliding = false;
+            Slip = 0f; Side = 0f; sideNow = 0f; easeFor = 99f; fallSeen = 0f; fallClock = 0; SideEdge = 0f; SideSlope = 0f; Sliding = false; wasSliding = false;
             ClearTrick(); SwitchOff(); grindScoring = false; LandSpin = 0f; LandFlip = 0f; GrindYaw = 0f; GrindPress = 0f; TrickX = TrickY = 0f; GrabHeld = false;
             popPending = false; airLock = 0f; lastGrind = -1;
             Flow = 0f; Shields = 0; BoostTime = 0f; invulnerable = 0f; SuperJumpTime = 0f; InvincibleTime = 0f; superAir = false;
@@ -576,7 +576,8 @@ namespace Summit
                 float h = Mathf.Sqrt(vt.x * vt.x + vt.z * vt.z);
                 if (h > 1f) Heading = Mathf.Clamp(Mathf.Atan2(vt.x, vt.z) + (Tube ? 0f : airTurn), -MaxHeading, MaxHeading);
             }
-            wasSliding = true;   // (a landing's own slide is the landing's: it is not announced as the edge letting go)
+            wasSliding = true;   // (a landing's own slide is the landing's: it is not thrown across)
+            easeFor = Mathf.Min(easeFor, 0f);   // (down across the fall line with no finger: it eases back from here, as if just let go)
             overLift = onTop ? Mathf.Max(0f, topY - Slope.DrawnHeight(p.x, p.z)) : 0f;   // (down on a rock: on its top, RiderRideOver)
             Landed?.Invoke(impact);
             // onto the snow's own line from here, and back up out of it if the board had come down into it (kept apart:

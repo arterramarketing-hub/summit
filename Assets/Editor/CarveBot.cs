@@ -2,32 +2,33 @@ using UnityEngine;
 using Summit;
 
 /// <summary>
-/// The test tools' rider, carving (carve: the finger is an edge angle, and an edge is a pull across the way the board
-/// goes; a bot that steers by how far it is off its line alone swings wider each time). This one steers by the
-/// sideways speed it wants: toward the line at `rate` per second (no faster than `most` m/s), with the line's own
-/// swing down the hill fed in; it asks its edge for the pull that closes on that speed at `quick` per second, and
-/// for the pull that holds the board against gravity across its path (an edge into the hill).
+/// The test tools' rider (slide: the finger is a push sideways across the fall line, and a held drag is a sideways
+/// speed). It steers by the sideways speed it wants: toward the line at `rate` per second (no faster than `most` m/s),
+/// with the line's own swing down the hill fed in, asked of the finger as the share of a whole drag that gives it.
 /// </summary>
 public static class CarveBot
 {
-    /// <summary>The finger that carves the board onto the line x = line(z) (looked at `ahead` m down the hill).</summary>
-    public static float Onto(Rider r, System.Func<float, float> line, float rate = 1.5f, float most = 10f, float ahead = 0f, float quick = 6f)
+    /// <summary>The finger that takes the board onto the line x = line(z) (looked at `ahead` m down the hill).</summary>
+    public static float Onto(Rider r, System.Func<float, float> line, float rate = 1.5f, float most = 10f, float ahead = 0f)
     {
         Vector3 v = r.Velocity; float z = r.Z + ahead;
         float want = line(z), swing = (line(z + 1f) - want) * v.z;
-        float side = Mathf.Clamp((want - r.X) * rate, -most, most) + swing;
-        return ForPull(r, quick * (side - v.x) - (r.Airborne ? 0f : r.SideSlope));
+        return ForSide(r, Mathf.Clamp((want - r.X) * rate, -most, most) + swing);
     }
 
-    /// <summary>The finger that asks the edge for this pull across the way the board is going (m/s^2, + right), on
-    /// corduroy at the speed it is going: the arc a carve of that pull is, as a share of the throw (Rider.ArcAt, inverted).</summary>
-    public static float ForPull(Rider r, float pull)
+    /// <summary>The finger for going sideways over the map at `side` m/s (+x): the way that is to be going, as a sideways
+    /// speed across the fall line under the board, as a share of what a whole drag gives at this speed; with the little
+    /// more it takes to hold that against gravity across the path. In the air: the drift toward it.</summary>
+    public static float ForSide(Rider r, float side)
     {
-        float sp = Mathf.Max(4f, r.Speed);
-        float knee = r.ArcAt(Rider.EdgeKnee, sp);   // (the arc at the knee of the throw: all the snow holds)
-        float k = Mathf.Min(Mathf.Abs(pull) / (sp * sp) / Mathf.Max(knee, 1e-5f), Rider.SkidOver);
-        float share = k <= 1f ? Mathf.Atan(k * Mathf.Tan(Rider.MaxLean)) / Rider.MaxLean * Rider.EdgeKnee
-                              : Rider.EdgeKnee + (k - 1f) / (Rider.SkidOver - 1f) * (1f - Rider.EdgeKnee);
-        return Mathf.Clamp(Mathf.Sign(pull) * share / Mathf.Clamp(Rider.TurnScale, 0.25f, 4f), -1f, 1f);
+        Vector3 v = r.Velocity; float flat = Mathf.Sqrt(v.x * v.x + v.z * v.z);
+        float full = Mathf.Max(0.5f, r.SideFull(r.Speed));
+        if (flat < 1f) return Mathf.Clamp(side / full, -1f, 1f);
+        // (in the air the finger only drifts the flight, AirDrift at the whole drag: ask for the drift that closes on
+        // the sideways speed wanted in about a second, no more)
+        if (r.Airborne) return Mathf.Clamp((side - v.x) / Mathf.Max(1f, Rider.AirDrift) / Mathf.Clamp(Rider.TurnScale, 0.25f, 4f), -1f, 1f);
+        float way = Mathf.Atan2(side, Mathf.Max(v.z, 1f));
+        float across = flat * Mathf.Sin(way - r.FallLine) - (r.Airborne ? 0f : r.SideSlope * Rider.PushTime);
+        return Mathf.Clamp(across / full / Mathf.Clamp(Rider.TurnScale, 0.25f, 4f), -1f, 1f);
     }
 }

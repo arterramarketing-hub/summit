@@ -215,7 +215,7 @@ public static class HubShot
         typeof(SummitGame).GetMethod("ToEnd", NP).Invoke(game, new object[] { "YOU SURVIVED", false, false });
         hud.SetWhiteout(0f);
         Shoot("HubShot18_end.png");
-        Debug.Log($"HUBSHOT done: points={Progress.Points} jacket={Progress.Jacket} fizz={Progress.Level(Progress.Up.Fizz)} grip={Rider.EdgeGrip:0.00}");
+        Debug.Log($"HUBSHOT done: points={Progress.Points} jacket={Progress.Jacket} fizz={Progress.Level(Progress.Up.Fizz)} grip={Rider.SideGrip:0.00}");
 
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;

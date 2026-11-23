@@ -7,12 +7,11 @@ using Summit;
 
 /// <summary>
 /// The nudge log: a bot rides ordinary runs with a finger that only moves in steps (a quarter of a second at a time),
-/// and every time the way the board is going is turned by something that is not the carving model's own two pulls
-/// across its path (its edge's, which is the finger's doing, and gravity's along the snow, which is the mountain's
-/// and the rider's to hold an edge against: Rider.SideEdge, Rider.SideSlope), that is a nudge: logged with what
+/// and every time the way the board is going is turned by something that is not the model's own two pulls across its path
+/// (the finger's push with the snow's resistance to the slide, and gravity's along the snow: Rider.SideEdge,
+/// Rider.SideSlope), that is a nudge: logged with what
 /// caused it. Counted apart, because they are physics the player controls: gravity's drifts (the snow's tilt pulling
-/// the way it goes round by more than MinSwing, toward the fall line) and skids (the edge letting go), each split by
-/// whether the finger asked for it. Also counted: the kinks in the board's height on the snow, airs nobody asked
+/// the way it goes round by more than MinSwing, toward the fall line) and the board thrown across by a flipped finger. Also counted: the kinks in the board's height on the snow, airs nobody asked
 /// for, and jolts of the chase camera.
 ///  - NUDGE-RUN: one line per run. NUDGE-TABLE: nudges by cause, per minute. NUDGE-RESULT: the totals.
 ///  - "open piste" is the cruising piste, within the groomed width, away from the park and the danger stretch.
@@ -110,15 +109,14 @@ public static class NudgeTest
     static float Quant(float s) => Mathf.Round(Mathf.Clamp(s, -1f, 1f) * 8f) / 8f;
     static readonly bool logDrift = System.Environment.GetEnvironmentVariable("NUDGE_DRIFTS") != "0";
 
-    /// <summary>The bots' finger, carving: an edge for the sideways speed that closes on the line `target` (m, the
-    /// run's own swing taken out), in eighths of the throw. Nothing within a board's length of the line.</summary>
-    static float Carve(Rider rr, float target, float z)
+    /// <summary>The bots' finger: for the line x = line(z), by the sideways speed that closes on it with the line's own
+    /// swing fed in (CarveBot.Onto), in eighths of the throw. Nothing within a board's length of the line.</summary>
+    static float Carve(Rider rr, System.Func<float, float> line)
     {
-        float err = target - rr.X;
-        Vector3 v = rr.Velocity;
-        float side = v.x - (Slope.Centre(z + 1f) - Slope.Centre(z)) * v.z;   // (sideways speed off the run's own line)
-        if (Mathf.Abs(err) < 1.2f && Mathf.Abs(side) < 1.5f) return 0f;
-        return Mathf.Clamp((Mathf.Clamp(err * 0.5f, -9f, 9f) - side) / 12f, -0.7f, 0.7f);
+        float z = rr.Z, err = line(z) - rr.X;
+        float swing = (line(z + 1f) - line(z)) * rr.Velocity.z;
+        if (Mathf.Abs(err) < 1.2f && Mathf.Abs(rr.Velocity.x - swing) < 1.5f) return 0f;
+        return Mathf.Clamp(CarveBot.Onto(rr, line, 1.2f, 8f), -0.75f, 0.75f);
     }
 
     /// <summary>
@@ -226,16 +224,16 @@ public static class NudgeTest
                 if (Mathf.Abs(steer) > 0.01f) drFlat = false;
             }
             else if (inDrift && (t - drLast > 0.08f || !live)) CloseDrift();
-            // skids: the edge let go (counted apart; "asked" is the finger past the knee of the throw)
+            // thrown across: the finger flipped hard (counted apart: the spray's burst, nothing lost)
             if (r.Sliding && live) T.skidSecs += Dt;
             if (skidNow)
             {
                 skidNow = false;
                 if (live)
                 {
-                    bool asked = Mathf.Abs(steer) * Rider.TurnScale > Rider.EdgeKnee - 0.01f;
+                    bool asked = true;   // (slide: a throw is only ever the finger's)
                     T.skids++; if (open) T.skidsOpen++; if (asked) T.skidsAsked++; if (r.Underfoot.ice > 0.3f) T.skidsIce++;
-                    if (log && logDrift) Debug.Log($"NUDGE-SKID {name} t={t:0.00} z={p.z:0}: the edge let go at {r.Speed * 3.6f:0} km/h, finger at {steer:+0.00;-0.00} ({(asked ? "past the knee: asked for" : "under the knee")}), ice {r.Underfoot.ice:0.0} powder {r.Underfoot.powder:0.0}, slope n.y {Slope.Normal(p.x, p.z).y:0.00}{(open ? " [open piste]" : "")}");
+                    if (log && logDrift) Debug.Log($"NUDGE-SKID {name} t={t:0.00} z={p.z:0}: thrown across at {r.Speed * 3.6f:0} km/h, finger at {steer:+0.00;-0.00}, ice {r.Underfoot.ice:0.0} powder {r.Underfoot.powder:0.0}, slope n.y {Slope.Normal(p.x, p.z).y:0.00}{(open ? " [open piste]" : "")}");
                 }
             }
             if (finger == null && !r.Crashed) drift = Mathf.Max(drift, Mathf.Abs(p.x - x0));
@@ -270,7 +268,7 @@ public static class NudgeTest
                 frame?.Invoke(camN);
             }
             if (traceName != null && name.StartsWith(traceName) && t >= traceA && t <= traceB)
-                Debug.Log($"NUDGE-TRACE t={t:0.000} p=({p.x:0.00},{p.y:0.00},{p.z:0.00}) v=({v.x:0.00},{v.y:0.00},{v.z:0.00}) speed={r.Speed:0.0} head={r.Heading:0.000} air={r.Airborne} above={r.AboveGround:0.00} steer={r.Steer:0.00} grind={r.Grinding} solid={Course.Solid(p.x, p.z, r.Speed)} drawn={Slope.DrawnHeight(p.x, p.z):0.00} why={Why(p)}");
+                Debug.Log($"NUDGE-TRACE t={t:0.000} p=({p.x:0.00},{p.y:0.00},{p.z:0.00}) v=({v.x:0.00},{v.y:0.00},{v.z:0.00}) speed={r.Speed:0.0} head={r.Heading:0.000} air={r.Airborne} above={r.AboveGround:0.00} steer={r.Steer:0.00} grind={r.Grinding} solid={Course.Solid(p.x, p.z, r.Speed)} drawn={Slope.DrawnHeight(p.x, p.z):0.00} x-c={p.x - Slope.Centre(p.z):0.0} fall={r.FallLine * Mathf.Rad2Deg:0} side={r.Side:0.0} sec={Course.At(p.z)} why={Why(p)}");
             vPrev = v; airPrev = r.Airborne; crashedPrev = r.Crashed;
             if (float.IsNaN(p.x)) { Debug.Log($"NUDGE-FAIL {name}: NaN"); break; }
         }
@@ -287,7 +285,7 @@ public static class NudgeTest
         var keys = new List<string>(T.by.Keys); keys.Sort((a, b) => T.by[b].n.CompareTo(T.by[a].n));
         foreach (var k in keys) { var a = T.by[k]; sb.Append($"  {k,-40} {a.n,4}  {a.n / min,6:0.0}/min  open {a.open,4}  mean {a.sum / a.n:0.00}  most {a.max:0.00}\n"); }
         sb.Append($"NUDGE-RESULT {title}: {T.Count(false) / min:0.0} nudges/min over the whole run ({T.Count(false)}), {T.Count(true) / openMin:0.0}/min on open piste ({T.Count(true)}); " +
-                  $"apart from those, physics the player controls: gravity's drifts {T.drifts / min:0.0}/min ({T.drifts}; {T.driftsOpen} on open piste, {T.driftsFlat} with the board flat; {(T.drifts > 0 ? T.driftSum / T.drifts : 0f):0.00} m/s each on average, {T.driftMax:0.00} at most), skids {T.skids / min:0.0}/min ({T.skids}; {T.skidsAsked} with the finger past the knee, {T.skids - T.skidsAsked} under it of which {T.skidsIce} on ice; {T.skidsOpen} on open piste; {T.skidSecs:0.0} s sliding in all); " +
+                  $"apart from those, physics the player controls: gravity's drifts {T.drifts / min:0.0}/min ({T.drifts}; {T.driftsOpen} on open piste, {T.driftsFlat} with the board flat; {(T.drifts > 0 ? T.driftSum / T.drifts : 0f):0.00} m/s each on average, {T.driftMax:0.00} at most), the board thrown across by a flipped finger {T.skids / min:0.0}/min ({T.skids}; {T.skidsOpen} on open piste; {T.skidSecs:0.0} s of it in all); " +
                   $"height kinks {T.kinks / Mathf.Max(1e-3f, T.groundSecs / 60f):0}/min (rms {Mathf.Sqrt((float)(T.vAcc2 / Mathf.Max(1, T.vAccN))):0} m/s^2 up and down on the snow); " +
                   $"airs not asked for {T.airs / min:0.0}/min, of them under 0.55 s {T.shortAirs / min:0.0}/min and hops under 0.35 s {T.micro / min:0.0}/min, {T.airLen / Mathf.Max(1, T.airs):0.00} s each on average; in the air {100f * T.airSecs / Mathf.Max(1e-3f, T.secs):0}% of the time; " +
                   $"camera jolts {T.camJolts / min:0.0}/min ({T.camJoltsOpen / openMin:0.0}/min on open piste); crashes {T.crashes}; speed over the ground {T.speedSum / Mathf.Max(1e-3f, T.secs) * 3.6f:0} km/h on average, {T.speedMax * 3.6f:0} at most");
@@ -297,8 +295,8 @@ public static class NudgeTest
     static System.Func<Rider, float> Bot(int seed) => rr =>
     {
         // down the piste, weaving a third of its width: aims at a line, carving for it, the finger in eighths
-        float z = rr.Z, target = Slope.Centre(z + 25f) + 7f * Mathf.Sin(z / 45f + seed);
-        return Carve(rr, target, z);
+        // (no wider than a ridge's crest is: a bot that holds its line exactly would weave off the crest's edge)
+        return Carve(rr, z => Slope.Centre(z) + Mathf.Min(7f, Ridge.HalfWidth(z) - 1.5f) * Mathf.Sin(z / 45f + seed));
     };
 
     public static void Run()
@@ -357,8 +355,7 @@ public static class NudgeTest
                 foreach (float side in new[] { -1f, 1f })
                     Ride($"edge seed{seed} {(side < 0f ? "left" : "right")}", Slope.Centre(z0) + side * Slope.Half(z0), z0, 10f, 30f, rr =>
                     {
-                        float z = rr.Z, target = Slope.Centre(z + 25f) + side * (Slope.Half(z + 25f) + 3f + 8f * Mathf.Sin(z / 30f));
-                        return Carve(rr, target, z);
+                        return Carve(rr, z => Slope.Centre(z) + side * (Slope.Half(z) + 3f + 8f * Mathf.Sin(z / 30f)));
                     }, edge, true);
             }
             Print("piste edge", edge);

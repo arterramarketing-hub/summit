@@ -241,7 +241,7 @@ namespace Summit
 
         // ---------------------------------------------------------------- what the upgrades do (the hooks)
 
-        /// <summary>Multiplier on the edge's grip (Rider.EdgeGrip: the sideways pull it holds before it skids).</summary>
+        /// <summary>Multiplier on the edge's grip (Rider.SideGrip: how much quicker the board answers the finger's push).</summary>
         public static float GripScale => 1f + 0.035f * Level(Up.Grip);   // ten levels, up to +35%
         /// <summary>Falls allowed in a run, given the base rule.</summary>
         public static int Falls(int baseFalls) => baseFalls + Level(Up.Helmet);
@@ -254,8 +254,8 @@ namespace Summit
         /// <summary>Set the rider's tuning from the upgrades (called as a run starts).</summary>
         public static void ApplyRider()
         {
-            if (grip0 < 0f) grip0 = Rider.EdgeGrip;   // the stock value, once
-            Rider.EdgeGrip = grip0 * GripScale;
+            if (grip0 < 0f) grip0 = Rider.SideGrip;   // the stock value, once
+            Rider.SideGrip = grip0 * GripScale;
         }
 
         // ---------------------------------------------------------------- what a run earns
