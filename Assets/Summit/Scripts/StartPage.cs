@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using static Summit.SettingsSheet;
 
 namespace Summit
 {
@@ -16,8 +17,8 @@ namespace Summit
     /// and the horizon rolls a little; a rotor and the wind sit quietly under the music.
     ///
     /// The page's parts come up after the view has had a moment alone. Choosing a way in pushes the lens in on the
-    /// summit and into cloud, and the game changes scene behind the white. The settings are rows handed over by
-    /// SummitGame (AddRow): the very setters the pause menu uses, so one change shows in both.
+    /// summit and into cloud, and the game changes scene behind the white. The settings are a SettingsSheet that
+    /// SummitGame fills with the same rows as the pause menu's (FillSettings): the very setters, so one change shows in both.
     /// Hit-tested by hand like the rest of the game's menus (no EventSystem).
     /// </summary>
     public class StartPage : MonoBehaviour
@@ -34,7 +35,6 @@ namespace Summit
         // ---- the page
         const float ViewAlone = 2.6f, FadeIn = 1.5f;   // seconds the view has to itself, then how long the parts take to come up
         const float LeaveSeconds = 1.5f, CoverOut = 0.9f;
-        const float SheetHeight = 900f, RowHeight = 104f;
 
         public bool Showing { get; private set; }
         public System.Action Clicked;
@@ -218,7 +218,8 @@ namespace Summit
             // the aim floats, as a hand-held long lens does
             Vector3 aim = new Vector3(mid.x, floor + AimHeight, mid.z) + side * (150f * Mathf.Sin(t * 0.09f + 0.4f)) + Vector3.up * (90f * Mathf.Sin(t * 0.061f));
             float roll = 1.5f * Mathf.Sin(t * 0.13f + 0.5f) + 0.7f * Mathf.Sin(t * 0.41f) + 0.1f * Mathf.Sin(t * 2.3f);
-            float pitch = 8.2f * sheet;   // the settings open: the mountain moves up the frame, clear of them
+            // the settings open: the mountain moves up the frame, clear of them (further for a taller sheet)
+            float pitch = 8.2f * sheet * (Settings != null ? Settings.Height / 900f : 1f);
             if (leaving != 0)
             {
                 // going in: the lens pushes in on the summit
@@ -407,13 +408,12 @@ namespace Summit
         // ---------------------------------------------------------------- the page
 
         Canvas canvas;
-        Font face;
-        RectTransform safe, page, sheetRoot, sheetSafe, titleRect, campBtn, runBtn, gearBtn, closeBtn;
+        RectTransform safe, page, sheetRoot, titleRect, campBtn, runBtn, gearBtn;
         CanvasGroup titleGroup, choiceGroup, sheetGroup;
         Image cover, topShade, bottomShade;
         Text campText, runText;
         Rect lastSafe;
-        Sprite fadeUp, chevron, sliders;
+        Sprite sliders;
         RectTransform pressed; float pressT;
 
         // ---------------------------------------------------------------- the title
@@ -489,95 +489,12 @@ namespace Summit
             titleMat.SetVector("_LightDir", ld.normalized);
         }
 
-        class Row
-        {
-            public int tab; public string label; public System.Func<string> value; public System.Action<int> step;
-            public bool toggle; public System.Func<bool> live;
-            public RectTransform rect, block; public Text name, val; public Image left, right;
-        }
-        readonly List<Row> rows = new List<Row>();
-        readonly List<string> tabNames = new List<string>();
-        readonly List<RectTransform> tabBtn = new List<RectTransform>();
-        readonly List<Text> tabText = new List<Text>();
-        Image tabMark;
-        int tab;
-
-        /// <summary>A page of settings.</summary>
-        public int AddTab(string name) { tabNames.Add(name); return tabNames.Count - 1; }
-
-        /// <summary>
-        /// One setting: its name, what it reads now, and what a step does (-1 or +1; a `toggle` is only ever
-        /// stepped +1). `live` false greys it out (it can't be changed just now).
-        /// </summary>
-        public void AddRow(int inTab, string label, System.Func<string> value, System.Action<int> step, bool toggle = false, System.Func<bool> live = null)
-        {
-            rows.Add(new Row { tab = inTab, label = label, value = value, step = step, toggle = toggle, live = live });
-        }
-
-        static readonly Color Ink = new Color(1f, 1f, 1f, 0.96f), Quiet = new Color(1f, 1f, 1f, 0.55f), Hair = new Color(1f, 1f, 1f, 0.14f);
-
-        /// <summary>Letters set apart (uGUI's Text has no tracking: a small space goes between each pair).</summary>
-        static string Track(string s, int gap)
-        {
-            var sb = new System.Text.StringBuilder();
-            for (int i = 0; i < s.Length; i++)
-            {
-                if (s[i] == ' ') { sb.Append("<size=").Append(gap).Append(">   </size>"); continue; }   // (small spaces, several: a big one would push the line down)
-                sb.Append(s[i]);
-                if (i < s.Length - 1 && s[i + 1] != ' ') sb.Append("<size=").Append(gap).Append("> </size>");
-            }
-            return sb.ToString();
-        }
-
-        static Font LoadFace()
-        {
-            Font f = null;
-            // a lighter, wider face than the menus' where the system has one (the phone and the Mac both do)
-            try { f = Font.CreateDynamicFontFromOSFont(new[] { "Avenir Next", "Avenir", "Helvetica Neue", "Arial" }, 64); } catch { }
-            if (f == null) try { f = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"); } catch { }
-            if (f == null) try { f = Resources.GetBuiltinResource<Font>("Arial.ttf"); } catch { }
-            return f;
-        }
-
-        static RectTransform New(string name, Transform parent)
-        {
-            var r = new GameObject(name, typeof(RectTransform)).GetComponent<RectTransform>();
-            r.SetParent(parent, false);
-            return r;
-        }
-
-        static void Place(RectTransform r, Vector2 anchor, Vector2 pos, Vector2 size, Vector2 pivot)
-        {
-            r.anchorMin = r.anchorMax = anchor; r.pivot = pivot; r.anchoredPosition = pos; r.sizeDelta = size;
-        }
-
-        static void Stretch(RectTransform r) { r.anchorMin = Vector2.zero; r.anchorMax = Vector2.one; r.offsetMin = r.offsetMax = Vector2.zero; }
-
-        static Image Img(string name, Transform parent, Color c, Sprite s = null)
-        {
-            var i = New(name, parent).gameObject.AddComponent<Image>();
-            i.color = c; i.raycastTarget = false; i.sprite = s;
-            return i;
-        }
-
-        Text Label(string name, Transform parent, Vector2 anchor, Vector2 pos, Vector2 size, int fontSize, TextAnchor align, Color c)
-        {
-            var t = New(name, parent).gameObject.AddComponent<Text>();
-            t.font = face; t.fontSize = fontSize; t.fontStyle = FontStyle.Normal; t.alignment = align; t.color = c;
-            t.horizontalOverflow = HorizontalWrapMode.Overflow; t.verticalOverflow = VerticalWrapMode.Overflow;
-            t.raycastTarget = false; t.supportRichText = true;
-            float px = align == TextAnchor.MiddleLeft ? 0f : align == TextAnchor.MiddleRight ? 1f : 0.5f;
-            Place(t.rectTransform, anchor, pos, size, new Vector2(px, 0.5f));
-            // a soft dark edge so it reads on snow and on night alike, without a plate behind it
-            var sh = t.gameObject.AddComponent<Shadow>();
-            sh.effectColor = new Color(0.02f, 0.04f, 0.09f, 0.45f); sh.effectDistance = new Vector2(0f, -2f);
-            return t;
-        }
+        /// <summary>The settings, filled by SummitGame (FillSettings) with the same rows as the pause menu's.</summary>
+        public SettingsSheet Settings { get; private set; }
 
         void BuildUi()
         {
-            face = LoadFace();
-            fadeUp = Gradient(false); chevron = Chevron(64); sliders = Sliders(96);
+            sliders = Sliders(96);
             var cg = new GameObject("StartCanvas", typeof(RectTransform));
             cg.transform.SetParent(transform, false);
             canvas = cg.AddComponent<Canvas>();
@@ -590,10 +507,10 @@ namespace Summit
 
             page = New("Page", cg.transform); Stretch(page);
             // the frame's top and bottom a little darker, so small type reads over cloud and snow (edge to edge, past the safe area)
-            topShade = Img("TopShade", page, new Color(0.02f, 0.04f, 0.09f, 0.34f), Gradient(true));
+            topShade = Img("TopShade", page, new Color(0.02f, 0.04f, 0.09f, 0.34f), FadeDown);
             topShade.rectTransform.anchorMin = new Vector2(0f, 1f); topShade.rectTransform.anchorMax = Vector2.one;
             topShade.rectTransform.pivot = new Vector2(0.5f, 1f); topShade.rectTransform.sizeDelta = new Vector2(0f, 760f);
-            bottomShade = Img("BottomShade", page, new Color(0.02f, 0.04f, 0.09f, 0.5f), fadeUp);
+            bottomShade = Img("BottomShade", page, new Color(0.02f, 0.04f, 0.09f, 0.5f), FadeUp);
             bottomShade.rectTransform.anchorMin = Vector2.zero; bottomShade.rectTransform.anchorMax = new Vector2(1f, 0f);
             bottomShade.rectTransform.pivot = new Vector2(0.5f, 0f); bottomShade.rectTransform.sizeDelta = new Vector2(0f, 820f);
 
@@ -634,16 +551,10 @@ namespace Summit
             Place(gi.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(62f, 62f), new Vector2(0.5f, 0.5f));
 
             // the settings: a sheet over the lower part of the view, the mountain still in sight above it
-            sheetRoot = New("Sheet", cg.transform);
-            sheetRoot.anchorMin = Vector2.zero; sheetRoot.anchorMax = new Vector2(1f, 0f); sheetRoot.pivot = new Vector2(0.5f, 0f);
+            Settings = new SettingsSheet((RectTransform)cg.transform, true);
+            Settings.Clicked = () => Clicked?.Invoke();
+            sheetRoot = Settings.Root;
             sheetGroup = sheetRoot.gameObject.AddComponent<CanvasGroup>();
-            var body = Img("Body", sheetRoot, new Color(0.025f, 0.04f, 0.075f, 0.9f));
-            Stretch(body.rectTransform);
-            var lip = Img("Lip", sheetRoot, new Color(0.025f, 0.04f, 0.075f, 0.9f), fadeUp);
-            lip.rectTransform.anchorMin = new Vector2(0f, 1f); lip.rectTransform.anchorMax = Vector2.one; lip.rectTransform.pivot = new Vector2(0.5f, 0f);
-            lip.rectTransform.sizeDelta = new Vector2(0f, 150f); lip.rectTransform.anchoredPosition = Vector2.zero;
-            sheetSafe = New("SheetSafe", sheetRoot);
-            sheetSafe.gameObject.SetActive(true);
             sheetRoot.gameObject.SetActive(false);
 
             // cloud over everything: what the game changes scene behind (it outlives the page)
@@ -651,71 +562,6 @@ namespace Summit
             Stretch(cover.rectTransform);
             cover.gameObject.SetActive(false);
             page.gameObject.SetActive(false);
-        }
-
-        bool sheetBuilt;
-
-        /// <summary>Lay the settings out (once every row has been added).</summary>
-        void BuildSheet()
-        {
-            if (sheetBuilt) return;
-            sheetBuilt = true;
-            closeBtn = New("Close", sheetSafe);
-            Place(closeBtn, new Vector2(0.5f, 1f), new Vector2(0f, -8f), new Vector2(260f, 96f), new Vector2(0.5f, 0.5f));
-            var ch = Img("Chevron", closeBtn, new Color(1f, 1f, 1f, 0.6f), chevron);
-            Place(ch.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(44f, 44f), new Vector2(0.5f, 0.5f));
-            ch.rectTransform.localRotation = Quaternion.Euler(0f, 0f, -90f);   // the chevron points right as drawn: down, to put the sheet away
-            float tabW = 940f / Mathf.Max(1, tabNames.Count);
-            for (int k = 0; k < tabNames.Count; k++)
-            {
-                var b = New(tabNames[k] + "Tab", sheetSafe);
-                Place(b, new Vector2(0.5f, 1f), new Vector2(-470f + tabW * (k + 0.5f), -112f), new Vector2(tabW, 110f), new Vector2(0.5f, 0.5f));
-                var t = Label("Text", b, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(tabW, 70f), 30, TextAnchor.MiddleCenter, Quiet);
-                t.text = Track(tabNames[k], 24);
-                tabBtn.Add(b); tabText.Add(t);
-            }
-            var line = Img("TabLine", sheetSafe, Hair);
-            Place(line.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -166f), new Vector2(940f, 2f), new Vector2(0.5f, 0.5f));
-            tabMark = Img("TabMark", sheetSafe, Ink);
-            Place(tabMark.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -166f), new Vector2(72f, 3f), new Vector2(0.5f, 0.5f));
-            var count = new int[tabNames.Count];
-            foreach (var r in rows)
-            {
-                int i = count[r.tab]++;
-                r.rect = New(r.label, sheetSafe);
-                Place(r.rect, new Vector2(0.5f, 1f), new Vector2(0f, -232f - i * RowHeight), new Vector2(940f, RowHeight), new Vector2(0.5f, 0.5f));
-                r.name = Label("Name", r.rect, new Vector2(0f, 0.5f), new Vector2(26f, 0f), new Vector2(460f, 60f), 27, TextAnchor.MiddleLeft, Quiet);
-                r.name.text = Track(r.label, 20);
-                r.block = New("Value", r.rect);
-                Place(r.block, new Vector2(1f, 0.5f), new Vector2(-8f, 0f), new Vector2(470f, RowHeight), new Vector2(1f, 0.5f));
-                r.val = Label("Text", r.block, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(360f, 60f), 31, TextAnchor.MiddleCenter, Ink);
-                if (!r.toggle)
-                {
-                    r.left = Img("Less", r.block, Quiet, chevron);
-                    Place(r.left.rectTransform, new Vector2(0f, 0.5f), new Vector2(30f, 0f), new Vector2(30f, 30f), new Vector2(0.5f, 0.5f));
-                    r.left.rectTransform.localScale = new Vector3(-1f, 1f, 1f);
-                    r.right = Img("More", r.block, Quiet, chevron);
-                    Place(r.right.rectTransform, new Vector2(1f, 0.5f), new Vector2(-30f, 0f), new Vector2(30f, 30f), new Vector2(0.5f, 0.5f));
-                }
-                if (i > 0)
-                {
-                    var hl = Img("Hair", r.rect, new Color(1f, 1f, 1f, 0.07f));
-                    Place(hl.rectTransform, new Vector2(0.5f, 1f), Vector2.zero, new Vector2(940f, 2f), new Vector2(0.5f, 0.5f));
-                }
-            }
-            LayoutSheet();
-        }
-
-        void LayoutSheet()
-        {
-            Rect a = Screen.safeArea;
-            float bottom = Screen.height > 0 ? a.yMin / Screen.height * ((RectTransform)canvas.transform).rect.height : 0f;
-            sheetRoot.sizeDelta = new Vector2(0f, SheetHeight + bottom);
-            sheetSafe.anchorMin = Vector2.zero; sheetSafe.anchorMax = Vector2.one;
-            sheetSafe.offsetMin = new Vector2(0f, bottom); sheetSafe.offsetMax = Vector2.zero;
-            // laid out 940 wide: on a narrower canvas the whole sheet's contents shrink to fit
-            float room = ((RectTransform)canvas.transform).rect.width - 36f;
-            sheetSafe.localScale = Vector3.one * (room > 1f && room < 940f ? room / 940f : 1f);
         }
 
         void ApplySafeArea()
@@ -726,31 +572,12 @@ namespace Summit
             safe.anchorMin = new Vector2(a.xMin / Screen.width, a.yMin / Screen.height);
             safe.anchorMax = new Vector2(a.xMax / Screen.width, a.yMax / Screen.height);
             safe.offsetMin = safe.offsetMax = Vector2.zero;
-            if (sheetBuilt) LayoutSheet();
+            if (Settings != null && Settings.IsBuilt) Settings.Layout();
         }
 
-        void ShowTab(int k)
-        {
-            BuildSheet();
-            tab = Mathf.Clamp(k, 0, Mathf.Max(0, tabNames.Count - 1));
-            foreach (var r in rows) r.rect.gameObject.SetActive(r.tab == tab);
-            for (int i = 0; i < tabText.Count; i++) tabText[i].color = i == tab ? Ink : Quiet;
-            if (tabBtn.Count > 0) tabMark.rectTransform.anchoredPosition = new Vector2(tabBtn[tab].anchoredPosition.x, -166f);
-        }
-
-        /// <summary>Read every setting again (after a step: one can grey another out).</summary>
-        public void Refresh()
-        {
-            BuildSheet();
-            foreach (var r in rows)
-            {
-                bool on = r.live == null || r.live();
-                r.val.text = Track(r.value != null ? r.value() : "", 12);
-                r.val.color = on ? Ink : new Color(1f, 1f, 1f, 0.3f);
-                r.name.color = on ? Quiet : new Color(1f, 1f, 1f, 0.28f);
-                if (r.left != null) r.left.color = r.right.color = on ? Quiet : new Color(1f, 1f, 1f, 0.16f);
-            }
-        }
+        void ShowTab(int k) => Settings.ShowTab(k);
+        /// <summary>Read every setting again.</summary>
+        public void Refresh() => Settings.Refresh();
 
         Camera UiCam => canvas.renderMode == RenderMode.ScreenSpaceCamera ? canvas.worldCamera : null;
         bool Inside(RectTransform r, Vector2 p) => r != null && r.gameObject.activeInHierarchy && RectTransformUtility.RectangleContainsScreenPoint(r, p, UiCam);
@@ -781,37 +608,16 @@ namespace Summit
             {
                 if (sheetOpen)
                 {
-                    if (Inside(closeBtn, at) || !Inside(sheetRoot, at)) { sheetOpen = false; Clicked?.Invoke(); }
-                    else TapSheet(at);
+                    if (Settings.OnClose(at) || !Settings.Contains(at)) { sheetOpen = false; Clicked?.Invoke(); }
+                    else Settings.Tap(at);
                 }
                 else if (age < ViewAlone + FadeIn * 0.6f) age = ViewAlone + FadeIn * 0.6f;   // a tap while the view is alone: the page comes up now
                 else if (Inside(campBtn, at)) { Press(campBtn); leaving = 1; }
                 else if (Inside(runBtn, at)) { Press(runBtn); leaving = 2; }
-                else if (Inside(gearBtn, at)) { Press(gearBtn); sheetOpen = true; sheetRoot.gameObject.SetActive(true); LayoutSheet(); Refresh(); }
+                else if (Inside(gearBtn, at)) { Press(gearBtn); sheetOpen = true; sheetRoot.gameObject.SetActive(true); Settings.Layout(); Refresh(); }
             }
             SetAlphas();
             return 0;
-        }
-
-        void TapSheet(Vector2 at)
-        {
-            for (int k = 0; k < tabBtn.Count; k++)
-                if (Inside(tabBtn[k], at)) { ShowTab(k); Clicked?.Invoke(); return; }
-            foreach (var r in rows)
-            {
-                if (r.tab != tab || !Inside(r.rect, at)) continue;
-                if (r.live != null && !r.live()) return;
-                int dir = 1;
-                if (!r.toggle && Inside(r.block, at))
-                {
-                    RectTransformUtility.ScreenPointToLocalPointInRectangle(r.block, at, UiCam, out Vector2 lp);
-                    dir = lp.x < r.block.rect.center.x ? -1 : 1;
-                }
-                r.step?.Invoke(dir);
-                Press(r.rect);
-                Refresh();
-                return;
-            }
         }
 
         void SetAlphas()
@@ -829,6 +635,7 @@ namespace Summit
             if (sheetRoot.gameObject.activeSelf != on) sheetRoot.gameObject.SetActive(on);
             if (on) { float e = Ease(sheet); sheetGroup.alpha = e; sheetRoot.anchoredPosition = new Vector2(0f, -70f * (1f - e)); }
             // a touch answers: the thing touched dips and comes back
+            Settings.Step(Time.unscaledDeltaTime);
             if (pressT > 0f && pressed != null)
             {
                 pressT -= Time.unscaledDeltaTime;
@@ -899,12 +706,12 @@ namespace Summit
             coverWant = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.5f, 1f, leaveT)); coverRate = 0f;
             SetAlphas(); StepCover(0f);
         }
-        public int TabCount => tabNames.Count;
+        public int TabCount => Settings.TabCount;
         /// <summary>The settings as they read now, and stepping one, for the test tools.</summary>
-        public int RowCount => rows.Count;
-        public string RowText(int i) => tabNames[rows[i].tab] + " / " + rows[i].label + " = " + (rows[i].value != null ? rows[i].value() : "") + (rows[i].toggle ? " (toggle)" : "") + (rows[i].live != null && !rows[i].live() ? " (greyed)" : "");
-        public void RowStep(int i, int dir) { rows[i].step?.Invoke(dir); Refresh(); }
-        public bool RowToggle(int i) => rows[i].toggle;
+        public int RowCount => Settings.RowCount;
+        public string RowText(int i) => Settings.RowText(i);
+        public void RowStep(int i, int dir) => Settings.RowStep(i, dir);
+        public bool RowToggle(int i) => Settings.RowToggle(i);
         /// <summary>The middle of one of the page's controls on the screen: "camp", "run" or "settings".</summary>
         public Vector2 ScreenPoint(string control)
         {
@@ -915,39 +722,6 @@ namespace Summit
         public FarMountain Far => far;
 
         // ---------------------------------------------------------------- the few pictures the page is drawn with
-
-        /// <summary>Clear at the top and solid at the bottom, or (`down`) the other way up.</summary>
-        static Sprite Gradient(bool down)
-        {
-            const int N = 64;
-            var t = new Texture2D(1, N, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
-            for (int y = 0; y < N; y++) { float k = down ? y / (float)(N - 1) : 1f - y / (float)(N - 1); t.SetPixel(0, y, new Color(1f, 1f, 1f, k * k * (3f - 2f * k))); }
-            t.Apply();
-            // (the whole rectangle: a tight sprite would trim its clear end, and the fade would stop at a line)
-            return Sprite.Create(t, new Rect(0, 0, 1, N), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect);
-        }
-
-        static float Seg(Vector2 p, Vector2 a, Vector2 b)
-        {
-            Vector2 ab = b - a; float h = Mathf.Clamp01(Vector2.Dot(p - a, ab) / ab.sqrMagnitude);
-            return (p - a - ab * h).magnitude;
-        }
-
-        static Sprite Draw(int px, System.Func<Vector2, float> dist, float half)
-        {
-            var t = new Texture2D(px, px, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
-            for (int y = 0; y < px; y++)
-                for (int x = 0; x < px; x++)
-                {
-                    var p = new Vector2((x + 0.5f) / px, (y + 0.5f) / px);
-                    t.SetPixel(x, y, new Color(1f, 1f, 1f, Mathf.Clamp01((half - dist(p)) * px + 0.5f)));
-                }
-            t.Apply();
-            return Sprite.Create(t, new Rect(0, 0, px, px), new Vector2(0.5f, 0.5f), 100f);
-        }
-
-        /// <summary>A thin chevron pointing right.</summary>
-        static Sprite Chevron(int px) => Draw(px, p => Mathf.Min(Seg(p, new Vector2(0.36f, 0.82f), new Vector2(0.68f, 0.5f)), Seg(p, new Vector2(0.68f, 0.5f), new Vector2(0.36f, 0.18f))), 0.045f);
 
         /// <summary>Three sliders: the one control for the settings.</summary>
         static Sprite Sliders(int px) => Draw(px, p =>

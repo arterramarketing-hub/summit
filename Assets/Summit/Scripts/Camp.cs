@@ -24,6 +24,12 @@ namespace Summit
         // the chalet's steps are some 35 m from DROP IN (it was 30 m further back, on ground the start no longer
         // uses now a run starts at the gate, and the walk down took over 20 seconds)
         public const float BackZ = -96f, HalfWidth = 23f;   // (the camp's extent, for keeping trees off it: you can walk anywhere)
+        // (camplayout) the lookout's deck at the cliff's edge, its front out past the rail over the lip, facing out (+x);
+        // the snowman beside the shovelled path to it, not on it, looking over the plaza toward the gate
+        public const float LookoutX = 24.2f, LookoutZ = -66.5f, LookoutHalfW = 3f;
+        public const float SnowmanX = 13.9f, SnowmanZ = -63.6f, SnowmanYaw = 300f;
+        /// <summary>On the lookout's deck's boards, or its open back's step (dx from the run's line at the lip): for the camp's people's grid.</summary>
+        public static bool OnLookoutDeck(float dx, float z) => dx > LookoutX - 2.6f && dx < LookoutX + 1.9f && Mathf.Abs(z - LookoutZ) < LookoutHalfW - 0.3f;
         static float Cx => Slope.Centre(Slope.PadLip);
         /// <summary>True inside the camp and its framing trees (the forest leaves this ground alone).</summary>
         public static bool InCamp(float x, float z) => z < -38f && z > BackZ - 16f && Mathf.Abs(x - Cx) < HalfWidth + 10f
@@ -72,6 +78,9 @@ namespace Summit
             wire = M(new Color(0.08f, 0.08f, 0.09f), 0.3f);
             ember = M(new Color(1f, 0.4f, 0.1f), 0.3f, null, default, new Color(2.2f, 0.6f, 0.1f));
             rope = M(new Color(0.75f, 0.68f, 0.52f), 0.1f);
+            corralGear = new Material[4];
+            var gearCols = new[] { new Color(0.86f, 0.25f, 0.18f), new Color(0.15f, 0.42f, 0.78f), new Color(0.95f, 0.78f, 0.2f), new Color(0.12f, 0.12f, 0.13f) };
+            for (int i = 0; i < gearCols.Length; i++) corralGear[i] = M(gearCols[i], 0.55f);
             carrot = M(new Color(0.98f, 0.45f, 0.08f), 0.3f);
             coal = M(new Color(0.05f, 0.05f, 0.06f), 0.5f);
             scarf = M(new Color(0.85f, 0.12f, 0.12f), 0.15f);
@@ -153,10 +162,11 @@ namespace Summit
             if (UseLodge) Lodge(Frame(LodgeDx, LodgeZ, LodgeYaw));   // (CampLodge.cs)
             else Chalet(Frame(-9f, -88.5f, 12f));
             StartBanner();
-            Lookout(Frame(16f, -54f, 0f));
+            StartCorral();    // the strap-in corral before the gate: a rack, the trail map and today's missions
+            Lookout(Frame(LookoutX, LookoutZ, 90f));   // out at the cliff's edge, facing out over the drop (camplayout)
             Benches();
             firePit = FirePit(Frame(0f, -71f, 0f)).gameObject;
-            snowman = Snowman(Frame(11.5f, -61f, 180f)).gameObject;
+            snowman = Snowman(Frame(SnowmanX, SnowmanZ, SnowmanYaw)).gameObject;
             Campfire();       // Alyssa and the stumps at the fire (CampFire.cs)
             CocoaCorner();    // the hot chocolate in the kitchen (CampCocoa.cs)
             flags = new GameObject("Flags"); flags.transform.SetParent(root, false);
@@ -516,11 +526,25 @@ namespace Summit
                 var p = Ground(dx, z);
                 float s = 1.4f + 2.2f * Slope.Hash01(i, 5, 41);
                 if (UseLodge && !LodgeClear(p, s * 0.7f)) continue;   // (not into the lodge or onto its terrace)
+                if (NearSummitPath(p, s * 0.75f + 1.6f)) continue;   // (nor onto the Summit lift's path in: camplayout)
                 // (its middle no higher than the lowest snow under its rim: on a slope it bulged out over the snow below)
                 float low = p.y; for (int k = 0; k < 8; k++) low = Mathf.Min(low, Slope.DrawnHeight(p.x + 0.7f * s * Mathf.Cos(k * 0.785f), p.z + 0.5f * s * Mathf.Sin(k * 0.785f)));
                 if (p.y - low > 0.5f) continue;   // (none on steep ground: it doesn't sit on it)
                 P(PrimitiveType.Sphere, t, new Vector3(p.x, Mathf.Min(p.y - s * 0.22f, low - 0.02f), p.z), new Vector3(s * 1.4f, s * 0.6f, s), new Vector3(0f, i * 41f, 0f), snowCap);
             }
+        }
+
+        /// <summary>Within reach of the Summit lift's path into the camp (LiftEnds.CampPath)?</summary>
+        static bool NearSummitPath(Vector3 p, float reach)
+        {
+            var path = LiftEnds.SummitPath();
+            for (int i = 0; i + 1 < path.Count; i++)
+            {
+                Vector2 a = new Vector2(path[i].x, path[i].z), b = new Vector2(path[i + 1].x, path[i + 1].z), q = new Vector2(p.x, p.z);
+                var d = b - a; float t = d.sqrMagnitude > 1e-6f ? Mathf.Clamp01(Vector2.Dot(q - a, d) / d.sqrMagnitude) : 0f;
+                if ((a + d * t - q).magnitude < reach) return true;
+            }
+            return false;
         }
 
         /// <summary>A path trodden through the snow from the fire to the lodge's stairs, boot prints and all.</summary>
@@ -672,10 +696,57 @@ namespace Summit
         }
 
 
+        /// <summary>
+        /// (camplayout) The start corral before the gate, out of the DROP IN circle, where people get ready: a ski and
+        /// board rack on the left, and the trail map with today's missions pinned under it (the lodge's notes, tinted as
+        /// they're done: Redress), turned to the path as you come down it. The waxing stand on the right is the camp's
+        /// people's (CampLife); the bench by the drop and the strap-in places either side of the gate were there already.
+        /// Solid as drawn.
+        /// </summary>
+        void StartCorral()
+        {
+            float gz = Slope.GateZ;
+            // the rack: two posts and two rails, boards and skis leaning on its gate side
+            var r = Frame(-5.8f, gz - 8.4f, 0f); r.name = "CorralRack";
+            for (int s = -1; s <= 1; s += 2) Log(r, new Vector3(s * 1.35f, -0.3f, 0f), new Vector3(s * 1.35f, 1.15f, 0f), 0.07f, logs);
+            Log(r, new Vector3(-1.45f, 1.05f, 0f), new Vector3(1.45f, 1.05f, 0f), 0.06f, logs);
+            Log(r, new Vector3(-1.45f, 0.5f, 0f), new Vector3(1.45f, 0.5f, 0f), 0.05f, logs);
+            P(PrimitiveType.Cube, r, new Vector3(0f, 1.11f, 0f), new Vector3(2.9f, 0.04f, 0.12f), Vector3.zero, snowCap);
+            // boards leaning, their noses on the top rail; a pair of skis and another board
+            foreach (var (x, m, w, len) in new[] { (-1.0f, 0, 0.27f, 1.5f), (-0.55f, 1, 0.27f, 1.45f), (0.75f, 2, 0.26f, 1.55f) })
+                P(PrimitiveType.Cube, r, new Vector3(x, len * 0.45f, 0.3f), new Vector3(w, len, 0.03f), new Vector3(-24f, 0f, 0f), corralGear[m]);
+            foreach (var x in new[] { 0.1f, 0.2f })
+                P(PrimitiveType.Cube, r, new Vector3(x, 0.78f, 0.3f), new Vector3(0.075f, 1.7f, 0.02f), new Vector3(-22f, 0f, 0f), corralGear[3]);
+            Block(r, new Vector3(0f, 0f, 0.25f), new Vector2(1.45f, 0.45f));
+            // the trail map and today's missions on a board on two posts, turned to the path (its face toward -z: the camp)
+            var b = Frame(-3.7f, gz - 11.2f, -20f); b.name = "CorralBoard";
+            for (int s = -1; s <= 1; s += 2)
+            {
+                Log(b, new Vector3(s * 0.78f, -0.3f, 0.02f), new Vector3(s * 0.78f, 2.5f, 0.02f), 0.07f, logs);
+                Block(b, new Vector3(s * 0.78f, 0f, 0.02f), new Vector2(0.09f, 0.09f));
+            }
+            P(PrimitiveType.Cube, b, new Vector3(0f, 1.6f, 0.02f), new Vector3(1.5f, 1.7f, 0.06f), Vector3.zero, darkWood);
+            P(PrimitiveType.Cube, b, new Vector3(0f, 2.5f, 0.02f), new Vector3(1.66f, 0.08f, 0.24f), Vector3.zero, snowCap);
+            P(PrimitiveType.Quad, b, new Vector3(0f, 2.0f, -0.015f), new Vector3(1.38f, 0.78f, 1f), Vector3.zero, Sign("Signs/TrailMap"));
+            P(PrimitiveType.Quad, b, new Vector3(0f, 1.44f, -0.015f), new Vector3(1.2f, 0.3f, 1f), Vector3.zero, Sign("Camp/SignMissions"));
+            for (int i = 0; i < noteMats.Length; i++)
+                P(PrimitiveType.Quad, b, new Vector3((i - 1) * 0.44f, 1.0f, -0.015f), new Vector3(0.36f, 0.45f, 1f), Vector3.zero, noteMats[i]);
+            Block(b, new Vector3(0f, 0f, 0.02f), new Vector2(0.8f, 0.06f), null, false, 0f, 0f, 0.75f, 2.5f);   // (the board, at head height)
+        }
+        Material[] corralGear;   // (the rack's boards and skis: made once in Build, kept; made in a build they'd go at the next one: purplefix)
+
         void Lookout(Transform t)
         {
             t.name = "Lookout";
-            float y = 0.45f;
+            // its boards a short step up from the snow along its open back, wherever that is highest (out on the cliff's
+            // lip the ground under it is uneven; standing on the plateau it was 0.45 over its middle): camplayout
+            float backHi = -9f;
+            for (float bx = -2.7f; bx <= 2.71f; bx += 0.9f)
+            {
+                var bp = t.TransformPoint(new Vector3(bx, 0f, -2.1f));
+                backHi = Mathf.Max(backHi, Slope.DrawnHeight(bp.x, bp.z) - t.position.y);
+            }
+            float y = Mathf.Clamp(backHi + 0.22f, 0.3f, 0.6f);
             P(PrimitiveType.Cube, t, new Vector3(0f, y - 0.1f, 0f), new Vector3(6f, 0.2f, 4.2f), Vector3.zero, wood);
             for (int sx = -1; sx <= 1; sx += 2)
                 for (int sz = -1; sz <= 1; sz += 2)
@@ -693,8 +764,10 @@ namespace Summit
             }
             P(PrimitiveType.Cube, t, new Vector3(0f, y + 1.08f, 2f), new Vector3(5.9f, 0.08f, 0.2f), Vector3.zero, snowCap);
             Block(t, new Vector3(0f, 0f, 2.05f), new Vector2(3f, 0.12f));
-            Block(t, Vector3.zero, new Vector2(2.9f, 2f), null, true, y);
-            Block(t, Vector3.zero, new Vector2(3f, 2.1f), null, false, 0f, 0f, -3f, y - 0.6f);   // (its sides, where it stands up off the snow below)
+            Block(t, new Vector3(0f, 0f, -0.25f), new Vector2(2.9f, 2.25f), null, true, y);   // (its floor to the boards' open back edge and a stride past it: you step up onto it there, not into it)
+            // (its sides, where it stands up off the snow below: solid for anyone whose feet are lower than a step up onto
+            // its boards, FloorAt's 0.55 m, so nobody walks along the snow under them where the ground dips: camplayout)
+            Block(t, Vector3.zero, new Vector2(3f, 2.1f), null, false, 0f, 0f, -3f, y - 0.42f);
             // the coin telescope, aimed down the mountain
             Log(t, new Vector3(1.2f, y, 1.2f), new Vector3(1.2f, y + 1.05f, 1.2f), 0.12f, metal);
             var scope = P(PrimitiveType.Cylinder, t, new Vector3(1.2f, y + 1.25f, 1.25f), new Vector3(0.2f, 0.38f, 0.2f), new Vector3(78f, 0f, 0f), metal);
@@ -707,10 +780,14 @@ namespace Summit
             P(PrimitiveType.Cube, t, new Vector3(-3.4f, 2.0f, -2.32f), new Vector3(1.7f, 0.48f, 0.08f), Vector3.zero, darkWood);
             Block(t, new Vector3(-3.4f, 0f, -2.3f), new Vector2(0.15f, 0.15f));
             Block(t, new Vector3(-3.4f, 0f, -2.33f), new Vector2(0.88f, 0.08f), null, false, 0f, 0f, 1.5f, 2.3f);   // (its board, at head height)
-            lookFrame = t; lookTop = y;
+            lookFrame = t; lookTop = y; lookFwd = t.forward;
             spots.Add(new Spot { st = Station.Lookout, at = t.position, radius = 2.6f, root = t });
         }
         Transform lookFrame; float lookTop;
+        /// <summary>The lookout deck's boards' height (world), for the people standing on it (CampLife).</summary>
+        public float LookoutDeckY => lookFrame != null ? lookFrame.position.y + lookTop : Ground(LookoutX, LookoutZ).y + 0.45f;
+        Vector3 lookFwd = Vector3.forward;   // the way the lookout's deck faces (the lodge's deck on the wing's roof faces down the mountain)
+        bool onCampLookout;
 
         Transform Snowman(Transform t)
         {
@@ -908,9 +985,16 @@ namespace Summit
                 flagMat = M(Color.white, 0.1f, Resources.Load<Texture2D>("Camp/Flag")); flagMat.SetFloat("_Cull", 0f);
             }
             var t = new GameObject("CliffRail").transform; t.SetParent(root, false);
-            int n = Mathf.RoundToInt((EdgeZ1 - EdgeZ0) / 2.5f);
+            int n0 = Mathf.RoundToInt((EdgeZ1 - EdgeZ0) / 2.5f);
+            // (a gap where the lookout's deck goes out over the lip, a post either side of it at the deck's sides: its own
+            // rail takes over there)
+            float e0 = LookoutZ - LookoutHalfW - 0.1f, e1 = LookoutZ + LookoutHalfW + 0.1f;
+            var zs = new List<float> { e0, e1 };
+            for (int i = 0; i <= n0; i++) { float z = Mathf.Lerp(EdgeZ0, EdgeZ1, i / (float)n0); if (z < e0 - 0.8f || z > e1 + 0.8f) zs.Add(z); }
+            zs.Sort();
+            int n = zs.Count - 1;
             var posts = new Vector3[n + 1];
-            for (int i = 0; i <= n; i++) posts[i] = Ground(EdgeX, Mathf.Lerp(EdgeZ0, EdgeZ1, i / (float)n));
+            for (int i = 0; i <= n; i++) posts[i] = Ground(EdgeX, zs[i]);
             for (int i = 0; i <= n; i++)
             {
                 P(PrimitiveType.Cube, t, posts[i] + Vector3.up * 0.6f, new Vector3(0.08f, 1.22f, 0.08f), Vector3.zero, railMetal);
@@ -919,6 +1003,7 @@ namespace Summit
             for (int i = 0; i < n; i++)
             {
                 Vector3 a = posts[i], b = posts[i + 1];
+                if (zs[i] == e0 && zs[i + 1] == e1) continue;   // (the deck)
                 // the kerb, and six cables pulled tight between the posts
                 var k = Log(t, a + Vector3.up * 0.1f, b + Vector3.up * 0.1f, 0.3f, kerbMat);
                 k.localScale = new Vector3(0.36f, k.localScale.y, 0.24f);
@@ -929,14 +1014,16 @@ namespace Summit
                 }
             }
             Combine(t);
-            // you walk up to it, not through it (the camp's edge stops you first anyway)
-            Block(Frame(EdgeX + 0.4f, (EdgeZ0 + EdgeZ1) * 0.5f, 0f), Vector3.zero, new Vector2(0.45f, (EdgeZ1 - EdgeZ0) * 0.5f + 1f));
+            // you walk up to it, not through it (the camp's edge stops you first anyway); either side of the deck
+            float g0 = LookoutZ - LookoutHalfW - 0.2f, g1 = LookoutZ + LookoutHalfW + 0.2f;
+            Block(Frame(EdgeX + 0.4f, (EdgeZ0 - 1f + g0) * 0.5f, 0f), Vector3.zero, new Vector2(0.45f, (g0 - EdgeZ0 + 1f) * 0.5f));
+            Block(Frame(EdgeX + 0.4f, (g1 + EdgeZ1 + 1f) * 0.5f, 0f), Vector3.zero, new Vector2(0.45f, (EdgeZ1 + 1f - g1) * 0.5f));
 
             // three flagpoles just inside the rail
             flagMeshes.Clear(); flagRoots.Clear(); flagRends.Clear();
             var poleM = M(new Color(0.88f, 0.89f, 0.9f), 0.6f); poleM.SetFloat("_Metallic", 0.5f);
             var gold = M(new Color(0.9f, 0.72f, 0.3f), 0.8f); gold.SetFloat("_Metallic", 0.9f);
-            foreach (var z in new[] { -74f, -67.5f, -61f })
+            foreach (var z in new[] { -77.5f, -72.5f, -59.5f })   // (either side of the lookout's deck: camplayout)
             {
                 var g = Ground(EdgeX - 1.6f, z);
                 Log(t.parent, g + Vector3.down * 0.3f, g + Vector3.up * 6f, 0.11f, poleM);
@@ -952,7 +1039,7 @@ namespace Summit
                 var mr = fo.GetComponent<MeshRenderer>(); mr.sharedMaterial = flagMat;
                 flagMeshes.Add(mesh); flagRends.Add(mr);
                 // the middle one has a lamp at its foot, lighting all three from below at night
-                if (z > -70f && z < -65f) Lamp(t.parent, g + Vector3.up * 1.2f + Vector3.left * 0.8f, 11f, 1.8f);
+                if (z > -75f && z < -70f) Lamp(t.parent, g + Vector3.up * 1.2f + Vector3.left * 0.8f, 11f, 1.8f);
             }
             WaveFlags(0f);
         }
@@ -1365,14 +1452,23 @@ namespace Summit
         public float WalkerYaw => yaw * Mathf.Rad2Deg;
 
         /// <summary>Put the rider in the camp on foot, by the lodge, and take over the camera.</summary>
-        public void Enter(Rider r, RiderBody b, Camera c)
+        public void Enter(Rider r, RiderBody b, Camera c, bool fromGate = false)
         {
             rider = r; body = b; cam = c;
             Active = true;
-            // arrive on the path by the fire, looking up at the lodge
-            pos = Ground(-1.5f, -64f);
-            var toLodge = lodgeApex - pos;
-            yaw = Mathf.Atan2(toLodge.x, toLodge.z); camYaw = yaw; speed = 0f;
+            // (camplayout) arrive where the Summit lift unloads, beside the lodge's wing, facing out past it toward the
+            // gate and Mt. Vertigo: the loop is lift, lodge, fire, gate. Back up from the start pad: at the gate, facing
+            // the camp. With no Summit lift: on the lodge's terrace at its door, facing out.
+            var path = LiftEnds.SummitPath();
+            Vector3 face;
+            if (fromGate) { pos = Ground(0f, Slope.GateZ - 5f); face = Ground(-3f, -72f); }
+            // (a few metres along its path in, past the unload's boards, the camera clear of them behind; facing just left
+            // of the gate, past the lodge's front corner)
+            else if (path.Count > 1) { pos = path[Mathf.Min(6, path.Count - 1)]; face = Ground(-6f, Slope.GateZ); }
+            else if (UseLodge && chalet != null) { pos = ChaletPoint(4.5f, 0f, 9.6f); face = ChaletPoint(4.5f, 0f, 40f); }
+            else { pos = Ground(-1.5f, -64f); face = lodgeApex; }
+            var toFace = face - pos;
+            yaw = Mathf.Atan2(toFace.x, toFace.z); camYaw = yaw; speed = 0f;
             snap = true;
             Near = Station.None;
             body.SetWalking(true);
@@ -1525,6 +1621,7 @@ namespace Summit
                 var d = new Vector2(s.at.x - pos.x, s.at.z - pos.z).magnitude;
                 if (d < s.radius && d < best && Mathf.Abs(s.at.y - pos.y) < 1.5f) { best = d; Near = s.st; }   // on its floor
             }
+            onCampLookout = Near == Station.Lookout;
             if (Near == Station.Lookout) { OnLookout = true; Near = Station.None; }
             if (Near == Station.None && UseLodge && LodgeLookoutAt(pos)) OnLookout = true;   // (the lodge's deck on the wing's roof: CampLodge)
             // feet on the snow: footsteps and prints (a jump or a roll makes its own marks)
@@ -2062,7 +2159,10 @@ namespace Summit
             want = target + Quaternion.AngleAxis(camPitch, tiltAxis) * (want - target);
             Vector3 look = target + f * Mathf.Lerp(4f, 3f, inBlend) + Vector3.up * Mathf.Lerp(0.15f, 0.1f, inBlend);
             // at the lookout, stand back and take in the whole mountain below
-            Vector3 lookPos = pos + new Vector3(-0.8f, 4.2f, -5.6f), lookAt = pos + new Vector3(0f, -55f, 190f);
+            // (the camp's lookout faces out over the cliff's drop; the lodge's deck down the mountain)
+            var lf = onCampLookout ? new Vector3(lookFwd.x, 0f, lookFwd.z).normalized : Vector3.forward;
+            var lr = new Vector3(lf.z, 0f, -lf.x);
+            Vector3 lookPos = pos - lr * 0.8f + Vector3.up * 4.2f - lf * 5.6f, lookAt = pos + Vector3.down * 55f + lf * 190f;
             want = Vector3.Lerp(want, lookPos, lookBlend); look = Vector3.Lerp(look, lookAt, lookBlend);
             // picking an outfit: face the rider, close, with room for the menu below
             var front = new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw));

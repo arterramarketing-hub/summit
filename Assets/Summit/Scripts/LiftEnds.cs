@@ -59,6 +59,8 @@ namespace Summit
             public readonly List<Vector3> strap = new List<Vector3>();   // places to strap in (top)
             public Vector3 hutDoor, rack, chatA, chatB, clickIn, sit, point, goggles;
             public readonly List<Vector3> toCamp = new List<Vector3>();  // the path into the camp (the Summit lift's top)
+            public int walkEnd;       // how far along toCamp its walkers go (to the lodge's steps; the rest of the path is drawn on to the paved path)
+            public readonly List<Vector3> pushWay = new List<Vector3>();  // the Summit top's riders' way off: round behind the station, down the far side
             public float lastTick = -1f;
             public readonly List<Agent> people = new List<Agent>();
             public Vector3 P(float u, float v) => Snow(st + side * u + dir * v);
@@ -172,7 +174,9 @@ namespace Summit
 
         static bool Clear(float x, float z, bool camp = false)
         {
-            Why = "run"; if (Mathf.Abs(Slope.Across(x, z)) < Slope.Half(z) + 2.5f) return false;   // (off the groomed run)
+            // (off the groomed run; behind the gate there is none, and the line's wander back there means nothing: the
+            // Summit lift's top beside the lodge, camplayout)
+            Why = "run"; if (z > Slope.GateZ && Mathf.Abs(Slope.Across(x, z)) < Slope.Half(z) + 2.5f) return false;
             Why = "kept"; if (Course.Keep(x, z, 1f) || Deadly.Below(x, z) || Cliffs.WallCut(x, z) < -0.05f) return false;
             Why = "hill"; if (LiftLine.HillOrLane(x, z, 1.5f)) return false;                         // (the way to a cable grind stays open)
             Why = "hamlet"; if (Hamlets.Taken(x, z) || TrailSigns.Near(x, z, 2f)) return false;
@@ -183,6 +187,73 @@ namespace Summit
             Why = "steep"; if (n.y < 0.64f) return false;
             Why = "rock"; return !RockFace.IsRock(n, x, z);
         }
+
+        /// <summary>
+        /// The Summit lift's path from its unload into the camp (camplayout). Beside the lodge's wing (its top's usual
+        /// place now): round the wing's front corner, clear of the drifts against it, to the foot of the terrace's steps by
+        /// the wing (where its walkers go in: walkEnd), and on along the terrace's front to join the paved path to the gate.
+        /// Where the top had to stand in front of the camp's left corner (its old place): in to the camp's left edge as
+        /// before, and on to the paved path. The camp keeps its mounds off this line, and the hero arrives at its start.
+        /// </summary>
+        public static List<Vector3> CampPath(LiftLine.Lift l, out int walkEnd)
+        {
+            var pts = new List<Vector3>();
+            float L = LiftLine.StationHalfLen, cx = Slope.Centre(Slope.PadLip);
+            var st = l.top;
+            float a0 = st.x - Slope.Centre(st.z);
+            var side = l.across * (Vector3.Dot(l.across, Vector3.right) * (a0 > 0f ? -1f : 1f) >= 0f ? 1f : -1f);
+            var start = st + side * 8f + l.dir * (-L - 2f);
+            var way = new List<Vector3> { start };
+            int stop;
+            if (st.z < -76f)
+            {
+                // (in the lodge's own frame, MakeLodge.py's: round the wing's end and its front corner, to the foot of the
+                // steps by the wing (STAIRS' second flight), then along the terrace's front to the paved path)
+                foreach (var (x, z) in new[] { (-23.1f, -0.8f), (-22.6f, 7.3f), (-20.9f, 14.1f), (-16.7f, 16.9f), (-13.4f, 18.4f) }) way.Add(Camp.LodgeGround(x, z));
+                stop = way.Count - 1;
+                foreach (var (x, z) in new[] { (-8.4f, 18.9f), (-3.9f, 19.6f), (-1.3f, 20.1f) }) way.Add(Camp.LodgeGround(x, z));
+            }
+            else
+            {
+                var b = new Vector3(cx - Camp.HalfWidth + 2f, 0f, Mathf.Clamp(st.z - 6f, Camp.BackZ + 20f, -44f));
+                for (int i = 1; i <= 4; i++)
+                {
+                    float t = i / 4f;
+                    way.Add(Vector3.Lerp(start, b, t) + Vector3.Cross(Vector3.up, (b - start).normalized) * Mathf.Sin(t * Mathf.PI) * 2.5f);
+                }
+                stop = way.Count - 1;
+                way.Add(new Vector3(cx - 14f, 0f, b.z + 1f)); way.Add(new Vector3(cx - 5.2f, 0f, -65.5f));
+            }
+            // a smooth line through them (Catmull-Rom), a point every metre and a half or so
+            walkEnd = 0;
+            for (int i = 0; i < way.Count - 1; i++)
+            {
+                Vector3 p0 = way[Mathf.Max(0, i - 1)], p1 = way[i], p2 = way[i + 1], p3 = way[Mathf.Min(way.Count - 1, i + 2)];
+                int n = Mathf.Max(1, Mathf.CeilToInt(Vector3.Distance(new Vector3(p1.x, 0f, p1.z), new Vector3(p2.x, 0f, p2.z)) / 1.5f));
+                for (int k = 0; k < n; k++)
+                {
+                    float t = k / (float)n, t2 = t * t, t3 = t2 * t;
+                    var q = 0.5f * (2f * p1 + (p2 - p0) * t + (2f * p0 - 5f * p1 + 4f * p2 - p3) * t2 + (3f * p1 - p0 - 3f * p2 + p3) * t3);
+                    pts.Add(Snow(q));
+                }
+                if (i + 1 == stop) walkEnd = pts.Count;
+            }
+            pts.Add(Snow(way[way.Count - 1]));
+            return pts;
+        }
+
+        /// <summary>The Summit lift's path into the camp on today's mountain (empty if it has none): for the camp's mounds and the hero's arrival.</summary>
+        public static List<Vector3> SummitPath()
+        {
+            if (summitPathFor != Slope.Seed)
+            {
+                summitPathFor = Slope.Seed; summitPath.Clear();
+                foreach (var l in LiftLine.Lifts) if (l.summit) summitPath.AddRange(CampPath(l, out _));
+            }
+            return summitPath;
+        }
+        static readonly List<Vector3> summitPath = new List<Vector3>();
+        static int summitPathFor = int.MinValue;
 
         bool Ok(End e, float u, float v) { var p = e.st + e.side * u + e.dir * v; return Clear(p.x, p.z, e.lift.summit && e.top); }
 
@@ -231,15 +302,10 @@ namespace Summit
                 e.sit = Ok(e, U1 - 1f, -L - 13f) ? e.P(U1 - 1f, -L - 13f) : Vector3.zero;
                 if (e.lift.summit)
                 {
-                    // on along a path to the camp's left edge (Camp: 23 m either side of the run's line at the pad)
-                    float cx = Slope.Centre(Slope.PadLip);
-                    Vector3 a = e.P(8f, -L - 2f), b = new Vector3(cx - Camp.HalfWidth + 2f, 0f, Mathf.Clamp(e.st.z - 6f, Camp.BackZ + 20f, -44f));
-                    for (int i = 0; i <= 10; i++)
-                    {
-                        float t = i / 10f;
-                        var q = Vector3.Lerp(a, b, t) + Vector3.Cross(Vector3.up, (b - a).normalized) * Mathf.Sin(t * Mathf.PI) * 2.5f;
-                        e.toCamp.Add(Snow(q));
-                    }
+                    // on along a path into the camp (CampPath), and the riders' way off down the shoulder on the station's
+                    // far side, round behind its uphill end: not across the camp (camplayout)
+                    e.toCamp.AddRange(CampPath(e.lift, out e.walkEnd));
+                    foreach (var (u, v) in new[] { (4f, -L - 12f), (-9f, -L - 10f), (-14f, 10f), (-16f, 45f) }) e.pushWay.Add(e.P(u, v));
                 }
             }
         }
@@ -463,7 +529,7 @@ namespace Summit
                     var q = e.toCamp[i] + s * k; q.y = Slope.DrawnHeight(q.x, q.z) + 0.04f; v.Add(q - e.toCamp[0]);
                 }
                 if (i > 0) { int o = v.Count - 4; tri.Add(o); tri.Add(o + 2); tri.Add(o + 1); tri.Add(o + 1); tri.Add(o + 2); tri.Add(o + 3); }
-                if (i % 3 == 1) Post(e.root.transform, e.toCamp[i] + s * 1.6f, 1.4f, 0.025f, orange);
+                if (i % 3 == 1 && Mathf.Abs(e.toCamp[i].x - Slope.Centre(Slope.PadLip)) > Camp.HalfWidth + 1f) Post(e.root.transform, e.toCamp[i] + s * 1.6f, 1.4f, 0.025f, orange);   // (wands out on the open snow, not in the camp)
             }
             var m = new Mesh { name = "LiftEndsPath" };
             m.SetVertices(v); m.SetTriangles(tri, 0); m.RecalculateNormals(); m.RecalculateBounds();
@@ -682,12 +748,25 @@ namespace Summit
                     if ((a.pos - a.goal).sqrMagnitude < 0.04f) { a.job = Job.Strap; a.t = 0f; a.until = a.p.Look.gear == PersonGear.Skis ? 3.5f : 7.5f; }
                     break;
                 case Job.Strap:
-                    if (a.t > a.until) { a.job = Job.Push; a.t = 0f; a.speed = 1.5f; }
+                    if (a.t > a.until) { a.job = Job.Push; a.t = 0f; a.speed = 1.5f; a.slot = 0; }
                     break;
                 case Job.Push:
                 {
-                    // off down the run: across onto it and down the fall line, gathering speed, out of sight
-                    var to = e.side * 0.8f + Vector3.forward * 0.6f; to.y = 0f; to.Normalize();
+                    // off down the run: across onto it and down the fall line, gathering speed, out of sight. (At the
+                    // Summit top the run is the camp: they go round behind the station and away down the shoulder on its
+                    // far side instead, beside the line: camplayout)
+                    var to = e.side * 0.8f + Vector3.forward * 0.6f;
+                    if (e.pushWay.Count > 0)
+                    {
+                        int w = Mathf.Min(a.slot, e.pushWay.Count - 1);
+                        to = e.pushWay[w] - a.pos;
+                        if (new Vector2(to.x, to.z).magnitude < 2.5f && a.slot < e.pushWay.Count - 1) a.slot++;
+                        // (turning as a rider does, not on the spot)
+                        var was = Quaternion.Euler(0f, a.yaw, 0f) * Vector3.forward;
+                        to.y = 0f; to.Normalize();
+                        to = Vector3.RotateTowards(was, to, dt * 2.2f, 0f);
+                    }
+                    to.y = 0f; to.Normalize();
                     a.speed = Mathf.Min(a.speed + dt * 2.2f, 9f);
                     a.pos = Snow(a.pos + to * a.speed * dt);
                     a.yaw = Yaw(to, to);
@@ -697,9 +776,10 @@ namespace Summit
                 case Job.Walk:
                 {
                     // the Summit lift: along the path into the camp, the board under an arm
-                    int i = Mathf.Clamp(a.slot, 0, e.toCamp.Count - 1);
+                    int end = e.walkEnd > 0 ? Mathf.Min(e.walkEnd, e.toCamp.Count - 1) : e.toCamp.Count - 1;   // (to the lodge's steps, and in)
+                    int i = Mathf.Clamp(a.slot, 0, end);
                     Walk(a, e.toCamp[i], 1.3f, dt);
-                    if ((a.pos - e.toCamp[i]).sqrMagnitude < 0.25f) { a.slot++; if (a.slot >= e.toCamp.Count) { e.people.Remove(a); Park(a); } }
+                    if ((a.pos - e.toCamp[i]).sqrMagnitude < 0.25f) { a.slot++; if (a.slot > end) { e.people.Remove(a); Park(a); } }
                     break;
                 }
             }

@@ -102,8 +102,8 @@ namespace Summit
         int angleLevel = 1, lensLevel = 1;
         bool pov;   // first person instead of the chase camera (the VIEW button; ChaseCamera does the rest)
         UnityEngine.Rendering.Universal.LensDistortion lens;
-        // colour filter (LookGrade) and its strength in tenths, and the lens type (LensFX), from the pause menu
-        int filterLevel, filterStrength = 10, lensMode;
+        // colour filter (LookGrade) and its strength in tenths, from the settings
+        int filterLevel, filterStrength = 10;
         int halation;   // the film glow round highlights (LensFX): OFF, SUBTLE, STRONG
         LensFX lensFx;
         DayNight dayNight;   // the time of day's light (TimeOfDay, DayNight.cs), and the pause menu's TIME row
@@ -114,32 +114,23 @@ namespace Summit
         {
             chase.heightScale = AngleHeight[angleLevel];
             chase.extraFov = LensFov[lensLevel];
-            lensFx.Apply(lens, LensWarp[lensLevel], lensLevel, lensMode);
-            hud.SetAngle(AngleName[angleLevel]); hud.SetLens(LensName[lensLevel]); hud.SetLensType(LensFX.ModeName[lensMode]);
-            ShowView();
-            PlayerPrefs.SetInt("summit_angle", angleLevel); PlayerPrefs.SetInt("summit_lens", lensLevel); PlayerPrefs.SetInt("summit_lenstype", lensMode); PlayerPrefs.Save();
-        }
-
-        // the VIEW tab's top button, and the two rows that only mean something to the chase camera
-        void ShowView()
-        {
-            hud.SetPausePov(pov);
-            hud.SetCamera(pov ? "N/A" : CamName[camLevel]);
-            hud.SetAngle(pov ? "N/A" : AngleName[angleLevel]);
+            lensFx.Apply(lens, LensWarp[lensLevel], lensLevel);
+            hud.RefreshPause();
+            PlayerPrefs.SetInt("summit_angle", angleLevel); PlayerPrefs.SetInt("summit_lens", lensLevel); PlayerPrefs.Save();
         }
 
         void SetPov(bool on)
         {
             pov = on; chase.pov = on;
-            ShowView();
+            hud.RefreshPause();
             PlayerPrefs.SetInt(ChaseCamera.PovPref, on ? 1 : 0); PlayerPrefs.Save();
         }
 
         void ApplyLook()
         {
             atmo.BaseVignette = LookGrade.Apply(post, filterLevel, filterStrength / 10f);
-            hud.SetFilter(LookGrade.Names[filterLevel]); hud.SetFilterStrength(filterStrength * 10 + "%");
-            lensFx.SetHalation(halation); hud.SetHalation(LensFX.HalationName[halation]);
+            lensFx.SetHalation(halation);
+            hud.RefreshPause();
             PlayerPrefs.SetInt("summit_filter", filterLevel); PlayerPrefs.SetInt("summit_filterstrength", filterStrength); PlayerPrefs.SetInt("summit_halation", halation); PlayerPrefs.Save();
         }
 
@@ -148,7 +139,7 @@ namespace Summit
         {
             int v = Mathf.Clamp(Mathf.RoundToInt(AudioPrefs.MusicVolume * 10f) + dir, 0, 10);
             AudioPrefs.MusicVolume = v / 10f;
-            hud.SetMusic(v * 10 + "%");
+            hud.RefreshPause();
         }
 
         // the GAME tab's TURN: how sharp the carve is (SteerPrefs, Rider.TurnScale), felt the moment the run resumes
@@ -156,67 +147,72 @@ namespace Summit
         void SetTurnStop(int k)
         {
             SteerPrefs.Stop = k;
-            hud.SetTurn(SteerPrefs.Label, SteerPrefs.Fraction);
+            hud.RefreshPause();
         }
-        bool turnDrag;   // a finger that went down on the TURN bar, sliding it
 
-        // ---- every setting has one method here, which the pause menu and the start page's settings both call
-        //      (BuildStart hands them to StartPage as rows), so the two can never disagree and a change made in
+        // ---- every setting has one method here, which the pause menu's and the start page's settings both call
+        //      (FillSettings hands them to both sheets as rows), so the two can never disagree and a change made in
         //      one shows in the other
         void StepCam(int dir) => SetCamLevel(camLevel + dir);
         void StepAngle(int dir) { angleLevel = Mathf.Clamp(angleLevel + dir, 0, AngleHeight.Length - 1); ApplyCamera(); }
         void StepLens(int dir) { lensLevel = Mathf.Clamp(lensLevel + dir, 0, LensFov.Length - 1); ApplyCamera(); }
-        void StepLensType() { lensMode = (lensMode + 1) % LensFX.ModeName.Length; ApplyCamera(); }
         void StepFilter(int dir) { filterLevel = (filterLevel + dir + LookGrade.Names.Length) % LookGrade.Names.Length; ApplyLook(); }
         void StepStrength(int dir) { filterStrength = Mathf.Clamp(filterStrength + dir, 0, 10); ApplyLook(); }
         void StepHalation(int dir) { halation = Mathf.Clamp(halation + dir, 0, LensFX.HalationName.Length - 1); ApplyLook(); }
-        void StepTime(int dir) { TimeOfDay.StepLock(dir); hud.SetTime(TimeOfDay.LockLabel); }
-        void ToggleSteer() { input.SetTilt(!input.useTilt); hud.SetPauseSteer(input.useTilt); hud.SetMode(input.useTilt); }
+        void StepTime(int dir) { TimeOfDay.StepLock(dir); hud.RefreshPause(); }
+        void ToggleSteer() { input.SetTilt(!input.useTilt); hud.SetMode(input.useTilt); hud.RefreshPause(); }
         // how the one finger jumps: a double tap (the default), a tap, or a flick up (RiderInput, FingerGesture)
-        void StepJump(int dir) { input.SetJumpStyle((JumpStyle)(((int)input.jumpStyle + dir + 3) % 3)); hud.SetPauseJump(JumpName); if (state == State.Ready) ShowReadyHint(); }
+        void StepJump(int dir) { input.SetJumpStyle((JumpStyle)(((int)input.jumpStyle + dir + 3) % 3)); hud.RefreshPause(); if (state == State.Ready) ShowReadyHint(); }
         string JumpName => RiderInput.JumpNames[(int)input.jumpStyle];
         /// <summary>The jump, in words, for the hints: as the JUMP setting has it.</summary>
         string JumpWords => input.jumpStyle == JumpStyle.Tap ? "tap" : input.jumpStyle == JumpStyle.FlickUp ? "flick up" : "double-tap";
         // (tilt steering the other way round: the game has always read "summit_invert", but nothing could set it)
         void ToggleInvert() { input.invertTilt = !input.invertTilt; PlayerPrefs.SetInt("summit_invert", input.invertTilt ? 1 : 0); PlayerPrefs.Save(); }
-        void ToggleTrees() { props.SetRealistic(!props.IsRealistic); hud.SetPauseTrees(props.IsRealistic); }
-        void ToggleVoice() { SoundMix.VoiceLines = !SoundMix.VoiceLines; hud.SetVoiceLines(SoundMix.VoiceLines); PlayerPrefs.SetInt("summit_voicelines", SoundMix.VoiceLines ? 1 : 0); PlayerPrefs.Save(); }
-        void ToggleFlashlight() { DayNight.FlashlightOn = !DayNight.FlashlightOn; hud.SetFlashlight(DayNight.FlashlightOn); PlayerPrefs.SetInt("summit_flashlight", DayNight.FlashlightOn ? 1 : 0); PlayerPrefs.Save(); dayNight.ApplyNow(); }
-        void ToggleBlood() { blood.SetOn(!blood.On); hud.SetBlood(blood.On); PlayerPrefs.SetInt("summit_blood", blood.On ? 1 : 0); PlayerPrefs.Save(); }
+        void ToggleTrees() { props.SetRealistic(!props.IsRealistic); hud.RefreshPause(); }
+        void ToggleVoice() { SoundMix.VoiceLines = !SoundMix.VoiceLines; hud.RefreshPause(); PlayerPrefs.SetInt("summit_voicelines", SoundMix.VoiceLines ? 1 : 0); PlayerPrefs.Save(); }
+        void ToggleFlashlight() { DayNight.FlashlightOn = !DayNight.FlashlightOn; hud.RefreshPause(); PlayerPrefs.SetInt("summit_flashlight", DayNight.FlashlightOn ? 1 : 0); PlayerPrefs.Save(); dayNight.ApplyNow(); }
+        void ToggleBlood() { blood.SetOn(!blood.On); hud.RefreshPause(); PlayerPrefs.SetInt("summit_blood", blood.On ? 1 : 0); PlayerPrefs.Save(); }
 
         // ---------------------------------------------------------------- the start page
 
         /// <summary>
-        /// Make the start page and hand it every setting there is, a row each, under the pause menu's four headings.
+        /// Every setting there is, a row each under four headings, onto a settings sheet: the start page's and the pause
+        /// menu's get the very same rows (one list, here), so the two read and behave alike.
         /// </summary>
+        void FillSettings(SettingsSheet s)
+        {
+            string OnOff(bool on) => on ? "ON" : "OFF";
+            int view = s.AddTab(Hud.TabName[0]), look = s.AddTab(Hud.TabName[1]), game = s.AddTab(Hud.TabName[2]), sound = s.AddTab(Hud.TabName[3]);
+            s.AddRow(view, "VIEW", () => pov ? "FIRST PERSON" : "CHASE CAMERA", d => SetPov(!pov), true);
+            s.AddRow(view, "CAMERA DISTANCE", () => pov ? "N/A" : CamName[camLevel], StepCam, false, () => !pov);
+            s.AddRow(view, "CAMERA ANGLE", () => pov ? "N/A" : AngleName[angleLevel], StepAngle, false, () => !pov);
+            s.AddRow(view, "LENS", () => LensName[lensLevel], StepLens);
+            s.AddRow(look, "TIME OF DAY", () => TimeOfDay.LockLabel, StepTime);
+            s.AddRow(look, "WEATHER", () => Weather.ChoiceLabel, Weather.StepChoice);
+            s.AddRow(look, "FILTER", () => LookGrade.Names[filterLevel], StepFilter);
+            s.AddRow(look, "FILTER STRENGTH", () => filterStrength * 10 + "%", StepStrength);
+            s.AddRow(look, "HALATION", () => LensFX.HalationName[halation], StepHalation);
+            s.AddRow(game, "TURN", () => SteerPrefs.Label, StepTurn);
+            s.AddRow(game, "STEERING", () => input.useTilt ? "TILT" : "DRAG", d => ToggleSteer(), true);
+            s.AddRow(game, "JUMP", () => JumpName, StepJump);
+            s.AddRow(game, "INVERT TILT", () => OnOff(input.invertTilt), d => ToggleInvert(), true, () => input.useTilt);
+            // (not mid-run: what you ride is changed on the start pad, or before you go)
+            s.AddRow(game, "RIDE", () => RideName, StepRide, false, () => state != State.Riding);
+            s.AddRow(game, "TREES", () => props.IsRealistic ? "REALISTIC" : "ORIGINAL", d => ToggleTrees(), true);
+            s.AddRow(game, "FLASHLIGHT", () => OnOff(DayNight.FlashlightOn), d => ToggleFlashlight(), true);
+            s.AddRow(game, "BLOOD", () => OnOff(blood.On), d => ToggleBlood(), true);
+            s.AddRow(sound, "MUSIC", () => Mathf.RoundToInt(AudioPrefs.MusicVolume * 10f) * 10 + "%", StepMusic);
+            s.AddRow(sound, "VOICE LINES", () => OnOff(SoundMix.VoiceLines), d => ToggleVoice(), true);
+        }
+
+        /// <summary>Make the start page, with every setting (FillSettings).</summary>
         void BuildStart()
         {
             start = new GameObject("StartPage").AddComponent<StartPage>();
             start.Build(chase.GetComponent<Camera>(), atmo, snow.shader, spray, () => dayNight != null ? dayNight.Darkness : 0f, () => LensFov[lensLevel]);
             start.Clicked = () => audioFx.Play(Sfx.Click);
             start.TimeJumped = () => dayNight.ApplyNow();
-            string OnOff(bool on) => on ? "ON" : "OFF";
-            int view = start.AddTab("VIEW"), look = start.AddTab("LOOK"), game = start.AddTab("GAME"), sound = start.AddTab("SOUND");
-            start.AddRow(view, "VIEW", () => pov ? "FIRST PERSON" : "CHASE CAMERA", d => SetPov(!pov), true);
-            start.AddRow(view, "CAMERA DISTANCE", () => pov ? "N/A" : CamName[camLevel], StepCam, false, () => !pov);
-            start.AddRow(view, "CAMERA ANGLE", () => pov ? "N/A" : AngleName[angleLevel], StepAngle, false, () => !pov);
-            start.AddRow(view, "LENS", () => LensName[lensLevel], StepLens);
-            start.AddRow(view, "LENS TYPE", () => LensFX.ModeName[lensMode], d => StepLensType(), true);
-            start.AddRow(look, "TIME OF DAY", () => TimeOfDay.LockLabel, StepTime);
-            start.AddRow(look, "WEATHER", () => Weather.ChoiceLabel, Weather.StepChoice);
-            start.AddRow(look, "FILTER", () => LookGrade.Names[filterLevel], StepFilter);
-            start.AddRow(look, "FILTER STRENGTH", () => filterStrength * 10 + "%", StepStrength);
-            start.AddRow(look, "HALATION", () => LensFX.HalationName[halation], StepHalation);
-            start.AddRow(game, "TURN", () => SteerPrefs.Label, StepTurn);
-            start.AddRow(game, "STEERING", () => input.useTilt ? "TILT" : "DRAG", d => ToggleSteer(), true);
-            start.AddRow(game, "JUMP", () => JumpName, StepJump);
-            start.AddRow(game, "INVERT TILT", () => OnOff(input.invertTilt), d => ToggleInvert(), true, () => input.useTilt);
-            start.AddRow(game, "RIDE", () => RideName, StepRide);
-            start.AddRow(game, "TREES", () => props.IsRealistic ? "REALISTIC" : "ORIGINAL", d => ToggleTrees(), true);
-            start.AddRow(game, "FLASHLIGHT", () => OnOff(DayNight.FlashlightOn), d => ToggleFlashlight(), true);
-            start.AddRow(game, "BLOOD", () => OnOff(blood.On), d => ToggleBlood(), true);
-            start.AddRow(sound, "MUSIC", () => Mathf.RoundToInt(AudioPrefs.MusicVolume * 10f) * 10 + "%", StepMusic);
-            start.AddRow(sound, "VOICE LINES", () => OnOff(SoundMix.VoiceLines), d => ToggleVoice(), true);
+            FillSettings(start.Settings);
         }
 
         bool titleShown;
@@ -275,19 +271,7 @@ namespace Summit
             Time.timeScale = on ? 0f : 1f;
             if (!on) { rider.CancelPop(); input.SwallowCurrentPress(); }   // a menu tap is never a jump
             AudioListener.pause = on;
-            hud.ShowPause(on);
-            hud.SetLens(LensName[lensLevel]);
-            ShowView();
-            hud.SetPauseSteer(input.useTilt);
-            hud.SetPauseJump(JumpName);
-            hud.SetPauseTrees(props.IsRealistic);
-            if (blood != null) hud.SetBlood(blood.On);
-            hud.SetFlashlight(DayNight.FlashlightOn);
-            hud.SetVoiceLines(SoundMix.VoiceLines);
-            hud.SetTime(TimeOfDay.LockLabel);
-            hud.SetMusic(Mathf.RoundToInt(AudioPrefs.MusicVolume * 10f) * 10 + "%");
-            hud.SetTurn(SteerPrefs.Label, SteerPrefs.Fraction);
-            turnDrag = false;
+            hud.ShowPause(on);   // (it reads every setting as it comes up)
             input.SwallowCurrentPress();
         }
 
@@ -295,7 +279,7 @@ namespace Summit
         {
             camLevel = Mathf.Clamp(k, 0, CamDist.Length - 1);
             chase.distScale = CamDist[camLevel];
-            hud.SetCamera(CamName[camLevel]);
+            hud.RefreshPause();
             PlayerPrefs.SetInt("summit_camdist", camLevel); PlayerPrefs.Save();
         }   // went over a crevasse: lost only if the body actually drops into it
         bool endBuried;
@@ -475,7 +459,7 @@ namespace Summit
             chase.distScale = CamDist[camLevel];
             angleLevel = Mathf.Clamp(PlayerPrefs.GetInt("summit_angle", 1), 0, AngleHeight.Length - 1);
             lensLevel = Mathf.Clamp(PlayerPrefs.GetInt("summit_lens", 1), 0, LensFov.Length - 1);
-            lensMode = Mathf.Clamp(PlayerPrefs.GetInt("summit_lenstype", 0), 0, LensFX.ModeName.Length - 1);
+            PlayerPrefs.DeleteKey("summit_lenstype");   // (the lens is always spherical now: an old ANAMORPHIC choice is forgotten)
             filterLevel = Mathf.Clamp(PlayerPrefs.GetInt("summit_filter", 0), 0, LookGrade.Names.Length - 1);
             filterStrength = Mathf.Clamp(PlayerPrefs.GetInt("summit_filterstrength", 10), 0, 10);
             halation = Mathf.Clamp(PlayerPrefs.GetInt("summit_halation", 0), 0, LensFX.HalationName.Length - 1);
@@ -580,6 +564,8 @@ namespace Summit
             lensFx.Build(cam);
             pov = PlayerPrefs.GetInt(ChaseCamera.PovPref, 0) == 1;
             chase.pov = pov; chase.body = body; chase.lensFx = lensFx;
+            FillSettings(hud.PauseSettings);
+            hud.PauseSettings.Clicked = () => audioFx.Play(Sfx.Click);
             ApplyCamera();
             ApplyLook();
             bool tube = PlayerPrefs.GetInt("summit_tube", 0) == 1;
@@ -653,7 +639,7 @@ namespace Summit
             hud.Clear(); hud.SetButtons(false, false, "PLAY"); hud.SetPrompt("");
             chase.enabled = false;
             terrain.behindChunks = 4; props.behindCells = 16;   // you can turn round and look up the hill here
-            camp.Enter(rider, body, chase.GetComponent<Camera>());
+            camp.Enter(rider, body, chase.GetComponent<Camera>(), !fresh);   // (back up from the start pad: at the gate; else off the Summit lift)
             if (slideView != null) slideView.gameObject.SetActive(false);   // its toe waits just uphill of the camp: not drawn here
             lensFx.Strength = 0.3f;   // the camp's gentle lens at once (it's a cut); dropping in eases back to yours
             terrain.Prewarm(); props.Prewarm();
@@ -929,45 +915,12 @@ namespace Summit
                 case State.Riding:
                     if (paused)
                     {
-                        // the TURN bar, slid: it follows the finger, a click at each stop it passes
-                        if (turnDrag)
-                        {
-                            if (!RiderInput.PointerHeld()) turnDrag = false;
-                            else
-                            {
-                                int k = Mathf.RoundToInt(hud.TurnBarAt(RiderInput.PointerPosition()) * (SteerPrefs.Stops.Length - 1));
-                                if (k != SteerPrefs.Stop) { audioFx.Play(Sfx.Click); SetTurnStop(k); }
-                            }
-                        }
                         if (input.AnyPress())
                         {
                             var pp = RiderInput.PointerPosition();
                             if (hud.OnResume(pp)) { audioFx.Play(Sfx.Click); SetPaused(false); }
-                            else if (hud.OnTurnMinus(pp) || hud.OnTurnPlus(pp)) { audioFx.Play(Sfx.Click); StepTurn(hud.OnTurnPlus(pp) ? 1 : -1); }
-                            else if (hud.OnTurnBar(pp))
-                            {
-                                turnDrag = true; audioFx.Play(Sfx.Click);
-                                SetTurnStop(Mathf.RoundToInt(hud.TurnBarAt(pp) * (SteerPrefs.Stops.Length - 1)));
-                            }
-                            else if (hud.OnPauseTab(pp)) audioFx.Play(Sfx.Click);
-                            else if (hud.OnHalationMinus(pp) || hud.OnHalationPlus(pp)) { audioFx.Play(Sfx.Click); StepHalation(hud.OnHalationPlus(pp) ? 1 : -1); }
-                            else if (hud.OnMusicMinus(pp) || hud.OnMusicPlus(pp)) { audioFx.Play(Sfx.Click); StepMusic(hud.OnMusicPlus(pp) ? 1 : -1); }
-                            else if (hud.OnPausePov(pp)) { audioFx.Play(Sfx.Click); SetPov(!pov); }
-                            else if (pov && (hud.OnCamMinus(pp) || hud.OnCamPlus(pp) || hud.OnAngMinus(pp) || hud.OnAngPlus(pp))) { }   // the chase camera's rows: greyed out
-                            else if (hud.OnCamMinus(pp) || hud.OnCamPlus(pp)) { audioFx.Play(Sfx.Click); StepCam(hud.OnCamPlus(pp) ? 1 : -1); }
-                            else if (hud.OnAngMinus(pp) || hud.OnAngPlus(pp)) { audioFx.Play(Sfx.Click); StepAngle(hud.OnAngPlus(pp) ? 1 : -1); }
-                            else if (hud.OnLensMinus(pp) || hud.OnLensPlus(pp)) { audioFx.Play(Sfx.Click); StepLens(hud.OnLensPlus(pp) ? 1 : -1); }
-                            else if (hud.OnLensTypeMinus(pp) || hud.OnLensTypePlus(pp)) { audioFx.Play(Sfx.Click); StepLensType(); }
-                            else if (hud.OnFilterMinus(pp) || hud.OnFilterPlus(pp)) { audioFx.Play(Sfx.Click); StepFilter(hud.OnFilterPlus(pp) ? 1 : -1); }
-                            else if (hud.OnStrengthMinus(pp) || hud.OnStrengthPlus(pp)) { audioFx.Play(Sfx.Click); StepStrength(hud.OnStrengthPlus(pp) ? 1 : -1); }
-                            else if (hud.OnTimeMinus(pp) || hud.OnTimePlus(pp)) { audioFx.Play(Sfx.Click); StepTime(hud.OnTimePlus(pp) ? 1 : -1); }
-                            else if (hud.OnPauseSteer(pp)) { audioFx.Play(Sfx.Click); ToggleSteer(); }
-                            else if (hud.OnPauseJump(pp)) { audioFx.Play(Sfx.Click); StepJump(1); }
-                            else if (hud.OnPauseTrees(pp)) { audioFx.Play(Sfx.Click); ToggleTrees(); }
-                            else if (hud.OnPauseVoiceLines(pp)) { audioFx.Play(Sfx.Click); ToggleVoice(); }
-                            else if (hud.OnPauseFlashlight(pp)) { audioFx.Play(Sfx.Click); ToggleFlashlight(); }
-                            else if (hud.OnPauseBlood(pp)) { audioFx.Play(Sfx.Click); ToggleBlood(); }
                             else if (hud.OnPauseRestart(pp)) { audioFx.Play(Sfx.Click); SetPaused(false); ToReady(); input.SwallowCurrentPress(); }
+                            else hud.OnPauseSettings(pp);   // (a tab or a setting: the sheet plays the click)
                         }
                         break;
                     }

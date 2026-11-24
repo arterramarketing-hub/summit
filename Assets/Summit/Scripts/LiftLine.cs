@@ -337,13 +337,16 @@ namespace Summit
         // ---------------------------------------------------------------- the Summit lift
         // The lift that brings you home: cycle 0's first line, from that cycle's gathering point (the danger stretch's
         // end, where the run funnels into the bowl or the ridge) up the summit face beside the start, to a top station
-        // on the camp's left shoulder (the right is the cliff: Slope.Summit), its deck about level with the camp's plateau
-        // and a short walk from it (LiftEnds lays the path, the outrun and the people). Before, its top was at z 40, below
+        // on the camp's left shoulder (the right is the cliff: Slope.Summit) beside the lodge's wing, its deck about level
+        // with the camp's plateau and a short walk from the lodge (LiftEnds lays the path, the outrun and the people; the
+        // hero arrives at its unload after a run: Camp.Enter). Before, its top was at z 40, below
         // the start's lip and 38 to 84 m to one side: down the face from the camp and out of sight of it.
         public const bool SummitOn = true;
-        // where its top station may stand: just in front of the camp's left front corner (it spans z -38 to -96, and 33 m
-        // either side of the run with its trees), as near the plateau's edge as the station's footprint allows
-        static readonly float[] SummitZ = { -62f, -58f, -66f, -54f, -70f, -50f };
+        // where its top station may stand: beside the lodge's wing (camplayout: the lift arrives at the lodge, so the
+        // camp's loop runs lift, lodge, fire, gate with no going back), as near the plateau's edge as the station's
+        // footprint allows; failing that, where it stood before, in front of the camp's left front corner (the camp
+        // spans z -38 to -96, and 33 m either side of the run with its trees)
+        static readonly float[][] SummitZ = { new[] { -88f, -86f, -90f, -84f, -92f, -82f, -94f, -80f }, new[] { -62f, -58f, -66f, -54f, -70f, -50f } };
         static readonly float[] SummitOff = { -41f, -44f, -47f, -50f, -54f };
 
         public static readonly Dictionary<string, int> SummitWhy = new Dictionary<string, int>();
@@ -361,9 +364,11 @@ namespace Summit
             int tries = 0;
             // (the nearest to the camp first; then, on a summit face too steep for the usual towers, taller ones, as
             // real summit lifts have)
+            // (every height and offset beside the lodge first; only then the old places in front of the camp)
+            foreach (var zs in SummitZ)
             foreach (float hm in new[] { HMax, SummitHMax })
             foreach (float off in SummitOff)
-                foreach (float zt in SummitZ)
+                foreach (float zt in zs)
                     foreach (float zBottom in wallLeft ? new[] { b + Course.DangerAt - 12f } : new[] { zb, b + Course.DangerAt - 12f })
                         foreach (float ob in SummitBottom)
                         {
@@ -448,7 +453,10 @@ namespace Summit
                 {
                     float px = x + l.dir.x * i * StationHalfLen * 0.5f + l.across.x * StationAcross[s];
                     float pz = z + l.dir.z * i * StationHalfLen * 0.5f + l.across.z * StationAcross[s];
-                    if (Mathf.Abs(px - Slope.Centre(pz)) < StationOff - StationHalfWid - 1f) return false;
+                    // (clear of the run: behind the gate there is none, only the camp on the run's line at the lip, so
+                    // the line's wander back there means nothing; the Summit lift's top, beside the lodge: camplayout)
+                    float runX = pz < Slope.GateZ ? Slope.Centre(Slope.PadLip) : Slope.Centre(pz);
+                    if (Mathf.Abs(px - runX) < StationOff - StationHalfWid - 1f) return false;
                     if (Kept(px, pz)) return false;
                     deck = Mathf.Max(deck, Slope.Height(px, pz));
                 }

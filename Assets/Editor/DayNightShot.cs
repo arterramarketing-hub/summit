@@ -72,7 +72,7 @@ public static class DayNightShot
                 // the pause menu with its TIME row, at phone size (an overlay canvas doesn't reach a render texture)
                 var hud = Get<Hud>("hud"); var hc = hud.GetComponent<Canvas>();
                 hc.renderMode = RenderMode.ScreenSpaceCamera; hc.worldCamera = cam; hc.planeDistance = 0.6f;
-                hud.ShowPause(true); hud.SetTime(TimeOfDay.LockName[4]);
+                hud.ShowPause(true); hud.ShowTab(1);   // (LOOK: the TIME OF DAY row)
                 Canvas.ForceUpdateCanvases();
                 Shoot("DayNight_pause.png");
                 hud.ShowPause(false); hc.renderMode = RenderMode.ScreenSpaceOverlay;

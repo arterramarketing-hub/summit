@@ -35,13 +35,12 @@ public static class LookShot
         var fFilter = typeof(SummitGame).GetField("filterLevel", NP);
         var fStrength = typeof(SummitGame).GetField("filterStrength", NP);
         var fLens = typeof(SummitGame).GetField("lensLevel", NP);
-        var fMode = typeof(SummitGame).GetField("lensMode", NP);
         Directory.CreateDirectory("LookShots");
 
         void Look(int filter, int strength) { fFilter.SetValue(game, filter); fStrength.SetValue(game, strength); applyLook.Invoke(game, null); }
-        void Lens(int level, int mode)
+        void Lens(int level)
         {
-            fLens.SetValue(game, level); fMode.SetValue(game, mode); applyCam.Invoke(game, null);
+            fLens.SetValue(game, level); applyCam.Invoke(game, null);
             for (int i = 0; i < 120; i++) late.Invoke(chase, null);   // let the field of view settle on the new lens
             aLate.Invoke(atmo, null);
         }
@@ -70,22 +69,18 @@ public static class LookShot
             foreach (var sk in skins) { var m = new Mesh(); sk.BakeMesh(m); var g = new GameObject("b", typeof(MeshFilter), typeof(MeshRenderer)); g.GetComponent<MeshFilter>().sharedMesh = m; g.GetComponent<MeshRenderer>().sharedMaterials = sk.sharedMaterials; g.transform.SetPositionAndRotation(sk.transform.position, sk.transform.rotation); sk.enabled = false; baked.Add(g); }
             if (!warmed) { Shoot(cam, "LookShots/warmup.png"); warmed = true; }   // the first frame shows placeholder materials
 
-            // every filter at full strength, and CINEMATIC at half, all through the default WIDE spherical lens
-            Lens(1, 0);
+            // every filter at full strength, and CINEMATIC at half, all through the default WIDE lens
+            Lens(1);
             for (int f = 0; f < LookGrade.Names.Length; f++) { Look(f, 10); Shoot(cam, $"LookShots/t{next}_filter_{Slug(LookGrade.Names[f])}.png"); }
             Look(1, 5); Shoot(cam, $"LookShots/t{next}_filter_cinematic_50.png");
 
             // the lenses, under NATURAL so only the lens changes
             Look(0, 10);
-            Lens(0, 0); Shoot(cam, $"LookShots/t{next}_lens_standard.png");
-            Lens(1, 0); Shoot(cam, $"LookShots/t{next}_lens_wide_default.png");
-            Lens(2, 0); Shoot(cam, $"LookShots/t{next}_lens_wider.png");
-            Lens(3, 0); Shoot(cam, $"LookShots/t{next}_lens_fisheye.png");
-            Lens(1, 1); Shoot(cam, $"LookShots/t{next}_lens_anamorphic.png");
-            Lens(3, 1); Shoot(cam, $"LookShots/t{next}_lens_anamorphic_fisheye.png");
-            // and the pairing most players will reach for
-            Look(1, 10); Lens(1, 1); Shoot(cam, $"LookShots/t{next}_cinematic_anamorphic.png");
-            Look(0, 10); Lens(1, 0);
+            Lens(0); Shoot(cam, $"LookShots/t{next}_lens_standard.png");
+            Lens(1); Shoot(cam, $"LookShots/t{next}_lens_wide_default.png");
+            Lens(2); Shoot(cam, $"LookShots/t{next}_lens_wider.png");
+            Lens(3); Shoot(cam, $"LookShots/t{next}_lens_fisheye.png");
+            Look(0, 10); Lens(1);
 
             foreach (var g in baked) Object.DestroyImmediate(g);
             foreach (var sk in skins) sk.enabled = true;

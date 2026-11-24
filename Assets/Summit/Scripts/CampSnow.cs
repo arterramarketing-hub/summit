@@ -272,7 +272,8 @@ namespace Summit
         /// </summary>
         List<Vector3> ShovelledPath()
         {
-            var line = Spline(new List<Vector3> { Ground(1.6f, -69.4f), Ground(5.5f, -66.2f), Ground(9.6f, -62.6f), Ground(13.4f, -58.8f), Ground(15.2f, -55.9f) }, 8);
+            // (camplayout: from the fire east to the lookout's deck at the cliff's edge, past the snowman on its left)
+            var line = Spline(new List<Vector3> { Ground(1.6f, -69.4f), Ground(6f, -67.6f), Ground(11f, -66.8f), Ground(16f, -66.5f), Ground(LookoutX - 2.4f, LookoutZ) }, 8);
             const float half = 0.7f;
             var bv = new List<Vector3>(); var btri = new List<int>(); var buv = new List<Vector2>();
             for (int i = 0; i < line.Count; i++)
@@ -344,10 +345,7 @@ namespace Summit
                 trod.Add((foot, foot, 3.6f, 3f, 1f)); dirt.Add((foot, foot, 1.3f, 1.2f, 0.55f));
                 var wingFoot = L(-13.2f, 18.2f);
                 trod.Add((wingFoot, wingFoot, 2.4f, 2.2f, 0.95f)); dirt.Add((wingFoot, wingFoot, 0.9f, 0.9f, 0.45f));
-                var wax = L(-7.0f, 15.6f);
-                trod.Add((wax, wax, 1.6f, 1.6f, 0.8f));
                 trod.Add((wingFoot, fire, 0.7f, 1.6f, 0.75f));     // the wing's steps to the fire
-                trod.Add((wax, foot, 0.8f, 1.4f, 0.7f));
                 // along the paved path, either side of its banks: people step off it
                 var path = new List<Vector2> { F(stairsFoot - chalet.forward * 0.6f), G(-5.6f, -71.5f), G(-4.9f, -64.5f), G(-3.4f, -57f), G(-1.2f, -50.5f), G(0f, -44f) };
                 for (int i = 0; i + 1 < path.Count; i++) trod.Add((path[i], path[i + 1], 2.4f, 2.6f, 0.85f));
@@ -355,9 +353,14 @@ namespace Summit
             var gate = G(0f, Slope.GateZ - 2.6f);
             trod.Add((gate, gate, 4.5f, 3f, 1f)); dirt.Add((gate, gate, 1.6f, 1.6f, 0.35f));
             trod.Add((G(-4f, -44f), G(4f, -44f), 1.4f, 2.5f, 0.85f));
-            var snowman = G(11.5f, -61f);
+            // the start corral (Camp.StartCorral, CampLife's waxing stand): round the rack, the trail map and the stand
+            var wax = G(7.2f, Slope.GateZ - 10.4f);
+            trod.Add((wax, wax, 1.6f, 1.6f, 0.8f));
+            trod.Add((wax, gate, 0.8f, 1.4f, 0.7f));
+            trod.Add((G(-5.8f, Slope.GateZ - 8.9f), G(-3.7f, Slope.GateZ - 11.2f), 1.6f, 1.8f, 0.85f));
+            var snowman = G(SnowmanX, SnowmanZ);
             trod.Add((snowman, snowman, 2.0f, 1.8f, 0.9f));
-            var look = G(16f, -54f);
+            var look = G(LookoutX - 2.6f, LookoutZ);
             trod.Add((look, look, 3.0f, 2.2f, 1f));
             trod.Add((fire, gate, 0.8f, 2.2f, 0.7f));            // the fire to the gate, by the path's side
             trod.Add((look, gate, 0.6f, 1.8f, 0.6f));            // the lookout to the gate

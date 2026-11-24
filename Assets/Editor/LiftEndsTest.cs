@@ -74,7 +74,7 @@ public static class LiftEndsTest
                         bool drawn = c.GetComponent<MeshRenderer>() != null || c.name == "RackSolid";
                         if (!drawn) Fail($"{tag}: {c.name}'s collider is not drawn");
                         var p = c.transform.position;
-                        if (Mathf.Abs(Slope.Across(p.x, p.z)) < Slope.Half(p.z)) Fail($"{tag}: {c.name} on the groomed run");
+                        if (p.z > Slope.GateZ && Mathf.Abs(Slope.Across(p.x, p.z)) < Slope.Half(p.z)) Fail($"{tag}: {c.name} on the groomed run");   // (behind the gate there is no run: the Summit top beside the lodge, camplayout)
                         if (LiftLine.HillOrLane(p.x, p.z, 0f)) Fail($"{tag}: {c.name} on a hill or the lane to it");
                         foreach (var o in LiftLine.Lifts)
                             if (o != e.lift)

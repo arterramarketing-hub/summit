@@ -87,11 +87,12 @@ public static class BloodShot
         // at an iPhone's portrait shape
         var hud = Object.FindFirstObjectByType<Hud>();
         typeof(SummitGame).GetMethod("SetPaused", NP).Invoke(game, new object[] { true });
+        hud.ShowTab(2);   // (GAME: the BLOOD row)
         var canvas = hud.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceCamera; canvas.worldCamera = cam; canvas.planeDistance = 1f;
         Look(rider.transform.position + new Vector3(0f, 3f, -6f), rider.transform.position, 60f);
         Shoot("BloodShotPause.png", false);
-        blood.SetOn(false); hud.SetBlood(false);
+        blood.SetOn(false); hud.RefreshPause();
         Shoot("BloodShotPauseOff.png", false);
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         typeof(SummitGame).GetMethod("SetPaused", NP).Invoke(game, new object[] { false });

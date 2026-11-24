@@ -46,6 +46,13 @@ public static class LiftLayoutCheck
                     float edge = Mathf.Abs(summit.top.x - cx) - Camp.HalfWidth;
                     Debug.Log($"LAYOUT seed{seed} Summit: top at z {summit.top.z:0}, {summit.top.x - cx:+0;-0} m off the run ({edge:0} m past the camp's edge), deck {summit.top.y - plateau:+0.0;-0.0} m against the plateau; bottom at z {summit.bottom.z:0} ({Course.At(summit.bottom.z)}); {summit.plan:0} m, {summit.top.y - summit.bottom.y:0} m up, {summit.s.Length} towers");
                     if (edge > SummitReach) Fail($"seed{seed}: the Summit lift's top is {edge:0} m past the camp's edge");
+                    // (camplayout: its top's place is beside the lodge's wing; say why not, where it isn't)
+                    if (summit.top.z > -76f)
+                    {
+                        var sbw = new System.Text.StringBuilder();
+                        foreach (var kv in LiftLine.SummitWhy) sbw.Append($" {kv.Key} x{kv.Value}");
+                        Debug.Log($"LAYOUT seed{seed} Summit: not beside the lodge (tries:{sbw})");
+                    }
                     if (plateau - summit.top.y > SummitDrop) Fail($"seed{seed}: the Summit lift's deck is {plateau - summit.top.y:0.0} m below the camp");
                 }
                 for (int k = 0; k < 8; k++)

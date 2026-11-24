@@ -77,9 +77,9 @@ public static class CamShot
             string mn = moments[m].name;
             Debug.Log($"CAMSHOT {mn}: {rider.Speed * 3.6f:0} km/h, lean {rider.Lean:0.00}, crashed={rider.Crashed}, air={rider.Airborne}");
 
-            void Variant(string label, int angle, int lensLv, int mode)
+            void Variant(string label, int angle, int lensLv)
             {
-                Set("angleLevel", angle); Set("lensLevel", lensLv); Set("lensMode", mode);
+                Set("angleLevel", angle); Set("lensLevel", lensLv);
                 applyCam.Invoke(game, null);
                 chase.Snap(); late.Invoke(chase, null); aLate.Invoke(atmo, null);
                 Vector3 c = cam.transform.position;
@@ -91,24 +91,22 @@ public static class CamShot
             }
 
             TimeOfDay.TestClock = 1.4f; dayNight.ApplyNow();
-            // every angle on the default lens (WIDE, spherical)
+            // every angle on the default lens (WIDE)
             string[] an = { "ground", "low", "normal", "high", "overhead" };
-            for (int a = 0; a < 5; a++) Variant($"day_angle{a}-{an[a]}_wide", a, 1, 0);
+            for (int a = 0; a < 5; a++) Variant($"day_angle{a}-{an[a]}_wide", a, 1);
             // every lens on the default angle (LOW)
             string[] ln = { "standard", "wide", "wider", "fisheye" };
-            for (int l = 0; l < 4; l++) Variant($"day_angle1-low_lens{l}-{ln[l]}", 1, l, 0);
-            Variant("day_angle1-low_anamorphic-wide", 1, 1, 1);
-            Variant("day_angle1-low_anamorphic-fisheye", 1, 3, 1);
-            Variant("day_angle0-ground_fisheye", 0, 3, 0);
+            for (int l = 0; l < 4; l++) Variant($"day_angle1-low_lens{l}-{ln[l]}", 1, l);
+            Variant("day_angle0-ground_fisheye", 0, 3);
             // the default view with the parts of the lens taken away one at a time: what bends the bottom?
-            Set("angleLevel", 1); Set("lensLevel", 1); Set("lensMode", 0); applyCam.Invoke(game, null);
+            Set("angleLevel", 1); Set("lensLevel", 1); applyCam.Invoke(game, null);
             chase.Snap(); late.Invoke(chase, null);
             float li = lens.intensity.value, ls = lens.scale.value;
-            var anaField = typeof(LensFX).GetField("ana", NP); var an0 = (Vector4)anaField.GetValue(lensFx);
-            lens.intensity.Override(0f); lens.scale.Override(1f); anaField.SetValue(lensFx, Vector4.zero);
+            var barrelField = typeof(LensFX).GetField("barrel", NP); var b0 = (float)barrelField.GetValue(lensFx);
+            lens.intensity.Override(0f); lens.scale.Override(1f); barrelField.SetValue(lensFx, 0f);
             Render($"{mn}_diag_low-wide_no-barrel");
-            lens.intensity.Override(li); lens.scale.Override(ls); anaField.SetValue(lensFx, an0);
-            var e = (Vector4)edgeField.GetValue(lensFx); edgeField.SetValue(lensFx, Vector4.zero); Render($"{mn}_diag_low-wide_no-fringe");
+            lens.intensity.Override(li); lens.scale.Override(ls); barrelField.SetValue(lensFx, b0);
+            var e = (Vector2)edgeField.GetValue(lensFx); edgeField.SetValue(lensFx, Vector2.zero); Render($"{mn}_diag_low-wide_no-fringe");
             edgeField.SetValue(lensFx, e);
             // first person (the chase view still runs underneath it)
             Set("pov", true); chase.pov = true; applyCam.Invoke(game, null);
@@ -118,12 +116,12 @@ public static class CamShot
             Set("pov", false); chase.pov = false; applyCam.Invoke(game, null); chase.Snap(); late.Invoke(chase, null);
             // night
             TimeOfDay.TestClock = 3.4f; dayNight.ApplyNow();
-            Variant("night_angle1-low_wide", 1, 1, 0);
-            Variant("night_angle0-ground_fisheye", 0, 3, 0);
-            Variant("night_angle2-normal_wide", 2, 1, 0);
+            Variant("night_angle1-low_wide", 1, 1);
+            Variant("night_angle0-ground_fisheye", 0, 3);
+            Variant("night_angle2-normal_wide", 2, 1);
             TimeOfDay.TestClock = 1.4f; dayNight.ApplyNow();
             // back to the default for the rest of the ride
-            Set("angleLevel", 1); Set("lensLevel", 1); Set("lensMode", 0); applyCam.Invoke(game, null);
+            Set("angleLevel", 1); Set("lensLevel", 1); applyCam.Invoke(game, null);
             m++;
         }
         ChaseCamera.TestDt = 0f;

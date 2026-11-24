@@ -415,8 +415,9 @@ public static partial class PeopleTest
                     if (m > 0.02f) { inThings++; if (m > worstThing) { worstThing = m; worstThingWhat = $"{a.role}:{a.doing} at {a.pos} ({a.pos.x - cx:0.0}, {a.pos.z:0.0}) spot {a.spot?.name}"; } }
                 }
                 float edge = a.pos.x - cx;
-                worstEdge = Mathf.Max(worstEdge, edge);
-                if (edge > 22f || a.pos.y < Slope.DrawnHeight(a.pos.x, a.pos.z) - 0.5f) nearEdge++;
+                bool onDeck = Summit.Camp.OnLookoutDeck(edge, a.pos.z);   // (the lookout's deck goes out past the rail, over the lip: camplayout)
+                if (!onDeck) worstEdge = Mathf.Max(worstEdge, edge);
+                if ((edge > 22f && !onDeck) || (!onDeck && a.pos.y < Slope.DrawnHeight(a.pos.x, a.pos.z) - 0.5f)) nearEdge++;
                 // foot slide: the planted foot of a walker in the full model stays put on the ground
                 if (a.doing == CampLife.Doing.Walk && a.p.Lod == 0 && a.speed > 0.4f)
                 {
@@ -461,7 +462,7 @@ public static partial class PeopleTest
             sb.AppendLine("CAMP   held up most at: " + t);
             if (System.Environment.GetEnvironmentVariable("SUMMIT_PEOPLE_LOG") == "1") foreach (var why in life.StuckWhy) sb.AppendLine("CAMP     " + why);
         }
-        sb.AppendLine($"CAMP off the edge: {nearEdge} frames; furthest toward the cliff {worstEdge:0.0} m from the run's centre (the rail is at 24.1)");
+        sb.AppendLine($"CAMP off the edge: {nearEdge} frames; furthest toward the cliff {worstEdge:0.0} m from the run's centre, off the lookout's deck (the rail is at 24.1)");
         sb.AppendLine($"CAMP planted feet slid {slideDist * 100.0:0.0} cm over {walkDist:0} m walked ({(walkDist > 0 ? slideDist / walkDist * 100.0 : 0):0.00} cm per metre; worst {slideWorst * 100f:0} cm/s)");
         sb.AppendLine($"CAMP after the edge gave way: facing it within {avgReact:0} degrees on average");
         sb.AppendLine(reactLine);

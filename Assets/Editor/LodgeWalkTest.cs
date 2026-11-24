@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
@@ -114,7 +115,9 @@ public static class LodgeWalkTest
     static void Walks()
     {
         float cx = Slope.Centre(Slope.PadLip);
-        var arrive = new Vector3(cx - 1.5f, 0f, -64f);
+        // (camplayout: you arrive off the Summit lift, beside the wing, and come round it to the steps by the wing)
+        var lift = LiftEnds.SummitPath();
+        var arrive = lift.Count > 1 ? lift[0] : new Vector3(cx - 1.5f, 0f, -64f);
         var dropIn = new Vector3(cx, 0f, Slope.GateZ - 2.6f);
         var foot = camp.StairsFoot;
         var style = camp.StationPoint(Camp.Station.Style);
@@ -124,17 +127,27 @@ public static class LodgeWalkTest
         foreach (var u in ups) { var l = Quaternion.Euler(0f, -camp.ChaletYaw, 0f) * (u - camp.ChaletPoint(0, 0, 0)); if (l.z > 2f) bench = u; else counter = u; }
         var door = L(4.5f, 5.5f);
         Debug.Log($"LODGEWALK lodge at {camp.ChaletPoint(0, 0, 0)}, steps' foot {foot} ({camp.LodgeStepsShowing} steps showing, the floor {camp.LodgeFrontDrop:0.00} m above the snow there); door {door}; DROP IN {dropIn}; straight line steps-to-DROP IN {Vector2.Distance(new Vector2(foot.x, foot.z), new Vector2(dropIn.x, dropIn.z)):0.0} m");
-        Leg("arrival to the steps, up them and in at the door", arrive, new[] { foot, L(0f, 12f), L(2.5f, 8.2f), door });
+        if (lift.Count > 1)
+        {
+            var way = new List<Vector3>();
+            for (int i = 2; i < lift.Count; i += 2) { var l = Quaternion.Euler(0f, -camp.ChaletYaw, 0f) * (lift[i] - camp.ChaletPoint(0, 0, 0)); way.Add(lift[i]); if (l.x > -14f && l.z > 17f) break; }   // (to the wing's steps' foot)
+            way.AddRange(new[] { L(-13.0f, 17.5f), L(-13.0f, 13.0f), L(-11.9f, 11.6f), L(-11.9f, 9.0f), L(-8f, 8.2f), L(3f, 8.2f), door });
+            Leg("arrival off the Summit lift, round the wing, up its steps and along the terrace in at the door", arrive, way.ToArray());
+        }
+        Leg("the fire to the steps, up them and in at the door", new Vector3(cx - 1.5f, 0f, -64f), new[] { foot, L(0f, 12f), L(2.5f, 8.2f), door });
         Vector3[] toDropIn;
         {
-            // B2R: in past the lounge to the back wall, up the stair along it into the loft by the gear wall, to the wardrobe
+            // camplayout: the wardrobe and the missions board just inside the front glass by the door; the stair along the
+            // back wall up to the loft's lounge (the window half, moved up there)
             var up = new[] { L(3.6f, 0.8f), L(3.0f, -4.4f), L(1.6f, -5.9f), L(0.4f, -5.9f), L(-5.0f, -5.9f), L(-6.4f, -5.6f), L(-7.2f, -4.4f), L(-8.6f, -4.0f) };
             var down = new[] { L(-7.2f, -4.4f), L(-6.4f, -5.6f), L(-5.0f, -5.9f), L(0.4f, -5.9f), L(1.6f, -5.9f), L(3.0f, -4.4f) };
-            var toStyle = new List<Vector3>(up) { style };
-            Leg("the door up the stair along the back wall to the wardrobe in the loft", door, toStyle.ToArray(), Camp.Station.Style);
-            var toMissions = new List<Vector3>(down) { missions };
-            Leg("the loft back down the stair to the missions board", style, toMissions.ToArray(), Camp.Station.Missions);
-            Leg("the missions board to the board shop's counter", missions, new[] { L(4.6f, -3.0f), L(4.6f, -0.4f), counter }, Camp.Station.Upgrades);
+            Leg("the door to the missions board beside it", door, new[] { missions }, Camp.Station.Missions);
+            Leg("the missions board along the front glass to the wardrobe", missions, new[] { L(3.6f, 1.5f), L(-1.0f, 1.4f), style }, Camp.Station.Style);
+            var toLoft = new List<Vector3> { L(-1.0f, 1.4f) }; toLoft.AddRange(up); toLoft.Add(U(-7.6f, 1.6f));
+            Leg("the wardrobe up the stair along the back wall to the loft's lounge", style, toLoft.ToArray());
+            var toMissions = new List<Vector3>(down) { L(3.6f, 0.8f), missions };
+            Leg("the loft back down the stair to the missions board", U(-7.6f, 1.6f), new List<Vector3>(new[] { U(-7.3f, -0.7f), U(-7.3f, -3.4f) }).Concat(toMissions).ToArray(), Camp.Station.Missions);
+            Leg("the missions board to the board shop's counter", missions, new[] { L(3.6f, 1.0f), L(4.6f, -0.4f), counter }, Camp.Station.Upgrades);
             Leg("the counter to the tuning bench", counter, new[] { L(7.2f, 2.5f), bench }, Camp.Station.Upgrades);
             Leg("the tuning bench through the snug's way into the café", bench, new[] { L(6f, 1.0f), L(-6f, 1.0f), L(-10f, 0.8f), L(-13.5f, 2.2f) });
             Leg("the café to the snug under the loft", L(-13.5f, 2.2f), new[] { L(-10f, 0.8f), L(-8.6f, 0.6f), L(-8.6f, -1.6f) });
@@ -142,17 +155,17 @@ public static class LodgeWalkTest
             Leg("the snug into the ring round the fire", L(-8.6f, -1.6f), new[] { L(-6.8f, -1.6f), L(-6.0f, -0.75f), L(-4.4f, -0.75f), L(-4.4f, -1.72f), L(-3.0f, -1.72f) });
             Leg("all the way round the fire (the stair behind the back sofa)", L(-3.0f, -1.72f), new[] { L(-0.1f, -1.72f), L(0.45f, -2.71f), L(-0.1f, -3.7f), L(-3.5f, -3.7f), L(-4.1f, -2.71f), L(-3.5f, -1.72f) });
             Leg("the fire out the side door to the racks", L(-3.5f, -1.72f), new[] { L(-4.4f, -1.72f), L(-4.4f, -0.75f), L(-4.6f, 1.0f), L(0f, 1.1f), L(8f, 3.9f), L(10.4f, 3.95f), L(11.6f, 3.95f), L(14.75f, 3.95f), L(14.75f, -2.1f), L(14.75f, -4.6f) });
-            Leg("the stair's foot round the lounge to the couple's glass", L(1.6f, -5.9f), new[] { L(3.0f, -4.4f), L(3.6f, 0.8f), L(2.4f, 5.0f), L(-1.0f, 5.6f) });
+            Leg("the stair's foot round the lounge to the couple's glass", L(1.6f, -5.9f), new[] { L(3.0f, -4.4f), L(3.6f, 0.8f), L(1.6f, 2.0f), L(-0.4f, 4.6f), L(-1.0f, 5.6f) });
             Leg("the door between the lounge's two halves to the café", door, new[] { L(3.6f, 1.2f), L(-4.6f, 1.0f), L(-10f, 0.8f), L(-13.5f, 2.2f) });
             // the lookout's deck on the wing's roof: from the wardrobe across the loft, out of its doors in the high end's
             // glass, to the front rail (standing still there the camera takes in the mountain); and back down to the hall
-            Leg("the wardrobe across the loft, out of its doors onto the lookout's deck, to the front rail", style, new[] { L(-7.3f, -3.4f), L(-7.3f, -0.7f), L(-9.8f, -0.1f), L(-12.2f, 0.0f), L(-13.0f, 2.0f), L(-13.2f, 4.7f) });
+            Leg("the loft's lounge across the loft, out of its doors onto the lookout's deck, to the front rail", U(-7.6f, 1.6f), new[] { U(-7.3f, -0.7f), L(-9.8f, -0.1f), L(-12.2f, 0.0f), L(-13.0f, 2.0f), L(-13.2f, 4.7f) });
             for (int i = 0; i < 90; i++) { camp.Walk(Vector2.zero, dt); body.Apply(dt); camp.CameraStep(dt); }
             if (!camp.OnLookout) { fails++; problems.Add(((Vector3)fPos.GetValue(camp), "the deck's lookout")); Debug.LogError("LODGEWALK standing at the deck's front rail: not on the lookout"); }
             else Debug.Log($"LODGEWALK standing at the deck's front rail: on the lookout; feet {((Vector3)fPos.GetValue(camp)).y - camp.ChaletPoint(0, 0, 0).y:0.00} above the lodge's floor, the camera at {cam(camp) - camp.ChaletPoint(0, 0, 0)}");
             Leg("round the deck: past the two talking by the viewer, round the fire bowl and the lounge chairs, by the drift, back to the doors", U(-13.2f, 4.7f), new[] { L(-13.0f, 2.6f), L(-14.2f, 2.3f), L(-15.4f, 1.9f), L(-16.2f, 0.6f), L(-14.0f, 0.2f), L(-13.4f, -1.6f), L(-13.4f, -3.9f), L(-14.6f, -4.3f), L(-12.4f, -3.4f), L(-12.2f, 0.0f) });
             Leg("the deck back in through the doors, across the loft and down the stair to its foot", U(-12.2f, 0.0f), new[] { L(-9.8f, -0.1f), L(-7.3f, -0.7f), L(-7.3f, -3.4f), L(-7.2f, -4.4f), L(-6.4f, -5.6f), L(-5.0f, -5.9f), L(0.4f, -5.9f), L(1.6f, -5.9f) });
-            var tdi = new List<Vector3>(down) { L(3.6f, 0.8f), door, L(2f, 9f), foot, dropIn };
+            var tdi = new List<Vector3> { L(-1.0f, 1.4f), L(3.6f, 1.5f), door, L(2f, 9f), foot, dropIn };   // (the wardrobe's by the door now)
             toDropIn = tdi.ToArray();
         }
         Leg("the covered section from the racks round the front to the wing's steps and down", L(14.75f, -4.6f), new[] { L(14.75f, 3.95f), L(14.75f, 8.15f), L(6f, 8.15f), L(-10.5f, 8.2f), L(-11.9f, 9.2f), L(-11.9f, 11.6f), L(-13.0f, 12.3f), L(-13.0f, 17.5f), L(-13.0f, 20f) });

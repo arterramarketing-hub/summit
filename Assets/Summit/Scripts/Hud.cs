@@ -255,205 +255,79 @@ namespace Summit
         public bool OnPlay(Vector2 p) => Inside(playBtn, p);
         public bool OnRestart(Vector2 p) => Inside(restartBtn, p);
 
-        // ---- the pause menu: RESUME always, then four tabs. VIEW: chase camera or first person, camera distance,
-        //      angle (those two are for the chase camera: greyed out in first person), lens, lens type.
-        //      LOOK: filter, filter strength, halation, time of day. GAME: turn (how sharp the carve is), steering, jump,
-        //      blood, trees, flashlight, restart run.
-        //      SOUND: music volume. A hidden tab's buttons are inactive, so they can't be hit.
+        // ---- the pause menu: PAUSED, RESUME and RESTART RUN side by side, and under them every setting on the same sheet
+        //      as the start page's (SettingsSheet, given the same rows by SummitGame.FillSettings), up for as long as
+        //      the game is paused. The frozen run shows above it, dimmed. A hidden tab's rows are inactive, so they
+        //      can't be hit.
 
         GameObject pausePanel;
-        RectTransform resumeBtn, camMinus, camPlus, angMinus, angPlus, lensMinus, lensPlus, steerBtn, againBtn, treesBtn;
-        Text camLabel, angLabel, lensLabel, steerLabel, treesLabel;
-        RectTransform lensTypeMinus, lensTypePlus, filterMinus, filterPlus, strengthMinus, strengthPlus;
-        Text lensTypeLabel, filterLabel, strengthLabel;
-        RectTransform timeMinus, timePlus; Text timeLabel;
-        RectTransform halationMinus, halationPlus, musicMinus, musicPlus; Text halationLabel, musicLabel;
+        RectTransform pauseTop, resumeBtn, againBtn;
+        /// <summary>The pause menu's settings: every one of them, as on the start page.</summary>
+        public SettingsSheet PauseSettings { get; private set; }
+        /// <summary>The settings' tabs, in the order SummitGame.FillSettings adds them.</summary>
         public static readonly string[] TabName = { "VIEW", "LOOK", "GAME", "SOUND" };
-        RectTransform[] tabBtn; GameObject[] tabPage; int tab;
-        static readonly Color TabOn = new Color(0.10f, 0.45f, 0.90f, 0.95f), TabOff = new Color(1f, 1f, 1f, 0.16f);
-
-        RectTransform Button(Transform parent, string label, Vector2 pos, Vector2 size, Color c, out Text text, int fontSize = 52)
-        {
-            var b = NewImage(label + "Btn", parent, c);
-            Place(b.rectTransform, new Vector2(0.5f, 0.5f), pos, size, new Vector2(0.5f, 0.5f));
-            text = NewText(label + "Label", b.transform, new Vector2(0.5f, 0.5f), Vector2.zero, fontSize, TextAnchor.MiddleCenter);
-            text.text = label;
-            return b.rectTransform;
-        }
 
         void BuildPause()
         {
-            var dim = NewImage("Pause", transform, new Color(0.03f, 0.06f, 0.12f, 0.72f));
+            var dim = NewImage("Pause", transform, new Color(0.02f, 0.04f, 0.09f, 0.42f));
             Stretch(dim.rectTransform);
             pausePanel = dim.gameObject;
-            var panel = new GameObject("PauseSafe", typeof(RectTransform)).GetComponent<RectTransform>();
-            panel.SetParent(pausePanel.transform, false);
-            panel.anchorMin = Vector2.zero; panel.anchorMax = Vector2.one; panel.offsetMin = panel.offsetMax = Vector2.zero;
-            var title = NewText("PausedTitle", panel, new Vector2(0.5f, 0.5f), new Vector2(0f, 700f), 90, TextAnchor.MiddleCenter);
-            title.text = "PAUSED";
-            Color blue = new Color(0.10f, 0.45f, 0.90f, 0.95f), grey = new Color(1f, 1f, 1f, 0.16f);
-            // the layout is 1920 high; a portrait iPhone's safe area is about +-940 of it: everything sits in +750..-500
-            resumeBtn = Button(panel, "RESUME", new Vector2(0f, 560f), new Vector2(560f, 120f), blue, out _, 60);
-            tabBtn = new RectTransform[TabName.Length]; tabPage = new GameObject[TabName.Length];
-            for (int k = 0; k < TabName.Length; k++)
+            var root = dim.rectTransform;
+            // the top of the frame a little darker as on the start page, so the type reads over sky and snow
+            var shade = SettingsSheet.Img("TopShade", root, new Color(0.02f, 0.04f, 0.09f, 0.34f), SettingsSheet.FadeDown);
+            shade.rectTransform.anchorMin = new Vector2(0f, 1f); shade.rectTransform.anchorMax = Vector2.one;
+            shade.rectTransform.pivot = new Vector2(0.5f, 1f); shade.rectTransform.sizeDelta = new Vector2(0f, 760f);
+            PauseSettings = new SettingsSheet(root, false);
+            // over the sheet: PAUSED, and the two ways on, set as the start page's VISIT CAMP | GO FOR A RUN
+            pauseTop = SettingsSheet.New("PauseTop", root);
+            Place(pauseTop, new Vector2(0.5f, 0f), Vector2.zero, new Vector2(SettingsSheet.Width, 0f), new Vector2(0.5f, 0f));
+            var title = SettingsSheet.Label("PausedTitle", pauseTop, new Vector2(0.5f, 0f), new Vector2(0f, 330f), new Vector2(900f, 110f), 64, TextAnchor.MiddleCenter, SettingsSheet.Ink);
+            title.text = SettingsSheet.Track("PAUSED", 40);
+            RectTransform Choice(string name, string label, float x)
             {
-                tabBtn[k] = Button(panel, TabName[k], new Vector2(-342f + 228f * k, 380f), new Vector2(214f, 110f), grey, out _, 42);
-                var page = new GameObject(TabName[k] + "Tab", typeof(RectTransform)).GetComponent<RectTransform>();
-                page.SetParent(panel, false);
-                page.anchorMin = Vector2.zero; page.anchorMax = Vector2.one; page.offsetMin = page.offsetMax = Vector2.zero;
-                tabPage[k] = page.gameObject;
+                var r = SettingsSheet.New(name, pauseTop);
+                Place(r, new Vector2(0.5f, 0f), new Vector2(x, 150f), new Vector2(440f, 150f), new Vector2(0.5f, 0.5f));
+                SettingsSheet.Label("Text", r, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(440f, 80f), 36, TextAnchor.MiddleCenter, SettingsSheet.Ink).text = SettingsSheet.Track(label, 30);
+                return r;
             }
-            // a setting with - and + either side of its value; rows 200 apart, big buttons
-            Text Row(int page, string label, float y, out RectTransform minus, out RectTransform plus)
-            {
-                var parent = tabPage[page].transform;
-                var t = NewText(label + "Title", parent, new Vector2(0.5f, 0.5f), new Vector2(0f, y + 80f), 38, TextAnchor.MiddleCenter);
-                t.text = label; t.color = new Color(1f, 1f, 1f, 0.75f);
-                minus = Button(parent, "-", new Vector2(-270f, y), new Vector2(150f, 120f), grey, out _, 80);
-                plus = Button(parent, "+", new Vector2(270f, y), new Vector2(150f, 120f), grey, out _, 80);
-                return NewText(label + "Value", parent, new Vector2(0.5f, 0.5f), new Vector2(0f, y), 54, TextAnchor.MiddleCenter);
-            }
-            // VIEW: the first-person switch on top, and the four rows closed up under it (173 apart) to make room
-            povBtn = Button(tabPage[0].transform, "FirstPerson", new Vector2(0f, 262f), new Vector2(700f, 100f), grey, out povLabel, 38);
-            camLabel = Row(0, "CAMERA DISTANCE", 85f, out camMinus, out camPlus);
-            angLabel = Row(0, "CAMERA ANGLE", -88f, out angMinus, out angPlus);
-            lensLabel = Row(0, "LENS", -261f, out lensMinus, out lensPlus);
-            lensTypeLabel = Row(0, "LENS TYPE", -434f, out lensTypeMinus, out lensTypePlus);
-            // LOOK
-            filterLabel = Row(1, "FILTER", 180f, out filterMinus, out filterPlus);
-            strengthLabel = Row(1, "FILTER STRENGTH", -20f, out strengthMinus, out strengthPlus);
-            halationLabel = Row(1, "HALATION", -220f, out halationMinus, out halationPlus);
-            timeLabel = Row(1, "TIME OF DAY", -420f, out timeMinus, out timePlus);   // CYCLE, or one phase held
-            // GAME
-            var game = tabPage[2].transform;
-            // TURN on top: a slider, - and + either side of its value and a bar under it (tap or drag along it), its
-            // middle the stock feel. Then five rows and the restart, 120 apart
-            turnLabel = Row(2, "TURN", 203f, out turnMinus, out turnPlus);
-            turnBar = NewImage("TurnBar", game, new Color(1f, 1f, 1f, 0f)).rectTransform;   // (the bar's hit area: taller than it looks)
-            Place(turnBar, new Vector2(0.5f, 0.5f), new Vector2(0f, 148f), new Vector2(TurnBarW, 56f), new Vector2(0.5f, 0.5f));
-            var track = NewImage("TurnTrack", turnBar, grey).rectTransform;
-            Place(track, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(TurnBarW, 12f), new Vector2(0.5f, 0.5f));
-            var mid = NewImage("TurnMiddle", turnBar, new Color(1f, 1f, 1f, 0.45f)).rectTransform;
-            Place(mid, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(4f, 28f), new Vector2(0.5f, 0.5f));
-            turnFill = NewImage("TurnFill", turnBar, TabOn).rectTransform;
-            Place(turnFill, new Vector2(0.5f, 0.5f), new Vector2(-TurnBarW * 0.5f, 0f), new Vector2(0f, 12f), new Vector2(0f, 0.5f));
-            turnKnob = NewImage("TurnKnob", turnBar, Color.white).rectTransform;
-            Place(turnKnob, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(26f, 44f), new Vector2(0.5f, 0.5f));
-            steerBtn = Button(game, "STEERING", new Vector2(0f, 64f), new Vector2(700f, 104f), grey, out steerLabel, 38);
-            jumpBtn = Button(game, "JUMP", new Vector2(0f, -56f), new Vector2(700f, 104f), grey, out jumpLabel, 38);
-            bloodBtn = Button(game, "BLOOD", new Vector2(0f, -176f), new Vector2(700f, 104f), grey, out bloodLabel, 38);
-            treesBtn = Button(game, "TREES", new Vector2(0f, -296f), new Vector2(700f, 104f), grey, out treesLabel, 38);
-            torchBtn = Button(game, "FLASHLIGHT", new Vector2(0f, -416f), new Vector2(700f, 104f), grey, out torchLabel, 38);
-            againBtn = Button(game, "RESTART RUN", new Vector2(0f, -544f), new Vector2(560f, 104f), new Color(0.8f, 0.2f, 0.15f, 0.9f), out _, 48);
-            // SOUND
-            musicLabel = Row(3, "MUSIC", 180f, out musicMinus, out musicPlus);
-            voiceBtn = Button(tabPage[3].transform, "VOICE LINES", new Vector2(0f, -60f), new Vector2(700f, 120f), grey, out voiceLabel, 38);
-            ShowTab(0);
+            againBtn = Choice("RestartRun", "RESTART RUN", -232f);
+            resumeBtn = Choice("Resume", "RESUME", 232f);
+            var split = SettingsSheet.Img("Split", pauseTop, new Color(1f, 1f, 1f, 0.38f));
+            Place(split.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 150f), new Vector2(2f, 54f), new Vector2(0.5f, 0.5f));
             pausePanel.SetActive(false);
         }
 
+        /// <summary>Fit the pause menu to the screen: the sheet above the home indicator, PAUSED and the two choices on top of it.</summary>
+        void LayoutPause()
+        {
+            PauseSettings.Layout();
+            pauseTop.localScale = PauseSettings.Safe.localScale;
+            pauseTop.anchoredPosition = new Vector2(0f, PauseSettings.Top + 20f);
+        }
+
+        bool restartWas;   // the PAUSE button was showing when the menu came up (it would sit on the sheet: hidden meanwhile)
         public void ShowPause(bool on)
         {
+            if (on == pausePanel.activeSelf) { if (on) PauseSettings.Refresh(); return; }
             pausePanel.SetActive(on);
+            if (on) { restartWas = restartBtn.gameObject.activeSelf; restartBtn.gameObject.SetActive(false); }
+            else if (restartWas) restartBtn.gameObject.SetActive(true);
             if (!on) return;
             pausePanel.transform.SetAsLastSibling();
             // a passing message ("Close call +175") would sit in the middle of the menu: let it go
             if (flashT > 0f) { flashT = 0f; big.text = ""; small.text = ""; }
+            LayoutPause();
+            PauseSettings.Refresh();
         }
         public bool Paused => pausePanel.activeSelf;
-        public void SetCamera(string name) { camLabel.text = name; }
-        public void SetPauseSteer(bool tilt) { steerLabel.text = tilt ? "STEERING: TILT  (tap to change)" : "STEERING: DRAG  (tap to change)"; }
         public bool OnResume(Vector2 p) => Inside(resumeBtn, p);
-        public void SetAngle(string name) { angLabel.text = name; }
-        public void SetLens(string name) { lensLabel.text = name; }
-        public bool OnAngMinus(Vector2 p) => Inside(angMinus, p);
-        public bool OnAngPlus(Vector2 p) => Inside(angPlus, p);
-        public bool OnLensMinus(Vector2 p) => Inside(lensMinus, p);
-        public bool OnLensPlus(Vector2 p) => Inside(lensPlus, p);
-        public bool OnCamMinus(Vector2 p) => Inside(camMinus, p);
-        public bool OnCamPlus(Vector2 p) => Inside(camPlus, p);
-        public bool OnPauseSteer(Vector2 p) => Inside(steerBtn, p);
-        RectTransform jumpBtn; Text jumpLabel;
-        public void SetPauseJump(string name) { jumpLabel.text = "JUMP: " + name + "  (tap to change)"; }
-        public bool OnPauseJump(Vector2 p) => Inside(jumpBtn, p);
         public bool OnPauseRestart(Vector2 p) => Inside(againBtn, p);
-        RectTransform bloodBtn; Text bloodLabel;
-        RectTransform torchBtn; Text torchLabel;
-        RectTransform voiceBtn; Text voiceLabel;
-        public void SetVoiceLines(bool on) { voiceLabel.text = on ? "VOICE LINES: ON  (tap to change)" : "VOICE LINES: OFF  (tap to change)"; }
-        public bool OnPauseVoiceLines(Vector2 p) => Inside(voiceBtn, p);
-        public void SetFlashlight(bool on) { torchLabel.text = on ? "FLASHLIGHT: ON  (tap to change)" : "FLASHLIGHT: OFF  (tap to change)"; }
-        public bool OnPauseFlashlight(Vector2 p) => Inside(torchBtn, p);
-        public void SetBlood(bool on) { bloodLabel.text = on ? "BLOOD: ON  (tap to change)" : "BLOOD: OFF  (tap to change)"; }
-        public bool OnPauseBlood(Vector2 p) => Inside(bloodBtn, p);
-        public void SetLensType(string name) { lensTypeLabel.text = name; }
-        public void SetFilter(string name) { filterLabel.text = name; }
-        public void SetFilterStrength(string value) { strengthLabel.text = value; }
-        public bool OnLensTypeMinus(Vector2 p) => Inside(lensTypeMinus, p);
-        public bool OnLensTypePlus(Vector2 p) => Inside(lensTypePlus, p);
-        public bool OnFilterMinus(Vector2 p) => Inside(filterMinus, p);
-        public bool OnFilterPlus(Vector2 p) => Inside(filterPlus, p);
-        public bool OnStrengthMinus(Vector2 p) => Inside(strengthMinus, p);
-        public bool OnStrengthPlus(Vector2 p) => Inside(strengthPlus, p);
-        public bool OnPauseTrees(Vector2 p) => Inside(treesBtn, p);
-        public void SetPauseTrees(bool realistic) { treesLabel.text = realistic ? "TREES: REALISTIC  (tap to change)" : "TREES: ORIGINAL  (tap to change)"; }
-        RectTransform povBtn; Text povLabel;
-        public bool OnPausePov(Vector2 p) => Inside(povBtn, p);
-        /// <summary>The VIEW button's state. In first person the distance and angle rows are greyed out: they set the chase camera.</summary>
-        public void SetPausePov(bool firstPerson)
-        {
-            povLabel.text = firstPerson ? "VIEW: FIRST PERSON  (tap to change)" : "VIEW: CHASE CAMERA  (tap to change)";
-            camLabel.color = angLabel.color = new Color(1f, 1f, 1f, firstPerson ? 0.35f : 1f);
-            var c = new Color(1f, 1f, 1f, firstPerson ? 0.06f : 0.16f);
-            camMinus.GetComponent<Image>().color = camPlus.GetComponent<Image>().color = c;
-            angMinus.GetComponent<Image>().color = angPlus.GetComponent<Image>().color = c;
-        }
-        public void SetTime(string value) { timeLabel.text = value; }
-        public void SetHalation(string value) { halationLabel.text = value; }
-        public bool OnHalationMinus(Vector2 p) => Inside(halationMinus, p);
-        public bool OnHalationPlus(Vector2 p) => Inside(halationPlus, p);
-        public void SetMusic(string value) { musicLabel.text = value; }
-        // ---- the TURN slider (GAME tab)
-        const float TurnBarW = 360f;
-        RectTransform turnMinus, turnPlus, turnBar, turnFill, turnKnob; Text turnLabel;
-        /// <summary>The TURN value, and where along the bar (0..1) it sits.</summary>
-        public void SetTurn(string value, float fraction)
-        {
-            turnLabel.text = value;
-            float f = Mathf.Clamp01(fraction);
-            turnFill.sizeDelta = new Vector2(TurnBarW * f, 12f);
-            turnKnob.anchoredPosition = new Vector2(TurnBarW * (f - 0.5f), 0f);
-        }
-        public bool OnTurnMinus(Vector2 p) => Inside(turnMinus, p);
-        public bool OnTurnPlus(Vector2 p) => Inside(turnPlus, p);
-        public bool OnTurnBar(Vector2 p) => Inside(turnBar, p);
-        /// <summary>How far along the TURN bar (0..1) a screen point is (past either end: that end).</summary>
-        public float TurnBarAt(Vector2 p)
-        {
-            RectTransformUtility.ScreenPointToLocalPointInRectangle(turnBar, p, null, out Vector2 local);
-            return Mathf.Clamp01(local.x / TurnBarW + 0.5f);
-        }
-        public bool OnMusicMinus(Vector2 p) => Inside(musicMinus, p);
-        public bool OnMusicPlus(Vector2 p) => Inside(musicPlus, p);
-        public int PauseTab => tab;
-        /// <summary>A tap on a tab: shows that tab and returns true.</summary>
-        public bool OnPauseTab(Vector2 p)
-        {
-            for (int k = 0; k < tabBtn.Length; k++)
-                if (Inside(tabBtn[k], p)) { ShowTab(k); return true; }
-            return false;
-        }
-        public void ShowTab(int k)
-        {
-            tab = Mathf.Clamp(k, 0, TabName.Length - 1);
-            for (int i = 0; i < tabPage.Length; i++)
-            {
-                tabPage[i].SetActive(i == tab);
-                tabBtn[i].GetComponent<Image>().color = i == tab ? TabOn : TabOff;
-            }
-        }
-        public bool OnTimeMinus(Vector2 p) => Inside(timeMinus, p);
-        public bool OnTimePlus(Vector2 p) => Inside(timePlus, p);
+        /// <summary>A finger on the pause menu's settings: a tab or a row, stepped. True if it hit one.</summary>
+        public bool OnPauseSettings(Vector2 p) => PauseSettings.Tap(p);
+        /// <summary>Read every setting again, if the menu is up (after a setting changed from anywhere).</summary>
+        public void RefreshPause() { if (pausePanel != null && pausePanel.activeSelf) PauseSettings.Refresh(); }
+        public int PauseTab => PauseSettings.Tab;
+        public void ShowTab(int k) => PauseSettings.ShowTab(k);
 
         static Font LoadFont()
         {
@@ -529,12 +403,14 @@ namespace Summit
             safe.anchorMax = new Vector2(a.xMax / Screen.width, a.yMax / Screen.height);
             safe.offsetMin = safe.offsetMax = Vector2.zero;
             if (pts != null) { pts.anchorMin = safe.anchorMin; pts.anchorMax = safe.anchorMax; pts.offsetMin = pts.offsetMax = Vector2.zero; }   // (the points and the bill: HudPoints)
+            if (PauseSettings != null && PauseSettings.IsBuilt) LayoutPause();
         }
 
         void Update()
         {
             if (hurtA > 0f) { hurtA = Mathf.MoveTowards(hurtA, 0f, Time.deltaTime * 1.2f); hurt.color = new Color(0.85f, 0.05f, 0.05f, hurtA); }
             if (safe != null && Screen.safeArea != lastSafe) ApplySafeArea();
+            if (pausePanel != null && pausePanel.activeSelf) PauseSettings.Step(Time.unscaledDeltaTime);
             if (flashT > 0f)
             {
                 flashT -= Time.deltaTime;

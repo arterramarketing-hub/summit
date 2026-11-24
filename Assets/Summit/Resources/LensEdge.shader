@@ -7,10 +7,7 @@
 //    fringes down both sides, where you look while riding, not only in the corners.
 //  - Edge softness: each colour is read twice, spread along the same direction, so the smear and the
 //    fringe share the six reads.
-//  - Spherical: both run outward from the centre. Anamorphic: both run sideways only, and the frame is
-//    warped like a desqueezed anamorphic picture: the middle stretched wide, the sides squeezed in (the
-//    "mumps"), verticals near the sides bowing, all pinned at the frame edge so nothing is read from
-//    outside the picture. A wide oval vignette and thin bars give the widescreen character.
+//  - Both run outward from the centre, through a spherical lens's barrel warp.
 //  - The middle of the frame takes an early exit with a single read.
 //  - Halation (film): a warm red-orange glow bleeding around bright highlights, from light scattering back
 //    through the film base. Passes 1-3 build it at a quarter of the screen size (bright parts kept, then a
@@ -38,9 +35,8 @@ Shader "Hidden/Summit/LensEdge"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
 
-            float4 _LensEdge;    // x: fringe, y: smear, z: bar height (0 = none), w: 1 = anamorphic
-            float4 _LensAna;     // x: squeeze of the sides, y: bow of the verticals, z: oval vignette;
-                                 // w: spherical barrel (0 = none)
+            float4 _LensEdge;    // x: fringe, y: smear
+            float _LensBarrel;   // the barrel warp (0 = none)
             float _LensAspect;   // width / height: keeps spherical fringes the same length in x and y on screen
             float4 _Halo;        // rgb: tint times strength (0 = off)
             float4 _LensBlur;    // x: streak length at the frame edge, as a fraction of the screen (0 = off);
@@ -53,18 +49,9 @@ Shader "Hidden/Summit/LensEdge"
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
                 float2 p = input.texcoord * 2.0 - 1.0;   // -1..1 across the screen
-                bool ana = _LensEdge.w > 0.5;
 
                 float2 dir;   // the direction the faults run, in uv
                 float r2;     // 0 in the middle, 1 at the side edges
-                if (ana)
-                {
-                    // desqueeze: magnified middle, squeezed sides, bowed verticals; x stays inside -1..1
-                    p.x *= 1.0 - _LensAna.x * (1.0 - p.x * p.x) - _LensAna.y * (1.0 - p.y * p.y);
-                    r2 = p.x * p.x;
-                    dir = float2(p.x * 0.5, 0.0);
-                }
-                else
                 {
                     // the barrel, round on the screen: the distance from the middle is measured in pixels, not in uv. (URP's
                     // own LensDistortion works in uv, and on a tall phone the short width spans as much uv as the long
@@ -73,7 +60,7 @@ Shader "Hidden/Summit/LensEdge"
                     // Pinned at the corners, so nothing is read from outside the picture.
                     float2 sc = float2(_LensAspect, 1.0) / max(_LensAspect, 1.0);
                     float2 q = p * sc;
-                    p *= (1.0 + _LensAna.w * dot(q, q)) / (1.0 + _LensAna.w * dot(sc, sc));
+                    p *= (1.0 + _LensBarrel * dot(q, q)) / (1.0 + _LensBarrel * dot(sc, sc));
                     r2 = dot(p, p) * 0.5 + 0.5 * max(p.x * p.x, p.y * p.y);
                     dir = float2(p.x, p.y * _LensAspect) * 0.5;
                 }
@@ -124,15 +111,6 @@ Shader "Hidden/Summit/LensEdge"
                     col = 1.0 - (1.0 - col) * (1.0 - saturate(glow * _Halo.rgb));
                 }
 
-                if (ana)
-                {
-                    // a wide oval: the top and bottom fall off first, the sides stay open
-                    float e = length(float2(p.x * 0.55, p.y));
-                    col *= 1.0 - _LensAna.z * smoothstep(0.62, 1.2, e);
-                    // thin bars, with an anti-aliased edge
-                    float y = 1.0 - abs(p.y), bar = _LensEdge.z * 2.0;
-                    col *= smoothstep(bar - 0.003, bar, y);
-                }
                 return half4(col, 1);
             }
             ENDHLSL

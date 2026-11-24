@@ -35,7 +35,6 @@ public static class StartPageShot
         cam.aspect = W / (float)H;
         // the default lens and no filter, whatever the editor's own save holds
         typeof(SummitGame).GetField("lensLevel", NP).SetValue(game, 1);
-        typeof(SummitGame).GetField("lensMode", NP).SetValue(game, 0);
         typeof(SummitGame).GetField("filterLevel", NP).SetValue(game, 0);
         typeof(SummitGame).GetField("halation", NP).SetValue(game, 0);
         typeof(SummitGame).GetMethod("ApplyCamera", NP).Invoke(game, null);

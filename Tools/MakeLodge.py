@@ -1594,13 +1594,35 @@ def open_fire(fx, fz, L=2.4, W=1.0, ceiling=under_flat):
     helper("BLK_fire", (fx - L / 2 - 0.05, 0.0, fz - W / 2 - 0.05), (fx + L / 2 + 0.05, 1.05, fz + W / 2 + 0.05))
 
 
+def missions_stand(mx=2.55, z0=2.55, z1=4.65):
+    """The missions board just inside the front glass, left of the door (camplayout: it was on the back wall across the
+    hall): freestanding on black steel legs, facing the way in (+x), so you meet it as you come in, the way a lodge's
+    grooming and conditions board stands by its door. (Its end short of the glass: Val and Breanna's way from the door
+    along the glass to their place at it, Camp.LodgeWindow, passes in front of it.)"""
+    zc, w = (z0 + z1) / 2, z1 - z0
+    for z in (z0 + 0.06, z1 - 0.06):
+        lohi("Steel", (mx - 0.05, 0.0, z - 0.04), (mx + 0.01, 3.35, z + 0.04))
+        lohi("Steel", (mx - 0.32, 0.0, z - 0.03), (mx + 0.3, 0.04, z + 0.03))   # (its feet)
+    lohi("Steel", (mx - 0.04, 0.7, z0 + 0.02), (mx + 0.01, 2.75, z1 - 0.02))
+    lohi("Oak", (mx + 0.01, 0.8, z0 + 0.12), (mx + 0.04, 2.65, z1 - 0.12))
+    sp = min(0.95, (w - 0.4) / 3)
+    for i, z in enumerate((zc - sp, zc, zc + sp)):
+        quad("Note%d" % i, (mx + 0.05, 1.62, z), sp - 0.25 if sp < 0.95 else 0.7, 0.88, yaw=90)
+    quad("SignMissions", (mx + 0.03, 3.05, zc), min(2.8, w - 0.15), min(2.8, w - 0.15) / 4, yaw=90)
+    lohi("Steel", (mx - 0.04, 2.88, z0 + 0.02), (mx + 0.01, 3.22, z1 - 0.02))
+    lohi("LED", (mx + 0.04, 2.72, z0 + 0.12), (mx + 0.08, 2.74, z1 - 0.12))
+    helper("TAP_Missions", (mx - 0.1, 0.5, z0 - 0.1), (mx + 0.6, 3.5, z1 + 0.1))
+    helper("BLK_missions", (mx - 0.32, 0.0, z0 - 0.04), (mx + 0.3, 3.35, z1 + 0.04))
+    marker("SPOT_Missions", (mx + 1.35, 0.0, zc))
+
+
 def welcome_mat():
     lohi("Runner", (3.2, 0.0, 4.9), (5.8, 0.012, 6.6))
 
 
-def b_rest(missions_x=4.0):
-    """The low end and the wing: the missions board, the board shop, wax & tune, the café."""
-    missions_board(missions_x, w=1.9)
+def b_rest():
+    """The low end and the wing: the missions board (by the door), the board shop, wax & tune (at the front glass), the café."""
+    missions_stand()
     board_shop(back_x0=5.3)
     tuning_bench()
     welcome_mat()
@@ -1880,25 +1902,6 @@ def coat_rack(z0, z1, x=XL - T):
     helper("BLK_coats", (x - 0.45, 0.0, z0), (x, 1.9, z1))
 
 
-def window_lounge():
-    """The lounge's second half: a sofa facing the front glass and the view, armchairs angled in at its ends, a long
-    low table with books and mugs between them and the glass, lamps at its ends, an arc lamp over it; on its own rug."""
-    lohi("Rug", (-5.05, 0.0, 2.15), (1.05, 0.015, 5.15))
-    sofa(-3.9, -0.1, 2.9, 1)
-    armchair(-4.6, 3.9, 64)
-    armchair(0.6, 3.9, -64)
-    low_table(-3.0, 3.87, -1.0, 4.57)
-    books(-2.55, 4.2, 0.42, 3, 8)
-    mug(-1.5, 4.1, 0.42); mug(-1.25, 4.35, 0.42, "Red")
-    side_table(-4.32, 2.7)
-    side_table(0.32, 2.7)
-    table_lamp(-4.32, 2.7, 0.52)
-    table_lamp(0.32, 2.7, 0.52)
-    arc_lamp(-5.0, 1.85, -2.4, 4.0)
-    throw_over(-0.95, -0.25, 2.9, 1)
-    cushions(-3.6, -1.2, 2.9, 1, ("Red", "Cream", "Navy"))
-
-
 def fire_lounge():
     """The lounge round the fire, bigger: the two sofas across it, a pair of armchairs angled in at each end with a
     side table between them and a floor lamp behind, lamps on the side tables at the back sofa's ends, throws,
@@ -1929,6 +1932,44 @@ def fire_lounge():
     pendants(((-2.6, 3.5, 4.15), (-2.0, 3.1, 3.85), (-1.4, 3.65, 4.3)), under_shed)
 
 
+def outfitters_front():
+    """The outfitters just inside the front glass, beside the door (camplayout: down from the loft, so the closet is on
+    the way in and out): a shop window of three mannequins at the glass, a two-sided rail of jackets and a display
+    table behind them, the till by the missions board, its sign hung over the rail; the way across the hall in front of
+    it (z 0.2 to 2.2) kept clear, and the big glass's right half free for Val and Breanna (Camp.LodgeWindow). The
+    wardrobe's station (the closet) at the rail."""
+    for (mx, col) in ((-4.6, "Red"), (-3.6, "ArtB"), (-2.6, "Navy")):
+        mannequin(mx, 6.15, col)
+    rail_x(-4.8, -2.2, 4.0, two_sided=True)
+    display_table(-0.8, 3.2)
+    till(0.35, 2.45, 1.05, 3.15)
+    hanging_sign(0, -3.5, 2.95, 4.0, 2.4, 0.6, under_shed)
+    helper("TAP_Style", (-5.0, 0.0, 3.3), (-2.0, 2.6, 4.7))
+    marker("SPOT_Style", (-3.5, 0.0, 2.55))
+
+
+def loft_lounge():
+    """Up in the loft, the lounge's window half (camplayout: it was down at the front glass, where the outfitters are
+    now): a sofa facing the two-storey glass and the view over the camp, armchairs angled in at its ends, a low table with
+    books and mugs, lamps; on its own rug. And by the loft's back wall a bookcase and a reading chair."""
+    y = MY
+    lohi("Rug", (-10.45, y, 1.9), (-5.75, y + 0.015, 5.9))
+    sofa(-9.85, -6.95, 3.0, 1, y=y)
+    armchair(-10.15, 4.55, 64, y=y)
+    armchair(-6.4, 4.55, -64, y=y)
+    low_table(-9.2, 3.95, -7.6, 4.65, y=y)
+    books(-8.85, 4.3, y + 0.42, 3, 8)
+    mug(-8.1, 4.2, y + 0.42); mug(-7.85, 4.45, y + 0.42, "Red")
+    side_table(-10.3, 2.85, y=y)
+    table_lamp(-10.3, 2.85, y + 0.52)
+    floor_lamp(-6.1, 2.7, y=y)
+    throw_over(-7.85, -7.15, 3.0, 1, y=y)
+    cushions(-9.55, -7.25, 3.0, 1, ("Red", "Cream", "Navy"), y=y)
+    bookcase(-10.3, -7.2, MZ, h=2.2, y=y)
+    armchair(-8.75, -4.7, 0, y=y)
+    floor_lamp(-9.9, -5.4, y=y)
+
+
 # ---- the inside: the B2R design, the one the user kept (the other six layouts and their switch went in campsnow). The
 # loft over the high end with the outfitters up there and the snug under it; the stair along the back wall, arriving at
 # the loft's back corner by the gear wall; the lounge round the fire and facing the front glass; the loft's doors out to
@@ -1939,7 +1980,7 @@ def lodge_inside():
     SZ0, SZ1 = MZ + 0.06, MZ + 1.56       # the stair: off the back wall's face, 1.5 m wide
     # the lounge (lodge5: bigger): round the fire, and its second half facing the front glass
     fire_lounge()
-    window_lounge()
+    outfitters_front()   # (camplayout: where the window lounge was; the window lounge went up to the loft)
     b_rest()
     # under the loft: the snug and the café's tables
     lohi("Runner", (-10.9, 0.0, -0.4), (-6.5, 0.012, 1.9))
@@ -1964,18 +2005,8 @@ def lodge_inside():
         bx = LX + 6.16 - (k + 0.5) * 6.16 / 4
         by = 1.0 + (LX + 6.16 - bx) / 6.16 * (MY - 0.05)
         lohi("Steel", (bx - 0.02, by - 0.06, MZ), (bx + 0.02, by - 0.02, MZ + 0.05))
-    # upstairs: the outfitters (the stair comes up beside the gear wall)
-    gear_wall(-10.3, -6.0, y0=MY, levels=(2.3, 2.75), n=7, top=2.8)
-    rail_x(-10.2, -7.0, MZ + 0.38, y0=MY, blk=False)
-    helper("BLK_rack", (-10.3, MY, MZ), (-6.9, MY + 2.2, MZ + 0.55))
-    mirror(-6.6, -5.75, y0=MY)
-    helper("TAP_Style", (-10.7, MY, MZ), (-6.8, MY + 2.6, MZ + 1.2))
-    marker("SPOT_Style", (-8.6, MY, MZ + 2.0))
-    display_table(-8.6, -2.3, y0=MY)
-    rail_x(-10.1, -7.2, 3.4, y0=MY, two_sided=True)
-    mannequin(-9.3, 6.0, "Red", y0=MY); mannequin(-8.3, 6.0, "ArtB", y0=MY); mannequin(-7.3, 6.0, "Navy", y0=MY)
-    till(-10.6, 1.75, -9.9, 2.95, y0=MY)   # (lodge5: moved off the way to the doors out to the deck)
-    hanging_sign(0, LX + 0.15, MY + 2.0, 1.0, 3.0, 0.75, lambda x: ru(x) - RD, yaw=90)
+    # upstairs: the lounge's window half, over the camp (camplayout: the outfitters went down to the front glass)
+    loft_lounge()
     marker("LIGHT_hall", (-4.6, 7.6, -1.0))
     # the doors out to the lookout: its sign over them (on their head), a runner up to them
     lohi("Steel", (XH + T, MY + 2.36, -0.72), (XH + T + 0.04, MY + 2.86, 0.72))

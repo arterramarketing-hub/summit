@@ -171,31 +171,37 @@ namespace Summit
             // (beside the foot of the steps, off Val and Breanna's way up them: CampCouple's ChaletSteps)
             var door = camp.ChaletPoint(2.4f, 0f, 12.2f); door.y = Slope.DrawnHeight(door.x, door.z);
             D("door", door, cy);
-            // the lookout's deck (16, -54): two places at the front rail, looking down the mountain
-            // (on its boards: 0.45 m over the snow at its middle, where Camp.Lookout sets it; the snow under its front is
-            // a metre lower, and standing 0.45 m over that was standing in the deck)
-            float deck = Ground(16f, -54f).y + 0.45f;
-            D("lookout.1", new Vector3(Ground(14.6f, -52.6f).x, deck, -52.6f), 0f);
-            D("lookout.2", new Vector3(Ground(16.3f, -52.6f).x, deck, -52.6f), 8f);
-            // along the cliff's rail between the flags, looking out over the edge
-            D("rail.1", Ground(21.2f, -70.8f), 90f);
-            D("rail.2", Ground(21.2f, -64.2f), 85f);
+            // the lookout's deck at the cliff's edge (Camp.LookoutX, LookoutZ, facing out over the drop, +x): two places
+            // at its front rail (on its boards, at the height Camp.Lookout sets them; the snow under its front is lower,
+            // and standing over that was standing in the deck)
+            float deck = camp.LookoutDeckY;
+            D("lookout.1", new Vector3(Ground(Camp.LookoutX + 1.4f, 0f).x, deck, Camp.LookoutZ + 1.4f), 90f);
+            D("lookout.2", new Vector3(Ground(Camp.LookoutX + 1.4f, 0f).x, deck, Camp.LookoutZ - 0.3f), 98f);
+            // along the cliff's rail between the flags (either side of the deck), looking out over the edge
+            D("rail.1", Ground(21.2f, -75.2f), 90f);
+            D("rail.2", Ground(21.2f, -61.0f), 85f);
             // open snow for standing about
-            D("chat.1", Ground(8.6f, -69.2f), 0f);   // (clear of the couple's Stroll at (6, -66))
+            D("chat.1", Ground(9.0f, -71.0f), 0f);   // (clear of the shovelled path to the lookout, and the couple's Stroll)
             D("chat.2", Ground(-7.5f, -58.5f), 0f);
             D("chat.3", Ground(3.5f, -55f), 0f);
             // the bench by the drop, looking down the start (the points are where you stand to sit down, just in front)
             D("bench.1", Ground(-9.4f, -47.1f), 0f);
             D("bench.2", Ground(-8.6f, -47.1f), 0f);
-            // the waxing stand beside the lodge's steps
-            var wax = camp.ChaletPoint(-6.2f, 0f, 13.4f); wax.y = Slope.DrawnHeight(wax.x, wax.z);
-            D("wax", wax, cy + 90f);
+            // the waxing stand in the start corral, on the right before the gate (camplayout: it stood by the lodge's steps)
+            D("wax", Ground(7.2f, Slope.GateZ - 10.4f), 0f);
             // strapping in, either side of the gate, out of the DROP IN circle
             D("gate.L", Ground(-5.4f, Slope.GateZ - 4.2f), 0f);
             D("gate.R", Ground(5.4f, Slope.GateZ - 4.2f), 0f);
-            D("snowman", Ground(9.6f, -62.6f), 50f);
-            // the fire pit's seats are for the fire's own guests; the DROP IN circle is for the hero
-            if (!keep.Exists(k => k.name == "fire")) keep.Add(new KeepOut { name = "fire", c = Ground(0f, -71f), r = 4.1f });
+            // in front of the snowman (it looks out over the plaza), off the shovelled path
+            {
+                var sf = Quaternion.Euler(0f, Camp.SnowmanYaw, 0f) * Vector3.forward;
+                var sp = Ground(Camp.SnowmanX + sf.x * 1.9f, Camp.SnowmanZ + sf.z * 1.9f);
+                D("snowman", sp, Camp.SnowmanYaw - 180f);
+            }
+            // the fire pit's seats are for the fire's own guests; the DROP IN circle is for the hero. (Both laid again
+            // each build: the camp sits on each mountain's own line, and a circle kept from the first one was metres off)
+            keep.RemoveAll(k => k.name == "fire");
+            keep.Add(new KeepOut { name = "fire", c = Ground(0f, -71f), r = 4.1f });
             keep.RemoveAll(k => k.name == "dropin");
             keep.Add(new KeepOut { name = "dropin", c = Ground(0f, Slope.GateZ - 2.6f), r = 4.5f, walk = true });
         }
@@ -285,7 +291,7 @@ namespace Summit
         {
             gridDirty = false;
             gx0 = Cx - 22f; gz0 = -100f;
-            gw = Mathf.CeilToInt(44f / CellSize); gh = Mathf.CeilToInt((-30f - gz0) / CellSize);
+            gw = Mathf.CeilToInt(49f / CellSize); gh = Mathf.CeilToInt((-30f - gz0) / CellSize);   // (out to the lookout's deck past the cliff's rail: camplayout)
             open = new bool[gw * gh]; floorY = new float[gw * gh];
             for (int j = 0; j < gh; j++)
                 for (int i = 0; i < gw; i++)
@@ -294,7 +300,8 @@ namespace Summit
                     float snow = Slope.DrawnHeight(w.x, w.z);
                     float y = camp.FloorHeight(new Vector3(w.x, snow, w.z), snow);
                     floorY[j * gw + i] = y;
-                    bool ok = w.x - Cx < 21.5f && w.x - Cx > -21.5f;   // (the cliff's rail is at +24; the left edge's mounds at -22)
+                    // (the cliff's rail is at +24, the left edge's mounds at -22; and the lookout's deck out over the lip)
+                    bool ok = w.x - Cx < 21.5f && w.x - Cx > -21.5f || Camp.OnLookoutDeck(w.x - Cx, w.z);
                     if (ok)
                     {
                         var q = camp.PushOutOfThings(new Vector2(w.x, w.z), 0.42f, y);

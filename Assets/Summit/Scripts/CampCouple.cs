@@ -195,10 +195,11 @@ namespace Summit
         struct Pt { public string name; public In frame; public float x, z; public Pt(string n, In f, float x, float z) { name = n; frame = f; this.x = x; this.z = z; } }
         static readonly Pt[] Points =
         {
-            new Pt("LookoutDeck", In.Camp, 16f, -54.4f),       // on the lookout's deck, the rail in front
-            new Pt("LookoutBack", In.Camp, 16f, -58.4f),       // the deck's open back, where you step up
-            new Pt("LookoutWay", In.Camp, 11.5f, -59.5f),      // round to the back from the camp
-            new Pt("LookoutView", In.Camp, 16f, 6f),           // down the mountain
+            // (the lookout's deck at the cliff's edge, facing out over the drop: Camp.LookoutX, LookoutZ)
+            new Pt("LookoutDeck", In.Camp, Camp.LookoutX + 1.0f, Camp.LookoutZ),   // on the deck, the rail in front
+            new Pt("LookoutBack", In.Camp, Camp.LookoutX - 2.7f, Camp.LookoutZ),   // the deck's open back, where you step up
+            new Pt("LookoutWay", In.Camp, 17.5f, -64.8f),      // from the camp along the shovelled path
+            new Pt("LookoutView", In.Camp, 90f, Camp.LookoutZ),   // out over the drop
             new Pt("Fire", In.Camp, 0f, -71f),
             new Pt("FireStand", In.Camp, -2.5f, -68.1f),       // the fire's open front corner (the log seats stay free)
             new Pt("FireWay", In.Camp, -3.4f, -65.8f),
@@ -209,11 +210,11 @@ namespace Summit
             new Pt("ChaletWindow", In.Chalet, -3.4f, 3.9f),    // at the next doors along, looking out (the kitchen and the stove's corner stay free)
             new Pt("ChaletView", In.Chalet, -3.4f, 34f),
             new Pt("Gate", In.Camp, 0f, Slope.GateZ),
-            new Pt("GateWatch", In.Camp, -7f, Slope.GateZ - 9f),   // to one side behind the gate, out of the hero's way
-            new Pt("Snowman", In.Camp, 11.5f, -61f),
-            new Pt("SnowmanStand", In.Camp, 11.2f, -63.6f),    // in front of it (it looks back toward the chalet)
-            new Pt("SnowmanWay", In.Camp, 8f, -64.5f),
-            new Pt("Stroll", In.Camp, 6f, -66f),               // a turn round the open snow between the fire and the lookout
+            new Pt("GateWatch", In.Camp, -11f, Slope.GateZ - 6.5f),   // to one side behind the gate, out of the hero's way (and the corral's rack)
+            new Pt("Snowman", In.Camp, Camp.SnowmanX, Camp.SnowmanZ),
+            new Pt("SnowmanStand", In.Camp, 11.8f, -62.3f),    // in front of it (it looks out over the plaza), off the shovelled path
+            new Pt("SnowmanWay", In.Camp, 8.5f, -61.0f),
+            new Pt("Stroll", In.Camp, 4.5f, -62.5f),           // a turn round the open snow between the fire and the gate (off the shovelled path)
             new Pt("StrollA", In.Camp, -6f, -58f),
             new Pt("StrollB", In.Camp, 2f, -53f),
             new Pt("StrollView", In.Camp, 30f, -30f),

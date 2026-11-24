@@ -9,7 +9,8 @@ namespace Summit
     /// shed roof rising from the low end (by the fire) to the high end, deep eaves on glulam rafters, a tall volume
     /// behind it with a glazed clerestory, a lower wing; dark board cladding, black-framed glass; a raised concrete
     /// terrace with wide steps down toward the fire and the gate. Inside: one open hall and the wing, the game's three
-    /// stations (missions board, tune-up bench, wardrobe) and open floor for what comes next (lodge.md).
+    /// stations (missions board, tune-up bench, wardrobe: all at the front glass, by the door, since camplayout) and the
+    /// lounges, the café and the hot chocolate deeper in (lodge.md).
     ///
     /// This file builds it and the paved path with its lamp posts; Camp.cs calls in here where it used to build the
     /// chalet (Rebuild, Indoors, SetNight, the trees round it).
@@ -20,6 +21,13 @@ namespace Summit
         public static bool UseLodge = true;
         /// <summary>Where the lodge stands: its hall's middle at (dx from the run's centre, z), turned to face the gate.</summary>
         public const float LodgeDx = -7f, LodgeZ = -92f, LodgeYaw = 7f;
+        /// <summary>A point on the snow in the lodge's own frame (MakeLodge.py's), where the lodge stands (built or not: LiftEnds' path in).</summary>
+        public static Vector3 LodgeGround(float x, float z)
+        {
+            var w = new Vector3(Slope.Centre(Slope.PadLip) + LodgeDx, 0f, LodgeZ) + Quaternion.Euler(0f, LodgeYaw, 0f) * new Vector3(x, 0f, z);
+            w.y = Slope.DrawnHeight(w.x, w.z);
+            return w;
+        }
         // its outline in its own frame (MakeLodge.py): the hall and the wing, and everything with the terrace and eaves
         static readonly Rect LodgeHall = Rect.MinMaxRect(-11f, -7f, 11f, 7f), LodgeWing = Rect.MinMaxRect(-16f, -5.5f, -11f, 5f);
         static readonly Rect LodgeAll = Rect.MinMaxRect(-17.6f, -8.4f, 19.4f, 12.8f);   // (to x 19: the covered section under the roof's tail)
@@ -32,11 +40,13 @@ namespace Summit
         // round its ends and back (the rest as Camp.Trees and Camp.Birches have them)
         // (the lookout's deck on the wing's roof looks out over the front and the high end: the trees that stood in its
         // view, in front of it and off the wing's end, moved out to the camp's edge on that side and back, framing it)
-        static readonly Vector2[] LodgeTrees = { new Vector2(-29f, -99f), new Vector2(-19f, -104f), new Vector2(-6f, -107f), new Vector2(7f, -105f), new Vector2(19f, -101f),
-                                                 new Vector2(21f, -104f), new Vector2(-31.8f, -83f), new Vector2(-32.4f, -66.5f), new Vector2(-30.5f, -104.5f), new Vector2(-31.2f, -74.5f),
+        // (camplayout: the Summit lift's top now stands beside the wing; the two firs that stood on its unload's flat, at
+        // (-29, -99) and (-30.5, -104.5), moved to the camp's left front, where the old lift path came in)
+        static readonly Vector2[] LodgeTrees = { new Vector2(-29.5f, -60f), new Vector2(-19f, -104f), new Vector2(-6f, -107f), new Vector2(7f, -105f), new Vector2(19f, -101f),
+                                                 new Vector2(21f, -104f), new Vector2(-31.8f, -83f), new Vector2(-32.4f, -66.5f), new Vector2(-31.5f, -45f), new Vector2(-31.2f, -74.5f),
                                                  new Vector2(-24f, -108f), new Vector2(13f, -110f), new Vector2(-31f, -54f),
                                                  new Vector2(-27f, -110f), new Vector2(17.3f, -86.6f) };   // (the last moved out past the covered section's end)
-        static readonly Vector2[] LodgeBirches = { new Vector2(-30.6f, -78.5f), new Vector2(-32.8f, -94f), new Vector2(15.9f, -98.3f), new Vector2(-30.8f, -60.8f), new Vector2(-32.8f, -70.8f), new Vector2(17.2f, -92.0f) };   // (two moved out past it)
+        static readonly Vector2[] LodgeBirches = { new Vector2(-30.6f, -78.5f), new Vector2(-13f, -104.5f), new Vector2(15.9f, -98.3f), new Vector2(-30.8f, -60.8f), new Vector2(-32.8f, -70.8f), new Vector2(17.2f, -92.0f) };   // (two moved out past it; the second, camplayout, off the Summit lift's path in)
 
         readonly List<(Rect r, float lo, float hi)> lodgeInside = new List<(Rect, float, float)>();
         readonly List<(Vector3 lo, Vector3 hi)> lodgeLook = new List<(Vector3, Vector3)>();
@@ -69,9 +79,7 @@ namespace Summit
             var life = GetComponent<CampLife>();
             if (life != null)
             {
-                life.SetPoint("door", L(4.5f, 6.2f), cy);
-                var wax = L(-7.0f, 15.6f); wax.y = Slope.DrawnHeight(wax.x, wax.z);
-                life.SetPoint("wax", wax, cy + 90f);
+                life.SetPoint("door", L(4.5f, 6.2f), cy);   // (the waxing stand went to the start corral by the gate: CampLife)
             }
             if (Couple != null)
             {
@@ -92,9 +100,9 @@ namespace Summit
         /// Places for people in and round the lodge (the camp's NPCs), in its own frame: where they stand or sit (x, z on
         /// the floor; y the height of the seat above the lodge's floor, or of the loft's or the deck's floor, 0 standing
         /// in the hall), the way they face (degrees from +z, the front), and what for: "sit" (the lounge's
-        /// seats, the café's stools and tables, the terrace's chairs and table), "browse" (the gear wall, the display
-        /// tables and rails, the board walls and tree), "queue" (the board shop's counter), "staff" (behind it, and at
-        /// the tuning bench), "stand" (the foyer, by the glass). camp.ChaletPoint turns one into the world.
+        /// seats, the café's stools and tables, the terrace's chairs and table), "browse" (the outfitters' rail, display
+        /// table and window, the board walls and tree), "queue" (the board shop's counter), "staff" (behind it, and at
+        /// the tuning bench), "stand" (the foyer, the missions board, by the glass). camp.ChaletPoint turns one into the world.
         /// </summary>
         public static (string what, Vector3 at, float yaw)[] LodgePeopleSpots => PeopleSpots;
 
@@ -182,21 +190,22 @@ namespace Summit
         };
 
         static readonly (string, Vector3, float)[] PeopleSpots =
-            // the lounge round the fire (a pair of armchairs at each end of it) and facing the front glass; the snug
-            // and the café's tables under the loft; the loft's outfitters
+            // the lounge round the fire (a pair of armchairs at each end of it); the snug and the café's tables under the
+            // loft; the outfitters at the front glass by the door, and the lounge's window half up in the loft
+            // (camplayout: the two swapped, so the closet is on the way in and out)
             Join(Join(Shared, Covered), new[] {
                 ("sit", new Vector3(-3.2f, 0.45f, -4.52f), 0f), ("sit", new Vector3(-1.8f, 0.45f, -4.52f), 0f), ("sit", new Vector3(-0.4f, 0.45f, -4.52f), 0f),
                 ("sit", new Vector3(-3.2f, 0.45f, -0.9f), 180f), ("sit", new Vector3(-1.8f, 0.45f, -0.9f), 180f), ("sit", new Vector3(-0.4f, 0.45f, -0.9f), 180f),
                 ("sit", new Vector3(-5.35f, 0.45f, -3.65f), 72f), ("sit", new Vector3(-5.35f, 0.45f, -1.75f), 108f),
                 ("sit", new Vector3(1.75f, 0.45f, -3.65f), -72f), ("sit", new Vector3(1.75f, 0.45f, -1.75f), -108f),
-                ("sit", new Vector3(-3.3f, 0.45f, 3.0f), 0f), ("sit", new Vector3(-2.0f, 0.45f, 3.0f), 0f), ("sit", new Vector3(-0.7f, 0.45f, 3.0f), 0f),
-                ("sit", new Vector3(-4.6f, 0.45f, 3.9f), 64f), ("sit", new Vector3(0.6f, 0.45f, 3.9f), -64f),
+                ("sit", new Vector3(-9.3f, LodgeUpper + 0.45f, 3.1f), 0f), ("sit", new Vector3(-8.4f, LodgeUpper + 0.45f, 3.1f), 0f), ("sit", new Vector3(-7.5f, LodgeUpper + 0.45f, 3.1f), 0f),
+                ("sit", new Vector3(-10.15f, LodgeUpper + 0.45f, 4.55f), 64f), ("sit", new Vector3(-6.4f, LodgeUpper + 0.45f, 4.55f), -64f),
+                ("sit", new Vector3(-8.75f, LodgeUpper + 0.45f, -4.6f), 0f),
                 ("sit", new Vector3(-9.3f, 0.45f, -5.15f), 0f), ("sit", new Vector3(-8.1f, 0.45f, -5.15f), 0f), ("sit", new Vector3(-9.6f, 0.45f, -2.6f), 180f),
                 ("sit", new Vector3(-9.9f, 0.45f, 3.6f), 90f), ("sit", new Vector3(-7.7f, 0.45f, 5.6f), -90f),
                 ("browse", new Vector3(6.4f, 0f, -5.6f), 180f),
-                ("stand", new Vector3(2.3f, 0f, 4.4f), 0f), ("stand", new Vector3(-4.4f, 0f, 5.9f), 0f),
-                ("browse", new Vector3(-9.5f, 3.8f, -5.6f), 180f), ("browse", new Vector3(-8.0f, 3.8f, -5.6f), 180f), ("browse", new Vector3(-8.6f, 3.8f, -1.6f), 180f),
-                ("browse", new Vector3(-8.6f, 3.8f, 2.6f), 0f), ("browse", new Vector3(-8.6f, 3.8f, 4.6f), 180f) });
+                ("browse", new Vector3(-4.4f, 0f, 3.2f), 0f), ("browse", new Vector3(-2.6f, 0f, 3.2f), 0f), ("browse", new Vector3(-3.4f, 0f, 4.8f), 180f),
+                ("browse", new Vector3(-3.6f, 0f, 5.45f), 0f), ("browse", new Vector3(-0.8f, 0f, 2.45f), 0f) });
 
         static (string, Vector3, float)[] Join((string, Vector3, float)[] a, (string, Vector3, float)[] b)
         {

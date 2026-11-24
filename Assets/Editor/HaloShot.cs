@@ -56,7 +56,7 @@ public static class HaloShot
             if (next == 0) for (int i = 0; i < 3; i++) Shoot(cam, "HaloShots/warmup.png");   // placeholder materials, then the real ones
 
             // under NATURAL and the default lens, so only halation and the light change
-            Set("filterLevel", 0); Set("filterStrength", 10); Set("lensLevel", 1); Set("lensMode", 0);
+            Set("filterLevel", 0); Set("filterStrength", 10); Set("lensLevel", 1);
             applyCam.Invoke(game, null);
             foreach (var (name, clock) in Times)
             {

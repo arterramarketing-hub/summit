@@ -63,9 +63,8 @@ public static class HubShot
         Shoot("HubShot0_arrive.png");
         // the lens: the player's own (default WIDE) as the run has it, then the camp's gentler one
         var lensFx = (LensFX)typeof(SummitGame).GetField("lensFx", NP).GetValue(game);
-        Debug.Log($"HUBSHOT saved lens level={typeof(SummitGame).GetField("lensLevel", NP).GetValue(game)} type={typeof(SummitGame).GetField("lensMode", NP).GetValue(game)} (shots use the default WIDE spherical)");
+        Debug.Log($"HUBSHOT saved lens level={typeof(SummitGame).GetField("lensLevel", NP).GetValue(game)} (shots use the default WIDE)");
         typeof(SummitGame).GetField("lensLevel", NP).SetValue(game, 1);
-        typeof(SummitGame).GetField("lensMode", NP).SetValue(game, 0);
         typeof(SummitGame).GetMethod("ApplyCamera", NP).Invoke(game, null);
         float cy0 = camp.ChaletYaw;
         var lensAt = camp.ChaletPoint(-2f, 0f, 16f);
