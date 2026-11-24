@@ -489,6 +489,7 @@ namespace Summit
                             slid++;
                             if (h.catchSpan != i && Tangled(l, h.catchSpan, laid)) continue;
                             if (l.gorge >= 0 && !anywhere && h.catchSpan >= l.gorge) continue;
+                            if (!LaneClear(l, h)) continue;   // (its lane would leave the piste at a blind roll's lip)
                             // the least speed first (any that 24 m/s reaches is as good as another), then the lowest hill,
                             // then the longest slide
                             // the least speed that reaches first, then the most speeds above it, then the lowest, then the longest slide
@@ -505,14 +506,8 @@ namespace Summit
             if (best == null) return;
             Frame(l, best);
             // the lane down to it from the piste's edge, and the sign at the top of the lane
-            Vector3 foot = l.At(best.s - best.rise, best.side * Half, 0f);
-            float zl = foot.z - CableTune.HillLaneLength;
-            float sgn = foot.x > Slope.Centre(foot.z) ? 1f : -1f;
-            float xl = Slope.Centre(zl) + sgn * Slope.PisteHalf;
-            best.laneFrom = new Vector3(xl, Slope.Height(xl, zl), zl);
-            float xs = Slope.Centre(zl) + sgn * (Slope.PisteHalf + 2.5f);
-            best.sign = new Vector3(xs, Slope.Height(xs, zl), zl);
             l.hill = best;
+            LaneClear(l, best);
             // (a lane must not run into another line's tower or station: then it has no hill)
             if (laid != null && LaneBlocked(l, laid)) l.hill = null;
         }
@@ -566,9 +561,56 @@ namespace Summit
             return false;
         }
 
-        static bool InLane(Lift l, float x, float z, float margin)
+        // how far up the hill a hill's lane may start: CableTune's length first, then shorter or longer
+        static readonly float[] LaneLengths = { CableTune.HillLaneLength, 45f, 65f, 38f, 75f, 85f };
+        static readonly List<Slope.Drop> lips = new List<Slope.Drop>();
+
+        /// <summary>The lane down to a hill's foot from the piste's edge len m up the hill, and the sign at its top.</summary>
+        static void SetLane(Hill h, Vector3 foot, float sgn, float len)
         {
-            var h = l.hill;
+            float zl = foot.z - len;
+            float xl = Slope.Centre(zl) + sgn * Slope.PisteHalf;
+            h.laneFrom = new Vector3(xl, Slope.Height(xl, zl), zl);
+            float xs = Slope.Centre(zl) + sgn * (Slope.PisteHalf + 2.5f);
+            h.sign = new Vector3(xs, Slope.Height(xs, zl), zl);
+        }
+
+        /// <summary>
+        /// Lay hill h's lane (the cleared way to it from the piste's edge, and its sign): CableTune's length up the hill
+        /// first, then shorter or longer, until it leaves the piste clear of where a blind roll's crossed pair stands on
+        /// that edge (PisteKit: a step up the hill from the lip, just out from the edge, or the spots it tries next up
+        /// the hill). Nobody should be turning off the run onto a blind roll, and the poles must have room. False if no
+        /// length is clear (the lane is left at CableTune's length).
+        /// </summary>
+        static bool LaneClear(Lift l, Hill h)
+        {
+            Vector3 foot = l.At(h.s - h.rise, h.side * Half, 0f);
+            float sgn = foot.x > Slope.Centre(foot.z) ? 1f : -1f;
+            foreach (float len in LaneLengths)
+            {
+                SetLane(h, foot, sgn, len);
+                if (!LaneAtBlindLip(l, h, sgn)) return true;
+            }
+            SetLane(h, foot, sgn, CableTune.HillLaneLength);
+            return false;
+        }
+
+        static bool LaneAtBlindLip(Lift l, Hill h, float sgn)
+        {
+            Slope.BlindLips(h.laneFrom.z - 40f, l.At(h.s - h.rise, h.side * Half, 0f).z + 40f, lips);
+            foreach (var d in lips)
+                for (float dz = -13f; dz <= 0f; dz += 1f)
+                {
+                    float z = d.LipZ - 4f + dz, x = Slope.Centre(z) + sgn * (Slope.HalfAt(z) + 0.8f / Slope.Squash(z));
+                    if (InLane(l, h, x, z, 2f)) return true;
+                }
+            return false;
+        }
+
+        static bool InLane(Lift l, float x, float z, float margin) => InLane(l, l.hill, x, z, margin);
+
+        static bool InLane(Lift l, Hill h, float x, float z, float margin)
+        {
             Vector3 b = l.At(h.s - h.rise, h.side * Half, 0f), a = h.laneFrom;
             if (z < a.z - CableTune.HillLane - margin || z > b.z + margin) return false;
             float dx = b.x - a.x, dz = b.z - a.z;
