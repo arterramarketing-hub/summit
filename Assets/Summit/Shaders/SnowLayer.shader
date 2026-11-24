@@ -49,6 +49,7 @@ Shader "Summit/SnowLayer"
         float4 _SnowGrid;     // x/y: the patch's first cell (x, z), z: cells per side in the buffers, w: cells shown per side
         float4 _SnowParams;   // x: cell size (m), y: lift of disturbed snow over the terrain, z: fade-out band (cells)
         half4 _SnowStain;     // what a stain looks like; a: how strongly
+        #define SUMMIT_SNOWGRID_DECLARED 1
 
         uint SlotOf(int i, int j)
         {
@@ -94,6 +95,10 @@ Shader "Summit/SnowLayer"
             float h = d.x * f, k = d.y * f, st = d.z * f;
             // untouched snow is the terrain's job: tuck this layer out of sight under it
             bool untouched = abs(h) < 0.0015 && k < 0.01 && st < 0.01;
+            // the snow's shape rounded off a little with its neighbours': loose snow has no flat plates and sharp
+            // steps, which is what the 12.5 cm grid's own heights look like close to
+            float hr = HeightAt(i + 1, j), hl = HeightAt(i - 1, j), hu = HeightAt(i, j + 1), hd = HeightAt(i, j - 1);
+            h = lerp(h, (hr + hl + hu + hd) * 0.25, 0.45);
             float3 p = TransformObjectToWorld(positionOS);
             // disturbed snow sits a few millimetres proud of the terrain so the two never fight, but the barely
             // touched edge of a mark comes down to meet it: no step, nothing to show where the layer starts
@@ -104,7 +109,6 @@ Shader "Summit/SnowLayer"
             if (!untouched) o.depthWS.y = max(p.y, b.x + 0.004);
             // the terrain's own smooth normal, tilted by the slope of the dents and piles
             float c2 = 2.0 * _SnowParams.x;
-            float hr = HeightAt(i + 1, j), hl = HeightAt(i - 1, j), hu = HeightAt(i, j + 1), hd = HeightAt(i, j - 1);
             float hx = (hr - hl) / c2;
             float hz = (hu - hd) / c2;
             float3 nb = float3(b.y, sqrt(saturate(1.0 - b.y * b.y - b.z * b.z)), b.z);
@@ -143,6 +147,7 @@ Shader "Summit/SnowLayer"
             // the groove relief: both ways are always built, and SnowLayer.cs picks the one the terrain is using
             #pragma multi_compile_local_fragment _ _PARALLAXMAP
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+            #include "SnowSurfaceLook.hlsl"
 
             struct Attributes { float4 positionOS : POSITION; float2 cell : TEXCOORD0; };
             struct Varyings
@@ -194,6 +199,9 @@ Shader "Summit/SnowLayer"
             #endif
                 SurfaceData s;
                 InitializeStandardLitSurfaceData(uv, s);
+                // the snow underfoot exactly as the terrain draws it (its corduroy, ice, powder, crud and slush, and the
+                // churned snow where a body has been), so where the two meet they are the same snow
+                SnowSurface(i.positionWS, uv, s);
                 float h = i.mark.x;
                 half k = saturate(i.mark.y), st = saturate(i.mark.z);
                 half fresh = saturate(h / 0.05);
@@ -204,7 +212,7 @@ Shader "Summit/SnowLayer"
                 s.smoothness = lerp(s.smoothness, 0.55, k * 0.8);
                 s.normalTS = normalize(lerp(s.normalTS, half3(0, 0, 1), k * 0.75));
                 // snow thrown up on the rims: fresh, bright and matte
-                s.albedo = lerp(s.albedo, min(s.albedo * 1.14, 1.0), max(fresh, crest * 0.5 * saturate(h / 0.02)));
+                s.albedo = lerp(s.albedo, min(s.albedo * 1.07, 1.0), max(fresh, crest * 0.5 * saturate(h / 0.02)));
                 s.smoothness = lerp(s.smoothness, 0.16, fresh);
                 // a stain soaked into the snow (blood, say), wet and a little glossy
                 half sa = st * _SnowStain.a;

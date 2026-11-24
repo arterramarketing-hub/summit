@@ -223,6 +223,9 @@ namespace Summit
             if (Course.At(z) != Course.Section.Cruise) return false;
             if (OffPiste(x, z) < Margin) return false;
             if (Slope.OnPad(x, z)) return false;
+            // nor in the Summit lift's corridor: it climbs from cycle 0's gathering point up the left of the run to the
+            // camp (LiftLine.LaySummit), and a house in its way left the camp without its lift
+            if (LiftLine.SummitOn && z < Course.First + Course.DangerAt + 200f && x - Slope.Centre(z) < 0f && x - Slope.Centre(z) > -160f) return false;
             // beside a ridge's last canyon (it runs on, filling in, into the top of the next cycle): not on its slopes
             // while it is still a canyon; once it is down to a dip the ground is the mountain's own again
             if (Ridge.InCanyons(z))

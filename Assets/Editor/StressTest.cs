@@ -386,8 +386,9 @@ public static class StressTest
 
     /// <summary>Across crevasses at a range of speeds and angles (and along one): you fall in only below the snow's level.</summary>
     /// <summary>
-    /// Across the glacier's crevasses: each kind, at a spread of speeds with and without a jump at the lip, over its snow
-    /// bridges fast and slow, and a check of every field that a way down through it exists (FieldPaths).
+    /// Across the glacier's crevasses: each kind, at a spread of speeds with and without a jump at the lip, through its
+    /// pinches fast and slow (carried at speed; at a crawl the slot may take you), and a check of every field that a way
+    /// down through it exists (FieldPaths).
     /// </summary>
     static void CrevasseRides(int seed)
     {
@@ -424,24 +425,23 @@ public static class StressTest
                         var from = new Vector3(at.x - Mathf.Sin(head) * 14f, 0f, at.z - Mathf.Cos(head) * 14f);
                         Gap($"seed{seed} crevasse {cv.kind} #{cv.id} {(across ? "down" : !down ? "square" : sd < 0 ? "fromR" : "fromL")} v{v0}{(pop ? " pop" : "")}", from, head, v0, pop, cv);
                     }
-            // its snow bridges: held at speed, broken through at a crawl
+            // its pinches: carried across at speed; at a crawl it may take you
             foreach (var span in new[] { new Vector2(cv.b0, cv.b1), new Vector2(cv.c0, cv.c1) })
             {
                 if (span.y <= span.x) continue;
                 float u = (span.x + span.y) * 0.5f;
                 Course.Opening(cv, u, out float mid);
                 var q = cv.Point(u, mid);
-                bool hidden = span.y - span.x > cv.len - 4f;
                 foreach (float v0 in new[] { 4f, 16f })
-                    Gap($"seed{seed} crevasse {cv.kind} #{cv.id} {(hidden ? "hidden" : "bridge")} v{v0}", new Vector3(q.x, 0f, q.y - 14f), 0f, v0, false, cv, hidden);
+                    Gap($"seed{seed} crevasse {cv.kind} #{cv.id} pinch v{v0}", new Vector3(q.x, 0f, q.y - 14f), 0f, v0, false, cv, true);
             }
         }
     }
 
     /// <summary>
     /// Every field of crevasses (and the bergschrund) must leave a way down through it: on a 1 m grid over the piste,
-    /// a cell is a wall only over a crack's opening too wide to carry at a normal speed (Course.CarryHalf) and with no
-    /// snow bridge over it; from the field's top row to its bottom row there must be a path round the walls.
+    /// a cell is a wall only over a crack's opening too wide to carry at a normal speed (Course.CarryHalf: a pinch is not
+    /// one); from the field's top row to its bottom row there must be a path round the walls.
     /// </summary>
     static void FieldPaths(int seed, Course.Crevasse[] all)
     {
@@ -465,7 +465,6 @@ public static class StressTest
                     float z = za + j, x = Slope.Centre(z) - Slope.PisteHalf + 1f + i;
                     if (Course.CrevasseCut(x, z) <= 0.3f || !Course.CrevasseNear(x, z, 0f, out var c)) continue;
                     float u = c.Along(x, z);
-                    if (c.Bridged(u)) continue;
                     if (Course.Opening(c, u, out _) <= Course.CarryHalf) continue;
                     wall[j, i] = true; walls++;
                 }
@@ -530,7 +529,7 @@ public static class StressTest
             }
         }
     }
-    static void Gap(string name, Vector3 from, float heading, float v0, bool pop, Course.Crevasse cv, bool hidden = false)
+    static void Gap(string name, Vector3 from, float heading, float v0, bool pop, Course.Crevasse cv, bool pinch = false)
     {
         if (only != null && !name.StartsWith(only)) return;
         rides++;
@@ -557,8 +556,8 @@ public static class StressTest
         r.Crash -= atCrash;
         bool fell = r.Crashed && lastCrash == "Crevasse!";
         if (fell) fellIn++; else if (wasOver) crossed++;
-        if (fell && hidden && v0 >= Course.BridgeHolds) { Count("crevasse hidden fall at speed"); Debug.Log($"STRESS-FLAG {name}: fell through a hidden crack's bridge at speed"); }
-        else if (fell && hidden) Count("crevasse hidden fall slow");
+        if (fell && pinch && v0 >= 2f * Course.PinchHalf / Course.SkimTime + 1f) { Count("crevasse pinch fall at speed"); Debug.Log($"STRESS-FLAG {name}: fell into a pinch at speed"); }
+        else if (fell && pinch) Count("crevasse pinch fall slow");
         Debug.Log($"STRESS-GAP {name}: {(fell ? "fell in" : wasOver ? "carried across" : "never over it")}{(r.Crashed && !fell ? $", crashed '{lastCrash}'" : "")}, {r.Speed * 3.6f:0} km/h");
         if (early) { Count("crevasse early"); Debug.Log($"STRESS-FLAG {name}: fell in while still {rimGap:0.00} m from the snow's level"); }
         if (r.Crashed && !fell) PlayOut(name);

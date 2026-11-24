@@ -12,7 +12,7 @@ using Summit;
 ///   bar, footrests, frame): how many vertices go into any of them and how deep, and how far anyone reaches into
 ///   the next seat. Batch: -executeMethod PeopleTest.Chairs (no graphics needed). Exit 1 on any clipping.
 /// </summary>
-public static class PeopleTest
+public static partial class PeopleTest
 {
     // ---------------------------------------------------------------- the chair's solid parts (its own frame)
 

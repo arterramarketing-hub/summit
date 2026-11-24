@@ -191,3 +191,82 @@ do {
     try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: "\(out)/Tape.png"))
 }
 print("signs written to \(out)")
+
+// the lifts' ends (LiftEnds.cs): each lift's name at its load and unload, the singles lane, the way to the camp
+let liftBlue = NSColor(calibratedRed: 0.07, green: 0.20, blue: 0.42, alpha: 1)
+make("LiftSummit", w: 1024, h: 256, bg: liftBlue, fg: .white, text: "SUMMIT EXPRESS", sub: "TO THE CAMP  ·  MT. VERTIGO SUMMIT", hazard: false, stripe: red)
+make("LiftPark", w: 1024, h: 256, bg: NSColor(calibratedRed: 0.95, green: 0.45, blue: 0.08, alpha: 1), fg: .white, text: "PARK LIFT", sub: "TERRAIN PARK LAPS  ·  RAILS  ·  JUMP LINE", hazard: false, stripe: .white)
+make("LiftChair", w: 1024, h: 256, bg: liftBlue, fg: .white, text: "QUAD CHAIR", sub: "LOAD HERE  ·  GROUPS OF FOUR  ·  BAR DOWN", hazard: false, stripe: red)
+make("LiftSingles", w: 512, h: 256, bg: NSColor(calibratedRed: 0.98, green: 0.80, blue: 0.10, alpha: 1), fg: NSColor(calibratedWhite: 0.08, alpha: 1), text: "SINGLES", sub: "FILL EVERY CHAIR", hazard: false, stripe: .black)
+make("LiftCamp", w: 1024, h: 256, bg: NSColor(calibratedRed: 0.13, green: 0.30, blue: 0.16, alpha: 1), fg: .white, text: "CAMP  ›", sub: "LODGE  ·  LOOKOUT  ·  DROP IN", hazard: false, stripe: .white)
+make("LiftUnload", w: 1024, h: 256, bg: liftBlue, fg: .white, text: "UNLOAD  ›  RUNS", sub: "STRAP IN CLEAR OF THE RAMP", hazard: false, stripe: red)
+
+// the trail map board: the mountain drawn as a print, its runs in their colours and the lifts in red
+func makeMap(_ name: String, w: Int, h: Int) {
+    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h, bitsPerSample: 8, samplesPerPixel: 4,
+                               hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+    let W = CGFloat(w), H = CGFloat(h)
+    // sky and the mountain's white mass, its ridges shaded
+    NSColor(calibratedRed: 0.56, green: 0.72, blue: 0.90, alpha: 1).setFill(); NSRect(x: 0, y: 0, width: W, height: H).fill()
+    let m = NSBezierPath()
+    m.move(to: NSPoint(x: 0, y: H * 0.08)); m.line(to: NSPoint(x: W * 0.18, y: H * 0.55)); m.line(to: NSPoint(x: W * 0.36, y: H * 0.70))
+    m.line(to: NSPoint(x: W * 0.52, y: H * 0.90)); m.line(to: NSPoint(x: W * 0.66, y: H * 0.72)); m.line(to: NSPoint(x: W * 0.84, y: H * 0.60))
+    m.line(to: NSPoint(x: W, y: H * 0.30)); m.line(to: NSPoint(x: W, y: 0)); m.line(to: NSPoint(x: 0, y: 0)); m.close()
+    NSColor(calibratedWhite: 0.97, alpha: 1).setFill(); m.fill()
+    NSColor(calibratedRed: 0.78, green: 0.84, blue: 0.92, alpha: 1).setStroke()
+    for (x0, y0, x1, y1) in [(0.52, 0.90, 0.40, 0.30), (0.52, 0.90, 0.70, 0.25), (0.36, 0.70, 0.22, 0.20), (0.66, 0.72, 0.86, 0.18)] {
+        let p = NSBezierPath(); p.lineWidth = W * 0.006
+        p.move(to: NSPoint(x: W * CGFloat(x0), y: H * CGFloat(y0))); p.line(to: NSPoint(x: W * CGFloat(x1), y: H * CGFloat(y1))); p.stroke()
+    }
+    // the forest below the tree line
+    srand48(4242)
+    for _ in 0..<900 {
+        let x = CGFloat(drand48()) * W, y = CGFloat(drand48()) * H * 0.32
+        if abs(x - W * 0.52) < W * 0.05 + y * 0.2 { continue }
+        NSColor(calibratedRed: 0.12, green: 0.30 + CGFloat(drand48()) * 0.1, blue: 0.18, alpha: 0.9).setFill()
+        let t = NSBezierPath(); t.move(to: NSPoint(x: x, y: y + H * 0.025)); t.line(to: NSPoint(x: x - W * 0.006, y: y)); t.line(to: NSPoint(x: x + W * 0.006, y: y)); t.close(); t.fill()
+    }
+    // the run: down the middle, winding, its stretches in their colours
+    func run(_ pts: [(CGFloat, CGFloat)], _ c: NSColor, _ wide: CGFloat) {
+        let p = NSBezierPath(); p.lineWidth = W * wide; p.lineCapStyle = .round; p.lineJoinStyle = .round
+        p.move(to: NSPoint(x: W * pts[0].0, y: H * pts[0].1))
+        for q in pts.dropFirst() { p.line(to: NSPoint(x: W * q.0, y: H * q.1)) }
+        c.setStroke(); p.stroke()
+    }
+    let green = NSColor(calibratedRed: 0.05, green: 0.55, blue: 0.22, alpha: 1), blue = NSColor(calibratedRed: 0.05, green: 0.30, blue: 0.75, alpha: 1)
+    let black = NSColor(calibratedWhite: 0.05, alpha: 1)
+    run([(0.52, 0.86), (0.50, 0.74), (0.53, 0.64)], black, 0.010)
+    run([(0.53, 0.64), (0.49, 0.52), (0.52, 0.44)], blue, 0.010)
+    run([(0.52, 0.44), (0.47, 0.34), (0.51, 0.24)], black, 0.010)
+    run([(0.51, 0.24), (0.48, 0.14), (0.50, 0.04)], green, 0.010)
+    run([(0.53, 0.64), (0.62, 0.52), (0.60, 0.40)], blue, 0.006)
+    run([(0.50, 0.74), (0.38, 0.58), (0.40, 0.46)], black, 0.006)
+    // the lifts: straight red lines, a dot at each station
+    func lift(_ x0: CGFloat, _ y0: CGFloat, _ x1: CGFloat, _ y1: CGFloat) {
+        let p = NSBezierPath(); p.lineWidth = W * 0.005
+        p.move(to: NSPoint(x: W * x0, y: H * y0)); p.line(to: NSPoint(x: W * x1, y: H * y1))
+        NSColor(calibratedRed: 0.85, green: 0.10, blue: 0.08, alpha: 1).setStroke(); p.stroke()
+        for (x, y) in [(x0, y0), (x1, y1)] {
+            NSColor(calibratedRed: 0.85, green: 0.10, blue: 0.08, alpha: 1).setFill()
+            NSBezierPath(ovalIn: NSRect(x: W * x - W * 0.010, y: H * y - W * 0.010, width: W * 0.02, height: W * 0.02)).fill()
+        }
+    }
+    lift(0.45, 0.86, 0.44, 0.60); lift(0.58, 0.58, 0.58, 0.40); lift(0.44, 0.40, 0.45, 0.20); lift(0.56, 0.20, 0.56, 0.05)
+    // the title band
+    NSColor(calibratedRed: 0.07, green: 0.20, blue: 0.42, alpha: 1).setFill(); NSRect(x: 0, y: H * 0.88, width: W, height: H * 0.12).fill()
+    let para = NSMutableParagraphStyle(); para.alignment = .center
+    NSAttributedString(string: "MT. VERTIGO  ·  TRAIL MAP", attributes: [.font: font(H * 0.08), .foregroundColor: NSColor.white, .paragraphStyle: para, .kern: H * 0.01])
+        .draw(in: NSRect(x: 0, y: H * 0.895, width: W, height: H * 0.1))
+    // the key
+    let key: [(String, NSColor)] = [("●  EASIER", green), ("■  MORE DIFFICULT", blue), ("◆  EXPERT", black), ("—  LIFTS", NSColor(calibratedRed: 0.85, green: 0.10, blue: 0.08, alpha: 1))]
+    for (i, (t, c)) in key.enumerated() {
+        NSAttributedString(string: t, attributes: [.font: font(H * 0.045), .foregroundColor: c]).draw(at: NSPoint(x: W * 0.03, y: H * (0.80 - 0.06 * CGFloat(i))))
+    }
+    NSColor(calibratedWhite: 0.15, alpha: 1).setStroke(); let frame = NSBezierPath(rect: NSRect(x: 2, y: 2, width: W - 4, height: H - 4)); frame.lineWidth = 4; frame.stroke()
+    NSGraphicsContext.restoreGraphicsState()
+    let data = rep.representation(using: .png, properties: [:])!
+    try! data.write(to: URL(fileURLWithPath: "\(out)/\(name).png"))
+}
+makeMap("TrailMap", w: 1024, h: 640)

@@ -63,6 +63,7 @@ namespace Summit
             s.rider = target != null ? target.GetComponent<Rider>() : null;
             SpreadBuild = !Application.isBatchMode;
             s.Build(lit);
+            LiftEnds.Create(s.transform, target, lit);   // the ground at each end of each lift, and its people (LiftEnds.cs)
             return s;
         }
 

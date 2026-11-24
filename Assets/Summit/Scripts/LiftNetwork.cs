@@ -47,6 +47,49 @@ namespace Summit
         // for CrowdRun or more; no two stations within StationApart (Crowds)
         public const float CrowdAngle = 45f, CrowdNear = 120f, CrowdRun = 40f, StationApart = 60f;
 
+        // ---------------------------------------------------------------- the park lift
+        // A cycle's second line, where it will go: a short lap chair from the park's run-out (its bottom: just above the
+        // danger stretch, where the park's lines end and everyone gathers) to the park's top (where you drop in), on the
+        // other side of the run from the first line, as parks have their own chair at Breckenridge or Mammoth. It may run
+        // beside the first line (real lifts do), ParkApart or more from it; otherwise every rule of a second line holds.
+        // Where it will not go, the line across the run is laid instead (LaySecond).
+        public const bool ParkOn = true;
+        public const float ParkApart = 60f;
+        static readonly float[] ParkOffsets = { 38f, 46f, 54f, 62f, 72f };
+        static bool parkLaying;
+
+        static Lift LayPark(int k, IList<Lift> laid)
+        {
+            if (k >= LastCycle) return null;   // (the last cycle is cut short by the finish)
+            float b = Course.First + k * Course.Cycle;
+            if (b + Course.ParkAt + 180f >= Course.ClearFrom) return null;
+            Lift first = null;
+            foreach (var o in laid) if (o.k == k && !o.second) first = o;
+            if (first == null) return null;
+            float zt = b + Course.ParkAt - 22f, zb = b + Course.DangerAt - 12f;
+            // the other side of the run from where the first line runs past the park
+            float zm = 0.5f * (zt + zb), tm = Mathf.Clamp((zm - first.top.z) / Mathf.Max(1f, first.bottom.z - first.top.z), 0f, 1f);
+            float fx = Mathf.Lerp(first.top.x, first.bottom.x, tm) - Slope.Centre(zm);
+            float side = fx > 0f ? -1f : 1f;
+            int tries = 0;
+            parkLaying = true;
+            try
+            {
+                foreach (float ob in ParkOffsets)
+                    foreach (float ot in ParkOffsets)
+                    {
+                        tries++;
+                        var l = Try(k, zt, zb, side * ot, side * ob, laid);
+                        if (l == null || l.under.Length > 0) continue;   // (beside the first line, never carried over it)
+                        l.park = true; l.tries = tries;
+                        PlaceHill(l, laid);
+                        return l;
+                    }
+            }
+            finally { parkLaying = false; }
+            return null;
+        }
+
         /// <summary>Lay cycle k's second line, across the piste and over the lines already laid. Null if none will go.</summary>
         static Lift LaySecond(int k, IList<Lift> laid)
         {
@@ -170,7 +213,9 @@ namespace Summit
                     }
                 if (o.ZMax < l.ZMin - CrowdNear || o.ZMin > l.ZMax + CrowdNear) continue;
                 if (Mathf.Abs(l.dir.x * o.dir.x + l.dir.z * o.dir.z) < cosMax) continue;
-                if (Alongside(l, o) >= CrowdRun || Alongside(o, l) >= CrowdRun) return true;
+                // (a park lift may run beside another line: ParkApart or more from it)
+                float near = parkLaying ? ParkApart : CrowdNear;
+                if (Alongside(l, o, near) >= CrowdRun || Alongside(o, l, near) >= CrowdRun) return true;
             }
             return false;
         }
@@ -179,7 +224,9 @@ namespace Summit
         /// How many metres of a run beside b: alongside it (between b's stations, looking square across from b) and
         /// within CrowdNear of it. (Two lines end to end are not side by side: their stations are kept apart.)
         /// </summary>
-        public static float Alongside(Lift a, Lift b)
+        public static float Alongside(Lift a, Lift b) => Alongside(a, b, CrowdNear);
+
+        public static float Alongside(Lift a, Lift b, float near)
         {
             float run = 0f;
             // (only the part of a that is abreast of b: where a's stations project onto b's line, clipped to b)
@@ -191,7 +238,7 @@ namespace Summit
                 float t = (p.x - b.top.x) * b.dir.x + (p.z - b.top.z) * b.dir.z;
                 if (t < 0f || t > b.plan) continue;
                 float dx = p.x - (b.top.x + b.dir.x * t), dz = p.z - (b.top.z + b.dir.z * t);
-                if (dx * dx + dz * dz < CrowdNear * CrowdNear) run += 4f;
+                if (dx * dx + dz * dz < near * near) run += 4f;
             }
             return run;
         }

@@ -93,7 +93,8 @@ namespace Summit
         //   chevron    - short cracks along the piste's edges, slanting in from the margin and up the hill
         //   bergschrund- one long crack near the top, at the foot of the steep summit face
         //   splaying   - now and then, a few cracks down the fall line, fanning out, where the run flattens
-        // Some cracks are partly spanned, or wholly hidden, by sagging snow bridges that hold a rider going at speed.
+        // No snow bridges (they read as slabs laid over the slot, not as snow): a crack is crossed by jumping it, by going
+        // round it, or where it pinches in to a slot a board carries across at speed (its pinches: Pinched).
         // Every crack is a straight line in plan (bowed and wandering a little), with its own along (u) and across
         // (w) axes; Opening gives its half-width and the line of its middle at a point along it.
 
@@ -107,7 +108,7 @@ namespace Summit
             public float ax, az, dx, dz;   // the start of its line, and the unit direction along it (plan)
             public float len, half, depth; // its length, its widest half-width, and how deep it is at its widest
             public float bow, phase;       // how far its middle is bowed off the straight line (m, toward +w), its wander
-            public float b0, b1, c0, c1;   // up to two snow bridges, as spans along it (b1 <= b0: none)
+            public float b0, b1, c0, c1;   // up to two pinches, as spans along it where it narrows to PinchHalf (b1 <= b0: none)
             public float x0, x1, z0, z1;   // its plan bounds, lips and all
             public int id, field;          // its place in Crevasses, and the field it is part of (-1: none)
             /// <summary>How far along its line a point is.</summary>
@@ -116,9 +117,17 @@ namespace Summit
             public float Across(float x, float z) => -(x - ax) * dz + (z - az) * dx;
             /// <summary>The point u along it and w across (the inverse of Along and Across), as (x, z).</summary>
             public Vector2 Point(float u, float w) => new Vector2(ax + dx * u - dz * w, az + dz * u + dx * w);
-            /// <summary>Is u along it under a snow bridge?</summary>
-            public bool Bridged(float u) => (u > b0 && u < b1) || (u > c0 && u < c1);
-            public bool HasBridge => b1 > b0 || c1 > c0;
+            /// <summary>Is u along it in one of its pinches?</summary>
+            public bool Pinched(float u) => (u > b0 && u < b1) || (u > c0 && u < c1);
+            public bool HasPinch => b1 > b0 || c1 > c0;
+            /// <summary>How far into a pinch u is: 1 inside one, easing to 0 over PinchEase either side.</summary>
+            public float PinchAt(float u)
+            {
+                float w = 0f;
+                if (b1 > b0) w = Mathf.Max(w, Mathf.Clamp01(1f - Mathf.Max(b0 - u, u - b1) / PinchEase));
+                if (c1 > c0) w = Mathf.Max(w, Mathf.Clamp01(1f - Mathf.Max(c0 - u, u - c1) / PinchEase));
+                return w * w * (3f - 2f * w);
+            }
         }
 
         /// <summary>
@@ -126,9 +135,13 @@ namespace Summit
         /// the run, over the piste and its margins (the forest starts beyond them).
         /// </summary>
         public const float GlacierTop = 40f, GlacierBottom = 1480f, GlacierHalf = Slope.PisteHalf + 14f;
-        public const float CrevasseDepth = 28f;
-        /// <summary>A snow bridge holds a rider going this fast (m/s); slower, it gives way under the board.</summary>
-        public const float BridgeHolds = 7f;
+        /// <summary>
+        /// How much deeper the cracks are than they were laid out at first (Glacier.Make): their walls go down three times
+        /// as far into the dark (60-90 m for the widest), so the bottom is never seen from the snow.
+        /// </summary>
+        public const float DepthScale = 3f;
+        /// <summary>A pinch's half-width: a slot 1.1 m wide, carried across from about 8 m/s (SkimTime), jumped slower.</summary>
+        public const float PinchHalf = 0.55f, PinchEase = 2.5f;
         /// <summary>A crack no wider than twice this is carried across at a normal riding speed (the board flies on).</summary>
         public const float CarryHalf = 1.4f;
 
@@ -204,11 +217,13 @@ namespace Summit
             // pointed at both ends, the way a crack runs out to nothing (a rounded end read as a pool from up the hill)
             float taper = Mathf.Min(9f, c.len * 0.38f);
             float t = Mathf.Clamp01(Mathf.Min(u, c.len - u) / taper);
-            float o = c.half * t * (2f - t);
-            return o * (0.82f + 0.18f * Mathf.Sin(u * 0.17f + c.phase * 1.3f));
+            float o = c.half * t * (2f - t) * (0.82f + 0.18f * Mathf.Sin(u * 0.17f + c.phase * 1.3f));
+            // where it pinches in, no wider than PinchHalf
+            if (c.b1 > c.b0 || c.c1 > c.c0) o = Mathf.Lerp(o, Mathf.Min(o, PinchHalf), c.PinchAt(u));
+            return o;
         }
 
-        /// <summary>How deep a crevasse cuts at (x, z): 0 almost everywhere. (Under a snow bridge too: the bridge is drawn over it.)</summary>
+        /// <summary>How deep a crevasse cuts at (x, z): 0 almost everywhere.</summary>
         public static float CrevasseCut(float x, float z)
         {
             var near = Near(z);
@@ -250,7 +265,7 @@ namespace Summit
             return false;
         }
 
-        /// <summary>The crevasse at or near a point (within margin of its full width, bridged or not), if any.</summary>
+        /// <summary>The crevasse at or near a point (within margin of its full width, pinched or not), if any.</summary>
         public static bool CrevasseNear(float x, float z, float margin, out Crevasse found)
         {
             found = default;
@@ -277,28 +292,12 @@ namespace Summit
 
         public static bool CrevasseNear(float x, float z, float margin) => CrevasseNear(x, z, margin, out _);
 
-        /// <summary>Over a crack's opening where a snow bridge spans it.</summary>
-        public static bool OnBridge(float x, float z)
-        {
-            var near = Near(z);
-            for (int i = 0; i < near.Length; i++)
-            {
-                ref var c = ref crevs[near[i]];
-                if (!c.HasBridge || x < c.x0 || x > c.x1 || z < c.z0 || z > c.z1) continue;
-                float u = c.Along(x, z);
-                if (!c.Bridged(u)) continue;
-                float open = Opening(c, u, out float mid);
-                if (open > 0.01f && Mathf.Abs(c.Across(x, z) - mid) < open + 0.3f) return true;
-            }
-            return false;
-        }
-
         /// <summary>
         /// Is there snow to ride on at (x, z) at this speed? Everywhere but a crack's opening (one narrow enough for the
-        /// speed is skimmed: SkimTime); over a snow bridge only going fast enough (a slow board breaks through).
+        /// speed is skimmed: SkimTime: a pinch at speed, say).
         /// </summary>
         public static bool Solid(float x, float z, float speed) =>
-            CrevasseCut(x, z) <= 0.3f || 2f * OpenAt(x, z) < speed * SkimTime || (speed >= BridgeHolds && OnBridge(x, z));
+            CrevasseCut(x, z) <= 0.3f || 2f * OpenAt(x, z) < speed * SkimTime;
 
         /// <summary>
         /// A board crosses an opening it spans in less than this (s) without sinking into it more than a few
@@ -338,7 +337,7 @@ namespace Summit
 
         /// <summary>
         /// For the test tools: the widest crack on the glacier (or of one kind), and a point on its middle line on the
-        /// piste where no bridge spans it, as near its middle as there is one.
+        /// piste out of its pinches (where it is wide), as near its middle as there is one.
         /// </summary>
         public static bool WidestCrack(out Crevasse found, out Vector3 at, CrevasseKind? kind = null)
         {
@@ -353,13 +352,13 @@ namespace Summit
             return true;
         }
 
-        /// <summary>A point on a crack's middle line, on the piste and not under a bridge, as near its middle as there is one.</summary>
+        /// <summary>A point on a crack's middle line, on the piste and out of its pinches, as near its middle as there is one.</summary>
         public static Vector3 CrackSpot(Crevasse c)
         {
             float bestScore = float.MaxValue; Vector3 at = Vector3.zero;
             for (float u = c.len * 0.15f; u <= c.len * 0.85f; u += 0.5f)
             {
-                if (c.Bridged(u)) continue;
+                if (c.PinchAt(u) > 0f) continue;
                 Opening(c, u, out float mid);
                 var q = c.Point(u, mid);
                 float off = Mathf.Abs(q.x - Slope.Centre(q.y));

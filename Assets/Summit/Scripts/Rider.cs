@@ -341,8 +341,7 @@ namespace Summit
             if (!Crashed) OverStep(p, v);
             // over a crevasse's opening there is nothing under the board: it carries on through the air on its own
             // line (fast enough across a narrow one, it comes down on the far lip). Only once it has dropped below the
-            // snow's level, into the slot, has it fallen in. A snow bridge holds the board at speed; a slow one breaks
-            // through it (Course.Solid)
+            // snow's level, into the slot, has it fallen in. A narrow slot (a pinch) is skimmed at speed (Course.Solid)
             if (!Crashed && !Grinding && !Course.Solid(p.x, p.z, Speed))
             {
                 if (p.y - R < Slope.DrawnHeight(p.x, p.z) - FallInDepth)

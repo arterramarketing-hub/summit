@@ -35,6 +35,7 @@ namespace Summit
 
         static readonly int MapId = Shader.PropertyToID("_SurfaceMap"), StId = Shader.PropertyToID("_SurfaceMapST"), WinId = Shader.PropertyToID("_SurfaceWin"),
                             DayId = Shader.PropertyToID("_SurfaceDay"), RunId = Shader.PropertyToID("_SurfaceRun"),
+                            GlacierId = Shader.PropertyToID("_SurfaceGlacier"),
                             ColorId = Shader.PropertyToID("_BaseColor"), SmoothId = Shader.PropertyToID("_Smoothness"), BumpId = Shader.PropertyToID("_BumpScale");
 
         /// <summary>The snow material the terrain is drawn from (null until Terrain has been asked for it): the board's
@@ -77,6 +78,8 @@ namespace Summit
         public static void Step(Vector3 focus, float run, float dt, bool all = false)
         {
             Day.warm = Warmth(TimeOfDay.Clock);
+            // no grooming lines on the glacier (SnowSurface: the look only), faded in and out over 40 m
+            Shader.SetGlobalVector(GlacierId, new Vector4(Course.GlacierTop, Course.GlacierBottom, 40f, 0f));
             if (SystemInfo.graphicsDeviceType == GraphicsDeviceType.Null) return;
             Fresh();
 

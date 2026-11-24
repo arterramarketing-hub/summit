@@ -94,7 +94,9 @@ Shader "Summit/IceWall"
                 float dist = length(toCam);
                 toCam /= max(dist, 0.001);
                 float metresDown = i.uv.x;        // below the lip
-                half t = saturate(i.uv.y);        // 0 at the lip, 1 at the bottom
+                // 0 at the lip, 1 at the bottom: by metres too, so a deep slot is dark 30 m down whatever its depth
+                // (the walls go 60-90 m down: by their share of it alone, their top third stayed pale)
+                half t = saturate(max(i.uv.y, metresDown / 36.0));
                 // the scan is laid on the walls (which face across the slope, along x); the narrow floor, which
                 // faces up, takes it stretched and without relief - it is all but black down there anyway
                 half wall = 1.0 - smoothstep(0.6, 0.9, abs(n.y));
@@ -132,9 +134,11 @@ Shader "Summit/IceWall"
 
                 // the ice's own colour by depth: pale blue, a luminous blue, deep blue, near black at the bottom
                 half3 blue = lerp(half3(0.50, 0.78, 0.93), half3(0.21, 0.60, 0.87), saturate((t - 0.05) / 0.15));
-                blue = lerp(blue, half3(0.04, 0.23, 0.60), saturate((t - 0.2) / 0.35));
-                blue = lerp(blue, half3(0.009, 0.064, 0.26), saturate((t - 0.55) / 0.3));
-                blue = lerp(blue, half3(0.002, 0.009, 0.04), saturate((t - 0.85) / 0.15));
+                // (the walls go down three times as far as they did: the blue deepens over the first third, then fades
+                // through the darkest blue to black, so no floor is ever seen)
+                blue = lerp(blue, half3(0.04, 0.23, 0.60), saturate((t - 0.12) / 0.22));
+                blue = lerp(blue, half3(0.009, 0.064, 0.26), saturate((t - 0.32) / 0.22));
+                blue = lerp(blue, half3(0.0, 0.004, 0.02), saturate((t - 0.55) / 0.3));
 
                 // the layers: each its own shade, some whiter and bubbly, with a thin dirty line where the summer's
                 // surface was
@@ -158,11 +162,13 @@ Shader "Summit/IceWall"
                 // the scene's light: sky light (less of it the deeper you go, and in the scan's hollows), the sun
                 // or moon, lamps (the headlamp at night), each with its highlight off the ice
                 half gloss = lerp(_Smoothness, 0.3, snowy);
-                half3 light = SampleSH(nb) * lerp(1.0, 0.3, t) * (0.7 + 0.3 * ice.a);
+                half3 light = SampleSH(nb) * lerp(1.0, 0.05, sqrt(t)) * (0.7 + 0.3 * ice.a);
                 Light sun = GetMainLight(TransformWorldToShadowCoord(p));
                 half3 sunLit = sun.color * (sun.distanceAttenuation * sun.shadowAttenuation);
-                light += sunLit * saturate(dot(nb, sun.direction));
-                half3 spec = sunLit * Shine(nb, sun.direction, toCam, gloss);
+                // (no sun reaches far down a slot)
+                half deepSun = 1.0 - smoothstep(0.08, 0.35, t);
+                light += sunLit * saturate(dot(nb, sun.direction)) * deepSun;
+                half3 spec = sunLit * Shine(nb, sun.direction, toCam, gloss) * deepSun;
                 #if defined(_ADDITIONAL_LIGHTS)
                 uint count = GetAdditionalLightsCount();
                 for (uint k = 0u; k < count; k++)

@@ -99,7 +99,9 @@ namespace Summit
         {
             public int k;                         // the course cycle it serves
             public int id;                        // which of the day's lifts it is (its place in Lifts)
-            public bool second;                   // a cycle's second line, laid across the piste (LiftNetwork.cs)
+            public bool second;                   // a cycle's second line: the park lift, or one laid across the piste (LiftNetwork.cs)
+            public bool summit;                   // the Summit lift: cycle 0's first line, its top station at the camp (LaySummit)
+            public bool park;                     // a cycle's park lift: from the park's run-out to its top (LiftNetwork.LayPark)
             public Lift[] under = NoLifts;        // the lines it is carried over: its chairs clear them by OverClear
             public Vector3 top, bottom;           // the stations: the middle of each deck
             public Vector3 dir, across;           // level unit vectors: down the line, and to its right looking down
@@ -267,7 +269,8 @@ namespace Summit
                     if (On && Network)
                         for (int k = 0; k <= LastCycle; k++)
                         {
-                            var l = LaySecond(k, list);
+                            // the park lift, where one will go; otherwise the line across the run (LiftNetwork.cs)
+                            var l = (ParkOn ? LayPark(k, list) : null) ?? LaySecond(k, list);
                             if (l != null) list.Add(l);
                         }
                     for (int i = 0; i < list.Count; i++) list[i].id = i;
@@ -327,9 +330,60 @@ namespace Summit
         static Lift LayPlain(int k)
         {
             if (!Range(k, out float zt, out float zb)) return null;
+            if (k == 0 && SummitOn) { var s = LaySummit(zb); if (s != null) return s; }
             return LayTo(k, zt, zb);
         }
 
+        // ---------------------------------------------------------------- the Summit lift
+        // The lift that brings you home: cycle 0's first line, from that cycle's gathering point (the danger stretch's
+        // end, where the run funnels into the bowl or the ridge) up the summit face beside the start, to a top station
+        // on the camp's left shoulder (the right is the cliff: Slope.Summit), its deck about level with the camp's plateau
+        // and a short walk from it (LiftEnds lays the path, the outrun and the people). Before, its top was at z 40, below
+        // the start's lip and 38 to 84 m to one side: down the face from the camp and out of sight of it.
+        public const bool SummitOn = true;
+        // where its top station may stand: just in front of the camp's left front corner (it spans z -38 to -96, and 33 m
+        // either side of the run with its trees), as near the plateau's edge as the station's footprint allows
+        static readonly float[] SummitZ = { -62f, -58f, -66f, -54f, -70f, -50f };
+        static readonly float[] SummitOff = { -41f, -44f, -47f, -50f, -54f };
+
+        public static readonly Dictionary<string, int> SummitWhy = new Dictionary<string, int>();
+
+        static Lift LaySummit(float zb)
+        {
+            SummitWhy.Clear();
+            // The top goes on the camp's left (the right is the cliff). Through the danger stretch a line keeps away
+            // from the deadly wall (LayTo); with the wall on the left that would carry it diagonally across the run, a
+            // span too long for any tower chain, so then it ends above the wall instead, still on the left: at the
+            // park's run-out, where the park's lines gather (cycle 0's park lift then goes on the right: LayPark).
+            bool wallLeft = LastCycle > 0 && Cliffs.WallOf(0, out var w) && w.side < 0f;
+            float b = Course.First;
+            float cx = Slope.Centre(Slope.PadLip);
+            int tries = 0;
+            // (the nearest to the camp first; then, on a summit face too steep for the usual towers, taller ones, as
+            // real summit lifts have)
+            foreach (float hm in new[] { HMax, SummitHMax })
+            foreach (float off in SummitOff)
+                foreach (float zt in SummitZ)
+                    foreach (float zBottom in wallLeft ? new[] { b + Course.DangerAt - 12f } : new[] { zb, b + Course.DangerAt - 12f })
+                        foreach (float ob in SummitBottom)
+                        {
+                            hMaxSummit = hm;
+                            tries++;
+                            float ot = cx + off - Slope.Centre(zt);   // (from the camp's own centre line: the run wanders)
+                            var l = Try(0, zt, zBottom, ot, -ob);
+                            hMaxSummit = 0f;
+                            if (l == null) { SummitWhy[Why] = SummitWhy.TryGetValue(Why, out int c) ? c + 1 : 1; continue; }
+                            // its deck about level with the camp's plateau, a walk from it
+                            if (l.top.y < Camp.GroundAt(-20f, zt).y - SummitDrop) { SummitWhy["low"] = SummitWhy.TryGetValue("low", out int c2) ? c2 + 1 : 1; continue; }
+                            l.summit = true; l.tries = tries;
+                            PlaceHill(l);
+                            return l;
+                        }
+            return null;
+        }
+        const float SummitDrop = 6f, SummitHMax = 30f;
+        static float hMaxSummit;   // (while the Summit lift is tried: its towers' height limit)
+        static readonly float[] SummitBottom = { 38f, 46f, 54f, 62f, 72f, 84f, 96f, 110f };
         static Lift LayTo(int k, float zt, float zb)
         {
             // through the danger stretch, the side away from its deadly cliff
@@ -403,6 +457,9 @@ namespace Summit
         }
 
         /// <summary>Lay lift k along the straight line from ot beside the piste at zt to ob beside it at zb. Null if it will not go.</summary>
+        /// <summary>Why the last line tried did not go (for checking).</summary>
+        public static string Why = "";
+
         static Lift Try(int k, float zt, float zb, float ot, float ob, IList<Lift> laid = null, float gorge = 0f)
         {
             // (a gorge line, gorge = the cliff's side, is a first line laid after others: it is kept clear of them too)
@@ -413,17 +470,17 @@ namespace Summit
             l.dir = new Vector3((xb - xt) / plan, 0f, (zb - zt) / plan);
             l.across = new Vector3(l.dir.z, 0f, -l.dir.x);
             l.top = new Vector3(xt, 0f, zt); l.bottom = new Vector3(xb, 0f, zb);
-            if (!StationAt(l, xt, zt, out float deckT) || !StationAt(l, xb, zb, out float deckB)) return null;
+            if (!StationAt(l, xt, zt, out float deckT) || !StationAt(l, xb, zb, out float deckB)) { Why = "station"; return null; }
             l.top.y = deckT; l.bottom.y = deckB;
             if (Occupied != null)
                 for (float s = -StationHalfLen - 6f; s <= plan + StationHalfLen + 6f; s += 5f)
                     for (int side = -1; side <= 1; side++)
-                        if (Occupied(xt + l.dir.x * s + l.across.x * side * Swath, zt + l.dir.z * s + l.across.z * side * Swath)) return null;
+                        if (Occupied(xt + l.dir.x * s + l.across.x * side * Swath, zt + l.dir.z * s + l.across.z * side * Swath)) { Why = "occupied"; return null; }
             l.lean = 0.5f * Mathf.Atan2(deckT - deckB, plan);
             float sl = Mathf.Sin(l.lean);
             // a second line: clear of the lines already laid (their stations, their hills' lanes), and over them
             // only where it can be (LiftNetwork.cs)
-            float hMax = HMax;
+            float hMax = hMaxSummit > 0f ? hMaxSummit : HMax;
             if (gorge != 0f && !GorgeSide(l, gorge)) return null;
             if (laid != null)
             {
@@ -436,7 +493,7 @@ namespace Summit
             // where a tower may stand: spots every Step along the line, between the stations' portals
             float s0 = StationHalfLen, s1 = plan - StationHalfLen;
             int n = Mathf.FloorToInt((s1 - s0 - 2f * EndMin) / Step) + 1;
-            if (n < 1) return null;
+            if (n < 1) { Why = "short"; return null; }
             float first = s0 + EndMin + ((s1 - s0 - 2f * EndMin) - (n - 1) * Step) * 0.5f;
             var spot = new float[n]; var ok = new bool[n]; var knoll = new float[n];
             var deep = gorge != 0f ? new int[n + 1] : null;   // (how many spots up to each stand over the deep canyon: OverGorge, quickly)
@@ -488,7 +545,7 @@ namespace Summit
                 float g = s1 - spot[i];
                 if (cost[i] < Inf && g <= EndMax && cost[i] + EndCost(g) < best) { best = cost[i] + EndCost(g); at = i; }
             }
-            if (at < 0) return null;
+            if (at < 0) { Why = "chain"; return null; }
             var chain = new List<float>();
             for (; at >= 0; at = prev[at]) chain.Add(spot[at]);
             chain.Reverse();
@@ -513,12 +570,12 @@ namespace Summit
                     if (i > 0) l.h[i - 1] += d;
                     if (i < l.h.Length) l.h[i] += d;
                 }
-                for (int i = 0; i < l.h.Length; i++) if (l.h[i] > hMax) return null;
+                for (int i = 0; i < l.h.Length; i++) if (l.h[i] > hMax) { Why = "tall"; return null; }
             }
-            if (!done) return null;
+            if (!done) { Why = "clearance"; return null; }
             Nodes(l);
             // (and where each foot has ended up, the snow must not be too steep to stand a tower on: about 50 degrees)
-            for (int i = 0; i < l.foot.Length; i++) if (Slope.Normal(l.foot[i].x, l.foot[i].z).y < 0.64f) return null;
+            for (int i = 0; i < l.foot.Length; i++) if (Slope.Normal(l.foot[i].x, l.foot[i].z).y < 0.64f) { Why = "steepfoot"; return null; }
             // (a gorge line's feet, wherever their heights have put them, on ground that will hold them; and a real drop under it)
             if (gorge != 0f)
             {
@@ -622,7 +679,7 @@ namespace Summit
                 foreach (float h in l.h) tall = Mathf.Max(tall, h);
                 float near = float.MaxValue;
                 foreach (var f in l.foot) near = Mathf.Min(near, Mathf.Abs(f.x - Slope.Centre(f.z)));
-                sb.AppendLine($"lift {l.k}{(l.second ? "b" : "")}: z {l.top.z:0} to {l.bottom.z:0}, {l.offTop:+0;-0} and {l.offBottom:+0;-0} m off the piste, {l.plan:0} m, {l.s.Length} towers (tallest {tall:0.0} m, nearest the piste {near:0.0} m), longest span {longest:0} m, {l.chairs} chairs {l.spacing:0.0} m apart, clearance to spare {-worst:0.00} m (0 at a station's portal), try {l.tries}{(l.under.Length > 0 ? ", carried over lift " + l.under[0].k : "")}");
+                sb.AppendLine($"lift {l.k}{(l.second ? "b" : "")}{(l.summit ? " (Summit)" : l.park ? " (park)" : "")}: z {l.top.z:0} to {l.bottom.z:0}, {l.offTop:+0;-0} and {l.offBottom:+0;-0} m off the piste, {l.plan:0} m, {l.s.Length} towers (tallest {tall:0.0} m, nearest the piste {near:0.0} m), longest span {longest:0} m, {l.chairs} chairs {l.spacing:0.0} m apart, clearance to spare {-worst:0.00} m (0 at a station's portal), try {l.tries}{(l.under.Length > 0 ? ", carried over lift " + l.under[0].k : "")}");
             }
             return sb.ToString();
         }

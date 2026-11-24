@@ -168,6 +168,7 @@ namespace Summit
             Footpath();
             CliffEdge();
             Mist();
+            CampSnow();       // the snow underfoot by place, the shovelled path, the piles you walk on (CampSnow.cs)
             Physics.SyncTransforms();
             Redress();
             SetNight(Night);   // the new lamps start at the evening's brightness
@@ -515,7 +516,10 @@ namespace Summit
                 var p = Ground(dx, z);
                 float s = 1.4f + 2.2f * Slope.Hash01(i, 5, 41);
                 if (UseLodge && !LodgeClear(p, s * 0.7f)) continue;   // (not into the lodge or onto its terrace)
-                P(PrimitiveType.Sphere, t, p + Vector3.down * s * 0.22f, new Vector3(s * 1.4f, s * 0.6f, s), new Vector3(0f, i * 41f, 0f), snowCap);
+                // (its middle no higher than the lowest snow under its rim: on a slope it bulged out over the snow below)
+                float low = p.y; for (int k = 0; k < 8; k++) low = Mathf.Min(low, Slope.DrawnHeight(p.x + 0.7f * s * Mathf.Cos(k * 0.785f), p.z + 0.5f * s * Mathf.Sin(k * 0.785f)));
+                if (p.y - low > 0.5f) continue;   // (none on steep ground: it doesn't sit on it)
+                P(PrimitiveType.Sphere, t, new Vector3(p.x, Mathf.Min(p.y - s * 0.22f, low - 0.02f), p.z), new Vector3(s * 1.4f, s * 0.6f, s), new Vector3(0f, i * 41f, 0f), snowCap);
             }
         }
 
@@ -690,6 +694,7 @@ namespace Summit
             P(PrimitiveType.Cube, t, new Vector3(0f, y + 1.08f, 2f), new Vector3(5.9f, 0.08f, 0.2f), Vector3.zero, snowCap);
             Block(t, new Vector3(0f, 0f, 2.05f), new Vector2(3f, 0.12f));
             Block(t, Vector3.zero, new Vector2(2.9f, 2f), null, true, y);
+            Block(t, Vector3.zero, new Vector2(3f, 2.1f), null, false, 0f, 0f, -3f, y - 0.6f);   // (its sides, where it stands up off the snow below)
             // the coin telescope, aimed down the mountain
             Log(t, new Vector3(1.2f, y, 1.2f), new Vector3(1.2f, y + 1.05f, 1.2f), 0.12f, metal);
             var scope = P(PrimitiveType.Cylinder, t, new Vector3(1.2f, y + 1.25f, 1.25f), new Vector3(0.2f, 0.38f, 0.2f), new Vector3(78f, 0f, 0f), metal);
@@ -701,45 +706,11 @@ namespace Summit
             var sg = P(PrimitiveType.Quad, t, new Vector3(-3.4f, 2.0f, -2.38f), new Vector3(1.6f, 0.4f, 1f), Vector3.zero, Sign("Camp/SignLookout"));
             P(PrimitiveType.Cube, t, new Vector3(-3.4f, 2.0f, -2.32f), new Vector3(1.7f, 0.48f, 0.08f), Vector3.zero, darkWood);
             Block(t, new Vector3(-3.4f, 0f, -2.3f), new Vector2(0.15f, 0.15f));
+            Block(t, new Vector3(-3.4f, 0f, -2.33f), new Vector2(0.88f, 0.08f), null, false, 0f, 0f, 1.5f, 2.3f);   // (its board, at head height)
             lookFrame = t; lookTop = y;
             spots.Add(new Spot { st = Station.Lookout, at = t.position, radius = 2.6f, root = t });
         }
         Transform lookFrame; float lookTop;
-
-        void Benches()
-        {
-            // log seats round the fire: left, right and behind; the front stays open to the view
-            var t = Frame(0f, -71f, 0f);
-            t.name = "Benches";
-            foreach (var c in new[] { new Vector3(-2.9f, 0f, 0f), new Vector3(2.9f, 0f, 0f), new Vector3(0f, 0f, -2.9f) })
-            {
-                var side = c.z != 0f ? Vector3.right : Vector3.forward;
-                Log(t, c - side * 1.1f + Vector3.up * 0.28f, c + side * 1.1f + Vector3.up * 0.28f, 0.42f, logs);
-                Block(t, c, c.z != 0f ? new Vector2(1.2f, 0.3f) : new Vector2(0.3f, 1.2f));
-            }
-        }
-
-        Transform FirePit(Transform t)
-        {
-            t.name = "FirePit";
-            for (int i = 0; i < 11; i++)
-            {
-                float a = i / 11f * Mathf.PI * 2f;
-                P(PrimitiveType.Sphere, t, new Vector3(Mathf.Cos(a) * 0.9f, 0.08f, Mathf.Sin(a) * 0.9f), new Vector3(0.42f, 0.3f, 0.36f), new Vector3(0f, i * 37f, 0f), stone);
-            }
-            P(PrimitiveType.Cylinder, t, new Vector3(0f, 0.02f, 0f), new Vector3(1.5f, 0.02f, 1.5f), Vector3.zero, coal);
-            for (int i = 0; i < 4; i++)
-            {
-                float a = i * 45f * Mathf.Deg2Rad;
-                var dir = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * 0.55f;
-                Log(t, -dir + Vector3.up * (0.12f + i * 0.04f), dir + Vector3.up * (0.12f + i * 0.04f), 0.14f, logs);
-            }
-            P(PrimitiveType.Sphere, t, new Vector3(0f, 0.15f, 0f), new Vector3(0.7f, 0.25f, 0.7f), Vector3.zero, ember, false);
-            Flames(t, new Vector3(0f, 0.25f, 0f));
-            Lamp(t, new Vector3(0f, 1.1f, 0f), 9f, 2.2f).color = new Color(1f, 0.72f, 0.45f);
-            Block(t, Vector3.zero, new Vector2(1.1f, 1.1f), t.gameObject);
-            return t;
-        }
 
         Transform Snowman(Transform t)
         {
@@ -1542,6 +1513,7 @@ namespace Summit
                 }
             if (Couple != null) p2 = Couple.PushOut(p2, 0.38f);   // (and round Val and Breanna, if they're about)
             if (PushWalker != null) p2 = PushWalker(p2);   // (the camp's people: you don't walk through them)
+            p2 = OffPiles(p2, feet);   // (nor into a pile of snow too steep to walk up: CampSnow.cs)
             pos = new Vector3(p2.x, feet, p2.y);
             Place();
             // the nearest station you're standing at
@@ -1665,6 +1637,8 @@ namespace Summit
                 float top = b.top - b.drop * (q.y + b.h.y) / (2f * b.h.y);
                 if (top <= feet + 0.55f && top > y) { y = top; onSnow = false; }   // on a floor, a deck or steps
             }
+            float pile = PileTop(p.x, p.z);   // (up on a pile of snow: CampSnow.cs)
+            if (pile > y && pile <= feet + 0.55f) { y = pile; onSnow = true; }
             return y;
         }
 
@@ -1912,7 +1886,6 @@ namespace Summit
         public bool Step(float dt, MetaUi ui)
         {
             fadeUi = ui;
-            if (LodgeSwitchStep(dt, ui)) return false;   // a change of the lodge's layout, behind a dip to black (CampLodge.cs)
             if (fadeIn) { fade = Mathf.MoveTowards(fade, 0f, dt / 0.6f); ui.SetFade(fade); fadeIn = fade > 0f; }
             if (falling) { FallStep(dt); ui.SetStick(false, Vector2.zero, Vector2.zero); ui.SetLookStick(false, Vector2.zero, Vector2.zero); ui.SetContext(Station.None); return false; }
             var touches = Touches();

@@ -202,7 +202,7 @@ namespace Summit
                 int v = r.pose * Heads + r.head;
                 var list = mats[tier][v];
                 if (list.Count >= MaxBatch) continue;
-                if (r.row < 0) r.row = PeopleKit.Row(r.look);
+                r.row = PeopleKit.Row(r.look);   // (asked for each frame it's drawn: a row not drawn lately can go to a new look)
                 float k = Mathf.Clamp(r.look.height, 0.95f, 1.03f) / BakeHeight;
                 rowArr[tier][v][list.Count] = r.row;
                 list.Add(r.chairM * SeatLocal(r.seat) * Matrix4x4.Scale(new Vector3(k * Mathf.Clamp(r.look.build, 0.95f, 1.06f), k, k)));

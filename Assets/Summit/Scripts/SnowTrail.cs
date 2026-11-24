@@ -19,7 +19,9 @@ namespace Summit
     /// </summary>
     public class SnowTrail
     {
-        const int PerChunk = 56, MaxChunks = 24, Across = 15;
+        const int PerChunk = 56, Across = 15;
+        /// <summary>How many 14 m pieces of track stay behind (the rider's own: 24; the mountain's other riders keep a short one).</summary>
+        public int MaxChunks = 24;
         const float Step = 0.25f;
 
         struct Pt { public Vector3 p, r, n; public float s, edge, skid, d, bite, born; public SnowMix mix; }

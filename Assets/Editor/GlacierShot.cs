@@ -8,7 +8,7 @@ using Summit;
 
 /// <summary>
 /// The glacier's crevasses, through the game's own wiring: the layout, and from the rider's view, day and night, a
-/// field coming up, a snow bridge crossed, the widest crack jumped and a fall into it (the body lying inside). Run: Unity
+/// field coming up, a pinch crossed at speed, the widest crack jumped and a fall into it (the body lying inside). Run: Unity
 /// -batchmode -projectPath . -executeMethod GlacierShot.Run -logFile x.log (no -nographics: it needs the GPU).
 /// Writes GlacierShot*.png in the project folder. GlacierShot.Snow: head-first falls and the snow at the lip;
 /// GlacierShot.Park: the park's rails and boxes and a grind on each.
@@ -61,6 +61,9 @@ public static class GlacierShot
 
     static void SnowSequence()
     {
+        // GLACIER_SEED=n picks the mountain (otherwise today's)
+        if (int.TryParse(System.Environment.GetEnvironmentVariable("GLACIER_SEED"), out int gs)) { TestBoot.NewMountain(game, gs, terrain, props); var tgt = dress.target; dress.target = null; dress.Rebuild(); dress.target = tgt; dress.Prewarm(); }
+        Log($"seed {Slope.Seed}");
         typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
         rider.input = null;
         Course.WidestCrack(out var crack, out var spot);
@@ -69,7 +72,11 @@ public static class GlacierShot
         // head first, slowly enough to go in: the widest crack, and the bergschrund
         HeadFirst("Crack", crack, spot.x, spot.z - 8f, 6f, 0f);
         if (Course.WidestCrack(out var berg, out var bspot, Course.CrevasseKind.Bergschrund))
+        {
+            float bu = berg.Along(bspot.x, bspot.z);
+            Log($"Bergschrund: in at ({bspot.x - Slope.Centre(bspot.z):+0.0;-0.0} m off the run, z {bspot.z:0}), {bu:0.0} m along {berg.len:0} m, pinch {berg.PinchAt(bu):0.00}, open {Course.Opening(berg, bu, out _):0.00} m half, pinches {berg.b0:0}-{berg.b1:0} {berg.c0:0}-{berg.c1:0}");
             HeadFirst("Bergschrund", berg, bspot.x, bspot.z - 8f, 5f, 0f);
+        }
         // the control: thrown on open snow (below the glacier), the body still leaves its furrow and rims
         float z0 = Course.GlacierBottom + 80f;
         rider.ResetAt(Slope.Centre(z0), z0); body.ResetVisual(); rider.Begin();
@@ -146,23 +153,22 @@ public static class GlacierShot
         // the glacier as laid out today
         var all = Course.Crevasses;
         var byKind = new Dictionary<Course.CrevasseKind, int>();
-        int bridged = 0, hidden = 0, wide = 0; var fieldsSeen = new HashSet<int>();
+        int pinched = 0, wide = 0; var fieldsSeen = new HashSet<int>();
         foreach (var c in all)
         {
             byKind.TryGetValue(c.kind, out int n); byKind[c.kind] = n + 1;
-            if (c.HasBridge) bridged++;
-            if (c.b1 - c.b0 > c.len - 4f) hidden++;
+            if (c.HasPinch) pinched++;
             if (c.half > Course.CarryHalf) wide++;
             if (c.field >= 0) fieldsSeen.Add(c.field);
         }
         var sb = new System.Text.StringBuilder();
         foreach (var kv in byKind) sb.Append($"{kv.Value} {kv.Key} ");
         Log($"glacier z {Course.GlacierTop:0}..{Course.GlacierBottom:0} ({Slope.AltitudeFeet(Course.GlacierTop):0} to {Slope.AltitudeFeet(Course.GlacierBottom):0} ft): {all.Length} cracks: {sb}in {fieldsSeen.Count} fields; " +
-            $"{wide} too wide to carry, {bridged} with snow bridges ({hidden} hidden under one)");
+            $"{wide} too wide to carry, {pinched} pinching in (no snow bridges)");
         foreach (var c in all)
             if (c.kind != Course.CrevasseKind.Chevron)
                 Log($"  #{c.id} {c.kind}{(c.field >= 0 ? $" field {c.field}" : "")} z~{(c.z0 + c.z1) * 0.5f:0} {c.len:0} m long, {2f * c.half:0.0} m wide, {c.depth:0} m deep, at {Mathf.Atan2(c.dz, c.dx) * Mathf.Rad2Deg:0} deg" +
-                    $"{(c.b1 > c.b0 ? $", bridge {c.b1 - c.b0:0} m" : "")}{(c.c1 > c.c0 ? $" + {c.c1 - c.c0:0} m" : "")}");
+                    $"{(c.b1 > c.b0 ? $", pinch {c.b1 - c.b0:0} m" : "")}{(c.c1 > c.c0 ? $" + {c.c1 - c.c0:0} m" : "")}");
         if (all.Length == 0) { Log("PROBLEM no crevasses"); bad++; return; }
 
         var dayNight = typeof(SummitGame).GetField("dayNight", NP)?.GetValue(game) as DayNight;
@@ -174,7 +180,7 @@ public static class GlacierShot
         {
             TimeOfDay.TestClock = clock; dayNight?.ApplyNow();
             Approach(tag, all);
-            Bridge(tag, all);
+            Pinch(tag, all);
             Jump(tag, widest, spot);
             FallIn(tag, widest, spot);
         }
@@ -208,12 +214,12 @@ public static class GlacierShot
         Ride(x, top - 45f, 15f, 4f, t => { if (!shot && rider.Z > top - 26f) { shot = true; Shoot($"GlacierShot{tag}Approach.png", true); } return !shot; });
     }
 
-    /// <summary>Over a snow bridge you can see (wands at its ends), at a normal speed.</summary>
-    static void Bridge(string tag, Course.Crevasse[] all)
+    /// <summary>Through a pinch (where a crack narrows to a slot), at a normal speed: carried across; at a crawl from its lip it takes you.</summary>
+    static void Pinch(string tag, Course.Crevasse[] all)
     {
         foreach (var c in all)
         {
-            if (c.b1 <= c.b0 || c.b1 - c.b0 > c.len - 4f) continue;
+            if (c.b1 <= c.b0) continue;
             float u = (c.b0 + c.b1) * 0.5f;
             Course.Opening(c, u, out float mid);
             var q = c.Point(u, mid);
@@ -222,20 +228,15 @@ public static class GlacierShot
             Ride(q.x, q.y - 22f, 16f, 4f, t =>
             {
                 var p = rider.transform.position;
-                if (Course.OnBridge(p.x, p.z)) over = true;
-                if (!shot && over) { shot = true; Shoot($"GlacierShot{tag}Bridge.png", true); }
+                if (Course.CrevasseCut(p.x, p.z) > 0.3f) over = true;
+                if (!shot && rider.Z > q.y - 6f) { shot = true; Shoot($"GlacierShot{tag}Pinch.png", true); }
                 return !rider.Crashed && rider.Z < q.y + 8f;
             });
-            Log($"{tag} bridge #{c.id} ({c.b1 - c.b0:0} m) at 16 m/s: {(rider.Crashed ? "CRASHED " + lastCrash : over ? "rode across" : "missed it")}");
+            Log($"{tag} pinch #{c.id} ({c.b1 - c.b0:0} m, {2f * Course.PinchHalf:0.0} m wide) at 16 m/s: {(rider.Crashed ? "CRASHED " + lastCrash : over ? "carried across" : "carried across (never over the slot)")}");
             if (rider.Crashed) bad++;
-            // and at a crawl, from its lip, it gives way
-            float open = Course.Opening(c, u, out _);
-            Ride(q.x, q.y - open - 0.4f, 1.5f, 5f, t => !rider.Crashed);
-            Log($"{tag} bridge #{c.id} from the lip at 1.5 m/s: {(rider.Crashed ? lastCrash : "held")}");
-            if (!rider.Crashed) { Log($"PROBLEM {tag}: a slow board on a bridge did not break through"); bad++; }
             return;
         }
-        Log("no visible bridge on the piste to ride");
+        Log("no pinch on the piste to ride");
     }
 
     /// <summary>The widest crack, jumped: an ollie at its lip at a normal speed.</summary>

@@ -13,7 +13,9 @@ namespace Summit
     ///
     /// Fair by construction: a crack no wider than 2 x Course.CarryHalf is carried across at a normal riding speed (the
     /// board flies on over an opening, see Rider), so every crack whose wide part crosses the piste either leaves a
-    /// lane of 6 m or more past it, or gets a snow bridge on the piste.
+    /// lane of 6 m or more past it, or pinches in on the piste to a slot a board carries across at speed (or a rider
+    /// ollies). There are no snow bridges: they read as slabs laid over the slot. The cracks go down 3 times as far as
+    /// they were laid out (Course.DepthScale), into the dark.
     /// </summary>
     public static class Glacier
     {
@@ -53,7 +55,7 @@ namespace Summit
             salt = 1;
             if (H(0, 0) > 0.9f) return;   // (now and then there is none)
             // across the run at the foot of the summit face, where the snow pulls away from what stays frozen to the
-            // mountain's top: long, wide, deep, bowed down the hill, with snow bridges on the piste
+            // mountain's top: long, wide, deep, bowed down the hill, pinching in on the piste (a way across it at speed)
             float len0 = 2f * (Course.GlacierHalf - 3f);
             for (float len = len0; len >= 28f; len -= 12f)
                 for (float z = Course.GlacierTop + 6f; z < Course.GlacierTop + 32f; z += 2f)
@@ -61,7 +63,7 @@ namespace Summit
                     float c = Slope.Centre(z) + (H(1, 0) - 0.5f) * (len0 - len);
                     var b = Make(Course.CrevasseKind.Bergschrund, c, z, 0.06f * (H(2, 0) - 0.5f), len,
                                  1.8f + 0.8f * H(3, 0), 30f, 2.5f + 2.5f * H(4, 0), H(5, 0) * 40f);
-                    // one bridge on the piste for certain, a second as often as not
+                    // one pinch on the piste for certain, a second as often as not
                     float mid = b.Along(Slope.Centre(z), z);
                     float s1 = 5f + 3f * H(6, 0), u1 = Mathf.Clamp(mid + (H(7, 0) - 0.5f) * 24f, 8f, b.len - 8f - s1);
                     b.b0 = u1; b.b1 = u1 + s1;
@@ -136,25 +138,16 @@ namespace Summit
                 var c = Make(Course.CrevasseKind.Transverse, Slope.Centre(z) + off, z, ang, len, half,
                              18f + 12f * H(key, 9), (0.8f + 2.5f * H(key, 10)) * len / 40f, H(key, 11) * 40f);
                 c.field = field;
-                // snow bridges: a span over part of it, or now and then all of it (a hidden crack: only its sag shows)
-                float hb = H(key, 12);
-                float taper = Mathf.Min(6f, len * 0.3f);
-                if (hb < 0.12f && len > 10f) { c.b0 = 1f; c.b1 = len - 1f; }
-                else if (hb < 0.45f && len > 2f * taper + 3f)
-                {
-                    float span = Mathf.Min(2.5f + 3.5f * H(key, 13), len - 2f * taper);
-                    float u = taper + (len - 2f * taper - span) * H(key, 14);
-                    c.b0 = u; c.b1 = u + span;
-                }
+                // (no snow bridges: a wide crack that would close the run pinches in on it instead: Fair)
                 if (!Fits(list, c))
                 {
                     // shorter, and toward the middle; then shorter still, off to one side
-                    c = Make(c.kind, Slope.Centre(z) + off * 0.5f, z, ang, len * 0.6f, half, c.depth, c.bow * 0.6f, c.phase);
+                    c = Make(c.kind, Slope.Centre(z) + off * 0.5f, z, ang, len * 0.6f, half, c.depth / Course.DepthScale, c.bow * 0.6f, c.phase);
                     c.field = field;
                     if (!Fits(list, c))
                     {
                         float side = H(key, 16) < 0.5f ? -1f : 1f;
-                        c = Make(c.kind, Slope.Centre(z) + side * (4f + 8f * H(key, 17)), z, ang, Mathf.Max(10f, len * 0.4f), half, c.depth, c.bow * 0.4f, c.phase);
+                        c = Make(c.kind, Slope.Centre(z) + side * (4f + 8f * H(key, 17)), z, ang, Mathf.Max(10f, len * 0.4f), half, c.depth / Course.DepthScale, c.bow * 0.4f, c.phase);
                         c.field = field;
                         if (!Fits(list, c)) { z += 5f + 9f * H(key, 15); continue; }
                     }
@@ -230,7 +223,7 @@ namespace Summit
             float dx = Mathf.Cos(ang), dz = Mathf.Sin(ang);
             var c = new Course.Crevasse
             {
-                kind = kind, len = len, half = half, depth = depth, bow = bow, phase = phase,
+                kind = kind, len = len, half = half, depth = depth * Course.DepthScale, bow = bow, phase = phase,
                 dx = dx, dz = dz, ax = cx - dx * len * 0.5f, az = cz - dz * len * 0.5f, field = -1,
             };
             // bounds: its line, bowed either way, and its lips (the dark band, the apron) a few metres out
@@ -302,19 +295,19 @@ namespace Summit
 
         /// <summary>
         /// A crack whose wide part (too wide to carry across) reaches over the piste must leave a lane of Lane metres
-        /// past it there, or have a snow bridge on the piste: if it has neither, it gets a bridge where the piste is.
+        /// past it there, or pinch in on the piste: if it has neither, it pinches in where the piste is.
         /// </summary>
         static void Fair(ref Course.Crevasse c)
         {
             if (c.half <= Course.CarryHalf) return;
             float zc = c.az + c.dz * c.len * 0.5f, ctr = Slope.Centre(zc), lo = ctr - Slope.PisteHalf + 1f, hi = ctr + Slope.PisteHalf - 1f;
-            // which metres of the piste the wide, unbridged part covers
+            // which metres of the piste the wide part (out of its pinches) covers
             var blocked = new bool[Mathf.CeilToInt(hi - lo) + 1];
             bool any = false;
             for (float u = 0f; u <= c.len; u += 0.5f)
             {
                 float open = Course.Opening(c, u, out float mid);
-                if (open <= Course.CarryHalf || c.Bridged(u)) continue;
+                if (open <= Course.CarryHalf) continue;
                 var q = c.Point(u, mid);
                 int i = Mathf.RoundToInt(q.x - lo);
                 if (i < 0 || i >= blocked.Length) continue;
@@ -324,7 +317,7 @@ namespace Summit
             int run = 0, longest = 0;
             for (int i = 0; i < blocked.Length; i++) { run = blocked[i] ? 0 : run + 1; longest = Mathf.Max(longest, run); }
             if (longest >= Lane) return;
-            // no lane: a bridge 5-7 m long where the crack crosses the middle of the piste
+            // no lane: it pinches in, 5-7 m of it, where the crack crosses the middle of the piste
             float um = Mathf.Clamp(c.Along(ctr, zc), 6f, c.len - 13f);
             float span = 5f + 2f * Mathf.Repeat(c.phase, 1f);
             if (c.b1 <= c.b0) { c.b0 = um; c.b1 = um + span; }

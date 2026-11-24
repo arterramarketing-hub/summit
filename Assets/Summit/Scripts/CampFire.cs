@@ -57,8 +57,7 @@ namespace Summit
                 Vector3 at = fireAt + Vector3.right * side * 1.75f;
                 at.y = Slope.DrawnHeight(at.x, at.z);
                 Vector3 l = t.InverseTransformPoint(at);
-                Log(t, l + Vector3.down * 0.25f, l + Vector3.up * 0.42f, 0.5f, logs);
-                P(PrimitiveType.Cylinder, t, l + Vector3.up * 0.425f, new Vector3(0.47f, 0.012f, 0.47f), Vector3.zero, darkWood);   // the cut face
+                FireRound(t, l + Vector3.down * 0.25f, l + Vector3.up * 0.425f, 0.25f, side > 0f ? 21 : 22);   // (bark round it, its rings on top: CampFirePit.cs)
                 Block(t, l, new Vector2(0.27f, 0.27f));
                 return at + Vector3.up * 0.43f;
             }

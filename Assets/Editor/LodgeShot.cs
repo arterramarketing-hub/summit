@@ -23,7 +23,7 @@ public static class LodgeShot
     static string dir;
     const float dt = 1f / 60f;
     static readonly (string name, float clock)[] Times = { ("day", 1.4f), ("dusk", 2.75f), ("night", 3.4f) };
-    // the spaces inside (layout A), each seen from a person's height in it: from, to (the lodge's frame), field of view
+    // the spaces inside, each seen from a person's height in it: from, to (the lodge's frame), field of view
     static readonly (string file, Vector3 from, Vector3 to, float fov)[] Rooms =
     {
         ("Lodge10_outfitters", new Vector3(-2.0f, 1.65f, 1.2f), new Vector3(-7.0f, 3.4f, -6.7f), 70f),
@@ -82,10 +82,15 @@ public static class LodgeShot
         if (System.Environment.GetEnvironmentVariable("LODGE_TEX") == "1") { Textures(); return; }
         // LODGE5=1: the lounge, the loft, the balcony over the wing and its view, the lodge's details, at the phone's quality
         if (System.Environment.GetEnvironmentVariable("LODGE5") == "1") { Lodge5(); return; }
-        // the three layouts inside (LODGE_FULL=1 also renders the outside, the walk in and layout A's spaces as before)
-        Layouts();
+        // CAMP_SNOW=1: the camp's snow underfoot (the plaza, the fire, the path, the lodge's wing and the piles there, the
+        // gate, close up and from above) and the hero walking into a pile, by day and at night
+        if (System.Environment.GetEnvironmentVariable("CAMP_SNOW") == "1") { CampSnow(); return; }
+        // CAMP_FIRE=1: the fire and the corner round it (CampFirePit.cs), by day and at night
+        if (System.Environment.GetEnvironmentVariable("CAMP_FIRE") == "1") { CampFire(); return; }
+        // the inside (LODGE_FULL=1 also renders the outside, the walk in and the spaces inside)
+        Inside();
         if (System.Environment.GetEnvironmentVariable("LODGE_FULL") != "1") return;
-        Cost("A");
+        Cost("lodge");
 
         // 1: the photo's viewpoint: on the snow in front and to the left (the low end), looking up at the whole front
         foreach (var (name, clock) in Times)
@@ -126,7 +131,7 @@ public static class LodgeShot
             Frames(40);
             Shoot($"Lodge9_side_terrace_{name}.png");
         }
-        // 10-16: inside (layout A), by day: each space from a person's height, then the hero's own views
+        // 10-16: inside, by day: each space from a person's height, then the hero's own views
         SetTime(1.4f);
         Vector3 C(float x, float y, float z) => camp.ChaletPoint(x, y, z);
         foreach (var (file, from, to, fov) in Rooms)
@@ -203,12 +208,11 @@ public static class LodgeShot
     }
 
     /// <summary>
-    /// Each layout in turn, as the LODGE setting shows it: from the door and from the far end at eye height, by day and
-    /// at dusk; the hero coming in (the camp's buttons, the LODGE chip with them); the hero where each layout is its
-    /// own (A by the hanging fire, B walking round the open one, C on the stair, under the mezzanine and up on it);
-    /// the wardrobe; and what each costs to draw.
+    /// The inside, by day and at dusk: from the door and from the far end at eye height, the ground floor and the loft,
+    /// the back wall with its stair, the loft from its back corner; the hero coming in at the door, up the stair into
+    /// the loft and under it; the wardrobe; and what it costs to draw.
     /// </summary>
-    static void Layouts()
+    static void Inside()
     {
         Vector3 C(float x, float y, float z) => camp.ChaletPoint(x, y, z);
         float cy = camp.ChaletYaw;
@@ -216,119 +220,49 @@ public static class LodgeShot
         // LODGE_COST_ONLY=1 stops after it)
         CostRounds();
         if (System.Environment.GetEnvironmentVariable("LODGE_COST_ONLY") == "1") return;
-        foreach (int k in Chosen())
-        {
-            string n = Camp.LodgeLayoutKeys[k];
-            PlayerPrefs.SetInt(Camp.LodgePref, k);
-            camp.Rebuild();
-            Simulate();
-            meta.Refresh();
-            Debug.Log($"LODGESHOT ===== layout {Camp.LodgeLayoutName}");
-            Cost(n, false);
-            foreach (var (name, clock) in new[] { Times[0], Times[1] })
-            {
-                SetTime(clock);
-                EyeCam(C(4.0f, 1.65f, 4.4f), C(-6.5f, 2.1f, -3.4f), 88f);
-                Shoot($"LodgeLayout{n}_1door_{name}.png", 720, 960);
-                EyeCam(C(-10.4f, 1.65f, 2.6f), C(6.0f, 1.9f, -2.0f), 88f);
-                Shoot($"LodgeLayout{n}_2far_{name}.png", 720, 960);
-            }
-            SetTime(1.4f);
-            // the hero coming in at the door (the camp's buttons up: the LODGE chip shows the layout)
-            camp.TeleportTo(C(4.5f, 0f, 9.0f), cy + 180f);
-            WalkTo(C(4.5f, 0f, 3.6f), 0.8f); Frames(20);
-            Shoot($"LodgeLayout{n}_3hero_in.png");
-            if (k == 0)
-            {
-                camp.TeleportTo(C(-2.6f, 0f, 1.2f), cy - 120f); Frames(40);
-                Shoot($"LodgeLayout{n}_4hero_fire.png");
-            }
-            else if (k == 1)
-            {
-                camp.TeleportTo(C(-3.0f, 0f, -2.05f), cy + 90f);
-                WalkTo(C(-0.1f, 0f, -2.05f), 0.6f); WalkTo(C(0.6f, 0f, -3.2f), 0.6f); Frames(10);
-                Shoot($"LodgeLayout{n}_4hero_roundfire.png");
-                WalkTo(C(-0.1f, 0f, -4.35f), 0.6f); WalkTo(C(-3.0f, 0f, -4.35f), 0.6f); Frames(10);
-                Shoot($"LodgeLayout{n}_5hero_behindfire.png");
-                camp.TeleportTo(C(-6.0f, 0f, 0.8f), cy - 90f);
-                WalkTo(C(-11.6f, 0f, 0.8f), 0.8f); Frames(10);
-                Shoot($"LodgeLayout{n}_6hero_tocafe.png");
-            }
-            else if (k >= 3)
-            {
-                // B with an upstairs: the ground floor and the upstairs from eye height, then the hero on the stair
-                // and up there (the camera kept clear of the floors)
-                foreach (var (name, clock) in new[] { Times[0], Times[1] })
-                {
-                    SetTime(clock);
-                    // (B2 and B2R from the same places: before and after its stair moved to the back wall)
-                    var (g0, g1, u0, u1) = n == "B1" ? (C(2.0f, 1.65f, 3.6f), C(-6.0f, 3.4f, -5.0f), C(3.7f, 5.45f, -5.5f), C(-8.0f, 4.6f, -2.0f))
-                                         : n == "B2" || n == "B2R" ? (C(1.4f, 1.65f, 0.8f), C(-9.0f, 3.2f, 3.6f), C(-5.8f, 5.45f, 5.3f), C(-9.6f, 4.8f, -4.6f))
-                                                  : (C(3.4f, 1.65f, 0.4f), C(-4.6f, 3.0f, 5.4f), C(-3.6f, 5.45f, 1.4f), C(-10.2f, 4.9f, 5.6f));
-                    EyeCam(g0, g1, 88f);
-                    Shoot($"LodgeLayout{n}_8ground_{name}.png", 720, 960);
-                    EyeCam(u0, u1, 88f);
-                    Shoot($"LodgeLayout{n}_9upstairs_{name}.png", 720, 960);
-                    if (n == "B2" || n == "B2R")
-                    {
-                        // the back wall from the front glass (where B2R's stair went), and the loft from its back corner
-                        EyeCam(C(-0.6f, 1.65f, 5.6f), C(-2.4f, 2.4f, -6.7f), 88f);
-                        Shoot($"LodgeLayout{n}_7backwall_{name}.png", 720, 960);
-                        EyeCam(C(-6.0f, 5.45f, -5.9f), C(-9.0f, 4.6f, 4.0f), 88f);
-                        Shoot($"LodgeLayout{n}_9loftback_{name}.png", 720, 960);
-                    }
-                }
-                SetTime(1.4f);
-                var path = n == "B1" ? new[] { (3.9f, 4.0f), (3.9f, 0.6f), (3.9f, -4.0f), (3.9f, -5.5f), (-2.0f, -5.6f) }
-                         : n == "B2" ? new[] { (1.6f, 5.3f), (0.4f, 5.35f), (-2.2f, 5.35f), (-5.0f, 5.35f), (-6.6f, 3.0f) }
-                         : n == "B2R" ? new[] { (2.6f, -4.6f), (0.4f, -5.9f), (-2.2f, -5.9f), (-5.0f, -5.9f), (-6.6f, -5.3f), (-7.4f, -3.6f) }
-                                  : new[] { (-4.0f, 5.2f), (-3.4f, 5.2f), (-0.6f, 5.2f), (0.7f, 4.4f), (-0.2f, 3.8f), (-3.4f, 3.8f), (-6.0f, 3.0f) };
-                camp.TeleportTo(C(path[0].Item1, 0f, path[0].Item2), cy);
-                for (int i = 1; i < path.Length; i++)
-                {
-                    WalkTo(C(path[i].Item1, 0f, path[i].Item2), 0.8f);
-                    float feet = rider.transform.position.y - Rider.R - C(0, 0, 0).y;
-                    Debug.Log($"LODGESHOT {n} at mark {i}: feet {feet:0.00} above the floor, camera {cam.transform.position.y - C(0, 0, 0).y:0.00}");
-                    if (i == 2) { Frames(6); Shoot($"LodgeLayout{n}_4hero_stair.png"); }
-                }
-                Frames(30);
-                Shoot($"LodgeLayout{n}_5hero_upstairs.png");
-                // and below it, the camera under its slab
-                var under = n == "B1" ? (-8.6f, -3.6f) : n == "B2" || n == "B2R" ? (-8.6f, -1.2f) : (-6.0f, 2.8f);
-                camp.TeleportTo(C(under.Item1 + 3.0f, 0f, under.Item2), cy - 90f);
-                WalkTo(C(under.Item1, 0f, under.Item2), 0.8f); Frames(20);
-                Shoot($"LodgeLayout{n}_6hero_under.png");
-                Debug.Log($"LODGESHOT under {n}'s upper floor: feet {rider.transform.position.y - Rider.R - C(0, 0, 0).y:0.00}, camera {cam.transform.position.y - C(0, 0, 0).y:0.00} above the floor");
-            }
-            else
-            {
-                camp.TeleportTo(C(1.1f, 0f, 5.4f), cy + 180f);
-                WalkTo(C(1.1f, 0f, 1.6f), 0.8f); Frames(6);
-                Shoot($"LodgeLayout{n}_4hero_stair.png");
-                Debug.Log($"LODGESHOT on C's stair: feet {rider.transform.position.y - Rider.R - C(0, 0, 0).y:0.00} above the floor");
-                WalkTo(C(1.1f, 0f, -2.6f), 0.8f); WalkTo(C(-2.0f, 0f, -3.1f), 0.8f); Frames(20);
-                Debug.Log($"LODGESHOT on C's mezzanine: feet {rider.transform.position.y - Rider.R - C(0, 0, 0).y:0.00} above the floor");
-                camp.TeleportTo(C(-4.0f, 3.8f, -2.6f), cy + 20f); Frames(40);
-                Shoot($"LodgeLayout{n}_5hero_mezzanine.png");
-                camp.TeleportTo(C(2.8f, 0f, -2.8f), cy - 90f);
-                WalkTo(C(-5.5f, 0f, -2.8f), 0.8f); Frames(10);
-                Shoot($"LodgeLayout{n}_6hero_undermezz.png");
-                Debug.Log($"LODGESHOT under C's mezzanine: feet {rider.transform.position.y - Rider.R - C(0, 0, 0).y:0.00}, camera {cam.transform.position.y - C(0, 0, 0).y:0.00} above the floor");
-            }
-            var at = camp.StationPoint(Camp.Station.Style);
-            camp.TeleportTo(at, cy + 180f); Frames(40);
-            meta.SetContext(camp.Near);
-            Shoot($"LodgeLayout{n}_7wardrobe.png");
-            Debug.Log($"LODGESHOT layout {n} at the wardrobe: near={camp.Near}");
-            meta.SetContext(Camp.Station.None);
-        }
-        PlayerPrefs.SetInt(Camp.LodgePref, 0);
         camp.Rebuild();
+        Simulate();
         meta.Refresh();
+        Cost("lodge", false);
+        foreach (var (name, clock) in new[] { Times[0], Times[1] })
+        {
+            SetTime(clock);
+            EyeCam(C(4.0f, 1.65f, 4.4f), C(-6.5f, 2.1f, -3.4f), 88f); Shoot($"LodgeInside_1door_{name}.png", 720, 960);
+            EyeCam(C(-10.4f, 1.65f, 2.6f), C(6.0f, 1.9f, -2.0f), 88f); Shoot($"LodgeInside_2far_{name}.png", 720, 960);
+            EyeCam(C(1.4f, 1.65f, 0.8f), C(-9.0f, 3.2f, 3.6f), 88f); Shoot($"LodgeInside_8ground_{name}.png", 720, 960);
+            EyeCam(C(-5.8f, 5.45f, 5.3f), C(-9.6f, 4.8f, -4.6f), 88f); Shoot($"LodgeInside_9upstairs_{name}.png", 720, 960);
+            EyeCam(C(-0.6f, 1.65f, 5.6f), C(-2.4f, 2.4f, -6.7f), 88f); Shoot($"LodgeInside_7backwall_{name}.png", 720, 960);
+            EyeCam(C(-6.0f, 5.45f, -5.9f), C(-9.0f, 4.6f, 4.0f), 88f); Shoot($"LodgeInside_9loftback_{name}.png", 720, 960);
+        }
+        SetTime(1.4f);
+        camp.TeleportTo(C(4.5f, 0f, 9.0f), cy + 180f);
+        WalkTo(C(4.5f, 0f, 3.6f), 0.8f); Frames(20);
+        Shoot("LodgeInside_3hero_in.png");
+        // up the stair along the back wall into the loft (the camera kept clear of its floor)
+        var path = new[] { (2.6f, -4.6f), (0.4f, -5.9f), (-2.2f, -5.9f), (-5.0f, -5.9f), (-6.6f, -5.3f), (-7.4f, -3.6f) };
+        camp.TeleportTo(C(path[0].Item1, 0f, path[0].Item2), cy);
+        for (int i = 1; i < path.Length; i++)
+        {
+            WalkTo(C(path[i].Item1, 0f, path[i].Item2), 0.8f);
+            Debug.Log($"LODGESHOT at mark {i}: feet {rider.transform.position.y - Rider.R - C(0, 0, 0).y:0.00} above the floor, camera {cam.transform.position.y - C(0, 0, 0).y:0.00}");
+            if (i == 2) { Frames(6); Shoot("LodgeInside_4hero_stair.png"); }
+        }
+        Frames(30);
+        Shoot("LodgeInside_5hero_upstairs.png");
+        // and below the loft, the camera under its slab
+        camp.TeleportTo(C(-5.6f, 0f, -1.2f), cy - 90f);
+        WalkTo(C(-8.6f, 0f, -1.2f), 0.8f); Frames(20);
+        Shoot("LodgeInside_6hero_under.png");
+        var at = camp.StationPoint(Camp.Station.Style);
+        camp.TeleportTo(at, cy + 180f); Frames(40);
+        meta.SetContext(camp.Near);
+        Shoot("LodgeInside_7wardrobe.png");
+        Debug.Log($"LODGESHOT at the wardrobe: near={camp.Near}");
+        meta.SetContext(Camp.Station.None);
     }
 
     /// <summary>
-    /// The default layout at the phone's quality (Mobile: render scale 0.8, its shadows; phone-size frames): the floor
+    /// The lodge at the phone's quality (Mobile: render scale 0.8, its shadows; phone-size frames): the floor
     /// where the wing (the hot chocolate) meets the hall (the café's tables under the loft) from the hall, from the wing,
     /// close, and as the hero walks through; the covered section at the low end (the racks and picnic tables under the
     /// roof's tail) from its front, the side door, its back corner, the snow outside, above, and the hero walking out the
@@ -345,7 +279,7 @@ public static class LodgeShot
         try
         {
             Simulate();
-            Debug.Log($"LODGESHOT covered: layout {Camp.LodgeLayoutName}, quality {QualitySettings.names[QualitySettings.GetQualityLevel()]}");
+            Debug.Log($"LODGESHOT covered: quality {QualitySettings.names[QualitySettings.GetQualityLevel()]}");
             foreach (var (name, clock) in new[] { Times[0], Times[1] })
             {
                 SetTime(clock);
@@ -393,7 +327,7 @@ public static class LodgeShot
     }
 
     /// <summary>
-    /// The default layout's surfaces at the phone's quality (Mobile, phone-size frames), by day and at dusk: the hall
+    /// The lodge's surfaces at the phone's quality (Mobile, phone-size frames), by day and at dusk: the hall
     /// from the door, the lounge (the fire's hearth, the sofas, the rug), the back wall and its stair, the ceiling; the
     /// café, its counter and the hot chocolate; the loft; the covered section; the photo's view and the cladding close;
     /// the hero coming in and at the racks. Files: {LODGE_TAG}_tex_*.png.
@@ -409,7 +343,7 @@ public static class LodgeShot
         try
         {
             Simulate();
-            Debug.Log($"LODGESHOT textures: layout {Camp.LodgeLayoutName}, quality {QualitySettings.names[QualitySettings.GetQualityLevel()]}");
+            Debug.Log($"LODGESHOT textures: quality {QualitySettings.names[QualitySettings.GetQualityLevel()]}");
             foreach (var (name, clock) in new[] { Times[0], Times[1] })
             {
                 SetTime(clock);
@@ -439,7 +373,82 @@ public static class LodgeShot
     }
 
     /// <summary>
-    /// The default layout at the phone's quality (Mobile, phone-size frames), by day and at dusk: the lounge round the
+    /// The camp's fire at the phone's quality (Mobile), by day and at night (CampFirePit.cs): from the open front as you
+    /// come to it, the woodpile and the chopping block in the back corner, down into the ring, low across it.
+    /// Files: {LODGE_TAG}_fire_*.png.
+    /// </summary>
+    static void CampFire()
+    {
+        Vector3 G(float dx, float z, float up = 0f) => Camp.GroundAt(dx, z) + Vector3.up * up;
+        string tag = System.Environment.GetEnvironmentVariable("LODGE_TAG");
+        if (string.IsNullOrEmpty(tag)) tag = "now";
+        int keepQ = QualitySettings.GetQualityLevel();
+        QualitySettings.SetQualityLevel(0, true);   // (the phone's)
+        try
+        {
+            Simulate();
+            foreach (var (name, clock) in new[] { Times[0], Times[2] })
+            {
+                SetTime(clock);
+                EyeCam(G(1.8f, -64.6f, 1.65f), G(0.4f, -72f, 0.2f), 62f); Shoot($"{tag}_fire_1front_{name}.png");
+                EyeCam(G(-0.8f, -68.2f, 1.55f), G(3.0f, -73.6f, 0.35f), 60f); Shoot($"{tag}_fire_2corner_{name}.png");
+                EyeCam(G(0.6f, -69.4f, 2.5f), G(0f, -71f), 60f); Shoot($"{tag}_fire_3down_{name}.png");
+                EyeCam(G(1.6f, -69.6f, 0.55f), G(0f, -71.1f, 0.3f), 58f); Shoot($"{tag}_fire_4low_{name}.png");
+            }
+        }
+        finally { QualitySettings.SetQualityLevel(keepQ, true); }
+    }
+
+    /// <summary>
+    /// The camp's snow at the phone's quality (Mobile), by day and at night: the plaza from the lodge's steps, the fire's
+    /// ring, the path, the lodge's wing and the piles of snow beside it, the way to the gate, the snow close up at the
+    /// steps' foot and by the fire, the camp from above; the hero walking across the plaza and into the drift
+    /// against the terrace's front. Files: {LODGE_TAG}_snow_*.png.
+    /// </summary>
+    static void CampSnow()
+    {
+        Vector3 G(float dx, float z, float up = 0f) => Camp.GroundAt(dx, z) + Vector3.up * up;
+        string tag = System.Environment.GetEnvironmentVariable("LODGE_TAG");
+        if (string.IsNullOrEmpty(tag)) tag = "now";
+        int keepQ = QualitySettings.GetQualityLevel();
+        QualitySettings.SetQualityLevel(0, true);   // (the phone's)
+        try
+        {
+            Simulate();
+            var foot = camp.StairsFoot;
+            foreach (var (name, clock) in new[] { Times[0], Times[2] })
+            {
+                SetTime(clock);
+                EyeCam(foot + Vector3.up * 1.7f + (G(0f, -60f) - foot).normalized * 0.5f, G(0f, -62f), 70f); Shoot($"{tag}_snow_1plaza_{name}.png");
+                EyeCam(G(3.6f, -65.5f, 1.6f), G(0f, -71f), 66f); Shoot($"{tag}_snow_2fire_{name}.png");
+                EyeCam(G(-6f, -64f, 1.7f), G(-22f, -84f), 70f); Shoot($"{tag}_snow_3wing_{name}.png");
+                EyeCam(foot + Vector3.up * 1.25f + Vector3.forward * 1.2f, foot + Vector3.forward * 3.6f, 60f); Shoot($"{tag}_snow_4steps_close_{name}.png");
+                EyeCam(G(1.6f, -68f, 1.1f), G(0.4f, -70f), 60f); Shoot($"{tag}_snow_5fire_close_{name}.png");
+                EyeCam(G(-4f, -60f, 1.7f), G(0f, Slope.GateZ), 70f); Shoot($"{tag}_snow_6gate_{name}.png");
+                EyeCam(G(-2f, -58f, 34f), G(-6f, -80f), 60f); Shoot($"{tag}_snow_7above_{name}.png", 960, 720);
+                EyeCam(G(-27f, -66f, 1.7f), G(-24f, -84f), 66f); Shoot($"{tag}_snow_8piles_{name}.png");
+            }
+            SetTime(Times[0].clock);
+            // the hero across the plaza, then into a drift against the lodge's terrace
+            camp.TeleportTo(G(4f, -60f), camp.ChaletYaw + 180f);
+            WalkTo(G(-2f, -66f), 0.8f); Frames(12); noUi = true;
+            Shoot($"{tag}_snow_9hero_plaza.png");
+            // into the drift against the terrace's front wall, left of the steps, from the open snow in front (the lodge's
+            // frame: fixed points)
+            var fPos = typeof(Camp).GetField("pos", NP);
+            var to = camp.ChaletPoint(-8.4f, 0f, 13.0f); to.y = Slope.DrawnHeight(to.x, to.z);
+            var from = camp.ChaletPoint(-8.4f, 0f, 19.5f); from.y = Slope.DrawnHeight(from.x, from.z);
+            camp.TeleportTo(from, Mathf.Atan2(to.x - from.x, to.z - from.z) * Mathf.Rad2Deg);
+            WalkTo(to, 0.8f); Frames(12); noUi = true;
+            Shoot($"{tag}_snow_10hero_pile.png");
+            var at = (Vector3)fPos.GetValue(camp);
+            Debug.Log($"LODGESHOT snow: walked at the terrace's drift: stopped {new Vector2(at.x - to.x, at.z - to.z).magnitude:0.00} m short, feet {at.y - Slope.DrawnHeight(at.x, at.z):0.00} over the ground");
+        }
+        finally { QualitySettings.SetQualityLevel(keepQ, true); }
+    }
+
+    /// <summary>
+    /// The lodge at the phone's quality (Mobile, phone-size frames), by day and at dusk: the lounge round the
     /// fire from the door, from the glass, from the low end and from the loft's rail; the loft and its end (the doors
     /// out); the balcony over the wing: its view (the slope and the mountain), back at the doors, and from the snow; the
     /// photo's view; the hero walking up into the loft and out onto the balcony. Files: {LODGE_TAG}_*.png.
@@ -455,7 +464,7 @@ public static class LodgeShot
         try
         {
             Simulate();
-            Debug.Log($"LODGESHOT lodge5: layout {Camp.LodgeLayoutName}, quality {QualitySettings.names[QualitySettings.GetQualityLevel()]}");
+            Debug.Log($"LODGESHOT lodge5: quality {QualitySettings.names[QualitySettings.GetQualityLevel()]}");
             foreach (var (name, clock) in new[] { Times[0], Times[1] })
             {
                 SetTime(clock);
@@ -487,34 +496,19 @@ public static class LodgeShot
     }
 
     /// <summary>
-    /// What each layout costs to draw, measured fairly on a busy machine: rounds of A, B, C in turn (so whatever else
-    /// the Mac is doing falls on all three alike), each timing the view in from the door at dusk with its inside on
-    /// and off, interleaved, and the photo's view at night with the whole lodge on and off.
+    /// What the lodge costs to draw, measured fairly on a busy machine: rounds of renders (so whatever else the Mac is
+    /// doing falls on each alike), each timing the view in from the door at dusk with its inside on and off,
+    /// interleaved, and the photo's view at night with the whole lodge on and off.
     /// </summary>
-    /// <summary>The layouts to render and time: LODGE_ONLY (keys, comma-separated, e.g. "B1,B2,B3"), or all of them.</summary>
-    static List<int> Chosen()
-    {
-        var only = System.Environment.GetEnvironmentVariable("LODGE_ONLY");
-        var l = new List<int>();
-        for (int k = 0; k < Camp.LodgeLayoutKeys.Length; k++)
-            if (string.IsNullOrEmpty(only) || System.Array.IndexOf(only.Split(','), Camp.LodgeLayoutKeys[k]) >= 0) l.Add(k);
-        return l;
-    }
-
     static void CostRounds()
     {
         const int Rounds = 4, N = 15;
-        int NL = Camp.LodgeLayoutKeys.Length;
-        var inOn = new List<double>[NL]; var inOff = new List<double>[NL]; var outOn = new List<double>[NL]; var outOff = new List<double>[NL];
-        for (int k = 0; k < NL; k++) { inOn[k] = new List<double>(); inOff[k] = new List<double>(); outOn[k] = new List<double>(); outOff[k] = new List<double>(); }
-        var chosen = Chosen();
+        var inOn = new List<double>(); var inOff = new List<double>(); var outOn = new List<double>(); var outOff = new List<double>();
         var rt = new RenderTexture(1170, 2532, 24);
         var tmp = new Texture2D(1, 1);
         double Med(List<double> l) { var c = new List<double>(l); c.Sort(); return c[c.Count / 2]; }
         for (int r = 0; r < Rounds; r++)
-            foreach (int k in chosen)
             {
-                PlayerPrefs.SetInt(Camp.LodgePref, k);
                 camp.Rebuild();
                 Transform root = null, inside = null;
                 foreach (var t in camp.GetComponentsInChildren<Transform>(true)) if (t.name == "Lodge") { root = t; break; }
@@ -538,22 +532,21 @@ public static class LodgeShot
                     on.Add(Med(a)); off.Add(Med(b));
                 }
                 // (no frames stepped in here: in a batch run each step queues the forest's instanced draws again, and with
-                // no end of frame to clear them every later render draws them all; the queue stays as it is for all three)
+                // no end of frame to clear them every later render draws them all; the queue stays as it is for each)
                 Away(true);
                 TimeOfDay.TestClock = 2.75f; dayNight.ApplyNow();
                 var eye = camp.ChaletPoint(4.0f, 1.65f, 4.4f);
                 cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(camp.ChaletPoint(-6.5f, 2.1f, -3.4f) - eye, Vector3.up)); cam.fieldOfView = 88f;
-                Clock(inside.gameObject, inOn[k], inOff[k]);
+                Clock(inside.gameObject, inOn, inOff);
                 TimeOfDay.TestClock = 3.4f; dayNight.ApplyNow();
                 PhotoCam(new Vector3(11f, 0f, 29f), new Vector3(-2f, 4.0f, 0f), 46f, false, true);
-                Clock(root.gameObject, outOn[k], outOff[k]);
+                Clock(root.gameObject, outOn, outOff);
                 noUi = false;
             }
         Object.DestroyImmediate(tmp); rt.Release();
-        foreach (int k in chosen)
-            Debug.Log($"LODGECOST [{Camp.LodgeLayoutKeys[k]}] phone-size renders, editor on this Mac, {Rounds} rounds of the layouts in turn x {N} interleaved (median of the rounds' medians): " +
-                      $"in from the door at dusk {Med(inOn[k]):0.00} ms, the same with its inside off {Med(inOff[k]):0.00} ms (the inside: +{Med(inOn[k]) - Med(inOff[k]):0.00} ms); " +
-                      $"the photo's view at night {Med(outOn[k]):0.00} ms, without the lodge {Med(outOff[k]):0.00} ms; rounds in from the door: {string.Join(" / ", inOn[k].ConvertAll(x => x.ToString("0.0")))}");
+        Debug.Log($"LODGECOST phone-size renders, editor on this Mac, {Rounds} rounds x {N} interleaved (median of the rounds' medians): " +
+                  $"in from the door at dusk {Med(inOn):0.00} ms, the same with its inside off {Med(inOff):0.00} ms (the inside: +{Med(inOn) - Med(inOff):0.00} ms); " +
+                  $"the photo's view at night {Med(outOn):0.00} ms, without the lodge {Med(outOff):0.00} ms; rounds in from the door: {string.Join(" / ", inOn.ConvertAll(x => x.ToString("0.0")))}");
         Simulate();
     }
 
@@ -652,7 +645,7 @@ public static class LodgeShot
         root.gameObject.SetActive(true);
         Object.DestroyImmediate(tmp);
         cam.targetTexture = null;
-        // and inside: the view from the door at dusk, every lamp on (the same view in each layout)
+        // and inside: the view from the door at dusk, every lamp on
         SetTime(2.75f);
         EyeCam(camp.ChaletPoint(4.0f, 1.65f, 4.4f), camp.ChaletPoint(-6.5f, 2.1f, -3.4f), 88f);
         cam.targetTexture = rt; cam.aspect = 1170f / 2532f;

@@ -557,6 +557,15 @@ namespace Summit
         }
 
         /// <summary>The lane cleared of trees from the piste's edge down to a lift's hill.</summary>
+        /// <summary>On a lift's hill, or in the cleared lane that leads to it from the piste (nothing may stand there:
+        /// LiftEnds keeps its things off it, so the way to a cable grind is never blocked).</summary>
+        public static bool HillOrLane(float x, float z, float margin)
+        {
+            if (OnHill(x, z, margin)) return true;
+            foreach (var l in Lifts) if (l.hill != null && InLane(l, x, z, margin)) return true;
+            return false;
+        }
+
         static bool InLane(Lift l, float x, float z, float margin)
         {
             var h = l.hill;

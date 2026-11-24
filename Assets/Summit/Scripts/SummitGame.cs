@@ -207,7 +207,6 @@ namespace Summit
             start.AddRow(look, "FILTER", () => LookGrade.Names[filterLevel], StepFilter);
             start.AddRow(look, "FILTER STRENGTH", () => filterStrength * 10 + "%", StepStrength);
             start.AddRow(look, "HALATION", () => LensFX.HalationName[halation], StepHalation);
-            start.AddRow(look, "LODGE (PLAYTEST)", () => Camp.LodgeLayoutShort, d => camp.StepLodgeLayout(d));   // (a playtest switch: the camp's lodge, three ways inside)
             start.AddRow(game, "TURN", () => SteerPrefs.Label, StepTurn);
             start.AddRow(game, "STEERING", () => input.useTilt ? "TILT" : "DRAG", d => ToggleSteer(), true);
             start.AddRow(game, "JUMP", () => JumpName, StepJump);
@@ -438,6 +437,7 @@ namespace Summit
             wild.Build(snow.shader);
             wild.BearSpotted += () => { };   // (the bear is there to see and hear: no caption)
             SkiLift.Create(rg.transform, snow.shader);   // ski lifts beside the run (SkiLift.cs): they stream, and follow a new mountain, by themselves
+            MountainRiders.Create(null, rider, snow.shader);   // other people riding the run (MountainRiders.cs): the same, by themselves (not under the rider: their solids would ride along with him)
             rider.GrindStart += f => { if (state == State.Riding) audioFx.Play(f.kind == Course.Kind.Rail ? Sfx.GrindRail : Sfx.GrindBox); };
             // a numbered flag wherever a fall came to rest, for the rest of the run
             flags = new GameObject("FallFlags").AddComponent<FallFlags>();

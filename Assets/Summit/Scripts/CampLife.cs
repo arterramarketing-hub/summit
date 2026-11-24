@@ -172,8 +172,11 @@ namespace Summit
             var door = camp.ChaletPoint(2.4f, 0f, 12.2f); door.y = Slope.DrawnHeight(door.x, door.z);
             D("door", door, cy);
             // the lookout's deck (16, -54): two places at the front rail, looking down the mountain
-            D("lookout.1", Ground(14.6f, -52.6f) + Vector3.up * 0.45f, 0f);
-            D("lookout.2", Ground(16.3f, -52.6f) + Vector3.up * 0.45f, 8f);
+            // (on its boards: 0.45 m over the snow at its middle, where Camp.Lookout sets it; the snow under its front is
+            // a metre lower, and standing 0.45 m over that was standing in the deck)
+            float deck = Ground(16f, -54f).y + 0.45f;
+            D("lookout.1", new Vector3(Ground(14.6f, -52.6f).x, deck, -52.6f), 0f);
+            D("lookout.2", new Vector3(Ground(16.3f, -52.6f).x, deck, -52.6f), 8f);
             // along the cliff's rail between the flags, looking out over the edge
             D("rail.1", Ground(21.2f, -70.8f), 90f);
             D("rail.2", Ground(21.2f, -64.2f), 85f);
@@ -296,6 +299,13 @@ namespace Summit
                     {
                         var q = camp.PushOutOfThings(new Vector2(w.x, w.z), 0.42f, y);
                         ok = (q - new Vector2(w.x, w.z)).sqrMagnitude < 1e-6f;
+                        if (!ok)
+                        {
+                            // (a deck standing up off the snow, the lookout's: solid under it, open on its boards)
+                            float up = camp.FloorHeight(new Vector3(w.x, snow + 1.2f, w.z), snow + 1.2f);
+                            if (up > y + 0.3f && (camp.PushOutOfThings(new Vector2(w.x, w.z), 0.42f, up) - new Vector2(w.x, w.z)).sqrMagnitude < 1e-6f)
+                            { ok = true; y = up; floorY[j * gw + i] = up; }
+                        }
                     }
                     if (ok) foreach (var k in keep) if (!k.walk && (new Vector2(w.x - k.c.x, w.z - k.c.z)).sqrMagnitude < k.r * k.r) { ok = false; break; }
                     // no edges: a drop of more than half a metre within a stride is a place they don't go

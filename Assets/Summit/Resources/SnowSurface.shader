@@ -12,6 +12,7 @@
 // what it covers; slush is the same right across the hill, so it is worked out here from how far down the pixel is.
 // Three more texture samples (the map, the snow's colour without its grooves, the grain again for the lumps) and a
 // sine per pixel. Past the map, and with Surfaces off, this is the snow as it was.
+// In the camp (CampSnow.cs) none of that: the camp's own snow, from a map of it (Shaders/SnowSurfaceLook.hlsl).
 //
 // Variants (multi_compile, so always in the build): _PARALLAXMAP as the snow material has it, and FARVIEW_PLAIN for
 // the chunks that discard nothing.
@@ -106,69 +107,9 @@ Shader "Summit/SnowSurface"
             #include "Packages/com.unity.render-pipelines.universal/Shaders/LitForwardPass.hlsl"
             #include "../Shaders/Farview.hlsl"
 
-            TEXTURE2D(_SurfaceMap); SAMPLER(sampler_SurfaceMap);
-            float4 _SurfaceMapST;   // xy: 1 / (metres the map spans), across and down the hill
-            float4 _SurfaceWin;     // xy: the middle of what the map covers (world x, z); zw: half its size (0: no map)
-            float4 _SurfaceDay;     // x: where slush starts (world z); y: 1 / the metres it comes in over; z: how much of it
-            float4 _SurfaceRun;     // xy: the way across the run under the rider (unit, in x and z); z: the lines' strength
+            #include "../Shaders/SnowSurfaceLook.hlsl"
 
             Varyings FarVertex(Attributes input) { return LitPassVertex(input); }
-
-            // The snow underfoot, drawn into the lit surface (albedo, smoothness, the relief's strength and the
-            // grooming's lines) before it is lit
-            void SnowSurface(float3 positionWS, float2 uv, inout SurfaceData s)
-            {
-                float2 off = abs(positionWS.xz - _SurfaceWin.xy);
-                half known = (half)(saturate((_SurfaceWin.z - off.x) * 0.05) * saturate((_SurfaceWin.w - off.y) * 0.025));
-                half4 m = SAMPLE_TEXTURE2D(_SurfaceMap, sampler_SurfaceMap, positionWS.xz * _SurfaceMapST.xy) * known;   // powder, ice, crud, crust
-                half slush = (half)saturate((positionWS.z - _SurfaceDay.x) * _SurfaceDay.y);
-                slush = slush * slush * (3.0h - 2.0h * slush) * (half)_SurfaceDay.z * known;
-                m *= 1.0h - slush;
-                half cord = saturate(known - m.r - m.g - m.b - m.a - slush);
-
-                // the relief (the wind grooves and the grain): how much of it each kind keeps. Groomed snow keeps almost
-                // none: the groomer has flattened the wind's ripples, and its own lines are the only ones there (two
-                // sets of lines read as moire and as motion where there is none)
-                half relief = 1.0h + cord * -0.88h + m.r * -0.7h + m.g * -0.85h + m.b * -0.55h + m.a * 0.45h + slush * -0.45h;
-                s.normalTS.xy *= relief;
-                // (tracked snow is chopped, not combed: the snow's own grain again, four times the size and much
-                // deeper, in lumps; a little of it in the crust)
-                half3 chop = UnpackNormalScale(SAMPLE_TEXTURE2D(_DetailNormalMap, sampler_DetailNormalMap, uv * _DetailAlbedoMap_ST.xy * 0.27 + 0.19), 1.0h);
-                s.normalTS.xy += chop.xy * (m.b * 2.6h + m.a * 0.5h);
-
-                // corduroy: the grooming's lines, straight down the run, and the groomer's passes, each a lane a shade
-                // off its neighbours. The lines fade out by how many pixels one spans: whole at 10 or more, gone by 4,
-                // well before the pixel grid can alias them into crawling bands at speed (the same for the lanes'
-                // edges, which are softened to a pixel or two and fade out once a lane is under 12 pixels)
-                float across = dot(positionWS.xz, _SurfaceRun.xy);
-                float phase = across * 39.27;   // (16 cm from line to line)
-                float px = 6.2832 / max(fwidth(phase), 1e-4);   // (pixels from one line to the next)
-                half fine = (half)saturate((px - 4.0) / 6.0);
-                fine *= fine;
-                half lines = cord * fine * (half)_SurfaceRun.z;
-                s.normalTS.xy += (half2)_SurfaceRun.xy * ((half)cos(phase) * 0.5h * lines);
-                float lanePhase = across * 0.2222;   // (4.5 m a pass)
-                float laneW = max(fwidth(lanePhase), 1e-4);
-                half lane = (half)(saturate((abs(frac(lanePhase + 0.5) - 0.5) - 0.25) / (laneW * 1.5)) * 2.0 - 1.0);
-                lane *= (half)saturate((1.0 / laneW - 12.0) / 24.0);
-                half groove = (half)sin(phase) * lines;
-
-                // the colour
-                // (the grooves drawn in the snow's own colour go with their relief: smooth snow is not striped)
-                half3 a = s.albedo;
-                half3 plain = SAMPLE_TEXTURE2D_LOD(_BaseMap, sampler_BaseMap, uv, 7).rgb * _BaseColor.rgb;
-                a = lerp(a, plain, saturate(cord * 0.9h + m.r * 0.85h + m.g * 0.9h + m.b * 0.5h + slush * 0.6h));
-                a *= 1.0h + cord * 0.02h * lane - 0.09h * (0.5h - 0.5h * groove) * lines;
-                a = lerp(a, min(a * 1.035h, half3(1.0h, 1.0h, 1.0h)), m.r);
-                a = lerp(a, a * half3(0.66h, 0.78h, 0.93h), m.g);
-                a *= 1.0h - m.b * (0.05h + 0.1h * saturate(-chop.y));
-                a = lerp(a, a * half3(0.95h, 0.97h, 1.0h), m.a);
-                a = lerp(a, a * half3(0.78h, 0.81h, 0.85h), slush);
-                s.albedo = a;
-
-                // the shine
-                s.smoothness = saturate(s.smoothness + cord * 0.05h + m.r * -0.16h + m.g * 0.52h + m.b * -0.06h + m.a * 0.2h + slush * 0.3h);
-            }
 
             void FarFragment(Varyings input, out half4 outColor : SV_Target0
             #ifdef _WRITE_RENDERING_LAYERS

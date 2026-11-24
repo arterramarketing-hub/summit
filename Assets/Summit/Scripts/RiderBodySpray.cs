@@ -25,6 +25,8 @@ namespace Summit
         Transform sprayAt;
         SnowMix sprayMix;
         bool sprayMixSet;
+        bool pressHooked;
+        int pressBudget;   // clumps the thrown body may still throw this frame (a crash's spray stays bounded)
 
         public static readonly List<ParticleSystemVertexStream> Streams = new List<ParticleSystemVertexStream>
         {
@@ -176,6 +178,8 @@ namespace Summit
         void SprayFrame(Vector3 at, float dt)
         {
             if (sprayAt == null) return;
+            if (!pressHooked && SnowLayer.Instance != null) { SnowLayer.Instance.Pressed += Ploughed; pressHooked = true; }
+            pressBudget = 36;
             var snow = rider.Underfoot;
             SprayFor(snow);
             bool riding = rider.Running && !rider.Crashed && !rider.Airborne && !rider.Grinding;
@@ -216,6 +220,35 @@ namespace Summit
             {
                 dragTrail.Mix = snow; dragTrail.Bite = 0.3f;
                 dragTrail.Feed(dragAt, normal, rider.TravelHeading, dragging, skis ? 0.16f : 0.32f, 0f, 0f, dt);
+            }
+        }
+
+        /// <summary>
+        /// The thrown body (or the board) ploughing the snow (SnowLayer.Pressed): clumps thrown up and out of the
+        /// furrow and a little powder off its rim, by how much snow it moved and how fast. None on ice (a scuff).
+        /// </summary>
+        void Ploughed(Vector3 at, Vector3 vel, float moved)
+        {
+            if (clumps == null || pressBudget <= 0 || !rider.Crashed) return;
+            var mix = Surfaces.Surface(at.x, at.z);
+            if (mix.ice > 0.8f) return;
+            Vector3 flat = new Vector3(vel.x, 0f, vel.z);
+            float speed = flat.magnitude;
+            int n = Mathf.Min(pressBudget, Mathf.FloorToInt(moved * 700f * Mathf.Clamp01(speed / 5f) * (0.6f + 0.8f * mix.powder) + Random.value));
+            if (n <= 0) return;
+            pressBudget -= n;
+            Vector3 side = Vector3.Cross(Vector3.up, speed > 0.1f ? flat / speed : Vector3.forward);
+            for (int i = 0; i < n; i++)
+            {
+                float s = Random.value < 0.5f ? -1f : 1f;   // out over either rim of the furrow
+                var ep = new ParticleSystem.EmitParams
+                {
+                    position = at + side * s * Random.Range(0.1f, 0.3f) + Vector3.up * 0.05f,
+                    velocity = flat * Random.Range(0.25f, 0.5f) + side * s * Random.Range(0.6f, 1.8f) + Vector3.up * Random.Range(1.2f, 2.8f),
+                    applyShapeToPosition = false,
+                };
+                clumps.Emit(ep, 1);
+                if (i % 2 == 0) { ep.velocity *= 1.3f; spray.Emit(ep, 2); }
             }
         }
 

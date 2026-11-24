@@ -15,9 +15,11 @@ using Summit;
 ///   Unity -batchmode -projectPath . -executeMethod PeopleShot.Run -logFile x.log
 ///   pop:    lift riders from far off, the phone before liftpop and after (Pop);
 ///   chairs: the lifts' chairs and towers, the phone before liftchairs and after (ChairShots).
-///   SUMMIT_PEOPLE_SET  lineup|lift|camp|pop|chairs|all (all)   SUMMIT_PEOPLE_OUT  the folder (PeopleShots)
+///   riders: the mountain's other riders (MountainRiders); campnpc: the camp's people near to far after the lifts
+///   have run a while (PeopleShotAlive.cs).
+///   SUMMIT_PEOPLE_SET  lineup|lift|camp|pop|chairs|riders|campnpc|all (all)   SUMMIT_PEOPLE_OUT  the folder (PeopleShots)
 /// </summary>
-public static class PeopleShot
+public static partial class PeopleShot
 {
     const BindingFlags NP = BindingFlags.NonPublic | BindingFlags.Instance;
     static SummitGame game; static Camp camp; static RiderBody body; static Rider rider; static Camera cam;
@@ -38,7 +40,7 @@ public static class PeopleShot
         QualitySettings.SetQualityLevel(0, true);
         TestPrefs.Pin();
         game = Object.FindFirstObjectByType<SummitGame>();
-        bool liftSet = set == "lift" || set == "pop" || set == "chairs";
+        bool liftSet = set == "lift" || set == "pop" || set == "chairs" || set == "riders";
         TestBoot.Boot(game, liftSet);
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
         camp = Get<Camp>("camp"); body = Get<RiderBody>("body"); rider = Get<Rider>("rider"); meta = Get<MetaUi>("meta");
@@ -53,6 +55,8 @@ public static class PeopleShot
         if (set == "camp") CampShots();
         if (set == "pop") Pop();
         if (set == "chairs") ChairShots();
+        if (set == "riders") RiderShots();
+        if (set == "campnpc") CampNpcShots();
         steps.Add(() =>
         {
             ChaseCamera.TestDt = 0f;

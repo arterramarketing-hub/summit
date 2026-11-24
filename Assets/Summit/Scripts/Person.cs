@@ -182,6 +182,8 @@ namespace Summit
         /// <summary>Put a look on: the body's size, the gear's shape, every colour. (A pooled person can change look.)</summary>
         public void Dress(PersonLook look)
         {
+            // the look's row of the people's palette (its colours far off) is kept for as long as it's worn
+            if (look != Look) { PeopleKit.Hold(look); PeopleKit.Let(Look); }
             Look = look;
             Model.localScale = Vector3.one * look.height;
             // girth through the hips (and so the legs and everything above), the shoulders on top; the head kept round
@@ -250,16 +252,25 @@ namespace Summit
         /// <summary>The simplified body for this look, if it's made yet (asked for if not).</summary>
         bool Simple()
         {
-            if (simpleFor == Look.ShapeKey && LodSkin.sharedMesh != null) return true;
-            if (!PeopleLod.Has(Look)) { PeopleLod.Want(Look); return false; }
-            LodSkin.sharedMesh = PeopleLod.Skinned(Look);
-            LodSkin.localBounds = GearSkin.localBounds;
-            mpb.SetFloat("_Row", PeopleKit.Row(Look));
-            LodSkin.SetPropertyBlock(mpb);
-            PeopleKit.Flush();
-            simpleFor = Look.ShapeKey;
+            if (simpleFor != Look.ShapeKey || LodSkin.sharedMesh == null)
+            {
+                if (!PeopleLod.Has(Look)) { PeopleLod.Want(Look); return false; }
+                LodSkin.sharedMesh = PeopleLod.Skinned(Look);
+                LodSkin.localBounds = GearSkin.localBounds;
+                simpleFor = Look.ShapeKey; simpleRow = -1;
+            }
+            // its colours: the look's row of the shared palette (held while worn: Dress), asked for each time
+            int r = PeopleKit.Row(Look);
+            if (r != simpleRow)
+            {
+                simpleRow = r;
+                mpb.SetFloat("_Row", r);
+                LodSkin.SetPropertyBlock(mpb);
+                PeopleKit.Flush();
+            }
             return true;
         }
+        int simpleRow = -1;
 
         Material[] Mats(Material[] src)
         {
@@ -718,6 +729,7 @@ namespace Summit
         {
             void Kill(Object o) { if (o != null) { if (Application.isPlaying) Destroy(o); else DestroyImmediate(o); } }
             Kill(jacketM); Kill(pantsM); Kill(gearM); Kill(boardM); Kill(pal);
+            PeopleKit.Let(Look);
         }
     }
 }

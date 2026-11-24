@@ -577,8 +577,18 @@ namespace Summit
         static readonly Color[] rowBuf = new Color[Slots];
         static readonly Dictionary<PersonLook, int> rowOf = new Dictionary<PersonLook, int>();
         static readonly PersonLook[] rowLook = new PersonLook[Rows];
+        // who still needs each row: how many people wear its look (Hold), and when it was last asked for, counted in
+        // rows handed out since (RowsMade): a row is only given to a new look when nobody wears its own and nothing has
+        // drawn it for RowKeep new rows. (It used to go round the rows oldest first: the lifts' riders bring a new look
+        // every lap, 64 a minute at the camp, and after a quarter of an hour the camp's people were drawn far off in
+        // rows that now held lift riders' colours: their outfits flickered as they went near and far.)
+        static readonly int[] rowHeld = new int[Rows], rowAsked = new int[Rows];
+        public const int RowKeep = 256;
         static int nextRow, atlasDirty;
+        static bool toldFull;
         public static int RowsInUse => rowOf.Count;
+        public static int RowsMade { get; private set; }
+        public static int RowsHeld { get { int n = 0; foreach (var h in rowHeld) if (h > 0) n++; return n; } }
 
         /// <summary>The instanced, slot-coloured material every distant person shares (Resources/PeopleLit.shader).</summary>
         public static Material LodMaterial
@@ -603,15 +613,19 @@ namespace Summit
             }
         }
 
-        /// <summary>A row of the palette for this look (each slot's colour, sheen in alpha): the instance's colours far off.</summary>
+        /// <summary>
+        /// A row of the palette for this look (each slot's colour, sheen in alpha): the instance's colours far off. Ask
+        /// for it each time it's drawn (that keeps it): one nobody has asked for in a while may go to a new look, and
+        /// then asking again gives the look a row of its own again.
+        /// </summary>
         public static int Row(PersonLook l)
         {
-            if (rowOf.TryGetValue(l, out int r)) return r;
+            if (rowOf.TryGetValue(l, out int r)) { rowAsked[r] = RowsMade; return r; }
             _ = LodMaterial;
-            // recycle the oldest row when they're all taken (the lifts draw a new look each lap)
-            r = nextRow; nextRow = (nextRow + 1) % Rows;
+            r = FreeRow();
             if (rowLook[r] != null) rowOf.Remove(rowLook[r]);
-            rowLook[r] = l; rowOf[l] = r;
+            rowLook[r] = l; rowOf[l] = r; rowHeld[r] = 0;
+            RowsMade++; rowAsked[r] = RowsMade;
             WriteRow(l, r);
             // just this row into the picture (sent with the rest at the frame's Flush)
             System.Array.Copy(atlasPx, r * Slots, rowBuf, 0, Slots);
@@ -619,6 +633,32 @@ namespace Summit
             atlasDirty++;
             return r;
         }
+
+        /// <summary>A row for a new look: one nobody wears and nothing has drawn lately, looking on from the last one given.</summary>
+        static int FreeRow()
+        {
+            int oldest = -1, oldestAt = int.MaxValue;
+            for (int k = 0; k < Rows; k++)
+            {
+                int c = (nextRow + k) % Rows;
+                if (rowHeld[c] > 0) continue;
+                if (rowLook[c] == null || RowsMade - rowAsked[c] >= RowKeep) { nextRow = (c + 1) % Rows; return c; }
+                if (rowAsked[c] < oldestAt) { oldestAt = rowAsked[c]; oldest = c; }
+            }
+            // every row worn or drawn lately: the one drawn longest ago (never one somebody wears)
+            if (!toldFull) { toldFull = true; Debug.LogWarning($"People: all {Rows} palette rows in use ({RowsHeld} worn): the one drawn longest ago goes to a new look"); }
+            if (oldest < 0) oldest = nextRow;
+            nextRow = (oldest + 1) % Rows;
+            return oldest;
+        }
+
+        /// <summary>Keep a look's row for as long as someone wears it (Person: from Dress until dressed again or gone).</summary>
+        public static void Hold(PersonLook l) { if (l != null) rowHeld[Row(l)]++; }
+        /// <summary>No longer worn by this one (Hold's other half).</summary>
+        public static void Let(PersonLook l) { if (l != null && rowOf.TryGetValue(l, out int r) && rowHeld[r] > 0) rowHeld[r]--; }
+
+        /// <summary>The colours a look's row holds (Slots of them), for the checks.</summary>
+        public static void RowColours(PersonLook l, Color[] into) => Fill(l, into, 0);
 
         /// <summary>Send the palette's changed rows to the GPU (once a frame at most).</summary>
         public static void Flush()
@@ -628,9 +668,10 @@ namespace Summit
             atlasDirty = 0;
         }
 
-        static void WriteRow(PersonLook l, int r)
+        static void WriteRow(PersonLook l, int r) => Fill(l, atlasPx, r * Slots);
+
+        static void Fill(PersonLook l, Color[] atlasPx, int o)
         {
-            int o = r * Slots;
             Color S(Color c, float smooth) => new Color(c.r, c.g, c.b, smooth);
             Color Avg(Wardrobe.Item it) => it == null ? Color.grey : it.Patterned && it.pattern != Wardrobe.Pattern.Block ? Color.Lerp(it.a, it.b, it.pattern == Wardrobe.Pattern.Stripes ? 0.4f : 0.35f) : it.a;
             atlasPx[o + SSkin] = S(l.skin, 0.25f);
