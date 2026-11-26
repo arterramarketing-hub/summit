@@ -55,6 +55,38 @@ half FirDither(float4 positionCS)
     return (m[p.y * 4 + p.x] + 0.5h) / 16.0h;
 }
 
+// The view through the trees (ChaseCamera): the foliage between the lens and the rider is thinned, a fixed screen
+// pattern dropping part of its pixels, so the rider and the way ahead show through while the tree is still plainly
+// there. Only what stands nearer the lens than the rider is thinned (the trees ahead never are), within a cone from
+// the lens round the rider and the line the camera looks along, and anything right at the lens. Shadows are untouched.
+float4 _FirSeeEye;     // xyz the lens; w how much (0 off: the first-person view, a menu .. 1)
+float4 _FirSeeAt;      // xyz the rider (chest high); w the cone's half-angle (radians)
+float4 _FirSeeAhead;   // xyz where the camera looks
+#define FIR_SEE_MOST 0.7h   // the most of a crown's pixels dropped: it thins, it never goes
+
+half FirSeeThrough(float3 p)
+{
+    if (_FirSeeEye.w <= 0.001) return 0.0h;
+    float3 e = _FirSeeEye.xyz;
+    float3 v = p - e;
+    float dist = length(v);
+    float3 vr = _FirSeeAt.xyz - e;
+    float lr = max(length(vr), 0.5);
+    float3 toRider = vr / lr;
+    float3 f = normalize(_FirSeeAhead.xyz - e);
+    // nearer the lens than the rider (by depth along the view)
+    float dr = dot(vr, f);
+    half nearer = (half)(1.0 - smoothstep(dr - 1.2, dr - 0.5, dot(v, f)));
+    // in the cone round the rider, the view's middle and the line between them
+    float3 dir = v / max(dist, 1e-3);
+    float c = max(max(dot(dir, toRider), dot(dir, f)), dot(dir, normalize(toRider + f)));
+    float ang = acos(clamp(c, -1.0, 1.0));
+    half inCone = (half)(1.0 - smoothstep(_FirSeeAt.w * 0.6, _FirSeeAt.w, ang));
+    // a frond brushing the lens
+    half atLens = (half)(1.0 - smoothstep(1.0, 2.0, dist));
+    return max(inCone * nearer, atLens) * (half)_FirSeeEye.w * FIR_SEE_MOST;
+}
+
 half3 FirLight(half3 albedo, float3 n, float3 positionWS, float4 positionCS, half3 vertexLight, half sunShade, half lift)
 {
     InputData inputData = (InputData)0;

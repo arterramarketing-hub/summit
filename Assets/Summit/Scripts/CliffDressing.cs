@@ -7,13 +7,13 @@ namespace Summit
     /// What marks the cliffs (see Cliffs), built by CourseDressing with the rest of a cycle and thrown away with it.
     ///   Jump cliffs: a sign up the in-run, and a row of short orange wands along the lip, so the line you are
     ///   about to fly off reads from a long way up.
-    ///   Deadly cliffs: a sign at the side of the piste before the wall, and orange and black poles along its top
-    ///   with caution tape strung between them, the way the crevasses and the start's drop are marked.
-    /// Nothing here has a collider (the tape tears as you ride through it, like the start's).
+    ///   Deadly cliffs and the cliff band: a sign at the side of the piste before them. The one line along their
+    ///   edge is PisteKit's rope on bamboo poles with crossed poles at its ends (one line per edge, not a tape too).
+    /// Nothing here has a collider.
     /// </summary>
     public static class CliffDressing
     {
-        static Material signJump, signCliffs, signLedges, signBand, tape;
+        static Material signJump, signCliffs, signLedges, signBand;
 
         public static void Build(Transform root, int cycle, Shader lit, Material poleOrange, Material poleBlack, Material post, Material signBack, Rider rider)
         {
@@ -27,7 +27,6 @@ namespace Summit
             {
                 signJump = CourseDressing.Sign(lit, "Signs/SignJump");
                 signCliffs = CourseDressing.Sign(lit, "Signs/SignCliffs");
-                tape = CourseDressing.Sign(lit, "Signs/Tape");
                 signLedges = CourseDressing.Sign(lit, "Signs/SignLedges");
                 signBand = CourseDressing.Sign(lit, "Signs/SignBand");
             }
@@ -65,49 +64,23 @@ namespace Summit
             // (blind roll-overs: crossed poles at the lip on both edges of the piste are PisteKit's closed markers)
             if (CliffBand.Of(cycle, out var band))
             {
-                // the way in: a sign at the edge of the run on the band's side; then poles and caution tape along its lip,
-                // with a gap at each low place (the optional air), and black wands along those
+                // the way in: a sign at the edge of the run on the band's side. Along the lip, black wands at each low
+                // place (the optional air); where the band stands tall the one line is PisteKit's rope on bamboo poles,
+                // a step in from the edge, with the crossed "closed" poles at its ends (no caution tape as well)
                 float zs = band.z0 - 30f;
                 Sign(root, zs, signBand, -band.side, post, signBack);
-                Vector3 last = Vector3.zero; bool have = false;
                 for (float zc = band.z1 - 8f; zc < band.z2 + 12f; zc += 5f)
                 {
-                    float hgt = CliffBand.HeightAt(band, zc);
+                    if (!CliffBand.Low(band, zc)) continue;
                     var at = CliffBand.PointAt(band, zc, CliffBand.Edge - 1.2f);
                     float y = Slope.DrawnHeight(at.x, at.y) - 0.05f;
-                    if (CliffBand.Low(band, zc))
-                    {
-                        Pole(root, new Vector3(at.x, y + 0.35f, at.y), new Vector3(0.035f, 0.4f, 0.035f), poleBlack);
-                        have = false; continue;
-                    }
-                    if (hgt < 6f) { have = false; continue; }
-                    Pole(root, new Vector3(at.x, y + 0.8f, at.y), new Vector3(0.06f, 0.8f, 0.06f), poleOrange);
-                    Pole(root, new Vector3(at.x, y + 1.45f, at.y), new Vector3(0.065f, 0.12f, 0.065f), poleBlack);
-                    var tie = new Vector3(at.x, y + 1.15f, at.y);
-                    if (have && rider != null) CautionTape.Make(root, last, tie, rider, tape);
-                    last = tie; have = true;
-                    yield return true;
+                    Pole(root, new Vector3(at.x, y + 0.35f, at.y), new Vector3(0.035f, 0.4f, 0.035f), poleBlack);
                 }
+                yield return true;
             }
-            if (Cliffs.WallOf(cycle, out var w))
-            {
-                Sign(root, w.z0 - 28f, signCliffs, w.side, post, signBack);
-                // along the top, from where it turns the corner to where it has died down to nothing much
-                Vector3 last = Vector3.zero;
-                bool have = false;
-                for (float z = w.z0 + 4f; z < w.z2 - 20f; z += 11f)
-                {
-                    if (Cliffs.WallHeight(w, z) < 6f) { have = false; continue; }
-                    float x = Slope.Centre(z) + w.side * (w.edge - 1.2f);
-                    float y = Slope.DrawnHeight(x, z) - 0.05f;
-                    Pole(root, new Vector3(x, y + 0.8f, z), new Vector3(0.06f, 0.8f, 0.06f), poleOrange);
-                    Pole(root, new Vector3(x, y + 1.45f, z), new Vector3(0.065f, 0.12f, 0.065f), poleBlack);
-                    var tie = new Vector3(x, y + 1.15f, z);
-                    if (have && rider != null) CautionTape.Make(root, last, tie, rider, tape);
-                    last = tie; have = true;
-                    yield return true;   // (each tape settles into its sag as it is made: about a millisecond)
-                }
-            }
+            // a deadly wall: its sign. The one line along it is PisteKit's rope on the piste's edge on the wall's side,
+            // with the crossed poles at its ends (no caution tape along the top as well)
+            if (Cliffs.WallOf(cycle, out var w)) Sign(root, w.z0 - 28f, signCliffs, w.side, post, signBack);
         }
 
         static void Sign(Transform root, float z, Material face, float side, Material post, Material back)

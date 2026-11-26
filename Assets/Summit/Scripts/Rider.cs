@@ -795,7 +795,7 @@ namespace Summit
             Flow = 0f;
             pipeAir = false;
             Airborne = false; Grinding = false;
-            crashTimer = 0.8f;   // at least this long; then until the player taps to get up (RequestUp)
+            crashTimer = 0.25f;   // a beat (a tap already under way isn't one), then the player taps to get up (RequestUp), even mid-tumble
             RequestUp = false;
             rb.detectCollisions = false;
             Carve = 0f; Skid = 0f; Lean = 0f; edge = 0f; edgeVel = 0f; Sliding = false; wasSliding = false;
@@ -830,7 +830,8 @@ namespace Summit
         /// <summary>Where the thrown rider is, set by the ragdoll while a crash plays out.</summary>
         public Vector3 CrashFollow;
         public bool HasCrashFollow;
-        /// <summary>Set while the thrown body is still moving: stay down until it stops.</summary>
+        /// <summary>Set while the fall isn't decided yet (still dropping off something high, or sinking into a
+        /// crevasse): a tap now waits until it is, and is then a get-up or the end of the run.</summary>
         public bool HoldCrash;
         /// <summary>Set by the game when this fall ends the run: no getting up.</summary>
         public bool StayDown;

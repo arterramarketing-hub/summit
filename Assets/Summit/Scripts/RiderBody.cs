@@ -1009,11 +1009,10 @@ namespace Summit
                 rider.HasCrashFollow = rider.Crashed;
                 // stay down while still sliding or tumbling, and a beat after it stops
                 if (ragdoll.Speed > 0.8f) stillFor = 0f; else stillFor += Time.fixedDeltaTime;
-                // you can tap to get up once the body has (nearly) come to rest, and never while it is
-                // falling into a crevasse
-                // (below the snow only holds you while still falling: lying still in a shallow crevasse tip you can
-                // tap to climb out, and a deep one ends the run, whose TAP TO CONTINUE needs the body at rest)
-                rider.HoldCrash = rider.Crashed && (ragdoll.Speed > 2.5f || (RagdollBelowSnow > 0.5f && stillFor < 1.2f));
+                // a tap gets you up at once, even mid-tumble, unless the fall isn't decided yet: still dropping off
+                // something high (it may kill: RiderBodyFall), or sinking into a crevasse (deep enough ends the run).
+                // Then the tap waits for the answer (SummitGame)
+                rider.HoldCrash = rider.Crashed && (FallPending || (RagdollBelowSnow > 0.5f && stillFor < 1.2f));
                 RagdollMoving = rider.Crashed && ragdoll.Speed > 2.5f;
             }
         }

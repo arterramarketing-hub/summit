@@ -16,7 +16,13 @@ namespace Summit
         BuddyWarn, BuddyDeep,                           // "lookout" (something in the way), "don't go down there" (a deadly drop or crevasse)
         PointTick, Bank, ComboLost, BillTick,           // the points running up (a note that climbs), a combo banked (by its size, 0..4), one lost; the bill running up
         Branches,     // riding through a tree's branches: needles swishing past and twigs cracking (made here: BranchClips)
-        ClothRip      // a SLOW banner torn off its stakes: the fabric ripping and a flap (made here: ClothClips)
+        ClothRip,     // a SLOW banner torn off its stakes: the fabric ripping and a flap (made here: ClothClips)
+        // wood breaking, in layers (made in TreeSounds; played with the size and speed: SoundMix.PlayTree)
+        TwigCrack,    // a thin twig's sharp crack
+        LimbSnap,     // a limb's deeper, splintering snap
+        TrunkCrack,   // a trunk giving: a heavy crack, splinters, and the creak as it leans over
+        TreeThud,     // what broke landing in the snow (SoundMix.TreeLanded, placed in the world)
+        SnowDump      // a soft dump of snow off the branches
     }
 
     /// <summary>What the ride sounds like this frame (all 0..1 unless noted).</summary>
@@ -162,6 +168,65 @@ namespace Summit
         }
         AudioClip[] clothRips;
 
+        // the wood breaking (TreeSounds): made once, at the start, and the take last played of each
+        AudioClip[] twigs, limbs, trunks, thuds, snowDumps;
+        readonly int[] lastTake = new int[5];
+
+        AudioClip Take(AudioClip[] set, int which)
+        {
+            if (set == null || set.Length == 0) return null;
+            int k = Random.Range(0, set.Length);
+            if (set.Length > 1 && k == lastTake[which]) k = (k + 1 + Random.Range(0, set.Length - 1)) % set.Length;   // never the same twice running
+            lastTake[which] = k;
+            return set[k];
+        }
+
+        /// <summary>
+        /// A layer of wood breaking, by `size` (0 a twig .. 1 a whole trunk: lower and fuller the bigger it is) and
+        /// `speed` (m/s it was hit at: louder and a touch brighter the harder). Each play is a different take, a
+        /// different pitch (±6%) and level (±12%).
+        /// </summary>
+        public void PlayTree(Sfx kind, float size, float speed, float level = 1f)
+        {
+            if (twigs == null) MakeTreeSounds();
+            float hard = Mathf.Clamp01((speed - 4f) / 26f);
+            size = Mathf.Clamp01(size);
+            AudioClip c; float vol, pitch;
+            switch (kind)
+            {
+                case Sfx.TwigCrack: c = Take(twigs, 0); vol = 0.45f + 0.45f * hard; pitch = Mathf.Lerp(1.2f, 0.88f, size); break;
+                case Sfx.LimbSnap: c = Take(limbs, 1); vol = 0.55f + 0.4f * hard; pitch = Mathf.Lerp(1.15f, 0.85f, size); break;
+                case Sfx.TrunkCrack: c = Take(trunks, 2); vol = 0.6f + 0.4f * hard; pitch = Mathf.Lerp(1.18f, 0.86f, size); break;
+                case Sfx.TreeThud: c = Take(thuds, 3); vol = 0.4f + 0.5f * hard; pitch = Mathf.Lerp(1.2f, 0.85f, size); break;
+                case Sfx.SnowDump: c = Take(snowDumps, 4); vol = 0.25f + 0.35f * Mathf.Max(size, hard); pitch = Mathf.Lerp(1.12f, 0.9f, size); break;
+                default: Play(kind, level); return;
+            }
+            pitch *= (1f + 0.05f * hard) * Random.Range(0.94f, 1.06f);
+            vol *= level * Random.Range(0.88f, 1.12f);
+            if (c == null || vol <= 0.001f) return;
+            var s = shots[nextShot];
+            nextShot = (nextShot + 1) % shots.Length;
+            s.pitch = pitch;
+            s.PlayOneShot(c, Mathf.Min(1f, vol));
+        }
+
+        /// <summary>What broke landing at `at` (out in the world: a treetop can fall a way off): the thump into the
+        /// snow and the snow it throws up, by its size and how hard it came down (m/s).</summary>
+        public void TreeLanded(Vector3 at, float size, float force)
+        {
+            if (twigs == null) MakeTreeSounds();
+            float hard = Mathf.Clamp01((force - 3f) / 12f);
+            float pitch = Mathf.Lerp(1.2f, 0.85f, Mathf.Clamp01(size)) * Random.Range(0.94f, 1.06f);
+            PlayAt(Take(thuds, 3), at, (0.45f + 0.55f * hard) * Random.Range(0.88f, 1.12f), pitch, 8f);
+            PlayAt(Take(snowDumps, 4), at, (0.3f + 0.3f * hard) * Random.Range(0.85f, 1.1f), pitch * Random.Range(0.95f, 1.08f), 8f);
+        }
+
+        void MakeTreeSounds()
+        {
+            twigs = TreeSounds.Twigs(); limbs = TreeSounds.Limbs(); trunks = TreeSounds.Trunks();
+            thuds = TreeSounds.Thuds(); snowDumps = TreeSounds.Snow();
+        }
+
         public void Build()
         {
             ambience = Loop("ambience"); windLow = Loop("wind_low"); windHigh = Loop("wind_high");
@@ -184,6 +249,7 @@ namespace Summit
             chime = C("trick"); powerShort = C("power_short"); trickBig = C("trick_big"); closeCall = C("close_call"); soda = C("soda");
             shieldGet = C("shield_get"); shieldHit = C("shield_hit"); click = C("click"); play = C("play"); buried = C("buried");
             bearRoar = C("bear_roar"); flap = C("flap");
+            MakeTreeSounds();
             smashWood = C("smash_wood"); smashRock = C("smash_rock"); powerJump = C("power_jump"); powerStar = C("power_star");
             lands = new[] { C("land_1"), C("land_2"), C("land_3") };
             thumps = new[] { C("thump_1"), C("thump_2"), C("thump_3") };
@@ -299,7 +365,7 @@ namespace Summit
             // fluttering. Slush is the powder's crush, lower and wetter)
             float snowUp = 30f, snowDown = 25f;
             float flutter = 0.6f + 0.4f * Mathf.Sin(Time.time * 53f) * Mathf.Sin(Time.time * 17f);
-            float scrape = Mathf.Max(r.ice * (0.3f + 0.5f * r.carve), 0.3f * r.chatter * flutter);
+            float scrape = Mathf.Max(r.ice * (0.45f + 0.55f * r.carve) * (0.8f + 0.2f * flutter), 0.3f * r.chatter * flutter);   // (ice: a hard, fluttering scrape)
             Mix(glide, snow * moving * (0.35f + 0.25f * s) * (1f - 0.6f * r.rough) * (1f - 0.5f * r.carve) * (1f - 0.3f * r.ice), 0.8f + 0.45f * s + 0.2f * r.ice - 0.12f * r.slush, snowUp, snowDown, dt);
             Mix(carve, snow * moving * Mathf.Pow(r.carve, 1.3f) * 0.75f * (1f - 0.45f * r.rough), 0.85f + 0.3f * s + 0.1f * r.carve, snowUp, 10f, dt);
             Mix(skid, snow * Mathf.Clamp01(s * 4f) * Mathf.Max(r.skid * 0.8f, scrape * 0.7f), 0.8f + 0.4f * s + 0.35f * r.ice * (1f - r.skid), snowUp, 12f, dt);
@@ -576,6 +642,8 @@ namespace Summit
                 case Sfx.Branches:
                     if (branches == null) branches = BranchClips();
                     c = branches[Random.Range(0, branches.Length)]; vol = 0.35f + 0.6f * Mathf.Clamp01(amount); pitch = Random.Range(0.9f, 1.12f); break;
+                case Sfx.TwigCrack: case Sfx.LimbSnap: case Sfx.TrunkCrack: case Sfx.TreeThud: case Sfx.SnowDump:
+                    PlayTree(kind, 0.5f, 12f, Mathf.Clamp01(amount)); return;
                 case Sfx.ClothRip:
                     if (clothRips == null) clothRips = ClothClips();
                     c = clothRips[Random.Range(0, clothRips.Length)]; vol = 0.4f + 0.5f * Mathf.Clamp01(amount); pitch = Random.Range(0.92f, 1.1f); break;

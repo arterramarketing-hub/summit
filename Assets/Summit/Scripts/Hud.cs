@@ -142,6 +142,12 @@ namespace Summit
             var knob = NewImage("StickKnob", transform, new Color(1f, 1f, 1f, 0.7f));
             knob.sprite = circle; stickKnob = knob.rectTransform;
             stickRing.gameObject.SetActive(false); stickKnob.gameObject.SetActive(false);
+            // down after a fall: no words, a soft ripple where the old prompt was (a tap carries on)
+            tapDot = NewImage("TapDot", safe, new Color(1f, 1f, 1f, 0f)); tapDot.sprite = circle;
+            Place(tapDot.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 250f), new Vector2(26f, 26f), new Vector2(0.5f, 0.5f));
+            tapRipple = NewImage("TapRipple", safe, new Color(1f, 1f, 1f, 0f)); tapRipple.sprite = circle;
+            Place(tapRipple.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 250f), new Vector2(26f, 26f), new Vector2(0.5f, 0.5f));
+            tapDot.enabled = tapRipple.enabled = false;
 
             // buttons (hit-tested by SummitGame, so no EventSystem is needed)
             var pb = NewImage("PlayButton", safe, new Color(0.10f, 0.45f, 0.90f, 0.95f));
@@ -500,6 +506,24 @@ namespace Summit
         }
 
         /// <summary>A pulsing instruction near the bottom (empty to hide).</summary>
+        Image tapDot, tapRipple;
+        float tapCueAt = -1f, tapCueOn;
+
+        /// <summary>Down after a fall, waiting for the tap: a small dot with a ripple spreading from it, fading in, no words.</summary>
+        public void SetTapCue(bool on)
+        {
+            if (tapDot == null) return;
+            if (on && tapCueAt < 0f) tapCueAt = Time.unscaledTime;
+            if (!on) tapCueAt = -1f;
+            tapCueOn = on ? Mathf.MoveTowards(tapCueOn, 1f, Time.unscaledDeltaTime / 0.6f) : 0f;
+            tapDot.enabled = tapRipple.enabled = on;
+            if (!on) return;
+            float ph = ((Time.unscaledTime - tapCueAt) / 1.4f) % 1f;
+            tapDot.color = new Color(1f, 1f, 1f, 0.55f * tapCueOn);
+            tapRipple.rectTransform.sizeDelta = Vector2.one * Mathf.Lerp(26f, 120f, ph);
+            tapRipple.color = new Color(1f, 1f, 1f, 0.28f * (1f - ph) * tapCueOn);
+        }
+
         public void SetPrompt(string text)
         {
             prompt.text = text;

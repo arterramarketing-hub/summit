@@ -64,6 +64,28 @@ void SnowSurface(float3 positionWS, float2 uv, inout SurfaceData s)
     half2 printN = (pr.rg * 2.0h - 1.0h) * show1 + half2(-n2.y, n2.x) * show2;
     half pressed = lerp(1.0h, pr.b, show1) * lerp(1.0h, pr2.b, show2);
 
+    // the snow's own grain again, four times the size (the lumps of tracked snow, below; and the ice's edge)
+    half3 chop = UnpackNormalScale(SAMPLE_TEXTURE2D(_DetailNormalMap, sampler_DetailNormalMap, uv * _DetailAlbedoMap_ST.xy * 0.27 + 0.19), 1.0h);
+
+    // ice, by height (as a height-blended terrain does it): where the map says some ice, it lies in the hollows of the
+    // snow's relief first and the snow stays on the ridges, so a patch's edge follows the grooves, not a linear fade.
+    // The height is the snow's own height map (one more sample, only where there is ice, on the base map's sampler:
+    // the pass has no sampler to spare), mixed with the grain at its other scale so the edge does not repeat with
+    // the tile; and a macro field over tens of metres moves the edge in and out, so no two patches look stamped.
+    // The look only: the ride reads the map's share (Surfaces)
+    float2 wp = positionWS.xz;
+    half macro = (half)(0.5 + 0.5 * sin(wp.x * 0.071 + sin(wp.y * 0.043) * 1.6) * sin(wp.y * 0.057 + sin(wp.x * 0.031 + 1.3) * 1.4));
+    float2 uvDx = ddx(uv), uvDy = ddy(uv);   // (taken out here: no derivatives inside the branch)
+    UNITY_BRANCH
+    if (m.g > 0.004h)
+    {
+        half h = SAMPLE_TEXTURE2D_GRAD(_ParallaxMap, sampler_BaseMap, uv, uvDx, uvDy).g;
+        // (the grain at its larger scale weighs most: pockets a hand or two across, not a dither)
+        h = h * 0.4h + saturate(0.5h + 0.6h * (chop.x + chop.y) * 0.5h) * 0.6h;
+        half e = m.g + (0.5h - h) * 0.6h + (macro - 0.5h) * 0.2h;
+        m.g = min(saturate((e - 0.5h) * 3.5h + 0.5h), saturate(m.g * 4.0h));   // (and none where the map has none)
+    }
+
     // snow a body has churned up (SnowLayer: its mask): chopped like crud, its grooming gone for good
     m.b = max(m.b, SnowChurn(positionWS) * (1.0h - m.g));
     half cord = saturate(known - m.r - m.g - m.b - m.a - slush);
@@ -82,8 +104,7 @@ void SnowSurface(float3 positionWS, float2 uv, inout SurfaceData s)
     s.normalTS.xy *= relief;
     s.normalTS.xy += printN * 1.1h;
     // (tracked snow is chopped, not combed: the snow's own grain again, four times the size and much
-    // deeper, in lumps; a little of it in the crust)
-    half3 chop = UnpackNormalScale(SAMPLE_TEXTURE2D(_DetailNormalMap, sampler_DetailNormalMap, uv * _DetailAlbedoMap_ST.xy * 0.27 + 0.19), 1.0h);
+    // deeper, in lumps; a little of it in the crust. Sampled above)
     s.normalTS.xy += chop.xy * (m.b * 2.6h + m.a * 0.5h);
 
     // corduroy: the grooming's ridges, straight down the run, as a tiller leaves them: fine ridges 2.6 cm
@@ -111,6 +132,13 @@ void SnowSurface(float3 positionWS, float2 uv, inout SurfaceData s)
     half groove = ((half)sin(phase) * fine * 0.5h + (half)sin(phase3) * fine3 * 0.5h) * lines;
     half shade = max(fine, fine3) * lines;
 
+    // ice: wind-scoured, in streaks down the fall line a metre or two across, polished between frosted ones (no
+    // texture: two sines on the run's own axes, wandering along it; faded out once a streak is under 8 pixels, so
+    // it never crawls). Read from up the hill as a darker, glossy sheet with the grooming gone (SurfacesIce)
+    float sc = across * 3.1 + sin(along * 0.37 + across * 0.6) * 1.7;
+    half scourSeen = (half)saturate((6.2832 / max(fwidth(sc), 1e-4) - 8.0) / 10.0);
+    half scour = (half)(0.5 + 0.5 * sin(sc) * sin(across * 1.13 + along * 0.05 + 2.0)) * scourSeen + 0.5h * (1.0h - scourSeen);
+
     // the colour
     // (the grooves drawn in the snow's own colour go with their relief: smooth snow is not striped)
     half3 a = s.albedo;
@@ -118,7 +146,10 @@ void SnowSurface(float3 positionWS, float2 uv, inout SurfaceData s)
     a = lerp(a, plain, saturate(cord * 0.9h + m.r * 0.85h + m.g * 0.9h + m.b * 0.5h + slush * 0.6h));
     a *= 1.0h + combed * 0.02h * lane - 0.03h * (0.5h - 0.5h * groove) * shade;
     a = lerp(a, min(a * 1.035h, half3(1.0h, 1.0h, 1.0h)), m.r);
-    a = lerp(a, a * half3(0.66h, 0.78h, 0.93h), m.g);
+    // (the polished streaks darker, the frosted ones between them a shade lighter)
+    // (and over tens of metres, bluer and more polished or greyer and more frosted: macro)
+    half3 iceTint = lerp(half3(0.64h, 0.73h, 0.86h), half3(0.54h, 0.69h, 0.92h), macro);
+    a = lerp(a, a * iceTint * (0.9h + 0.2h * (1.0h - scour)) * (1.0h - 0.14h * scour * scour), m.g);
     a *= 1.0h - m.b * (0.05h + 0.1h * saturate(-chop.y));
     a = lerp(a, a * half3(0.95h, 0.97h, 1.0h), m.a);
     a = lerp(a, a * half3(0.78h, 0.81h, 0.85h), slush);
@@ -132,7 +163,7 @@ void SnowSurface(float3 positionWS, float2 uv, inout SurfaceData s)
     s.albedo = a;
 
     // the shine
-    s.smoothness = saturate(s.smoothness + cord * 0.05h + m.r * -0.16h + m.g * 0.52h + m.b * -0.06h + m.a * 0.2h + slush * 0.3h
+    s.smoothness = saturate(s.smoothness + cord * 0.05h + m.r * -0.16h + m.g * (0.28h + 0.36h * scour + 0.12h * macro) + m.b * -0.06h + m.a * 0.2h + slush * 0.3h
                             + camp.r * -0.08h + camp.b * 0.14h + camp.g * 0.4h);
 }
 

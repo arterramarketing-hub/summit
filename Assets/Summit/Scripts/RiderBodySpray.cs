@@ -9,7 +9,7 @@ namespace Summit
     ///  - crystals: a fan of fine snow off the edge, out to the outside of the turn and back, by how hard the edge is
     ///    pushing (Rider.Bite) and how much it skids. Light and drifting in powder (more of it), a fine fast icy hiss
     ///    on ice, a small puff on the groomed run;
-    ///  - clumps: heavier lumps that arc out and fall under gravity (powder and crud throw the most, ice none);
+    ///  - clumps: heavier lumps that arc out and fall under gravity (powder and crud throw the most; on ice, small hard chips);
     ///  - the wake hanging in the air behind, and the bow wave off the nose (RiderBody built them; here they are given
     ///    the lit material and tuned for the snow);
     ///  - the hand dragged through the snow in a hard lean (RiderBodyTouch), or a ski pole's tip: a spray of its own,
@@ -162,10 +162,10 @@ namespace Summit
             m.gravityModifier = 0.55f - 0.25f * powder + 0.3f * wet;
             var lv = spray.limitVelocityOverLifetime; lv.drag = 1.6f + 1.4f * powder - 0.8f * ice;
             crystalLit?.SetFloat("_Sparkle", 0.9f + 1.6f * ice);
-            // clumps: big in powder, wet and heavy in slush
+            // clumps: big in powder, wet and heavy in slush; on ice, hard chips the edge knocks off (small, quick, heavy)
             var cm = clumps.main;
-            cm.startSize = new ParticleSystem.MinMaxCurve(Mathf.Lerp(0.06f, 0.10f, powder + wet), Mathf.Lerp(0.15f, 0.24f, powder + wet));
-            cm.gravityModifier = 1f + 0.3f * wet - 0.25f * powder;
+            cm.startSize = new ParticleSystem.MinMaxCurve(Mathf.Lerp(Mathf.Lerp(0.06f, 0.10f, powder + wet), 0.018f, ice), Mathf.Lerp(Mathf.Lerp(0.15f, 0.24f, powder + wet), 0.045f, ice));
+            cm.gravityModifier = 1f + 0.3f * wet - 0.25f * powder + 0.25f * ice;
             float puff = 1f + 0.6f * powder + 0.2f * wet - 0.5f * ice;
             var wm = wake.main; wm.startSize = new ParticleSystem.MinMaxCurve(0.4f * puff, 0.9f * puff);
             var bm = bow.main; bm.startSize = new ParticleSystem.MinMaxCurve(0.12f * puff, 0.42f * puff);
@@ -200,7 +200,8 @@ namespace Summit
             float speed = rider.Speed;
             float kind = 0.55f + 2.2f * powder + 0.9f * snow.crud + 0.8f * snow.slush - 0.45f * ice;   // more and lighter in powder, a little puff on the groove, a fine hiss on ice
             sprayEm.rateOverTime = riding && !Tube ? work * speed * kind * 0.75f + Mathf.Max(0f, speed - 22f) * 1.2f + (rider.BoostTime > 0f ? 50f : 0f) : 0f;
-            clumpsEm.rateOverTime = riding && !Tube ? (rider.Bite * 3.5f + rider.Skid * 5f) * speed * (0.15f + 1.6f * heavy) * (1f - ice) : 0f;
+            clumpsEm.rateOverTime = riding && !Tube ? (rider.Bite * 3.5f + rider.Skid * 5f) * speed * (0.15f + 1.6f * heavy) * (1f - ice)
+                                                   + (rider.Bite * 4f + rider.Skid * 9f) * speed * 0.35f * ice : 0f;   // (ice: chips)
             bowEm.rateOverTime = riding && speed > 3f && !Tube
                 ? speed * (3f + 3.5f * deep) * (1f - 0.75f * ice) * (1f + 1.0f * Mathf.Abs(rider.Lean) / Rider.MaxLean + rider.Skid)
                 : 0f;

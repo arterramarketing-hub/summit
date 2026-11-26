@@ -269,10 +269,14 @@ namespace Summit
 #endif
         }
 
+        /// <summary>The space bar is down (a tap for the keyboard).</summary>
+        public static bool SpaceHeld() => !TestDrive && SpaceDown();
+
         /// <summary>Where the latest touch or click is, in screen pixels.</summary>
         public static Vector2 PointerPosition()
         {
 #if ENABLE_INPUT_SYSTEM
+            if (TestDrive) return TestPos;
             if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.isPressed)
                 return Touchscreen.current.primaryTouch.position.ReadValue();
             if (Mouse.current != null) return Mouse.current.position.ReadValue();

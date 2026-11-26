@@ -12,6 +12,7 @@ using Summit;
 /// moments where the trees are tightest picked, and the same ride (it is the same to the step: the camera does not
 /// move the rider) is shot from the chase camera at those moments with the tight-trees view off (before) and on
 /// (after): TreeCam_before.png, TreeCam_after.png, and TreeCam_compare.png (before on top, after below).
+/// TREECAM_MODE=see: the tight view on in both, and the view through the trees (ChaseCamera.SeeOn) off before, on after.
 /// </summary>
 public static class TreeCamShots
 {
@@ -20,6 +21,7 @@ public static class TreeCamShots
     const int W = 360, H = 780, Shots = 3;
     static SummitGame game; static Rider r; static RiderBody body; static SlopeStreamer terrain; static Forest props;
     static ChaseCamera chase; static MethodInfo camStep; static Camera cam;
+    static readonly bool seeMode = System.Environment.GetEnvironmentVariable("TREECAM_MODE") == "see";
 
     public static void Run()
     {
@@ -60,6 +62,7 @@ public static class TreeCamShots
             Debug.Log($"TREECAM the tightest moments:{seen}");
             // 2. the same ride shot at those moments, before and after
             var before = Shoot(false, picks); var after = Shoot(true, picks);
+            ChaseCamera.SeeOn = true;
             Save(before, $"{outDir}/TreeCam_before.png"); Save(after, $"{outDir}/TreeCam_after.png");
             var both = new Texture2D(W * Shots, H * 2, TextureFormat.RGB24, false);
             both.SetPixels(0, H, W * Shots, H, before.GetPixels()); both.SetPixels(0, 0, W * Shots, H, after.GetPixels()); both.Apply();
@@ -79,7 +82,8 @@ public static class TreeCamShots
         var strip = new Texture2D(W * Shots, H, TextureFormat.RGB24, false);
         var rt = new RenderTexture(W, H, 24); var tex = new Texture2D(W, H, TextureFormat.RGB24, false);
         int taken = 0;
-        Ride(!on, null, f =>
+        ChaseCamera.SeeOn = !seeMode || on;
+        Ride(seeMode ? false : !on, null, f =>
         {
             if (!frames.Contains(f)) return;
             // (the batch run has no frame loop: the sky, the forest and what has broken are drawn by hand)
@@ -91,7 +95,7 @@ public static class TreeCamShots
             RenderTexture.active = rt; tex.ReadPixels(new Rect(0, 0, W, H), 0, 0); tex.Apply();
             strip.SetPixels(frames.IndexOf(f) * W, 0, W, H, tex.GetPixels());
             Vector3 c = chase.transform.position, p = r.transform.position;
-            Debug.Log($"TREECAM {(on ? "after" : "before")} frame {f}: tight {chase.Tight:0.00}, the lens {new Vector2(c.x - p.x, c.z - p.z).magnitude:0.0} m behind and {c.y - p.y:0.0} m up, field of view {cam.fieldOfView:0}, {r.Speed * 3.6f:0} km/h");
+            Debug.Log($"TREECAM {(on ? "after" : "before")} frame {f}: see-through {(ChaseCamera.SeeOn ? "on" : "off")}, tight {chase.Tight:0.00}, the lens {new Vector2(c.x - p.x, c.z - p.z).magnitude:0.0} m behind and {c.y - p.y:0.0} m up, field of view {cam.fieldOfView:0}, {r.Speed * 3.6f:0} km/h");
             taken++;
         });
         cam.targetTexture = null; RenderTexture.active = null;

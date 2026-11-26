@@ -81,6 +81,13 @@ namespace Summit
             var lr = Img("LookRing", transform, new Color(0.75f, 0.88f, 1f, 0.2f), ring); lookRing = lr.rectTransform;
             var lk = Img("LookKnob", transform, new Color(0.75f, 0.88f, 1f, 0.65f), disc); lookKnob = lk.rectTransform;
             lookRing.gameObject.SetActive(false); lookKnob.gameObject.SetActive(false);
+            // down after a fall off the camp's edge: a soft ripple, no words (a tap brings you back)
+            tapDot = Img("TapDot", safe, new Color(1f, 1f, 1f, 0f), disc);
+            Place(tapDot.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 250f), new Vector2(26f, 26f), new Vector2(0.5f, 0.5f));
+            tapRipple = Img("TapRipple", safe, new Color(1f, 1f, 1f, 0f), disc);
+            Place(tapRipple.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 250f), new Vector2(26f, 26f), new Vector2(0.5f, 0.5f));
+            tapDot.raycastTarget = tapRipple.raycastTarget = false;
+            tapDot.enabled = tapRipple.enabled = false;
 
             // ---- at the start pad: back to camp
             var cbk = Img("CampButton", safe, new Color(0f, 0f, 0f, 0.45f), round);
@@ -178,6 +185,24 @@ namespace Summit
             if (contextBtn.gameObject.activeSelf != on) contextBtn.gameObject.SetActive(on);
             if (on) { contextText.text = label; contextImg.color = st == Camp.Station.DropIn ? new Color(0.85f, 0.2f, 0.12f, 0.97f) : Blue; }
             hintText.text = PanelOpen || on || Quiet ? "" : Sipping ? "Drag: walk  ·  tap: sip" : "Drag: walk  ·  hold a second finger: look  ·  tap: jump  ·  swipe: roll";
+        }
+
+        Image tapDot, tapRipple;
+        float tapCueAt = -1f, tapCueOn;
+
+        /// <summary>Waiting for the tap after a fall: a small dot with a ripple spreading from it, fading in, no words.</summary>
+        public void SetTapCue(bool on)
+        {
+            if (tapDot == null) return;
+            if (on && tapCueAt < 0f) tapCueAt = Time.unscaledTime;
+            if (!on) tapCueAt = -1f;
+            tapCueOn = on ? Mathf.MoveTowards(tapCueOn, 1f, Time.unscaledDeltaTime / 0.6f) : 0f;
+            if (tapDot.enabled != on) tapDot.enabled = tapRipple.enabled = on;
+            if (!on) return;
+            float ph = ((Time.unscaledTime - tapCueAt) / 1.4f) % 1f;
+            tapDot.color = new Color(1f, 1f, 1f, 0.55f * tapCueOn);
+            tapRipple.rectTransform.sizeDelta = Vector2.one * Mathf.Lerp(26f, 120f, ph);
+            tapRipple.color = new Color(1f, 1f, 1f, 0.28f * (1f - ph) * tapCueOn);
         }
 
         /// <summary>The camera stick under the right thumb (screen pixels), tinted so the two sticks read apart.</summary>

@@ -491,10 +491,16 @@ namespace Summit
             // young trees and dead snags hit fast enough snap: the top falls, you go down but carry on (TreeBreak)
             treeBreak = new GameObject("TreeBreak").AddComponent<TreeBreak>();
             treeBreak.Build(props, fx, smasher);
+            // the sound of it in layers (SoundMix.PlayTree, by the size of what broke and how fast it was hit): a twig's
+            // sharp crack, a limb's splintering snap, a trunk's heavy crack and creak, the thump as it lands, the snow
+            // falling off the branches
             treeBreak.Snapped += (at, into, byRider) =>
             {
                 if (state != State.Riding) return;
-                audioFx.Play(Sfx.SmashWood, byRider ? 1f : 0.85f);
+                audioFx.PlayTree(Sfx.TrunkCrack, byRider ? 0.85f : 0.7f, into);
+                audioFx.PlayTree(Sfx.LimbSnap, 0.9f, into, 0.5f);
+                audioFx.PlayTree(Sfx.SnowDump, 0.9f, into, 0.9f);
+                audioFx.Play(Sfx.Branches, 0.6f);
                 hurtShake = Mathf.Max(hurtShake, byRider ? 0.8f : 0.5f);
             };
             // a thin trunk ridden through (a small tree, a treetop) and branches brushed: you ride on. Heard, felt in the
@@ -502,17 +508,28 @@ namespace Summit
             treeBreak.Broke += (at, into, top) =>
             {
                 if (state != State.Riding) return;
-                audioFx.Play(Sfx.Branches, 1f);
-                audioFx.Play(Sfx.SmashWood, top ? 0.55f : 0.65f);
+                audioFx.PlayTree(Sfx.LimbSnap, top ? 0.75f : 0.55f, into);
+                audioFx.PlayTree(Sfx.TrunkCrack, top ? 0.35f : 0.15f, into, top ? 0.55f : 0.4f);
+                audioFx.PlayTree(Sfx.SnowDump, top ? 0.8f : 0.6f, into, top ? 0.9f : 0.7f);
+                audioFx.Play(Sfx.Branches, 0.8f);
                 hurtShake = Mathf.Max(hurtShake, top ? 0.4f : 0.5f);
                 if (!rider.Crashed) body.Flinch(at, 1f);
             };
             treeBreak.Brushed += (at, side, depth) =>
             {
                 if (state != State.Riding) return;
-                audioFx.Play(Sfx.Branches, depth);
+                float sp = rider.Speed;
+                audioFx.Play(Sfx.Branches, depth * 0.8f);
+                // the tips: twigs; deeper in, limbs torn out too; and the snow knocked off them
+                audioFx.PlayTree(Sfx.TwigCrack, 0.3f * depth, sp, 0.5f + 0.5f * depth);
+                if (depth > 0.45f) audioFx.PlayTree(Sfx.LimbSnap, 0.2f + 0.4f * depth, sp, depth);
+                if (depth > 0.2f || Random.value < 0.5f) audioFx.PlayTree(Sfx.SnowDump, 0.3f * depth, sp, 0.35f + 0.55f * depth);
                 hurtShake = Mathf.Max(hurtShake, 0.2f + 0.3f * depth);
                 if (!rider.Crashed) body.Flinch(at, depth);
+            };
+            treeBreak.Landed += (at, size, force) =>
+            {
+                if (state == State.Riding) audioFx.TreeLanded(at, size, force);
             };
             // signs and flags: ridden into (or tumbled into), signs break and flags go down (Breakables)
             breaks = new GameObject("Breakables").AddComponent<Breakables>();
@@ -771,7 +788,7 @@ namespace Summit
             hud.SetWhiteout(0f);
             falls = 0; wipeoutTimer = 0f; hurtShake = 0f; crevasseWatch = false; medical = 0f; receipt.Reset(); downT = 0f;
             flags.Clear();
-            hud.SetPrompt("");
+            hud.SetPrompt(""); hud.SetTapCue(false);
             if (paused) SetPaused(false);
             chase.peek = 0f;
             if (atmo != null) atmo.ResetParallax();
@@ -815,7 +832,7 @@ namespace Summit
             combo.Bank();   // (anything still in hand at the end counts: a crash has already taken what it takes)
             audioFx.StopCue();
             state = State.Buried;
-            hud.SetPrompt("");
+            hud.SetPrompt(""); hud.SetTapCue(false);
             wipeoutTimer = 0f;
             endBuried = buried;
             if (buried) audioFx.Play(Sfx.Buried);   // the world goes muffled under the snow (see the mix below)
@@ -915,6 +932,7 @@ namespace Summit
                 case State.Riding:
                     if (paused)
                     {
+                        hud.SetTapCue(false);
                         if (input.AnyPress())
                         {
                             var pp = RiderInput.PointerPosition();
@@ -925,10 +943,12 @@ namespace Summit
                         break;
                     }
                     if (input.AnyPress() && hud.OnRestart(RiderInput.PointerPosition())) { audioFx.Play(Sfx.Click); SetPaused(true); break; }
-                    // down in the snow: the camera stays on the body until you tap to get back up
-                    if (rider.CanGetUp && input.AnyPress()) { rider.RequestUp = true; input.SwallowCurrentPress(); audioFx.Play(Sfx.Groan); }
-                    else if (rider.StayDown && rider.Crashed && wipeoutTimer > 0f && input.AnyPress() && !body.RagdollMoving) wipeoutTimer = 0.01f;
-                    hud.SetPrompt(rider.CanGetUp ? "TAP TO GET UP" : rider.StayDown && rider.Crashed && !body.RagdollMoving && !slide.Caught ? "TAP TO CONTINUE" : "");
+                    // down: the camera stays on the body, for as long as you like, until you tap. A tap gets you up at
+                    // once, even mid-tumble; after the run's last fall (or a fatal one) it goes on to the end. A tap
+                    // while the fall isn't decided yet (still dropping off something high) waits for the answer
+                    if (CrashTapStep(dt)) break;
+                    hud.SetPrompt("");
+                    hud.SetTapCue(rider.Crashed && !slide.Caught && !autoplay);
                     runTime += dt;
                     slide.Step(dt, rider, body);
                     TreeWind.Avalanche(slide.Released, slide.Z, slide.Speed);   // its air blast bends the trees ahead of it
@@ -952,7 +972,8 @@ namespace Summit
                         ToEnd("YOU SURVIVED", false, true);   // carry on through the arch while the screen fades in
                         break;
                     }
-                    if (wipeoutTimer > 0f && !slide.Caught) { if (!body.RagdollMoving) wipeoutTimer -= dt; if (wipeoutTimer <= 0f) { ToEnd(endTitle, false); break; } }
+                    // (only the device-test autoplay, with nobody to tap, moves on from a fatal fall by itself)
+                    if (autoplay && wipeoutTimer > 0f && !slide.Caught) { if (!body.RagdollMoving) wipeoutTimer -= dt; if (wipeoutTimer <= 0f) { ToEnd(endTitle, false); break; } }
                     StepCombo(dt);
                     if (slide.Done) ToBuried();   // caught, carried off and buried, and the camera has held on the pile
                     break;
@@ -1136,7 +1157,7 @@ namespace Summit
             {
                 body.ReportBreaks();   // (a bone the wipeout broke with no hit to carry it: RiderBodyInjury)
                 downT += dt;
-                if (!receipt.Served && !slide.Caught && (rider.CanGetUp || (downT > 1f && !body.RagdollMoving))) receipt.Rest();   // (under the avalanche: billed at the end, buried)
+                if (!receipt.Served && !slide.Caught && downT > 1f && !body.RagdollMoving) receipt.Rest();   // (under the avalanche: billed at the end, buried; up early, billed as you get up)
             }
             if (downBefore && !rider.Crashed) { receipt.Rest(); receipt.Close(); hud.BillBank(); }
             downBefore = rider.Crashed;
@@ -1462,9 +1483,45 @@ namespace Summit
             }
         }
 
+        // ---- after a fall: wait for the player's tap (ResumeTap)
+
+        readonly ResumeTap crashTap = new ResumeTap();
+        bool crashTapQueued;
+        /// <summary>Test tools: the tap that ends a fall, and whether one is waiting for the fall to be decided.</summary>
+        public ResumeTap CrashTap => crashTap;
+        public bool CrashTapQueued => crashTapQueued;
+
+        /// <summary>
+        /// One frame down in the snow: a tap (or one waiting) gets the rider up, or after a fall that ends the run goes
+        /// on to the end. True when it left the riding state. Nothing happens without a tap.
+        /// </summary>
+        public bool CrashTapStep(float dt)
+        {
+            if (!rider.Crashed || slide.Caught) { crashTapQueued = false; return false; }
+            if (crashTap.Step(RiderInput.PointerHeld(), RiderInput.PointerPosition(), RiderInput.SpaceHeld(), dt, Mathf.Min(Screen.width, Screen.height)))
+                crashTapQueued = true;
+            if (!crashTapQueued) return false;
+            if (rider.StayDown && wipeoutTimer > 0f)
+            {
+                crashTapQueued = false;
+                ToEnd(endTitle, false);
+                return true;
+            }
+            if (rider.CanGetUp)
+            {
+                crashTapQueued = false;
+                rider.RequestUp = true;
+                input.SwallowCurrentPress();
+                audioFx.Play(Sfx.Groan);
+            }
+            // (otherwise the fall isn't decided yet: the tap waits for it to land, or for the end)
+            return false;
+        }
+
         void OnCrash(string why)
         {
             if (state != State.Riding) return;
+            crashTap.Arm(RiderInput.PointerHeld(), RiderInput.SpaceHeld()); crashTapQueued = false;
             if (why == Avalanche.Cause)
             {
                 // the slide took the board out from under you: no fall counted, no getting up (see Avalanche)

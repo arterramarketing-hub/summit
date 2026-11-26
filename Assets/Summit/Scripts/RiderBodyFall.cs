@@ -19,12 +19,17 @@ namespace Summit
         /// <summary>This crash killed the rider.</summary>
         public bool Dead { get; private set; }
         float fallTopX, fallTopY, fallTopZ, stuckOnRock;
+        /// <summary>The body is dropping and has fallen far enough beyond the mountain's line that it may yet kill:
+        /// whether it does isn't known until it lands (a tap waits for that).</summary>
+        public bool FallPending { get; private set; }
+        /// <summary>m: a drop this far beyond the mountain's line, still going, isn't decided until it lands.</summary>
+        public const float PendingDrop = 3f;
         Vector3 fallVel;
 
         /// <summary>The body has just been thrown: count the fall from where the rider last left the snow.</summary>
         void FallBegin()
         {
-            Dead = false;
+            Dead = false; FallPending = false;
             Vector3 d = rider.DropFrom, p = rider.transform.position;
             fallTopX = d.x; fallTopY = Mathf.Max(d.y, p.y); fallTopZ = d.z;
             fallVel = lastVel;
@@ -34,10 +39,10 @@ namespace Summit
         /// <summary>Each physics step of a crash, once the body has moved for this step.</summary>
         void FallStep()
         {
-            if (ragdoll == null || !ragdoll.Active || Dead) return;
+            if (ragdoll == null || !ragdoll.Active || Dead) { FallPending = false; return; }
             Vector3 c = ragdoll.Centre, v = ragdoll.Velocity;
             // down a crevasse is the crevasse's own business (the game watches for that)
-            if (Course.CrevasseNear(c.x, c.z, 3f)) { fallTopX = c.x; fallTopY = c.y; fallTopZ = c.z; fallVel = v; return; }
+            if (Course.CrevasseNear(c.x, c.z, 3f)) { fallTopX = c.x; fallTopY = c.y; fallTopZ = c.z; fallVel = v; FallPending = false; return; }
             Vector3 n = Slope.Normal(c.x, c.z);
             // (only at the surface: a body somewhere under it is down a hole, not landing; and a face too steep to stop
             // on, snow or rock, is tumbled down, the fall still counting)
@@ -56,6 +61,7 @@ namespace Summit
                 // on the snow: any fall from here starts from here
                 fallTopX = c.x; fallTopY = c.y; fallTopZ = c.z;
                 stuckOnRock = 0f;
+                FallPending = false;
             }
             else
             {
@@ -63,6 +69,7 @@ namespace Summit
                 stuckOnRock = ragdoll.Speed < 1f ? stuckOnRock + Time.fixedDeltaTime : 0f;
                 float fell = fallTopY - c.y - Slope.Fall * Mathf.Max(0f, c.z - fallTopZ);
                 if (stuckOnRock > 0.8f && fell >= Rider.DeathFall) { DieOnRock(c, n, fell); return; }
+                FallPending = fell >= PendingDrop;
             }
             fallVel = v;
         }

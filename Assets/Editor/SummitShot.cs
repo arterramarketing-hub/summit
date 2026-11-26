@@ -120,11 +120,15 @@ public static class SummitShot
         float t = 0f; int shot = 0; bool rested = false;
         while (camp.Falling && t < 14f)
         {
+            // the fall waits for a tap (ResumeTap): tap once the last picture is taken
+            bool tap = shot >= times.Length && (rest == null || rested) && t > 0.2f;
+            Camp.TestTouches = tap && ((int)(t / dt)) % 8 < 3 ? new System.Collections.Generic.List<CampInput.Touch> { new CampInput.Touch(91, new Vector2(300f, 600f)) } : new System.Collections.Generic.List<CampInput.Touch>();
             camp.Step(dt, meta); Fall();
             t += dt;
             if (shot < times.Length && t >= times[shot]) { Shoot(names[shot]); Debug.Log($"SUMMIT fall {t:0.0}s body={body.RagdollCentre} moving={body.RagdollMoving}"); shot++; }
             if (rest != null && !rested && t > 1.2f && !body.RagdollMoving) { rested = true; Shoot(rest); Debug.Log($"SUMMIT at rest {t:0.0}s at {body.RagdollCentre}"); }
         }
+        Camp.TestTouches = null;
         Debug.Log($"SUMMIT rescued after {t:0.0}s: walker at {camp.WalkerPosition}");
         return t;
     }

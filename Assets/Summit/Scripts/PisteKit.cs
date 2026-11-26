@@ -198,7 +198,7 @@ namespace Summit
             {
                 if (!Cliffs.WallOf(c, out var w)) continue;
                 // along the piste's edge on the wall's side, from above where it turns the corner to where it has died
-                // down (the caution tape along the top itself is CliffDressing's)
+                // down: the wall's one line (no caution tape along the top as well)
                 var pts = new List<Vector2>();
                 float z0 = w.z0 - 14f, z1 = w.z0;
                 for (float z = z0; z < w.z2 - 20f; z += 9f)
@@ -261,7 +261,7 @@ namespace Summit
             for (int c = 0; c <= Course.CycleOf(Slope.FinishZ); c++)
             {
                 if (!CliffBand.Of(c, out var b)) continue;
-                // a rope line along the bench's edge a step in from the caution tape (CliffDressing's) wherever the band
+                // the band's one line: a rope along the bench, a step in from its edge, wherever the band
                 // stands tall, broken at each low place (the optional air: its lip is marked with black wands)
                 var pts = new List<Vector2>();
                 for (float zc = b.z1 - 8f; zc < b.z2 + 13f; zc += 7f)
@@ -313,7 +313,7 @@ namespace Summit
                     // on a ridge's crest (or a valley's floor, or a ledge): its own edge, roped on a cliff side, and
                     // nothing against a rock wall
                     // (off a ridge, the groomed run's own edge: wide below a cliff band, measured along x where a band's
-                    // traverse crosses the hill; a band's bench has its own rope and caution tape)
+                    // traverse crosses the hill; a band's bench has its own rope)
                     if (CliffBand.Near(z, 10f, out _)) { Fail("band"); continue; }
                     float half = Ridge.Weight(z) > 0f ? Ridge.HalfWidth(z) : Slope.HalfAt(z);
                     if (Ridge.Weight(z) > 0.2f)

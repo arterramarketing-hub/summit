@@ -57,6 +57,9 @@ namespace Summit
         /// <summary>Branches brushed through, no crash: where, the way out of the tree toward the rider, and how deep in
         /// (0 the tips .. 1 by the trunk). Again as you go deeper into the same tree.</summary>
         public System.Action<Vector3, Vector3, float> Brushed;
+        /// <summary>A broken top or snapped tree has come down on the snow: where (the middle of it), how big (0 a
+        /// sapling's top .. 1 a long, thick one) and how hard it came down (m/s).</summary>
+        public System.Action<Vector3, float, float> Landed;
 
         Forest forest; SnowFX fx; Smasher smasher;
         readonly Collider[] near = new Collider[24];
@@ -591,6 +594,7 @@ namespace Summit
                 top.landed = true; top.landedAt = top.t;
                 float force = Mathf.Min(16f, -top.vb.y);
                 fx?.TopLands(top.a, top.b, force);
+                Landed?.Invoke(Vector3.Lerp(top.a, top.b, 0.5f), Mathf.Clamp01(Vector3.Distance(top.a, top.b) / 12f * 0.6f + top.girth * 1.5f), force);
             }
             if (aDown) na *= Mathf.Exp(-h * 10f);
             if (bDown) nb *= Mathf.Exp(-h * 12f);

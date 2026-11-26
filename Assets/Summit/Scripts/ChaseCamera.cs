@@ -114,6 +114,14 @@ namespace Summit
         /// (CrownPad m off it, never nearer the rider than CrownMin m), eased in over CrownIn s and out over CrownOut s.
         /// And in tight trees the lens's near plane is pushed out to TightNearClip m, so a frond brushing it is not drawn.</summary>
         public static float CrownPad = 0.4f, CrownMin = 2.6f, CrownIn = 0.12f, CrownOut = 0.6f, TightNearClip = 0.8f;
+        /// <summary>The view through the trees: the firs' foliage nearer the lens than the rider, inside a cone from the lens
+        /// round the rider and the middle of the view, is thinned (Fir.hlsl FirSeeThrough: at most 70% of its pixels
+        /// dropped, by a fixed screen pattern), so the rider and the way ahead show through and the tree is still there.
+        /// The cone's half-angle is what the rider spans from the lens (SeeBody m across) plus SeeMargin radians. Off in
+        /// the first-person view, over a crevasse or a burial, and with SeeOn false (the test tools' before).</summary>
+        public static float SeeBody = 1.3f, SeeMargin = 0.12f;
+        public static bool SeeOn = true;
+        static readonly int SeeEyeId = Shader.PropertyToID("_FirSeeEye"), SeeAtId = Shader.PropertyToID("_FirSeeAt"), SeeAheadId = Shader.PropertyToID("_FirSeeAhead");
         float crownDist = 99f, crownVel, nearBase = -1f;
 
         /// <summary>How far back along the line from the rider (focus) to where the lens would be (`back`, the whole
@@ -339,6 +347,12 @@ namespace Summit
             if (pov || povBlend > 0f) StepPov(dt, s01, ref pos, ref rot, ref view);
             transform.SetPositionAndRotation(pos, rot);
             cam.fieldOfView = view;
+            // the view through the trees (SeeOn)
+            float see = SeeOn && peek <= 0.001f && hold <= 0.001f ? 1f - Pov : 0f;
+            float toRider = Vector3.Distance(pos, raw);
+            Shader.SetGlobalVector(SeeEyeId, new Vector4(pos.x, pos.y, pos.z, see));
+            Shader.SetGlobalVector(SeeAtId, new Vector4(raw.x, raw.y, raw.z, Mathf.Atan(SeeBody / Mathf.Max(toRider, 1f)) + SeeMargin));
+            Shader.SetGlobalVector(SeeAheadId, new Vector4(look.x, look.y, look.z, 0f));
             lastRider = rider.transform.position; haveLast = true;
             first = false;
         }
@@ -438,6 +452,7 @@ namespace Summit
             povOn = false; povBlend = 0f;
             if (body != null) body.SetPovHead(false);
             if (lensFx != null) lensFx.Blur = 0f;
+            Shader.SetGlobalVector(SeeEyeId, Vector4.zero);   // (no thinning for whoever has the camera now)
         }
     }
 }

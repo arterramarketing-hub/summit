@@ -1179,16 +1179,19 @@ namespace Summit
         // start pad's lip, the summit's slopes where they steepen into rock) and the snow's edge breaks off under you:
         // a cornice splits away with a crack and a burst of powder, and you go down with it, thrown as a crash
         // throws you on the run (RiderBody's ragdoll), tumbling all the way. The camera watches from the top, then
-        // follows; when the body has come to rest, or after a few seconds, the screen fades and you're back at the
-        // chalet. The game adds the screams, the "nooo" and the thump (Collapsed, Rescued, RiderBody.Killed).
+        // follows, and stays on the body for as long as you like: when you tap (at any moment, even mid-fall) the
+        // screen fades and you're back at the chalet. It never moves on by itself. The game adds the screams, the "nooo" and the thump (Collapsed, Rescued, RiderBody.Killed).
         /// <summary>The edge broke under the walker: where, and which way it fell.</summary>
         public System.Action<Vector3, Vector3> Collapsed;
         /// <summary>Back at the chalet after a fall.</summary>
         public System.Action Rescued;
         public bool Falling => falling;
         const float EdgeDrop = 1.3f;   // more than this lower within a stride of you is an edge (about 55 degrees)
-        bool falling;
+        bool falling, fallTapped;
         float fallT, restFor, fade;
+        readonly ResumeTap fallTap = new ResumeTap();
+        /// <summary>Test tools: tapped to come back from a fall (the fade is under way).</summary>
+        public bool FallTapped => fallTapped;
         Vector3 fallDir, fallCamFrom, fallLook;
         GameObject cornice;
         Material fracture;
@@ -1238,7 +1241,10 @@ namespace Summit
         public void Collapse(Vector3 dir)
         {
             if (falling || rider == null) return;
-            falling = true; fallT = 0f; restFor = 0f;
+            falling = true; fallT = 0f; restFor = 0f; fallTapped = false;
+            // (the thumb that was walking you to the edge isn't a tap when it lifts)
+            var now = Touches();
+            fallTap.Arm(now.Count > 0, RiderInput.SpaceHeld());
             dir.y = 0f; fallDir = dir.normalized;
             speed = 0f;
             fallCamFrom = cam != null ? cam.transform.position : pos + Vector3.up * 3f;
@@ -1270,10 +1276,14 @@ namespace Summit
         {
             fallT += dt;
             Footsteps(dt);   // (fades the steps out)
-            // lying still a while (or long enough falling): fade, and back to the chalet
+            // a tap (whenever: still falling, or lying at the bottom): fade, and back to the chalet. Until then the camera
+            // stays on the body
+            var ts = Touches();
+            if (fallTap.Step(ts.Count > 0, ts.Count > 0 ? ts[0].pos : Vector2.zero, RiderInput.SpaceHeld(), dt, cam != null ? Mathf.Min(cam.pixelWidth, cam.pixelHeight) : Mathf.Min(Screen.width, Screen.height)))
+                fallTapped = true;
             restFor = body.RagdollMoving || fallT < 2.5f ? 0f : restFor + dt;
-            bool done = restFor > 1.4f || fallT > 10f;
-            fade = Mathf.MoveTowards(fade, done ? 1f : 0f, dt / 0.6f);
+            bool done = fallTapped;
+            fade = Mathf.MoveTowards(fade, done ? 1f : 0f, dt / 0.35f);
             if (fadeUi != null) fadeUi.SetFade(fade);
             if (cornice != null && fallT > 9f) { if (Application.isPlaying) Destroy(cornice); else DestroyImmediate(cornice); }
             if (done && fade >= 1f) Rescue();
@@ -1499,6 +1509,7 @@ namespace Summit
             if (stepPool != null) { foreach (var src in stepPool) src.Stop(); stepVol = 0f; }
             if (body != null) body.SetWalking(false);
             EdgeGestures(false);
+            fadeUi?.SetTapCue(false);
         }
 
 #if UNITY_IOS && !UNITY_EDITOR
@@ -1984,6 +1995,7 @@ namespace Summit
         {
             fadeUi = ui;
             if (fadeIn) { fade = Mathf.MoveTowards(fade, 0f, dt / 0.6f); ui.SetFade(fade); fadeIn = fade > 0f; }
+            ui.SetTapCue(falling && !fallTapped);
             if (falling) { FallStep(dt); ui.SetStick(false, Vector2.zero, Vector2.zero); ui.SetLookStick(false, Vector2.zero, Vector2.zero); ui.SetContext(Station.None); return false; }
             var touches = Touches();
             if (ui.ClosetOpen)

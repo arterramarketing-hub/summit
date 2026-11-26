@@ -42,8 +42,10 @@ public static class GlitchTest
         if (dressing != null) { var tgt = dressing.target; dressing.target = null; dressing.Rebuild(); dressing.target = tgt; }
         try
         {
+            int onlySeed = int.TryParse(System.Environment.GetEnvironmentVariable("GLITCH_SEED"), out int os) ? os : -1;   // (one mountain only, to chase a report)
             for (int seed = 0; seed < 4; seed++)
             {
+                if (onlySeed >= 0 && seed != onlySeed) continue;
                 TestBoot.NewMountain(game, 1000 + seed * 77, terrain, props);
                 // the halfpipe: weave wall to wall at different speeds
                 if (traceEdge) { RidgeRides(seed, rider, body, terrain, props); break; }
@@ -519,7 +521,7 @@ public static class GlitchTest
         for (float t = 0f; t < 8f; t += Dt)
         {
             r.Steer = steer != null ? steer(t) : 0f;
-            if (r.CanGetUp) r.RequestUp = true;   // tap to get up as soon as the game allows
+            if (r.CanGetUp && !body.RagdollMoving) r.RequestUp = true;   // tap to get up once the body has come to rest (a tap allowed mid-tumble would cut the fall short: the whole tumble is what's measured here)
             r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt);
             if (rbs.Count == 0) foreach (var rb in Object.FindObjectsByType<Rigidbody>(FindObjectsSortMode.None)) if (!rb.isKinematic && rb != r.Body) rbs.Add(rb);
             Vector3 c = body.RagdollCentre;
@@ -536,6 +538,8 @@ public static class GlitchTest
                 if (float.IsNaN(rb.position.x)) { Report($"{name}: ragdoll NaN"); return; }
             }
             maxBelow = Mathf.Max(maxBelow, Slope.DrawnHeight(c.x, c.z) - c.y);
+            if (name == System.Environment.GetEnvironmentVariable("GLITCH_TRACE") && (frames % 30 == 0 || Slope.DrawnHeight(c.x, c.z) - c.y > 0.6f && frames % 6 == 0))
+                Debug.Log($"GLITCH-TRACE t={t:0.00} c={c} snow={Slope.DrawnHeight(c.x, c.z):0.00} x-c={c.x - Slope.Centre(c.z):0.0} crevasse={Course.CrevasseNear(c.x, c.z, 4f)} cut={Course.CrevasseCut(c.x, c.z):0.0} v={body.RagdollSpeed:0.0} moving={body.RagdollMoving} canUp={r.CanGetUp} hold={r.HoldCrash} pending={body.FallPending} dead={body.Dead} buried={body.RagdollBelowSnow:0.0} near {Near(c, rbs)}");
             if (r.Crashed) rest = c;
             frames++;
             if (!r.Crashed) { stopT = t; break; }

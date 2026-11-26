@@ -78,8 +78,9 @@ namespace Summit
     ///   powder     off the run, all of it, and on a snowy day over the run as well: it drags (less at speed, when the
     ///              board floats), it is soft under an edge (the board washes out further before it holds, and holds
     ///              less), it throws the most snow and it is quiet.
-    ///   ice        scraped patches down the middle of the run where it is steepest, and under the lift lines: the
-    ///              fastest snow, with the least edge: it lets go soonest. It shines.
+    ///   ice        scraped patches down the middle of the run where it is steepest, under the lift lines, and now
+    ///              and then a whole icy stretch (SurfacesIce): the fastest snow, with the least edge: it lets go
+    ///              soonest, and it chatters. It shines. Never at a lip or a landing (SurfacesIce: Fair).
     ///   crud       tracked-out snow round the lift stations and along the hamlets: a little slower, and it chatters.
     ///   crust      wind crust and sastrugi: the alpine ridges, the rims of the bowl and the open snow above the tree
     ///              line, on a windy day (a little of it is always there).
@@ -114,7 +115,7 @@ namespace Summit
         public static readonly float[] Plough   = {          0f,  0.0042f, -0.0003f, 0.0003f, 0.0002f, 0.0022f };
         public static readonly float[] Grip     = {          1f,     1f,     0.45f,  0.9f,   0.8f,   0.7f };
         public static readonly float[] Bite     = {          1f,     1f,      0.8f,  0.9f,   0.8f,   0.5f };
-        public static readonly float[] Chatter  = {          0f,       0f,   0.25f,    1f,   0.7f,     0f };
+        public static readonly float[] Chatter  = {          0f,       0f,    0.5f,    1f,   0.7f,     0f };
         /// <summary>Powder floats the board at speed: its plough is this much of itself from FloatTo m/s up (all of it under FloatFrom).</summary>
         public const float Float = 0.4f, FloatFrom = 8f, FloatTo = 22f;
         /// <summary>Old powder (no fresh snow on it) drags this much of what a snowy day's does.</summary>
@@ -185,7 +186,7 @@ namespace Summit
         {
             if (Force.HasValue) { var f = Force.Value; f.slush = 0f; return f; }
             if (!On) return default;
-            Row(z, out float pitch, out float alpine, out float keep, out float half);
+            Row(z, out float pitch, out float alpine, out float keep, out float half, out float fair);
 
             float a = Slope.Across(x, z), aa = Mathf.Abs(a);
             float rough = Smooth((aa - half) / EdgeBlend);
@@ -233,7 +234,10 @@ namespace Summit
             float under = UnderLift(x, z);
             if (under > 0f)
                 ice = Mathf.Max(ice, under * LiftIceMost * Smooth((Slope.Noise(x * 0.06f + 1.9f, z * 0.05f + 6.3f) - 0.3f) / 0.3f) * (1f - lane) * (1f - crud));
-            if (ice > 0f) m.LayIce(ice * (1f - 0.7f * Day.fresh) * keep);
+            // (an icy stretch: SurfacesIce)
+            if (groomed > 0f) ice = Mathf.Max(ice, SectionIce(x, z, aa, half) * groomed * (1f - lane) * (1f - crud));
+            // (none where it is not fair: a lip, a landing, what is out of sight past a blind roll: SurfacesIce.Fair)
+            if (ice > 0f) m.LayIce(ice * (1f - 0.7f * Day.fresh) * keep * fair);
             return m;
         }
 
@@ -247,7 +251,7 @@ namespace Summit
         // or along a cliff band's traverse and ledge, where the run needs every bit of its edge), and half the
         // groomed run's width (Slope.Half, eased over 12 m: where the run's width steps, the snow does not)
         const int Rows = 5632, RowBack = 512;
-        static readonly float[] rowPitch = new float[Rows], rowAlpine = new float[Rows], rowKeep = new float[Rows], rowHalf = new float[Rows];
+        static readonly float[] rowPitch = new float[Rows], rowAlpine = new float[Rows], rowKeep = new float[Rows], rowHalf = new float[Rows], rowFair = new float[Rows];
         static readonly int[] rowStamp = new int[Rows];
         static int stamp = 1, stampSeed = int.MinValue;
         static bool hooked;
@@ -258,7 +262,7 @@ namespace Summit
             if (stampSeed != Slope.Seed) { stampSeed = Slope.Seed; stamp++; liftsFor = null; }
         }
 
-        static void Row(float z, out float pitch, out float alpine, out float keep, out float half)
+        static void Row(float z, out float pitch, out float alpine, out float keep, out float half, out float fair)
         {
             Fresh();
             float f = z + RowBack;
@@ -270,6 +274,7 @@ namespace Summit
             alpine = Mathf.Lerp(rowAlpine[i], rowAlpine[i + 1], t);
             keep = Mathf.Lerp(rowKeep[i], rowKeep[i + 1], t);
             half = Mathf.Lerp(rowHalf[i], rowHalf[i + 1], t);
+            fair = Mathf.Lerp(rowFair[i], rowFair[i + 1], t);
         }
 
         static void Fill(int i)
@@ -289,6 +294,14 @@ namespace Summit
             for (int k = -3; k <= 3; k++) half += Slope.Half(z + 2f * k) * (k == -3 || k == 3 ? 0.5f : 1f);
             rowHalf[i] = half / 6f;
             rowAlpine[i] = 1f - Smooth((Forest.Low(z) - (Forest.TreeLine - 0.03f)) / (Forest.LineBand - Forest.TreeLine + 0.03f));
+            rowKeep[i] = KeepAt(z);
+            rowFair[i] = FairAt(z);   // (whether ice may lie here at all: SurfacesIce)
+        }
+
+        /// <summary>How much of the special snow (ice, crud, crust) is kept at z: none at the start, in the park and the
+        /// danger stretch, or along a cliff band's traverse and ledge, where the run needs every bit of its edge.</summary>
+        static float KeepAt(float z)
+        {
             // none at the start (the gate, the first turns), fading in over 60 m
             float keep = Smooth((z - (Slope.StartZ + 40f)) / 60f);
             // none in the park (25 m to fade either end)
@@ -296,7 +309,7 @@ namespace Summit
             if (z >= Course.First) keep *= Smooth(Mathf.Max(Course.ParkAt - 15f - u, u - (Course.DangerAt + 15f)) / 25f);
             // none along a cliff band or an angled ledge (from its turn in to where the run is back on the fall line)
             if (CliffBand.Near(z, 40f, out var b)) keep *= Smooth(Mathf.Max(b.z0 - 15f - z, z - (b.z3 + 15f)) / 25f);
-            rowKeep[i] = keep;
+            return keep;
         }
 
         // ---------------------------------------------------------------- the lifts and the hamlets

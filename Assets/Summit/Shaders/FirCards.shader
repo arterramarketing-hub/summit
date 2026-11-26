@@ -4,6 +4,8 @@
 // A forest tree dissolves from one level of detail into the next (Forest.cs, Fir.hlsl): _FadeOut says which band it
 // dissolves away over (1 the far one, into its picture; 2 the near one: the rich tree), _FadeIn that it appears
 // over the near band (the plain tree). The camp's and the start tape's own trees leave both off.
+// The foliage between the chase camera's lens and the rider is thinned the same way (Fir.hlsl FirSeeThrough), in the
+// lit and depth passes; the shadows are left whole.
 // _Bake is for RealFir.BakeImpostors only: 1 writes the plain colour, 2 the normal, for the far pictures.
 // Every pass moves the vertices with the one wind (TreeWind.hlsl), as far as _WindFlex gives (the firs' atlas or the
 // pines': TreeWind.Flex*); _Sway 0 holds a felled piece still, and _Snow below 1
@@ -180,7 +182,7 @@ Shader "Summit/FirCards"
                 float3 n = normalize(i.normalWS);
                 if (_Bake > 0.5) return _Bake < 1.5 ? half4(c.rgb, 1) : half4(n * 0.5 + 0.5, 1);
                 half dither = FirDither(i.positionCS);
-                clip(dither - i.fadeFogLift.x);
+                clip(dither - max(i.fadeFogLift.x, FirSeeThrough(i.positionWS)));   // (the hand-over, and the view through)
                 clip(i.fadeFogLift.w - dither);
                 half3 col = FirLight(c.rgb, n, i.positionWS, i.positionCS, i.vertexLight, 1, i.fadeFogLift.z);
                 return half4(MixFog(col, i.fadeFogLift.y), 1);
@@ -258,13 +260,14 @@ Shader "Summit/FirCards"
             }
 
             struct Attributes { float4 positionOS : POSITION; float2 uv : TEXCOORD0; UNITY_VERTEX_INPUT_INSTANCE_ID };
-            struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; half2 fades : TEXCOORD1; float3 objPos : TEXCOORD2; };
+            struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; half2 fades : TEXCOORD1; float3 objPos : TEXCOORD2; float3 positionWS : TEXCOORD3; };
             Varyings vert(Attributes i)
             {
                 UNITY_SETUP_INSTANCE_ID(i);
                 Varyings o;
                 float3 origin = TransformObjectToWorld(float3(0, 0, 0));
-                o.positionCS = TransformWorldToHClip(TreeSway(TransformObjectToWorld(i.positionOS.xyz), origin, 1.0, _Sway * _WindFlex));
+                o.positionWS = TreeSway(TransformObjectToWorld(i.positionOS.xyz), origin, 1.0, _Sway * _WindFlex);
+                o.positionCS = TransformWorldToHClip(o.positionWS);
                 o.uv = TRANSFORM_TEX(i.uv, _BaseMap);
                 o.fades = Fades(origin);
                 o.objPos = i.positionOS.xyz;
@@ -277,7 +280,7 @@ Shader "Summit/FirCards"
                 clip(i.objPos.y - _CutY);
                 clip(Torn(i.objPos, i.uv));
                 half dither = FirDither(i.positionCS);
-                clip(dither - i.fades.x);
+                clip(dither - max(i.fades.x, FirSeeThrough(i.positionWS)));
                 clip(i.fades.y - dither);
                 return 0;
             }

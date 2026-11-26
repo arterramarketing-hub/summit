@@ -244,7 +244,7 @@ namespace Summit
             }
             else
             {
-                ragdoll.SetBoard(boardRoot, new Vector3(0.29f, 0.07f, 1.55f), new Vector3(0f, 0.04f, 0f));
+                ragdoll.SetBoard(boardRoot, new Vector3(0.29f, 0.07f, 1.55f), new Vector3(0f, 0.04f, 0f), true);   // strapped to both feet
                 ragdoll.SetExtras(null);
             }
         }
