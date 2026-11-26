@@ -396,7 +396,7 @@ public static class CampfireShot
     /// <summary>The move stick held over (x, y) of its throw.</summary>
     static void Hold(Vector2 stick)
     {
-        var p0 = new Vector2(cam.pixelWidth * 0.5f, cam.pixelHeight * 0.3f);
+        var p0 = camp.Controls.Home ?? new Vector2(cam.pixelWidth * 0.5f, cam.pixelHeight * 0.3f);   // (the walk stick, fixed bottom left)
         float r = Mathf.Max(60f, Mathf.Min(cam.pixelWidth, cam.pixelHeight) * 0.14f);
         touches.Clear();
         if (!holding) { touches.Add(new CampInput.Touch(9, p0)); Frame(); holding = true; }

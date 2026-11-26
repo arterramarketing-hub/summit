@@ -123,14 +123,16 @@ public static class WeatherShot
         foreach (var (when, _) in Times) Sheet($"sheet_camp_{when}.png", System.Array.ConvertAll(Kinds, k => $"camp_{k.name}_{when}.png"));
         ChaseCamera.TestDt = 0f;
 
-        // ---- the start page's fly-around
+        // ---- the start page's fly-around (the FLIGHT view: the weather is the far mountain's)
+        int homeWas = StartPage.Home; StartPage.Home = 1;
         typeof(SummitGame).GetMethod("ToTitle", NP).Invoke(game, null);
+        StartPage.Home = homeWas;
         var start = Get<StartPage>("start");
         foreach (var (choice, name) in Kinds)
             foreach (var (when, clock) in Times)
             {
                 TimeOfDay.TestClock = clock;
-                start.Clock = StartPage.OrbitSeconds * 0.05f; start.Preview(0f, false, 0);
+                start.Clock = StartPage.OrbitSeconds * 0.05f; start.Preview(0f);
                 Show(choice, clock, 4f, true, true);
                 start.Far.Shade(-RenderSettings.sun.transform.forward, 0f, -1f);
                 dayNight.ApplyNow();

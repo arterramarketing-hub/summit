@@ -64,6 +64,12 @@ namespace Summit
         // the avalanche up close: the hiss and crackle of the churning front, and the blow that takes you off
         Layer slideNear;
         AudioClip slideHit, slideCrack;
+        // the board on ice, recorded (Tools/MakeIceScrape.py: CC0 recordings of skate blades and stones on ice): the edge
+        // grinding (scrape), the runner's thin hiss at speed (hiss), the squeal of an edge set hard (squeal), the board
+        // juddering (chatter); and a hard skid stop when an edge is thrown sideways on the ice
+        Layer iceScrape, iceHiss, iceSqueal, iceChatter;
+        AudioClip iceSkid;
+        float iceSkidWait, lastSkid;
         AudioSource voice;   // one voice: a new cry cuts the last one off, like a real throat
         // the player's own clips: a long "nooo" down a crevasse, and the suspense sting at the first ledge, on its
         // own source so it can be faded out once the jump is over
@@ -233,6 +239,8 @@ namespace Summit
             glide = Loop("glide"); carve = Loop("carve"); skid = Loop("skid"); powder = Loop("powder");
             grindRail = Loop("grind_rail"); grindBox = Loop("grind_box"); avalanche = Loop("avalanche"); boost = Loop("boost");
             slideNear = Loop("avalanche_near"); slideHit = C("slide_hit"); slideCrack = C("slide_crack");
+            iceScrape = Loop("ice_scrape"); iceHiss = Loop("ice_hiss"); iceSqueal = Loop("ice_squeal"); iceChatter = Loop("ice_chatter");
+            iceSkid = C("ice_skid");
 
             shots = new AudioSource[10];
             for (int i = 0; i < shots.Length; i++) { shots[i] = gameObject.AddComponent<AudioSource>(); shots[i].playOnAwake = false; shots[i].spatialBlend = 0f; }
@@ -365,10 +373,29 @@ namespace Summit
             // fluttering. Slush is the powder's crush, lower and wetter)
             float snowUp = 30f, snowDown = 25f;
             float flutter = 0.6f + 0.4f * Mathf.Sin(Time.time * 53f) * Mathf.Sin(Time.time * 17f);
-            float scrape = Mathf.Max(r.ice * (0.45f + 0.55f * r.carve) * (0.8f + 0.2f * flutter), 0.3f * r.chatter * flutter);   // (ice: a hard, fluttering scrape)
-            Mix(glide, snow * moving * (0.35f + 0.25f * s) * (1f - 0.6f * r.rough) * (1f - 0.5f * r.carve) * (1f - 0.3f * r.ice), 0.8f + 0.45f * s + 0.2f * r.ice - 0.12f * r.slush, snowUp, snowDown, dt);
-            Mix(carve, snow * moving * Mathf.Pow(r.carve, 1.3f) * 0.75f * (1f - 0.45f * r.rough), 0.85f + 0.3f * s + 0.1f * r.carve, snowUp, 10f, dt);
-            Mix(skid, snow * Mathf.Clamp01(s * 4f) * Mathf.Max(r.skid * 0.8f, scrape * 0.7f), 0.8f + 0.4f * s + 0.35f * r.ice * (1f - r.skid), snowUp, 12f, dt);
+            // (tracked snow and crust: the skid layer, fluttering; on ice the recorded layers below take over)
+            float scrape = 0.3f * r.chatter * flutter * (1f - r.ice);
+            float ice = snow * r.ice, edge = r.carve;
+            Mix(glide, snow * moving * (0.35f + 0.25f * s) * (1f - 0.6f * r.rough) * (1f - 0.5f * r.carve) * (1f - 0.65f * r.ice), 0.8f + 0.45f * s + 0.2f * r.ice - 0.12f * r.slush, snowUp, snowDown, dt);
+            Mix(carve, snow * moving * Mathf.Pow(r.carve, 1.3f) * 0.75f * (1f - 0.45f * r.rough) * (1f - 0.7f * r.ice), 0.85f + 0.3f * s + 0.1f * r.carve, snowUp, 10f, dt);
+            Mix(skid, snow * Mathf.Clamp01(s * 4f) * Mathf.Max(r.skid * 0.8f * (1f - 0.6f * r.ice), scrape * 0.7f), 0.8f + 0.4f * s, snowUp, 12f, dt);
+            // ice, in layers by speed and the edge's angle: the runner's hiss (speed alone: the board running flat on
+            // it), the edge's scrape (the edge on it, more with speed and in a skid), the squeal (only an edge set hard),
+            // the chatter (the board juddering: a skid, or an edge that cannot bite; faster with speed)
+            Mix(iceHiss, ice * Mathf.Clamp01(s * 2.5f) * (0.22f + 0.4f * s) * (1f - 0.4f * edge), 0.85f + 0.4f * s, snowUp, snowDown, dt);
+            Mix(iceScrape, ice * Mathf.Clamp01(s * 4f) * (0.15f + 0.55f * edge + 0.35f * r.skid) * (0.7f + 0.4f * s), 0.82f + 0.3f * s + 0.1f * edge, snowUp, 10f, dt);
+            Mix(iceSqueal, ice * Mathf.Clamp01(s * 3f) * Mathf.SmoothStep(0f, 1f, (edge - 0.45f) / 0.45f) * (0.25f + 0.25f * s), 0.92f + 0.22f * s, 12f, 8f, dt);
+            Mix(iceChatter, ice * Mathf.Clamp01(s * 3f) * Mathf.Max(0.55f * r.skid, 0.25f * edge * (1f - edge)) * (0.75f + 0.25f * flutter), 0.75f + 0.55f * s, snowUp, 12f, dt);
+            // a hard skid stop: an edge thrown sideways on the ice (the skid rising through a half at speed), not often
+            iceSkidWait -= dt;
+            if (ice > 0.5f && s > 0.2f && r.skid > 0.5f && lastSkid <= 0.5f && iceSkidWait <= 0f && iceSkid != null)
+            {
+                shots[nextShot].pitch = Random.Range(0.93f, 1.07f) + 0.1f * s;
+                shots[nextShot].PlayOneShot(iceSkid, 0.55f * ice);
+                nextShot = (nextShot + 1) % shots.Length;
+                iceSkidWait = 1.5f;
+            }
+            lastSkid = r.skid;
             Mix(powder, snow * r.rough * Mathf.Clamp01(s * 2f) * (0.4f + 0.4f * s), 0.8f + 0.3f * s - 0.18f * r.slush, snowUp, snowDown, dt);
             if (carve.src != null) carve.src.panStereo = Mathf.Clamp(r.pan * 0.3f, -0.3f, 0.3f);
 

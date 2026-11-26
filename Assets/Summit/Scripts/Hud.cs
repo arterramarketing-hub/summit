@@ -13,7 +13,7 @@ namespace Summit
         RectTransform playBtn, restartBtn, modeBtn, riderBtn;
         Text riderLabel;
         /// <summary>The start pad's RIDER label: what is being ridden, by name ("SNOWBOARD", "SKIS", "TOBOGGAN", "SNOW TUBE").</summary>
-        public void SetRider(string ride) { riderLabel.text = "RIDER: " + ride + "  (tap to change)"; }
+        public void SetRider(string ride) { riderLabel.text = "RIDE   " + ride; }
         public bool OnRider(Vector2 p) => Inside(riderBtn, p);
         Text modeLabel;
         Text playLabel;
@@ -69,12 +69,12 @@ namespace Summit
             speed = NewText("Speed", safe, new Vector2(0f, 1f), new Vector2(40f, -40f), 54, TextAnchor.UpperLeft);
             score = NewText("Score", safe, new Vector2(0.5f, 1f), new Vector2(0f, -34f), 84, TextAnchor.UpperCenter);
             timer = NewText("Timer", safe, new Vector2(0f, 1f), new Vector2(40f, -104f), 46, TextAnchor.UpperLeft);
-            timer.color = new Color(0.85f, 0.93f, 1f);
+            timer.color = Brand.Snow;
             medical = NewText("Medical", safe, new Vector2(1f, 1f), new Vector2(-40f, -232f), 40, TextAnchor.UpperRight);
-            medical.color = new Color(1f, 0.45f, 0.4f);
+            medical.color = Brand.Alert;
             prompt = NewText("Prompt", safe, new Vector2(0.5f, 0f), new Vector2(0f, 230f), 58, TextAnchor.LowerCenter);
             altitude = NewText("Altitude", safe, new Vector2(0f, 1f), new Vector2(40f, -160f), 40, TextAnchor.UpperLeft);
-            altitude.color = new Color(0.85f, 0.93f, 1f, 0.95f);
+            altitude.color = Brand.SnowMuted;
             // the avalanche's distance and bar, on their own canvas too: both change every frame while it's on its way
             var slideBox = NestedCanvas("Slide", safe);
             slide = NewText("Slide", slideBox, new Vector2(1f, 1f), new Vector2(-40f, -40f), 44, TextAnchor.UpperRight);
@@ -91,8 +91,11 @@ namespace Summit
 
             big = NewText("Big", safe, new Vector2(0.5f, 0.5f), new Vector2(0f, 260f), 110, TextAnchor.MiddleCenter);
             small = NewText("Small", safe, new Vector2(0.5f, 0.5f), new Vector2(0f, 150f), 50, TextAnchor.MiddleCenter);
-            hint = NewText("Hint", safe, new Vector2(0.5f, 0f), new Vector2(0f, 120f), 44, TextAnchor.LowerCenter);
-            hint.color = new Color(1f, 1f, 1f, 0.9f);
+            // the start pad's and the end screen's lines: on dark plates, so they read on bright snow
+            smallPlate = Brand.Plate("SmallPlate", safe, Brand.Panel); smallPlate.enabled = false;
+            hintPlate = Brand.Plate("HintPlate", safe, Brand.Panel); hintPlate.enabled = false;
+            hint = NewText("Hint", safe, new Vector2(0.5f, 0f), new Vector2(0f, 120f), 32, TextAnchor.LowerCenter);
+            hint.color = Brand.Snow; hint.lineSpacing = 1.25f;
 
             diag = NewText("Diag", safe, new Vector2(0f, 0f), new Vector2(20f, 70f), 30, TextAnchor.UpperLeft);
             diag.color = new Color(1f, 1f, 0.6f, 0.9f);
@@ -104,7 +107,7 @@ namespace Summit
             shieldPips = new Image[Rider.MaxShields];
             for (int i = 0; i < shieldPips.Length; i++)
             {
-                var pip = NewImage("Shield" + i, safe, new Color(0.45f, 0.78f, 1f, 0.95f));
+                var pip = NewImage("Shield" + i, safe, Brand.A(Brand.Snow, 0.95f));
                 pip.sprite = circle;
                 Place(pip.rectTransform, new Vector2(0f, 1f), new Vector2(40f + i * 54f, -218f), new Vector2(44f, 44f), new Vector2(0f, 1f));
                 shieldPips[i] = pip;
@@ -116,7 +119,7 @@ namespace Summit
             var cross = MakeCross(64);
             for (int i = 0; i < fallPips.Length; i++)
             {
-                var pip = NewImage("Fall" + i, safe, new Color(0.95f, 0.2f, 0.18f, 0.95f));
+                var pip = NewImage("Fall" + i, safe, Brand.Alert);
                 pip.sprite = cross;
                 Place(pip.rectTransform, new Vector2(1f, 1f), new Vector2(-40f - i * 52f, -176f), new Vector2(42f, 42f), new Vector2(1f, 1f));
                 fallPips[i] = pip;
@@ -143,33 +146,18 @@ namespace Summit
             knob.sprite = circle; stickKnob = knob.rectTransform;
             stickRing.gameObject.SetActive(false); stickKnob.gameObject.SetActive(false);
             // down after a fall: no words, a soft ripple where the old prompt was (a tap carries on)
-            tapDot = NewImage("TapDot", safe, new Color(1f, 1f, 1f, 0f)); tapDot.sprite = circle;
-            Place(tapDot.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 250f), new Vector2(26f, 26f), new Vector2(0.5f, 0.5f));
-            tapRipple = NewImage("TapRipple", safe, new Color(1f, 1f, 1f, 0f)); tapRipple.sprite = circle;
-            Place(tapRipple.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 250f), new Vector2(26f, 26f), new Vector2(0.5f, 0.5f));
-            tapDot.enabled = tapRipple.enabled = false;
+            tapCue = new Brand.TapCue(safe, new Vector2(0.5f, 0f), new Vector2(0f, 250f));
 
             // buttons (hit-tested by SummitGame, so no EventSystem is needed)
-            var pb = NewImage("PlayButton", safe, new Color(0.10f, 0.45f, 0.90f, 0.95f));
-            Place(pb.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, -90f), new Vector2(520f, 150f), new Vector2(0.5f, 0.5f));
-            playBtn = pb.rectTransform;
-            playLabel = NewText("PlayLabel", pb.transform, new Vector2(0.5f, 0.5f), Vector2.zero, 70, TextAnchor.MiddleCenter);
-            playLabel.text = "PLAY";
+            // the start pad: PLAY (the gold one) and, under it, what you steer with and what you ride, each a tap to change
+            playBtn = Brand.Button("PlayButton", safe, "PLAY", Brand.Kind.Primary, new Vector2(0.5f, 0.5f), new Vector2(0f, -90f), new Vector2(560f, 132f), out playLabel);
+            playLabel.fontSize = 40;
 
-            var rb = NewImage("RestartButton", safe, new Color(0f, 0f, 0f, 0.4f));
-            Place(rb.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 50f), new Vector2(300f, 90f), new Vector2(0.5f, 0f));
-            restartBtn = rb.rectTransform;
-            var rl = NewText("RestartLabel", rb.transform, new Vector2(0.5f, 0.5f), Vector2.zero, 44, TextAnchor.MiddleCenter);
-            rl.text = "II  PAUSE";
+            // the pause: a small square with the two bars, no word (bottom middle, as it was)
+            restartBtn = Brand.IconButton("RestartButton", safe, Brand.Pause, new Vector2(0.5f, 0f), new Vector2(0f, 40f), new Vector2(0.5f, 0f));
             BuildPause();
-            var mb = NewImage("ModeButton", safe, new Color(0f, 0f, 0f, 0.4f));
-            Place(mb.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, -280f), new Vector2(620f, 100f), new Vector2(0.5f, 0.5f));
-            modeBtn = mb.rectTransform;
-            modeLabel = NewText("ModeLabel", mb.transform, new Vector2(0.5f, 0.5f), Vector2.zero, 40, TextAnchor.MiddleCenter);
-            var rbtn = NewImage("RiderButton", safe, new Color(0f, 0f, 0f, 0.4f));
-            Place(rbtn.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, -400f), new Vector2(620f, 100f), new Vector2(0.5f, 0.5f));
-            riderBtn = rbtn.rectTransform;
-            riderLabel = NewText("RiderLabel", rbtn.transform, new Vector2(0.5f, 0.5f), Vector2.zero, 40, TextAnchor.MiddleCenter);
+            modeBtn = Brand.Button("ModeButton", safe, "", Brand.Kind.Secondary, new Vector2(0.5f, 0.5f), new Vector2(0f, -258f), new Vector2(560f, Brand.Control), out modeLabel);
+            riderBtn = Brand.Button("RiderButton", safe, "", Brand.Kind.Secondary, new Vector2(0.5f, 0.5f), new Vector2(0f, -258f - Brand.Control - 20f), new Vector2(560f, Brand.Control), out riderLabel);
             BuildPoints();   // the combo and the medical bill as they run up (HudPoints.cs)
             SetButtons(false, false, "PLAY");
         }
@@ -195,7 +183,7 @@ namespace Summit
             for (int i = 0; i < fallPips.Length; i++)
             {
                 fallPips[i].enabled = show && i < max;
-                fallPips[i].color = i < left ? new Color(0.95f, 0.2f, 0.18f, 0.95f) : new Color(0.2f, 0.2f, 0.22f, 0.6f);
+                fallPips[i].color = i < left ? Brand.Alert : Brand.A(Brand.Ink, 0.45f);
             }
             fallsLabel.text = show ? "FALLS" : "";
         }
@@ -236,7 +224,7 @@ namespace Summit
 
         public void SetDiag(string t) { diag.text = t; }
 
-        public void SetMode(bool tilt) { modeLabel.text = tilt ? "STEERING: TILT  (tap to change)" : "STEERING: DRAG STICK  (tap to change)"; }
+        public void SetMode(bool tilt) { modeLabel.text = tilt ? "STEER   TILT" : "STEER   DRAG"; }
         public bool OnMode(Vector2 p) => Inside(modeBtn, p);
 
         CanvasGroup safeGroup;
@@ -267,7 +255,9 @@ namespace Summit
         //      can't be hit.
 
         GameObject pausePanel;
-        RectTransform pauseTop, resumeBtn, againBtn;
+        RectTransform pauseTop, resumeBtn, againBtn, doneBtn;
+        Text pauseTitle;
+        bool runMenu;
         /// <summary>The pause menu's settings: every one of them, as on the start page.</summary>
         public SettingsSheet PauseSettings { get; private set; }
         /// <summary>The settings' tabs, in the order SummitGame.FillSettings adds them.</summary>
@@ -275,31 +265,25 @@ namespace Summit
 
         void BuildPause()
         {
-            var dim = NewImage("Pause", transform, new Color(0.02f, 0.04f, 0.09f, 0.42f));
+            var dim = NewImage("Pause", transform, Brand.A(Brand.Ink, 0.42f));
             Stretch(dim.rectTransform);
             pausePanel = dim.gameObject;
             var root = dim.rectTransform;
             // the top of the frame a little darker as on the start page, so the type reads over sky and snow
-            var shade = SettingsSheet.Img("TopShade", root, new Color(0.02f, 0.04f, 0.09f, 0.34f), SettingsSheet.FadeDown);
+            var shade = SettingsSheet.Img("TopShade", root, Brand.A(Brand.Ink, 0.3f), SettingsSheet.FadeDown);
             shade.rectTransform.anchorMin = new Vector2(0f, 1f); shade.rectTransform.anchorMax = Vector2.one;
             shade.rectTransform.pivot = new Vector2(0.5f, 1f); shade.rectTransform.sizeDelta = new Vector2(0f, 760f);
             PauseSettings = new SettingsSheet(root, false);
             // over the sheet: PAUSED, and the two ways on, set as the start page's VISIT CAMP | GO FOR A RUN
             pauseTop = SettingsSheet.New("PauseTop", root);
             Place(pauseTop, new Vector2(0.5f, 0f), Vector2.zero, new Vector2(SettingsSheet.Width, 0f), new Vector2(0.5f, 0f));
-            var title = SettingsSheet.Label("PausedTitle", pauseTop, new Vector2(0.5f, 0f), new Vector2(0f, 330f), new Vector2(900f, 110f), 64, TextAnchor.MiddleCenter, SettingsSheet.Ink);
-            title.text = SettingsSheet.Track("PAUSED", 40);
-            RectTransform Choice(string name, string label, float x)
-            {
-                var r = SettingsSheet.New(name, pauseTop);
-                Place(r, new Vector2(0.5f, 0f), new Vector2(x, 150f), new Vector2(440f, 150f), new Vector2(0.5f, 0.5f));
-                SettingsSheet.Label("Text", r, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(440f, 80f), 36, TextAnchor.MiddleCenter, SettingsSheet.Ink).text = SettingsSheet.Track(label, 30);
-                return r;
-            }
-            againBtn = Choice("RestartRun", "RESTART RUN", -232f);
-            resumeBtn = Choice("Resume", "RESUME", 232f);
-            var split = SettingsSheet.Img("Split", pauseTop, new Color(1f, 1f, 1f, 0.38f));
-            Place(split.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 150f), new Vector2(2f, 54f), new Vector2(0.5f, 0.5f));
+            pauseTitle = Brand.Line("PausedTitle", pauseTop, Brand.Type.Title, TextAnchor.MiddleCenter, Brand.Snow, new Vector2(0.5f, 0f), new Vector2(0f, 300f), 900f, true);
+            pauseTitle.text = "PAUSED";
+            // RESUME is the gold one; starting the run again is the quieter choice beside it
+            againBtn = Brand.Button("RestartRun", pauseTop, "RESTART RUN", Brand.Kind.Secondary, new Vector2(0.5f, 0f), new Vector2(-232f, 130f), new Vector2(440f, Brand.Control));
+            resumeBtn = Brand.Button("Resume", pauseTop, "RESUME", Brand.Kind.Primary, new Vector2(0.5f, 0f), new Vector2(232f, 130f), new Vector2(440f, Brand.Control));
+            // the same sheet opened from the camp or the start pad: SETTINGS, and one way out
+            doneBtn = Brand.Button("Done", pauseTop, "DONE", Brand.Kind.Primary, new Vector2(0.5f, 0f), new Vector2(0f, 130f), new Vector2(440f, Brand.Control));
             pausePanel.SetActive(false);
         }
 
@@ -312,10 +296,18 @@ namespace Summit
         }
 
         bool restartWas;   // the PAUSE button was showing when the menu came up (it would sit on the sheet: hidden meanwhile)
-        public void ShowPause(bool on)
+        /// <summary>The pause menu, on a run: PAUSED, RESTART RUN and RESUME over every setting.</summary>
+        public void ShowPause(bool on) => ShowMenu(on, true);
+        /// <summary>The settings from the camp or the start pad (MetaUi's sliders): SETTINGS and DONE over the same sheet.</summary>
+        public void ShowSettings(bool on) => ShowMenu(on, false);
+
+        void ShowMenu(bool on, bool run)
         {
+            if (on) SetMenuKind(run);
             if (on == pausePanel.activeSelf) { if (on) PauseSettings.Refresh(); return; }
             pausePanel.SetActive(on);
+            // over the camp's menus (11) while it's up; under them again after
+            canvasRef.sortingOrder = on ? 13 : 10;
             if (on) { restartWas = restartBtn.gameObject.activeSelf; restartBtn.gameObject.SetActive(false); }
             else if (restartWas) restartBtn.gameObject.SetActive(true);
             if (!on) return;
@@ -325,7 +317,16 @@ namespace Summit
             LayoutPause();
             PauseSettings.Refresh();
         }
+        void SetMenuKind(bool run)
+        {
+            runMenu = run;
+            pauseTitle.text = run ? "PAUSED" : "SETTINGS";
+            againBtn.gameObject.SetActive(run); resumeBtn.gameObject.SetActive(run);
+            doneBtn.gameObject.SetActive(!run);
+        }
+        /// <summary>The pause menu or the settings are up.</summary>
         public bool Paused => pausePanel.activeSelf;
+        public bool OnDone(Vector2 p) => Inside(doneBtn, p);
         public bool OnResume(Vector2 p) => Inside(resumeBtn, p);
         public bool OnPauseRestart(Vector2 p) => Inside(againBtn, p);
         /// <summary>A finger on the pause menu's settings: a tab or a row, stepped. True if it hit one.</summary>
@@ -360,8 +361,8 @@ namespace Summit
                                         anchor.y);
             Place(t.rectTransform, anchor, pos, new Vector2(900f, size * 1.3f), pivot);
             var sh = go.AddComponent<Shadow>();
-            sh.effectColor = new Color(0.05f, 0.08f, 0.16f, 0.55f);
-            sh.effectDistance = new Vector2(3f, -3f);
+            sh.effectColor = Brand.A(Brand.Ink, 0.6f);
+            sh.effectDistance = new Vector2(0f, -3f);
             return t;
         }
 
@@ -443,14 +444,14 @@ namespace Summit
             }
             int s0 = showRun ? Mathf.Max(0, Mathf.RoundToInt(gap)) : -1;
             if (s0 != lastGap) { lastGap = s0; slide.text = showRun && s0 < 9999 ? "SLIDE " + s0 + " m" : ""; }   // 9999: not released yet
-            slide.color = gap < 40f ? new Color(1f, 0.45f, 0.35f) : Color.white;
+            slide.color = gap < 40f ? Brand.Alert : Brand.Snow;
             // the bar only while riding with the slide released, like its "SLIDE n m" (its dark track used to stay
             // up always: on the start pad, the end screen, and every other screen the HUD sits under)
             bool bar = showRun && s0 < 9999;
             if (slideBar.activeSelf != bar) slideBar.SetActive(bar);
             float k = Mathf.Clamp01(gap / gapMax);
             slideFill.rectTransform.anchorMax = new Vector2(showRun ? k : 0f, 1f);
-            slideFill.color = gap < 40f ? new Color(1f, 0.45f, 0.35f) : Color.white;
+            slideFill.color = gap < 40f ? Brand.Alert : Brand.Snow;
         }
 
         /// <summary>Run time and shields held; hidden when not riding.</summary>
@@ -466,7 +467,7 @@ namespace Summit
         }
 
         static readonly string[] TimerNames = { "MOUNTAIN ZOOM", "SUPER JUMP", "INVINCIBLE" };
-        static readonly Color[] TimerColors = { new Color(0.55f, 1f, 0.3f, 0.95f), new Color(1f, 0.5f, 0.78f, 0.95f), new Color(1f, 0.85f, 0.25f, 0.95f) };
+        static readonly Color[] TimerColors = { Brand.Gold, Brand.Gold, Brand.Gold };   // (one accent: the name tells them apart)
 
         /// <summary>
         /// The timed power-ups: seconds left of each (0 = not running) and how long a full one lasts.
@@ -506,23 +507,12 @@ namespace Summit
         }
 
         /// <summary>A pulsing instruction near the bottom (empty to hide).</summary>
-        Image tapDot, tapRipple;
-        float tapCueAt = -1f, tapCueOn;
+        Brand.TapCue tapCue;
 
-        /// <summary>Down after a fall, waiting for the tap: a small dot with a ripple spreading from it, fading in, no words.</summary>
-        public void SetTapCue(bool on)
-        {
-            if (tapDot == null) return;
-            if (on && tapCueAt < 0f) tapCueAt = Time.unscaledTime;
-            if (!on) tapCueAt = -1f;
-            tapCueOn = on ? Mathf.MoveTowards(tapCueOn, 1f, Time.unscaledDeltaTime / 0.6f) : 0f;
-            tapDot.enabled = tapRipple.enabled = on;
-            if (!on) return;
-            float ph = ((Time.unscaledTime - tapCueAt) / 1.4f) % 1f;
-            tapDot.color = new Color(1f, 1f, 1f, 0.55f * tapCueOn);
-            tapRipple.rectTransform.sizeDelta = Vector2.one * Mathf.Lerp(26f, 120f, ph);
-            tapRipple.color = new Color(1f, 1f, 1f, 0.28f * (1f - ph) * tapCueOn);
-        }
+        /// <summary>Down after a fall, waiting for the tap: a dark dot with a gold ring spreading from it, fading in, no words (Brand.TapCue).</summary>
+        public void SetTapCue(bool on) { if (tapCue != null) tapCue.Set(on); }
+        /// <summary>Test tools: the cue held at a moment of its ripple (0..1).</summary>
+        public void FreezeTapCue(float phase) { if (tapCue != null) tapCue.Freeze(phase); }
 
         public void SetPrompt(string text)
         {
@@ -566,16 +556,36 @@ namespace Summit
             hint.text = bottom;
             // (the hint is the one long line here: fitted to the screen, where it used to run off both sides)
             // (a portrait phone is narrower than the 1080 the layout is drawn on: about 980 across)
-            float room = safe.rect.width > 200f ? safe.rect.width - 70f : 900f;
+            float room = safe.rect.width > 200f ? safe.rect.width - 70f - 48f : 860f;
             float hw = Wide(hint), hs = hw > room ? room / hw : 1f;
             hint.rectTransform.localScale = new Vector3(hs, hs, 1f);
+            PlateUnder(hintPlate, hint, hs, 120f);
+            PlateUnder(smallPlate, small, 1f, small.rectTransform.anchoredPosition.y);
             flashT = 0f;
             big.color = Color.white;
             small.color = Color.white;
         }
 
+        Image hintPlate, smallPlate;
+        /// <summary>A dark plate just bigger than a line of type (none under no type).</summary>
+        void PlateUnder(Image plate, Text t, float scale, float y)
+        {
+            plate.enabled = !string.IsNullOrEmpty(t.text);
+            if (!plate.enabled) return;
+            var tr = t.rectTransform;
+            float w = Wide(t) * scale + 56f, h = t.preferredHeight * scale + 28f;
+            plate.rectTransform.anchorMin = plate.rectTransform.anchorMax = tr.anchorMin;
+            plate.rectTransform.pivot = new Vector2(0.5f, tr.pivot.y);
+            plate.rectTransform.sizeDelta = new Vector2(w, h);
+            // (the type's box is taller than its letters: the plate is centred on the letters)
+            float off = tr.pivot.y < 0.25f ? -14f : tr.pivot.y > 0.75f ? 14f : 0f;
+            plate.rectTransform.anchoredPosition = new Vector2(0f, y + off);
+            plate.transform.SetSiblingIndex(t.transform.GetSiblingIndex());
+        }
+
         public void Clear()
         {
+            if (hintPlate != null) hintPlate.enabled = smallPlate.enabled = false;
             big.text = small.text = hint.text = "";
             flashT = 0f;
             if (rmode == RMode.End) ClearReceipt();   // (the end screen's receipt goes with it: HudReceipt)

@@ -272,6 +272,7 @@ namespace Summit
         static Key EndOf(int p) => p == 2 ? Pink : StartOf(p);
 
         static readonly int FirLiftId = Shader.PropertyToID("_FirLift");
+        static readonly int FirSnowCoolId = Shader.PropertyToID("_FirSnowCool");
         static readonly Color FirMoonLift = new Color(0.15f, 0.19f, 0.29f, 0f);
 
         static Color Mul(Color a, Color b) => new Color(a.r * b.r, a.g * b.g, a.b * b.b, 1f);
@@ -377,6 +378,9 @@ namespace Summit
             // further off they are, so their shapes still read against the dark instead of going black
             float lift = Mathf.Clamp01((Darkness - 0.3f) / 0.7f);
             Shader.SetGlobalColor(FirLiftId, FirMoonLift * lift);
+            // the snow on the boughs: white by day, the cool blue of the old look from the pink hour into the night
+            // (Shaders/Fir.hlsl FirLight)
+            Shader.SetGlobalFloat(FirSnowCoolId, Mathf.Clamp01((Darkness - 0.15f) / 0.5f));
 
             // what each end shows: its sky, times its exposure and tint (linear)
             Color gradeA = a.tint * a.exposure, gradeB = b.tint * b.exposure;

@@ -156,7 +156,8 @@ public static class CampMovesShot
         int shot = 0; int jumps = 0, lands = 0, rolls = 0, furrows = 0; float camYaw0 = cam.transform.eulerAngles.y;
         camp.Jumped += _ => jumps++; camp.Landed += (a, b, c) => { lands++; Log($"landed {c:0.0} m/s at {a}"); };
         camp.Rolled += (a, b) => { rolls++; Log($"roll toward {b}"); }; camp.Furrowed += (a, b) => furrows++;
-        Vector2 L0 = new Vector2(W * 0.25f, H * 0.22f), R0 = new Vector2(W * 0.74f, H * 0.42f);
+        Camp.TestTouches = new List<CampInput.Touch>(); camp.Step(Dt, meta);   // (a frame first: where the walk stick sits)
+        Vector2 L0 = camp.Controls.Home ?? new Vector2(W * 0.25f, H * 0.22f), R0 = new Vector2(W * 0.74f, H * 0.42f);
         bool peakShot = false, rollShot = false; Vector3 landAt = Vector3.zero, rollFrom = Vector3.zero; float lastKind = 0;
         float yawLook0 = 0f;
         for (float t = 0f; t < 7.2f; t += Dt)
@@ -204,7 +205,7 @@ public static class CampMovesShot
         for (float t = 0f; t < 3f; t += Dt)
         {
             fingers.Clear();
-            fingers.Add(new CampInput.Touch(30, new Vector2(W * 0.7f, H * 0.3f) + new Vector2(Mathf.Min(1f, t / 0.3f) * 80f, 20f)));   // on the right half: any thumb, anywhere
+            fingers.Add(new CampInput.Touch(30, L0 + new Vector2(Mathf.Min(1f, t / 0.3f) * 80f, 20f)));   // the thumb on the walk stick (fixed, bottom left)
             Frame(rt, Mathf.Abs(t - 2.5f) < Dt * 0.5f ? Path.Combine(outDir, "OneStickTurn.png") : null);
         }
         fingers.Clear();

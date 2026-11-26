@@ -22,6 +22,20 @@ float4 _FirFade;
 float4 _FirCentre;
 // set by DayNight: rgb = the extra light on the far forest at dusk and night (0 by day)
 half4 _FirLift;
+// set by DayNight: how cold the snow on the boughs shows. 0 (by day, and when nothing sets it): white in the sun,
+// only a hint of the sky's blue where it is shaded. 1 (night): the cool blue of moonlight, as the trees always had
+half _FirSnowCool;
+
+// how much of a colour is the snow on the boughs: pale and not needle green (the atlas's snow is blue-white, with its
+// own shade baked in). Read on the plain colour, so the near cards and the far pictures (baked from it) agree
+half FirSnowy(half3 c)
+{
+    half greener = c.g - max(c.r, c.b);
+    return saturate((dot(c, half3(0.3h, 0.59h, 0.11h)) - 0.33h) * 5.0h) * saturate(1.0h - greener * 15.0h);
+}
+// the dark blue-green grade the needles get (FirCards' _NeedleTint, at the share the snow used to take of it): at
+// night the snow is graded so again, so the night forest looks as it did
+#define FIR_SNOW_NIGHT half3(0.77h, 0.87h, 0.92h)
 
 // how far along the far hand-over a tree standing at `originWS` is: 0 cards, 1 picture
 half FirFade(float3 originWS)
@@ -94,9 +108,20 @@ half3 FirLight(half3 albedo, float3 n, float3 positionWS, float4 positionCS, hal
     inputData.normalWS = n;
     inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(positionCS);
 
-    half3 light = SampleSH(n) + _FirLift.rgb * lift;
+    // The snow by day reads white: its own blue-white goes neutral, and the sky's blue light on it is mostly let go
+    // of where the sun is on it, less so in shade (deep shade keeps a cool cast). At night it is as it always was:
+    // the needles' blue grade, and the sky's (moonlit) light as it is.
+    half snow = FirSnowy(albedo);
+    half day = 1.0h - saturate(_FirSnowCool);
+    half lum = dot(albedo, half3(0.3h, 0.59h, 0.11h));
+    albedo = lerp(albedo, lerp(albedo * FIR_SNOW_NIGHT, half3(lum, lum, lum) * 1.04h, day), snow);
     Light sun = GetMainLight(TransformWorldToShadowCoord(positionWS));
-    light += sun.color * (saturate(dot(n, sun.direction)) * sun.distanceAttenuation * sun.shadowAttenuation * sunShade);
+    half sunlit = saturate(dot(n, sun.direction)) * sun.distanceAttenuation * sun.shadowAttenuation * sunShade;
+    half3 sky = SampleSH(n);
+    half skyLum = dot(sky, half3(0.3h, 0.59h, 0.11h));
+    sky = lerp(sky, half3(skyLum, skyLum, skyLum), snow * day * lerp(0.55h, 0.9h, sunlit));
+    half3 light = sky + _FirLift.rgb * lift;
+    light += sun.color * sunlit;
 #if defined(_ADDITIONAL_LIGHTS)
     uint count = GetAdditionalLightsCount();
     LIGHT_LOOP_BEGIN(count)

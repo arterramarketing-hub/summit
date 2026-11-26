@@ -80,11 +80,12 @@ Shader "Summit/FirCards"
             return b;
         }
 
-        // the atlas's greens graded darker and bluer; the snow (pale, unsaturated) is left white
-        half3 Needles(half3 c)
+        // the atlas's greens graded darker and bluer; the snow (`snowy`: Fir.hlsl FirSnowy) is left as it is (its
+        // colour by time of day is FirLight's)
+        half3 Needles(half3 c, half snowy)
         {
             half sat = max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b));
-            return lerp(c, c * _NeedleTint.rgb, saturate(sat * 6.0h));
+            return lerp(c, c * _NeedleTint.rgb, saturate(sat * 6.0h) * (1.0h - snowy));
         }
         ENDHLSL
 
@@ -164,9 +165,8 @@ Shader "Summit/FirCards"
                 clip(Torn(i.objPos, i.uv));
                 // what is snow in the atlas: pale, and not needle green (white, or blue-white in shade); read before
                 // the needles are graded
-                half greener = c.g - max(c.r, c.b);
-                half snowy = saturate((dot(c.rgb, half3(0.3h, 0.59h, 0.11h)) - 0.33h) * 5.0h) * saturate(1.0h - greener * 15.0h);
-                c.rgb = Needles(c.rgb);
+                half snowy = FirSnowy(c.rgb);
+                c.rgb = Needles(c.rgb, snowy);
                 // the snow has let go: there the bare bough under it shows, dark needles
                 half snowLeft = min(_Snow, 1.0h - Bared(i.objPos));
                 if (snowLeft < 0.999h) c.rgb = lerp(c.rgb, half3(0.045h, 0.07h, 0.055h), snowy * (1.0h - snowLeft));

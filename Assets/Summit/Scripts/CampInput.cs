@@ -6,22 +6,24 @@ namespace Summit
     /// <summary>
     /// The camp's touch controls, as plain logic (no Unity input in here, so the test tools can drive it with made-up
     /// touches). Every finger is one of:
-    ///   - the MOVE stick: the first finger down, anywhere on the screen (floating: wherever the thumb lands). It
-    ///     walks the hero, and the camera swings round behind as you go, so one thumb does both;
-    ///   - the LOOK stick: a second finger pressed and held while the first is down, for turning the camera round
-    ///     the hero by hand when you want to;
+    ///   - the MOVE stick: fixed in the bottom left corner (Home, set by the camp from where MetaUi draws it), always
+    ///     on show. A finger that lands on it (within HomeReach radii of its centre) walks the hero, and the camera
+    ///     swings round behind as you go, so one thumb does both. (With no Home given, the old floating stick: the
+    ///     first finger down, anywhere, is the stick, its base wherever the thumb lands.)
+    ///   - the LOOK stick: a finger held down off the stick (with the fixed stick, also the first one; floating, a
+    ///     second finger while the stick is down), for turning the camera round the hero by hand when you want to;
     ///   - a TAP: a quick touch anywhere (not on a button) that hardly moves: the hero jumps (or, standing still on
     ///     a station, opens it);
     ///   - a SWIPE: a quick flick that lets go: the hero rolls that way;
     ///   - a button: the menus and the context button take their own touches, as before.
-    /// A second finger isn't the look stick straight away: it waits a moment, so a tap or a flick with it never
+    /// A finger off the stick isn't the look stick straight away: it waits a moment, so a tap or a flick with it never
     /// nudges the camera first. (Two sticks at once, one per thumb, was too much to handle on a phone; a plugged-in
     /// controller still has its two sticks, see Camp.)
-    /// The move stick is sticky: once the thumb is on it, it is that thumb's until it lifts. Past the rim the base
-    /// follows the thumb and the walk stays at full strength; other fingers (taps, buttons, the look stick) never
-    /// take it; a thumb that lands on the station button and drags walks instead; and a thumb that loses the
-    /// screen for an instant (the phone dropping the touch) and comes straight back near where it was picks the
-    /// same stick up again, already walking, rather than starting over. Lifted, it's gone: nothing keeps walking.
+    /// The move stick is sticky: once the thumb is on it, it is that thumb's until it lifts, wherever it wanders.
+    /// Past the rim the walk stays at full strength (the fixed base stays put; the floating one follows the thumb);
+    /// other fingers (taps, buttons, the look stick) never take it; and a thumb that loses the screen for an
+    /// instant (the phone dropping the touch) and comes straight back near where it was picks the same stick up
+    /// again, already walking, rather than starting over. Lifted, it's gone: nothing keeps walking.
     /// </summary>
     public class CampInput
     {
@@ -44,6 +46,12 @@ namespace Summit
         public const float ResumeTime = 0.12f, ResumeReach = 1.25f;
         /// <summary>The stick's throw this frame (screen pixels): the drawn ring is this big.</summary>
         public float Radius { get; private set; } = 150f;
+        /// <summary>The fixed stick's centre (screen pixels), or null for the floating stick. A finger that lands
+        /// within HomeReach radii of it is the stick.</summary>
+        public Vector2? Home;
+        public const float HomeReach = 1.6f;
+        /// <summary>A screen this big: the stick's throw (screen pixels), a thumb's width.</summary>
+        public static float RadiusFor(float w, float h) => Mathf.Max(60f, Mathf.Min(w, h) * 0.14f);
         readonly List<Finger> fingers = new List<Finger>();
         // the walking thumb that lifted last: where its stick was, and how long ago
         Vector2 lostOrigin, lostPos; float lostT = 99f;
@@ -60,7 +68,8 @@ namespace Summit
         {
             Move = Look = Vector2.zero; MoveShown = LookShown = false;
             Tapped = Swiped = ContextTapped = false; Button = null;
-            float radius = Mathf.Max(60f, Mathf.Min(w, h) * 0.14f);
+            float radius = RadiusFor(w, h);
+            bool fixedStick = Home.HasValue; Vector2 home = Home ?? Vector2.zero;
             Radius = radius;
             float tapDist = radius * 0.14f, swipeDist = radius * 0.55f;
             lostT += dt;
@@ -76,11 +85,15 @@ namespace Summit
                     if (id == "context") f.role = Role.Context;   // it opens on lifting a tap, never on touching down
                     else if (id != null) { f.role = Role.Button; Button = id; }
                     else if (panelOpen) f.role = Role.Ignore;
-                    else f.role = fingers.Exists(x => x.role == Role.Move) ? Role.Undecided : Role.Move;
+                    else if (fingers.Exists(x => x.role == Role.Move)) f.role = Role.Undecided;
+                    else if (!fixedStick) f.role = Role.Move;
+                    // (the fixed stick: a finger on it, or the walking thumb back after losing the screen for an instant)
+                    else f.role = (t.pos - home).magnitude < radius * HomeReach || (lostT < ResumeTime && (t.pos - lostPos).magnitude < radius * ResumeReach) ? Role.Move : Role.Undecided;
+                    if (f.role == Role.Move && fixedStick) f.origin = home;
                     // the walking thumb back after losing the screen for an instant: the same stick, still walking
                     if (f.role == Role.Move && lostT < ResumeTime && (t.pos - lostPos).magnitude < radius * ResumeReach)
                     {
-                        f.origin = lostOrigin; f.resumed = true;
+                        f.origin = fixedStick ? home : lostOrigin; f.resumed = true;
                         lostT = 99f;
                     }
                     fingers.Add(f);
@@ -90,15 +103,20 @@ namespace Summit
                 f.travel = Mathf.Max(f.travel, (t.pos - f.start).magnitude);
                 f.last = t.pos;
                 if (f.role == Role.Undecided && f.t >= LookWait) { f.role = Role.Look; f.origin = t.pos; }
-                // a thumb that landed on the station button and drags off is walking, not pressing it
-                if (f.role == Role.Context && f.travel > tapDist * 1.5f && !fingers.Exists(x => x.role == Role.Move)) f.role = Role.Move;
+                // a thumb that landed on the station button and drags off is walking (floating) or looking (the fixed
+                // stick has its own place), not pressing it
+                if (f.role == Role.Context && f.travel > tapDist * 1.5f && !fingers.Exists(x => x.role == Role.Move))
+                { if (fixedStick) { f.role = Role.Look; f.origin = t.pos; } else f.role = Role.Move; }
+                if (f.role == Role.Move && fixedStick) f.origin = home;
                 if (f.role == Role.Move || f.role == Role.Look)
                 {
                     var d = t.pos - f.origin;
-                    // the stick's centre trails the thumb past full throw, so turning round is instant
-                    if (d.magnitude > radius) { f.origin = t.pos - d.normalized * radius; d = t.pos - f.origin; }
-                    bool live = f.role == Role.Look || f.resumed || f.travel > tapDist;   // a resting thumb isn't a walk yet
-                    if (f.role == Role.Move && live) { Move = d / radius; MoveShown = true; MoveOrigin = f.origin; MovePos = t.pos; }
+                    // past full throw: the fixed stick's base stays put (full strength that way); the floating one's
+                    // centre trails the thumb, so turning round is instant
+                    if (d.magnitude > radius) { if (f.role == Role.Move && fixedStick) d = d.normalized * radius; else { f.origin = t.pos - d.normalized * radius; d = t.pos - f.origin; } }
+                    // a resting thumb isn't a walk yet (the fixed stick: a thumb held still off its centre is, in a moment)
+                    bool live = f.role == Role.Look || f.resumed || f.travel > tapDist || (fixedStick && f.t >= 0.1f);
+                    if (f.role == Role.Move && live) { Move = d / radius; MoveShown = true; MoveOrigin = f.origin; MovePos = f.origin + d; }
                     if (f.role == Role.Look) { Look = d / radius; LookShown = true; LookOrigin = f.origin; LookPos = t.pos; }
                 }
             }

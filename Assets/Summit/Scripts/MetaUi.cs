@@ -15,14 +15,18 @@ namespace Summit
         public Mode Current { get; private set; }
         public System.Action Clicked, Bought, Denied;
 
-        static readonly Color Navy = new Color(0.06f, 0.09f, 0.16f, 0.98f), Row = new Color(1f, 1f, 1f, 0.07f),
-                              Blue = new Color(0.10f, 0.45f, 0.90f, 0.97f), Green = new Color(0.20f, 0.70f, 0.32f, 0.97f),
-                              Gold = new Color(1f, 0.80f, 0.25f), Grey = new Color(1f, 1f, 1f, 0.14f), Dim = new Color(1f, 1f, 1f, 0.7f);
+        // (the brand's colours: Brand. The old names stay so the closet and the talk read as before; blue and green are gold now)
+        static readonly Color Navy = Brand.PanelStrong, Row = new Color(1f, 1f, 1f, 0.07f),
+                              Blue = Brand.Gold, Green = Brand.Gold,
+                              Gold = Brand.Gold, Grey = new Color(1f, 1f, 1f, 0.14f), Dim = Brand.SnowMuted;
 
         Font font;
         Sprite round, coin, disc, ring;
-        RectTransform safe, hubRoot, panelRoot, card, endRoot, toastRoot, stickRing, stickKnob, campBtn, rideBtn, contextBtn;
+        RectTransform safe, hubRoot, panelRoot, card, endRoot, toastRoot, stickRing, stickKnob, campBtn, rideBtn, contextBtn, settingsBtn;
         RectTransform lookRing, lookKnob;   // the camp's second stick: the camera
+        RectTransform stickHome;            // where the walk stick sits (bottom left, in the safe area)
+        Image stickBase, stickRim, stickKnobImg;
+        float stickR = 137f;                // the walk stick's radius on the canvas (StickHome)
         Image contextImg, fadeImg;
 
         /// <summary>Black over the whole screen, 0..1.</summary>
@@ -41,7 +45,7 @@ namespace Summit
         public void Build()
         {
             font = LoadFont();
-            round = Rounded(64, 26); coin = Coin(96); disc = Disc(128, false); ring = Disc(128, true);
+            round = Brand.Rounded; coin = Coin(96); disc = Disc(128, false); ring = Disc(128, true);
             var canvas = gameObject.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = 11;
@@ -54,34 +58,43 @@ namespace Summit
 
             // ---- the camp: points and missions up top, the stick, and a button for the station you're at
             hubRoot = New("Hub", safe); Stretch(hubRoot);
-            var pc = Img("PointsChip", hubRoot, new Color(0f, 0f, 0f, 0.45f), round);
-            Place(pc.rectTransform, new Vector2(0f, 1f), new Vector2(36f, -36f), new Vector2(340f, 100f), new Vector2(0f, 1f));
-            Place(Img("Coin", pc.transform, Color.white, coin).rectTransform, new Vector2(0f, 0.5f), new Vector2(18f, 0f), new Vector2(72f, 72f), new Vector2(0f, 0.5f));
-            pointsText = Label(pc.transform, new Vector2(0f, 0.5f), new Vector2(104f, 0f), new Vector2(230f, 80f), 56, TextAnchor.MiddleLeft);
-            var mc = Img("MissionsChip", hubRoot, new Color(0f, 0f, 0f, 0.45f), round);
-            Place(mc.rectTransform, new Vector2(1f, 1f), new Vector2(-36f, -36f), new Vector2(400f, 100f), new Vector2(1f, 1f));
-            missionsText = Label(mc.transform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(380f, 80f), 40, TextAnchor.MiddleCenter);
+            // the camp's chips, one row along the top, all a control high (45 pt): the points, the way back to the
+            // start page (the brand's peak, in a square), today's missions, and in the corner the settings (settingsBtn)
+            float H = Brand.Control;
+            var pc = Brand.Plate("PointsChip", hubRoot, Brand.Panel);
+            Place(pc.rectTransform, new Vector2(0f, 1f), new Vector2(Brand.Margin, -Brand.Margin), new Vector2(280f, H), new Vector2(0f, 1f));
+            Place(Img("Coin", pc.transform, Color.white, coin).rectTransform, new Vector2(0f, 0.5f), new Vector2(22f, 0f), new Vector2(60f, 60f), new Vector2(0f, 0.5f));
+            pointsText = Brand.Line("Points", pc.transform, new Brand.Style(Brand.Weight.SemiBold, 40, 0.04f), TextAnchor.MiddleLeft, Brand.Snow, new Vector2(0f, 0.5f), new Vector2(98f, 1f), 170f);
+            var tb0 = Brand.IconButton("TitleChip", hubRoot, Brand.Peak, new Vector2(0f, 1f), new Vector2(Brand.Margin + 280f + 16f, -Brand.Margin), new Vector2(0f, 1f));
+            tb0.Find("Icon").GetComponent<Image>().color = Brand.Gold;
+            buttons.Add(new KeyValuePair<RectTransform, string>(tb0, "title"));
+            var mc = Brand.Plate("MissionsChip", hubRoot, Brand.Panel);
+            Place(mc.rectTransform, new Vector2(1f, 1f), new Vector2(-Brand.Margin - H - 16f, -Brand.Margin), new Vector2(340f, H), new Vector2(1f, 1f));
+            missionsText = Brand.Line("Missions", mc.transform, Brand.Type.Label, TextAnchor.MiddleCenter, Brand.Snow, new Vector2(0.5f, 0.5f), new Vector2(0f, 1f), 320f);
             buttons.Add(new KeyValuePair<RectTransform, string>(mc.rectTransform, "missions"));
-            // the way back to the start page: a small peak between the two chips
-            var tb0 = Img("TitleChip", hubRoot, new Color(0f, 0f, 0f, 0.45f), disc);
-            Place(tb0.rectTransform, new Vector2(0f, 1f), new Vector2(408f, -38f), new Vector2(96f, 96f), new Vector2(0f, 1f));
-            Place(Img("Peak", tb0.transform, new Color(1f, 1f, 1f, 0.9f), Peak(96)).rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(60f, 60f), new Vector2(0.5f, 0.5f));
-            buttons.Add(new KeyValuePair<RectTransform, string>(tb0.rectTransform, "title"));
-            var cb = Img("Context", hubRoot, Blue, round);
-            Place(cb.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 230f), new Vector2(660f, 140f), new Vector2(0.5f, 0f));
-            contextBtn = cb.rectTransform;
-            contextImg = cb;
-            contextText = Label(cb.transform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(640f, 120f), 52, TextAnchor.MiddleCenter);
+            contextBtn = Brand.Button("Context", hubRoot, "", Brand.Kind.Primary, new Vector2(0.5f, 0f), new Vector2(0f, 300f), new Vector2(600f, 132f), out contextText);
+            contextImg = contextBtn.Find("Fill").GetComponent<Image>();
+            contextText.fontSize = 36;
             buttons.Add(new KeyValuePair<RectTransform, string>(contextBtn, "context"));
-            hintText = Label(hubRoot, new Vector2(0.5f, 0f), new Vector2(0f, 120f), new Vector2(1000f, 60f), 38, TextAnchor.MiddleCenter);
-            hintText.color = Dim;
-            var sr = Img("StickRing", transform, new Color(1f, 1f, 1f, 0.2f), ring); stickRing = sr.rectTransform;
-            var sk = Img("StickKnob", transform, new Color(1f, 1f, 1f, 0.65f), disc); stickKnob = sk.rectTransform;
+            // the controls, on a plate, fitted to the screen (SetContext)
+            hintPlate = Brand.Plate("HintPlate", hubRoot, Brand.Panel);
+            Place(hintPlate.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 96f), new Vector2(600f, 80f), new Vector2(0.5f, 0.5f));
+            hintText = Brand.Line("Hint", hubRoot, Brand.Type.Hint, TextAnchor.MiddleCenter, Brand.Snow, new Vector2(0.5f, 0f), new Vector2(0f, 96f), 1000f);
+            // the walk stick, fixed in the bottom left corner: a translucent dark base with a fine rim (gold while it's
+            // walking) and a white knob. stickHome marks its centre in the safe area; the parts are placed on it
+            stickHome = New("StickHome", hubRoot);
+            Place(stickHome, Vector2.zero, new Vector2(Brand.Margin + stickR, Brand.Margin + stickR), Vector2.zero, new Vector2(0.5f, 0.5f));
+            stickBase = Brand.Img("StickRing", transform, Brand.A(Brand.Ink, 0.45f), Brand.Disc); stickRing = stickBase.rectTransform;
+            stickRim = Brand.Img("StickRim", stickRing, Brand.SnowFaint, Brand.DiscRing);
+            Place(stickRim.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f));
+            stickKnobImg = Brand.Img("StickKnob", transform, Brand.Snow, Brand.Disc); stickKnob = stickKnobImg.rectTransform;
+            stickBase.raycastTarget = stickRim.raycastTarget = stickKnobImg.raycastTarget = false;
             stickRing.gameObject.SetActive(false); stickKnob.gameObject.SetActive(false);
             var lr = Img("LookRing", transform, new Color(0.75f, 0.88f, 1f, 0.2f), ring); lookRing = lr.rectTransform;
             var lk = Img("LookKnob", transform, new Color(0.75f, 0.88f, 1f, 0.65f), disc); lookKnob = lk.rectTransform;
             lookRing.gameObject.SetActive(false); lookKnob.gameObject.SetActive(false);
             // down after a fall off the camp's edge: a soft ripple, no words (a tap brings you back)
+            tapCue = new Brand.TapCue(safe, new Vector2(0.5f, 0f), new Vector2(0f, 250f));
             tapDot = Img("TapDot", safe, new Color(1f, 1f, 1f, 0f), disc);
             Place(tapDot.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 250f), new Vector2(26f, 26f), new Vector2(0.5f, 0.5f));
             tapRipple = Img("TapRipple", safe, new Color(1f, 1f, 1f, 0f), disc);
@@ -89,17 +102,23 @@ namespace Summit
             tapDot.raycastTarget = tapRipple.raycastTarget = false;
             tapDot.enabled = tapRipple.enabled = false;
 
+            // ---- the settings, from the camp and the start pad: the sliders in the top right corner (SummitGame opens
+            //      the HUD's settings sheet: Hud.ShowSettings). On a run the pause menu has them
+            settingsBtn = Brand.IconButton("SettingsButton", safe, Brand.Sliders, new Vector2(1f, 1f), new Vector2(-Brand.Margin, -Brand.Margin), new Vector2(1f, 1f));
+            buttons.Add(new KeyValuePair<RectTransform, string>(settingsBtn, "settings"));
+
             // ---- at the start pad: back to camp
-            var cbk = Img("CampButton", safe, new Color(0f, 0f, 0f, 0.45f), round);
-            Place(cbk.rectTransform, new Vector2(0f, 1f), new Vector2(36f, -36f), new Vector2(300f, 100f), new Vector2(0f, 1f));
-            Label(cbk.transform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(280f, 80f), 44, TextAnchor.MiddleCenter).text = "< CAMP";
-            campBtn = cbk.rectTransform;
+            campBtn = Brand.Button("CampButton", safe, "CAMP", Brand.Kind.Secondary, new Vector2(0f, 1f), new Vector2(Brand.Margin + 120f, -Brand.Margin - Brand.Control * 0.5f), new Vector2(240f, Brand.Control), out var campLabel);
+            campLabel.rectTransform.anchoredPosition = new Vector2(14f, 1f);
+            var back = Img("Back", campBtn, Brand.Snow, Brand.Chevron);
+            Place(back.rectTransform, new Vector2(0f, 0.5f), new Vector2(38f, 0f), new Vector2(30f, 30f), new Vector2(0.5f, 0.5f));
+            back.rectTransform.localScale = new Vector3(-1f, 1f, 1f);
             buttons.Add(new KeyValuePair<RectTransform, string>(campBtn, "camp"));
 
             // ---- the end of a run: what it earned, and a quick way straight back to the start
             endRoot = New("End", safe);
             Place(endRoot, new Vector2(0.5f, 0.5f), new Vector2(0f, -330f), new Vector2(900f, 400f), new Vector2(0.5f, 1f));
-            var eb = Img("EndCard", endRoot, new Color(0.03f, 0.06f, 0.12f, 0.78f), round); Stretch(eb.rectTransform);
+            var eb = Img("EndCard", endRoot, Brand.PanelStrong, round); Stretch(eb.rectTransform);
             var eh = Label(endRoot, new Vector2(0f, 1f), new Vector2(40f, -26f), new Vector2(400f, 60f), 40, TextAnchor.UpperLeft);
             eh.text = "POINTS EARNED"; eh.color = Dim;
             Place(Img("EndCoin", endRoot, Color.white, coin).rectTransform, new Vector2(1f, 1f), new Vector2(-250f, -20f), new Vector2(64f, 64f), new Vector2(1f, 1f));
@@ -108,10 +127,7 @@ namespace Summit
             endLines = Label(endRoot, new Vector2(0f, 1f), new Vector2(40f, -96f), new Vector2(820f, 220f), 34, TextAnchor.UpperLeft);
             endLines.verticalOverflow = VerticalWrapMode.Overflow; endLines.lineSpacing = 1.1f;
             endBalance = Label(endRoot, new Vector2(0f, 0f), new Vector2(40f, 26f), new Vector2(820f, 50f), 36, TextAnchor.LowerLeft);
-            var rb = Img("RideAgain", safe, new Color(0f, 0f, 0f, 0.5f), round);
-            Place(rb.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, -250f), new Vector2(520f, 100f), new Vector2(0.5f, 0.5f));
-            Label(rb.transform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(500f, 90f), 44, TextAnchor.MiddleCenter).text = "RIDE AGAIN";
-            rideBtn = rb.rectTransform;
+            rideBtn = Brand.Button("RideAgain", safe, "RIDE AGAIN", Brand.Kind.Secondary, new Vector2(0.5f, 0.5f), new Vector2(0f, -250f), new Vector2(560f, Brand.Control));
             buttons.Add(new KeyValuePair<RectTransform, string>(rideBtn, "ride"));
 
             // ---- mission-complete toast: below the score, as ever, except during a run, where the combo and the medical
@@ -119,7 +135,7 @@ namespace Summit
             toastRoot = New("Toast", safe);
             Place(toastRoot, new Vector2(0.5f, 0f), new Vector2(0f, ToastY), new Vector2(860f, 170f), new Vector2(0.5f, 0f));
             toastGroup = toastRoot.gameObject.AddComponent<CanvasGroup>();
-            var tb = Img("ToastCard", toastRoot, new Color(0.08f, 0.10f, 0.18f, 0.9f), round); Stretch(tb.rectTransform);
+            var tb = Img("ToastCard", toastRoot, Brand.PanelStrong, round); Stretch(tb.rectTransform);
             var tl = Img("ToastEdge", toastRoot, Gold, null);
             Place(tl.rectTransform, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(14f, 170f), new Vector2(0f, 0f));
             toastHead = Label(toastRoot, new Vector2(0f, 1f), new Vector2(44f, -20f), new Vector2(560f, 50f), 34, TextAnchor.UpperLeft);
@@ -158,6 +174,7 @@ namespace Summit
             Current = m;
             hubRoot.gameObject.SetActive(m == Mode.Hub);
             campBtn.gameObject.SetActive(m == Mode.Ready);
+            settingsBtn.gameObject.SetActive((m == Mode.Hub || m == Mode.Ready) && !PanelOpen);
             endRoot.gameObject.SetActive(m == Mode.End);
             rideBtn.gameObject.SetActive(m == Mode.End);
             if (m != Mode.Hub) { ClosePanel(false); SetStick(false, Vector2.zero, Vector2.zero); }
@@ -168,11 +185,12 @@ namespace Summit
         public void Refresh()
         {
             pointsText.text = Progress.Points.ToString("N0");
-            missionsText.text = "MISSIONS  " + Missions.DoneCount + " / " + Missions.Today.Count;
+            missionsText.text = "MISSIONS  " + Missions.DoneCount + "/" + Missions.Today.Count;
         }
 
         /// <summary>The camp's say over the bottom button and the hint: a label of its own (null: the station's), and a mug in hand.</summary>
         public string ContextLabel; public bool Sipping, Quiet;
+        Image hintPlate;
 
         public void SetContext(Camp.Station st)
         {
@@ -183,16 +201,76 @@ namespace Summit
             if (ContextLabel != null) { label = ContextLabel; st = Camp.Station.None; }   // the fire's own button (CampFire: TAKE IT OUT)
             bool on = label != null && !PanelOpen;
             if (contextBtn.gameObject.activeSelf != on) contextBtn.gameObject.SetActive(on);
-            if (on) { contextText.text = label; contextImg.color = st == Camp.Station.DropIn ? new Color(0.85f, 0.2f, 0.12f, 0.97f) : Blue; }
-            hintText.text = PanelOpen || on || Quiet ? "" : Sipping ? "Drag: walk  ·  tap: sip" : "Drag: walk  ·  hold a second finger: look  ·  tap: jump  ·  swipe: roll";
+            if (on)
+            {
+                contextText.text = label;
+                // dropping in is the one gold button that's a danger: it takes the alert colour
+                bool drop = st == Camp.Station.DropIn;
+                contextImg.color = drop ? Brand.Alert : Brand.Gold;
+                contextText.color = drop ? Brand.Snow : Brand.Ink;
+            }
+            // (the stick shows how to walk: the line is for the rest)
+            hintText.text = PanelOpen || on || Quiet ? "" : Sipping ? "Tap to sip" : "Drag to look   ·   tap to jump   ·   swipe to roll";
+            FitHint();
         }
 
+        /// <summary>The controls line fits the screen (two lines, then smaller, when it won't), on a plate just bigger than it.</summary>
+        float hintFitW = -1f;
+        void FitHint()
+        {
+            hintFitW = safe.rect.width;
+            BottomRow(out float midX, out float roomW);
+            bool show = !string.IsNullOrEmpty(hintText.text);
+            hintPlate.enabled = show;
+            if (!show) return;
+            float room = roomW - 48f;
+            string one = hintText.text.Replace("\n", "   ·   ");
+            hintText.text = one;
+            float w = Brand.Width(hintText);
+            if (w > room)
+            {
+                // break after the middle separator
+                int mid = one.Length / 2, cut = one.IndexOf("   ·   ", mid);
+                if (cut < 0) cut = one.LastIndexOf("   ·   ", mid);
+                if (cut > 0) hintText.text = one.Substring(0, cut) + "\n" + one.Substring(cut + 7);
+                w = 0f;
+                foreach (var line in hintText.text.Split('\n')) { hintText.text = line; w = Mathf.Max(w, Brand.Width(hintText)); }
+                hintText.text = cut > 0 ? one.Substring(0, cut) + "\n" + one.Substring(cut + 7) : one;
+            }
+            float sc = w > room ? room / w : 1f;
+            hintText.rectTransform.localScale = new Vector3(sc, sc, 1f);
+            int lines = hintText.text.Split('\n').Length;
+            float h = (lines * Brand.Type.Hint.size * 1.35f) * sc + 32f;
+            hintPlate.rectTransform.sizeDelta = new Vector2(w * sc + 56f, h);
+            // level with the stick (a plate taller than it sits on the bottom margin)
+            hintPlate.rectTransform.anchoredPosition = hintText.rectTransform.anchoredPosition = new Vector2(midX, Mathf.Max(Brand.Margin + stickR, Brand.Margin + h * 0.5f));
+        }
+
+        /// <summary>The bottom row: the walk stick in the left corner, and the room to its right (where the station's
+        /// button and the controls hint go, centred in it): its middle (x from the safe area's centre) and width.</summary>
+        void BottomRow(out float midX, out float roomW)
+        {
+            // (never wider than a portrait phone's canvas, ~978: the test tools' editor canvas can stand wider than the shot)
+            float w = Mathf.Min(safe.rect.width > 200f ? safe.rect.width : 978f, 978f);
+            float left = Brand.Margin + 2f * stickR + 28f;
+            roomW = w - left - Brand.Margin;
+            midX = left + roomW * 0.5f - w * 0.5f;
+            if (contextBtn == null) return;
+            float bw = Mathf.Min(600f, roomW);
+            contextBtn.sizeDelta = new Vector2(bw, 132f);
+            contextBtn.anchoredPosition = new Vector2(midX, Brand.Margin + stickR);
+            contextText.rectTransform.sizeDelta = new Vector2(bw - 24f, contextText.rectTransform.sizeDelta.y);
+            contextText.resizeTextForBestFit = true; contextText.resizeTextMaxSize = 36; contextText.resizeTextMinSize = 24;
+        }
+
+        Brand.TapCue tapCue;
         Image tapDot, tapRipple;
         float tapCueAt = -1f, tapCueOn;
 
         /// <summary>Waiting for the tap after a fall: a small dot with a ripple spreading from it, fading in, no words.</summary>
         public void SetTapCue(bool on)
         {
+            if (tapCue != null) { tapCue.Set(on); return; }
             if (tapDot == null) return;
             if (on && tapCueAt < 0f) tapCueAt = Time.unscaledTime;
             if (!on) tapCueAt = -1f;
@@ -210,9 +288,7 @@ namespace Summit
         {
             if (lookRing.gameObject.activeSelf != show) { lookRing.gameObject.SetActive(show); lookKnob.gameObject.SetActive(show); }
             if (!show) return;
-            var cr = (RectTransform)transform;
-            RectTransformUtility.ScreenPointToLocalPointInRectangle(cr, origin, UiCam, out Vector2 o);
-            RectTransformUtility.ScreenPointToLocalPointInRectangle(cr, pos, UiCam, out Vector2 k);
+            Vector2 o = ToCanvas(origin), k = ToCanvas(pos);
             float r = StickR(radiusPx);
             lookRing.anchoredPosition = o; lookRing.sizeDelta = Vector2.one * r * 2f;
             lookKnob.anchoredPosition = o + Vector2.ClampMagnitude(k - o, r); lookKnob.sizeDelta = Vector2.one * r * 0.9f;
@@ -227,17 +303,40 @@ namespace Summit
             return radiusPx / Mathf.Max(0.01f, cv != null ? cv.scaleFactor : 1f);
         }
 
-        /// <summary>The walk stick under the thumb (screen pixels).</summary>
-        public void SetStick(bool show, Vector2 origin, Vector2 pos, float radiusPx = 0f)
+        /// <summary>
+        /// Where the walk stick sits for a throw this big (screen pixels): its centre on the screen. It lays the bottom
+        /// row out round it (the station's button and the hint to its right) when its size changes.
+        /// </summary>
+        public Vector2 StickHome(float radiusPx)
+        {
+            float r = StickR(radiusPx);
+            if (!Mathf.Approximately(r, stickR)) { stickR = r; FitHint(); }
+            stickHome.anchoredPosition = new Vector2(Brand.Margin + stickR, Brand.Margin + stickR);
+            var cr = (RectTransform)transform;
+            Vector2 local = cr.InverseTransformPoint(stickHome.position);
+            return (local - cr.rect.min) * Scale;
+        }
+
+        /// <summary>Canvas units to screen pixels (the canvas spans the screen, or the camera's picture).</summary>
+        float Scale { get { var cv = GetComponent<Canvas>(); return Mathf.Max(0.01f, cv != null ? cv.scaleFactor : 1f); } }
+        /// <summary>A screen point (pixels) on the canvas's own plane. (Not through the camera: a camera-drawn canvas
+        /// in the test tools follows its camera a frame late.)</summary>
+        Vector2 ToCanvas(Vector2 px) { var cr = (RectTransform)transform; return px / Scale + cr.rect.min; }
+
+        /// <summary>The walk stick (screen pixels): its base at origin, the knob at pos; active, while it walks (the rim
+        /// turns gold).</summary>
+        public void SetStick(bool show, Vector2 origin, Vector2 pos, float radiusPx = 0f, bool active = true)
         {
             if (stickRing.gameObject.activeSelf != show) { stickRing.gameObject.SetActive(show); stickKnob.gameObject.SetActive(show); }
             if (!show) return;
-            var cr = (RectTransform)transform;
-            RectTransformUtility.ScreenPointToLocalPointInRectangle(cr, origin, UiCam, out Vector2 o);
-            RectTransformUtility.ScreenPointToLocalPointInRectangle(cr, pos, UiCam, out Vector2 k);
+            Vector2 o = ToCanvas(origin), k = ToCanvas(pos);
             float r = StickR(radiusPx);
             stickRing.anchoredPosition = o; stickRing.sizeDelta = Vector2.one * r * 2f;
+            stickRim.rectTransform.sizeDelta = Vector2.one * r * 2f / 0.92f;   // (the ring is drawn at 0.46 of its square)
+            stickRim.color = active ? Brand.Gold : Brand.SnowFaint;
+            stickBase.color = Brand.A(Brand.Ink, active ? 0.55f : 0.45f);
             stickKnob.anchoredPosition = o + Vector2.ClampMagnitude(k - o, r); stickKnob.sizeDelta = Vector2.one * r * 0.9f;
+            stickKnobImg.color = Brand.A(Brand.Snow, active ? 1f : 0.85f);
         }
 
         /// <summary>The button under a screen point, or null. Panels sit on top of everything else.</summary>
@@ -274,13 +373,12 @@ namespace Summit
             // laid out 1010 wide; on a narrower screen (a 19.5:9 phone's canvas is ~978) the whole card shrinks to fit
             float room = cardSafe.rect.width - 40f;
             if (room > 1f && room < 1010f) card.localScale = Vector3.one * (room / 1010f);
-            var t = Label(card, new Vector2(0.5f, 1f), new Vector2(0f, -34f), new Vector2(900f, 90f), 66, TextAnchor.UpperCenter);
+            var t = Brand.Line("Title", card, new Brand.Style(Brand.Weight.Light, 52, 0.26f), TextAnchor.UpperCenter, Brand.Snow, new Vector2(0.5f, 1f), new Vector2(0f, -44f), 800f);
             t.text = title;
-            if (sub != null) { var s = Label(card, new Vector2(0.5f, 1f), new Vector2(0f, -116f), new Vector2(900f, 50f), 34, TextAnchor.UpperCenter); s.text = sub; s.color = Dim; }
-            var x = Img("Close", card, Grey, disc);
-            Place(x.rectTransform, new Vector2(1f, 1f), new Vector2(-24f, -24f), new Vector2(104f, 104f), new Vector2(1f, 1f));
-            Label(x.transform, new Vector2(0.5f, 0.5f), new Vector2(0f, 2f), new Vector2(100f, 100f), 56, TextAnchor.MiddleCenter).text = "X";
-            buttons.Add(new KeyValuePair<RectTransform, string>(x.rectTransform, "close"));
+            if (sub != null) { var s = Brand.Line("Sub", card, Brand.Type.Label, TextAnchor.UpperCenter, Dim, new Vector2(0.5f, 1f), new Vector2(0f, -122f), 800f); s.text = sub.ToUpperInvariant(); }
+            var x = Brand.IconButton("Close", card, Brand.Close, new Vector2(1f, 1f), new Vector2(-20f, -20f), new Vector2(1f, 1f));
+            x.Find("Fill").GetComponent<Image>().color = Grey;
+            buttons.Add(new KeyValuePair<RectTransform, string>(x, "close"));
             cardMsg = Label(card, new Vector2(0.5f, 0f), new Vector2(0f, 26f), new Vector2(900f, 50f), 34, TextAnchor.LowerCenter);
             cardMsg.color = new Color(1f, 0.5f, 0.42f);
             return card;
@@ -303,7 +401,7 @@ namespace Summit
             for (int i = 0; i < Missions.Today.Count; i++)
             {
                 var m = Missions.Today[i];
-                var r = Img("Mission", c, m.done ? new Color(0.2f, 0.7f, 0.32f, 0.18f) : Row, round);
+                var r = Img("Mission", c, m.done ? Brand.A(Brand.Gold, 0.16f) : Row, round);
                 Place(r.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -200f - i * 290f), new Vector2(930f, 260f), new Vector2(0.5f, 1f));
                 var tt = Label(r.transform, new Vector2(0f, 1f), new Vector2(36f, -28f), new Vector2(600f, 120f), 46, TextAnchor.UpperLeft);
                 tt.horizontalOverflow = HorizontalWrapMode.Wrap; tt.text = Missions.TitleFor(m);
@@ -316,7 +414,7 @@ namespace Summit
                 fill.rectTransform.anchorMin = Vector2.zero; fill.rectTransform.anchorMax = new Vector2(Mathf.Max(0.04f, m.Fraction), 1f);
                 fill.rectTransform.offsetMin = fill.rectTransform.offsetMax = Vector2.zero;
                 var ct = Label(r.transform, new Vector2(1f, 0f), new Vector2(-30f, 30f), new Vector2(300f, 50f), 36, TextAnchor.LowerRight);
-                ct.text = m.done ? "DONE" : m.Count; ct.color = m.done ? new Color(0.5f, 1f, 0.55f) : Dim;
+                ct.text = m.done ? "DONE" : m.Count; ct.color = m.done ? Brand.Gold : Dim;
             }
             var hint = Label(c, new Vector2(0.5f, 0f), new Vector2(0f, 90f), new Vector2(900f, 50f), 32, TextAnchor.LowerCenter);
             hint.text = "Missions pay out the moment you finish them, mid-run."; hint.color = Dim;
@@ -334,9 +432,10 @@ namespace Summit
             bal.text = Progress.Points.ToString("N0"); bal.color = Gold;
             for (int k = 0; k < 2; k++)
             {
-                var tb = Img("Tab", c, k == tab ? Blue : Grey, round);
+                var tb = Img("Tab", c, k == tab ? Brand.Snow : Grey, round);
                 Place(tb.rectTransform, new Vector2(0.5f, 1f), new Vector2(-230f + k * 460f, -130f), new Vector2(440f, 96f), new Vector2(0.5f, 1f));
-                Label(tb.transform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(420f, 90f), 42, TextAnchor.MiddleCenter).text = k == 0 ? "UPGRADES" : "OUTFITS";
+                var tl = Brand.Line("Text", tb.transform, Brand.Type.Button, TextAnchor.MiddleCenter, k == tab ? Brand.Ink : Brand.Snow, new Vector2(0.5f, 0.5f), new Vector2(0f, 1f), 420f);
+                tl.text = k == 0 ? "UPGRADES" : "OUTFITS";
                 buttons.Add(new KeyValuePair<RectTransform, string>(tb.rectTransform, "tab" + k));
             }
             GearRows(c);
@@ -369,7 +468,8 @@ namespace Summit
                 else
                 {
                     Place(Img("Coin", b.transform, Color.white, coin).rectTransform, new Vector2(0f, 0.5f), new Vector2(22f, 0f), new Vector2(52f, 52f), new Vector2(0f, 0.5f));
-                    Label(b.transform, new Vector2(1f, 0.5f), new Vector2(-24f, 0f), new Vector2(160f, 90f), 44, TextAnchor.MiddleRight).text = cost.ToString("N0");
+                    var cl = Label(b.transform, new Vector2(1f, 0.5f), new Vector2(-24f, 0f), new Vector2(160f, 90f), 40, TextAnchor.MiddleRight);
+                    cl.text = cost.ToString("N0"); if (afford) { cl.color = Brand.Ink; cl.GetComponent<Shadow>().enabled = false; }
                     buttons.Add(new KeyValuePair<RectTransform, string>(b.rectTransform, "buy" + (int)it.id));
                 }
             }
@@ -377,6 +477,8 @@ namespace Summit
 
         /// <summary>The camp's peak chip was touched: SummitGame takes it from here (back to the start page).</summary>
         public bool TitleAsked;
+        /// <summary>The sliders were touched (the camp or the start pad): SummitGame opens the settings.</summary>
+        public bool SettingsAsked;
 
         /// <summary>Do what a panel button says. Returns false if the id isn't a panel/menu action.</summary>
         public bool Act(string id)
@@ -384,6 +486,7 @@ namespace Summit
             if (id == "close") { ClosePanel(); return true; }
             if (id == "missions") { ShowMissions(); return true; }
             if (id == "title") { TitleAsked = true; Clicked?.Invoke(); return true; }
+            if (id == "settings") { SettingsAsked = true; Clicked?.Invoke(); return true; }
             if (id == "tab0" || id == "tab1") { Clicked?.Invoke(); ShowShop(id == "tab0" ? 0 : 1); return true; }
             if (id.StartsWith("buy"))
             {
@@ -421,6 +524,14 @@ namespace Summit
         void Update()
         {
             if (safe != null && Screen.safeArea != lastSafe) ApplySafeArea();
+            // (the hint is fitted to the screen's width: again whenever that changes)
+            if (hintPlate != null && hintPlate.enabled && !Mathf.Approximately(safe.rect.width, hintFitW)) FitHint();
+            // the sliders: the camp and the start pad, not over a card or the closet
+            if (settingsBtn != null)
+            {
+                bool sOn = (Current == Mode.Hub || Current == Mode.Ready) && !PanelOpen && !ClosetOpen;
+                if (settingsBtn.gameObject.activeSelf != sOn) settingsBtn.gameObject.SetActive(sOn);
+            }
             float dt = Time.unscaledDeltaTime;
             // paused (time stopped): the toast waits, hidden, so it never covers the pause menu's RESUME
             bool paused = Time.timeScale == 0f;
@@ -483,7 +594,7 @@ namespace Summit
                      : align == TextAnchor.UpperRight || align == TextAnchor.MiddleRight || align == TextAnchor.LowerRight ? 1f : 0.5f;
             Place(t.rectTransform, anchor, pos, size, new Vector2(px, anchor.y));
             var sh = t.gameObject.AddComponent<Shadow>();
-            sh.effectColor = new Color(0.02f, 0.04f, 0.1f, 0.5f); sh.effectDistance = new Vector2(2f, -2f);
+            sh.effectColor = Brand.A(Brand.Ink, 0.45f); sh.effectDistance = new Vector2(0f, -2f);
             return t;
         }
 
@@ -593,6 +704,8 @@ namespace Summit
             var cv = GetComponent<Canvas>();
             cv.renderMode = cam != null ? RenderMode.ScreenSpaceCamera : RenderMode.ScreenSpaceOverlay;
             cv.worldCamera = cam; cv.planeDistance = 0.5f;
+            Canvas.ForceUpdateCanvases();
+            if (hintPlate != null && hintPlate.enabled) FitHint();
         }
     }
 }

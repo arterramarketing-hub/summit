@@ -1509,7 +1509,7 @@ namespace Summit
         bool gesturesHeld;
 #endif
         /// <summary>
-        /// In camp the walk stick floats wherever the thumb lands, often down by the bottom edge: there iOS holds the
+        /// In camp the walk stick sits down in the bottom corner, by the bottom edge: there iOS holds the
         /// touch back for its own home swipe and may take it away mid-walk. So in camp the edges are the game's (a
         /// swipe in from an edge goes to the game; a second one still goes home), and as they were when you leave.
         /// </summary>
@@ -2004,8 +2004,8 @@ namespace Summit
         public CampInput Controls => input;
 
         /// <summary>
-        /// One frame in camp. One thumb, anywhere, walks, and the camera follows round behind; a second finger held
-        /// down turns the camera by hand; a quick tap jumps (or, standing on a station, opens it), a flick rolls; the
+        /// One frame in camp. One thumb on the stick in the bottom left corner walks, and the camera follows round
+        /// behind; a finger held down anywhere else turns the camera by hand; a quick tap jumps (or, standing on a station, opens it), a flick rolls; the
         /// menus take their own taps. A plugged-in controller has its two sticks: left walks, right turns the camera.
         /// True when it's time to drop in.
         /// </summary>
@@ -2024,7 +2024,9 @@ namespace Summit
                 Showcase = false;
                 return false;
             }
-            input.Step(touches, dt, cam != null ? cam.pixelWidth : Screen.width, cam != null ? cam.pixelHeight : Screen.height, ui.Hit, ui.PanelOpen);
+            float sw = cam != null ? cam.pixelWidth : Screen.width, sh = cam != null ? cam.pixelHeight : Screen.height;
+            input.Home = ui.StickHome(CampInput.RadiusFor(sw, sh));   // the walk stick: fixed, bottom left
+            input.Step(touches, dt, sw, sh, ui.Hit, ui.PanelOpen);
             if (input.Button != null) ui.Act(input.Button);
             if (ActStep(dt, ui, touches)) return false;   // talking, roasting, at the stove (CampFire.cs)
             if (input.ContextTapped && Open(Near, ui)) return true;
@@ -2050,7 +2052,9 @@ namespace Summit
             }
             Look(input.Look + padLook, dt);
             lookRest = input.Look.sqrMagnitude > 0.0025f ? 0f : lookRest + dt;
-            ui.SetStick(input.MoveShown && !ui.PanelOpen, input.MoveOrigin, input.MovePos, input.Radius);
+            // (always there, at rest with the knob in the middle until a thumb takes it)
+            Vector2 home = input.Home ?? input.MoveOrigin;
+            ui.SetStick(!ui.PanelOpen, input.MoveShown ? input.MoveOrigin : home, input.MoveShown ? input.MovePos : home, input.Radius, input.MoveShown);
             ui.SetLookStick(input.LookShown && !ui.PanelOpen, input.LookOrigin, input.LookPos, input.Radius);
             var stick = ui.PanelOpen ? Vector2.zero : Vector2.ClampMagnitude(input.Move + padMove + Keys(), 1f);
             if (HoldingMug) stick = Vector2.ClampMagnitude(stick, 0.9f);   // a full mug: you walk, you don't run

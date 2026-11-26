@@ -187,6 +187,7 @@ namespace Summit
             s.AddRow(view, "CAMERA DISTANCE", () => pov ? "N/A" : CamName[camLevel], StepCam, false, () => !pov);
             s.AddRow(view, "CAMERA ANGLE", () => pov ? "N/A" : AngleName[angleLevel], StepAngle, false, () => !pov);
             s.AddRow(view, "LENS", () => LensName[lensLevel], StepLens);
+            s.AddRow(view, "HOME SCREEN", () => StartPage.HomeName, d => { StartPage.StepHome(d); hud.RefreshPause(); }, true);
             s.AddRow(look, "TIME OF DAY", () => TimeOfDay.LockLabel, StepTime);
             s.AddRow(look, "WEATHER", () => Weather.ChoiceLabel, Weather.StepChoice);
             s.AddRow(look, "FILTER", () => LookGrade.Names[filterLevel], StepFilter);
@@ -205,14 +206,14 @@ namespace Summit
             s.AddRow(sound, "VOICE LINES", () => OnOff(SoundMix.VoiceLines), d => ToggleVoice(), true);
         }
 
-        /// <summary>Make the start page, with every setting (FillSettings).</summary>
+        /// <summary>Make the start page (its settings are the HUD's: they open from the camp and the start pad).</summary>
         void BuildStart()
         {
             start = new GameObject("StartPage").AddComponent<StartPage>();
             start.Build(chase.GetComponent<Camera>(), atmo, snow.shader, spray, () => dayNight != null ? dayNight.Darkness : 0f, () => LensFov[lensLevel]);
+            start.Body = body;
             start.Clicked = () => audioFx.Play(Sfx.Click);
             start.TimeJumped = () => dayNight.ApplyNow();
-            FillSettings(start.Settings);
         }
 
         bool titleShown;
@@ -221,6 +222,7 @@ namespace Summit
         {
             if (start == null) BuildStart();
             if (paused) SetPaused(false);
+            CloseSettings();
             state = State.Title;
             hud.Clear(); hud.SetButtons(false, false, "PLAY"); hud.SetPrompt("");
             meta.SetMode(MetaUi.Mode.Off);
@@ -262,6 +264,36 @@ namespace Summit
             }
             fx.TreeDump(foot, h, crown, into * 0.65f);
             TreeWind.Shake(foot, knock, into);
+        }
+
+        // ---- the settings from the camp and the start pad (MetaUi's sliders): the pause menu's sheet, with DONE.
+        //      While it's up the camp stands still and a tap is the sheet's
+        bool settingsOpen;
+        void OpenSettings()
+        {
+            settingsOpen = true;
+            hud.ShowSettings(true);
+            meta.SetStick(false, Vector2.zero, Vector2.zero); meta.SetLookStick(false, Vector2.zero, Vector2.zero);
+            input.SwallowCurrentPress();
+        }
+        void CloseSettings()
+        {
+            if (!settingsOpen) return;
+            settingsOpen = false;
+            hud.ShowSettings(false);
+            input.SwallowCurrentPress();
+        }
+        /// <summary>A frame with the settings up: DONE closes them, any other tap is the sheet's. False when they're not up.</summary>
+        bool SettingsStep()
+        {
+            if (!settingsOpen) return false;
+            if (input.AnyPress())
+            {
+                var p = RiderInput.PointerPosition();
+                if (hud.OnDone(p)) { audioFx.Play(Sfx.Click); CloseSettings(); }
+                else hud.OnPauseSettings(p);   // (a tab or a setting: the sheet plays the click)
+            }
+            return true;
         }
 
         void SetPaused(bool on)
@@ -652,6 +684,7 @@ namespace Summit
         void ToHub(bool fresh = true)
         {
             if (fresh) ToReady();
+            CloseSettings();
             state = State.Hub;
             hud.Clear(); hud.SetButtons(false, false, "PLAY"); hud.SetPrompt("");
             chase.enabled = false;
@@ -790,6 +823,7 @@ namespace Summit
             flags.Clear();
             hud.SetPrompt(""); hud.SetTapCue(false);
             if (paused) SetPaused(false);
+            CloseSettings();
             chase.peek = 0f;
             if (atmo != null) atmo.ResetParallax();
             if (fx != null) fx.Clear();
@@ -902,7 +936,9 @@ namespace Summit
                         if (before < 2.5f && readyT >= 2.5f) AutoShot("auto-hub.png");
                         if (readyT >= 3.5f) { readyT = 0f; ToReady(false); }
                     }
+                    else if (SettingsStep()) { }
                     else if (camp.Step(dt, meta)) { audioFx.Play(Sfx.Play); ToReady(false); input.SwallowCurrentPress(); }
+                    else if (meta.SettingsAsked) { meta.SettingsAsked = false; OpenSettings(); }
                     // the camp's way back to the start page: through cloud, the scene changed behind it
                     else if (meta.TitleAsked) { meta.TitleAsked = false; if (start == null) BuildStart(); start.Through(ToTitle); }
                     break;
@@ -923,6 +959,8 @@ namespace Summit
                     traceT = 0f;
                     if (autoplay && (readyT += dt) > 3f) { readyT = 0f; ToRiding(); }
                     else if (autoplay && readyT > 2f && readyT - dt <= 2f) AutoShot("auto-ready.png");
+                    else if (SettingsStep()) { }
+                    else if (input.AnyPress() && meta.Hit(RiderInput.PointerPosition()) == "settings") { audioFx.Play(Sfx.Click); OpenSettings(); }
                     else if (input.AnyPress() && ModeTapped()) { }
                     else if (input.AnyPress() && RiderTapped()) { }
                     else if (input.AnyPress() && meta.Hit(RiderInput.PointerPosition()) == "camp") { audioFx.Play(Sfx.Click); ToHub(false); }

@@ -3,12 +3,14 @@ using System.Reflection;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.UI;
 using Summit;
 
 /// <summary>
 /// The pause menu, every tab, drawn into the frame at an iPhone's portrait shape over a run in daylight; and checks
-/// that it is the start page's settings sheet: the same rows (WEATHER among them, no LENS TYPE), taps on its tabs
-/// and rows doing what they say, RIDE greyed mid-run, and an old saved ANAMORPHIC lens type forgotten.
+/// that it is the one settings sheet: its rows (WEATHER and HOME SCREEN among them, no LENS TYPE), taps on its tabs
+/// and rows doing what they say, RIDE greyed mid-run, and an old saved ANAMORPHIC lens type forgotten. Then the same
+/// sheet from the start pad and the camp (the sliders in the corner): SETTINGS and DONE, over the camp's menus.
 /// Batch: -executeMethod SettingsShot.Run -logFile x.log   (no -nographics: it renders)
 /// Writes into $SETTINGSSHOT_OUT (or settings-shots/ in the project folder).
 /// </summary>
@@ -61,14 +63,15 @@ public static class SettingsShot
             cam.transform.position = rider.transform.position + new Vector3(0f, 3f, -6f);
             cam.transform.LookAt(rider.transform.position); cam.fieldOfView = 60f;
             Shoot(cam, null);
-            // the same rows as the start page's
+            // the one settings sheet (the start page has none now: it opens from the camp, the start pad and here)
             typeof(SummitGame).GetMethod("BuildStart", NP).Invoke(game, null);
             var start = (StartPage)typeof(SummitGame).GetField("start", NP).GetValue(game);
             var sheet = hud.PauseSettings;
             Debug.Log("SETTINGSSHOT pause rows: " + sheet.Labels());
-            Check(sheet.Labels() == start.Settings.Labels(), "the pause menu's rows are the start page's");
+            Check(typeof(StartPage).GetProperty("Settings") == null, "no settings on the start page");
             Check(sheet.RowIndex("LOOK", "WEATHER") >= 0, "WEATHER is in the pause menu");
-            Check(!sheet.Labels().Contains("LENS TYPE") && !start.Settings.Labels().Contains("LENS TYPE"), "no LENS TYPE row anywhere");
+            Check(sheet.RowIndex("VIEW", "HOME SCREEN") >= 0, "HOME SCREEN is in the VIEW tab");
+            Check(!sheet.Labels().Contains("LENS TYPE"), "no LENS TYPE row anywhere");
             // taps, at the points a finger would land (the canvas is drawn by the camera here, as on the phone it is the screen)
             Canvas.ForceUpdateCanvases();
             sheet.Layout();
@@ -93,7 +96,11 @@ public static class SettingsShot
             hud.OnPauseSettings(sheet.RowPoint(wx, true)); now = sheet.RowText(wx);
             hud.OnPauseSettings(sheet.RowPoint(wx, false));
             Check(now != was && sheet.RowText(wx) == was, $"WEATHER steps ({was} -> {now}) and back");
-            Check(start.Settings.RowText(wx) == was, "and the start page reads the same");
+            int home = sheet.RowIndex("VIEW", "HOME SCREEN"); int homeWas = StartPage.Home; was = sheet.RowText(home);
+            sheet.RowStep(home, 1); now = sheet.RowText(home);
+            Check(now != was && StartPage.Home != homeWas, $"HOME SCREEN switches the start page's view ({was} -> {now})");
+            sheet.RowStep(home, 1);
+            Check(StartPage.Home == homeWas, "and back");
             // a tap on a hidden tab's row does nothing
             was = sheet.RowText(blood);
             hud.OnPauseSettings(sheet.RowPoint(blood, true));
@@ -106,8 +113,38 @@ public static class SettingsShot
                 Shoot(cam, file);
                 Debug.Log("SETTINGSSHOT " + file);
             }
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay; Object.DestroyImmediate(uiCam.gameObject); uiCam = null;
             typeof(SummitGame).GetMethod("SetPaused", NP).Invoke(game, new object[] { false });
+
+            // ---- the same sheet from the start pad and the camp: the sliders in the corner, SETTINGS and DONE
+            var meta = (MetaUi)typeof(SummitGame).GetField("meta", NP).GetValue(game);
+            var sliders = meta.transform.Find("Safe/SettingsButton");
+            var open = typeof(SummitGame).GetMethod("OpenSettings", NP); var close = typeof(SummitGame).GetMethod("CloseSettings", NP);
+            var step = typeof(SummitGame).GetMethod("SettingsStep", NP);
+            Text Title() => hud.transform.Find("Pause/PauseTop/PausedTitle").GetComponent<Text>();
+            bool On(string path) { var t = hud.transform.Find(path); return t != null && t.gameObject.activeInHierarchy; }
+            foreach (var (where, call, arg) in new (string, string, object)[] { ("ready", "ToReady", false), ("camp", "ToHub", false) })
+            {
+                typeof(SummitGame).GetMethod(call, NP, null, new[] { typeof(bool) }, null).Invoke(game, new object[] { arg });
+                typeof(MetaUi).GetMethod("Update", NP).Invoke(meta, null);
+                Check(sliders != null && sliders.gameObject.activeInHierarchy, $"{where}: the sliders show");
+                Check(meta.Hit(RectTransformUtility.WorldToScreenPoint(null, sliders.position)) == "settings", $"{where}: a tap on them is the settings");
+                open.Invoke(game, null);
+                Check(hud.Paused && Title().text == "SETTINGS" && On("Pause/PauseTop/Done") && !On("Pause/PauseTop/Resume") && !On("Pause/PauseTop/RestartRun"),
+                      $"{where}: SETTINGS with DONE (no RESUME or RESTART RUN)");
+                Check(canvas.sortingOrder > meta.GetComponent<Canvas>().sortingOrder, $"{where}: the sheet is over the camp's menus");
+                Check((bool)step.Invoke(game, null), $"{where}: while it's up a tap is the sheet's");
+                hud.ShowTab(0);
+                if (where == "ready") { cam.transform.position = rider.transform.position + new Vector3(0f, 3f, -6f); cam.transform.LookAt(rider.transform.position); }
+                Shoot(cam, Path.Combine(outDir, $"settings_{where}.png"));
+                close.Invoke(game, null);
+                Check(!hud.Paused && !(bool)step.Invoke(game, null), $"{where}: DONE puts it away");
+            }
+            typeof(SummitGame).GetMethod("ToReady", NP, null, new[] { typeof(bool) }, null).Invoke(game, new object[] { false });
+            typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
+            typeof(SummitGame).GetMethod("SetPaused", NP).Invoke(game, new object[] { true });
+            Check(Title().text == "PAUSED" && On("Pause/PauseTop/Resume") && !On("Pause/PauseTop/Done"), "on a run the pause menu is PAUSED with RESUME");
+            typeof(SummitGame).GetMethod("SetPaused", NP).Invoke(game, new object[] { false });
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay; Object.DestroyImmediate(uiCam.gameObject); uiCam = null;
         }
         catch (System.Exception e) { Debug.LogError("SETTINGSSHOT exception " + e); bad++; }
         Debug.Log($"SETTINGSSHOT done: {bad} wrong");

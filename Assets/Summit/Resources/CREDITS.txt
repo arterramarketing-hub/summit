@@ -109,6 +109,10 @@ power_short.wav: powerUp9.ogg (Kenney Digital Audio; file 9 of 12 named: powerUp
 shield_get.wav: forceField_002.ogg (Kenney Sci-fi Sounds; file 3 of 5 named: forceField_000.ogg .. forceField_004.ogg) - Kenney - Creative Commons CC0 - https://kenney.nl/assets/sci-fi-sounds
 shield_hit.wav: Hard Glass Impact (by deleted_user_3656686, id 418194) - Freesound - Creative Commons 0 - https://freesound.org/people/deleted_user_3656686/sounds/418194/
 soda.wav: Opening a can of soda (by michorvath, id 386887) - Freesound - Creative Commons 0 - https://freesound.org/people/michorvath/sounds/386887/
+Ice sounds added on 2026-11-26 (Freesound HQ previews; cut, filtered and looped by Tools/MakeIceScrape.py):
+ice_scrape.wav, ice_hiss.wav, ice_skid.wav: skate fx.mp3 (by splodge123, id 249833) - Freesound - Creative Commons 0 - https://freesound.org/people/splodge123/sounds/249833/
+ice_squeal.wav: Ice_BreakScrapeIce.wav (by Pipppo89, id 665109) - Freesound - Creative Commons 0 - https://freesound.org/people/Pipppo89/sounds/665109/
+ice_chatter.wav: ski_04.wav (by blaukreuz, id 52151) - Freesound - Creative Commons 0 - https://freesound.org/people/blaukreuz/sounds/52151/
 music_hub.wav: Chill Out Theme (Komiku, "It's time for adventure ! vol 2") - Free Music Archive - CC0 1.0 Universal License - https://freemusicarchive.org/music/Komiku/Its_time_for_adventure__vol_2/Komiku_-_Its_time_for_adventure_vol_2_-_02_Chill_Out_Theme/
 music_run.wav: Fight, run, breath deeply (Komiku, "It's time for adventure ! vol 2") - Free Music Archive - CC0 1.0 Universal License - https://freemusicarchive.org/music/Komiku/Its_time_for_adventure__vol_2/Komiku_-_Its_time_for_adventure_vol_2_-_13_Fight_run_breath_deeply/
 Lodge surfaces (Camp/LodgeTex: colour, normal and roughness/occlusion maps; graded, resized and packed for the phone by

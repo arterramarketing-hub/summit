@@ -39,6 +39,15 @@ namespace Summit
         public Transform ChestBone => hero != null ? (hero.UpperChest != null ? hero.UpperChest : hero.Chest) : rig != null ? rig.Chest : null;
         Vector3 heroRidePos;            // the model's place under the body with the Root bone on the deck
         Quaternion heroRootRot;         // the Root bone's turn in the board's frame
+        /// <summary>For a copy of the rider (the start page's jump, StartJump): the hero model, its place and turn on the
+        /// deck, and the Root bone's turn in the board's frame. Null model: the previous rider (no clips).</summary>
+        public Transform HeroModel => hero != null ? model : null;
+        public Vector3 HeroRidePos => heroRidePos;
+        public Quaternion HeroBaseRot => heroBaseRot;
+        public Quaternion HeroRootRot => heroRootRot;
+        public Transform RollFrame => roll;
+        /// <summary>Which hand holds the board in each grab (0 left, 1 right), as Rider.Grabs.</summary>
+        public static int GrabHand(int i) => grabHand[i];
         int idIdle, idRide, idToe, idHeel, idTuck, idPop, idAir, idLand, idFlip, idFlail, idSit, idStand, idWalk, idRun;
         int idWindL, idWindR, idSpinL, idSpinR, idCampJump, idCampRoll;
         readonly int[] idGrab = new int[6];

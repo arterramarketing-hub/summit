@@ -7,7 +7,9 @@ using Summit;
 /// <summary>
 /// How far the start is from the chalet: from the foot of the chalet's front steps, walk (stick part way) and run
 /// (stick right out) straight for the start gate's DROP IN, and log the distance and time until the prompt comes up;
-/// then the lookout the same way, and where the stations inside stand in the chalet.
+/// then the lookout the same way, and where the stations inside stand in the chalet. Then the walk stick itself, through
+/// the camp's own frame (Camp.Step, the real MetaUi): a thumb put on the fixed stick in the bottom left and pushed up
+/// walks the hero away from the camera; a finger dragged anywhere else turns the camera and doesn't walk.
 /// Batch: -executeMethod CampWalkTest.Run
 /// </summary>
 public static class CampWalkTest
@@ -69,6 +71,38 @@ public static class CampWalkTest
             // (the stations inside: where they stand in the chalet's own frame, which moves with it; HubShot walks to them)
             var chalet = camp.ChaletPoint(0f, 0f, 0f);
             Debug.Log($"WALK {st} inside the chalet at {Quaternion.Euler(0f, -camp.ChaletYaw, 0f) * (at - chalet)} from its centre");
+        }
+        // the fixed walk stick, through the camp's own frame
+        {
+            var meta = (MetaUi)typeof(SummitGame).GetField("meta", NP).GetValue(game);
+            var fingers = new System.Collections.Generic.List<CampInput.Touch>();
+            Camp.TestTouches = fingers;
+            void Frame() { camp.Step(dt, meta); body.Apply(dt); camp.CameraStep(dt); }
+            Vector3 P() => (Vector3)fPos.GetValue(camp);
+            camp.TeleportTo(stairs, Mathf.Atan2(dropIn.x - stairs.x, dropIn.z - stairs.z) * Mathf.Rad2Deg);
+            for (int i = 0; i < 30; i++) { fingers.Clear(); Frame(); }
+            var home = camp.Controls.Home ?? Vector2.zero;
+            float R = camp.Controls.Radius;
+            var p0 = P(); float yaw0 = (float)fCamYaw.GetValue(camp);
+            for (float t = 0f; t < 2.5f; t += dt) { fingers.Clear(); fingers.Add(new CampInput.Touch(1, home + Vector2.up * R * Mathf.Min(1f, t / 0.2f) * 0.8f)); Frame(); }
+            var p1 = P();
+            var fwd = new Vector3(Mathf.Sin(yaw0), 0f, Mathf.Cos(yaw0));
+            float along = Vector3.Dot(p1 - p0, fwd), walked = Vector3.Distance(new Vector3(p1.x, 0f, p1.z), new Vector3(p0.x, 0f, p0.z));
+            bool okWalk = camp.Controls.Home.HasValue && walked > 4f && along > walked * 0.8f;
+            for (int i = 0; i < 30; i++) { fingers.Clear(); Frame(); }
+            // a finger dragged across the middle of the screen: the camera turns, the hero stays
+            var p2 = P(); float yaw2 = (float)fCamYaw.GetValue(camp);
+            var mid = new Vector2(Camera.main.pixelWidth * 0.55f, Camera.main.pixelHeight * 0.45f);
+            for (float t = 0f; t < 1.2f; t += dt) { fingers.Clear(); fingers.Add(new CampInput.Touch(2, mid + Vector2.right * R * Mathf.Min(1f, t / 0.4f))); Frame(); }
+            float turned = Mathf.DeltaAngle(yaw2 * Mathf.Rad2Deg, (float)fCamYaw.GetValue(camp) * Mathf.Rad2Deg);
+            float drift = Vector3.Distance(new Vector3(P().x, 0f, P().z), new Vector3(p2.x, 0f, p2.z));
+            bool okLook = Mathf.Abs(turned) > 20f && drift < 0.3f;
+            fingers.Clear(); Frame();
+            Camp.TestTouches = null;
+            if (!okWalk) fails++;
+            if (!okLook) fails++;
+            Debug.Log($"WALK the fixed stick at {home} (radius {R:0} px, screen {Camera.main.pixelWidth}x{Camera.main.pixelHeight}): pushed up 2.5 s, {walked:0.0} m, {along:0.0} m of it away from the camera{(okWalk ? "" : " << DIDN'T WALK")}");
+            Debug.Log($"WALK a finger dragged off the stick: the camera turned {turned:0} deg, the hero moved {drift:0.00} m{(okLook ? "" : " << WRONG")}");
         }
         Debug.Log($"WALK done: {fails} fail(s)");
         ChaseCamera.TestDt = 0f;

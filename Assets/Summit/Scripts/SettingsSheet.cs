@@ -18,13 +18,13 @@ namespace Summit
         public const float Width = 940f, RowHeight = 104f;
         const float FirstRow = 232f, MinHeight = 900f, Foot = 40f;
 
-        public static readonly Color Ink = new Color(1f, 1f, 1f, 0.96f), Quiet = new Color(1f, 1f, 1f, 0.55f), Hair = new Color(1f, 1f, 1f, 0.14f);
+        public static readonly Color Ink = Brand.Snow, Quiet = Brand.SnowMuted, Hair = Brand.Hair;
 
         class Row
         {
             public int tab; public string label; public System.Func<string> value; public System.Action<int> step;
             public bool toggle; public System.Func<bool> live;
-            public RectTransform rect, block; public Text name, val; public Image left, right;
+            public RectTransform rect, block; public Text name, val; public Image left, right, track, knob;
         }
         readonly List<Row> rows = new List<Row>();
         readonly List<string> tabNames = new List<string>();
@@ -55,9 +55,9 @@ namespace Summit
             this.frame = frame; this.closable = closable;
             Root = New("Settings", frame);
             Root.anchorMin = Vector2.zero; Root.anchorMax = new Vector2(1f, 0f); Root.pivot = new Vector2(0.5f, 0f);
-            var body = Img("Body", Root, new Color(0.025f, 0.04f, 0.075f, 0.9f));
+            var body = Img("Body", Root, Brand.PanelStrong);
             Stretch(body.rectTransform);
-            var lip = Img("Lip", Root, new Color(0.025f, 0.04f, 0.075f, 0.9f), FadeUp);
+            var lip = Img("Lip", Root, Brand.PanelStrong, FadeUp);
             lip.rectTransform.anchorMin = new Vector2(0f, 1f); lip.rectTransform.anchorMax = Vector2.one; lip.rectTransform.pivot = new Vector2(0.5f, 0f);
             lip.rectTransform.sizeDelta = new Vector2(0f, 150f); lip.rectTransform.anchoredPosition = Vector2.zero;
             Safe = New("SettingsSafe", Root);
@@ -105,26 +105,34 @@ namespace Summit
             {
                 var b = New(tabNames[k] + "Tab", Safe);
                 Place(b, new Vector2(0.5f, 1f), new Vector2(-Width * 0.5f + tabW * (k + 0.5f), -112f), new Vector2(tabW, 110f), new Vector2(0.5f, 0.5f));
-                var t = Label("Text", b, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(tabW, 70f), 30, TextAnchor.MiddleCenter, Quiet);
-                t.text = Track(tabNames[k], 24);
+                var t = Brand.Line("Text", b, Brand.Type.Button, TextAnchor.MiddleCenter, Quiet, new Vector2(0.5f, 0.5f), Vector2.zero, tabW);
+                t.text = tabNames[k];
                 tabBtn.Add(b); tabText.Add(t);
             }
             var line = Img("TabLine", Safe, Hair);
             Place(line.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -166f), new Vector2(Width, 2f), new Vector2(0.5f, 0.5f));
-            tabMark = Img("TabMark", Safe, Ink);
-            Place(tabMark.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -166f), new Vector2(72f, 3f), new Vector2(0.5f, 0.5f));
+            tabMark = Img("TabMark", Safe, Brand.Gold);   // the selected tab: the brand's accent
+            Place(tabMark.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -166f), new Vector2(72f, 4f), new Vector2(0.5f, 0.5f));
             var count = new int[tabNames.Count];
             foreach (var r in rows)
             {
                 int i = count[r.tab]++;
                 r.rect = New(r.label, Safe);
                 Place(r.rect, new Vector2(0.5f, 1f), new Vector2(0f, -FirstRow - i * RowHeight), new Vector2(Width, RowHeight), new Vector2(0.5f, 0.5f));
-                r.name = Label("Name", r.rect, new Vector2(0f, 0.5f), new Vector2(26f, 0f), new Vector2(460f, 60f), 27, TextAnchor.MiddleLeft, Quiet);
-                r.name.text = Track(r.label, 20);
+                r.name = Brand.Line("Name", r.rect, Brand.Type.Label, TextAnchor.MiddleLeft, Quiet, new Vector2(0f, 0.5f), new Vector2(26f, 0f), 460f);
+                r.name.text = r.label;
                 r.block = New("Value", r.rect);
                 Place(r.block, new Vector2(1f, 0.5f), new Vector2(-8f, 0f), new Vector2(470f, RowHeight), new Vector2(1f, 0.5f));
-                r.val = Label("Text", r.block, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(360f, 60f), 31, TextAnchor.MiddleCenter, Ink);
-                if (!r.toggle)
+                r.val = Brand.Line("Text", r.block, Brand.Type.Body, TextAnchor.MiddleCenter, Ink, new Vector2(0.5f, 0.5f), Vector2.zero, 360f);
+                if (r.toggle)
+                {
+                    // an ON / OFF setting reads as a switch (Refresh shows it in place of the words); one between two
+                    // named choices keeps its words and the ‹ › of a stepper, since a tap anywhere steps it
+                    r.track = Img("Switch", r.block, Hair, Brand.Rounded);
+                    Place(r.track.rectTransform, new Vector2(1f, 0.5f), new Vector2(-24f, 0f), new Vector2(92f, 48f), new Vector2(1f, 0.5f));
+                    r.knob = Img("Knob", r.track.transform, Ink, Brand.Disc);
+                    Place(r.knob.rectTransform, new Vector2(0f, 0.5f), new Vector2(24f, 0f), new Vector2(38f, 38f), new Vector2(0.5f, 0.5f));
+                }
                 {
                     r.left = Img("Less", r.block, Quiet, Chevron);
                     Place(r.left.rectTransform, new Vector2(0f, 0.5f), new Vector2(30f, 0f), new Vector2(30f, 30f), new Vector2(0.5f, 0.5f));
@@ -181,10 +189,21 @@ namespace Summit
             foreach (var r in rows)
             {
                 bool on = r.live == null || r.live();
-                r.val.text = Track(r.value != null ? r.value() : "", 12);
-                r.val.color = on ? Ink : new Color(1f, 1f, 1f, 0.3f);
-                r.name.color = on ? Quiet : new Color(1f, 1f, 1f, 0.28f);
-                if (r.left != null) r.left.color = r.right.color = on ? Quiet : new Color(1f, 1f, 1f, 0.16f);
+                string v = r.value != null ? r.value() : "";
+                bool sw = r.toggle && (v == "ON" || v == "OFF");
+                r.val.text = v;
+                r.val.enabled = !sw;
+                r.val.color = on ? Ink : Brand.SnowFaint;
+                r.name.color = on ? Quiet : Brand.A(Brand.Snow, 0.28f);
+                if (r.left != null) { r.left.enabled = r.right.enabled = !sw; r.left.color = r.right.color = on ? Quiet : Brand.A(Brand.Snow, 0.16f); }
+                if (r.track != null)
+                {
+                    r.track.enabled = r.knob.enabled = sw;
+                    bool lit = v == "ON";
+                    r.track.color = !on ? Brand.A(Brand.Snow, 0.08f) : lit ? Brand.Gold : Brand.A(Brand.Snow, 0.22f);
+                    r.knob.color = lit ? Brand.Ink : Brand.Snow;
+                    r.knob.rectTransform.anchoredPosition = new Vector2(lit ? 68f : 24f, 0f);
+                }
             }
         }
 
@@ -271,25 +290,15 @@ namespace Summit
             get
             {
                 if (face != null) return face;
-                try { face = Font.CreateDynamicFontFromOSFont(new[] { "Avenir Next", "Avenir", "Helvetica Neue", "Arial" }, 64); } catch { }
+                face = Brand.Face(Brand.Weight.Regular);
                 if (face == null) try { face = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"); } catch { }
                 if (face == null) try { face = Resources.GetBuiltinResource<Font>("Arial.ttf"); } catch { }
                 return face;
             }
         }
 
-        /// <summary>Letters set apart (uGUI's Text has no tracking: a small space goes between each pair).</summary>
-        public static string Track(string s, int gap)
-        {
-            var sb = new System.Text.StringBuilder();
-            for (int i = 0; i < s.Length; i++)
-            {
-                if (s[i] == ' ') { sb.Append("<size=").Append(gap).Append(">   </size>"); continue; }   // (small spaces, several: a big one would push the line down)
-                sb.Append(s[i]);
-                if (i < s.Length - 1 && s[i + 1] != ' ') sb.Append("<size=").Append(gap).Append("> </size>");
-            }
-            return sb.ToString();
-        }
+        /// <summary>Kept for callers: the letters are spaced by the Tracking on every Label now, not padded with spaces.</summary>
+        public static string Track(string s, int gap) => s;
 
         public static RectTransform New(string name, Transform parent)
         {
@@ -307,22 +316,15 @@ namespace Summit
 
         public static Image Img(string name, Transform parent, Color c, Sprite s = null)
         {
-            var i = New(name, parent).gameObject.AddComponent<Image>();
-            i.color = c; i.raycastTarget = false; i.sprite = s;
-            return i;
+            return Brand.Img(name, parent, c, s);
         }
 
         public static Text Label(string name, Transform parent, Vector2 anchor, Vector2 pos, Vector2 size, int fontSize, TextAnchor align, Color c)
         {
-            var t = New(name, parent).gameObject.AddComponent<Text>();
-            t.font = Face; t.fontSize = fontSize; t.fontStyle = FontStyle.Normal; t.alignment = align; t.color = c;
-            t.horizontalOverflow = HorizontalWrapMode.Overflow; t.verticalOverflow = VerticalWrapMode.Overflow;
-            t.raycastTarget = false; t.supportRichText = true;
+            // (Brand's type, spaced; a soft dark edge so it reads where there's no plate behind it)
+            var t = Brand.Line(name, parent, new Brand.Style(Brand.Weight.Regular, fontSize, 0.2f), align, c, true);
             float px = align == TextAnchor.MiddleLeft ? 0f : align == TextAnchor.MiddleRight ? 1f : 0.5f;
             Place(t.rectTransform, anchor, pos, size, new Vector2(px, 0.5f));
-            // a soft dark edge so it reads on snow and on night alike, without a plate behind it
-            var sh = t.gameObject.AddComponent<Shadow>();
-            sh.effectColor = new Color(0.02f, 0.04f, 0.09f, 0.45f); sh.effectDistance = new Vector2(0f, -2f);
             return t;
         }
 
@@ -332,7 +334,7 @@ namespace Summit
         /// <summary>Solid at the top, clear at the bottom.</summary>
         public static Sprite FadeDown => fadeDown != null ? fadeDown : (fadeDown = Gradient(true));
         /// <summary>A thin chevron pointing right.</summary>
-        public static Sprite Chevron => chevron != null ? chevron : (chevron = Draw(64, p => Mathf.Min(Seg(p, new Vector2(0.36f, 0.82f), new Vector2(0.68f, 0.5f)), Seg(p, new Vector2(0.68f, 0.5f), new Vector2(0.36f, 0.18f))), 0.045f));
+        public static Sprite Chevron => Brand.Chevron;
 
         static Sprite Gradient(bool down)
         {

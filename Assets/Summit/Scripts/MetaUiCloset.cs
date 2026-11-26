@@ -32,7 +32,7 @@ namespace Summit
         public int ClosetItem => hi;
 
         static readonly Color Ink = new Color(0.05f, 0.07f, 0.13f), PanelBg = new Color(0.02f, 0.03f, 0.07f, 0.8f),
-                              Banner = new Color(0.10f, 0.42f, 0.86f, 0.96f), Worn = new Color(0.40f, 0.90f, 0.50f),
+                              Banner = Brand.PanelStrong, Worn = Brand.Gold,
                               WornDark = new Color(0.08f, 0.50f, 0.20f), GoldDark = new Color(0.62f, 0.40f, 0.02f);
         const float RowH = 96f, RowGap = 8f;
 
@@ -325,12 +325,12 @@ namespace Summit
             bool own = Progress.Owns(cat, hi), on2 = hi == worn;
             buyCoin.gameObject.SetActive(!own);
             if (on2) { buyText.text = cat == Wardrobe.Cat.Ride ? "RIDING" : cat == Wardrobe.Cat.Rider ? "THIS IS YOU" : "WORN"; buyImg.color = new Color(0.02f, 0.03f, 0.07f, 0.55f); buyText.color = new Color(1f, 1f, 1f, 0.55f); }
-            else if (own) { buyText.text = cat == Wardrobe.Cat.Ride ? "RIDE THIS" : cat == Wardrobe.Cat.Rider ? "PLAY AS" : "WEAR"; buyImg.color = Blue; buyText.color = Color.white; }
+            else if (own) { buyText.text = cat == Wardrobe.Cat.Ride ? "RIDE THIS" : cat == Wardrobe.Cat.Rider ? "PLAY AS" : "WEAR"; buyImg.color = Blue; buyText.color = Brand.Ink; }
             else
             {
                 buyText.text = "BUY  " + cur.cost.ToString("N0");
                 bool can = pts >= cur.cost;
-                buyImg.color = can ? Green : new Color(0.02f, 0.03f, 0.07f, 0.55f); buyText.color = can ? Color.white : new Color(1f, 1f, 1f, 0.6f);
+                buyImg.color = can ? Green : new Color(0.02f, 0.03f, 0.07f, 0.55f); buyText.color = can ? Brand.Ink : new Color(1f, 1f, 1f, 0.6f);
             }
             detailText.text = hi == 0 && cur != items[0] ? "The pyjamas as they were made" : Detail(cat, cur);
             if (cat == Wardrobe.Cat.Graphic) { detailText.text = cur.tier >= 2 ? "RARE" : cur.tier == 1 ? "PREMIUM" : ""; detailText.color = cur.tier >= 1 ? Gold : Dim; }

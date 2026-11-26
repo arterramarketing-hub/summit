@@ -6,8 +6,9 @@ using static Summit.SettingsSheet;
 namespace Summit
 {
     /// <summary>
-    /// The first screen: a helicopter circling the whole of Mt. Vertigo from far off, the game's name, two ways in
-    /// (the camp, or straight to the start gate) and one control that opens every setting.
+    /// The first screen: the game's name, two ways in (the camp, or straight to the start gate), and behind them one
+    /// of two views (HOME SCREEN in the settings): JUMP, your rider hitting a kicker on bright white snow like a still
+    /// from a ski film come to life (StartJump), or FLIGHT, a helicopter circling the whole of Mt. Vertigo from far off.
     ///
     /// The view is drawn live, not played from a file: the game's own camera flies the circle and sees only the far
     /// view's layer (FarMountain: this mountain's real run on the whole mountain of the backdrop photograph, the
@@ -17,8 +18,8 @@ namespace Summit
     /// and the horizon rolls a little; a rotor and the wind sit quietly under the music.
     ///
     /// The page's parts come up after the view has had a moment alone. Choosing a way in pushes the lens in on the
-    /// summit and into cloud, and the game changes scene behind the white. The settings are a SettingsSheet that
-    /// SummitGame fills with the same rows as the pause menu's (FillSettings): the very setters, so one change shows in both.
+    /// summit and into cloud, and the game changes scene behind the white. The settings aren't here: they open from
+    /// the camp, the start pad and the pause menu (Hud).
     /// Hit-tested by hand like the rest of the game's menus (no EventSystem).
     /// </summary>
     public class StartPage : MonoBehaviour
@@ -35,9 +36,28 @@ namespace Summit
         // ---- the page
         const float ViewAlone = 2.6f, FadeIn = 1.5f;   // seconds the view has to itself, then how long the parts take to come up
         const float LeaveSeconds = 1.5f, CoverOut = 0.9f;
+        /// <summary>The time of day the JUMP view holds (TimeOfDay's clock: the middle of the day).</summary>
+        public const float JumpClock = 1.35f;
 
         public bool Showing { get; private set; }
         public System.Action Clicked;
+
+        // ---- which view: 0 JUMP (the default), 1 FLIGHT. Read as the page comes up
+        public static int Home
+        {
+            get => PlayerPrefs.GetInt("summit_home", 0) == 1 ? 1 : 0;
+            set { PlayerPrefs.SetInt("summit_home", value == 1 ? 1 : 0); PlayerPrefs.Save(); }
+        }
+        public static string HomeName => Home == 1 ? "FLIGHT" : "JUMP";
+        public static void StepHome(int dir) => Home = 1 - Home;
+        /// <summary>The rider the JUMP view copies (SummitGame sets it).</summary>
+        public RiderBody Body;
+        StartJump jump;
+        bool jumping, postWas, postKept;
+        UnityEngine.Rendering.Universal.UniversalAdditionalCameraData camData;
+        /// <summary>The JUMP view is the one showing.</summary>
+        public bool Jumping => jumping;
+        public StartJump Jump => jump;
         /// <summary>The flight's clock, seconds (the test tools set it to look from anywhere round the circle).</summary>
         public float Clock;
 
@@ -58,6 +78,9 @@ namespace Summit
             far = new GameObject("FarMountain").AddComponent<FarMountain>();
             far.transform.SetParent(transform, false);
             far.gameObject.SetActive(false);
+            jump = new GameObject("StartJump").AddComponent<StartJump>();
+            jump.transform.SetParent(transform, false);
+            jump.Setup(camera, softParticle);
             BuildUi();
             BuildSound();
         }
@@ -67,14 +90,32 @@ namespace Summit
         /// <summary>Take the camera up over the mountain. `first`: the game has just opened (the view gets longer alone).</summary>
         public void Show(bool first)
         {
-            far.gameObject.SetActive(true);
-            far.Build(lit);
-            BuildClouds();
             if (!kept)
             {
                 keptMask = cam.cullingMask; keptFov = cam.fieldOfView; keptNear = cam.nearClipPlane; keptFar = cam.farClipPlane;
                 kept = true;
             }
+            // the jump: its own little world (and the day held, so the rider is in daylight like the snow)
+            jumping = Home == 0 && jump.Show(Body);
+            if (jumping)
+            {
+                cam.cullingMask = 1 << StartJump.Layer;
+                // drawn straight, as a still is: the game's grading (its tone mapping, vignette and filter) would take the
+                // white snow grey. Put back as it was on Hide
+                camData = cam.GetComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>();
+                if (camData != null && !postKept) { postWas = camData.renderPostProcessing; postKept = true; camData.renderPostProcessing = false; }
+                Showing = true;
+                lapsing = false; TimeOfDay.Shown = JumpClock; DayNight.SkyTurn = 0f;
+                TimeJumped?.Invoke();
+                age = first ? 0f : 1.4f;
+                leaving = 0; leaveT = 0f; pressed = null;
+                page.gameObject.SetActive(true);
+                Frame(0f);
+                return;
+            }
+            far.gameObject.SetActive(true);
+            far.Build(lit);
+            BuildClouds();
             cam.cullingMask = 1 << FarMountain.Layer;
             cam.nearClipPlane = NearClip;
             cam.farClipPlane = far.Reach + 20000f;
@@ -88,10 +129,8 @@ namespace Summit
             lapseT = LapseTimeOf(TimeOfDay.Own); lapsing = true;
             TimeOfDay.Shown = LapseClock(lapseT);
             age = first ? 0f : 1.4f;
-            leaving = 0; leaveT = 0f; sheetOpen = false; sheet = 0f; pressed = null;
+            leaving = 0; leaveT = 0f; pressed = null;
             page.gameObject.SetActive(true);
-            ShowTab(0);
-            Refresh();
             far.Shade(SunDir(), 0f, -1f);
             Frame(0f);
         }
@@ -100,7 +139,7 @@ namespace Summit
         public void Hide()
         {
             if (!Showing) return;
-            Showing = false; leaving = 0; leaveT = 0f; sheetOpen = false; sheet = 0f;
+            Showing = false; leaving = 0; leaveT = 0f;
             if (kept)
             {
                 cam.cullingMask = keptMask; cam.fieldOfView = keptFov; cam.nearClipPlane = keptNear; cam.farClipPlane = keptFar;
@@ -110,10 +149,12 @@ namespace Summit
             // back to the game's own time, at once (the cloud is closed over the screen as this happens)
             TimeOfDay.Shown = -1f; DayNight.SkyTurn = 0f;
             TimeJumped?.Invoke();
+            jump.Hide(); jumping = false;
+            if (postKept && camData != null) camData.renderPostProcessing = postWas;
+            postKept = false;
             far.gameObject.SetActive(false);
             if (cloudRoot != null) cloudRoot.gameObject.SetActive(false);
             page.gameObject.SetActive(false);
-            sheetRoot.gameObject.SetActive(false);
         }
         void OnDestroy() { if (Showing) { TimeOfDay.Shown = -1f; DayNight.SkyTurn = 0f; } }
 
@@ -164,16 +205,10 @@ namespace Summit
         public float LapseTime { get => lapseT; set { lapseT = value; if (lapsing) TimeOfDay.Shown = LapseClock(lapseT); } }
 
         /// <summary>
-        /// One frame of the time-lapse. With the settings open it stops and the game's own time is shown (so a change
-        /// to TIME OF DAY shows, DayNight running the day round to it), and it carries on from there when they close.
+        /// One frame of the time-lapse.
         /// </summary>
         void StepLapse(float dt)
         {
-            if (sheetOpen)
-            {
-                if (lapsing) { lapsing = false; TimeOfDay.Shown = -1f; }
-                return;
-            }
             if (!lapsing) { lapsing = true; lapseT = LapseTimeOf(TimeOfDay.Own); }
             lapseT += dt;
             TimeOfDay.Shown = LapseClock(lapseT);
@@ -184,9 +219,8 @@ namespace Summit
 
         // ---------------------------------------------------------------- the flight
 
-        float age, sheet, leaveT;
+        float age, leaveT;
         int leaving;   // 0 staying, 1 to the camp, 2 to the start gate
-        bool sheetOpen;
 
         static float Ease(float t) { t = Mathf.Clamp01(t); return t * t * (3f - 2f * t); }
 
@@ -218,8 +252,7 @@ namespace Summit
             // the aim floats, as a hand-held long lens does
             Vector3 aim = new Vector3(mid.x, floor + AimHeight, mid.z) + side * (150f * Mathf.Sin(t * 0.09f + 0.4f)) + Vector3.up * (90f * Mathf.Sin(t * 0.061f));
             float roll = 1.5f * Mathf.Sin(t * 0.13f + 0.5f) + 0.7f * Mathf.Sin(t * 0.41f) + 0.1f * Mathf.Sin(t * 2.3f);
-            // the settings open: the mountain moves up the frame, clear of them (further for a taller sheet)
-            float pitch = 8.2f * sheet * (Settings != null ? Settings.Height / 900f : 1f);
+            float pitch = 0f;
             if (leaving != 0)
             {
                 // going in: the lens pushes in on the summit
@@ -236,7 +269,7 @@ namespace Summit
         {
             if (!Showing || cam == null) return;
             Clock += dt;
-            sheet = Mathf.MoveTowards(sheet, sheetOpen ? 1f : 0f, dt / 0.45f);
+            if (jumping) { jump.Frame(dt, leaving != 0 ? leaveT : 0f); return; }
             Pose(Clock, out Vector3 pos, out Quaternion rot, out float fov);
             cam.transform.SetPositionAndRotation(pos, rot);
             cam.fieldOfView = fov;
@@ -357,7 +390,7 @@ namespace Summit
         {
             if (rotor == null) return;
             // up gently with the view; away as the cloud closes
-            soundLevel = Mathf.MoveTowards(soundLevel, Showing && leaving == 0 ? 1f : 0f, dt / (Showing && leaving == 0 ? 2.5f : 0.9f));
+            soundLevel = Mathf.MoveTowards(soundLevel, Showing && leaving == 0 && !jumping ? 1f : 0f, dt / (Showing && leaving == 0 ? 2.5f : 0.9f));
             bool on = soundLevel > 0.001f;
             if (on != rotor.isPlaying) { if (on) { rotor.Play(); if (wind.clip != null) wind.Play(); } else { rotor.Stop(); wind.Stop(); } }
             if (!on) return;
@@ -408,12 +441,11 @@ namespace Summit
         // ---------------------------------------------------------------- the page
 
         Canvas canvas;
-        RectTransform safe, page, sheetRoot, titleRect, campBtn, runBtn, gearBtn;
-        CanvasGroup titleGroup, choiceGroup, sheetGroup;
+        RectTransform safe, page, titleRect, campBtn, runBtn;
+        CanvasGroup titleGroup, choiceGroup;
         Image cover, topShade, bottomShade;
         Text campText, runText;
         Rect lastSafe;
-        Sprite sliders;
         RectTransform pressed; float pressT;
 
         // ---------------------------------------------------------------- the title
@@ -489,12 +521,8 @@ namespace Summit
             titleMat.SetVector("_LightDir", ld.normalized);
         }
 
-        /// <summary>The settings, filled by SummitGame (FillSettings) with the same rows as the pause menu's.</summary>
-        public SettingsSheet Settings { get; private set; }
-
         void BuildUi()
         {
-            sliders = Sliders(96);
             var cg = new GameObject("StartCanvas", typeof(RectTransform));
             cg.transform.SetParent(transform, false);
             canvas = cg.AddComponent<Canvas>();
@@ -507,10 +535,10 @@ namespace Summit
 
             page = New("Page", cg.transform); Stretch(page);
             // the frame's top and bottom a little darker, so small type reads over cloud and snow (edge to edge, past the safe area)
-            topShade = Img("TopShade", page, new Color(0.02f, 0.04f, 0.09f, 0.34f), FadeDown);
+            topShade = Img("TopShade", page, Brand.A(Brand.Ink, 0.24f), FadeDown);
             topShade.rectTransform.anchorMin = new Vector2(0f, 1f); topShade.rectTransform.anchorMax = Vector2.one;
             topShade.rectTransform.pivot = new Vector2(0.5f, 1f); topShade.rectTransform.sizeDelta = new Vector2(0f, 760f);
-            bottomShade = Img("BottomShade", page, new Color(0.02f, 0.04f, 0.09f, 0.5f), FadeUp);
+            bottomShade = Img("BottomShade", page, Brand.A(Brand.Ink, 0.4f), FadeUp);
             bottomShade.rectTransform.anchorMin = Vector2.zero; bottomShade.rectTransform.anchorMax = new Vector2(1f, 0f);
             bottomShade.rectTransform.pivot = new Vector2(0.5f, 0f); bottomShade.rectTransform.sizeDelta = new Vector2(0f, 820f);
 
@@ -532,30 +560,12 @@ namespace Summit
             titleImage.enabled = false;
             SetTitleStyle(TitleArt.DefaultStyle, false);
 
-            // the two ways in, side by side, and under them the one control for everything else
+            // the two ways in: a run (the gold one: what the game is for) and, under it, the camp. (No settings here:
+            // they open from the camp, the start pad and the pause menu: Hud.)
             var choices = New("Choices", safe); Stretch(choices);
             choiceGroup = choices.gameObject.AddComponent<CanvasGroup>();
-            campBtn = New("VisitCamp", choices);
-            Place(campBtn, new Vector2(0.5f, 0f), new Vector2(-232f, 318f), new Vector2(440f, 170f), new Vector2(0.5f, 0.5f));
-            campText = Label("Text", campBtn, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(440f, 80f), 36, TextAnchor.MiddleCenter, Ink);
-            campText.text = Track("VISIT CAMP", 30);
-            runBtn = New("GoForARun", choices);
-            Place(runBtn, new Vector2(0.5f, 0f), new Vector2(232f, 318f), new Vector2(440f, 170f), new Vector2(0.5f, 0.5f));
-            runText = Label("Text", runBtn, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(440f, 80f), 36, TextAnchor.MiddleCenter, Ink);
-            runText.text = Track("GO FOR A RUN", 30);
-            var split = Img("Split", choices, new Color(1f, 1f, 1f, 0.38f));
-            Place(split.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 318f), new Vector2(2f, 54f), new Vector2(0.5f, 0.5f));
-            gearBtn = New("Settings", choices);
-            Place(gearBtn, new Vector2(0.5f, 0f), new Vector2(0f, 136f), new Vector2(220f, 150f), new Vector2(0.5f, 0.5f));
-            var gi = Img("Icon", gearBtn, new Color(1f, 1f, 1f, 0.82f), sliders);
-            Place(gi.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(62f, 62f), new Vector2(0.5f, 0.5f));
-
-            // the settings: a sheet over the lower part of the view, the mountain still in sight above it
-            Settings = new SettingsSheet((RectTransform)cg.transform, true);
-            Settings.Clicked = () => Clicked?.Invoke();
-            sheetRoot = Settings.Root;
-            sheetGroup = sheetRoot.gameObject.AddComponent<CanvasGroup>();
-            sheetRoot.gameObject.SetActive(false);
+            runBtn = Brand.Button("GoForARun", choices, "GO FOR A RUN", Brand.Kind.Primary, new Vector2(0.5f, 0f), new Vector2(0f, 300f), new Vector2(640f, Brand.Control), out runText);
+            campBtn = Brand.Button("VisitCamp", choices, "VISIT CAMP", Brand.Kind.Secondary, new Vector2(0.5f, 0f), new Vector2(0f, 300f - Brand.Control - 24f), new Vector2(640f, Brand.Control), out campText);
 
             // cloud over everything: what the game changes scene behind (it outlives the page)
             cover = Img("Cloud", cg.transform, new Color(1f, 1f, 1f, 0f));
@@ -572,12 +582,8 @@ namespace Summit
             safe.anchorMin = new Vector2(a.xMin / Screen.width, a.yMin / Screen.height);
             safe.anchorMax = new Vector2(a.xMax / Screen.width, a.yMax / Screen.height);
             safe.offsetMin = safe.offsetMax = Vector2.zero;
-            if (Settings != null && Settings.IsBuilt) Settings.Layout();
         }
 
-        void ShowTab(int k) => Settings.ShowTab(k);
-        /// <summary>Read every setting again.</summary>
-        public void Refresh() => Settings.Refresh();
 
         Camera UiCam => canvas.renderMode == RenderMode.ScreenSpaceCamera ? canvas.worldCamera : null;
         bool Inside(RectTransform r, Vector2 p) => r != null && r.gameObject.activeInHierarchy && RectTransformUtility.RectangleContainsScreenPoint(r, p, UiCam);
@@ -606,15 +612,9 @@ namespace Summit
             }
             if (press)
             {
-                if (sheetOpen)
-                {
-                    if (Settings.OnClose(at) || !Settings.Contains(at)) { sheetOpen = false; Clicked?.Invoke(); }
-                    else Settings.Tap(at);
-                }
-                else if (age < ViewAlone + FadeIn * 0.6f) age = ViewAlone + FadeIn * 0.6f;   // a tap while the view is alone: the page comes up now
+                if (age < ViewAlone + FadeIn * 0.6f) age = ViewAlone + FadeIn * 0.6f;   // a tap while the view is alone: the page comes up now
                 else if (Inside(campBtn, at)) { Press(campBtn); leaving = 1; }
                 else if (Inside(runBtn, at)) { Press(runBtn); leaving = 2; }
-                else if (Inside(gearBtn, at)) { Press(gearBtn); sheetOpen = true; sheetRoot.gameObject.SetActive(true); Settings.Layout(); Refresh(); }
             }
             SetAlphas();
             return 0;
@@ -623,19 +623,16 @@ namespace Summit
         void SetAlphas()
         {
             float up = leaving != 0 ? 1f - Ease(leaveT * 3f) : 1f;
-            float page01 = (1f - sheet) * up;
+            float page01 = up;
             titleGroup.alpha = Mathf.Clamp01((age - ViewAlone) / 0.3f) * page01;   // (the lettering reveals itself: StepTitle)
             choiceGroup.alpha = Ease((age - ViewAlone - 0.7f) / FadeIn) * page01;
             titleRect.anchoredPosition = new Vector2(0f, -TitleY + 10f * (1f - Ease((age - ViewAlone) / (FadeIn * 1.6f))));
             StepTitle();
-            topShade.color = new Color(0.02f, 0.04f, 0.09f, 0.34f * titleGroup.alpha);
-            bottomShade.color = new Color(0.02f, 0.04f, 0.09f, 0.5f * Mathf.Max(choiceGroup.alpha, sheet * up));
-            // the sheet rises as it comes
-            bool on = sheet > 0.001f && leaving == 0;
-            if (sheetRoot.gameObject.activeSelf != on) sheetRoot.gameObject.SetActive(on);
-            if (on) { float e = Ease(sheet); sheetGroup.alpha = e; sheetRoot.anchoredPosition = new Vector2(0f, -70f * (1f - e)); }
+            // (over the jump's white snow, only a breath of shade: the buttons sit on their own plates, and the ice
+            // lettering has its own blue)
+            topShade.color = Brand.A(Brand.Ink, (jumping ? 0.08f : 0.24f) * titleGroup.alpha);
+            bottomShade.color = Brand.A(Brand.Ink, (jumping ? 0.1f : 0.4f) * choiceGroup.alpha);
             // a touch answers: the thing touched dips and comes back
-            Settings.Step(Time.unscaledDeltaTime);
             if (pressT > 0f && pressed != null)
             {
                 pressT -= Time.unscaledDeltaTime;
@@ -689,51 +686,28 @@ namespace Summit
         }
         public int UiLayer { set { foreach (var t in canvas.GetComponentsInChildren<Transform>(true)) t.gameObject.layer = value; } }
 
-        /// <summary>Show the page as it is `seconds` after it came up, with the settings open on a tab or shut.</summary>
-        public void Preview(float seconds, bool settings, int onTab)
+        /// <summary>Show the page as it is `seconds` after it came up.</summary>
+        public void Preview(float seconds)
         {
             age = seconds; leaving = 0; leaveT = 0f;
             coverThen = null; coverA = coverWant = 0f; coverRate = 0f; StepCover(0f);
-            sheetOpen = settings; sheet = settings ? 1f : 0f;
             ApplySafeArea();
-            if (settings) { ShowTab(onTab); Refresh(); }
             SetAlphas();
         }
         /// <summary>Show a moment of the way in (0 the tap .. 1 the cloud closed), to `way` (1 the camp, 2 the start gate).</summary>
         public void PreviewLeaving(float t, int way)
         {
-            age = 30f; sheetOpen = false; sheet = 0f; leaving = way; leaveT = Mathf.Clamp01(t);
+            age = 30f; leaving = way; leaveT = Mathf.Clamp01(t);
             coverWant = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.5f, 1f, leaveT)); coverRate = 0f;
             SetAlphas(); StepCover(0f);
         }
-        public int TabCount => Settings.TabCount;
-        /// <summary>The settings as they read now, and stepping one, for the test tools.</summary>
-        public int RowCount => Settings.RowCount;
-        public string RowText(int i) => Settings.RowText(i);
-        public void RowStep(int i, int dir) => Settings.RowStep(i, dir);
-        public bool RowToggle(int i) => Settings.RowToggle(i);
-        /// <summary>The middle of one of the page's controls on the screen: "camp", "run" or "settings".</summary>
+        /// <summary>The middle of one of the page's controls on the screen: "camp" or "run".</summary>
         public Vector2 ScreenPoint(string control)
         {
-            var r = control == "camp" ? campBtn : control == "run" ? runBtn : gearBtn;
+            var r = control == "camp" ? campBtn : runBtn;
             return RectTransformUtility.WorldToScreenPoint(UiCam, r.TransformPoint(r.rect.center));
         }
         public float CoverAlpha => coverA;
         public FarMountain Far => far;
-
-        // ---------------------------------------------------------------- the few pictures the page is drawn with
-
-        /// <summary>Three sliders: the one control for the settings.</summary>
-        static Sprite Sliders(int px) => Draw(px, p =>
-        {
-            float d = 9f;
-            float[] ys = { 0.78f, 0.5f, 0.22f }, knob = { 0.66f, 0.3f, 0.56f };
-            for (int i = 0; i < 3; i++)
-            {
-                d = Mathf.Min(d, Seg(p, new Vector2(0.12f, ys[i]), new Vector2(0.88f, ys[i])) + 0.022f);   // a hair of a line
-                d = Mathf.Min(d, (p - new Vector2(knob[i], ys[i])).magnitude - 0.055f);                    // and its knob
-            }
-            return d;
-        }, 0.04f);
     }
 }

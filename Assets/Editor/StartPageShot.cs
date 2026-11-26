@@ -6,9 +6,11 @@ using UnityEngine;
 using Summit;
 
 /// <summary>
-/// Renders the start page (StartPage.cs) as the game builds it: the bare fly-around from points round the circle,
-/// the page with its title and choices, and the settings open on each tab, by day and by night (and the bare view
-/// at dawn and dusk). Also logs what the far view costs to draw beside a frame of a run.
+/// Renders the start page (StartPage.cs) as the game builds it. FLIGHT: the bare fly-around from points round the
+/// circle and the page with its title and choices, by day and by night (and the bare view at dawn and dusk); what the
+/// far view costs to draw beside a frame of a run. JUMP (the default): the rider's loop off the kicker, each trick
+/// through its moments, with the page over it, and what a frame of it costs. (The settings aren't on this page any
+/// more: SettingsShot has them.)
 /// Batch: -executeMethod StartPageShot.Run -logFile x.log   (no -nographics: it renders)
 /// Writes startmenu-shots/*.png in the project folder (or into $STARTPAGE_OUT).
 /// </summary>
@@ -39,6 +41,8 @@ public static class StartPageShot
         typeof(SummitGame).GetField("halation", NP).SetValue(game, 0);
         typeof(SummitGame).GetMethod("ApplyCamera", NP).Invoke(game, null);
         typeof(SummitGame).GetMethod("ApplyLook", NP).Invoke(game, null);
+        int homeWas = StartPage.Home;
+        StartPage.Home = 1;   // the flight first (the jump: Jump, below)
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
         typeof(SummitGame).GetMethod("ToTitle", NP).Invoke(game, null);
@@ -72,19 +76,14 @@ public static class StartPageShot
             for (int k = 0; k < views; k++)
             {
                 start.Clock = lap * k / views;
-                start.Preview(0f, false, 0);
+                start.Preview(0f);
                 Shoot($"fly_{name}_{k}.png", false);
             }
             if (!main) continue;
             // the page as it stands once it has come up, then the settings on every tab
             start.Clock = 6f;
-            start.Preview(30f, false, 0);
+            start.Preview(30f);
             Shoot($"page_{name}.png", true);
-            for (int t = 0; t < start.TabCount; t++)
-            {
-                start.Preview(30f, true, t);
-                Shoot($"settings_{name}_{t}.png", true);
-            }
         }
         // the photo the mountain is modelled on, and the mountain from the side the photo was taken (down the valley)
         TimeOfDay.TestClock = 1.4f; dayNight.ApplyNow(); start.Far.Shade(-RenderSettings.sun.transform.forward, 0f, -1f);
@@ -99,13 +98,13 @@ public static class StartPageShot
             foreach (var (when, clock) in new[] { ("day", 1.4f), ("night", 3.4f) })
             {
                 TimeOfDay.TestClock = clock; dayNight.ApplyNow(); start.Far.Shade(-RenderSettings.sun.transform.forward, 0f, -1f);
-                start.Clock = 6f; start.Preview(30f, false, 0);
+                start.Clock = 6f; start.Preview(30f);
                 Shoot($"title_{nm}_{when}.png", true);
             }
             TimeOfDay.TestClock = 1.4f; dayNight.ApplyNow(); start.Far.Shade(-RenderSettings.sun.transform.forward, 0f, -1f);
             foreach (float t in new[] { 1.1f, 2.6f })
             {
-                start.Clock = 6f; start.Preview(2.6f + t, false, 0);
+                start.Clock = 6f; start.Preview(2.6f + t);
                 Shoot($"title_{nm}_reveal_{t * 10f:0}.png", true);
             }
             Sheet($"sheet_title_{nm}.png", $"title_{nm}_day.png", $"title_{nm}_night.png", $"title_{nm}_reveal_11.png", $"title_{nm}_reveal_26.png");
@@ -114,7 +113,7 @@ public static class StartPageShot
         start.SetTitleStyle(TitleArt.DefaultStyle, true);
         // half-way up: the title in, the choices coming
         TimeOfDay.TestClock = 1.4f; dayNight.ApplyNow(); start.Far.Shade(-RenderSettings.sun.transform.forward, 0f, -1f);
-        start.Clock = 3.6f; start.Preview(3.6f, false, 0);
+        start.Clock = 3.6f; start.Preview(3.6f);
         Shoot("page_day_easing_in.png", true);
 
         // the way in, by day and by night: the lens pushing in on the summit as the cloud closes, and what is there
@@ -128,19 +127,21 @@ public static class StartPageShot
                 start.PreviewLeaving(t, 2);
                 Shoot($"leaving_{when}_{t * 100f:0}.png", true);
             }
-            start.Preview(30f, false, 0); start.Tick(0f);
+            start.Preview(30f); start.Tick(0f);
             Sheet($"sheet_leaving_{when}.png", $"page_{when}.png", $"leaving_{when}_30.png", $"leaving_{when}_60.png", $"leaving_{when}_80.png", $"leaving_{when}_100.png");
         }
         TimeOfDay.TestClock = 1.4f; dayNight.ApplyNow();
         Sheet("sheet_fly_day.png", "fly_day_0.png", "fly_day_1.png", "fly_day_2.png", "fly_day_3.png", "fly_day_4.png", "fly_day_5.png");
         Sheet("sheet_fly_night.png", "fly_night_0.png", "fly_night_1.png", "fly_night_2.png", "fly_night_3.png", "fly_night_4.png", "fly_night_5.png");
         Sheet("sheet_fly_dawn_dusk.png", "fly_morning_0.png", "fly_morning_1.png", "fly_morning_2.png", "fly_evening_0.png", "fly_evening_1.png", "fly_evening_2.png");
-        Sheet("sheet_page.png", "page_day.png", "settings_day_0.png", "settings_day_1.png", "settings_day_2.png", "settings_day_3.png", "page_night.png", "settings_night_1.png");
+        Sheet("sheet_page.png", "page_day.png", "page_night.png");
 
         Lapse();
         Cost();
         Flow();
         Leaks();
+        Jump();
+        StartPage.Home = homeWas;
         // back to day before leaving: the night dims the Spray and Trail material assets, and nothing here restores them
         TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt; dayNight.ApplyNow();
         TimeOfDay.TestClock = -1f;
@@ -148,14 +149,13 @@ public static class StartPageShot
     }
 
     /// <summary>
-    /// The time-lapse: twelve moments evenly through one loop, the settings opened part way (the game's own time shown,
-    /// the time-lapse carrying on from it when they close), and what a frame of it costs on the CPU.
+    /// The time-lapse: twelve moments evenly through one loop, and what a frame of it costs on the CPU.
     /// </summary>
     static void Lapse()
     {
         TimeOfDay.TestClock = -1f;
         var apply = typeof(DayNight).GetMethod("Apply", NP);
-        start.Preview(30f, false, 0);
+        start.Preview(30f);
         float T = StartPage.LapseSeconds;
         var names = new System.Collections.Generic.List<string>();
         for (int k = 0; k < 12; k++)
@@ -169,17 +169,6 @@ public static class StartPageShot
             Debug.Log($"STARTLAPSE {nm}: {t:0.0} s of {T:0} s, clock {TimeOfDay.Clock:0.00} ({TimeOfDay.PhaseName[(int)TimeOfDay.Clock]}), sky turned {DayNight.SkyTurn:0}, darkness {dayNight.Darkness:0.00}");
         }
         Grid("sheet_lapse.png", 6, names.ToArray());
-        // the settings opened at night: the game's own time is shown; closed, the time-lapse carries on from it
-        start.LapseTime = StartPage.LapseTimeOf(3.4f); start.Frame(0f); dayNight.ApplyNow();
-        start.Far.Shade(-RenderSettings.sun.transform.forward, 0f, -1f);
-        Shoot("lapse_panel_before.png", true);
-        start.Preview(30f, true, 1); start.Frame(0f); dayNight.ApplyNow();
-        start.Far.Shade(-RenderSettings.sun.transform.forward, 0f, -1f);
-        Shoot("lapse_panel_open.png", true);
-        Debug.Log($"STARTLAPSE panel open: shown={TimeOfDay.Shown:0.00} (off), clock now {TimeOfDay.Clock:0.00} = the game's own {TimeOfDay.Own:0.00} ({TimeOfDay.LockLabel})");
-        start.Preview(30f, false, 0); start.Frame(0f);
-        Debug.Log($"STARTLAPSE panel closed: the time-lapse carries on from {TimeOfDay.Shown:0.00} (the game's own was {TimeOfDay.Own:0.00})");
-        Sheet("sheet_lapse_panel.png", "lapse_panel_before.png", "lapse_panel_open.png");
 
         // the cost of a frame of it, played through at 60 frames a second: the flight, the time-lapse, the shadow's share
         // and the day's light (DayNight.Apply; its sky reflection is captured four times a second at most and is left
@@ -206,6 +195,65 @@ public static class StartPageShot
         TimeOfDay.TestClock = 1.4f; DayNight.SkyTurn = 0f; dayNight.ApplyNow();
     }
 
+    /// <summary>
+    /// The JUMP view: each trick through its moments (the way in, the pop, the top of the trick, the landing, away),
+    /// the page over a few of them, the push in as a way in is chosen, and what a frame of it costs.
+    /// </summary>
+    static void Jump()
+    {
+        start.Hide();
+        StartPage.Home = 0;
+        TimeOfDay.TestClock = StartPage.JumpClock; dayNight.ApplyNow();
+        typeof(SummitGame).GetMethod("ToTitle", NP).Invoke(game, null);
+        Debug.Log($"STARTJUMP showing: jumping={start.Jumping} mask={cam.cullingMask} (layer {StartJump.Layer})");
+        if (!start.Jumping) { Debug.Log("STARTJUMP WRONG: the jump didn't show"); return; }
+        var j = start.Jump;
+        dayNight.ApplyNow();
+        string[] trick = { "360indy", "backflip", "540method" };
+        var names = new System.Collections.Generic.List<string>();
+        for (int k = 0; k < 3; k++)
+        {
+            foreach (var (label, at) in new[] { ("in", -0.9f), ("pop", 0.05f), ("rise", 0.3f), ("top", 0.5f), ("fall", 0.72f), ("land", 1.03f), ("away", 1.5f) })
+            {
+                j.Seek(k, at);
+                start.Preview(30f);
+                string nm = $"jump_{trick[k]}_{label}.png";
+                Shoot(nm, false);
+                names.Add(nm);
+            }
+        }
+        Grid("sheet_jump.png", 7, names.ToArray());
+        // the page over it
+        foreach (var (label, at) in new[] { ("rise", 0.3f), ("top", 0.5f), ("in", -0.9f) })
+        {
+            j.Seek(0, at); start.Preview(30f);
+            Shoot($"jump_page_{label}.png", true);
+        }
+        j.Seek(1, 0.5f); start.Preview(30f); Shoot("jump_page_flip.png", true);
+        j.Seek(0, 0.5f); start.Preview(3.6f); Shoot("jump_page_easing_in.png", true);
+        foreach (float t in new[] { 0.3f, 0.6f, 0.8f })
+        {
+            j.Seek(0, 0.45f);
+            start.PreviewLeaving(t, 2);
+            Shoot($"jump_leaving_{t * 100f:0}.png", true);
+        }
+        start.Preview(30f);
+        Sheet("sheet_jump_page.png", "jump_page_in.png", "jump_page_rise.png", "jump_page_top.png", "jump_page_flip.png", "jump_leaving_60.png");
+        // the cost: a minute of the loop at 60 frames a second, and what's drawn
+        var sw = new System.Diagnostics.Stopwatch();
+        float worst = 0f, sum = 0f; int n = 600;
+        j.Seek(0, 0f);
+        for (int f = 0; f < n; f++)
+        {
+            sw.Restart(); start.Frame(1f / 60f);
+            float ms = (float)sw.Elapsed.TotalMilliseconds; sum += ms; worst = Mathf.Max(worst, ms);
+        }
+        Shoot(null, false);
+        Debug.Log($"STARTJUMP COST over {n} frames: CPU a frame mean {sum / n:0.00} ms, worst {worst:0.00} ms; {Seen()}");
+        start.Hide();
+        Debug.Log($"STARTJUMP hidden: mask={cam.cullingMask} near={cam.nearClipPlane:0.##} far={cam.farClipPlane:0}");
+    }
+
     /// <summary>Pictures in a grid, `cols` across, at half size.</summary>
     static void Grid(string file, int cols, params string[] names)
     {
@@ -230,7 +278,7 @@ public static class StartPageShot
     /// <summary>What a frame of the far view costs to draw, beside a frame of a run from the start gate.</summary>
     static void Cost()
     {
-        start.Clock = 6f; start.Preview(0f, false, 0);
+        start.Clock = 6f; start.Preview(0f);
         Shoot(null, false);
         Debug.Log($"STARTPAGE COST fly-around: {Seen()} (far view meshes: {start.Far.Triangles} tris; plus the sky)");
         start.Hide();
@@ -255,8 +303,8 @@ public static class StartPageShot
     }
 
     /// <summary>
-    /// The page's logic, driven as the game drives it: every setting stepped and put back, then each way in and the
-    /// way back from the camp, checking the camera is handed back as it was found.
+    /// The page's logic, driven as the game drives it: each way in and the way back from the camp, checking the camera
+    /// is handed back as it was found.
     /// </summary>
     static void Flow()
     {
@@ -270,17 +318,7 @@ public static class StartPageShot
         string before = Cam();
         Call("ToTitle");
         Debug.Log($"STARTFLOW title: state={St()} showing={start.Showing} {Cam()} (the game's camera was {before})");
-        // every setting: a step on and a step back (a toggle: twice), reading it each time
-        for (int i = 0; i < start.RowCount; i++)
-        {
-            string was = start.RowText(i);
-            start.RowStep(i, 1); string then = start.RowText(i);
-            if (then == was && !start.RowToggle(i)) { start.RowStep(i, -1); then = start.RowText(i); start.RowStep(i, 1); }   // (already at its top: down and back)
-            else start.RowStep(i, start.RowToggle(i) ? 1 : -1);
-            string back = start.RowText(i);
-            Debug.Log($"STARTFLOW setting {i}: {was}  ->  {then.Substring(then.IndexOf('=') + 2)}  ->  {back.Substring(back.IndexOf('=') + 2)}{(was != back ? "   NOT RESTORED" : "")}{(was == then ? "   (no change: at an end, or greyed)" : "")}");
-        }
-        // the three controls, by touch
+        // the two ways in, by touch
         const float dt = 1f / 60f;
         int Tap(string control, int frames)
         {
@@ -288,12 +326,8 @@ public static class StartPageShot
             for (int f = 0; f < frames && go == 0; f++) { start.Tick(dt); go = start.Step(dt, false, Vector2.zero); }
             return go;
         }
-        start.Preview(30f, false, 0);
-        int g = Tap("settings", 40);
-        Debug.Log($"STARTFLOW tap settings: go={g} state={St()}");
-        start.Step(dt, true, new Vector2(W * 0.5f, H * 0.9f));   // (the page here is drawn by the picture's camera: up in the view, off the sheet, puts it away)
-        for (int f = 0; f < 40; f++) { start.Tick(dt); start.Step(dt, false, Vector2.zero); }
-        g = Tap("run", 200);
+        start.Preview(30f);
+        int g = Tap("run", 200);
         Debug.Log($"STARTFLOW tap GO FOR A RUN: go={g} cloud={start.CoverAlpha:0.00}");
         start.Hide(); Call("ToReady", false);
         for (int f = 0; f < 80; f++) start.Tick(dt);
@@ -307,7 +341,7 @@ public static class StartPageShot
         start.Through(() => Call("ToTitle"));
         for (int f = 0; f < 40; f++) start.Tick(dt);
         Debug.Log($"STARTFLOW back at the title: state={St()} showing={start.Showing} busy={start.Busy} cloud={start.CoverAlpha:0.00} {Cam()}");
-        start.Preview(30f, false, 0);
+        start.Preview(30f);
         g = Tap("camp", 200);
         start.Hide(); Call("ToHub", false);
         for (int f = 0; f < 80; f++) start.Tick(dt);
@@ -334,7 +368,7 @@ public static class StartPageShot
         Object.DestroyImmediate(photo);
         // the far view from straight down the valley, through a lens that frames it as the photo is framed
         start.Clock = (0f - StartPage.StartAzimuth) / 360f * StartPage.OrbitSeconds;
-        start.Preview(0f, false, 0);
+        start.Preview(0f);
         start.Frame(0f); aLate.Invoke(atmo, null);
         float keptFov = cam.fieldOfView; var keptRot = cam.transform.rotation;
         var mid = FarMountain.Middle;
