@@ -221,7 +221,7 @@ public static class HubShot
         // leave the editor's own save as it was found
         Progress.ResetAll();
         PlayerPrefs.DeleteKey("summit_missions");
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>The camera looking down at the snow just behind the walker (the prints), not following.</summary>

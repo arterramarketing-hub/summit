@@ -103,7 +103,7 @@ public static class AirControlTest
         Debug.Log($"AIRCTL done: {rides} rides, {measured} steered airs of 0.8 s or more, the least landing moved {least:0.00} m, the most {most:0.00} m per second of air; {fails} failure(s)");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static float RiderTricks_FlickAt() => Rider.FlickAt;

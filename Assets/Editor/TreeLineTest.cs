@@ -118,7 +118,7 @@ public static class TreeLineTest
         Debug.Log(fails == 0 ? $"TREELINE PASS ({checks} checks)" : $"TREELINE FAIL ({fails} of {checks})");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(fails == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 ? 0 : 1);
     }
 
     /// <summary>What the forest plants within a line's core (less a little, for rounding), in the cell row at z.</summary>

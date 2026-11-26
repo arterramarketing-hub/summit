@@ -92,7 +92,7 @@ public static class WindStrip
 
         TreeWind.Still();
         TimeOfDay.TestClock = -1f;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>The weather's wind strength: TreeWind.ForWeather where there is one, else the old sum (Weather.Step's).</summary>

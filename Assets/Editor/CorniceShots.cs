@@ -116,9 +116,9 @@ public static class CorniceShots
                         var m = Surfaces.Surface(x, z);
                         Debug.Log($"PROBE c{c}k{k} u{u:0} pow {m.powder:0.00} ice {m.ice:0.00} crud {m.crud:0.00} crust {m.crust:0.00} face {Cliffs.CorniceFace(x, z):0.00} rough {Slope.Rough(x, z):0.00}");
                     }
-                    TestPrefs.Restore(); EditorApplication.Exit(0); return;
+                    TestPrefs.Restore(); TestHarness.Exit(0); return;
                 }
-        TestPrefs.Restore(); EditorApplication.Exit(0);
+        TestPrefs.Restore(); TestHarness.Exit(0);
     }
 
     static void JumpViews(Cliffs.Jump j, List<(string, Vector3, Quaternion, Vector3)> views, int seed)
@@ -260,6 +260,6 @@ public static class CorniceShots
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(code);
+        TestHarness.Exit(code);
     }
 }

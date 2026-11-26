@@ -72,7 +72,7 @@ public static class TreeBreakShot
         catch (System.Exception e) { Debug.LogError("TREEBREAK exception " + e); }
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     // ---- which trees can snap, top to bottom of the mountain

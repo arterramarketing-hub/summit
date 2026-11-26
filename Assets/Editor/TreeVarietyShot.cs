@@ -76,7 +76,7 @@ public static class TreeVarietyShot
         Shoot(cam, props, file);
         Debug.Log($"TREES {want[0]} {want[1]} z={z:0} alt={Slope.AltitudeFeet(z):0}ft low={Forest.Low(z):0.00} trees+rocks={inst} draws={draws} tris={tris} shadowDraws={sDraws} shadowTris={sTris}");
         Physics.simulationMode = SimulationMode.FixedUpdate;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static readonly MethodInfo draw = typeof(Forest).GetMethod("Draw", NP);

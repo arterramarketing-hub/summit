@@ -71,7 +71,7 @@ public static class TreeGlanceTest
         Debug.Log(fails == 0 ? $"TREEGLANCE PASS ({checks} checks)" : $"TREEGLANCE FAIL ({fails} of {checks})");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(fails == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 ? 0 : 1);
     }
 
     /// <summary>A tree in the lower forest with nothing else standing in a lane 20 m up the hill from it, on open, even ground.</summary>

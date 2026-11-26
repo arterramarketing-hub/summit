@@ -209,7 +209,7 @@ public static class SteerTest
         Scale = scale0; Rider.Pace = paceWas;
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(fails == 0);
     }
 
     /// <summary>

@@ -145,7 +145,7 @@ public static class StartPageShot
         // back to day before leaving: the night dims the Spray and Trail material assets, and nothing here restores them
         TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt; dayNight.ApplyNow();
         TimeOfDay.TestClock = -1f;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>

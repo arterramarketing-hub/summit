@@ -53,7 +53,7 @@ public static class LiftArriveTest
         ChaseCamera.TestDt = 0f; SkiLift.TestClock = -1.0; LiftArrive.On = true; LiftArrive.TestFailAt = 0f;
         TestPrefs.Restore();
         Log($"done: {fails} failure(s)");
-        EditorApplication.Exit(fails == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 ? 0 : 1);
     }
 
     static string State() => stateF.GetValue(game).ToString();

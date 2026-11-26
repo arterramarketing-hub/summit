@@ -51,7 +51,7 @@ public static class CampLeakTest
         }
         finally { TestPrefs.Restore(); }
         Debug.Log($"CAMPLEAK done: {grew} kind(s) grew");
-        EditorApplication.Exit(grew == 0 ? 0 : 1);
+        TestHarness.Exit(grew == 0 ? 0 : 1);
     }
 
     static Dictionary<string, Dictionary<string, int>> Count()

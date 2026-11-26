@@ -61,7 +61,7 @@ public static class RagdollAudit
         Debug.Log($"RAGAUDIT TOTAL {n} crashes: {tot}");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>One crash traced (GlitchTest's seed 3, 30 m/s, wagged, getting up once at rest): where the body is every quarter second.</summary>
@@ -99,7 +99,7 @@ public static class RagdollAudit
             if (!r.Crashed) { Debug.Log($"RAGTRACE up at t={t:0.00}"); break; }
         }
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     class Stats

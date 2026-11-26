@@ -80,7 +80,7 @@ public static class PointsShot
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     // ---------------------------------------------------------------- the stepping, as the game runs it

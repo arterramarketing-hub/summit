@@ -52,7 +52,7 @@ public static class PeopleProbe
         }
         System.IO.File.WriteAllText("Logs/people-probe-" + which + ".txt", sb.ToString());
         Debug.Log("PROBE written");
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
     static float Min(Vector2[] a, int k) { float m = 9f; foreach (var v in a) m = Mathf.Min(m, v[k]); return m; }
     static float Max(Vector2[] a, int k) { float m = -9f; foreach (var v in a) m = Mathf.Max(m, v[k]); return m; }

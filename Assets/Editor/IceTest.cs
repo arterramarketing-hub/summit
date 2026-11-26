@@ -125,7 +125,7 @@ public static class IceTest
         Debug.Log($"ICE done: {laid} icy stretches on {mountains} mountains, {rides} rides; {fails} failure(s)");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(fails == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 ? 0 : 1);
     }
 
     /// <summary>No ice at a lip, a landing or the like, by the features themselves.</summary>
@@ -241,7 +241,7 @@ public static class IceTest
         var camStep = typeof(ChaseCamera).GetMethod("LateUpdate", NP);
         chase.enabled = false;
         var secs = Surfaces.IceSections;
-        if (secs.Length == 0) { Debug.Log($"ICE-SHOT seed{seed}: no icy stretch"); EditorApplication.Exit(1); return; }
+        if (secs.Length == 0) { Debug.Log($"ICE-SHOT seed{seed}: no icy stretch"); TestHarness.Exit(1); return; }
         var s = secs[Mathf.Clamp(int.TryParse(System.Environment.GetEnvironmentVariable("ICE_SHOT_PICK"), out int pk) ? pk : 0, 0, secs.Length - 1)];
         var cam = Camera.main;
         const int W = 590, H = 1280;
@@ -294,7 +294,7 @@ public static class IceTest
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     const float IceTestSeen = 22f;   // (the approach picture: this far above the stretch's start)

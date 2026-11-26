@@ -107,6 +107,6 @@ public static class CampWalkTest
         Debug.Log($"WALK done: {fails} fail(s)");
         ChaseCamera.TestDt = 0f;
         TestPrefs.Restore();
-        EditorApplication.Exit(fails == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 ? 0 : 1);
     }
 }

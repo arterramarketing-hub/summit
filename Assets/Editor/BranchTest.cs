@@ -78,7 +78,7 @@ public static class BranchTest
         catch (System.Exception e) { Debug.LogError("BRANCH exception " + e); code = 1; }
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(code);
+        TestHarness.Exit(code);
     }
 
     // the trunk's radius at the snow and the height shown, of every tree within reach of the piste, by band down the mountain
@@ -314,7 +314,7 @@ public static class BranchTest
         TimeOfDay.TestClock = -1f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(code);
+        TestHarness.Exit(code);
     }
 
     /// <summary>A tree for each scene, near the piste with a clear run at it from up the hill.</summary>

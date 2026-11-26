@@ -53,6 +53,6 @@ public static class TreeSnowShot
         tex.ReadPixels(new Rect(0, 0, w, hh), 0, 0); tex.Apply();
         File.WriteAllBytes($"TreeSnowShot_{v}.png", tex.EncodeToPNG());
         Debug.Log($"TREESNOW wrote TreeSnowShot_{v}.png (variant {v}, left snow on, right shaken off)");
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 }

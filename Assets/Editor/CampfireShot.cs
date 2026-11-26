@@ -429,7 +429,7 @@ public static class CampfireShot
         TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt; dayNight.ApplyNow(); TimeOfDay.TestClock = -1f;
         Debug.Log($"FIRE done: {fails} failure(s)");
         TestPrefs.Restore();
-        EditorApplication.Exit(fails == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 ? 0 : 1);
     }
 
     static void Shoot(string file)

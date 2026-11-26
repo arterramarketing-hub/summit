@@ -92,7 +92,7 @@ public static class TreeFadeShot
         }
         TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt; dayNight.ApplyNow();
         TimeOfDay.TestClock = -1f;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Shoot(Camera cam, string file)

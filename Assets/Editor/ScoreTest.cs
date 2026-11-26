@@ -52,7 +52,7 @@ public static class ScoreTest
     {
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(fails == 0);
     }
 
     static void Mountain(int seed)
@@ -298,8 +298,9 @@ public static class ScoreTest
             for (int i = 0; i < Mathf.Max(first.Count, lines.Count); i++)
                 if (i >= first.Count || i >= lines.Count || first[i] != lines[i]) { diff++; Debug.Log($"SCORE DIFFERS line {i}:\n  1: {(i < first.Count ? first[i] : "")}\n  2: {(i < lines.Count ? lines[i] : "")}"); }
             Debug.Log($"SCORE {(diff == 0 ? "PASS" : "FAIL")}: the table ridden twice, {first.Count} lines, {diff} different; {fails} failure(s)");
+            if (diff > 0) fails++;
         }
-        catch (System.Exception e) { Debug.LogError("SCORE exception " + e); }
+        catch (System.Exception e) { Debug.LogError("SCORE exception " + e); fails++; }
         Done();
     }
 
@@ -450,7 +451,7 @@ public static class ScoreTest
                 Debug.Log($"SCORERUN bot={kv.Key} ({BotName[kv.Key]}): median {kv.Value[kv.Value.Count / 2]}, low {kv.Value[0]}, high {kv.Value[kv.Value.Count - 1]}");
             }
         }
-        catch (System.Exception e) { Debug.LogError("SCORERUN exception " + e); }
+        catch (System.Exception e) { Debug.LogError("SCORERUN exception " + e); fails++; }
         Done();
     }
 }

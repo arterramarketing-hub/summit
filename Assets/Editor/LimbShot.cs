@@ -66,7 +66,7 @@ public static class LimbShot
         catch (System.Exception e) { Debug.LogError("LIMBSHOT exception " + e); }
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Sequence(bool old)

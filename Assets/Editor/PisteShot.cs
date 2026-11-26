@@ -44,7 +44,7 @@ public static class PisteShot
         cam = Camera.main; chase = cam.GetComponent<ChaseCamera>(); atmo = Object.FindFirstObjectByType<Atmosphere>();
         lights = NightLights.Instance; kit = PisteKit.Instance;
         hamlets = Object.FindFirstObjectByType<Hamlets>(); lifts = Object.FindFirstObjectByType<SkiLift>();
-        if (kit == null || weather == null) { Debug.LogError("PISTESHOT: no PisteKit or Weather"); EditorApplication.Exit(1); return; }
+        if (kit == null || weather == null) { Debug.LogError("PISTESHOT: no PisteKit or Weather"); TestHarness.Exit(1); return; }
         var sw0 = System.Diagnostics.Stopwatch.StartNew();
         string stats = PisteKit.Stats();
         Debug.Log($"PISTESHOT layout: seed {Slope.Seed}, {stats}; trail signs {TrailSigns.Signs.Count}; laid out in {sw0.Elapsed.TotalMilliseconds:0} ms");
@@ -167,7 +167,7 @@ public static class PisteShot
         Weather.TestChoice = 1; TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt; weather.Step(0f); dayNight.ApplyNow();
         TimeOfDay.TestClock = -1f;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static Vector3 Ground(float x, float z, float up) => new Vector3(x, Slope.DrawnHeight(x, z) + up, z);

@@ -63,7 +63,7 @@ public static class LiftGorgeTest
         Debug.Log($"GORGE done: {across} of {rides} grinds got across the gorge, {fails} failure(s); across in {R(times)} s, top speed {R(tops)} m/s; pops off the gorge span: {popsDead} of {pops} killed, falls {R(falls)} m");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(fails > 0 ? 1 : 0);
+        TestHarness.Exit(fails > 0 ? 1 : 0);
     }
 
     static void Step(int n)

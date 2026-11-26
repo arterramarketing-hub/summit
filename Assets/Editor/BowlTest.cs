@@ -101,7 +101,7 @@ public static class BowlTest
         Debug.Log($"BOWL done: {bowls} bowls on {bowls + none} mountains; out of sight past the crest from 30 m above: {hiddenSum / Mathf.Max(1, bowls):0} m on average; {rides} rides, {fails} failure(s)");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(fails == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 ? 0 : 1);
     }
 
     static void Check(int seed, Bowl.Shape s)
@@ -299,7 +299,7 @@ public static class BowlTest
         }
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static Vector3 P(float a, float z, float up) { float x = Slope.Centre(z) + a; return new Vector3(x, Slope.Height(x, z) + up, z); }

@@ -79,7 +79,7 @@ public static class RagdollShot
         catch (System.Exception e) { Debug.LogError("RAGSHOT exception " + e); }
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static Color[] Shoot(Camera cam)

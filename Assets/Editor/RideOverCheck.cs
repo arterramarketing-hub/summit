@@ -125,7 +125,7 @@ public static class RideOverCheck
         Debug.Log(sb.ToString());
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(fails == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 ? 0 : 1);
     }
 
     /// <summary>How far the mountain's own obstacles stand out of the snow (Rider.StandsOut), by kind, over two cycles
@@ -398,6 +398,6 @@ public static class RideOverCheck
         }
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 }

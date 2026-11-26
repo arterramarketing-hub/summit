@@ -576,6 +576,6 @@ public class SummitImport : AssetPostprocessor
         EnsureSky();
         EnsureBackdrop();
         EnsureAvalanche();
-        if (Application.isBatchMode) EditorApplication.Exit(0);
+        if (Application.isBatchMode) TestHarness.Exit(0);
     }
 }

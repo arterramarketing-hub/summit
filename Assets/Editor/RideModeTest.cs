@@ -72,7 +72,7 @@ public static class RideModeTest
         Debug.Log(fails == 0 ? $"RIDES PASS ({checks} checks)" : $"RIDES FAIL ({fails} of {checks})");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(fails == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 ? 0 : 1);
     }
 
     static bool Shown(Transform t) => t != null && t.gameObject.activeInHierarchy;

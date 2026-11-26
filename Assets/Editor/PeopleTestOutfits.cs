@@ -29,7 +29,7 @@ public static partial class PeopleTest
         typeof(SummitGame).GetMethod("ToHub", NP).Invoke(game, new object[] { true });
         ChaseCamera.TestDt = 1f / 30f;
         var life = camp.GetComponent<CampLife>();
-        if (life == null || life.Agents.Count == 0) { Debug.LogError("OUTFITS no camp life"); EditorApplication.Exit(1); return; }
+        if (life == null || life.Agents.Count == 0) { Debug.LogError("OUTFITS no camp life"); TestHarness.Exit(1); return; }
         var lift = Object.FindFirstObjectByType<SkiLift>();
         var lUpd = typeof(SkiLift).GetMethod("Update", NP);
         var fNext = typeof(PeopleKit).GetField("nextRow", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
@@ -124,7 +124,7 @@ public static partial class PeopleTest
         System.IO.File.WriteAllText("Logs/people-outfits.txt", sb.ToString());
         ChaseCamera.TestDt = 0f;
         TestPrefs.Restore();
-        EditorApplication.Exit(ok ? 0 : 1);
+        TestHarness.Exit(ok ? 0 : 1);
     }
 
     class Track { public PersonLook look; public string full, simple; public bool shown, toldRow; }

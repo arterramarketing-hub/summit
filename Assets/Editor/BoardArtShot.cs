@@ -55,7 +55,7 @@ public static class BoardArtShot
         catch (System.Exception e) { Debug.LogError("BOARDART exception " + e); code = 1; }
         TestPrefs.Restore();
         Debug.Log($"BOARDART done: {fails} failure(s)");
-        EditorApplication.Exit(code != 0 || fails > 0 ? 1 : 0);
+        TestHarness.Exit(code != 0 || fails > 0 ? 1 : 0);
     }
 
     static void Stock()
@@ -297,7 +297,7 @@ public static class BoardArtShot
         ChaseCamera.TestDt = 0f; TimeOfDay.TestClock = -1f;
         QualitySettings.SetQualityLevel(quality, false);
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void CFrame()
@@ -430,7 +430,7 @@ public static class BoardArtShot
         Physics.simulationMode = SimulationMode.FixedUpdate;
         QualitySettings.SetQualityLevel(quality, false);
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>Under way down the first stretch, then held still for the shots.</summary>

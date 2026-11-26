@@ -192,6 +192,6 @@ public static class ArcadeTreeShot
         QualitySettings.SetQualityLevel(quality, false);
         TestPrefs.Restore();
         Debug.Log("ARCADE done");
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 }

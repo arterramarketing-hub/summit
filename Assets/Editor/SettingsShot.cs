@@ -203,7 +203,7 @@ public static class SettingsShot
         Debug.Log($"SETTINGSSHOT done: {bad} wrong");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(bad == 0 ? 0 : 1);
+        TestHarness.Exit(bad == 0 ? 0 : 1);
     }
 
     static Camera uiCam;

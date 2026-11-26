@@ -89,7 +89,7 @@ public static class GearLeakTest
         catch (System.Exception e) { Debug.LogError("GEARLEAK exception " + e); fails++; Debug.Log("GEARLEAK FAIL: exception"); }
         Physics.simulationMode = simWas;
         TestPrefs.Restore();
-        EditorApplication.Exit(fails == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 ? 0 : 1);
     }
 
     static void Begin()

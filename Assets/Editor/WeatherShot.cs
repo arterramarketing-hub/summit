@@ -43,7 +43,7 @@ public static class WeatherShot
         dayNight = Get<DayNight>("dayNight"); camp = Get<Camp>("camp"); fx = Get<SnowFX>("fx"); weather = Get<Weather>("weather");
         cam = Camera.main; chase = cam.GetComponent<ChaseCamera>(); atmo = Object.FindFirstObjectByType<Atmosphere>();
         Debug.Log($"WEATHERSHOT built: weather {(weather != null ? weather.Base.ToString() : "NONE")}, seed {Slope.Seed}");
-        if (weather == null) { EditorApplication.Exit(1); return; }
+        if (weather == null) { TestHarness.Exit(1); return; }
         tUpd = typeof(SlopeStreamer).GetMethod("Update", NP); fUpd = typeof(Forest).GetMethod("Update", NP);
         late = typeof(ChaseCamera).GetMethod("LateUpdate", NP); aLate = typeof(Atmosphere).GetMethod("LateUpdate", NP);
         cam.aspect = W / (float)H;
@@ -145,7 +145,7 @@ public static class WeatherShot
         Object.DestroyImmediate(weather.gameObject);
         TimeOfDay.TestClock = -1f;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     // ---------------------------------------------------------------- driving it

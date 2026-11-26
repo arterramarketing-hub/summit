@@ -112,7 +112,7 @@ public static class FaceShot
         TimeOfDay.TestClock = -1f;
         TestPrefs.Restore();
         Debug.Log($"FACE done: {fails} failure(s)");
-        EditorApplication.Exit(code != 0 || fails > 0 ? 1 : 0);
+        TestHarness.Exit(code != 0 || fails > 0 ? 1 : 0);
     }
 
     /// <summary>One person's face: front, three-quarters left, and from the camp camera's distance; night too.</summary>

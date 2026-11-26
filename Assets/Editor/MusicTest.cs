@@ -62,6 +62,6 @@ public static class MusicTest
         music.Set(new RideSound(), 0f);
         Debug.Log($"MUSIC after a paused frame asking for the run: camp {srcs[0].volume:0.000} run {srcs[1].volume:0.000}");
         PlayerPrefs.DeleteKey("summit_music");   // leave the editor's saved music volume at its default
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 }

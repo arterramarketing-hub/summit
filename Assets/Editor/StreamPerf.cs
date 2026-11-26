@@ -119,7 +119,7 @@ public static class StreamPerf
         if (typeof(SlopeStreamer).GetField("lodOf", NP)?.GetValue(terrain) is Dictionary<Vector2Int, int> lodOf) foreach (var kv in lodOf) if (kv.Value > 0 && live.ContainsKey(kv.Key)) far++;
         Debug.Log($"STREAMPERF {frames} frames, rider z {z:0}: frames with a chunk missing in view {missingFrames} (most at once {missingMax}); {live.Count} chunks live, {far} at half resolution");
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>Each piece of a course cycle's build, timed (the most one frame of the cycle ahead can cost).</summary>
@@ -148,7 +148,7 @@ public static class StreamPerf
         var whole = (GameObject)typeof(CourseDressing).GetMethod("BuildCycle", NP).Invoke(dressing, new object[] { 2 });
         Debug.Log($"STREAMPIECES cycle 2 in one go: {(Stopwatch.GetTimestamp() - s0) * TickMs:0.0} ms");
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>
@@ -180,7 +180,7 @@ public static class StreamPerf
             checks++;
         }
         Debug.Log($"STREAMTRAIL {checks} meshes checked: the trail's normals are at most {worst:0.0000} degrees off RecalculateNormals'");
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     // ---------------------------------------------------------------- does half resolution show?
@@ -230,7 +230,7 @@ public static class StreamPerf
             Debug.Log($"STREAMLOOK z {z:0}: farRows {rows} vs full: {differ} of {shots[0].Length} pixels differ by more than 2/255, {big} by more than 12/255, mean {sum / shots[0].Length:0.000}/255");
         }
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static Color32[] Shoot(Camera cam, Atmosphere atmo, string file)
@@ -292,7 +292,7 @@ public static class StreamPerf
         string basePath = System.Environment.GetEnvironmentVariable("STREAM_BASE");
         if (!string.IsNullOrEmpty(basePath) && File.Exists(basePath)) Compare(basePath, parts);
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static string Path(Transform t) => t.parent != null && !t.parent.name.StartsWith("Course ") ? Path(t.parent) + "/" + t.name : t.name;

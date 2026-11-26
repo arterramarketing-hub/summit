@@ -79,7 +79,7 @@ public static class StressTest
         Physics.simulationMode = SimulationMode.FixedUpdate;
         Time.timeScale = 1f; Time.fixedDeltaTime = 1f / 120f;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Count(string kind) { kinds.TryGetValue(kind, out int c); kinds[kind] = c + 1; }

@@ -83,7 +83,7 @@ public static class ForestShadowShot
         QualitySettings.SetQualityLevel(quality, false);
         File.Delete("ForestShadow_warmup.png");
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Shoot(string file)

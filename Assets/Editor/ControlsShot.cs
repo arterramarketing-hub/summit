@@ -27,7 +27,7 @@ public static class ControlsShot
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
         Log($"done: {fails} failure(s)");
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     // ---- the jump finger's rule: play a press of so many frames and see what came of it

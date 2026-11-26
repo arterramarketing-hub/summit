@@ -64,7 +64,7 @@ public static class UphillTest
                   $"\n  by the code at work: {Dump(byCode)}\n  by the ground: {Dump(bySurface)}\n  by the line ridden: {Dump(byLine)}");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static string Dump(Dictionary<string, int> d)

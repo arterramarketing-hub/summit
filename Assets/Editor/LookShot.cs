@@ -89,7 +89,7 @@ public static class LookShot
         }
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static string Slug(string s) => s.ToLowerInvariant().Replace(' ', '_');

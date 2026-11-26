@@ -104,6 +104,6 @@ public static class LineSurvey
         catch (System.Exception e) { Debug.LogError("SURVEY exception " + e); }
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 }

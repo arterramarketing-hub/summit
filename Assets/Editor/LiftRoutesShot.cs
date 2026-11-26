@@ -86,7 +86,7 @@ public static class LiftRoutesShot
             return;
         }
         EditorApplication.update -= Tick;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Mountain(int seed)

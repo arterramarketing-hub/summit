@@ -94,7 +94,7 @@ public static class BandTest
         Debug.Log($"BAND done: {bands} bands, {rides} rides, {fails} failure(s)");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(fails == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 ? 0 : 1);
     }
 
     static void Shape(int seed, CliffBand.Band b)
@@ -353,7 +353,7 @@ public static class BandTest
         }
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Shot(Camera cam, Vector3 from, Vector3 at, string file)

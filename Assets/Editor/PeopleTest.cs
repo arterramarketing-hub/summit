@@ -136,7 +136,7 @@ public static partial class PeopleTest
         Debug.Log(sb.ToString());
         System.IO.File.WriteAllText("Logs/people-chairs.txt", sb.ToString());
         // shoulder to shoulder is a quad chair; more than 6 cm into the next seat would put two people in one place
-        EditorApplication.Exit(bad == 0 && worstNb < 0.06f ? 0 : 1);
+        TestHarness.Exit(bad == 0 && worstNb < 0.06f ? 0 : 1);
 
         void Note(string part, float dd, string who)
         {
@@ -182,7 +182,7 @@ public static partial class PeopleTest
         }
         Debug.Log(sb.ToString());
         System.IO.File.WriteAllText("Logs/people-feet.txt", sb.ToString());
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     // ---------------------------------------------------------------- lift riders: there from as far as their chairs
@@ -286,7 +286,7 @@ public static partial class PeopleTest
         SkiLift.TestClock = -1.0;
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(kept && missingInView == 0 ? 0 : 1);
+        TestHarness.Exit(kept && missingInView == 0 ? 0 : 1);
     }
     static int frameMissing;
 
@@ -313,7 +313,7 @@ public static partial class PeopleTest
         ChaseCamera.TestDt = 1f / 30f;
         var life = camp.GetComponent<CampLife>();
         var sb = new StringBuilder();
-        if (life == null || life.Agents.Count == 0) { Debug.LogError("PEOPLETEST no camp life"); EditorApplication.Exit(1); return; }
+        if (life == null || life.Agents.Count == 0) { Debug.LogError("PEOPLETEST no camp life"); TestHarness.Exit(1); return; }
         float minutes = float.TryParse(System.Environment.GetEnvironmentVariable("SUMMIT_CAMP_MINUTES"), out float mm) ? mm : 4f;
         // two people of someone else's, through the API other sessions use: one wandered by the camp, one held still
         var guestLook = PersonLook.Random(424242); guestLook.name = "Guest";
@@ -495,7 +495,7 @@ public static partial class PeopleTest
         ChaseCamera.TestDt = 0f;
         TestPrefs.Restore();
         bool ok = overlapPeople == 0 && overlapOthers < frameCount / 200 && overlapHero < frameCount / 200 && inThings == 0 && nearEdge == 0 && (walkDist <= 0 || slideDist / walkDist < 0.02);
-        EditorApplication.Exit(ok ? 0 : 1);
+        TestHarness.Exit(ok ? 0 : 1);
     }
     // ---------------------------------------------------------------- the lodge's own people
 
@@ -518,7 +518,7 @@ public static partial class PeopleTest
         typeof(SummitGame).GetMethod("ToHub", NP).Invoke(game, new object[] { true });
         var folk = LodgeFolk.Current;
         var sb = new StringBuilder();
-        if (folk == null || folk.All.Count == 0) { Debug.LogError("PEOPLETEST no lodge folk"); EditorApplication.Exit(1); return; }
+        if (folk == null || folk.All.Count == 0) { Debug.LogError("PEOPLETEST no lodge folk"); TestHarness.Exit(1); return; }
         var toLocal = Matrix4x4.TRS(camp.ChaletPoint(0f, 0f, 0f), Quaternion.Euler(0f, camp.ChaletYaw, 0f), Vector3.one).inverse;
         // what they sit at and stand by (MakeLodge.py's picnic(), bistro(), stool(), cafe(), rack()), in the lodge's frame
         tubes.Clear(); boxes.Clear();
@@ -686,7 +686,7 @@ public static partial class PeopleTest
         Debug.Log(sb.ToString());
         System.IO.File.WriteAllText("Logs/people-lodge.txt", sb.ToString());
         TestPrefs.Restore();
-        EditorApplication.Exit(bad == 0 && overlaps == 0 ? 0 : 1);
+        TestHarness.Exit(bad == 0 && overlaps == 0 ? 0 : 1);
 
         void Note(string part, float dd, string who)
         {

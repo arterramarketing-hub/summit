@@ -89,7 +89,7 @@ public static class CarveShots
         catch (System.Exception e) { Debug.LogError("CARVE-SHOTS exception " + e); }
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>Open cruising piste with `len` m clear down the middle: no crevasse, nothing standing within 12 m, no air.</summary>

@@ -29,6 +29,6 @@ public static class BloodNoiseBake
         imp.textureCompression = TextureImporterCompression.Uncompressed;
         imp.SaveAndReimport();
         Debug.Log("BLOODNOISE baked " + Path_);
-        if (Application.isBatchMode) EditorApplication.Exit(0);
+        if (Application.isBatchMode) TestHarness.Exit(0);
     }
 }

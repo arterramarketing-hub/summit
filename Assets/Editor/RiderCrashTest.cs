@@ -96,7 +96,7 @@ public static class RiderCrashTest
         Debug.Log(fails == 0 ? $"RIDERCRASH PASS ({checks} checks)" : $"RIDERCRASH FAIL ({fails} of {checks})");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(fails == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 ? 0 : 1);
     }
 
     /// <summary>A new run, riding straight down the run at z 320.</summary>

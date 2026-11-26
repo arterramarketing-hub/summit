@@ -101,7 +101,7 @@ public static class RidgeTest
             }
         }
         Debug.Log($"RIDGE probe done: {problems} problem(s)");
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     public static void Shots()
@@ -410,7 +410,7 @@ public static class RidgeTest
         }
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>
@@ -487,7 +487,7 @@ public static class RidgeTest
         }
         TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt;
         Physics.simulationMode = SimulationMode.FixedUpdate;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>
@@ -552,7 +552,7 @@ public static class RidgeTest
             trm.SetVector("_Strata", new Vector4(st.x, 0f, 1f, 0f)); View("DbgL2NoStrata.png", eye, at, 60f, false);
             trm.SetVector("_Snow", new Vector4(5f, 6f, 0f, 0f)); View("DbgL3NoUpSnow.png", eye, at, 60f, false);
             trm.SetVector("_Line", new Vector4(0f, 0.16f, 0f, 0f)); View("DbgL4NoPush.png", eye, at, 60f, false);
-            EditorApplication.Exit(0);
+            TestHarness.Exit(0);
             return;
         }
         if (System.Environment.GetEnvironmentVariable("SNOWLINE_DEBUG") == "1")
@@ -574,7 +574,7 @@ public static class RidgeTest
             var flatRock = new Material(Shader.Find("Unlit/Color")) { color = Color.red };
             foreach (var mr in terrain.GetComponentsInChildren<MeshRenderer>()) mr.sharedMaterials = new[] { flatSnow, flatRock };
             View("Dbg3FlatNear.png", nearEye, at, 60f, false);
-            EditorApplication.Exit(0);
+            TestHarness.Exit(0);
             return;
         }
         foreach (bool night in new[] { false, true })
@@ -611,7 +611,7 @@ public static class RidgeTest
         Debug.Log($"SNOWLINE seed {seed} wall z {zw} height {hw} side {w.side}; terrain rock {tm.shader.name} keyword {tm.IsKeywordEnabled("SUMMIT_ROCK_TERRAIN")} queue {tm.renderQueue}");
         TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt;
         Physics.simulationMode = SimulationMode.FixedUpdate;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>The summit's left shoulder, down its fall line at a few places along it: where the ground holds snow
@@ -644,7 +644,7 @@ public static class RidgeTest
             }
             Debug.Log($"BACK a{a,5:0} {sb}");
         }
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>The ground along the piste's centre line from $LINE_Z0 to $LINE_Z1 on mountain $LINE_SEED, term by term.</summary>
@@ -667,7 +667,7 @@ public static class RidgeTest
                 }
                 Debug.Log($"LINE z={z:0} form={Ridge.FormOf(Course.CycleOf(z))} w={Ridge.Weight(z):0.00} half={Ridge.HalfWidth(z):0.0} right={Ridge.SideAt(z, 1f)} wall={Cliffs.WallCut(Slope.Centre(z) + 12f, z):0.0} {sb}");
             }
-            EditorApplication.Exit(0);
+            TestHarness.Exit(0);
             return;
         }
         for (float z = z0; z <= z1; z += 1f)
@@ -675,7 +675,7 @@ public static class RidgeTest
             float x = Slope.Centre(z);
             Debug.Log($"LINE z={z:0} h-line={Slope.Height(x, z) - Slope.FallLine(z):0.00} jump={Cliffs.JumpHeight(x, z):0.00} kick={Slope.Kicker(x, z):0.00} drops={Slope.Drops(z):0.00} canyon={Ridge.Depth(z):0.00} wall={Cliffs.WallCut(x, z):0.00} sec={Course.At(z)} n.y={Slope.Normal(x, z).y:0.00}");
         }
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     public static void Fit()
@@ -823,7 +823,7 @@ public static class RidgeTest
         }
         Debug.Log($"RIDGEFIT done: {problems} problem(s)");
         Physics.simulationMode = SimulationMode.FixedUpdate;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>Batchmode renders do not re-skin meshes: bake them for the shot, then put them back.</summary>

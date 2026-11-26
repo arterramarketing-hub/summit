@@ -155,7 +155,7 @@ public static class DeckTest
         Physics.simulationMode = SimulationMode.FixedUpdate;
         SkiLift.TestClock = -1.0;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static string Sum(List<Ride> rs)
@@ -332,7 +332,7 @@ public static class DeckTest
         SkiLift.SpreadBuild = false;
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     // ================================================================ renders
@@ -363,7 +363,7 @@ public static class DeckTest
                 if (s.o.y - Slope.DrawnHeight(e.x, e.z) > 3f) { st = s; found = true; break; }
             }
         }
-        if (!found) { Debug.LogError("DECK shots: no station"); EditorApplication.Exit(1); return; }
+        if (!found) { Debug.LogError("DECK shots: no station"); TestHarness.Exit(1); return; }
         const float c = 4.7f, v0 = 16f;
         clock0 = 1200.0;
         // the rides once each, to find their moments
@@ -416,7 +416,7 @@ public static class DeckTest
             return;
         }
         EditorApplication.update -= Tick;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>The ride again, to its `stepsTo`th step, and the camera set.</summary>

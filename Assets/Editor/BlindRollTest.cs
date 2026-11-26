@@ -97,7 +97,7 @@ public static class BlindRollTest
         Debug.Log($"BLIND done: {blinds} blind rolls ({steps} with a rock step), {plains} plain; out of sight past the lip from 30 m above: blind {hiddenBlind / Mathf.Max(1, blinds):0.0} m on average, plain {hiddenPlain / Mathf.Max(1, plains):0.0} m; {rides} rides, {fails} failure(s)");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(fails == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 ? 0 : 1);
     }
 
     static void Blind(int seed, Slope.Drop d)
@@ -250,7 +250,7 @@ public static class BlindRollTest
         }
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Shot(Camera cam, Vector3 from, Vector3 at, string file)

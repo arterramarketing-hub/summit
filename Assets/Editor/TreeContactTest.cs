@@ -104,7 +104,7 @@ public static class TreeContactTest
         Debug.Log($"TREECONTACT {(fails == 0 ? "PASS" : "FAIL")} ({fails} failures)");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(fails == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 ? 0 : 1);
     }
 
     /// <summary>The tall trees nearest the run in the lower forest: each one's top knocked off a metre above its solid

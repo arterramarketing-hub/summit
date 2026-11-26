@@ -129,7 +129,7 @@ public static class LodgeTex
         if (EditorUserBuildSettings.activeBuildTarget != BuildTarget.iOS)
         {
             Debug.Log("LODGETEX not building: the project isn't on iOS here");
-            EditorApplication.Exit(0);
+            TestHarness.Exit(0);
             return;
         }
         var report = UnityEditor.BuildPipeline.BuildPlayer(new BuildPlayerOptions
@@ -145,7 +145,7 @@ public static class LodgeTex
                 if (c.sourceAssetPath.EndsWith(".mat")) mats += (long)c.packedSize; else tex += (long)c.packedSize;
             }
         Debug.Log($"LODGETEX build {report.summary.result}: the lodge's textures {tex / 1024} KB, its materials {mats / 1024} KB; all packed assets {all / 1024} KB; build total {report.summary.totalSize / 1024} KB");
-        EditorApplication.Exit(report.summary.result == UnityEditor.Build.Reporting.BuildResult.Succeeded ? 0 : 1);
+        TestHarness.Exit(report.summary.result == UnityEditor.Build.Reporting.BuildResult.Succeeded ? 0 : 1);
     }
 
     static void Import(string path, TextureImporterType type, bool srgb, TextureImporterFormat phone)

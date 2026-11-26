@@ -122,6 +122,6 @@ public static class LiftLayoutCheck
         }
         catch (System.Exception e) { Fail("exception " + e); }
         Debug.Log($"LAYOUT done: {lifts} lifts on {Seeds.Length} mountains; {summits} Summit lifts at the camp ({onPad} on the top's pad at the gate's level); {parks} park lifts and {across} lines across the run in {cycles} cycles with a first line; {fails} failure(s)");
-        EditorApplication.Exit(fails == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 ? 0 : 1);
     }
 }

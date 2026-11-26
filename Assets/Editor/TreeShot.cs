@@ -95,7 +95,7 @@ public static class TreeShot
             }
         }
         Physics.simulationMode = SimulationMode.FixedUpdate;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static readonly MethodInfo draw = typeof(Forest).GetMethod("Draw", NP);

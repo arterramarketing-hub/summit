@@ -194,7 +194,7 @@ public static class WeatherPerf
         Object.DestroyImmediate(weather.gameObject);
         TimeOfDay.TestClock = -1f;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static readonly Dictionary<string, int> marks = new Dictionary<string, int>();

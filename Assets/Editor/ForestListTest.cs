@@ -62,7 +62,7 @@ public static class ForestListTest
         if (urp != null) urp.shadowDistance = keptShadow;
         Debug.Log(fails == 0 ? "FORESTLIST PASS" : $"FORESTLIST FAIL ({fails})");
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Ride(Transform t)

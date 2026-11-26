@@ -361,6 +361,6 @@ public static class FarviewShot
         Farview.TestOn = false; Farview.Disabled = false; Farview.TestClock = -1.0;
         QualitySettings.SetQualityLevel(quality, false);
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 }

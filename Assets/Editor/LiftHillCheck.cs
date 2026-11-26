@@ -172,8 +172,11 @@ public static class LiftHillCheck
         var bd = new System.Text.StringBuilder();
         for (int i = 0; i < speeds.Length; i++) bd.Append($" {speeds[i]:0} m/s {bySpeedDirect[i]}/{with};");
         Debug.Log($"HILLRIDE done, asking for the line's sideways speed: {grindsDirect} of {tries} rides reached a cable grind.{bd}");
+        // (main: 203 of 266, 76%; fewer than 60% reaching a cable, or no lift with a hill at all, means the hills broke)
+        bool pass = with > 0 && tries > 0 && grinds * 100 >= tries * 60;
+        Debug.Log(pass ? "HILLRIDE PASS" : $"HILLRIDE FAIL: {grinds} of {tries} rides reached a cable grind (at least 60% wanted), {with} lifts with a hill or ramp");
         Physics.simulationMode = SimulationMode.FixedUpdate;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(pass);
     }
 
     public static void Shots()
@@ -258,7 +261,7 @@ public static class LiftHillCheck
                 Debug.Log($"HILLSHOT seed {seed} lift {l.id}: {what} at x {spot.x:0} z {spot.z:0}, {ghosts.Count} solid colliders within 30 m");
             }
         }
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Shoot(Camera cam, Atmosphere atmo, SkiLift lifts, MethodInfo liftUpd, string file)

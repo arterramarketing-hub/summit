@@ -175,7 +175,7 @@ public static class ClosetShot
             TimeOfDay.TestClock = -1f;
             QualitySettings.SetQualityLevel(quality, false);
         }
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static IEnumerable<string> AllKeys()

@@ -39,7 +39,7 @@ public static class CampStairsShot
             Progress.ResetAll(); PlayerPrefs.DeleteKey("summit_missions");
             TestPrefs.Restore();
         }
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Shots()

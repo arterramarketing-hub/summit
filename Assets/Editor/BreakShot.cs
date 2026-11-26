@@ -66,7 +66,7 @@ public static class BreakShot
         catch (System.Exception e) { Debug.LogError("BREAK exception " + e); }
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Start(float x, float z, float v)

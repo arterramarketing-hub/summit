@@ -33,6 +33,7 @@ public static class NudgeTest
     static FieldInfo fWobble, fSlow, fKnock;
     static float tHop = -9f, tGlance = -9f, tHit = -9f, tLand = -9f, tJump = -9f, tCrash = -9f, tUp = -9f, tGrind = -9f, tBrush = -9f, now;
     static int brushes; static bool skidNow;
+    static int fails;   // NUDGE-FAIL lines and exceptions: Run exits 1 if there were any
     // NUDGE_TRACE="seed77 run,6.2,6.5": every step of that ride between those times
     static string traceName; static float traceA, traceB;
 
@@ -270,7 +271,7 @@ public static class NudgeTest
             if (traceName != null && name.StartsWith(traceName) && t >= traceA && t <= traceB)
                 Debug.Log($"NUDGE-TRACE t={t:0.000} p=({p.x:0.00},{p.y:0.00},{p.z:0.00}) v=({v.x:0.00},{v.y:0.00},{v.z:0.00}) speed={r.Speed:0.0} head={r.Heading:0.000} air={r.Airborne} above={r.AboveGround:0.00} steer={r.Steer:0.00} grind={r.Grinding} solid={Course.Solid(p.x, p.z, r.Speed)} drawn={Slope.DrawnHeight(p.x, p.z):0.00} x-c={p.x - Slope.Centre(p.z):0.0} fall={r.FallLine * Mathf.Rad2Deg:0} side={r.Side:0.0} sec={Course.At(p.z)} why={Why(p)}");
             vPrev = v; airPrev = r.Airborne; crashedPrev = r.Crashed;
-            if (float.IsNaN(p.x)) { Debug.Log($"NUDGE-FAIL {name}: NaN"); break; }
+            if (float.IsNaN(p.x)) { fails++; Debug.Log($"NUDGE-FAIL {name}: NaN"); break; }
         }
         Close(); CloseDrift();
         ChaseCamera.TestDt = 0f;
@@ -361,11 +362,12 @@ public static class NudgeTest
             Print("piste edge", edge);
             }
         }
-        catch (System.Exception e) { Debug.LogError("NUDGE exception " + e); }
+        catch (System.Exception e) { Debug.LogError("NUDGE exception " + e); fails++; }
         finally { Rider.Pace = pace0; }
+        Debug.Log(fails == 0 ? "NUDGE PASS" : $"NUDGE FAIL ({fails} failure(s))");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(fails == 0);
     }
 
     /// <summary>One of GlitchTest's rides, step by step: NUDGE_DEBUG="seed,z,dx,v0,amp,rate,t0,t1" (the finger a sine of
@@ -394,7 +396,7 @@ public static class NudgeTest
         }
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Merge(Tally a, Tally b)
@@ -427,7 +429,7 @@ public static class NudgeTest
             if (bad) continue;
             spots.Add(z); z += len;
         }
-        if (spots.Count < count) Debug.Log($"NUDGE-FAIL only {spots.Count} open stretches of {len} m");
+        if (spots.Count < count) { fails++; Debug.Log($"NUDGE-FAIL only {spots.Count} open stretches of {len} m"); }
         while (spots.Count < count) spots.Add(Course.First + 120f + spots.Count * 80f);
         return spots;
     }
@@ -508,6 +510,6 @@ public static class NudgeTest
         }
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 }

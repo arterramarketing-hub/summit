@@ -86,6 +86,6 @@ public static class GateTest
         Debug.Log($"GATE summary: start z={Slope.StartZ:0.0}, gate z={Slope.GateZ:0.0}, lip z={Slope.PadLip:0.0}; mean GO-to-lip {sumLip / Mathf.Max(1, nLip):0.00} s, mean GO-to-first-kicker {sumKick / Mathf.Max(1, nKick):0.00} s; {fails} fails");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(fails == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 ? 0 : 1);
     }
 }

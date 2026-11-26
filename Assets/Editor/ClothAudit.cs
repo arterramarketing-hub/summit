@@ -76,7 +76,7 @@ public static class ClothAudit
         Say(bad == 0 ? "PASS: every jacket and pair of trousers has the wind's shapes" : $"FAIL: {bad} cloth meshes without the wind's shapes");
         var outFile = System.Environment.GetEnvironmentVariable("CLOTHAUDIT_OUT");
         if (!string.IsNullOrEmpty(outFile)) System.IO.File.WriteAllText(outFile, log.ToString());
-        EditorApplication.Exit(bad == 0 ? 0 : 1);
+        TestHarness.Exit(bad == 0 ? 0 : 1);
     }
 
     /// <summary>
@@ -147,6 +147,6 @@ public static class ClothAudit
         var outFile = System.Environment.GetEnvironmentVariable("CLOTHAUDIT_OUT");
         if (!string.IsNullOrEmpty(outFile)) System.IO.File.WriteAllText(outFile, log.ToString());
         TreeWind.Still();
-        EditorApplication.Exit(ok ? 0 : 1);
+        TestHarness.Exit(ok ? 0 : 1);
     }
 }

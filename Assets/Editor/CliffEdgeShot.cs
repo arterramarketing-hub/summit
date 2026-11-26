@@ -113,7 +113,7 @@ public static class CliffEdgeShot
         catch (System.Exception e) { Debug.LogError("CLIFFSHOT exception " + e); }
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static Vector3 Ground(Vector2 p, float up) => new Vector3(p.x, Slope.DrawnHeight(p.x, p.y) + up, p.y);

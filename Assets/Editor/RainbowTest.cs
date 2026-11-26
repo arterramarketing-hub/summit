@@ -89,9 +89,9 @@ public static class RainbowTest
             Debug.Log(fails == 0 ? $"RAINBOW PASS: {cases} riders, outfits and rides, and the crash, restart and swap; 0 failures"
                                  : $"RAINBOW FAIL: {fails} failure(s) over {cases} cases");
         }
-        catch (System.Exception e) { Debug.LogError("RAINBOW exception " + e); }
+        catch (System.Exception e) { Debug.LogError("RAINBOW exception " + e); fails++; }
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(fails == 0);
     }
 
     static string RideName(int k) => k == 3 ? "tube" : ((RideKind)k).ToString();
@@ -357,11 +357,11 @@ public static class RainbowTest
                 Strip(name, outDir);
             }
         }
-        catch (System.Exception e) { Debug.LogError("RAINBOW exception " + e); }
+        catch (System.Exception e) { Debug.LogError("RAINBOW exception " + e); fails++; }
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(fails == 0);
     }
 
     static void Strip(string name, string outDir)

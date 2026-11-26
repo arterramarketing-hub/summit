@@ -119,7 +119,7 @@ public static class HeroShot
         Summit.Progress.Wear(Wardrobe.Cat.Rider, 0);
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>Something done at night (the camp's lamps lit, the night sky), and back to day after.</summary>

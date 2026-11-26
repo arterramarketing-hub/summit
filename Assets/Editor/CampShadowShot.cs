@@ -87,7 +87,7 @@ public static class CampShadowShot
         TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt; dayNight.ApplyNow();
         TimeOfDay.TestClock = -1f;
         QualitySettings.SetQualityLevel(quality, false);   // (the editor saves the current level into ProjectSettings)
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static float keptDistance;

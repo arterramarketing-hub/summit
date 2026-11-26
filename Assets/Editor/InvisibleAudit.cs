@@ -121,7 +121,7 @@ public static class InvisibleAudit
         TimeOfDay.TestClock = -1f; Weather.TestChoice = -1;
         QualitySettings.SetQualityLevel(quality, false);   // (the editor saves the current level into ProjectSettings)
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
     static bool night, withSlide, storm;
     static Avalanche slide;
@@ -170,7 +170,7 @@ public static class InvisibleAudit
                 break;
             }
         }
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>
@@ -219,7 +219,7 @@ public static class InvisibleAudit
             k++;
         }
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Render(string file)
@@ -382,7 +382,7 @@ public static class InvisibleAudit
         foreach (var k in kinds) { done.TryGetValue(k, out int nk); Debug.Log($"AUDIT fit shot {tag}: {k} x{nk}"); }
         TimeOfDay.TestClock = -1f;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static string FitKind(Collider c)

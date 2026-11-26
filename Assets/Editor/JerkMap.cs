@@ -47,6 +47,6 @@ public static class JerkMap
         var sb = new System.Text.StringBuilder();
         foreach (var kv in where) sb.Append($"{kv.Key}={kv.Value} ");
         Debug.Log($"JERK summary: {all} jerks, {near} within 3 m of a crack's opening ({nearAir} in the air): {sb}");
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 }

@@ -93,7 +93,7 @@ public static class CampStickShot
         Camp.TestTouches = null;
         ChaseCamera.TestDt = 0f;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>n camp frames, a finger at thumb(t) each (null: none down).</summary>

@@ -39,7 +39,7 @@ public static partial class PeopleTest
         var camp = (Summit.Camp)typeof(SummitGame).GetField("camp", NP).GetValue(game);
         typeof(SummitGame).GetMethod("ToHub", NP).Invoke(game, new object[] { true });
         var life = camp.GetComponent<CampLife>();
-        if (life == null || life.Agents.Count == 0) { Debug.LogError("LODLOOKS no camp life"); EditorApplication.Exit(1); return; }
+        if (life == null || life.Agents.Count == 0) { Debug.LogError("LODLOOKS no camp life"); TestHarness.Exit(1); return; }
         var main = Camera.main;
         float gameFov = main != null ? main.fieldOfView : 60f;
         // a minute of the camp's life: everyone about, doing what they do
@@ -154,7 +154,7 @@ public static partial class PeopleTest
         File.WriteAllText("Logs/people-lodlooks.txt", sb.ToString());
         Object.DestroyImmediate(camGo);
         TestPrefs.Restore();
-        EditorApplication.Exit(pass ? 0 : 1);
+        TestHarness.Exit(pass ? 0 : 1);
     }
 
     const int ShotLayer = 31, PhoneHeight = 2000;

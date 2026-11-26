@@ -23,7 +23,7 @@ public static class CamShot
     {
         TestPrefs.Pin();
         try { Shoot(); } finally { TestPrefs.Restore(); }
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Shoot()

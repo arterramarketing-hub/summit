@@ -51,7 +51,7 @@ public static class SteerFightProbe
         catch (System.Exception e) { Debug.LogError("FIGHT exception " + e); }
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static float Rider_FallAt(Site s)

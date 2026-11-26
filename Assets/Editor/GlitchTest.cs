@@ -1,4 +1,7 @@
+using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -15,6 +18,7 @@ public static class GlitchTest
     static int issues;
     static string lastCrash = "";
     static bool diedOnRock;
+    static bool threw;
 
     public static void Run()
     {
@@ -110,11 +114,12 @@ public static class GlitchTest
                 BreakableRides(seed, game, rider, body, terrain, props);
             }
         }
-        catch (System.Exception e) { Debug.LogError("GLITCH exception " + e); issues++; }
+        catch (System.Exception e) { Debug.LogError("GLITCH exception " + e); issues++; threw = true; }
         Debug.Log($"GLITCH done: {issues} issue(s)");
+        bool pass = Judge(threw);
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(pass);
     }
 
     /// <summary>One jump-cliff ride traced step by step ($TRACE_SEED, cycle $TRACE_C, jump $TRACE_K, speed $TRACE_V).</summary>
@@ -147,7 +152,7 @@ public static class GlitchTest
                  if (n++ % 3 == 0) Debug.Log($"TRACE t={t:0.000} z={p.z:0.00} x-c={p.x - Slope.Centre(p.z):0.00} y-ground={p.y - Slope.DrawnHeight(p.x, p.z) - Rider.R:0.00} v=({v.x:0.0},{v.y:0.0},{v.z:0.0}) air={rr.Airborne} n.y={Slope.Normal(p.x, p.z).y:0.00} fine={Ridge.Fine(Mathf.FloorToInt(p.x / Slope.Quad), Mathf.FloorToInt(p.z / Slope.Quad))}");
              }, true);
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>What else is near a ragdoll part (a tree, a rock...), besides the body, the board and the snow slabs.</summary>
@@ -162,7 +167,72 @@ public static class GlitchTest
         return s == "" ? "nothing" : s;
     }
 
-    static void Report(string what) { issues++; if (issues < 2000) Debug.Log("GLITCH " + what); }
+    static void Report(string what)
+    {
+        issues++; if (issues < 2000) Debug.Log("GLITCH " + what);
+        string k = Kind(what);
+        kinds.TryGetValue(k, out int n); kinds[k] = n + 1;
+    }
+
+    // ---------------------------------------------------------------- the baseline
+    // The run reports a few hundred known issues (mostly jerks on landings, kickers and the pipe), so a plain count can
+    // never pass. Each issue has a kind (the ride and what went wrong, numbers dropped: "jumps: jerk # m/s^#"), and
+    // GlitchBaseline.txt holds how many of each kind main had. The run fails (exit 1) on a kind main never had, on a
+    // kind that rises by more than half again (and at least 3), on a rise of more than a quarter in all, or on an
+    // exception. GLITCH_BASELINE=write puts this run's counts in the file instead (after a change is understood).
+
+    static readonly Dictionary<string, int> kinds = new Dictionary<string, int>();
+    const string BaselinePath = "Assets/Editor/GlitchBaseline.txt";
+
+    /// <summary>An issue's kind: the ride's first word ("jumps", "superjump", "pipe"...) and the message, numbers as #.</summary>
+    static string Kind(string what)
+    {
+        string s = Regex.Replace(what, @"^seed\d+ ", "");
+        int colon = s.IndexOf(": ");
+        string ride = colon < 0 ? "" : s.Substring(0, colon).Split(' ')[0];
+        string msg = colon < 0 ? s : s.Substring(colon + 2);
+        msg = Regex.Replace(msg, @"\(.*$|;.*$| at t=.*$| at z=.*$", "");
+        msg = Regex.Replace(msg, @"-?\d+(\.\d+)?", "#").Trim();
+        return ride.Length > 0 ? ride + ": " + msg : msg;
+    }
+
+    /// <summary>Compare this run's kinds with the baseline; true if it passes.</summary>
+    static bool Judge(bool crashed)
+    {
+        var lines = new List<string>();
+        foreach (var kv in kinds) lines.Add($"{kv.Value}\t{kv.Key}");
+        lines.Sort((a, b) => string.CompareOrdinal(a.Substring(a.IndexOf('\t')), b.Substring(b.IndexOf('\t'))));
+        foreach (var l in lines) Debug.Log("GLITCH-KIND " + l);
+        if (System.Environment.GetEnvironmentVariable("GLITCH_BASELINE") == "write")
+        {
+            File.WriteAllLines(BaselinePath, lines);
+            Debug.Log($"GLITCH baseline written: {kinds.Count} kinds, {issues} issues ({BaselinePath})");
+            return !crashed;
+        }
+        if (System.Environment.GetEnvironmentVariable("GLITCH_SEED") != null) { Debug.Log("GLITCH one mountain only: no baseline check"); return !crashed; }
+        var base0 = new Dictionary<string, int>(); int baseTotal = 0;
+        if (File.Exists(BaselinePath))
+            foreach (var l in File.ReadAllLines(BaselinePath))
+            {
+                int tab = l.IndexOf('\t');
+                if (tab <= 0 || !int.TryParse(l.Substring(0, tab), out int c)) continue;
+                base0[l.Substring(tab + 1)] = c; baseTotal += c;
+            }
+        else Debug.Log($"GLITCH no baseline at {BaselinePath}: every kind is new");
+        int bad = 0;
+        foreach (var kv in kinds)
+        {
+            base0.TryGetValue(kv.Key, out int b);
+            if (b == 0) { bad++; Debug.Log($"GLITCH-NEW {kv.Value}x {kv.Key}"); }
+            else if (kv.Value > Mathf.Max(b * 1.5f, b + 3)) { bad++; Debug.Log($"GLITCH-RISE {kv.Key}: {kv.Value}, baseline {b}"); }
+        }
+        if (issues > baseTotal * 1.25f + 3) { bad++; Debug.Log($"GLITCH-RISE in all: {issues}, baseline {baseTotal}"); }
+        foreach (var kv in base0) if (!kinds.ContainsKey(kv.Key)) Debug.Log($"GLITCH-GONE {kv.Key} (baseline {kv.Value})");
+        bool pass = bad == 0 && !crashed;
+        Debug.Log(pass ? $"GLITCH PASS: {issues} issue(s) against a baseline of {baseTotal}, no new kinds"
+                       : $"GLITCH FAIL: {bad} new or risen kind(s){(crashed ? ", and an exception" : "")}; {issues} issue(s) against a baseline of {baseTotal}");
+        return pass;
+    }
 
     /// <summary>Falling into a crevasse, onto rock or off a cliff is the mountain, not a glitch in a jump or a smash.</summary>
     static bool Fell(string why) => why == "Crevasse!" || why == "Hit the rocks!" || why == "Cliffed!";

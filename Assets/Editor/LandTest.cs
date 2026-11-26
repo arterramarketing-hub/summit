@@ -110,7 +110,7 @@ public static class LandTest
         Debug.Log($"LAND done: {rides} rides, {fails} failure(s); hardest landing ridden away {worstSurvived:0.0} m/s");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(fails == 0);
     }
 
     static void Fail(string what) { fails++; Debug.Log("LAND-FAIL " + what); }

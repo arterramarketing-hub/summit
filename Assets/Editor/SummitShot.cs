@@ -111,7 +111,7 @@ public static class SummitShot
         TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt; dayNight.ApplyNow();
         TimeOfDay.TestClock = -1f;
         QualitySettings.SetQualityLevel(quality, false);
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>Run a fall to its rescue, shooting at the given times (and once at rest, if rest is named).</summary>

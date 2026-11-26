@@ -136,7 +136,7 @@ public static class ShaderCensus
         string varPath = System.Environment.GetEnvironmentVariable("SUMMIT_VARIANTS") ?? "Logs/shader-variants-full.txt";
         bool fix = System.Environment.GetEnvironmentVariable("SUMMIT_CENSUS_FIX") == "1";
         var sb = new StringBuilder();
-        if (!File.Exists(Store)) { Debug.LogError("CENSUS nothing seen"); EditorApplication.Exit(2); return; }
+        if (!File.Exists(Store)) { Debug.LogError("CENSUS nothing seen"); TestHarness.Exit(2); return; }
         var record = File.Exists(varPath) ? InstancedAssets.ReadRecord(varPath) : null;
         sb.AppendLine($"CENSUS materials made at run time, by shader and the shader_feature keywords on; against {(record != null ? varPath : "no build record")}");
         int missing = 0;
@@ -175,7 +175,7 @@ public static class ShaderCensus
         }
         Debug.Log(sb.ToString());
         File.WriteAllText("Logs/shader-census.txt", sb.ToString());
-        EditorApplication.Exit((missing == 0 || fix) && magenta.Length == 0 ? 0 : 1);
+        TestHarness.Exit((missing == 0 || fix) && magenta.Length == 0 ? 0 : 1);
     }
 
     /// <summary>
@@ -204,6 +204,6 @@ public static class ShaderCensus
         sb.Insert(0, $"ZERO {varPath}: {record.Count} shaders, {n} with no instanced variant, of which {declaring} declare instancing\n");
         File.WriteAllText("Logs/shader-zero-instanced.txt", sb.ToString());
         Debug.Log(sb.ToString());
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 }

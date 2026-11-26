@@ -60,7 +60,7 @@ public static class CampMovesShot
         Camp.TestTouches = null;
         ChaseCamera.TestDt = 0f;
         Log($"done: {fails} failure(s)");
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     // ---- the touch logic alone

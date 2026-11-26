@@ -130,6 +130,6 @@ public static class SimTest
         }
         Physics.simulationMode = SimulationMode.FixedUpdate;   // do not leave the project on manual physics
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 }

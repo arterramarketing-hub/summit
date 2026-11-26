@@ -395,7 +395,7 @@ public static class MountainAudit
         Directory.CreateDirectory(outDir);
         try { MeasureAll(); }
         catch (System.Exception e) { Debug.LogError("MAUDIT exception " + e); }
-        if (Application.isBatchMode && !rideRunning) EditorApplication.Exit(0);
+        if (Application.isBatchMode && !rideRunning) TestHarness.Exit(0);
     }
 
     static bool rideRunning;
@@ -688,7 +688,7 @@ public static class MountainAudit
         try { MeasureAll(); } catch (System.Exception e) { Debug.LogError("MAUDIT exception " + e); }
         Log("done");
         rideRunning = false;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>ScoreTest's rider who looks where they are going: down the piste, round whatever is in the way.</summary>

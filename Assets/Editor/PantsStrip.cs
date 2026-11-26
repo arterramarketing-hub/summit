@@ -105,7 +105,7 @@ public static class PantsStrip
         }
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TreeWind.Still();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>The first time a gust at p rises through 0.5 after a calm.</summary>

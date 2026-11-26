@@ -88,7 +88,7 @@ public static class TrickTest
         catch (System.Exception e) { Debug.LogException(e); Say("FAIL (exception)"); fails++; }
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(fails == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 ? 0 : 1);
     }
 
     static void Boot()

@@ -99,7 +99,7 @@ public static class LiftShot
             return;
         }
         EditorApplication.update -= Tick;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     // ---------------------------------------------------------------- where the camera stands

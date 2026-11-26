@@ -83,7 +83,7 @@ public static class WorldFix
         for (int i = 0; i < hist.Length; i++) hs.Append($" {i * 2}-{i * 2 + 2} m: {hist[i]};");
         Debug.Log($"WORLDFIX hamlets' nearest building outside the piste:{hs} under 8 m: {close}; the nearest of all {worst:0.0} m ({worstAt})");
         Debug.Log($"WORLDFIX fence {Summit.Hamlets.FenceOff:0.0} m outside the piste; margin {Summit.Hamlets.Margin:0.0} m");
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     public static void HamletShots()
@@ -135,7 +135,7 @@ public static class WorldFix
             }
         }
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>
@@ -208,7 +208,7 @@ public static class WorldFix
                 }
             if (changed > 200) Debug.Log($"WORLDFIX probe: hiding '{kv.Key}' ({kv.Value.Count} renderers, e.g. {kv.Value[0].sharedMaterial?.name} / {kv.Value[0].sharedMaterial?.shader.name}) changes {changed} pixels of the patch, {white} of them white");
         }
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static byte[] ToPng(Color32[] px)

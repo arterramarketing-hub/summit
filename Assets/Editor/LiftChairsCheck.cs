@@ -224,7 +224,7 @@ public static class LiftChairsCheck
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
         bool ok = phoneAll == expectedAll && towersPhone == towersExpected && worstGap == 0 && listedMissing == 0 && extras == 0 && ridersMissing == 0;
-        EditorApplication.Exit(ok ? 0 : 1);
+        TestHarness.Exit(ok ? 0 : 1);
     }
 
     static bool KeptInstanced(Shader s, out string by) => InstancedAssets.KeptInstanced(s, out by);

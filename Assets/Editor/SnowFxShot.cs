@@ -90,7 +90,7 @@ public static class SnowFxShot
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TimeOfDay.TestClock = -1f;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static float Stretch(float from, float near)

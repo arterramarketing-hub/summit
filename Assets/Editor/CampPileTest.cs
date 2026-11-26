@@ -49,7 +49,7 @@ public static class CampPileTest
             TestPrefs.Restore();
         }
         Debug.Log($"CAMPPILES done: {bad} problem(s)");
-        EditorApplication.Exit(bad == 0 ? 0 : 1);
+        TestHarness.Exit(bad == 0 ? 0 : 1);
     }
 
     static Vector3 Pos => (Vector3)fPos.GetValue(camp);

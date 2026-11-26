@@ -66,7 +66,7 @@ public static class FenceShot
         catch (System.Exception e) { Debug.LogError("FENCE exception " + e); }
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>The first hamlet's fence, built (its pieces go down one a frame), its spans in order down the hill.</summary>

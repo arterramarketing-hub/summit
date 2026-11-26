@@ -102,7 +102,7 @@ public static class SlowShot
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Day() { TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt; dayNight.ApplyNow(); }

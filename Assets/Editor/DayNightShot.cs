@@ -116,7 +116,7 @@ public static class DayNightShot
         // back to day before quitting: the particle materials are project assets, and the editor saves them on exit
         TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt; dayNight.ApplyNow();
         TimeOfDay.TestClock = -1f;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>

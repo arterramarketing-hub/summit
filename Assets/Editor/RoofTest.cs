@@ -101,7 +101,7 @@ public static class RoofTest
         Debug.Log($"ROOF-SUMMARY {fails} failures in {sw.Elapsed.TotalSeconds:0} s; outcomes:{sb}");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Count(string k) { outcomes.TryGetValue(k, out int c); outcomes[k] = c + 1; }
@@ -489,7 +489,7 @@ public static class RoofTest
                 foreach (var x in Build(h)) if (x.name == "Chalet") { roof = x; break; }
             }
         }
-        if (roof == null) { Debug.LogError("ROOF shots: no chalet"); EditorApplication.Exit(1); return; }
+        if (roof == null) { Debug.LogError("ROOF shots: no chalet"); TestHarness.Exit(1); return; }
         var s = roof.s;
         // down onto the right pitch half way out, heading down the ridge's line: lands, rides along the pitch, off the front eave
         // (the pitch away from the chimney)
@@ -557,7 +557,7 @@ public static class RoofTest
             return;
         }
         EditorApplication.update -= Tick;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Pose(Vector3 p0, Vector3 v0, int stepsTo, Vector3 eye, Vector3 look)

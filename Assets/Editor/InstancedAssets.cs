@@ -484,6 +484,6 @@ public class InstancedAssets : IPreprocessBuildWithReport, IPostprocessBuildWith
         string text = $"MAGENTA against {varPath}: {(sb.Length == 0 ? "nothing" : "\n" + sb)}";
         File.WriteAllText("Logs/shader-magenta.txt", text + "\n");
         if (sb.Length == 0) Debug.Log(text); else Debug.LogError(text);
-        EditorApplication.Exit(sb.Length == 0 ? 0 : 1);
+        TestHarness.Exit(sb.Length == 0 ? 0 : 1);
     }
 }

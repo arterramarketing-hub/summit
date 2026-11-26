@@ -49,7 +49,7 @@ public static class HudWashShot
         Shoot(cam, "HudWash_off.png");
         hc.renderMode = RenderMode.ScreenSpaceOverlay;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Shoot(Camera cam, string file)

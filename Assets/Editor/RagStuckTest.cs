@@ -115,7 +115,7 @@ public static class RagStuckTest
         Physics.simulationMode = SimulationMode.FixedUpdate;
         Ragdoll.Unstick = true;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static T F<T>(string name) => (T)typeof(SummitGame).GetField(name, NP).GetValue(game);
@@ -555,7 +555,7 @@ public static class RagStuckTest
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>
@@ -638,7 +638,7 @@ public static class RagStuckTest
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Shoot(Camera cam, string file)

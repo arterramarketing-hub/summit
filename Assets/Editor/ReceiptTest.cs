@@ -50,7 +50,7 @@ public static class ReceiptTest
         catch (System.Exception e) { Debug.LogError("RECEIPT exception " + e); }
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static List<string> Pass()

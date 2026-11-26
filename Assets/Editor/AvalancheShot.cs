@@ -21,7 +21,7 @@ public static class AvalancheShot
         catch (System.Exception e) { Debug.LogError("AVSHOT failed: " + e); }
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Shoot()

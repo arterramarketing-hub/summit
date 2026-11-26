@@ -69,7 +69,7 @@ public static class TurnMenuShot
         Debug.Log($"TURNSHOT done: {ok} ok, {bad} wrong");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(bad == 0 ? 0 : 1);
+        TestHarness.Exit(bad == 0 ? 0 : 1);
     }
 
     static void Shoot(Camera cam, string file)

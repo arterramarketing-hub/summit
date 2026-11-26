@@ -138,7 +138,7 @@ public static class CoupleShot
         CampCouple.Manual = false;
         TimeOfDay.TestClock = -1f;
         Progress.Wear(Wardrobe.Cat.Rider, 0);
-        EditorApplication.Exit(code);
+        TestHarness.Exit(code);
     }
 
     // ---------------------------------------------------------------------------------------------- the measurements

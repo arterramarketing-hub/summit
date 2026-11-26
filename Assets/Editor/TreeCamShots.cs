@@ -72,7 +72,7 @@ public static class TreeCamShots
         ChaseCamera.TightOn = true;
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Save(Texture2D t, string file) { System.IO.File.WriteAllBytes(file, t.EncodeToPNG()); Debug.Log($"TREECAM wrote {file}"); }

@@ -25,7 +25,7 @@ public static class TreeSoundDump
                 Wav(Path.Combine(dir, $"{name}_{k}.wav"), d, c.frequency);
             }
         Debug.Log($"TREESOUND loaded {sets.Length} layers ({sets[0].Item2.Length}/{sets[1].Item2.Length}/{sets[2].Item2.Length}/{sets[3].Item2.Length}/{sets[4].Item2.Length} takes), {samples} samples ({samples * 4 / 1048576f:0.0} MB as float) in {ms:0} ms (editor)");
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Wav(string file, float[] d, int rate)

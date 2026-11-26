@@ -53,7 +53,7 @@ public static class LineTest
     {
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(fails == 0);
     }
 
     static void Mountain(int seed)
@@ -78,7 +78,7 @@ public static class LineTest
             string ks = ""; foreach (var kv in kinds) ks += $" {kv.Key} {kv.Value}";
             Debug.Log($"LINE-PLAN {total} lines on {seeds.Length} mountains, {hits} hits:{ks}");
         }
-        catch (System.Exception e) { Debug.LogError("LINE exception " + e); }
+        catch (System.Exception e) { Debug.LogError("LINE exception " + e); fails++; }
         Done();
     }
 

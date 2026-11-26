@@ -96,7 +96,7 @@ public static class GlacierPlan
         }
         catch (System.Exception e) { Debug.LogError("PLAN exception " + e); }
         Debug.Log("PLAN done");
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Shoot(Camera cam, Atmosphere atmo, string file)

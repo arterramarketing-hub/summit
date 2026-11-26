@@ -50,7 +50,7 @@ public static class TapResumeTest
         Debug.Log(fails == 0 ? $"TAPRESUME PASS ({checks} checks)" : $"TAPRESUME FAIL ({fails} of {checks})");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(fails == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 ? 0 : 1);
     }
 
     static string State() => typeof(SummitGame).GetField("state", NP).GetValue(game).ToString();

@@ -142,7 +142,7 @@ public static class LiftEndsTest
     {
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(fails == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 ? 0 : 1);
     }
 
     // ---------------------------------------------------------------- pictures
@@ -229,7 +229,7 @@ public static class LiftEndsTest
             Physics.simulationMode = SimulationMode.FixedUpdate;
             TestPrefs.Restore();
             EditorApplication.update -= Tick;
-            EditorApplication.Exit(0);
+            TestHarness.Exit(0);
         });
         EditorApplication.update += Tick;
     }
@@ -238,7 +238,7 @@ public static class LiftEndsTest
     {
         if (at >= steps.Count) return;
         try { steps[at++](); }
-        catch (System.Exception e) { Debug.LogError("ENDS-SHOT exception " + e); EditorApplication.update -= Tick; EditorApplication.Exit(1); }
+        catch (System.Exception e) { Debug.LogError("ENDS-SHOT exception " + e); EditorApplication.update -= Tick; TestHarness.Exit(1); }
     }
 
     static void Stand(Vector3 rider, Vector3 eye, Vector3 look, float fov)

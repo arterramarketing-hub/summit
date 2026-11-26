@@ -43,7 +43,7 @@ public static class SwitchShot
         TestBoot.NewMountain(game, 1000, terrain, props);
         var dressing = Object.FindFirstObjectByType<CourseDressing>();
         if (dressing != null) dressing.Rebuild();
-        if (!Cliffs.JumpOf(0, 0, out jump) && !Cliffs.JumpOf(0, 1, out jump)) { Debug.LogError("SWITCH no jump cliff"); EditorApplication.Exit(1); return; }
+        if (!Cliffs.JumpOf(0, 0, out jump) && !Cliffs.JumpOf(0, 1, out jump)) { Debug.LogError("SWITCH no jump cliff"); TestHarness.Exit(1); return; }
         steps.Clear(); at = 0;
         steps.Add(() => { TimeOfDay.TestClock = 1.4f; dayNight.ApplyNow(); Ride(RideKind.Snowboard, 40); Shoot(Path.Combine(outDir, "switch-warmup.png")); });
         foreach (var kind in new[] { RideKind.Snowboard, RideKind.Skis })
@@ -137,7 +137,7 @@ public static class SwitchShot
             return;
         }
         EditorApplication.update -= Tick;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Shoot(string file)

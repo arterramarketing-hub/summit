@@ -51,7 +51,7 @@ public static class CanyonCheck
         }
         catch (System.Exception e) { fails++; Debug.Log("CANYON-FAIL exception " + e); }
         Debug.Log($"CANYON done: {stretches} stretches; deepest hollow {worst:0.00} m (seed {worstSeed}); most climbed along a floor {worstClimb:0.0} m (seed {worstClimbSeed}); {fails} failure(s)");
-        EditorApplication.Exit(fails == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 ? 0 : 1);
     }
 
     static void Stretch(int seed, int c)
@@ -210,7 +210,7 @@ public static class CanyonCheck
         Debug.Log($"CANYON ride done: {fails} failure(s)");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(fails == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 ? 0 : 1);
     }
 
     /// <summary>Heights round a point (CANYON_PT=seed,z,a): every 0.5 m across and along, and the cliff band's weight there.</summary>
@@ -237,7 +237,7 @@ public static class CanyonCheck
             }
             Debug.Log(sb.ToString());
         }
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>
@@ -299,7 +299,7 @@ public static class CanyonCheck
         }
         catch (System.Exception e) { fails++; Debug.Log("CANYON-FAIL exception " + e); }
         Debug.Log($"CANYON seams done: worst {worstAll:0.0} m; {fails} failure(s)");
-        EditorApplication.Exit(fails == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 ? 0 : 1);
     }
 
     /// <summary>Slope.Height's cost (µs a call) on a band's stretch and away from it. -executeMethod CanyonCheck.Cost</summary>
@@ -314,7 +314,7 @@ public static class CanyonCheck
                 for (int i = 0; i < 500; i++, n++) sum += Slope.Height(Slope.Centre(z0) - 300f + i * 1.2f, z0 + j * 1.5f);
             Debug.Log($"COST {what}: {sw.Elapsed.TotalMilliseconds * 1000.0 / n:0.00} us a call ({n} calls, {sum:0})");
         }
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>The kickers each LandTest mountain's cells would hold, and whether each is built (its ramp's height),
@@ -336,6 +336,6 @@ public static class CanyonCheck
             }
             Debug.Log(sb.ToString());
         }
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 }

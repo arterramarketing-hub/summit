@@ -43,7 +43,7 @@ public static partial class PeopleTest
         Weather.TestChoice = 1; TimeOfDay.TestClock = 1.4f;
         TestBoot.Boot(game);
         var mr = MountainRiders.Current;
-        if (mr == null) { Debug.LogError("RIDERS no MountainRiders"); EditorApplication.Exit(1); return; }
+        if (mr == null) { Debug.LogError("RIDERS no MountainRiders"); TestHarness.Exit(1); return; }
         var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
         var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
         var props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
@@ -206,7 +206,7 @@ public static partial class PeopleTest
         System.IO.File.WriteAllText("Logs/people-riders.txt", sb.ToString());
         Weather.TestChoice = -1; TimeOfDay.TestClock = -1f;
         TestPrefs.Restore();
-        EditorApplication.Exit(ok ? 0 : 1);
+        TestHarness.Exit(ok ? 0 : 1);
     }
 
     static readonly bool Trace = System.Environment.GetEnvironmentVariable("RIDERS_TRACE") == "1";

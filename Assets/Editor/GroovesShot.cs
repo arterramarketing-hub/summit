@@ -66,7 +66,7 @@ public static class GroovesShot
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TimeOfDay.TestClock = -1f;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>The first z from `from` (or about `near`) with groomed cruise snow from 40 m before it to 160 m after.</summary>

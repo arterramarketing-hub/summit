@@ -48,7 +48,7 @@ public static class StairsTest
         Debug.Log($"STAIRS done: {fails} fail(s)");
         ChaseCamera.TestDt = 0f;
         TestPrefs.Restore();
-        EditorApplication.Exit(fails == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 ? 0 : 1);
     }
 
     /// <summary>How far a foot's sole is above the tread under it (its heel and toes both on that tread: on); NaN off the stairs.</summary>

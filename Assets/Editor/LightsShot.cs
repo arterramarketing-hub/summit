@@ -41,7 +41,7 @@ public static class LightsShot
         dayNight = Get<DayNight>("dayNight"); camp = Get<Camp>("camp"); fx = Get<SnowFX>("fx"); weather = Get<Weather>("weather");
         cam = Camera.main; chase = cam.GetComponent<ChaseCamera>(); atmo = Object.FindFirstObjectByType<Atmosphere>();
         lights = NightLights.Instance;
-        if (lights == null || weather == null) { Debug.LogError("LIGHTSSHOT: no NightLights or Weather"); EditorApplication.Exit(1); return; }
+        if (lights == null || weather == null) { Debug.LogError("LIGHTSSHOT: no NightLights or Weather"); TestHarness.Exit(1); return; }
         var lamps = NightLights.Lamps;
         var byKind = new Dictionary<NightLights.Kind, int>();
         foreach (var l in lamps) { byKind.TryGetValue(l.kind, out int n); byKind[l.kind] = n + 1; }
@@ -147,7 +147,7 @@ public static class LightsShot
         Object.DestroyImmediate(lights.gameObject);
         TimeOfDay.TestClock = -1f;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     // ---------------------------------------------------------------- shots
@@ -200,7 +200,7 @@ public static class LightsShot
         Object.DestroyImmediate(lights.gameObject);
         TimeOfDay.TestClock = -1f;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>The nearest lit kicker ahead: the rider set at its in-run at speed, ridden until in the air past the lip.</summary>

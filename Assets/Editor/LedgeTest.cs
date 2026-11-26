@@ -77,7 +77,7 @@ public static class LedgeTest
         Debug.Log($"LEDGE done: {lines} ledge lines, {ledges} ledges, {rides} rides, {fails} failure(s)");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(fails == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 ? 0 : 1);
     }
 
     static void Shape(int seed, int c, Cliffs.LedgeLine L)
@@ -225,7 +225,7 @@ public static class LedgeTest
         }
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Shot(Camera cam, Vector3 from, Vector3 at, string file)

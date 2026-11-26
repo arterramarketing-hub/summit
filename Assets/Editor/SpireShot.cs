@@ -155,7 +155,7 @@ public static class SpireShot
         }
 
         Stats();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>
@@ -230,7 +230,7 @@ public static class SpireShot
         }
         Stats();
         TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>
@@ -325,7 +325,7 @@ public static class SpireShot
         }
         Stats();
         TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>
@@ -412,7 +412,7 @@ public static class SpireShot
             Debug.Log($"SPIREHIT ride {n} side {side}: crash '{why}', spire contact steps {contacts}, outcrop contact steps {boxSteps}, deepest {maxPen:0.00} m, ended {Ridge.Top(c0.z) - c0.y:0} m below the crest, off={c0.x - Slope.Centre(c0.z):0.0}, dead={body.Dead}, {i * Dt:0.0} s");
         }
         Debug.Log($"SPIREHIT summary: {falls} falls, {touched} hit spires, {deep} sank over 25 cm into one (deepest {worst:0.00} m)");
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>What the spires cost, and that none of them is somewhere it must not be.</summary>

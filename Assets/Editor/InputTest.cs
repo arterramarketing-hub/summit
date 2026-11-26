@@ -66,11 +66,11 @@ public static class InputTest
             CampStickFixed();
             Debug.Log(fails == 0 ? $"INPUT PASS ({checks} checks)" : $"INPUT FAIL ({fails} of {checks} checks)");
         }
-        catch (System.Exception e) { Debug.LogError("INPUT exception " + e); }
+        catch (System.Exception e) { Debug.LogError("INPUT exception " + e); fails++; }
         RiderInput.TestDrive = false; RiderInput.TestFingers = 0;
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(fails == 0);
     }
 
     static bool wasGrinding, onRailWatch;

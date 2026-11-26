@@ -186,7 +186,7 @@ public static class SurfaceTest
         Debug.Log($"SURFACETEST {(fails == 0 ? "PASS" : "FAIL")} ({fails} failures)");
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(fails == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 ? 0 : 1);
     }
 
     // ---------------------------------------------------------------- rides (a bare rider on the mountain: no trees)
@@ -536,6 +536,6 @@ public static class SurfaceTest
         Surfaces.Force = null; Surfaces.Day = default; TimeOfDay.TestClock = -1f; ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 }

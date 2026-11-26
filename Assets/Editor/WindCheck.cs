@@ -54,7 +54,7 @@ public static class WindCheck
                     float ambDb = amb + Db(0.22f * (1f - 0.5f * s)), glideDb = s > 0f ? glide + Db(0.35f + 0.25f * s) : -99f;
                     Debug.Log($"WINDCHECK {name,-9} speed {s:0} gust {gust:0}: wind_low {v.x:0.000} ({lowDb:0.0} dBFS)  wind_high {v.y:0.000} ({(v.y > 0f ? highDb.ToString("0.0") : "off")})  wind mixed {mixed:0.0} dBFS  | ambience {ambDb:0.0}  glide {(s > 0f ? glideDb.ToString("0.0") : "-")}");
                 }
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     // ---------------------------------------------------------------- the trees
@@ -245,6 +245,6 @@ public static class WindCheck
         var outFile = System.Environment.GetEnvironmentVariable("WINDCHECK_OUT");
         if (!string.IsNullOrEmpty(outFile)) System.IO.File.WriteAllText(outFile, log.ToString());
         Say(ok ? "PASS" : "FAILED");
-        EditorApplication.Exit(ok ? 0 : 1);
+        TestHarness.Exit(ok ? 0 : 1);
     }
 }

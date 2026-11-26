@@ -192,7 +192,7 @@ public static class RenderShot
         cam.transform.SetPositionAndRotation(cpos, Quaternion.LookRotation((trackAt + trackDir * 3f) - cpos));
         Shoot(cam, "RenderShotTrack.png");
         Physics.simulationMode = SimulationMode.FixedUpdate;   // do not leave the project on manual physics
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>Probe the bear: log its clip bindings and render a few frames of its run from the side.</summary>
@@ -264,7 +264,7 @@ public static class RenderShot
         bear.transform.rotation = Quaternion.Euler(0f, (float)typeof(Wildlife).GetField("bearFwdYaw", NP).GetValue(wild) + 90f, 0f);
         cam.transform.SetPositionAndRotation(new Vector3(0f, 501.2f, -7f), Quaternion.LookRotation(Vector3.forward));
         Shoot(cam, "BearStand.png");
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Shoot(Camera cam, string file)

@@ -92,7 +92,7 @@ public static class HaloShot
         TimeOfDay.TestClock = -1f;
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Shoot(Camera cam, string file)

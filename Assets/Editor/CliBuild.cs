@@ -37,6 +37,14 @@ public static class CliBuild
 
     public static void BuildIOS()
     {
+        // (--burst-disable-compilation, or UNITY_BURST_DISABLE_COMPILATION, is for test rounds: it also leaves Burst
+        // out of the player, so the phone build would run its jobs as plain C#)
+        if (TestHarness.BurstOff)
+        {
+            Debug.LogError("CLIBUILD result: Failed (Burst is turned off for this editor: --burst-disable-compilation or UNITY_BURST_DISABLE_COMPILATION is set; that is for test runs, the phone build needs Burst)");
+            EditorApplication.Exit(2);
+            return;
+        }
         SummitImport.EnsureImprintMaterial();
         SummitImport.EnsureVertexColorMaterial();
         SummitImport.EnsureSnowTextures();
@@ -72,10 +80,10 @@ public static class CliBuild
         if (report.summary.result == BuildResult.Succeeded && !InstancedAssets.Verified)
         {
             Debug.LogError("CLIBUILD result: Failed (shaders or shader variants the game needs missing from the build, or failed; see Logs/shader-variants.txt):\n" + InstancedAssets.Problems);
-            EditorApplication.Exit(1);
+            TestHarness.Exit(1);
             return;
         }
         Debug.Log("CLIBUILD result: " + report.summary.result + " icons=" + sizes.Length);
-        EditorApplication.Exit(report.summary.result == BuildResult.Succeeded ? 0 : 1);
+        TestHarness.Exit(report.summary.result == BuildResult.Succeeded ? 0 : 1);
     }
 }

@@ -188,6 +188,6 @@ public static class IceAudit
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestPrefs.Restore();
-        EditorApplication.Exit(code);
+        TestHarness.Exit(code);
     }
 }

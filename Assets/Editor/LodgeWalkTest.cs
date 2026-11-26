@@ -62,7 +62,7 @@ public static class LodgeWalkTest
             TestPrefs.Restore();
         }
         Debug.Log($"LODGEWALK done: {fails} failed leg(s), {problems.Count} problem(s)");
-        EditorApplication.Exit(fails == 0 && problems.Count == 0 ? 0 : 1);
+        TestHarness.Exit(fails == 0 && problems.Count == 0 ? 0 : 1);
     }
 
     static Vector3 L(float x, float z) => camp.ChaletPoint(x, 0f, z);
