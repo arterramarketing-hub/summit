@@ -325,12 +325,11 @@ namespace Summit
                     // on along a path into the camp (CampPath), and the riders' way off down the shoulder on the station's
                     // far side, round behind its uphill end: not across the camp (camplayout)
                     e.toCamp.AddRange(CampPath(e.lift, out e.walkEnd));
-                    // (lifttop: on the summit bench some ride in down its way into the camp, the rest round behind the
-                    // station and off down the far side to the run, and on down the run's left side)
+                    // (lifttop2: at the gate's level some ride along the way to the gate and go up into the camp, the rest
+                    // on into the in-run, over the lip and on down the run)
                     if (LiftTop.AtBench(e.lift))
                     {
                         var ride = LiftTop.RideIn(out int rideEnd); for (int i = 0; i < rideEnd; i++) e.rideWay.Add(ride[i]);
-                        e.pushWay.Add(e.P(4f, -L - 9f)); e.pushWay.Add(e.P(-5f, -L - 9.5f));
                         var far = LiftTop.FarSide();
                         e.pushWay.AddRange(far);
                         if (far.Count > 0)
@@ -402,8 +401,10 @@ namespace Summit
                 if (Ok(e, U0 - 0.5f, -L - 1.5f)) Board(e.root.transform, e.P(U0 - 0.5f, -L - 1.5f), Quaternion.LookRotation(e.dir + e.side * 0.3f, Vector3.up), e.lift.summit ? "LiftCamp" : "LiftUnload", 2.2f, 0.55f, 1.8f);
                 if (Ok(e, U1, -L - 5f)) Board(e.root.transform, e.P(U1, -L - 5f), facingRun, "TrailMap", 2.4f, 1.5f, 1.1f);
                 if (Ok(e, U1 + 0.5f, -L + 2f)) Board(e.root.transform, e.P(U1 + 0.5f, -L + 2f), facingRun, liftSign, 2.2f, 0.55f, 1.8f);
-                for (float v = -L - 3f; v >= -L - 15f; v -= 3f)
-                    if (Ok(e, U1 + 1.5f, v)) Post(e.root.transform, e.P(U1 + 1.5f, v), 1.4f, 0.025f, orange);
+                // (not at the Summit top's pad, lifttop2: there the flat opens onto its two groomed ways on that side)
+                if (!LiftTop.AtBench(e.lift))
+                    for (float v = -L - 3f; v >= -L - 15f; v -= 3f)
+                        if (Ok(e, U1 + 1.5f, v)) Post(e.root.transform, e.P(U1 + 1.5f, v), 1.4f, 0.025f, orange);
                 if (e.toCamp.Count > 1) PathToCamp(e);
             }
         }
@@ -558,6 +559,7 @@ namespace Summit
         /// <summary>The Summit lift's path into the camp: packed snow a little darker than the powder, wands along it.</summary>
         void PathToCamp(End e)
         {
+            bool bench = LiftTop.AtBench(e.lift);   // (its groomed way to the gate is ridden: no wands along it)
             var v = new List<Vector3>(); var tri = new List<int>();
             for (int i = 0; i < e.toCamp.Count; i++)
             {
@@ -569,7 +571,7 @@ namespace Summit
                     var q = e.toCamp[i] + s * k; q.y = Slope.DrawnHeight(q.x, q.z) + 0.04f; v.Add(q - e.toCamp[0]);
                 }
                 if (i > 0) { int o = v.Count - 4; tri.Add(o); tri.Add(o + 2); tri.Add(o + 1); tri.Add(o + 1); tri.Add(o + 2); tri.Add(o + 3); }
-                if (i % 3 == 1 && Mathf.Abs(e.toCamp[i].x - Slope.Centre(Slope.PadLip)) > Camp.HalfWidth + 1f) Post(e.root.transform, e.toCamp[i] + s * 1.6f, 1.4f, 0.025f, orange);   // (wands out on the open snow, not in the camp)
+                if (i % 3 == 1 && Mathf.Abs(e.toCamp[i].x - Slope.Centre(Slope.PadLip)) > Camp.HalfWidth + 1f && !(bench && i < e.walkEnd)) Post(e.root.transform, e.toCamp[i] + s * 1.6f, 1.4f, 0.025f, orange);   // (wands out on the open snow, not in the camp)
             }
             var m = new Mesh { name = "LiftEndsPath" };
             m.SetVertices(v); m.SetTriangles(tri, 0); m.RecalculateNormals(); m.RecalculateBounds();
@@ -664,7 +666,7 @@ namespace Summit
                     a.p.gameObject.SetActive(lod < 2);
                     a.p.SetLod(lod);
                     if (a.hit != null) a.hit.enabled = lod < 2 && d < 70f;
-                    if (lod < 2) { Pose(a, dt); a.p.Apply(dt); }
+                    if (lod < 2) { Pose(a, dt); a.p.Apply(dt); if (a.job == Job.Unload && a.handed && a.p.Look.gear != PersonGear.Skis) Skate(a); }
                 }
             }
         }
@@ -949,6 +951,30 @@ namespace Summit
             life.WalkTo(a.p, door.at, () => { if (a.job == Job.Camp) a.until = -1f; });
         }
 
+        /// <summary>The foot a boarder's board stays on (as on the chair: LiftRiders).</summary>
+        static int FrontFoot(PersonLook look) => Slope.Hash01((int)(look.height * 1000f), (int)(look.build * 1000f), 5) < 0.7f ? 0 : 1;
+
+        /// <summary>
+        /// Skating off the chair: the board on the front foot, the back foot pushing behind it, a stride every 0.8 s or
+        /// so while they're moving (it planted beside the board's tail, swept back, lifted and brought forward again).
+        /// </summary>
+        void Skate(Agent a)
+        {
+            var p = a.p; var h = p.Rig;
+            if (h == null || p.Lod != 0 && p.Lod != 1) return;
+            int back = 1 - FrontFoot(p.Look);
+            var rot = Quaternion.Euler(0f, a.yaw, 0f);
+            float s = p.Scale, side = back == 0 ? -1f : 1f;
+            bool moving = a.speed > 0.5f;
+            float ph = moving ? Mathf.Repeat(a.t * 1.25f, 1f) : 0.2f;
+            // on the snow for the push (0..0.6), then up and forward
+            float z = ph < 0.6f ? Mathf.Lerp(0.05f, -0.45f, ph / 0.6f) : Mathf.Lerp(-0.45f, 0.05f, (ph - 0.6f) / 0.4f);
+            float y = ph < 0.6f ? 0f : 0.1f * Mathf.Sin((ph - 0.6f) / 0.4f * Mathf.PI);
+            var ankle = a.pos + rot * new Vector3(side * 0.2f * s, (0.08f + y) * s, z * s);
+            ankle.y = Mathf.Max(ankle.y, Slope.DrawnHeight(ankle.x, ankle.z) + 0.08f * s);
+            h.LegTo(back, ankle, h.Hips.position + rot * new Vector3(side * 0.15f, -0.3f, 0.5f));
+        }
+
         // ---------------------------------------------------------------- who can see whom
 
         readonly Plane[] frustum = new Plane[6];
@@ -1113,6 +1139,34 @@ namespace Summit
                     break;
                 }
                 case Job.Unload when a.handed:
+                {
+                    // (lifttop2) off the chair: a skier pushes off on the poles, planted ahead and drawn back past the
+                    // hips, a few times; a boarder skates, the board on the front foot, the back foot out of its binding
+                    // pushing (Skate, after the pose), until they stop to strap in
+                    p.transform.SetPositionAndRotation(a.pos, rot);
+                    if (skis)
+                    {
+                        p.mode = Person.Mode.Ski; p.pace = Mathf.Clamp01(a.speed / 3f); p.skisOn = true; p.polesOn = true; p.polesInOneHand = false;
+                        float ph = Mathf.Repeat(a.t * 1.25f, 1f), push = ph < 0.55f ? ph / 0.55f : 1f - (ph - 0.55f) / 0.45f;
+                        if (a.t < 3.4f && a.speed > 0.6f)
+                        {
+                            for (int i = 0; i < 2; i++)
+                            {
+                                float sd = i == 0 ? -1f : 1f;
+                                p.handAt[i] = a.pos + rot * new Vector3(sd * 0.25f, (1.0f - 0.12f * push) * p.Scale, (0.38f - 0.6f * push) * p.Scale);
+                                p.handW[i] = 1f;
+                            }
+                            p.polesDir = (Vector3.down + rot * Vector3.back * (0.05f + 0.95f * push)).normalized;
+                            p.crouch = 0.18f * push;
+                        }
+                        else p.polesDir = (Vector3.down + rot * Vector3.back * 0.3f).normalized;
+                    }
+                    else
+                    {
+                        p.mode = Person.Mode.Stand; p.held = Person.Held.Placed; p.boardFoot = FrontFoot(p.Look); p.boardPitch = 0f; p.boardTurn = 0f;
+                    }
+                    break;
+                }
                 case Job.Push:
                 {
                     // gear on: gliding off the chair, or riding away

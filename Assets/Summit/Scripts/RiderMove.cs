@@ -38,8 +38,9 @@ namespace Summit
     /// surface (RiderRideOver), not a jump. A real lip, crest or drop still throws the board into the air: when the
     /// snow falls away faster than gravity can follow.
     ///
-    /// In the air the flight is the flight's: gravity, and a little drift the finger's way (AirDrift). The board is
-    /// tipped and its nose turned a little by the finger, for the look.
+    /// In the air the flight is mostly the flight's: gravity, and a limited steer the finger's way, straight from the
+    /// finger (AirDrift, never more than AirSideMost m/s over the air), to line the landing up. The board is tipped and
+    /// its nose turned a little by the finger.
     /// </summary>
     public partial class Rider
     {
@@ -94,8 +95,11 @@ namespace Summit
         /// speed, 0.36 three fifths). It does not touch the air: jumps fly and land as they do.
         /// </summary>
         public static float Pace = 1.15f;
-        /// <summary>m/s^2 a full drag drifts the flight sideways in the air; how far ahead of the flight the nose is turned (rad) and how fast (rad/s).</summary>
-        public static float AirDrift = 5f, AirTurnMost = 0.35f, AirTurnRate = 1.6f;
+        /// <summary>In the air (aircontrol): m/s^2 a whole drag swings the flight sideways, straight from the finger (about a
+        /// quarter of what the edge gives on the snow); the most sideways speed (m/s) the finger may add or take over one
+        /// air, so the landing can be lined up, not moved somewhere else; how far ahead of the flight the nose is turned
+        /// (rad) and how fast (rad/s).</summary>
+        public static float AirDrift = 10f, AirSideMost = 4f, AirTurnMost = 0.35f, AirTurnRate = 4f;
 
         // the hill's own fall line where the board is: taken at five places across, out to FallReach m either side,
         // each over FallBase m, ground steeper than FallGentle (rise over run) counting for little; followed this
@@ -127,6 +131,7 @@ namespace Summit
 
         float edge, edgeVel;   // the lean (rad, + right) and its rate: the look's own (Lean is this, and the body's chatter on top)
         float airTurn;         // in the air: how far the nose is turned off the flight (rad)
+        float airSide;         // in the air: the sideways speed the finger has given the flight so far (m/s, + right; AirSideMost)
         float sideNow;         // the sideways speed over what a whole drag would give, -1..1: what the lean shows
         float easeFor;         // s since the finger came off: the coast, then the return
         float deepIn;          // 0..1: how far the board has sunk into deep powder
@@ -155,6 +160,22 @@ namespace Summit
         /// <summary>The share of a whole drag the finger asks for now (-1..1): the TURN setting is how much the same drag
         /// asks, the throw shaped (Shape).</summary>
         float Asked() => Shape(Steer * Mathf.Clamp(TurnScale, 0.25f, 4f)) * Mathf.Lerp(1f, 0.7f, Tuck);
+
+        /// <summary>
+        /// In the air (aircontrol): the share of the whole air steer the finger asks for, -1..1. In proportion to the throw
+        /// (no expo: the air is short, what is asked is had at once). In an air long enough to trick, a throw past FlickAt
+        /// is a spin (RiderTricks), so there the whole air steer comes just short of it (AirReach of FlickAt): a drag
+        /// steers, a flick spins.
+        /// </summary>
+        float AirAsked()
+        {
+            float th = Steer * Mathf.Clamp(TurnScale, 0.25f, 4f), a = Mathf.Abs(th);
+            if (a <= DeadZone) return 0f;
+            float reach = trickAir ? FlickAt * AirReach : 1f;
+            return Mathf.Sign(th) * Mathf.Clamp01((a - DeadZone) / Mathf.Max(0.05f, reach - DeadZone));
+        }
+        /// <summary>In an air long enough to trick: the whole air steer at this share of the flick's throw (FlickAt).</summary>
+        public static float AirReach = 0.9f;
 
         /// <summary>A throw (-1..1) to the share of a whole push it asks for: the dead zone, then the expo curve.</summary>
         public static float Shape(float throw_)

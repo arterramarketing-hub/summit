@@ -460,26 +460,32 @@ namespace Summit
                 v.x -= side * 28f * dt;
                 if (v.y > 0f) v.y -= 0.8f * G * dt;   // pipe airs top out at a few metres, smoothly
             }
-            // the flight is the flight's: nothing aims it. The finger still has the edge (the board is tipped onto it
-            // in the air, ready for the snow), drifts the flight a little its way (AirDrift: an arm thrown out, no
-            // more) and turns the board's nose ahead of the flight (AirTurn), unless that same drag is a spin being
-            // thrown. It comes down with that edge and that slip, and the carving model takes it from there. (Not in
-            // the pipe, which steers itself, nor sliding down a face too steep to ride: the rock has it)
+            // the flight is mostly the flight's: gravity has it. The finger steers it a little (aircontrol): straight
+            // from the finger, no edge to wait for, it swings the flight its way (AirDrift m/s^2 at a whole drag, a
+            // fraction of what the edge gives on the snow) by no more than AirSideMost m/s of sideways speed over the
+            // whole air, and it turns the board's nose ahead of the flight (AirTurn). So a landing can be lined up,
+            // never flown somewhere else. While a spin is coming round, a drag its own way is the spin's; the other way
+            // still steers. It comes down with that line and that slip, and the carving model takes it from there.
+            // (Not in the pipe, which steers itself, nor sliding down a face too steep to ride: the rock has it)
             float flat = Mathf.Sqrt(v.x * v.x + v.z * v.z);
             RunNow = RunHeading(p.z) * Mathf.Clamp01((flat - 5f) / 5f);
             EdgeStep(dt);
             bool sliding = faceSlide; faceSlide = false;
+            if (AirTime <= dt * 1.5f) airSide = 0f;   // (a new air: the whole of its budget to steer with)
             if (flat > 2f)
             {
                 float line = Mathf.Atan2(v.x, v.z);
                 if (!pipeAir && !sliding && !Tube && Mathf.Abs(line) <= MaxHeading)
                 {
-                    bool spinning = trickAir && spinHalves != 0;
-                    float e = spinning ? 0f : edge / MaxLean;
-                    SideEdge = e * AirDrift * feel.AirControl; SideSlope = 0f;   // (the finger's drift: what turns the flight, for the test tools)
-                    line = Mathf.Clamp(line + SideEdge / flat * dt, -MaxHeading, MaxHeading);
+                    float a = AirAsked();
+                    if (trickAir && spinHalves != 0 && a * spinDir > 0f) a = 0f;   // (the spin's own way: the spin's)
+                    float most = AirSideMost * feel.AirControl;
+                    float dv = Mathf.Clamp(airSide + a * AirDrift * feel.AirControl * dt, -most, most) - airSide;
+                    airSide += dv;
+                    SideEdge = dv / dt; SideSlope = 0f;   // (the finger's drift: what turns the flight, for the test tools)
+                    line = Mathf.Clamp(line + dv / flat, -MaxHeading, MaxHeading);
                     v = new Vector3(Mathf.Sin(line) * flat, v.y, Mathf.Cos(line) * flat);
-                    airTurn = Mathf.MoveTowards(airTurn, e * AirTurnMost, AirTurnRate * dt);
+                    airTurn = Mathf.MoveTowards(airTurn, a * AirTurnMost, AirTurnRate * dt);
                 }
                 else { airTurn = Mathf.MoveTowards(airTurn, 0f, AirTurnRate * dt); SideEdge = 0f; SideSlope = 0f; }
                 Heading = Mathf.Clamp(line + airTurn, -MaxHeading, MaxHeading);

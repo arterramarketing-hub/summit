@@ -52,10 +52,15 @@ namespace Summit
         /// <summary>How fast the loop's clock runs this frame (1 on the snow, Slow in the air). Only this scene's own
         /// clock: Time.timeScale and the game's time are never touched.</summary>
         public float Rate { get; private set; } = 1f;
+        /// <summary>For checks: where the rider is, the way the skier faces, and which way a pole points from its grip.</summary>
+        public Vector3 RiderAt => holder != null ? holder.position : Vector3.zero;
+        public Vector3 RiderForward => holder != null ? holder.forward : Vector3.forward;
+        public Vector3 PoleTip(int s) => poleT[s] != null ? poleT[s].rotation * Vector3.down : Vector3.down;
         static int visits;   // each visit to the page starts on the other one
 
         Transform stage, holder, board, model, skyT;
         Transform skisT; readonly Transform[] skiT = new Transform[2], poleT = new Transform[2];
+        PoleSwing poles;                                // the poles hang and swing from the hands (as on a run)
         bool hasSkis, onSkis;
         Vector3 skiModelPos; readonly Vector3[] skiOff = new Vector3[2]; readonly Quaternion[] skiTurn = new Quaternion[2];
         int idSRide, idSTurnL, idSTurnR, idSPop, idSAir, idSLand, idSWindL, idSWindR, idSSpinL, idSSpinR, idSFlip;
@@ -112,6 +117,7 @@ namespace Summit
             if (holder != null) Kill(holder.gameObject);
             holder = null; board = null; model = null; rig = null; skisT = null;
             for (int s = 0; s < 2; s++) { skiT[s] = null; poleT[s] = null; }
+            poles = null;
             if (colorKept && camData != null) camData.requiresColorOption = colorWas;
             colorKept = false;
             Rate = 1f;
@@ -249,6 +255,7 @@ namespace Summit
                 };
             }
             float blend = 9f, liftWant = 0f;
+            Vector3 aimL = PoleSwing.Trail, aimR = PoleSwing.Trail; float hang = PoleSwing.HangSnow;   // the poles (PoleSwing)
             if (phase != lastPhase)
             {
                 if (phase == 1) { h.Restart(cPop); Puff(lipPos, 14, 2.5f); }
@@ -265,6 +272,10 @@ namespace Summit
                 if (sk) h.Want(carve > 0f ? idSTurnR : idSTurnL, Mathf.Abs(carve));
                 else { h.Want(carve > 0f ? idToe : idHeel, Mathf.Abs(carve)); d.lean = carve * 10f; }
                 d.drop = 0.16f * Sm(0.45f, 0.1f, toLip) - 0.0f;
+                // the poles trail, the inside one forward in a carve; then both reach forward to plant at the lip
+                PoleSwing.OnSnow(0f, carve, 9f, out aimL, out aimR);
+                float reach = Sm(0.6f, 0.12f, toLip);
+                aimL = Vector3.Lerp(aimL, PoleSwing.Plant, reach); aimR = Vector3.Lerp(aimR, PoleSwing.Plant, reach);
                 d.look = Vector3.right * 4f + Vector3.down;
                 d.lookWeight = 0.5f;
             }
@@ -291,6 +302,10 @@ namespace Summit
                 if (fl > 0f) h.Want(cFlip, fl * 1.5f);
                 liftWant = 0.11f * Mathf.Max(grab, fl);
                 if (ft < h.Length(cPop)) h.Want(cPop, 2f * (1f - Sm(0.55f, 1f, ft / Mathf.Max(0.01f, h.Length(cPop)))));
+                // the poles: planted at the lip and let go, out and swinging through the air (on the scene's slowed clock)
+                int gHand = sk && grab > 0f ? RiderBody.SkiGrabHand(tr.skiGrab) : -1;
+                PoleSwing.InAir(ft, ft, f, fl, grab, gHand, out aimL, out aimR);
+                hang = PoleSwing.HangAir * (1f - fl);
                 // spotting the landing as it comes round
                 d.look = (landPos - p) + Vector3.right * 3f; d.lookWeight = 0.35f + 0.4f * Sm(0.55f, 0.85f, f);
             }
@@ -298,6 +313,7 @@ namespace Summit
             {
                 h.Want(cRide, 1f);
                 if (ft < h.Length(cLand)) h.Want(cLand, 2f * (1f - Sm(0.3f, 1f, ft / Mathf.Max(0.01f, h.Length(cLand)))));
+                PoleSwing.OnSnow(0f, 0f, ft, out aimL, out aimR);
                 d.look = Vector3.right * 4f + Vector3.down; d.lookWeight = 0.4f;
             }
             // the legs take the landing and spring back
@@ -313,6 +329,11 @@ namespace Summit
             if (sk)
                 for (int s = 0; s < 2; s++)
                     if (skiT[s] != null) { Transform ft2 = h.Foot[s]; skiT[s].SetPositionAndRotation(ft2.position + ft2.rotation * skiOff[s], ft2.rotation * skiTurn[s]); }
+            if (sk && poles != null)
+            {
+                if (dt <= 0f || phase != lastPhase && phase == 0) poles.Reset();
+                poles.Apply(holder.forward, holder.up, aimL, aimR, 0f, 0f, hang, Mathf.Max(dt, 0f));
+            }
             lastPhase = phase;
 
             // ---- the snow: the trail of spray off the tail on the snow, the shadow under the rider
@@ -588,6 +609,7 @@ namespace Summit
             }
             if (skisT != null) skisT.gameObject.SetActive(false);
             skiModelPos = body.SkiModelPos;
+            poles = body.HasSkis && poleT[0] != null && poleT[1] != null ? new PoleSwing(poleT[0], poleT[1], body.PoleRest(0), body.PoleRest(1)) : null;
             var table = Resources.Load<TextAsset>("Rider/HeroAnim");
             var h = table != null ? new HeroRig(model, table) : null;
             if (h == null || !h.Ok) { Hide(); return false; }

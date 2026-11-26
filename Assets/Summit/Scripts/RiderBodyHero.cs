@@ -94,6 +94,8 @@ namespace Summit
         public interface ICampPose { bool Want(HeroRig h); void After(HeroRig h, Transform model, float dt); }
         public ICampPose CampPose;
         bool campPosed;
+        /// <summary>(lifttop2: LiftArrive) Runs once a riding frame's pose is done, to place limbs on top of it (pushing off a lift's deck).</summary>
+        public System.Action<HeroRig, Transform, float> RideAfter;
 
         bool SetUpHero()
         {
@@ -527,6 +529,7 @@ namespace Summit
             if (HandGone(1)) d.handR = 0f;
             h.Layer(d, dt);
             if (Walking && CampPose != null) CampPose.After(h, model, dt);
+            else if (!Walking && RideAfter != null) RideAfter(h, model, dt);
             // on the camp's stairs, each foot on the tread under it (StairFeet)
             if (Walking && CampMove == 0 && !campPosed && !float.IsNaN(FeetGround))
                 StairFeet.Plant(h, FeetGround, FeetFacing, stairFeet, dt);

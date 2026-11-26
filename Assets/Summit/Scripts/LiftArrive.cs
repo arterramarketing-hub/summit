@@ -6,8 +6,10 @@ namespace Summit
     /// <summary>
     /// (lifttop) The hero arriving at the camp as everyone does: on the Summit lift. Coming into the camp (from the start
     /// page, or back after a run) the hero rides the last span up on a chair of their own, the chairs ahead and behind
-    /// full of the mountain's people; stands up as the chair comes into the station, glides off the deck's uphill end
-    /// onto the bench, turns toward the camp and skids to a stop; and the camp takes over (on foot, the gear left at the
+    /// full of the mountain's people; their hands go to the bar as it swings up on the last span, they stand up as the
+    /// chair comes onto the deck and push off it as the mountain's people do (lifttop2: on a board the back foot out,
+    /// skating; on skis the poles), glide off the deck's uphill end onto the pad and along the way to the gate, and skid
+    /// to a stop; and the camp takes over (on foot, the gear left at the
     /// gate as ever: Camp). About ten seconds. The camera is a chase camera: behind and above the chair, the station and
     /// the camp coming up ahead and to the right; then behind the hero as they glide, settling where the camp's own
     /// camera sits so the hand-over doesn't show. A tap skips to the end. No words on screen.
@@ -22,7 +24,9 @@ namespace Summit
         /// <summary>For the tests: fail on purpose this far in (0: never).</summary>
         public static float TestFailAt;
         /// <summary>How long the ride lasts before the chair reaches the unload (about), standing up, the most it can take.</summary>
-        public const float RideTime = 3.2f, StandTime = 0.8f, StopTime = 0.6f, MaxTime = 16f;
+        public const float RideTime = 2.6f, StandTime = 0.8f, StopTime = 0.6f, MaxTime = 16f;
+        /// <summary>(lifttop2) The hero's chair's bar while they ride it (0 down .. 1 up; below 0 none: the chair's own, SkiLift.BarUp): swung up over the ride's last seconds, whichever chair it is.</summary>
+        public static float HeroBar = -1f;
         public enum Phase { None, Ride, Stand, Glide, Stop, Done }
         public Phase Now { get; private set; }
         public float T { get; private set; }
@@ -41,7 +45,7 @@ namespace Summit
         Vector3 campSide, outer;
         Matrix4x4 chairM;
         readonly List<Vector3> glide = new List<Vector3>(); readonly List<float> glideS = new List<float>();
-        float glideLen, gs, speed, stopT, heading;
+        float glideLen, gs, speed, stopT, heading, glideT;
         Vector3 standAt, lookAhead, camVel;
         float camFace;
         bool skis, gear;
@@ -109,8 +113,9 @@ namespace Summit
             Vector3 P(float v, float u) => l.top + l.dir * v + campSide * u;
             // (off the deck's uphill end, round toward the camp's side, and back the way the line comes: toward the
             // camp, down the way in)
-            float us = Mathf.Max(u0, 0f);   // (round to the camp's side of the station, clear of the places others strap in)
-            var key = new[] { P(v0, u0), P(v0 - 4f, u0), P(-6.8f, u0 + 0.6f), P(-9.4f, us + 3f), P(-10.2f, us + 7f), P(-8.6f, us + 10.6f), P(-5.4f, us + 12.2f) };
+            float us = Mathf.Max(u0, 0f);
+            // (lifttop2: off the deck's uphill end and round to the right onto the way to the gate, along it a little)
+            var key = new[] { P(v0, u0), P(v0 - 4f, u0), P(-7.4f, u0 + 1f), P(-9.4f, us + 4f), P(-9.8f, us + 9f), P(-9.3f, us + 14f), P(-8.5f, us + 18.5f) };
             glide.Clear(); glideS.Clear();
             for (int i = 0; i < key.Length - 1; i++)
             {
@@ -166,9 +171,10 @@ namespace Summit
                         if (T >= rideFor)
                         {
                             // up and off: on the gear now, gliding (the ride's own stance: RiderBody, as at the gate)
-                            Now = Phase.Glide; gs = 0f; speed = LiftLine.Speed * 0.9f;
+                            Now = Phase.Glide; gs = 0f; glideT = 0f; speed = LiftLine.Speed * 0.9f;
                             body.CampPose = null;
                             body.SetWalking(false);
+                            body.RideAfter = PushOff;   // (skating off on a board, the back foot out; pushing on the poles on skis)
                             var d0 = glide[Mathf.Min(1, glide.Count - 1)] - glide[0];
                             heading = Mathf.Atan2(d0.x, d0.z);
                         }
@@ -177,8 +183,8 @@ namespace Summit
                     {
                         // gliding at the chair's pace off the deck, then a skid to a stop over the last few metres
                         float stopLen = 4f, cruise = Mathf.Max(0.1f, glideLen - stopLen);
-                        speed = gs < cruise ? Mathf.Lerp(LiftLine.Speed * 0.9f, 5.2f, gs / cruise) : Mathf.Max(0.35f, 5.2f * Mathf.Sqrt(Mathf.Max(0f, (glideLen - gs) / stopLen)));
-                        gs += speed * dt;
+                        speed = gs < cruise ? Mathf.Lerp(LiftLine.Speed * 0.9f, 6f, gs / cruise) : Mathf.Max(0.35f, 6f * Mathf.Sqrt(Mathf.Max(0f, (glideLen - gs) / stopLen)));
+                        gs += speed * dt; glideT += dt;
                         if (gs >= glideLen) { gs = glideLen; Now = Phase.Stop; stopT = 0f; }
                         break;
                     }
@@ -211,8 +217,10 @@ namespace Summit
         public void End()
         {
             LiftRiders.HeroLift = LiftRiders.HeroChair = LiftRiders.HeroLap = -1;
+            HeroBar = -1f;
             if (body != null)
             {
+                if (body.RideAfter == (System.Action<HeroRig, Transform, float>)PushOff) body.RideAfter = null;
                 if (ReferenceEquals(body.CampPose, this)) body.CampPose = null;
                 body.GearAt(null, Quaternion.identity);
             }
@@ -228,6 +236,8 @@ namespace Summit
             if (Now == Phase.Ride || Now == Phase.Stand)
             {
                 chairM = ChairNow();
+                // (the bar: up over a second and a bit, ending as they stand)
+                HeroBar = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(rideFor - StandTime - 2.0f, rideFor - StandTime - 0.6f, T));
                 var seatM = chairM * LiftRiders.SeatLocal(seat);
                 Vector3 at = seatM.GetColumn(3);
                 var fwd = chairM.MultiplyVector(Vector3.forward); fwd.y = 0f; fwd.Normalize();
@@ -241,6 +251,7 @@ namespace Summit
                 body.FeetGround = float.NaN; body.Upright = true; body.PhaseLock = float.NaN;
                 return;
             }
+            HeroBar = -1f;   // (off it: the chair's own, up through the station)
             // gliding: on the board (or the skis) along the way, the board's nose ahead; skidding round across it to stop
             Vector3 g = Along(gs, out Vector3 dir);
             float travel = Mathf.Atan2(dir.x, dir.z);
@@ -312,11 +323,69 @@ namespace Summit
                     h.LegTo(sd, Vector3.Lerp(cur, foot, k), hips + fwd * 0.9f + Vector3.up * 0.4f + right * side * 0.12f);
                 }
                 if (w <= 0f)
+                {
+                    // the hands in the lap; up to the bar as it swings up nearing the station (the riders' way: LiftRiders)
+                    SkiLift.ChairAt(l, chair, clock0 + T, out float dNow, out _);
+                    float up = HeroBar >= 0f ? HeroBar : SkiLift.BarUp(l, dNow);
+                    float lift = up > 0.02f && up < 0.98f ? Mathf.Clamp01(Mathf.Sin(up * Mathf.PI) * 1.6f) : 0f;
                     for (int sd = 0; sd < 2; sd++)
                     {
                         float side = sd == 0 ? -1f : 1f;
-                        h.ArmTo(sd, hips + fwd * 0.3f + right * side * 0.13f + Vector3.up * 0.12f, h.UpperArm[sd].position + right * side * 0.35f - Vector3.up * 0.3f);
+                        var lap = hips + fwd * 0.3f + right * side * 0.13f + Vector3.up * 0.12f;
+                        var bar = m.MultiplyPoint3x4(SkiLift.BarPoint(LiftRiders.SeatX[seat] + side * 0.14f, up));
+                        h.ArmTo(sd, Vector3.Lerp(lap, bar, lift), h.UpperArm[sd].position + right * side * 0.35f - Vector3.up * 0.3f);
                     }
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------- pushing off the deck (RiderBody.RideAfter)
+
+        /// <summary>How far along the glide the pushing goes on (m), and a stride's length (s): the people's own (LiftEnds).</summary>
+        const float PushFor = 7f, Stride = 0.8f;
+
+        /// <summary>
+        /// Off the chair as the mountain's people go (LiftEnds): on a board, the front foot strapped in and the back
+        /// foot out of its binding, skating, planted on the toe side beside the board and swept back, lifted and
+        /// brought forward again, a stride every 0.8 s; on skis, the poles planted ahead beside the boots and drawn
+        /// back past the hips. Over the first few metres of the glide, then back on the gear (the board's back foot
+        /// on it again) for the run in and the stop.
+        /// </summary>
+        void PushOff(HeroRig h, Transform model, float dt)
+        {
+            if (Now != Phase.Glide || h == null || !h.Ok) return;
+            float k = 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(PushFor - 2f, PushFor, gs));
+            if (k <= 0f) return;
+            k *= Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(glideT / 0.25f));   // (eased in from the stand)
+            Vector3 g = Along(gs, out Vector3 dir);
+            g.y = Slope.DrawnHeight(g.x, g.z);
+            var right = Vector3.Cross(Vector3.up, dir);
+            float ph = Mathf.Repeat(glideT / Stride, 1f);
+            if (!skis)
+            {
+                // the back foot: the one nearer the board's tail (the board's nose goes first)
+                int back = Vector3.Dot(h.Foot[0].position - h.Foot[1].position, dir) < 0f ? 0 : 1;
+                Vector3 front = h.Foot[1 - back].position;
+                // (the toe edge's side: the board's own right, as the rig has it)
+                var toe = body.RollFrame != null ? body.RollFrame.right : right; toe.y = 0f; toe = toe.sqrMagnitude > 1e-4f ? toe.normalized : right;
+                // on the snow for the push (0..0.6), then up and forward
+                float along = ph < 0.6f ? Mathf.Lerp(0.1f, -0.55f, ph / 0.6f) : Mathf.Lerp(-0.55f, 0.1f, (ph - 0.6f) / 0.4f);
+                float up = ph < 0.6f ? 0f : 0.12f * Mathf.Sin((ph - 0.6f) / 0.4f * Mathf.PI);
+                var ankle = front + dir * (along - 0.15f) + toe * 0.3f;
+                ankle.y = Slope.DrawnHeight(ankle.x, ankle.z) + 0.09f + up;
+                h.LegTo(back, Vector3.Lerp(h.Foot[back].position, ankle, k), h.Hips.position + toe * 0.55f + dir * (along * 0.4f) + Vector3.down * 0.25f);
+            }
+            else
+            {
+                // both poles at once: planted ahead (0..0.55, pushed back past the hips), then swung forward again
+                float push = ph < 0.55f ? ph / 0.55f : 1f - (ph - 0.55f) / 0.45f;
+                for (int s = 0; s < 2; s++)
+                {
+                    float sd = s == 0 ? -1f : 1f;
+                    var hand = g + Vector3.up * (1.0f - 0.18f * push) + dir * (0.42f - 0.7f * push) + right * sd * 0.3f;
+                    // (the pole goes with the hand; planted, its tip on the snow swings it back as the hand goes by: RiderBodyTouch)
+                    h.ArmTo(s, Vector3.Lerp(h.Hand[s].position, hand, k), hand + right * sd * 0.35f - dir * 0.3f + Vector3.down * 0.15f);
+                }
             }
         }
 
@@ -337,7 +406,8 @@ namespace Summit
             Vector3 povLook = seatP + cf * 14f + campSide * (near * 4f) + Vector3.up * Mathf.Lerp(-14f, -2.4f, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.25f, 1f, near)));
             // 2. pulled back, up over the station, to a place out on the bench beside it, looking at them as they stand
             // up and glide out from under it
-            Vector3 vantage = l.top + l.dir * -1f + outer * 15f + Vector3.up * 3.4f;
+            // (uphill of the station's hut, which stands at its downhill end on that side: it would hide them)
+            Vector3 vantage = l.top + l.dir * -6.5f + outer * 14f + Vector3.up * 4.2f;
             vantage.y = Mathf.Max(vantage.y, Slope.DrawnHeight(vantage.x, vantage.z) + 2f);
             Vector3 vantageLook = hero + Vector3.up * 0.9f;
             // 3. behind them as the camp's own camera sits (Camp.CameraStep), facing the way they stop: the camp

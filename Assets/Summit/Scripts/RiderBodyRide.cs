@@ -52,6 +52,7 @@ namespace Summit
         static readonly int[] skiGrabHand = { 1, 0, 1 };
         readonly HeroRig.Hold[] skiGrabHold = new HeroRig.Hold[3];
         float plantT = 9f; int plantSide, lastTurnSide;
+        PoleSwing poleSwing;                            // the poles hang and swing from the hands (PoleSwing)
 
         // the boxes the loose gear tumbles with (in each piece's own frame: z down a ski, y up a pole)
         static readonly Vector3 SkiBox = new Vector3(0.10f, 0.06f, 1.62f), SkiBoxAt = new Vector3(0f, -0.01f, 0.09f);
@@ -66,6 +67,8 @@ namespace Summit
         public static float DeckTop => BoardTop;
         public Vector3 SkiOffset(int s) => skiOff[s];
         public Quaternion SkiTurnOf(int s) => skiTurn[s];
+        /// <summary>A pole's grip in its hand at rest (a copy of the rider starts its own PoleSwing from it).</summary>
+        public Quaternion PoleRest(int s) => poleSwing != null ? poleSwing.Rest(s) : Quaternion.identity;
         public static int SkiGrabHand(int i) => skiGrabHand[i];
 
         /// <summary>
@@ -157,6 +160,7 @@ namespace Summit
                 grip.SetParent(hand, true);
                 pole[s] = grip;
             }
+            poleSwing = new PoleSwing(pole[0], pole[1]);
             // the toboggan: its seat (the tops of the battens) at the Root bone, the curl the way the rider faces
             idSledIdle = h.Id("Sled_Idle"); idSledRide = h.Id("Sled_Ride"); idSledLeanL = h.Id("Sled_LeanL"); idSledLeanR = h.Id("Sled_LeanR");
             idSledTuck = h.Id("Sled_Tuck"); idSledAir = h.Id("Sled_Air"); idSledNoHands = h.Id("Sled_NoHands"); idSledBump = h.Id("Sled_Bump");
@@ -203,6 +207,7 @@ namespace Summit
             if (sledRoot != null) DestroyImmediate(sledRoot.gameObject);
             skiRoot = sledRoot = sled = null;
             for (int s = 0; s < 2; s++) { ski[s] = null; pole[s] = null; }
+            poleSwing = null;
             rideGear = sledGear = false;
         }
 
@@ -274,6 +279,7 @@ namespace Summit
                 up = roll.up, toe = roll.forward, nose = -roll.right, feet = !down,
             };
             float lift = 0f, blend = 9f;
+            Vector3 aimL = PoleSwing.Trail, aimR = PoleSwing.Trail; float keepL = 0f, keepR = 0f, hang = PoleSwing.HangSnow;   // where the poles go (PoleSwing)
             Flutter(dt);
             // landings squash the legs, which spring back (the same spring as on the board)
             compV += (-comp * 140f - compV * 16f) * dt;
@@ -282,7 +288,7 @@ namespace Summit
             float turn = Mathf.Clamp(rider.Lean / Rider.MaxLean * StanceSign, -1f, 1f);   // + = turning right (the skier's own right: skiing backwards, the world's left)
             float speed01 = Mathf.Clamp01(rider.Speed / 30f);
             if (down) h.Want(idFlail, 1f);
-            else if (idle) h.Want(idSkiIdle, 1f);
+            else if (idle) { h.Want(idSkiIdle, 1f); aimL = aimR = PoleSwing.Stand; }
             else if (air)
             {
                 blend = 11f;
@@ -306,6 +312,10 @@ namespace Summit
                 }
                 if (fl > 0f) h.Want(idSkiFlip, fl * 1.5f);
                 lift = 0.11f * Mathf.Max(grab, fl);   // the skis come up to the body
+                // the poles: planted as they leave the lip and let go, then out and swinging for balance;
+                // in with the ball in a flip; the grabbing hand's hanging behind; forward, ready, for the landing
+                PoleSwing.InAir(popT, t, k, fl, grab, rider.TrickGrab > 0 && rider.TrickGrab <= skiGrabHand.Length ? skiGrabHand[rider.TrickGrab - 1] : -1, out aimL, out aimR);
+                hang = PoleSwing.HangAir * (1f - fl);
                 if (popT < h.Length(idSkiPop)) h.Want(idSkiPop, 2f * (1f - Sm(0.55f, 1f, popT / h.Length(idSkiPop))));
             }
             else
@@ -326,7 +336,14 @@ namespace Summit
                     if (rider.Speed > 6f && tuck < 0.3f && !rider.Grinding) { plantT = 0f; plantSide = side; h.Restart(side > 0 ? idSkiPlantR : idSkiPlantL); }
                 }
                 int idPlant = plantSide > 0 ? idSkiPlantR : idSkiPlantL;
-                if (idPlant >= 0 && plantT < h.Length(idPlant)) h.Want(idPlant, 1.4f * (1f - Sm(0.6f, 1f, plantT / h.Length(idPlant))) * (1f - tuck));
+                if (idPlant >= 0 && plantT < h.Length(idPlant))
+                {
+                    float pw = 1.4f * (1f - Sm(0.6f, 1f, plantT / h.Length(idPlant))) * (1f - tuck);
+                    h.Want(idPlant, pw);
+                    // the planting pole goes where the clip reaches it (forward, the tip in the snow)
+                    if (plantSide > 0) keepR = Mathf.Clamp01(pw); else keepL = Mathf.Clamp01(pw);
+                }
+                PoleSwing.OnSnow(tuck, turn, landT, out aimL, out aimR);
                 // the shoulders lead a little, and the eyes go where the turn is taking you
                 d.twist = Mathf.Clamp(-rider.YawRate * Mathf.Rad2Deg * 0.06f, -8f, 8f);
                 Vector3 v = rider.Velocity; v.y = 0f;
@@ -350,6 +367,7 @@ namespace Summit
             if (HandGone(0)) d.handL = 0f;
             if (HandGone(1)) d.handR = 0f;
             h.Layer(d, dt);
+            if (!Walking && RideAfter != null) RideAfter(h, model, dt);   // (lifttop2: pushing off a lift's deck on the poles)
             // each ski goes with its own foot; a pole is not carried in a hand that is gone
             for (int s = 0; s < 2; s++)
             {
@@ -358,6 +376,9 @@ namespace Summit
                 bool held = !HandGone(s);
                 if (pole[s].gameObject.activeSelf != held) pole[s].gameObject.SetActive(held);
             }
+            // the poles from the hands: hanging, trailing, swinging (the clips' own directions sat near level)
+            if (!down && poleSwing != null) poleSwing.Apply(roll.forward, roll.up, aimL, aimR, keepL, keepR, hang, dt);
+            else if (poleSwing != null) poleSwing.Reset();
             KeepOffSnow(dt, true);   // nothing through the snow, the poles' tips on it (RiderBodyTouch)
         }
 

@@ -114,6 +114,82 @@ namespace Summit
 
         bool Baking_(Mesh m) { foreach (var b in baking) if (b.mesh == m) { b.freed = true; return true; } return false; }
         static double Clock => TestClock >= 0.0 ? TestClock : Time.timeAsDouble;
+        // ---------------------------------------------------------------- the restraint bar (lifttop2)
+
+        /// <summary>Where the bar's arms pivot on the chair's frame (the chair's own frame: the grip at the origin), and how far it swings up.</summary>
+        public static readonly Vector3 BarPivot = new Vector3(0f, -2.0f, -0.02f);
+        public const float BarSwing = 105f;
+        static float Ramp(float x, float a, float b) => Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(a, b, x));
+
+        /// <summary>
+        /// How far up a chair's bar is (0 down .. 1 up) at a place on its loop: lowered just after loading, raised on the
+        /// last span before the top (the riders lift it), up through the station and round, lowered again on the way
+        /// down, and up again coming into the bottom to load.
+        /// </summary>
+        public static float BarUp(LiftLine.Lift l, float d)
+        {
+            if (l.cum == null) return 0f;
+            int n = l.Spans;
+            if (d < l.cum[0] + 14f) return 1f - Ramp(d, l.cum[0] + 5f, l.cum[0] + 14f);
+            if (d < l.cum[n + 1] - 24f) return 0f;
+            if (d < l.cum[n + 4] + 8f) return Ramp(d, l.cum[n + 1] - 24f, l.cum[n + 1] - 9f);
+            if (d < l.cum[2 * n + 4] - 16f) return 1f - Ramp(d, l.cum[n + 4] + 8f, l.cum[n + 4] + 20f);
+            return Ramp(d, l.cum[2 * n + 4] - 16f, l.cum[2 * n + 4] - 4f);
+        }
+
+        /// <summary>The bar's frame relative to the chair's at a lift of `up` (0..1).</summary>
+        public static Matrix4x4 BarLocal(float up) => Matrix4x4.Translate(BarPivot) * Matrix4x4.Rotate(Quaternion.Euler(-BarSwing * up, 0f, 0f)) * Matrix4x4.Translate(-BarPivot);
+
+        /// <summary>The bar's middle at a seat's x (chair frame), at a lift of `up`: where a hand takes it.</summary>
+        public static Vector3 BarPoint(float x, float up) => BarLocal(up).MultiplyPoint3x4(new Vector3(x, LiftRiders.BarY, LiftRiders.BarZ));
+
+        /// <summary>
+        /// Split the chair's model in two: the restraint bar (its arms, the bar, the footrests on it) and the rest, so the
+        /// bar can swing up on its own. By shape, in the chair's frame: everything ahead of the seat, and the arms along
+        /// their line from the pivot. The rest keeps the chair's part; the bar gets one of its own.
+        /// </summary>
+        Part SplitBar(Part ch)
+        {
+            if (ch.mesh == null || !ch.mesh.isReadable) return null;
+            var src = ch.mesh;
+            var v = src.vertices;
+            var g = new Vector3[v.Length];
+            float cw = 0f;
+            for (int i = 0; i < v.Length; i++) { g[i] = ch.local.MultiplyPoint3x4(v[i]); cw = Mathf.Max(cw, Mathf.Abs(g[i].x)); }
+            Vector3 armA = BarPivot, armB = new Vector3(0f, LiftRiders.BarY, LiftRiders.BarZ);
+            bool IsBar(Vector3 p)
+            {
+                if (p.z > 0.33f && p.y < -2.25f) return true;
+                if (Mathf.Abs(p.x) < cw - 0.09f) return false;
+                // along an arm: from the pivot to the bar, at the chair's ends
+                var q = new Vector3(0f, p.y, p.z); var ab = armB - armA;
+                float t = Mathf.Clamp01(Vector3.Dot(q - armA, ab) / ab.sqrMagnitude);
+                return (armA + ab * t - q).magnitude < 0.055f && t > 0.12f;
+            }
+            var bodyTri = new List<int>(); var barTri = new List<int>();
+            var subs = new List<int[]>();
+            for (int sm = 0; sm < src.subMeshCount; sm++)
+            {
+                var tri = src.GetTriangles(sm);
+                for (int i = 0; i < tri.Length; i += 3)
+                {
+                    bool bar = IsBar(g[tri[i]]) && IsBar(g[tri[i + 1]]) && IsBar(g[tri[i + 2]]);
+                    (bar ? barTri : bodyTri).AddRange(new[] { tri[i], tri[i + 1], tri[i + 2] });
+                }
+            }
+            if (barTri.Count == 0) return null;
+            Mesh Make(List<int> t, string name)
+            {
+                var m = Object.Instantiate(src); m.name = name;
+                m.subMeshCount = 1; m.SetTriangles(t, 0); m.RecalculateBounds();
+                return m;
+            }
+            ch.mesh = Make(bodyTri, "ChairBody");
+            var bp = new Part { mesh = Make(barTri, "ChairBar"), local = ch.local, shadows = ch.shadows, props = ch.props };
+            parts.Add(bp);
+            return bp;
+        }
+
         /// <summary>The lifts' clock (what every chair's place is worked out from).</summary>
         public static double Now => Clock;
 
@@ -157,7 +233,7 @@ namespace Summit
             public readonly List<Matrix4x4> list = new List<Matrix4x4>();
             public int Tris => mesh != null ? (int)(mesh.GetIndexCount(0) / 3) : 0;
         }
-        Part mast, mastLod, head, headLod, pad, sheaves, sheavesLod, chair, chairLod, station;
+        Part mast, mastLod, head, headLod, pad, sheaves, sheavesLod, chair, chairLod, station, chairBar;
         readonly Part[] riders = new Part[4], ridersLod = new Part[4];
         readonly List<Part> parts = new List<Part>();
 
@@ -195,6 +271,7 @@ namespace Summit
             }
             if (chair.mesh == null || mast.mesh == null) return;
             Pair(mast, mastLod, NearRange); Pair(head, headLod, NearRange); Pair(sheaves, sheavesLod, TrainNear); Pair(chair, chairLod, ChairNear);
+            chairBar = SplitBar(chair);   // (lifttop2: the restraint bar its own piece, raised as a chair nears a station)
             for (int i = 0; i < 4; i++) Pair(riders[i], ridersLod[i], ChairNear);
 
             // The file is made in metres, but it says its unit is the centimetre (UnitScaleFactor 1), so the importer
@@ -834,6 +911,8 @@ namespace Summit
                     bool near = d2 < ChairNear * ChairNear;
                     float dc = Flat(pos, p);
                     Put(chair, chairLod, ChairNear, dc, m, 0f);
+                    // (its bar: swung up near the stations, drawn with the near chair)
+                    if (chairBar != null && (!Farview.On ? dc < ChairNear : dc < ChairNear + Hand)) chairBar.list.Add(m * BarLocal(LiftArrive.HeroBar >= 0f && l.id == LiftRiders.HeroLift && c == LiftRiders.HeroChair ? LiftArrive.HeroBar : BarUp(l, (float)(along - lap * (double)l.loop))) * chairBar.local);
                     // who is aboard: drawn when the chair left the bottom station, and gone at the top
                     if (LiftRiders.On) LiftRiders.Chair(l, c, lap, (float)(along - lap * (double)l.loop), m);
                     else

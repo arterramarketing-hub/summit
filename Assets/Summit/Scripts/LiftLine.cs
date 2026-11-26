@@ -363,8 +363,8 @@ namespace Summit
             float b = Course.First;
             float cx = Slope.Centre(Slope.PadLip);
             int tries = 0;
-            // (lifttop: on the summit bench behind the lodge, LiftTop; should the bench not take it on some mountain,
-            // where it stood before, beside the lodge's wing, then in front of the camp's left corner)
+            // (lifttop2: at the camp's front left at the gate's level, LiftTop; should its pad not take it on some
+            // mountain, where it stood before, beside the lodge's wing, then in front of the camp's left corner)
             var places = new List<(float[] zs, float[] offs)>();
             if (LiftTop.Station(out var vz, out var voff)) places.Add((vz, voff));
             foreach (var zs in SummitZ) places.Add((zs, SummitOff));
@@ -437,6 +437,7 @@ namespace Summit
             if (Mathf.Abs(x - Slope.Centre(z)) < off) return false;
             if (Kept(x, z)) return false;
             if (Cliffs.WallCut(x - 4f, z) < -0.01f || Cliffs.WallCut(x + 4f, z) < -0.01f) return false;
+            if (z < 40f && LiftTop.OnWayDown(x, z, 2.5f)) return false;   // (nor on the Summit top's way down to the run)
             float gx = (Slope.Height(x + 3f, z) - Slope.Height(x - 3f, z)) / 6f;
             float gz = (Slope.Height(x, z + 3f) - Slope.Height(x, z - 3f)) / 6f;
             return Mathf.Abs(gx) <= 0.55f && gz <= 0.3f && gz >= -1.25f;
@@ -445,8 +446,7 @@ namespace Summit
         // (a lift stays out of a ridge stretch altogether, canyons, gorge and all, not just off its rock)
         // (asked with a small margin as well as a wide one: near two jump cliffs at once, Cliffs.Keep's wide look can
         // find the further one first and miss the nearer)
-        static bool Kept(float x, float z) => Ridge.InCanyons(z) || CliffBand.Near(z, 30f, out _) || Course.Keep(x, z, 3f) || Course.Keep(x, z, 0.5f) || Cliffs.WallCut(x, z) < -0.01f || Slope.OnPad(x, z)
-            || (z > -100f && z < 80f && LiftTop.Covers(x, z, 2.5f));   // (nor on the Summit top's ways: its far side runs beside the line, and under it)
+        static bool Kept(float x, float z) => Ridge.InCanyons(z) || CliffBand.Near(z, 30f, out _) || Course.Keep(x, z, 3f) || Course.Keep(x, z, 0.5f) || Cliffs.WallCut(x, z) < -0.01f || Slope.OnPad(x, z);
 
         static readonly float[] StationAcross = { -StationHalfWid, -Half, 0f, Half, StationHalfWid };
 
@@ -454,6 +454,7 @@ namespace Summit
         static bool StationAt(Lift l, float x, float z, out float deck)
         {
             deck = float.MinValue;
+            float low = float.MaxValue;
             // (under its edges, its middle, and the two cables: the chairs leave it only just above its deck)
             for (int i = -2; i <= 2; i++)
                 for (int s = 0; s < StationAcross.Length; s++)
@@ -465,9 +466,12 @@ namespace Summit
                     float runX = pz < Slope.GateZ ? Slope.Centre(Slope.PadLip) : Slope.Centre(pz);
                     if (Mathf.Abs(px - runX) < StationOff - StationHalfWid - 1f) return false;
                     if (Kept(px, pz)) return false;
-                    deck = Mathf.Max(deck, Slope.Height(px, pz));
+                    float hy = Slope.Height(px, pz);
+                    deck = Mathf.Max(deck, hy); low = Mathf.Min(low, hy);
                 }
-            deck += 0.3f;
+            // (on the Summit top's pad, lifttop2: flush with the snow all round, its frame and legs under it; elsewhere
+            // just over the highest snow under it)
+            deck += LiftTop.OnPad(x, z, 0f) && deck - low < 0.05f ? LiftTop.DeckStep : 0.3f;
             return true;
         }
 

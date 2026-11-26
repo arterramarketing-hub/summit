@@ -45,7 +45,8 @@ namespace Summit
             public long key;
             public PersonLook look;
             public int row, pose, head, seat, count, lift, chair;
-            public float seen, d2, phase;
+            public float seen, d2, phase, d;
+            public LiftLine.Lift l;
             public Matrix4x4 chairM;
             public bool down;
             public Person near;
@@ -166,7 +167,7 @@ namespace Summit
                     r.row = -1;
                     riders[key] = r;
                 }
-                r.count = count; r.chairM = m; r.d2 = d2; r.seen = clock;
+                r.count = count; r.chairM = m; r.d2 = d2; r.seen = clock; r.d = d; r.l = l;
                 now.Add(r);
             }
         }
@@ -369,6 +370,27 @@ namespace Summit
             float d = Mathf.Sqrt(r.d2);
             p.SetLod(d < FullRange ? 0 : 1);
             Hands(p, r.pose, r.chairM, r.seat);
+            // (lifttop2) nearing the top: a hand up to the bar as it swings up (and down again after loading), then
+            // up off the seat as the chair comes onto the deck, the feet to it
+            if (r.l != null && !r.down)
+            {
+                float up = SkiLift.BarUp(r.l, r.d);
+                float lift = up > 0.02f && up < 0.98f ? Mathf.Sin(up * Mathf.PI) : 0f;
+                if (lift > 0f)
+                    for (int i = 0; i < 2; i++)
+                    {
+                        var bar = r.chairM.MultiplyPoint3x4(SkiLift.BarPoint(SeatX[r.seat] + (i == 0 ? -0.14f : 0.14f), up));
+                        p.handAt[i] = Vector3.Lerp(p.handAt[i], bar, Mathf.Clamp01(lift * 1.6f));
+                    }
+                float unload = UnloadAt(r.l);
+                float rise = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(unload - 4f, unload, r.d));
+                if (rise > 0f && r.d < unload + 1f)
+                {
+                    p.sitW = 1f - 0.6f * rise;
+                    p.feetDown = true; p.footY = r.l.top.y; p.feetForward = 0.1f * (1f - rise);
+                    p.lean = Mathf.Lerp(p.lean, -12f, rise);   // (leaning forward over the feet to stand)
+                }
+            }
             // poles: down and ahead in the chair's frame
             p.polesDir = r.chairM.MultiplyVector(PolesDir(r.pose == (int)Pose.SkiBar));
             // a slow swing of the hanging feet, each their own

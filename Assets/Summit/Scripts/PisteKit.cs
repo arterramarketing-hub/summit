@@ -333,16 +333,23 @@ namespace Summit
         }
 
         /// <summary>
-        /// (lifttop) The Summit top's far side, from its bench down to the run: poles along both edges, and where an
-        /// edge is open (the ground falling away past it) a rope line along it instead.
+        /// (lifttop) The Summit top's way down to the run: poles along both edges, and where an edge is open (the
+        /// ground falling away past it) a rope line along it instead; and a rope line round the top's pad wherever the
+        /// ground falls away past its rim (lifttop2: side 2, no poles).
         /// </summary>
         static void LayFarSide(List<Item> list, List<Rope> rl)
         {
             var edges = LiftTop.FarEdges(9f);
-            for (int side = -1; side <= 1; side += 2)
+            foreach (int side in new[] { -1, 1, 2 })
             {
                 var pts = new List<(Vector2 at, bool open)>();
                 foreach (var e in edges) if (e.side == side) pts.Add((e.at, e.open));
+                // (round the rim: start the walk round at a gap, so a rope line isn't split where the list wraps)
+                if (side == 2 && pts.Count > 0)
+                {
+                    int gap = pts.FindIndex(q => !q.open);
+                    if (gap > 0) { var rot = pts.GetRange(gap, pts.Count - gap); rot.AddRange(pts.GetRange(0, gap)); pts = rot; }
+                }
                 var run = new List<Vector2>();
                 for (int i = 0; i <= pts.Count; i++)
                 {
@@ -350,6 +357,7 @@ namespace Summit
                     if (open) { run.Add(pts[i].at); continue; }
                     if (run.Count >= 2) Line(list, rl, run, false, false);
                     run.Clear();
+                    if (side == 2) continue;
                     if (i >= pts.Count || (i & 1) == 1) continue;
                     var at = pts[i].at;
                     if (Blocked(at.x, at.y, 0.4f)) continue;

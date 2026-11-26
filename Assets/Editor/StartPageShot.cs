@@ -288,6 +288,7 @@ public static class StartPageShot
             Debug.Log($"STARTJUMP SLOWMO air {j.AirTime:0.00} s of the scene's clock took ~{realAir / 0.85f:0.0} s real; rate in the air {minRate:0.00}, on the snow {maxSnow:0.00}; " +
                       $"Time.timeScale {Time.timeScale} fixedDeltaTime {Time.fixedDeltaTime} (unchanged={scaleOk}); loop {real:0.0} s; next loop trick {j.Trick} on skis={j.OnSkis}" + (ok ? "" : " WRONG"));
         }
+        Poles(j);
         // the cost: a minute of the loop at 60 frames a second, and what's drawn
         var sw = new System.Diagnostics.Stopwatch();
         float worst = 0f, sum = 0f; int n = 600;
@@ -304,6 +305,84 @@ public static class StartPageShot
     }
 
     /// <summary>Pictures in a grid, `cols` across, at half size.</summary>
+    /// <summary>
+    /// The ski poles (PoleSwing): through a whole ski loop at 60 frames a second, how far below level the tips
+    /// point on the snow and in the air, how much they swing through the air, and that both reach forward at the
+    /// lip; the same with the clips' own directions (as before) for comparison. Then the same moments, before and
+    /// after, close in on the rider: poles_before_after.png.
+    /// </summary>
+    static void Poles(StartJump j)
+    {
+        string Run(bool off, out bool ok)
+        {
+            PoleSwing.Off = off;
+            j.Seek(0, -1.8f, 1);
+            float lip = j.Clock + 1.8f;
+            float snowSum = 0f, snowMin = 90f, airLo = 90f, airHi = -90f, plantFwd = -1f; int sn = 0, an = 0, up = 0;
+            for (int f = 0; f < 60 * 30; f++)
+            {
+                start.Frame(1f / 60f);
+                float u = j.Clock - lip;
+                if (u > j.AirTime + 1.2f) break;
+                for (int s = 0; s < 2; s++)
+                {
+                    Vector3 tip = j.PoleTip(s);
+                    float below = Mathf.Asin(Mathf.Clamp(-tip.y, -1f, 1f)) * Mathf.Rad2Deg;
+                    if (u < -0.7f || u > j.AirTime + 0.5f) { snowSum += below; snowMin = Mathf.Min(snowMin, below); sn++; }
+                    else if (u > 0.3f && u < j.AirTime * 0.9f) { airLo = Mathf.Min(airLo, below); airHi = Mathf.Max(airHi, below); an++; if (below < 0f) up++; }
+                    if (Mathf.Abs(u + 0.06f) < 0.03f) plantFwd = Mathf.Max(plantFwd, Vector3.Dot(tip, j.RiderForward));
+                }
+            }
+            float snowMean = snowSum / Mathf.Max(1, sn), upShare = up / (float)Mathf.Max(1, an);
+            ok = snowMean >= 40f && snowMin >= 20f && upShare < 0.05f && airHi - airLo >= 20f && plantFwd > 0.2f;
+            return $"on the snow {snowMean:0}° below level on average (least {snowMin:0}°); in the air {airLo:0}° to {airHi:0}° below level " +
+                   $"(swing {airHi - airLo:0}°), above level {upShare * 100f:0}% of the time; at the lip the tips {(plantFwd > 0.2f ? "forward, planting" : "not forward")} ({plantFwd:0.00})";
+        }
+        string before = Run(true, out _);
+        string after = Run(false, out bool good);
+        Debug.Log($"STARTJUMP POLES before (the clips' own): {before}");
+        Debug.Log($"STARTJUMP POLES after: {after}" + (good ? "" : " WRONG"));
+
+        // before and after, close in: the way in, the plant at the lip, the 360 rising and at the top, the flip, the landing
+        var moments = new[] { (0, -0.9f, "in"), (0, 0.0f, "lip"), (0, 0.3f, "rise"), (0, 0.55f, "top"), (1, 0.5f, "flip"), (0, 1.06f, "land") };
+        var names = new System.Collections.Generic.List<string>();
+        var centres = new System.Collections.Generic.List<Vector2>();
+        foreach (bool off in new[] { true, false })
+            foreach (var (k, at, label) in moments)
+            {
+                PoleSwing.Off = off;
+                // Seek snaps the poles to their aims: start a little earlier and play in, so the swing is as it really is
+                j.Seek(k, at, 1); float want = j.Clock;
+                j.Seek(k, -1.2f, 1);
+                for (int f = 0; f < 60 * 30 && j.Clock < want; f++) start.Frame(1f / 60f);
+                string nm = $"poles_{(off ? "before" : "after")}_{label}.png";
+                Shoot(nm, false);
+                Vector3 vp = cam.WorldToViewportPoint(j.RiderAt + Vector3.up * 0.7f);
+                names.Add(nm); centres.Add(new Vector2(vp.x, vp.y));
+            }
+        PoleSwing.Off = false;
+        CropGrid("poles_before_after.png", moments.Length, 300, names.ToArray(), centres.ToArray());
+    }
+
+    /// <summary>A sheet of squares cut from shots, each round its own centre (viewport), cols across.</summary>
+    static void CropGrid(string file, int cols, int size, string[] names, Vector2[] centres)
+    {
+        int rows = (names.Length + cols - 1) / cols;
+        var sheet = new Texture2D(size * cols, size * rows, TextureFormat.RGB24, false);
+        for (int k = 0; k < names.Length; k++)
+        {
+            var t = new Texture2D(2, 2);
+            t.LoadImage(File.ReadAllBytes(Path.Combine(outDir, names[k])));
+            int x0 = Mathf.Clamp(Mathf.RoundToInt(centres[k].x * t.width) - size / 2, 0, t.width - size);
+            int y0 = Mathf.Clamp(Mathf.RoundToInt(centres[k].y * t.height) - size / 2, 0, t.height - size);
+            sheet.SetPixels((k % cols) * size, (rows - 1 - k / cols) * size, size, size, t.GetPixels(x0, y0, size, size));
+            Object.DestroyImmediate(t);
+        }
+        sheet.Apply();
+        File.WriteAllBytes(Path.Combine(outDir, file), sheet.EncodeToPNG());
+        Object.DestroyImmediate(sheet);
+    }
+
     static void Grid(string file, int cols, params string[] names)
     {
         int w = W / 2, h = H / 2, rows = (names.Length + cols - 1) / cols;

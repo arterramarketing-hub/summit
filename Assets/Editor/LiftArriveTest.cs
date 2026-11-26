@@ -43,6 +43,7 @@ public static class LiftArriveTest
         try
         {
             Play("plays", 0f, false);
+            Play("plays on skis", 0f, false, 0f, false, true);
             Play("skipped", 2.0f, false);
             Play("fails half way", 0f, false, 3.0f);
             Play("off", 0f, true);
@@ -58,9 +59,11 @@ public static class LiftArriveTest
     static string State() => stateF.GetValue(game).ToString();
 
     /// <summary>Into the camp on the lift; tap at `tapAt` s (0: never); fail on purpose at `failAt`; with it off; on a new mountain.</summary>
-    static void Play(string name, float tapAt, bool off, float failAt = 0f, bool fresh = false)
+    static void Play(string name, float tapAt, bool off, float failAt = 0f, bool fresh = false, bool skis = false)
     {
         LiftArrive.On = !off; LiftArrive.TestFailAt = failAt;
+        var rideWas = body.Ride;
+        body.SetRide(skis ? RideKind.Skis : RideKind.Snowboard);
         var arrive = (LiftArrive)arriveF.GetValue(game);
         arriveNextF.SetValue(game, true);
         SkiLift.TestClock = clock;
@@ -74,6 +77,10 @@ public static class LiftArriveTest
         var phases = new List<string>();
         float t = 0f; bool ended = first == "Hub", tapped = false;
         int heroChairRiders = 0, framesOnChair = 0;
+        // (lifttop2) pushing off the deck: on a board the back foot out beside it (its farthest off the line through
+        // the front foot along the way); on skis the hands' swing along the way (planting the poles and pushing back)
+        float footOut = 0f, handMin = float.MaxValue, handMax = float.MinValue, glideT = 0f;
+        Vector3 prevHero = rider.transform.position;
         Vector3 lastHero = rider.transform.position;
         float maxJump = 0f;
         while (!ended && t < 25f)
@@ -96,6 +103,24 @@ public static class LiftArriveTest
                 foreach (var r in list) if (((Vector3)r.chair.GetColumn(3) - seatAt).magnitude < 4f) heroChairRiders++;
             }
             var hp = rider.transform.position;
+            if (arrive.Now == LiftArrive.Phase.Glide && body.Hero != null && body.Hero.Ok)
+            {
+                glideT += dt;
+                var way = hp - prevHero; way.y = 0f;
+                if (glideT < 2.2f && way.sqrMagnitude > 1e-6f)
+                {
+                    way.Normalize();
+                    var h = body.Hero; var across = Vector3.Cross(Vector3.up, way);
+                    if (!skis)
+                    {
+                        int back = Vector3.Dot(h.Foot[0].position - h.Foot[1].position, way) < 0f ? 0 : 1;
+                        footOut = Mathf.Max(footOut, Mathf.Abs(Vector3.Dot(h.Foot[back].position - h.Foot[1 - back].position, across)));
+                    }
+                    else
+                        for (int sd = 0; sd < 2; sd++) { float f = Vector3.Dot(h.Hand[sd].position - hp, way); handMin = Mathf.Min(handMin, f); handMax = Mathf.Max(handMax, f); }
+                }
+            }
+            prevHero = hp;
             if (!ended && t > dt * 2f) maxJump = Mathf.Max(maxJump, (hp - lastHero).magnitude / dt);
             lastHero = hp;
         }
@@ -114,6 +139,17 @@ public static class LiftArriveTest
             foreach (var want in new[] { "Ride", "Stand", "Glide", "Stop" }) if (!phases.Contains(want)) Fail($"{name}: never {want}");
             if (maxJump > 12f) Fail($"{name}: the hero jumped about ({maxJump:0} m/s)");
             if (framesOnChair < (LiftArrive.RideTime - 0.2f) * 30f) Fail($"{name}: only {framesOnChair} frames on the chair");
+            if (!skis)
+            {
+                Log($"{name}: pushing off, the back foot out to {footOut:0.00} m beside the board");
+                if (footOut < 0.18f) Fail($"{name}: the back foot never came off the board to push ({footOut:0.00} m)");
+            }
+            else
+            {
+                float swing = handMax - handMin;
+                Log($"{name}: pushing off, the hands swung {swing:0.00} m along the way (planting the poles)");
+                if (swing < 0.35f) Fail($"{name}: no push on the poles (the hands swung {swing:0.00} m)");
+            }
         }
         if (tapAt > 0f && t > tapAt + 0.2f) Fail($"{name}: the tap at {tapAt:0.0} s didn't end it (ended at {t:0.0} s)");
         // standing on the snow of the bench or its way in, where it should be
@@ -130,5 +166,6 @@ public static class LiftArriveTest
         Log($"{name}: walked {moved:0.0} m in 1.5 s");
         if (moved < 2f) Fail($"{name}: no control afterwards (walked {moved:0.0} m)");
         LiftArrive.On = true; LiftArrive.TestFailAt = 0f;
+        body.SetRide(rideWas);
     }
 }
