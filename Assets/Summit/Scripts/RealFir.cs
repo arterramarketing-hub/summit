@@ -145,8 +145,10 @@ namespace Summit
                         trunkTable[i] = new float[Table]; crownTable[i] = new float[Table];
                         for (int k = 0; k < Table; k++) trunkTable[i][k] = r.ReadSingle();
                         for (int k = 0; k < Table; k++) crownTable[i][k] = r.ReadSingle();
-                        Meshes[i] = ReadMesh(r, name);
-                        Plain[i] = ReadMesh(r, name + "Plain");
+                        Meshes[i] = ReadMesh(r, name, out var mv, out var mt);
+                        BuildPolar(i, n, mv, mt);   // (what its branches really reach, all round: TreeBreak's contact)
+                        if (Application.isEditor) { if (TestVerts == null || TestVerts.Length != n) { TestVerts = new Vector3[n][]; TestTris = new int[n][]; } TestVerts[i] = mv; TestTris[i] = mt; }
+                        Plain[i] = ReadMesh(r, name + "Plain", out _, out _);
                     }
                     Variants = n;
                     return true;
@@ -159,7 +161,7 @@ namespace Summit
             }
         }
 
-        static Mesh ReadMesh(BinaryReader r, string name)
+        static Mesh ReadMesh(BinaryReader r, string name, out Vector3[] verts, out int[] tris)
         {
             int vn = (int)r.ReadUInt32(), tn = (int)r.ReadUInt32();
             var v = new Vector3[vn]; var nrm = new Vector3[vn]; var col = new Color32[vn]; var uv = new Vector2[vn];
@@ -178,7 +180,85 @@ namespace Summit
             m.SetVertices(v); m.SetNormals(nrm); m.SetColors(col); m.SetUVs(0, uv); m.SetTriangles(t, 0);
             m.RecalculateBounds();
             m.UploadMeshData(true);
+            verts = v; tris = t;
             return m;
+        }
+
+        // ---- what the branches really reach (treeline): the rich mesh's own reach, all the way round
+        //      The crown tables above are each kind's envelope: the widest its branches reach at a height, whatever the
+        //      direction. A fir has five to eight branches to a whorl with gaps between, so a board passing through the
+        //      envelope often touches nothing. TreeBreak asks this instead: at a height and a direction from the trunk,
+        //      how far out the drawn tree (its cards and its wood) reaches there.
+        /// <summary>The editor's test tools: each kind's rich mesh as read (the game's own copy is on the GPU only).</summary>
+        public static Vector3[][] TestVerts; public static int[][] TestTris;
+        const int PolarRows = 96, PolarSectors = 120;
+        static float[][] polar;
+
+        /// <summary>Has this kind's all-round reach been measured.</summary>
+        public static bool HasPolar(int variant) => polar != null && variant >= 0 && polar[variant % Variants] != null;
+
+        /// <summary>
+        /// The drawn tree (its cards and its wood) at model height y, seen from a point `d` model metres out from its
+        /// trunk in direction `az` (radians round the trunk, from the model's x toward its z): how near any of it comes
+        /// to that point (`near`, model metres), and how far out it reaches along that direction (returned). Each
+        /// direction's branches run from the trunk out to their reach, so a point beside a branch is as near it as its
+        /// distance square to the branch, and one past its tip as near as the tip.
+        /// </summary>
+        public static float Reach(int variant, float y, float az, float d, out float near)
+        {
+            near = float.MaxValue;
+            float H = Heights[variant % Variants];
+            if (y < -0.3f || y > H * 1.02f) return 0f;
+            var tab = polar[variant % Variants];
+            int row = Mathf.Clamp(Mathf.FloorToInt(y / H * PolarRows), 0, PolarRows - 1);
+            const float W = 2f * Mathf.PI / PolarSectors;
+            float reach = 0f;
+            // (the directions within a right angle of the point: nothing behind the trunk comes nearer than it)
+            int c = Mathf.FloorToInt(az / W), span = PolarSectors / 4;
+            for (int k = -span; k <= span; k++)
+            {
+                int s = c + k;
+                float r = tab[row * PolarSectors + ((s % PolarSectors) + PolarSectors) % PolarSectors];
+                if (r <= 0f) continue;
+                // (the sector's middle: its branches are taken to lie along it, never nearer the point than they are)
+                float mid = (s + 0.5f) * W, delta = Mathf.Abs(Mathf.DeltaAngle(mid * Mathf.Rad2Deg, az * Mathf.Rad2Deg)) * Mathf.Deg2Rad;
+                float along = d * Mathf.Cos(delta), dist;
+                if (along <= 0f) dist = d;
+                else if (along <= r) dist = d * Mathf.Sin(delta);
+                else { float dx = d * Mathf.Cos(delta) - r, dy = d * Mathf.Sin(delta); dist = Mathf.Sqrt(dx * dx + dy * dy); }
+                if (dist < near) near = dist;
+                if (delta < 0.5f * Mathf.PI) reach = Mathf.Max(reach, r * Mathf.Cos(delta));
+            }
+            return reach;
+        }
+
+        static void BuildPolar(int i, int n, Vector3[] v, int[] t)
+        {
+            if (polar == null || polar.Length != n) polar = new float[n][];
+            float H = Mathf.Max(0.5f, Heights[i]);
+            var tab = new float[PolarRows * PolarSectors];
+            void Put(Vector3 p)
+            {
+                int row = Mathf.FloorToInt(p.y / H * PolarRows);
+                if (row < 0 || row >= PolarRows) return;
+                float az = Mathf.Atan2(p.z, p.x);
+                int s = ((Mathf.FloorToInt(az / (2f * Mathf.PI / PolarSectors)) % PolarSectors) + PolarSectors) % PolarSectors;
+                float r = Mathf.Sqrt(p.x * p.x + p.z * p.z);
+                int k = row * PolarSectors + s;
+                if (r > tab[k]) tab[k] = r;
+            }
+            // each triangle, sampled over its inside (drawn toward its middle a little: a card's corners are empty)
+            for (int k = 0; k + 2 < t.Length; k += 3)
+            {
+                Vector3 a = v[t[k]], b = v[t[k + 1]], c = v[t[k + 2]], m = (a + b + c) / 3f;
+                for (int u = 0; u <= 3; u++)
+                    for (int w = 0; w <= 3 - u; w++)
+                    {
+                        float fu = u / 3f, fw = w / 3f;
+                        Put(Vector3.Lerp(m, a + (b - a) * fu + (c - a) * fw, 0.8f));
+                    }
+            }
+            polar[i] = tab;
         }
 
         // ---- the firs and hemlocks the forest has always had (kinds 0-7): what their hit capsules are sized from

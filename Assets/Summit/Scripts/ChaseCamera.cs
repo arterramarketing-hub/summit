@@ -100,6 +100,87 @@ namespace Summit
         public static float BiteRoll = 0f;
         /// <summary>How much of the old roll with a hard carve's lean is kept (1: up to 9 degrees). 0 since feel2.</summary>
         public static float SteerRoll = 0f;
+        /// <summary>
+        /// treeline: in tight trees the view comes in (TightDist of the distance, never under TightNear m), down
+        /// (TightLift of the height, TightClear of what it keeps over the snow), looks further along the way the rider is
+        /// going (TightAhead m instead of 12, swung TightTurn of the way onto the line of travel) and opens the lens a
+        /// little (TightFov degrees). How tight it is (Tight, 0..1) is how near the trees' crowns come to the rider and
+        /// into the line from the lens to the rider, eased in over TightIn s and back out over TightOut s, so it never
+        /// snaps. No roll. TightOn: off for the test tools' before.
+        /// </summary>
+        public static float TightDist = 0.55f, TightNear = 3.4f, TightLift = 0.66f, TightClear = 0.62f, TightAhead = 17f, TightTurn = 0.6f, TightFov = 6f, TightIn = 0.35f, TightOut = 1.4f;
+        public static bool TightOn = true;
+        /// <summary>Never inside a crown: the lens stops short of the first crown in its line back from the rider
+        /// (CrownPad m off it, never nearer the rider than CrownMin m), eased in over CrownIn s and out over CrownOut s.
+        /// And in tight trees the lens's near plane is pushed out to TightNearClip m, so a frond brushing it is not drawn.</summary>
+        public static float CrownPad = 0.4f, CrownMin = 2.6f, CrownIn = 0.12f, CrownOut = 0.6f, TightNearClip = 0.8f;
+        float crownDist = 99f, crownVel, nearBase = -1f;
+
+        /// <summary>How far back along the line from the rider (focus) to where the lens would be (`back`, the whole
+        /// offset) the lens can go before it enters a tree's crown (m, measured as `dist` is: level back from the rider).</summary>
+        float CrownClear(Vector3 eyeFrom, Vector3 back, float dist)
+        {
+            var forest = TreeBreak.Instance != null ? TreeBreak.Instance.Forest : null;
+            if (forest == null) return dist;
+            float clear = dist;
+            for (int pass = 0; pass < 2; pass++)
+            {
+                forest.TreesNear(eyeFrom + back * (pass == 0 ? 0.2f : 0.8f), tightTrees);
+                foreach (var t in tightTrees)
+                {
+                    // the line's first metre inside this crown: stepped along it, a tenth at a time
+                    for (int i = 2; i <= 10; i++)
+                    {
+                        float u = i / 10f;
+                        if (u * dist >= clear) break;
+                        Vector3 q = eyeFrom + back * u;
+                        float hq = Vector3.Dot(q - t.at, t.up);
+                        if (hq < 0f || hq > t.top) continue;
+                        Vector3 o = q - t.at - t.up * hq;
+                        if (new Vector2(o.x, o.z).magnitude > Forest.CrownAt(t, hq) + CrownPad) continue;
+                        clear = Mathf.Min(clear, Mathf.Max(CrownMin, (u - 0.1f) * dist));
+                        break;
+                    }
+                }
+                tightTrees.Clear();
+            }
+            return clear;
+        }
+        /// <summary>How tight the trees round the rider are now, as the view has eased onto it (0 open .. 1 tight).</summary>
+        public float Tight => tight;
+        float tight, tightVel;
+        readonly System.Collections.Generic.List<Forest.Tree> tightTrees = new System.Collections.Generic.List<Forest.Tree>();
+
+        /// <summary>
+        /// How tight the trees are round the rider now (0..1): the nearest any crown comes to the rider (within 3 m of its
+        /// edge is tight), and how far any crown reaches into the line from the lens back to the rider.
+        /// </summary>
+        float TightNow(Vector3 eye)
+        {
+            var forest = TreeBreak.Instance != null ? TreeBreak.Instance.Forest : null;
+            if (forest == null || rider.Crashed) return 0f;
+            Vector3 p = rider.transform.position;
+            forest.TreesNear(p, tightTrees);
+            float near = 0f, occl = 0f;
+            Vector2 a = new Vector2(p.x, p.z), b = new Vector2(eye.x, eye.z), ab = b - a;
+            float abl = Mathf.Max(1e-3f, ab.sqrMagnitude);
+            foreach (var t in tightTrees)
+            {
+                Vector2 c = new Vector2(t.at.x, t.at.z);
+                float hRider = Vector3.Dot(p - t.at, t.up) + 0.8f;
+                float edge = (c - a).magnitude - Forest.CrownAt(t, Mathf.Clamp(hRider, 0f, t.top));
+                near = Mathf.Max(near, Mathf.Clamp01((3f - edge) / 3f));
+                // into the line of sight: the crown at the height the line passes the tree
+                float k = Mathf.Clamp01(Vector2.Dot(c - a, ab) / abl);
+                Vector3 on = Vector3.Lerp(p + Vector3.up * 1.1f, eye, k);
+                float crown = Forest.CrownAt(t, Mathf.Clamp(Vector3.Dot(on - t.at, t.up), 0f, t.top));
+                float d = (a + ab * k - c).magnitude;
+                occl = Mathf.Max(occl, Mathf.Clamp01((crown + 0.3f - d) / 1.5f));
+            }
+            tightTrees.Clear();
+            return Mathf.Max(near, occl);
+        }
+
         public static float HardFloor = 0.7f;   // m over the snow under the lens it is never below, eased or not
         public static float FloorEase = 0.15f;  // s: how soon the height it keeps over the snow under it follows that snow (a lip passing under is not a step)
         public static float TrunkSlow = 7f;     // m/s: slower than this it slides in front of a trunk in the way; not at all by twice it
@@ -138,9 +219,18 @@ namespace Summit
 
             // low and close when slow; the faster you go the further back it pulls, to show what is coming
             // (eased both ways, so slowing down or a crash glides it back in rather than snapping)
+            // (how tight the trees are, from where the lens was last frame: eased in quickly, out slowly)
+            float tightTo = TightOn && !first ? TightNow(transform.position) : 0f;
+            if (first) { tight = tightTo; tightVel = 0f; }
+            else tight = Mathf.SmoothDamp(tight, tightTo, ref tightVel, tightTo > tight ? TightIn : TightOut, Mathf.Infinity, Mathf.Max(dt, 1e-4f));
+            float tk = Mathf.SmoothStep(0f, 1f, tight);
+            // (and in tight trees a frond brushing the lens is not drawn: the near plane pushed out a little)
+            if (nearBase < 0f) nearBase = cam.nearClipPlane;
+            if (!povOn && povBlend <= 0f) cam.nearClipPlane = Mathf.Lerp(nearBase, Mathf.Max(nearBase, TightNearClip), TightOn ? tk : 0f);
             float speedDist = Mathf.Lerp(4.4f, 10.5f, Mathf.SmoothStep(0f, 1f, s01)) * distScale;
             speedCam = first ? speedDist : Mathf.Lerp(speedCam, speedDist, 1f - Mathf.Exp(-dt * 1.8f));
-            float dist = speedCam;
+            // (in tight trees, in closer: on top of the speed's own distance, eased by Tight itself)
+            float dist = Mathf.Min(speedCam, Mathf.Max(TightNear, speedCam * Mathf.Lerp(1f, TightDist, tk)));
             // never left behind a tree trunk: slide in front of it, and ease back out after. Looked for along the line
             // from the rider up to where the lens is (level back from the rider, on a steep pitch, it ran into the
             // hill, and every rock and stump just passed pulled the view in), never for what the board rides over, and
@@ -158,9 +248,16 @@ namespace Summit
             if (first) { camDist = dist; distVel = 0f; }
             else camDist = Mathf.SmoothDamp(camDist, dist, ref distVel, dist < camDist ? DistIn : DistOut, Mathf.Infinity, Mathf.Max(dt, 1e-4f));
             dist = camDist;
+            // (treeline) never inside a crown: short of the first one in the line back to the lens, eased
+            {
+                float clearTo = TightOn && !first ? CrownClear(focus, -f * dist + Vector3.up * (height - focus.y), dist) : 99f;
+                if (first) { crownDist = clearTo; crownVel = 0f; }
+                else crownDist = Mathf.SmoothDamp(crownDist, clearTo, ref crownVel, clearTo < crownDist ? CrownIn : CrownOut, Mathf.Infinity, Mathf.Max(dt, 1e-4f));
+                dist = Mathf.Min(dist, crownDist);
+            }
             Vector3 pos = focus - f * dist;
             float hs = Mathf.SmoothStep(0f, 1f, s01);
-            float lift = Mathf.Lerp(LiftSlow, LiftFast, hs) * heightScale * Mathf.Lerp(1f, distScale, 0.7f);
+            float lift = Mathf.Lerp(LiftSlow, LiftFast, hs) * heightScale * Mathf.Lerp(1f, distScale, 0.7f) * Mathf.Lerp(1f, TightLift, tk);
             float wantH = focus.y + lift;
             // On a steep pitch at speed the camera is far enough back up the hill that the snow under it is higher than
             // the rider-relative height above. It used to sit on a fixed floor there (1.3 m, or the 2.4 m debris floor),
@@ -169,7 +266,7 @@ namespace Summit
             // the bottom bending away from the rest of the picture). Now it keeps a clear height over the snow under it,
             // set by the angle setting and growing with speed, so the near snow stays well away from the lens.
             float snowUnder = Slope.Height(pos.x, pos.z);
-            float floorWant = snowUnder + Mathf.Max(1.3f, Mathf.Lerp(ClearSlow, ClearFast, hs) * heightScale);
+            float floorWant = snowUnder + Mathf.Max(1.3f, Mathf.Lerp(ClearSlow, ClearFast, hs) * heightScale * Mathf.Lerp(1f, TightClear, tk));
             if (first) { floorH = floorWant; floorVel = 0f; }
             else floorH = Mathf.SmoothDamp(floorH, floorWant, ref floorVel, FloorEase, Mathf.Infinity, Mathf.Max(dt, 1e-4f));
             wantH = Mathf.Max(wantH, floorH);
@@ -188,7 +285,10 @@ namespace Summit
             }
 
             // aim along the slope ahead, but only part way down it, so the horizon and the far ranges stay in view
-            Vector3 ahead = focus + f * 12f;
+            // (in tight trees, further ahead and more along the way the rider is going: the gap they are heading for)
+            Vector3 travel = new Vector3(Mathf.Sin(rider.TravelHeading), 0f, Mathf.Cos(rider.TravelHeading));
+            Vector3 aimDir = Vector3.Slerp(f, travel, TightTurn * tk).normalized;
+            Vector3 ahead = focus + aimDir * Mathf.Lerp(12f, TightAhead, tk);
             float drop = Slope.Height(ahead.x, ahead.z) - Slope.Height(focus.x, focus.z);
             if (first) { lookDrop = drop; dropVel = 0f; }
             else lookDrop = Mathf.SmoothDamp(lookDrop, drop, ref dropVel, DropEase, Mathf.Infinity, Mathf.Max(dt, 1e-4f));
@@ -232,7 +332,7 @@ namespace Summit
             roll = first ? wantRoll : Mathf.Lerp(roll, wantRoll, 1f - Mathf.Exp(-dt * 3f));
             Quaternion rot = Quaternion.LookRotation(look - pos, Vector3.up) * Quaternion.Euler(0f, 0f, roll);
 
-            float wantFov = Mathf.Lerp(80f, 94f, s01 * s01) + extraFov + (rider.BoostTime > 0f ? 8f : 0f);   // a wide-angle lens
+            float wantFov = Mathf.Lerp(80f, 94f, s01 * s01) + extraFov + (rider.BoostTime > 0f ? 8f : 0f) + TightFov * tk;   // a wide-angle lens (a little wider in tight trees)
             fov = first ? wantFov : Mathf.Lerp(fov, wantFov, 1f - Mathf.Exp(-dt * 2f));
             float view = fov;
             // first person, over the chase view worked out above (which keeps running underneath, so handing back is seamless)

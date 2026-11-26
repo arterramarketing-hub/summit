@@ -24,6 +24,8 @@ namespace Summit
     public class TreeBreak : MonoBehaviour
     {
         public static TreeBreak Instance { get; private set; }
+        /// <summary>The forest it breaks (the chase camera reads how close the trees are: ChaseCamera.Tight).</summary>
+        public Forest Forest => forest;
 
         public const float SnapSpeed = 22f;     // m/s into the trunk (79 km/h): a young tree snaps
         public const float SnagSpeed = 19.5f;   // (70 km/h): a dead snag, dry and brittle, goes sooner
@@ -33,6 +35,16 @@ namespace Summit
 
         /// <summary>Faster than this (m/s into it) a thin trunk snaps; slower, it bends and its post stops you (a scrape).</summary>
         public const float ThinSpeed = 4f;
+        /// <summary>
+        /// treeline: what touches a tree is the rider's own body and board, BodyR m round the line from the board up to
+        /// the shoulders, against the tree as it is drawn (RealFir.Reach: its branches where they are, all round, not
+        /// the widest they reach at that height). A thin trunk or a tall tree's top snaps only when the body meets the
+        /// trunk itself (and, above the solid post, the short twigs round the leader: LeaderReach). Envelope: the old
+        /// rule (the crown's widest reach with a margin, and a top snapped from anywhere in the inner half of the crown):
+        /// the test tools' before.
+        /// </summary>
+        public static float BodyR = 0.25f, LeaderReach = 0.2f;
+        public static bool Envelope;
         /// <summary>A brush through branches: speed lost on contact (share, at the tips .. right in by the trunk), and
         /// as you push on through them (per second, at full depth).</summary>
         public const float BrushNick = 0.012f, BrushNickDeep = 0.03f, BrushDrag = 0.5f;
@@ -131,7 +143,8 @@ namespace Summit
                 // a thin trunk at the board: a small tree, or (up off the snow, above the solid post) a tall tree's top.
                 // In the top, the short branches round its leader break with it
                 bool thinHere = h <= t.top && (t.girth < Forest.ThinGirth || h > t.solid);
-                float reach = trunk + Rider.R + 0.05f + (h > t.solid ? 0.45f * Forest.CrownAt(t, h) : 0f);
+                float reach = Envelope ? trunk + Rider.R + 0.05f + (h > t.solid ? 0.45f * Forest.CrownAt(t, h) : 0f)
+                                       : trunk + BodyR + (h > t.solid ? LeaderReach : 0f);
                 if (thinHere && d < reach && (into > ThinSpeed || h > t.solid + 0.3f) && !(smash && h <= t.solid))
                 {
                     if (BreakThin(t, h, flat, Mathf.Max(into, flat.magnitude * 0.5f), true))
@@ -149,14 +162,25 @@ namespace Summit
                 }
                 // the branches, from the board to the shoulders: how far into them, at the deepest
                 float depth = 0f; Vector3 deepAt = q; float deepH = h;
+                bool drawn = !Envelope && t.realistic && RealFir.HasPolar(t.idx);
                 for (int s = 0; s < 3; s++)
                 {
                     float hs = h + s * 0.55f;
-                    float c = Forest.CrownAt(t, hs);
-                    if (c <= 0.05f) continue;
                     Vector3 o = rel + Vector3.up * (s * 0.55f) - t.up * hs;
                     float ds = new Vector3(o.x, 0f, o.z).magnitude;
-                    float dep = (c + 0.2f - ds) / (c + 0.2f - trunk);
+                    float c, pad;
+                    if (drawn)
+                    {
+                        // the branches where they really are, on the side the body is (RealFir.Reach), against the body
+                        float az = Mathf.Atan2(Vector3.Dot(o, t.zAxis), Vector3.Dot(o, t.xAxis));
+                        c = RealFir.Reach(t.idx, t.cut + Mathf.Max(0f, hs) / t.ys, az, ds / t.k, out float nearM) * t.k;
+                        // (touched only if the body itself meets some of it; then as deep as it is in along that line)
+                        if (hs < 0f || hs > t.top || nearM * t.k > BodyR) c = 0f;
+                        pad = BodyR;
+                    }
+                    else { c = Forest.CrownAt(t, hs); pad = 0.2f; }
+                    if (c <= 0.05f || c <= trunk) continue;
+                    float dep = (c + pad - ds) / (c + pad - trunk);
                     if (dep > depth) { depth = dep; deepAt = q + Vector3.up * (s * 0.55f); deepH = hs; }
                 }
                 if (depth <= 0.04f) continue;
@@ -352,6 +376,37 @@ namespace Summit
         // ---------------------------------------------------------------- the falling tops
 
         const float Gravity = 14f;   // a little more than real: a tall top takes its time going over
+        /// <summary>s a broken top may rest its butt on the stump it came off; m/s^2 it is pushed off it after.</summary>
+        public static float StumpHold = 0.5f, SlideOff = 8f;
+
+        /// <summary>The top's butt is still up on its stump, well off the snow.</summary>
+        static bool Hung(Top top) => Flat(top.a - top.stump) < top.girth * 1.4f && top.a.y > Slope.DrawnHeight(top.a.x, top.a.z) + top.girth + 0.15f;
+
+        /// <summary>The test tools: the most any broken top's butt or crown is off the snow under it (m), and whether any is still moving.</summary>
+        public float HighestRest()
+        {
+            float most = 0f;
+            foreach (var t in tops)
+            {
+                if (!t.on) continue;
+                most = Mathf.Max(most, t.a.y - (Slope.DrawnHeight(t.a.x, t.a.z) + t.girth));
+                most = Mathf.Max(most, t.b.y - (Slope.DrawnHeight(t.b.x, t.b.z) + 0.35f));
+            }
+            return most;
+        }
+
+        /// <summary>The test tools: the most any torn-off branch lying still is off the snow under it (m), and how many are still in the air.</summary>
+        public float HighestSprig(out int flying)
+        {
+            float most = 0f; flying = 0;
+            foreach (var s in sprigs)
+            {
+                if (s == null || !s.on) continue;
+                if (!s.landed) { flying++; continue; }
+                most = Mathf.Max(most, s.pos.y - (Slope.DrawnHeight(s.pos.x, s.pos.z) + 0.04f));
+            }
+            return most;
+        }
 
         void Update() { Step(Time.deltaTime); Draw(); }
 
@@ -489,7 +544,7 @@ namespace Summit
                     top.snow = Mathf.Max(0.12f, top.snow - dt / (top.landed ? 0.4f : 1.4f));
                     top.props.SetFloat(SnowLeft, top.snow);
                 }
-                if (top.va.sqrMagnitude + top.vb.sqrMagnitude < 1e-4f && top.t > 1f) continue;   // at rest
+                if (top.va.sqrMagnitude + top.vb.sqrMagnitude < 1e-4f && top.t > 1f && !Hung(top)) continue;   // at rest (never left hanging off a stump)
                 int n = Mathf.CeilToInt(dt / (1f / 90f));
                 float h = dt / n;
                 for (int s = 0; s < n; s++) Sub(top, h);
@@ -508,6 +563,15 @@ namespace Summit
                 if (l > 1e-4f) { Vector3 c = d * ((l - top.len) / l * 0.5f); top.a += c; top.b -= c; }
                 // the butt rests on the stump while it is over it, then on the snow; the crown on the snow
                 bool onStump = Flat(top.a - top.stump) < top.girth * 1.4f;
+                // (treeline: a butt left resting on a tall tree's own clipped top lay there for good, the crown down on
+                // the snow and the log hung across the run in mid-air. It rests there a moment, then slides off the
+                // stump the way the crown went over, and goes down to the snow)
+                if (onStump && top.t > StumpHold && top.a.y > Slope.DrawnHeight(top.a.x, top.a.z) + top.girth + 0.15f)
+                {
+                    Vector3 off = top.b - top.a; off.y = 0f;
+                    off = off.sqrMagnitude > 1e-4f ? off.normalized : Vector3.forward;
+                    top.va += off * (SlideOff * h);
+                }
                 float ga = Mathf.Max(Slope.DrawnHeight(top.a.x, top.a.z) + top.girth, onStump ? top.stumpTop : float.MinValue);
                 if (top.a.y < ga) top.a.y = ga;
                 float gb = Slope.DrawnHeight(top.b.x, top.b.z) + 0.35f;

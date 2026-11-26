@@ -1213,6 +1213,8 @@ namespace Summit
         {
             public Vector2Int cell; public int idx; public bool realistic, snag;
             public Vector3 at, up;
+            /// <summary>The model's own x and z as they lie in the world (unit): which way round the tree is turned.</summary>
+            public Vector3 xAxis, zAxis;
             public float vis, top, girth, solid;
             internal float cut, ys, k, full;
         }
@@ -1225,6 +1227,7 @@ namespace Summit
             return new Tree
             {
                 cell = cell, idx = pl.idx, realistic = real, snag = real && RealFir.IsSnag(pl.idx), at = at, up = axis,
+                xAxis = ((Vector3)pl.m.GetColumn(0)).normalized, zAxis = ((Vector3)pl.m.GetColumn(2)).normalized,
                 vis = pl.vis, top = top, girth = pl.girth, solid = Mathf.Max(0.6f, pl.solid), cut = pl.cut, ys = pl.ys, k = pl.k, full = pl.full
             };
         }
@@ -1260,6 +1263,11 @@ namespace Summit
             foreach (var kv in live) if (kv.Value == c.gameObject) return TreeIn(kv.Key.x, kv.Key.y, out t);
             return false;
         }
+
+        /// <summary>A point of a realistic tree's own mesh (model space) where it is drawn in the world (the test tools).</summary>
+        public static Vector3 ModelToWorld(in Tree t, Vector3 m) => t.at + t.up * ((m.y - t.cut) * t.ys) + t.xAxis * (m.x * t.k) + t.zAxis * (m.z * t.k);
+        /// <summary>The model height of what still stands of a realistic tree (the test tools).</summary>
+        public static float ModelTop(in Tree t) => t.cut + t.top / t.ys;
 
         /// <summary>The trunk's radius (m) h metres up from where it leaves the snow.</summary>
         public static float TrunkAt(in Tree t, float h) => t.realistic ? RealFir.TrunkRadius(t.idx, t.cut + Mathf.Max(0f, h) / t.ys) * t.k : t.girth;
