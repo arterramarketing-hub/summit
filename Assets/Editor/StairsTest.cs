@@ -10,7 +10,8 @@ using Summit;
 /// are checked against the treads every frame (the foot carrying the body on the tread under it, not over the nosing
 /// or through it); then three minutes of the camp's life: how its people get up and down the bank (the stairs, or
 /// its steep snow beside them) and their feet on the treads too.
-/// Batch: -executeMethod StairsTest.Run   (exit 1 on a failure)
+/// Batch: -executeMethod StairsTest.Run   (exit 1 on a failure; STAIRS_TRACE=1 logs the camp's people one by one,
+/// where each one's planted ankle was taken, and the snow, floor and treads across the top of the stairs)
 /// </summary>
 public static class StairsTest
 {
@@ -164,6 +165,18 @@ public static class StairsTest
             var sbw = new System.Text.StringBuilder("STAIRS   walkable up the stairs' middle:");
             for (float z = Camp.StairBottomZ + 1f; z > Camp.StairTopZ - 2f; z -= 1f) sbw.Append(life.Walkable(new Vector3(cx + Camp.StairX, 0f, z)) ? " o" : " X");
             Debug.Log(sbw.ToString());
+            if (System.Environment.GetEnvironmentVariable("STAIRS_TRACE") == "1")
+                foreach (float dx in new[] { -1.0f, 0f, 1.0f })
+                {
+                    var sbt = new System.Text.StringBuilder($"STAIRS   the top, {dx:+0.0;-0.0} m across: deck {Camp.TreadUnder(new Vector3(cx + Camp.StairX + dx, 0f, Camp.StairTopZ - 0.5f)):0.000}; z: snow / floor / tread");
+                    for (float z = Camp.StairTopZ + 0.3f; z > Camp.StairTopZ - Camp.StairTopDeck - 2.2f; z -= 0.2f)
+                    {
+                        var w = new Vector3(cx + Camp.StairX + dx, 0f, z);
+                        float sn = Slope.DrawnHeight(w.x, w.z);
+                        sbt.Append($" {z:0.0}: {sn:0.000}/{camp.FloorHeight(new Vector3(w.x, sn, w.z), sn + 0.3f):0.000}/{Camp.TreadUnder(w):0.000}");
+                    }
+                    Debug.Log(sbt.ToString());
+                }
             foreach (var (fx, fz, tx, tz) in new[] { (-9f, -46f, -6f, -66f), (0f, -42f, 0f, -68f), (8f, -44f, 18f, -62f), (-9f, -46f, 8f, -67f) })
             {
                 var path = new List<Vector3>();
@@ -179,6 +192,8 @@ public static class StairsTest
         int onStairs = 0, onBank = 0, feetFrames = 0, feetOff = 0, levelN = 0, levelOver = 0; float feetSum = 0f, levelSum = 0f;
         var rest = new Dictionary<CampLife.Agent, float>();
         var used = new HashSet<CampLife.Agent>(); var steep = new HashSet<CampLife.Agent>();
+        bool trace = System.Environment.GetEnvironmentVariable("STAIRS_TRACE") == "1"; int traced = 0;
+        var per = new Dictionary<string, (int, float, int, float)>();
         for (int f = 0; f < frames; f++)
         {
             camp.Walk(Vector2.zero, dt); body.Apply(dt); camp.CameraStep(dt);
@@ -204,7 +219,14 @@ public static class StairsTest
                 var rig = a.p.Rig;
                 if (!st)
                 {
+                    // (the clips' own planted ankle: on plain ground only, no foot over the stairs. Coming off the
+                    // plateau a foot reaches down onto the top deck, below the bank the body is still on, and StairFeet
+                    // sets it there: that is not the clip's own, and taken for it every tread after read 4 cm high)
+                    // (and walking: starting off or stopping, the standing clip's ankle is lower than the walk's)
+                    if (!float.IsNaN(Camp.TreadUnder(rig.Foot[0].position)) || !float.IsNaN(Camp.TreadUnder(rig.Foot[1].position)) || Camp.OnStairs(a.pos, 0.6f) || a.p.pace < 0.5f) continue;
                     float r = Mathf.Min(rig.Foot[0].position.y, rig.Foot[1].position.y) - a.pos.y;
+                    if (trace && r < 0.06f && (!rest.TryGetValue(a, out float rr) || r < rr - 0.003f))
+                        Debug.Log($"STAIRS   rest dips {a.role}:{a.spot?.name} to {r * 100f:0.0} cm at ({a.pos.x - cx:0.00}, {a.pos.y:0.000}, {a.pos.z:0.00}) drawn y {a.p.transform.position.y:0.000} snow {Slope.DrawnHeight(a.pos.x, a.pos.z):0.000} near stairs {Camp.OnStairs(a.pos, 0.6f)} speed {a.speed:0.00} pace {a.p.pace:0.00} step {a.p.StairStep:0.00} feet {rig.Foot[0].position.y - a.pos.y:0.000} {rig.Foot[1].position.y - a.pos.y:0.000} hips {rig.Hips.position.y - a.pos.y:0.000} lod {a.p.Lod} f{f}");
                     rest[a] = rest.TryGetValue(a, out float r0) ? Mathf.Min(r0, r) : r;
                     // the same measure on the level (the plateau's paving and snow, not the bank): the clips' own
                     if (rest.ContainsKey(a) && g < 0.06f && a.pos.z < -64f)
@@ -221,8 +243,16 @@ public static class StairsTest
                 float e = Mathf.Abs(e0) < Mathf.Abs(e1) ? e0 : e1;
                 if (e > 0.07f) continue;   // (both feet off: between steps)
                 feetFrames++; feetSum += Mathf.Abs(e); if (Mathf.Abs(e) > 0.05f) feetOff++;
+                if (trace)
+                {
+                    var k = $"{a.role}:{a.spot?.name} s{a.p.Scale:0.00} lod{a.p.Lod} step{a.p.StairStep:0.00} rest{ar * 100f:0.0}";
+                    var v = per.TryGetValue(k, out var v0) ? v0 : (0, 0f, 0, 0f);
+                    per[k] = (v.Item1 + 1, v.Item2 + Mathf.Abs(e), v.Item3 + (Mathf.Abs(e) > 0.05f ? 1 : 0), v.Item4 + e);
+                    if (f % 7 == 0 && traced++ < 120) Debug.Log($"STAIRS   trace {k} at ({a.pos.x - cx:0.00}, {a.pos.y:0.00}, {a.pos.z:0.00}) e0 {e0 * 100f:0.0} e1 {e1 * 100f:0.0} foot0 {rig.Foot[0].position.y - a.pos.y:0.000} foot1 {rig.Foot[1].position.y - a.pos.y:0.000} tread0 {Camp.TreadUnder(rig.Foot[0].position):0.000} tread1 {Camp.TreadUnder(rig.Foot[1].position):0.000} speed {a.speed:0.00} pace {a.p.pace:0.00}");
+                }
             }
         }
+        if (trace) foreach (var kv in per) Debug.Log($"STAIRS   per person {kv.Key}: {kv.Value.Item1} frames, {kv.Value.Item2 / kv.Value.Item1 * 100f:0.0} cm off on average (signed {kv.Value.Item4 / kv.Value.Item1 * 100f:0.0}), over 5 cm {kv.Value.Item3}");
         float mean = feetFrames > 0 ? feetSum / feetFrames : 0f, lmean = levelN > 0 ? levelSum / levelN : 0f, lover = levelN > 0 ? levelOver / (float)levelN : 0f;
         bool feetOk = feetFrames == 0 || (mean < lmean + 0.015f && feetOff < feetFrames * (lover + 0.15f));
         bool wayOk = onBank <= onStairs;

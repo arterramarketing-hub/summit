@@ -96,11 +96,14 @@ namespace Summit
             if (outcrop > 0f) density = 1f;
             if (off < Slope.PisteHalf - 3f) grow = Mathf.Min(grow, 1f);   // (never more to hit on the piste than there was)
             if (!rock && grow < 1f && off > Slope.PisteHalf + WildMargin && Slope.Hash01(cx, cz, 19) < Boulders * Mathf.Clamp01(1f - grow / 0.25f)) { rock = true; grow = 1f; }
-            if (Slope.Hash01(cx, cz, 1) >= density * grow) return Kind.None;
-            if (Course.Keep(wx, wz, 1f)) return Kind.None;   // pipe, crevasses, park features
-            if (LiftLine.Taken(wx, wz, 3.5f)) return Kind.None;   // ski lifts (LiftLine.cs): the cleared swath under a line, and its stations
             float x = wx + (Slope.Hash01(cx, cz, 2) - 0.5f) * Cell * 0.75f;
             float z = wz + (Slope.Hash01(cx, cz, 3) - 0.5f) * Cell * 0.75f;
+            // arcadetrees: the open lines through the forest and its glade pockets, where it really stands (rocks too:
+            // nothing to hit on a line), and the forest a little thicker away from them
+            float lane = outcrop <= 0f && grove <= 0.05f && off > half - 3f ? LaneKeep(x, z) : 1f;   // (from the piste's edge out)
+            if (Slope.Hash01(cx, cz, 1) >= density * grow * lane) return Kind.None;
+            if (Course.Keep(wx, wz, 1f)) return Kind.None;   // pipe, crevasses, park features
+            if (LiftLine.Taken(wx, wz, 3.5f)) return Kind.None;   // ski lifts (LiftLine.cs): the cleared swath under a line, and its stations
             if (Course.Keep(x, z, 0.5f)) return Kind.None;   // (where it really stands, too: the long park features)
             if (Hamlets.Taken(x, z)) return Kind.None;       // hamlets (Hamlets.cs): nothing grows in a house, its fence or its clearing
             if (NightLights.Taken(x, z)) return Kind.None;   // nor at the foot of a floodlight's pole (NightLights.cs)
@@ -109,6 +112,79 @@ namespace Summit
             pos = new Vector3(x, Slope.DrawnHeight(x, z), z);
             size = rock ? (outcrop > 0f ? outcrop : 0.8f + 1.4f * Slope.Hash01(cx, cz, 4)) : (0.75f + 0.6f * Slope.Hash01(cx, cz, 4)) * Mathf.Max(Stature(z), grove > 0.05f ? 0.7f : 0f);
             return rock ? Kind.Rock : Kind.Tree;
+        }
+
+        // ---- arcadetrees: lines through the trees
+        // Either side of the run, two lines run down through the forest the way a rider goes (along the run, so down
+        // the fall line, and across the hill with it where a cliff band's traverse swings it): an inner one in the
+        // thinner trees beside the piste and an outer one deep in the full forest. Each is a smooth curve, wandering a
+        // few metres from side to side over a couple of hundred, never a zig-zag. On a line's core nothing stands (a
+        // tree's hit capsule is its crown at the snow, up to a few metres round, so the core is wide enough that the
+        // capsules either side still leave a clear way several metres across); beside it the trees thin out and come
+        // back to the full forest by its edge, so from inside the forest reads as full and the line as a gap through it.
+        // And glade pockets: open stretches tens of metres long along the run, where most of the trees give way.
+        // Pure functions of the place, like everything here, so every mountain has them and any thread may ask.
+
+        /// <summary>The lines and glade pockets are cut (off: the forest as it was, for the test tools' before).</summary>
+        public static bool LanesOn = true;
+
+        /// <summary>Half the clear core of a line (m, square to the run), where the thinning ends (full forest), and how much is kept just outside the core.</summary>
+        public const float LaneCore = 5f, LaneEdge = 8.5f, LaneThin = 0.4f;
+        /// <summary>Away from the lines and pockets the forest grows this much thicker, so it still reads as full (and as many trees stand as before, near enough).</summary>
+        public const float LaneFill = 1.2f;
+        /// <summary>The lines' offsets beyond the groomed run's edge: inner, outer (m), and how far each wanders either way.</summary>
+        public static readonly float[] LaneOut = { 17f, 47f }, LaneWander = { 6f, 10f };
+
+        /// <summary>
+        /// The middle of line k (0 inner, 1 outer) on side `side` (+1 toward +x, -1 toward -x) at z: how far it is from the
+        /// run's middle along x. Measured along x, not square to the run, so where a cliff band's traverse swings the run
+        /// across the hill the lines swing with it, the same curve shifted, as smooth as the run is (square to a swinging
+        /// run, a point 60 m out lies against a different stretch of it, and the line jumped).
+        /// </summary>
+        public static float LaneOffset(int side, int k, float z) => LaneOffset(side, k, z, LaneHalf(z));
+        static float LaneOffset(int side, int k, float z, float halfX)
+        {
+            float w = (Slope.Noise(z * 0.0045f + 17.3f * (k + 1), side > 0 ? 61.7f : 83.1f) - 0.5f) * 2f * LaneWander[k];
+            return side * (halfX + LaneOut[k] + w);
+        }
+
+        /// <summary>
+        /// The groomed run's half-width along x as the lines follow it: smoothed over 160 m, so where the run narrows into a
+        /// cliff band's gap or opens out below it (B4) or into the bowl, the lines ease out and in over the stretch rather
+        /// than jump sideways with it (a hard zig-zag through the trees).
+        /// </summary>
+        public static float LaneHalf(float z)
+        {
+            float sum = 0f, w = 0f;
+            for (int i = -4; i <= 4; i++) { float k = 5f - Mathf.Abs(i); sum += Slope.HalfAt(z + i * 20f) * k; w += k; }
+            return sum / w;
+        }
+
+        /// <summary>The middle of line k on side `side` at z, as a point on the map (x, z).</summary>
+        public static float LaneX(int side, int k, float z) => Slope.Centre(z) + LaneOffset(side, k, z);
+
+        /// <summary>How far (x, z) is from the middle of the nearest line, square to it (m).</summary>
+        public static float LaneDistance(float x, float z)
+        {
+            float a = x - Slope.Centre(z), half = LaneHalf(z), best = float.MaxValue;
+            int side = a < 0f ? -1 : 1;   // (the other side's lines are the whole run's width away)
+            for (int k = 0; k < 2; k++) best = Mathf.Min(best, Mathf.Abs(a - LaneOffset(side, k, z, half)));
+            return best * Slope.Squash(z);
+        }
+
+        /// <summary>The share of the forest kept at (x, z): 0 on a line's core, thinning back to all of it by its edge; less again in a glade pocket.</summary>
+        public static float LaneKeep(float x, float z)
+        {
+            if (!LanesOn) return 1f;
+            float d = LaneDistance(x, z);
+            float keep = d < LaneCore ? 0f : Mathf.Lerp(LaneThin, 1f, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(LaneCore, LaneEdge, d)));
+            // glade pockets: long along the run, a few tens of metres across
+            float pocket = Slope.Noise(Slope.Across(x, z) * 0.03f + 5.5f, z * 0.0085f + 2.1f);
+            float glade = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.74f, 0.82f, pocket));
+            keep *= Mathf.Lerp(1f, 0.22f, glade);
+            // and the rest of the forest a little thicker (only where it is no line and no pocket)
+            if (d >= LaneEdge && glade <= 0f) keep *= LaneFill;
+            return keep;
         }
 
         /// <summary>
@@ -439,6 +515,7 @@ namespace Summit
             float z = wz + (Slope.Hash01(cx, cz, 18) - 0.5f) * Cell * 0.75f;
             if (Course.Keep(x, z, 0.5f)) return false;
             if (Hamlets.Taken(x, z)) return false;            // nor in a hamlet's houses, fence or clearing
+            if (LaneKeep(x, z) < 0.5f) return false;          // nor on a line through the trees (arcadetrees)
             if (NightLights.Taken(x, z)) return false;
             if (Mathf.Abs(Slope.Kicker(x, z)) > 0.01f || Mathf.Abs(Slope.Kicker(x, z - 14f)) > 0.01f) return false;
             int idx = RealFir.PickSapling(Slope.Hash01(cx, cz, 15) < pines, Slope.Hash01(cx, cz, 9));

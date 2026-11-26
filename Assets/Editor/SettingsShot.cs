@@ -67,6 +67,7 @@ public static class SettingsShot
             typeof(SummitGame).GetMethod("BuildStart", NP).Invoke(game, null);
             var start = (StartPage)typeof(SummitGame).GetField("start", NP).GetValue(game);
             var sheet = hud.PauseSettings;
+            var meta = (MetaUi)typeof(SummitGame).GetField("meta", NP).GetValue(game);
             Debug.Log("SETTINGSSHOT pause rows: " + sheet.Labels());
             Check(typeof(StartPage).GetProperty("Settings") == null, "no settings on the start page");
             Check(sheet.RowIndex("LOOK", "WEATHER") >= 0, "WEATHER is in the pause menu");
@@ -106,6 +107,29 @@ public static class SettingsShot
             hud.OnPauseSettings(sheet.RowPoint(blood, true));
             Check(sheet.RowText(blood) == was, "a tap where a hidden tab's row would be does nothing");
             Check(!hud.transform.Find("Safe/RestartButton").gameObject.activeInHierarchy, "the PAUSE button is hidden under the menu");
+            // (steerB) the TUNE tab: live sliders, dragged; kept; RESET TO DEFAULTS
+            hud.OnPauseSettings(sheet.TabPoint(4));
+            Check(hud.PauseTab == 4 && Hud.TabName[4] == "TUNE", "a tap on TUNE shows the TUNE tab");
+            {
+                int sr = sheet.RowIndex("TUNE", "STEER STRENGTH"), rs = sheet.RowIndex("TUNE", "RESET TO DEFAULTS");
+                Check(sr >= 0 && sheet.RowSlider(sr) && rs >= 0, "TUNE has its sliders and RESET TO DEFAULTS");
+                float def = Rider.SideShare;
+                hud.OnPauseSettings(sheet.SliderPoint(sr, 0.9f)); float hi = Rider.SideShare;
+                Check(hi > def + 0.05f && hud.PauseDrag(sheet.SliderPoint(sr, 0.9f), true), $"a finger on STEER STRENGTH's rail sets it ({def:0.00} -> {hi:0.00}) and holds it");
+                hud.PauseDrag(sheet.SliderPoint(sr, 0.1f), true); float lo = Rider.SideShare;
+                Check(lo < def - 0.05f, $"dragged along, it follows ({lo:0.00})");
+                Check(sheet.RowText(sr).Contains(lo.ToString("0.00")), $"the value shows beside it ({sheet.RowText(sr)})");
+                hud.PauseDrag(sheet.SliderPoint(sr, 0.1f), false);
+                Check(!hud.PauseDrag(sheet.SliderPoint(sr, 0.5f), true) && Mathf.Approximately(Rider.SideShare, lo), "let go, it stays where it was left");
+                Check(PlayerPrefs.HasKey(Tuning.Prefix + "side") && Mathf.Abs(PlayerPrefs.GetFloat(Tuning.Prefix + "side") - lo) < 1e-4f, "and it is kept (PlayerPrefs)");
+                int cam_ = sheet.RowIndex("TUNE", "CAMERA EASE");
+                hud.OnPauseSettings(sheet.SliderPoint(cam_, 1f)); hud.PauseDrag(Vector2.zero, false);
+                Check(ChaseCamera.YawEase > 0.45f, $"CAMERA EASE moves the camera's own number ({ChaseCamera.YawEase:0.00} s)");
+                Shoot(cam, Path.Combine(outDir, "pause_tune_moved.png"));
+                hud.OnPauseSettings(sheet.RowPoint(rs, true));
+                Check(Mathf.Approximately(Rider.SideShare, def) && !PlayerPrefs.HasKey(Tuning.Prefix + "side") && !Tuning.Changed, $"RESET TO DEFAULTS puts every knob back ({Rider.SideShare:0.00}, camera ease {ChaseCamera.YawEase:0.00} s)");
+                Debug.Log("SETTINGSSHOT tune rows: " + string.Join(" | ", System.Linq.Enumerable.Select(Tuning.Knobs, k => k.label + " " + k.Text)));
+            }
             for (int k = 0; k < Hud.TabName.Length; k++)
             {
                 hud.ShowTab(k);
@@ -114,9 +138,38 @@ public static class SettingsShot
                 Debug.Log("SETTINGSSHOT " + file);
             }
             typeof(SummitGame).GetMethod("SetPaused", NP).Invoke(game, new object[] { false });
+            // (steerB) the pause button: top right, inside the safe area, clear of the right-hand column under it
+            {
+                var pb = (RectTransform)hud.transform.Find("Safe/RestartButton");
+                Check(pb.gameObject.activeInHierarchy && pb.anchorMin == Vector2.one && pb.pivot == Vector2.one, "on a run the pause button is up, in the top right corner");
+                Rect R(RectTransform t) { var c = new Vector3[4]; t.GetWorldCorners(c); return Rect.MinMaxRect(c[0].x, c[0].y, c[2].x, c[2].y); }
+                Rect pr = R(pb), safeR = R((RectTransform)hud.transform.Find("Safe"));
+                Check(safeR.Contains(pr.min) && safeR.Contains(pr.max), "inside the safe area");
+                foreach (var nm in new[] { "Safe/FallsLabel", "Safe/Fall0", "Safe/Fall1", "Safe/Fall2", "Safe/Medical", "Safe/Score", "Safe/Slide/Slide", "Safe/Slide/SlideBar" })
+                {
+                    var t = hud.transform.Find(nm) as RectTransform;
+                    if (t == null) { Debug.Log("SETTINGSSHOT (no " + nm + ")"); continue; }
+                    var tr = R(t);
+                    var tx = t.GetComponent<Text>();
+                    if (tx != null)
+                    {
+                        // (a HUD text's rect is 900 wide: what counts is the words, as long as they get. Filled for the check)
+                        string keep = tx.text;
+                        if (string.IsNullOrEmpty(keep)) tx.text = nm.EndsWith("Score") ? "1,234,567" : nm.EndsWith("Medical") ? "$12,345 MEDICAL" : nm.EndsWith("FallsLabel") ? "FALLS LEFT" : "AVALANCHE 120 m";
+                        float w = tx.preferredWidth * t.lossyScale.x, x0 = Mathf.Lerp(tr.xMin, tr.xMax, t.pivot.x) - w * t.pivot.x;
+                        tr = Rect.MinMaxRect(x0, tr.yMin, x0 + w, tr.yMax);
+                        tx.text = keep;
+                    }
+                    // (a right-aligned text grows leftward from its anchor: its top is what matters against the button)
+                    bool clear = !tr.Overlaps(pr) || tr.yMax <= pr.yMin;
+                    Check(clear, $"the pause button is clear of {nm}");
+                }
+                var mb = meta.transform.Find("Safe/SettingsButton");
+                Check(mb == null || !mb.gameObject.activeInHierarchy, "the camp's settings button (same corner) is not up on a run");
+                Shoot(cam, Path.Combine(outDir, "run_hud_pause.png"));
+            }
 
             // ---- the same sheet from the start pad and the camp: the sliders in the corner, SETTINGS and DONE
-            var meta = (MetaUi)typeof(SummitGame).GetField("meta", NP).GetValue(game);
             var sliders = meta.transform.Find("Safe/SettingsButton");
             var open = typeof(SummitGame).GetMethod("OpenSettings", NP); var close = typeof(SummitGame).GetMethod("CloseSettings", NP);
             var step = typeof(SummitGame).GetMethod("SettingsStep", NP);

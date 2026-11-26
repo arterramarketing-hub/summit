@@ -353,7 +353,7 @@ namespace Summit
         public static bool LedgeOf(int cycle, out LedgeLine L)
         {
             L = default;
-            if (!On || cycle < 0 || LedgesHidden || Course.Laying) return false;   // (never worked out while the lifts or crevasses are laid)
+            if (!On || cycle < 0 || LedgesHidden || Course.Laying || Lines.Laying) return false;   // (never worked out while the lifts or crevasses are laid)
             var lines = ledgeLines;
             if (lines == null || ledgeSeed != Slope.Seed)
             {
@@ -404,7 +404,7 @@ namespace Summit
                     for (float at = from; at < to - 90f; at += 25f)
                     {
                         var L = Lay(cycle, side, at, to);
-                        if (L.count >= 2 && Clear(L, lifts)) return L;
+                        if (L.count >= 2 && Clear(L, lifts) && !OnLine(L)) return L;
                     }
                 }
             }
@@ -432,6 +432,13 @@ namespace Summit
             }
             if (L.count < 2) L.count = 0;   // (a staircase: two at least)
             return L;
+        }
+
+        /// <summary>A feature line's stretch (Lines, laid before the ledges) overlaps the ledges' (and their eased ends).</summary>
+        static bool OnLine(in LedgeLine L)
+        {
+            for (float z = L.Start - 30f; z < L.End + 30f; z += 10f) if (Lines.LineNear(z, 10f, out _)) return true;
+            return false;
         }
 
         /// <summary>No lift's tower foot, station or hill (or a hill's way in) in the strip or its eased sides.</summary>

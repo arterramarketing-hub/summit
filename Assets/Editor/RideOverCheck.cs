@@ -74,15 +74,19 @@ public static class RideOverCheck
                             table.TryGetValue(key + " " + res.outcome, out int c); table[key + " " + res.outcome] = c + 1;
                             // the rule: low enough is ridden over; taller, only dead on (and fast enough) crashes
                             bool low = h <= Rider.StepUp - 0.03f;
-                            bool deadOn = ang <= Rider.DeadOnAngle - 3f;
+                            // (a stump is a tree's: arcadetrees, only near head on and fast into it is a crash, anything
+                            // else a glance off it; rocks and blocks keep the general rule)
+                            bool tree = shape == "stump";
+                            float cone = tree ? Rider.TreeDeadOnAngle : Rider.DeadOnAngle, fast = tree ? 13.5f : 8.5f;
+                            bool deadOn = ang <= cone - 3f;
                             // (a round rock's face is met only roughly at the angle asked for: near the line, either may be right)
                             bool rough = shape == "rock" && ang > 0f && ang < Rider.DeadOnAngle + 10f;
-                            string want = low ? "over" : (deadOn && !rough && v0 > 8.5f ? "crash" : null);
+                            string want = low ? "over" : (deadOn && !rough && v0 > fast ? "crash" : null);
                             if (want != null && res.outcome != want) { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: {res.outcome}, the rule says {want}"); }
                             if (!low && !deadOn && !rough && res.outcome == "crash") { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: a crash on a glancing hit"); }
-                            if (!low && res.angle >= 0f && v0 > 8.5f)
+                            if (!low && res.angle >= 0f && v0 > fast)
                             {
-                                bool sq = res.angle <= Rider.DeadOnAngle;
+                                bool sq = res.angle <= cone;
                                 if (sq && res.outcome != "crash" && res.into <= 0f) { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: met {res.angle:0} deg off square, {res.outcome}, not a crash"); }
                                 if (!sq && res.outcome == "crash") { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: met {res.angle:0} deg off square, a crash"); }
                             }
@@ -93,7 +97,12 @@ public static class RideOverCheck
                                 if (res.vAcc > MaxLiftAcc) { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: its height hurried at {res.vAcc:0} m/s^2 (a step, not a rise)"); }
                                 if (res.sunk > 0.1f) { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: the board went {res.sunk:0.00} m into it (lifted {res.lift:0.00} m)"); }
                             }
-                            if (res.outcome == "deflect" && res.vAfter > res.vIn + 0.3f) { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: faster straight after a glancing hit ({res.vIn:0.0} -> {res.vAfter:0.0} m/s)"); }
+                            // a glance never speeds the board up: against the speed it was met at (all shapes; less a step's fall down the slope), and for rocks and
+                            // blocks (their glance keeps 88% of a slide along the face) against the speed held into it too. A tree's
+                            // graze keeps 90% of the speed it met, which the last 1.5 m free down the slope may have raised past
+                            // the speed held: that is the slope's, not the glance's
+                            if (res.outcome == "deflect" && res.vAfter > res.vBefore + 0.15f) { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: the glance sped it up ({res.vBefore:0.0} -> {res.vAfter:0.0} m/s)"); }
+                            if (!tree && res.outcome == "deflect" && res.vAfter > res.vIn + 0.3f) { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: faster straight after a glancing hit ({res.vIn:0.0} -> {res.vAfter:0.0} m/s)"); }
                             if (res.outcome == "deflect" && res.side > Mathf.Max(res.vIn, res.sideAt) * Mathf.Sin(Mathf.Min(89f, res.angle < 0f ? 89f : 90f - res.angle + 8f) * Mathf.Deg2Rad) + 0.5f) { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: thrown sideways at {res.side:0.0} m/s by a glancing hit (more than sliding along its face gives)"); }
                             if (Mathf.Abs(res.offLine) > 0.05f) { fails++; Debug.Log($"RIDEOVER-FAIL {shape} top {h:0.00} m {ang:0} deg {v0:0} m/s: the board came {res.offLine:+0.00;-0.00} m off its line (the angle asked for is not the one met)"); }
                         }
@@ -199,7 +208,7 @@ public static class RideOverCheck
 
     static void Stream() { terrain.Prewarm(); props.Prewarm(); Physics.SyncTransforms(); }
 
-    struct Result { public string outcome; public bool hop, air; public float vIn, vOut, peak, into, angle, offLine, lift, vAcc, side, sideAt, sunk, vAfter; }
+    struct Result { public string outcome; public bool hop, air; public float vIn, vOut, peak, into, angle, offLine, lift, vAcc, side, sideAt, sunk, vAfter, vBefore; }
 
     /// <summary>A thing `shape` standing h over the snow at (centre, z), met at `ang` degrees off dead on at v0.</summary>
     static GameObject Make(string shape, float h, float ang, float x, float z, out float side)
@@ -289,6 +298,7 @@ public static class RideOverCheck
                 // (there: no steering for or against the thing itself, only the edge that holds the board's line
                 // against gravity across it, so it meets the thing going straight, as it was aimed)
                 else r.Steer = glanced || r.Airborne ? 0f : CarveBot.ForSide(r, 0f);
+                float vStep = r.Body.linearVelocity.magnitude;   // (the speed this step starts at: what a glance in it met)
                 r.TestContacts(Dt);
                 if (!r.Crashed) r.Tick(Dt);
                 if (frame != null) { body.PhysicsStep(); }
@@ -318,7 +328,7 @@ public static class RideOverCheck
                     if (gc != null && gc.Raycast(new Ray(new Vector3(bp.x, bp.y + 3f, bp.z), Vector3.down), out var under, 8f))
                         res.sunk = Mathf.Max(res.sunk, under.point.y - (bp.y - Rider.R));
                 }
-                if (glanced && !sawGlance) { sawGlance = true; res.vAfter = r.Speed; }
+                if (glanced && !sawGlance) { sawGlance = true; res.vAfter = r.Body.linearVelocity.magnitude; res.vBefore = vStep; }
                 vyPrev = r.Body.linearVelocity.y;
                 if (r.Z < z - 1.5f) res.offLine = r.X - xs;
                 if (r.Crashed) { res.outcome = "crash"; break; }

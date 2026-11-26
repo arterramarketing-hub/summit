@@ -95,7 +95,9 @@ namespace Summit
         float yawVel, heightVel, distVel, dropVel;   // (the springs' own speeds)
         // how soon each settles (s): the swing onto the rider's line, the height, sliding in front of a trunk and back
         // out again, the look down the slope ahead
-        public static float YawEase = 0.2f, HeightEase = 0.13f, DistIn = 0.07f, DistOut = 0.3f, DropEase = 0.3f;
+        /// <summary>(steerB) How much of the turn the chase camera swings with (of the travel's heading off the run).</summary>
+        public static float TravelShare = 0.85f;
+        public static float YawEase = 0.12f, HeightEase = 0.13f, DistIn = 0.07f, DistOut = 0.3f, DropEase = 0.3f;
         /// <summary>deg: how far the camera rolls with the edge biting hardest (Rider.Bite). 0 since feel2.</summary>
         public static float BiteRoll = 0f;
         /// <summary>How much of the old roll with a hard carve's lean is kept (1: up to 9 degrees). 0 since feel2.</summary>
@@ -220,7 +222,7 @@ namespace Summit
             // across the frame instead of the whole world swinging round with the board
             // (where the run itself swings across the hill, along the run: the part way is measured off that)
             float run = rider.RunNow;
-            float wantYaw = rider.Crashed ? yaw : Mathf.Clamp(run + (Mathf.Clamp(rider.TravelHeading, -1.4f, 1.4f) - run) * 0.7f, -1.4f, 1.4f);   // never round to face uphill
+            float wantYaw = rider.Crashed ? yaw : Mathf.Clamp(run + (Mathf.Clamp(rider.TravelHeading, -1.4f, 1.4f) - run) * TravelShare, -1.4f, 1.4f);   // never round to face uphill
             if (first) { yaw = wantYaw; yawVel = 0f; }
             else yaw = Mathf.SmoothDamp(yaw, wantYaw, ref yawVel, YawEase, Mathf.Infinity, Mathf.Max(dt, 1e-4f));
             var f = new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw));

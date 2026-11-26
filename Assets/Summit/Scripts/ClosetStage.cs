@@ -29,7 +29,7 @@ namespace Summit
         RiderBody body;
         Camera cam;
         Transform stage, spin, holder, copy;
-        readonly Transform[] gear = new Transform[3];   // copies of the board, the skis, the toboggan (as RideKind)
+        readonly Transform[] gear = new Transform[6];   // copies of the board, the skis, the toboggan, the kayak, the car, the bear (as RideKind)
         RideKind showRide;
         HeroRig rig;
         int idStand = -1;
@@ -257,6 +257,38 @@ namespace Summit
                 g.SetParent(pv, true);
                 SetLayer(pv);
                 gear[i] = pv;
+            }
+
+            // the fun rides (rides) as they are ridden, upright on the floor behind the hero, turned three quarters on:
+            // the kayak with its paddle across the deck, the car parked, the bear stood waiting
+            Transform[] vsrc = { body.KayakGear, body.CarGear, body.BearGear };
+            Vector3[] vspot = { new Vector3(0.35f, 0f, -0.9f), new Vector3(0.75f, 0f, -2.2f), new Vector3(1.15f, 0f, -2.1f) };
+            float[] vyaw = { 62f, 38f, 145f };
+            for (int k = 0; k < vsrc.Length; k++)
+            {
+                if (vsrc[k] == null) continue;
+                var g = Instantiate(vsrc[k].gameObject).transform;
+                g.name = "Closet" + vsrc[k].name;
+                g.gameObject.SetActive(true);
+                foreach (var t in g.GetComponentsInChildren<Transform>(true)) t.gameObject.SetActive(true);
+                Strip(g.gameObject);
+                g.localScale = Vector3.one;
+                g.rotation = Quaternion.Euler(0f, vyaw[k], 0f);
+                var paddle = k == 0 ? Find(g, "Paddle") : null;
+                if (paddle != null) { paddle.localPosition = new Vector3(0f, 0.34f, 0.28f); paddle.localRotation = Quaternion.identity; }
+                // (each one's root is on the snow under the seat, as ridden: stood there. Not by its bounds: a skinned
+                // copy's are not worked out until it is first drawn, and the bear's file scales its own root)
+                var bs = Find(g, "BearSurge");
+                if (bs != null) bs.localPosition = Vector3.zero;
+                Vector3 spot = At + vspot[k];
+                g.position = spot;
+                g.SetParent(stage, true);
+                var pv = new GameObject("Turn" + vsrc[k].name).transform;
+                pv.SetPositionAndRotation(spot, Quaternion.identity);
+                pv.SetParent(stage, true);
+                g.SetParent(pv, true);
+                SetLayer(pv);
+                gear[3 + k] = pv;
             }
         }
 

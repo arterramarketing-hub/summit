@@ -276,7 +276,7 @@ namespace Summit
                 case Cat.Gloves: return "GLOVES";
                 case Cat.Boots: return "BOOTS";
                 case Cat.Pack: return "PACKS";
-                case Cat.Board: return Progress.Ride == RideKind.Snowboard ? "BOARDS" : Rides.Of(Progress.Ride).Name;
+                case Cat.Board: return Progress.Ride == RideKind.Snowboard || Rides.Of(Progress.Ride).Vehicle ? "BOARDS" : Rides.Of(Progress.Ride).Name;   // (the fun rides have their own colours)
                 case Cat.Rider: return "RIDER";
                 case Cat.Outfit: return "OUTFIT";
                 case Cat.Graphic: return "GRAPHICS";

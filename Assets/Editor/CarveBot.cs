@@ -29,6 +29,15 @@ public static class CarveBot
         if (r.Airborne) return Mathf.Clamp((side - v.x) / Mathf.Max(1f, Rider.AirDrift) / Mathf.Clamp(Rider.TurnScale, 0.25f, 4f), -1f, 1f);
         float way = Mathf.Atan2(side, Mathf.Max(v.z, 1f));
         float across = flat * Mathf.Sin(way - r.FallLine) - (r.Airborne ? 0f : r.SideSlope * Rider.SettleTime);
-        return Mathf.Clamp(Rider.Unshape(Mathf.Clamp(across / full, -1f, 1f)) / Mathf.Clamp(Rider.TurnScale, 0.25f, 4f), -1f, 1f);   // (the throw that asks for it: the input's curve undone)
+        // (the throw that asks for it: steerB's push holds a slide it began on, so the input's curve can't simply be
+        // undone; the throw is found by trying them, finest near the middle)
+        float best = 0f, err = Mathf.Abs(across);
+        for (int i = -48; i <= 48; i++)
+        {
+            float t = Mathf.Sign(i) * Mathf.Pow(Mathf.Abs(i) / 48f, 1.5f);
+            float e = Mathf.Abs(r.SideWant(t) - across);
+            if (e < err - 1e-4f) { err = e; best = t; }
+        }
+        return best;
     }
 }

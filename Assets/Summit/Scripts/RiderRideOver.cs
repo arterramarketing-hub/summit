@@ -308,6 +308,18 @@ namespace Summit
                 return v * (first ? 0.6f : 1f);
             }
             if (first) { HitCollider = col; HitPoint = at; HitObstacle?.Invoke(ob, col.bounds.center, into); }
+            // arcadetrees: a tree only knocks you down near head on and fast; anything else clipped (a trunk, a crown's
+            // skirt down at the snow) turns you along it, staggering, some speed gone
+            if (first && invulnerable <= 0f && normal.y < 0.7f && ob.label == "Tree" && !ob.always)
+            {
+                // judged on the level (a trunk stands upright: on a steep slope the downhill part of the speed, which
+                // the board carries down the fall line, is not into it)
+                Vector3 nf = new Vector3(normal.x, 0f, normal.z), vf = new Vector3(v.x, 0f, v.z);
+                float spf = vf.magnitude, intof = nf.sqrMagnitude > 1e-6f ? Mathf.Max(0f, -Vector3.Dot(vf, nf.normalized)) : spf;
+                bool headOn = spf > 1e-3f && intof >= spf * TreeDeadOnCos && intof > TreeCrashInto;
+                if (!headOn) return GlanceTree(normal, at, v, intof, spf);
+                square = true; into = Mathf.Max(into, intof);   // (on to the crash below: a shield, the tube, or down)
+            }
             // glancing (or still in touch after the first meeting, or just back on your feet): slid along its face,
             // never down. (Met from above, on its top, it is a touch, as before: a scrape, or a crash come down on hard)
             bool glancing = !square && normal.y < 0.7f;
@@ -345,6 +357,64 @@ namespace Summit
             if (into > CrashInto) { DoCrash(ob.label); return v; }
             Scraped?.Invoke(into);
             return Slide(v, normal) * 0.85f;
+        }
+
+        // ---- arcadetrees: forgiving glancing hits on trees
+
+        /// <summary>A tree knocks you down only hit within this of square on (degrees)...</summary>
+        public const float TreeDeadOnAngle = 14f;
+        public static readonly float TreeDeadOnCos = Mathf.Cos(TreeDeadOnAngle * Mathf.Deg2Rad);
+        /// <summary>...and faster than this into it (m/s). Anything less is a glance off it.</summary>
+        public const float TreeCrashInto = 11f;
+        /// <summary>The share of the speed a glance off a tree keeps: grazing it, and hit as squarely as a glance can be.</summary>
+        public const float TreeKeepGraze = 0.9f, TreeKeepHard = 0.75f;
+        /// <summary>The most a glance off a tree turns the board's line (degrees).</summary>
+        public const float TreeTurnMax = 45f;
+        /// <summary>Glanced off a tree: where, how fast into it (m/s), and how square it was (0 grazing .. 1 as square as a glance gets).</summary>
+        public System.Action<Vector3, float, float> TreeGlanced;
+        /// <summary>Glances off trees this run (for the tests). They never use up the run's free hit (that is for riders: MeetPerson).</summary>
+        public int TreeGlances;
+
+        /// <summary>
+        /// A tree clipped, not hit square on and hard: the board turns along the trunk's tangent (the part of the speed into
+        /// it taken away), keeps 90% of its speed grazing it down to 75% the squarer it was, is pushed a little clear of it
+        /// and staggers (the wobble) for a moment, during which the next tree it brushes is a slide along it as well.
+        /// Never a crash, and not the run's free hit.
+        /// </summary>
+        Vector3 GlanceTree(Vector3 normal, Vector3 at, Vector3 v, float into, float sp)
+        {
+            float square = sp > 1e-3f ? Mathf.Clamp01(into / sp / TreeDeadOnCos) : 1f;
+            square = Mathf.Max(square, Mathf.Clamp01(into / TreeCrashInto) * 0.6f);   // (slow but square on: a solid bump all the same)
+            float keep = Mathf.Lerp(TreeKeepGraze, TreeKeepHard, square);
+            Vector3 nh = new Vector3(normal.x, 0f, normal.z);
+            Vector3 flat = new Vector3(v.x, 0f, v.z);
+            float flatSp = flat.magnitude;
+            if (nh.sqrMagnitude < 1e-4f) nh = -flat;
+            nh.Normalize();
+            Vector3 dir = flatSp > 1e-3f ? flat / flatSp : new Vector3(Mathf.Sin(Heading), 0f, Mathf.Cos(Heading));
+            // the trunk's tangent, the way the board was already going along it (dead on: the way it was leaning)
+            Vector3 tangent = Vector3.Cross(Vector3.up, nh);
+            float along = Vector3.Dot(dir, tangent);
+            if (Mathf.Abs(along) < 0.05f) along = Mathf.Sin(Heading) * tangent.x + Mathf.Cos(Heading) * tangent.z;
+            if (along < 0f) tangent = -tangent;
+            // turned toward it, but by no more than TreeTurnMax: knocked off line, not flung across the hill
+            if (Vector3.Dot(dir, nh) < 0f) dir = Vector3.RotateTowards(dir, tangent, TreeTurnMax * Mathf.Deg2Rad, 0f);
+            // (nearer square on than that: whatever is still into it goes, the speed kept, so the next step does not grind
+            // it off against the bark)
+            float still = Vector3.Dot(dir, nh);
+            if (still < 0f) { dir -= nh * still; dir = dir.sqrMagnitude > 1e-6f ? dir.normalized : tangent; }
+            Vector3 nf = dir * (flatSp * keep) + nh * Mathf.Min(2.5f, 0.6f + 0.15f * into);   // (and a little clear of it)
+            // never faster than the share kept of the speed it was met at, all told: the push clear of it comes out of
+            // that, not on top of it, and so does the downhill part (kept whole, it made a graze at low speed a gain)
+            float was = v.magnitude;
+            v = new Vector3(nf.x, v.y * keep, nf.z);
+            if (v.magnitude > was * keep) v *= was * keep / v.magnitude;
+            wobble = Mathf.Max(wobble, Mathf.Lerp(0.35f, 0.8f, square));
+            invulnerable = Mathf.Max(invulnerable, 0.25f);
+            TreeGlances++;
+            TreeGlanced?.Invoke(at, into, square);
+            Glanced?.Invoke(into);
+            return v;
         }
 
         /// <summary>Closing on another rider at least this fast (m/s, the two speeds together) is a real hit; slower, a brush you slide past.</summary>

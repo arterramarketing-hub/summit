@@ -63,6 +63,7 @@ namespace Summit
         /// <summary>The stretch a cycle gets: drawn from the day's mountain, the same every time for that cycle.</summary>
         public static Form FormOf(int cycle)
         {
+            if (Lines.Claims(cycle)) return Form.Plain;   // (its stretch is the feature lines', instead: Lines)
             if (CliffBand.Is(cycle)) return Form.Plain;   // (its stretch is a cliff band's traverse, or an angled ledge, instead)
             if (Bowl.Of(cycle, out _)) return Form.Plain;   // (or the alpine bowl)
             float h = Slope.Hash01(cycle, 5, 61);

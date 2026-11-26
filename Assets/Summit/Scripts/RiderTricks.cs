@@ -29,7 +29,10 @@ namespace Summit
         public const int BoxOn = 100, RailOn = 150, SwitchUp = 100;
         static readonly int[] GrabPoints = { 0, 100, 220, 400, 550, 750, 900 };
         const float GrabPerSecond = 120f, GrabHeldMax = 2f;
-        static readonly string[] TubeGrabs = { "Starfish" };
+        static readonly string[] TubeGrabs = { "Starfish", "Hands Up" };
+        static readonly int[] TubeGrabBonus = { 0, 50 };
+        /// <summary>s a grab is held before it is tweaked, and again before it goes into the next grab (a grab to grab).</summary>
+        public static float GrabStepHold = 0.7f;
 
         // ---- the trick inputs (set from RiderInput each step; the test tools set them themselves)
         /// <summary>Left/right in the air or on a rail, -1..1 (the steering stick).</summary>
@@ -48,7 +51,7 @@ namespace Summit
         int spinHalves, flipTurns, spinDir;   // committed: half turns and whole flips (signed), and the way the spin goes
         bool xOn, yOn;
         int grabLevel, grabFirst;
-        float grabClock, grabPose, grabTweak, grabHeldFor;
+        float grabClock, grabPose, grabTweak, grabHeldFor, grabStepClock;
         float landIn, trickLook;
         string liveName, wholeName; int liveSig = -1, wholeSig = -1, livePoints;
 
@@ -166,7 +169,7 @@ namespace Summit
         {
             TrickAlias = null; TrickTime = 0f; trickAir = false;
             spinNow = flipNow = 0f; spinHalves = flipTurns = spinDir = 0; xOn = yOn = false;
-            grabLevel = 0; grabClock = grabPose = grabTweak = grabHeldFor = 0f;
+            grabLevel = 0; grabClock = grabPose = grabTweak = grabHeldFor = grabStepClock = 0f;
             landIn = 0f; trickLook = 0f; liveName = null; liveSig = -1; livePoints = 0; tapQueue = 0;
             takeoffSwitch = false;
         }
@@ -234,8 +237,15 @@ namespace Summit
             {
                 tapQueue--;
                 if (grabLevel < MaxGrab) grabLevel++;
-                grabClock = GrabMin;
+                grabClock = GrabMin; grabStepClock = 0f;
             }
+            // held on: the grab is tweaked, then goes on into the next one (the same steps a tap takes)
+            if (grabLevel > 0 && GrabHeld && grabPose > 0.6f)
+            {
+                grabStepClock += dt;
+                if (grabStepClock >= GrabStepHold && grabLevel < MaxGrab) { grabLevel++; grabStepClock = 0f; }
+            }
+            else grabStepClock = 0f;
             grabClock -= dt;
             bool grabbing = grabLevel > 0 && (GrabHeld || grabClock > 0f);
             grabPose = Mathf.MoveTowards(grabPose, grabbing ? 1f : 0f, dt * 8f);
@@ -261,8 +271,8 @@ namespace Summit
             }
             xOn = on;
 
-            // ---- up / down: flips (not on a tube: there is nothing to flip)
-            if (!Tube)
+            // ---- up / down: flips (on a tube, a roll over with it: the Bail Roll)
+            if (Tube) flipRate = FlipRate * 0.8f;
             {
                 float ay = Mathf.Abs(TrickY);
                 bool yon = yOn ? ay > FlickOff : ay >= FlickAt;
@@ -286,7 +296,7 @@ namespace Summit
             int doneFlips = Mathf.FloorToInt(Mathf.Abs(flipNow) / (Mathf.PI * 2f) + 0.06f) * (flipNow < 0f ? -1 : 1);
             int sig = Sig(doneHalves, doneFlips, grabLevel);
             if (sig != liveSig) { liveSig = sig; liveName = NameFor(doneHalves, doneFlips, grabLevel); }
-            livePoints = liveName == null ? 0 : TrickPoints(doneHalves, doneFlips, grabLevel, grabHeldFor);
+            livePoints = liveName == null ? 0 : TrickPoints(doneHalves, doneFlips, grabLevel, grabHeldFor, GrabBonusNow());
         }
 
         static int Sig(int halves, int flips, int level) => (halves + 64) | ((flips + 16) << 8) | (level << 14);
@@ -311,12 +321,12 @@ namespace Summit
         public static int FlipPoints(int flips) { int m = Mathf.Abs(flips); return m == 0 ? 0 : 700 * m + 250 * m * (m - 1) + (flips > 0 ? 100 * m : 0); }
 
         /// <summary>What a trick is worth, landed clean: its spin, its flips, a quarter more for both at once, the grab and how long it was held.</summary>
-        public static int TrickPoints(int halves, int flips, int level, float held)
+        public static int TrickPoints(int halves, int flips, int level, float held, int bonus = 0)
         {
             int s = SpinPoints(halves), f = FlipPoints(flips);
             float pts = s + f + (s > 0 && f > 0 ? 0.25f * (s + f) : 0f);
             level = Mathf.Clamp(level, 0, MaxGrabLevel);
-            if (level > 0) pts += GrabPoints[level] + GrabPerSecond * Mathf.Min(held, GrabHeldMax);
+            if (level > 0) pts += GrabPoints[level] + GrabPerSecond * Mathf.Min(held, GrabHeldMax) + bonus;
             return Mathf.RoundToInt(pts / 5f) * 5;
         }
 
@@ -329,14 +339,28 @@ namespace Summit
             return Mathf.Max(5, Mathf.RoundToInt(100f * seconds * seconds / 5f) * 5);
         }
 
-        /// <summary>A trick's name from its parts (null with none): flips, spin, grab.</summary>
+        /// <summary>
+        /// A trick's name from its parts (null with none): flips, spin, grab. A flat spin on a snowboard is frontside or
+        /// backside (a regular rider, the toe edge to the right: frontside turns left, the chest opening down the hill;
+        /// switch, the other way); a backflip with a spin is a cork (whole turns) or a rodeo (an odd half turn), a
+        /// frontflip with one a misty; skiers count their spins plain; a tube twirls, and its flip is a bail roll.
+        /// </summary>
         public string NameFor(int halves, int flips, int level)
         {
             int m = Mathf.Abs(flips), deg = Mathf.Abs(halves) * 180;
             string count = m <= 1 ? "" : m == 2 ? "Double " : m == 3 ? "Triple " : m == 4 ? "Quad " : m + "x ";
-            string rot = m > 0 && deg > 0 ? count + (flips > 0 ? "Misty " : "Cork ") + deg
-                       : m > 0 ? count + (flips > 0 ? "Frontflip" : "Backflip")
-                       : deg > 0 ? deg.ToString() : null;
+            string rot;
+            if (Tube)
+                rot = m > 0 && deg > 0 ? count + "Bail Roll " + deg : m > 0 ? count + "Bail Roll" : deg > 0 ? deg + " Twirl" : null;
+            else
+            {
+                bool board = Ride == RideKind.Snowboard;
+                bool front = takeoffSwitch ? halves > 0 : halves < 0;
+                string side = board && halves != 0 ? (front ? "Frontside " : "Backside ") : "";
+                rot = m > 0 && deg > 0 ? (flips > 0 ? count + "Misty " + deg : (halves & 1) != 0 ? count + "Rodeo " + deg : side + count + "Cork " + deg)
+                    : m > 0 ? count + (flips > 0 ? "Frontflip" : "Backflip")
+                    : deg > 0 ? side + deg : null;
+            }
             string grab = GrabName(level);
             string name = rot == null ? grab : grab == null ? rot : rot + " " + grab;
             // (taken off riding switch: a switch trick)
@@ -357,6 +381,17 @@ namespace Summit
                 case 5: return "Triple Grab";
                 default: return tw + " Triple Grab";
             }
+        }
+
+        /// <summary>What the grabs in hand add for their shapes (the ride's GrabBonus): the first, and the second once it is gone into.</summary>
+        int GrabBonusNow()
+        {
+            if (grabLevel <= 0) return 0;
+            int[] b = Tube ? TubeGrabBonus : feel.GrabBonus;
+            if (b == null || b.Length == 0) return 0;
+            int n = Grabs.Length, v = b[grabFirst % n % b.Length];
+            if (grabLevel >= 3) v += b[(grabFirst + 1) % n % b.Length];
+            return v;
         }
 
         /// <summary>The snowboard grabs a mission would take this air's grabs as (each ride's own count as their namesakes: Ride.cs).</summary>
@@ -408,7 +443,7 @@ namespace Summit
                 name = NameFor(halves, flips, grabLevel);
                 if (name != null)
                 {
-                    pts = TrickPoints(halves, flips, grabLevel, grabHeldFor);
+                    pts = TrickPoints(halves, flips, grabLevel, grabHeldFor, GrabBonusNow());
                     if (sketchy) pts = Mathf.RoundToInt(pts * 0.5f / 5f) * 5;
                     TrickAlias = GrabAlias();
                 }

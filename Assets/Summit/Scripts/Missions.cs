@@ -134,7 +134,7 @@ namespace Summit
                 for (int i = 0; i < Today.Count; i++) { var m = Today[i]; if (m.kind == Kind.Trick && !m.done && (name.Contains(m.match) || (r.TrickAlias != null && r.TrickAlias.Contains(m.match)))) Add(m, 1f); }   // (a ride's own grab counts as its snowboard namesakes: Ride.cs)
             };
             r.Crash += why => { if (active) { cleanFrom = -1f; Restart(Kind.CleanDistance); } };
-            r.GrindStart += f => { if (active) Bump(f.kind == Course.Kind.Rail ? Kind.Rails : Kind.Boxes, 1f); };
+            r.GrindStart += f => { if (active) Bump(f.kind != Course.Kind.Box ? Kind.Rails : Kind.Boxes, 1f); };
             if (power != null) power.Collected += k =>
             {
                 if (!active) return;

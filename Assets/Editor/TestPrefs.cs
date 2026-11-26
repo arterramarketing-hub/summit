@@ -39,6 +39,7 @@ public static class TestPrefs
         keys["summit_clock"] = Kind.Float;
         keys["summit_music"] = Kind.Float;
         keys[SteerPrefs.TurnKey] = Kind.Float;
+        foreach (var k in Tuning.Keys()) keys[k] = Kind.Float;   // (steerB: the pause menu's TUNE sliders)
         keys["summit_missions"] = Kind.String;
     }
 

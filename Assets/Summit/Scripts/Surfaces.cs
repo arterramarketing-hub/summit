@@ -219,6 +219,9 @@ namespace Summit
             // (a cornice's face, its crown and the top of its landing: scoured by the wind that built it, whatever the day)
             float cf = Cliffs.CorniceFace(x, z);
             if (cf > 0f) m.LayCrust(cf * (0.7f + 0.2f * Slope.Noise(x * 0.11f + 2.3f, z * 0.09f + 7.1f)));
+            // (a freeride line's rollers, lips and spines: wind-packed, its ripples showing, so the shapes read on white snow: Lines)
+            float nf = Summit.Lines.NaturalShare(x, z);
+            if (nf > 0f) m.LayCrust(nf * (0.6f + 0.25f * Slope.Noise(x * 0.13f + 5.1f, z * 0.1f + 1.7f)));
 
             // ---- crud: where people are
             float crud = Mathf.Max(Stations(x, z), Hamlet(x, z, a, half));
@@ -302,7 +305,8 @@ namespace Summit
         }
 
         /// <summary>How much of the special snow (ice, crud, crust) is kept at z: none at the start, in the park and the
-        /// danger stretch, or along a cliff band's traverse and ledge, where the run needs every bit of its edge.</summary>
+        /// danger stretch, along a cliff band's traverse and ledge, where the run needs every bit of its edge, or along a
+        /// feature line's stretch.</summary>
         static float KeepAt(float z)
         {
             // none at the start (the gate, the first turns), fading in over 60 m
@@ -312,6 +316,10 @@ namespace Summit
             if (z >= Course.First) keep *= Smooth(Mathf.Max(Course.ParkAt - 15f - u, u - (Course.DangerAt + 15f)) / 25f);
             // none along a cliff band or an angled ledge (from its turn in to where the run is back on the fall line)
             if (CliffBand.Near(z, 40f, out var b)) keep *= Smooth(Mathf.Max(b.z0 - 15f - z, z - (b.z3 + 15f)) / 25f);
+            // none along a feature line's stretch: groomed, like the park (Lines)
+            if (z >= Course.First)
+                for (int c = Course.CycleOf(z) - 1; c <= Course.CycleOf(z); c++)
+                    if (Summit.Lines.Window(c, out float la, out float lb, out _)) keep *= Smooth(Mathf.Max(la - 15f - z, z - (lb + 15f)) / 25f);
             return keep;
         }
 

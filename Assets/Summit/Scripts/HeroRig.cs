@@ -126,6 +126,8 @@ namespace Summit
 
         /// <summary>Play a clip from its start (a one-shot: the pop, the landing).</summary>
         public void Restart(int id) { if (id >= 0) time[id] = 0f; }
+        /// <summary>Put a clip at this time (s): one played in step with something else (a paddle stroke: RiderBodyVehicle).</summary>
+        public void SetTime(int id, float t) { if (id >= 0) time[id] = Mathf.Clamp(t, 0f, Length(id)); }
 
         /// <summary>Hold a clip at this point of its cycle (0..1) instead of letting it run.</summary>
         public void At(int id, float t01) { if (id < 0) return; held[id] = true; time[id] = Mathf.Repeat(t01, 1f) * Length(id); }

@@ -28,7 +28,7 @@ namespace Summit
         readonly SlipRow[] cRows = new SlipRow[LineCount];
         readonly string[] lineName = new string[LineCount];
         readonly int[] linePts = new int[LineCount], lineCnt = new int[LineCount];
-        const float Right = -40f, Top = -296f, NumSize = 104f, LineStep = 52f, CW = 560f;
+        const float Right = -40f, Top = -296f - PauseRoom, NumSize = 104f, LineStep = 52f, CW = 560f;
         const int CFont = 44;
 
         enum Mode { Off, Live, Banking, Dropping }

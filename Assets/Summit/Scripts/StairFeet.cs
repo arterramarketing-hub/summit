@@ -54,9 +54,18 @@ namespace Summit
                 }
                 else st.down[s] = false;
                 // (a foot in the air looks further ahead for the next riser: it comes up over the nosing, not into it)
-                float want = ground + Under(a[s], facing, ground, scale, contact ? 0f : 0.12f);
+                float want = ground + Under(a[s], facing, ground, scale, contact ? 0f : 0.12f, out bool over);
                 float was = s == 0 ? st.tread.x : st.tread.y;
-                float now = float.IsNaN(was) || Mathf.Abs(was - want) > 1f ? want : Mathf.Lerp(was, want, want > was ? kUp : kDown);
+                float now;
+                if (!over)
+                {
+                    // off the treads: what lift is left eases away against the body's own floor. (Eased in the world, a
+                    // step up onto a floor, the lookout's deck, left the tread behind under it: the hips and feet dropped
+                    // through the boards for a frame or two, by as much as the step: campfix2)
+                    float o = s == 0 ? st.off.x : st.off.y;
+                    now = ground + (float.IsNaN(was) ? 0f : Mathf.Lerp(o, 0f, kDown));
+                }
+                else now = float.IsNaN(was) || Mathf.Abs(was - want) > 1f ? want : Mathf.Lerp(was, want, want > was ? kUp : kDown);
                 if (s == 0) { st.tread.x = now; st.off.x = now - ground; } else { st.tread.y = now; st.off.y = now - ground; }
                 any |= on;
             }
@@ -74,11 +83,15 @@ namespace Summit
         }
 
         /// <summary>How far the tread under a foot (its heel and its toes: the higher) is above the body's floor; 0 off the stairs.</summary>
-        static float Under(Vector3 ankle, Vector3 facing, float ground, float scale, float ahead = 0f)
+        static float Under(Vector3 ankle, Vector3 facing, float ground, float scale, float ahead, out bool over)
         {
             float heel = Camp.TreadUnder(ankle - facing * (Heel * scale)), toe = Camp.TreadUnder(ankle + facing * ((Toe + ahead) * scale));
-            float t = float.IsNaN(heel) ? toe : float.IsNaN(toe) ? heel : Mathf.Max(heel, toe);
-            return float.IsNaN(t) ? 0f : Mathf.Clamp(t - ground, -0.5f, 0.5f);
+            over = !float.IsNaN(heel) || !float.IsNaN(toe);
+            if (!over) return 0f;
+            // (half off the stairs, that half stands on the body's own floor: coming off the plateau onto the top deck,
+            // below the bank, the heel still on the bank kept the foot up there, not down at the deck in the snow: campfix2)
+            float t = Mathf.Max(float.IsNaN(heel) ? ground : heel, float.IsNaN(toe) ? ground : toe);
+            return Mathf.Clamp(t - ground, -0.5f, 0.5f);
         }
     }
 }

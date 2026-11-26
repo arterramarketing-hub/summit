@@ -3,6 +3,8 @@
 # posing code), so the two tools always agree, and it never rewrites the hero itself.
 #
 #   python3 Tools/MakeRides.py -- --project .                       (exports; needs "pip install bpy")
+#   ... --project . --new-clips-only    (only adds the clips the table hasn't got: the ones in it are kept byte for
+#                                        byte, so another Blender's solver, a degree off, doesn't touch them)
 #   python3 Tools/MakeRides.py -- --render DIR [--what skis,sled,gear]   (preview pictures, rendered with Cycles)
 #   blender --background --factory-startup --python Tools/MakeRides.py -- ...      (the same, from Blender)
 #
@@ -41,6 +43,7 @@ PROJECT = arg("--project")
 RENDER = arg("--render")
 WHAT = set((arg("--what", "all") or "all").split(","))
 HERO_CLIPS = len(CLIPS)                       # everything after these is ours
+NEW_ONLY = "--new-clips-only" in argv
 
 # ----------------------------------------------------------------------------------------------- the models
 for nm, rgb, sm_ in (("Wood", (0.66, 0.47, 0.26), 0.3), ("WoodDark", (0.38, 0.24, 0.12), 0.3),
@@ -455,6 +458,96 @@ def _(t):
     k = (t - 0.3) / 0.7
     return overlap(SLED_JOLT, SLED, ease(k), ease(max(0, k - 0.2) / 0.8))
 
+# ----------------------------------------------------------------------------------------------- more tricks
+# (the tricks branch: Rider.cs's grab lists name these, RiderBodyHero / RiderBodyRide play them)
+# The snowboard's further grabs, made as MakeHero makes its own (GRABS, fix_reach): which hand, where on the board.
+#   nose grab: the front hand on the nose, the back leg drawn up; japan: the front hand to the toe edge in front of
+#   the front foot, round the knee, the board pulled up behind; roast beef: the back hand between the legs to the
+#   heel edge; crail: the back hand forward to the toe edge by the nose, the front leg straightened; truck driver:
+#   both hands at once, indy and melon.
+MORE_GRABS = {
+    "Nose Grab": P_(**dict(GRABBED, hips=V(0.10, 0.02, -0.34), spine=(30, 0, 0)), hL=("abs", board_pt(0.70, 0.0, 0.02)), eL=V(0.0, 0.4, 0.8), gL=1.0,
+                    hR=("rel", V(-0.34, -0.10, 0.20)), eR=V(0.0, 0.5, -0.8), gR=0.2),
+    "Japan": P_(**dict(GRABBED, hrot=(24, 0, 20), spine=(36, 8, 16), head=(10, 0, 30), kL=side_pole(0.1, -1, -0.35)),
+                hL=("abs", board_pt(0.15, -0.152)), eL=V(0.7, -0.2, 0.5), gL=1.0,
+                hR=("rel", V(-0.30, 0.06, 0.30)), eR=V(0.0, 0.6, -0.6), gR=0.2),
+    "Roast Beef": P_(**dict(GRABBED, hrot=(26, 0, 6), spine=(34, -4, 4)), hR=("abs", board_pt(-0.03, 0.155)), eR=V(-0.1, -0.9, 0.3), gR=1.0,
+                     hL=("rel", V(0.34, -0.02, 0.22)), eL=V(0.0, 0.5, -0.8), gL=0.2),
+    "Crail": P_(**dict(GRABBED, hrot=(24, 0, 14), spine=(34, 10, 8), kL=side_pole(0.9, -0.6, 0.1)), hR=("abs", board_pt(0.34, -0.152)), eR=V(-0.2, -0.5, 0.6), gR=1.0,
+                hL=("rel", V(0.30, 0.10, 0.30)), eL=V(0.0, 0.6, -0.6), gL=0.2),
+    "Truck Driver": P_(**dict(GRABBED, hrot=(28, 0, 8), spine=(36, 0, 6)), hL=("abs", board_pt(0.05, 0.155)), eL=V(0.6, -0.2, 0.4), gL=1.0,
+                       hR=("abs", board_pt(-0.04, -0.15)), eR=V(-0.3, 0.5, 0.3), gR=1.0),
+}
+for gname in list(MORE_GRABS): MORE_GRABS[gname] = fix_reach(MORE_GRABS[gname], gname)
+for gname, gp in MORE_GRABS.items():
+    CLIPS.append(("Grab_" + gname.replace(" ", ""), 30, True, (lambda gp: lambda t: breathe(gp, t, 0.4))(gp)))
+
+# The skis' further grabs and the old school's no-hand shapes (each ski goes with its own foot, so the legs make them):
+#   japan: the right hand across to the left ski in front of the boot, both skis tucked up behind, knees down;
+#   octograb: the arms crossed, each hand on the other ski in front of the boot; daffy: one leg straight out in front,
+#   the other straight back, arms out; iron cross: the heels kicked up behind and the tips crossed in an X under the
+#   skier; spread eagle: legs and skis wide apart, arms up and out (a star).
+SKI_OLD = over(SKI, hips=V(0, 0.08, -0.18), hrot=(16, 0, 0), spine=(8, 0, 0), head=(-14, 0, 0), pL=V(0.45, 0.75, -0.45), pR=V(-0.45, 0.75, -0.45))
+MORE_SKI = {
+    "Japan": ("R", over(SKI_GRABBED, hips=V(0, 0.06, -0.44), hrot=(30, 0, 6), spine=(34, 8, 12),
+                        fL=(AK(SKI_HALF, 0.20, 0.10), 0, -24, 0), fR=(AK(-SKI_HALF, 0.20, 0.10), 0, -24, 0), kL=V(0.12, -1, -0.4), kR=V(-0.12, -1, -0.4),
+                        hR=("abs", V(0.10, -0.30, -0.03)), eR=V(-0.6, -0.4, 0.4), pR=V(-0.4, 0.85, 0.30),
+                        hL=("rel", V(0.36, -0.06, 0.12)), eL=V(0.5, 0.6, -0.5), pL=V(0.55, 0.62, -0.35))),
+    "Octograb": ("L", over(SKI_GRABBED, hrot=(36, 0, 0), spine=(34, 0, 0),
+                           hL=("abs", V(-0.10, -0.32, -0.03)), eL=V(0.8, -0.2, 0.3), pL=V(-0.6, 0.75, 0.25),
+                           hR=("abs", V(0.10, -0.32, -0.03)), eR=V(-0.8, -0.2, 0.3), pR=V(0.6, 0.75, 0.25))),
+}
+SKI_DAFFY = over(SKI_OLD, hips=V(0, 0.02, -0.12), hrot=(4, 0, 0), spine=(4, 0, 0),
+                 fL=(AK(SKI_HALF * 0.6, -0.66, 0.34), 0, 34, 0), kL=V(0.05, -1, 0.2),
+                 fR=(AK(-SKI_HALF * 0.6, 0.64, 0.40), 0, -38, 0), kR=V(-0.05, -1, -0.2),
+                 hL=("rel", V(0.58, -0.10, 0.10)), eL=V(0.3, 0.6, -0.5), hR=("rel", V(-0.58, -0.04, 0.14)), eR=V(-0.3, 0.6, -0.5))
+SKI_IRON = over(SKI_OLD, hips=V(0, 0.02, -0.30), hrot=(22, 0, 0), spine=(16, 0, 0),
+                fL=(AK(SKI_HALF * 0.9, 0.34, 0.38), -48, -40, 0), kL=V(0.15, -1, -0.5),
+                fR=(AK(-SKI_HALF * 0.9, 0.34, 0.38), 48, -40, 0), kR=V(-0.15, -1, -0.5),
+                hL=("rel", V(0.42, -0.14, 0.10)), eL=V(0.4, 0.6, -0.5), hR=("rel", V(-0.42, -0.14, 0.10)), eR=V(-0.4, 0.6, -0.5))
+SKI_EAGLE = over(SKI_OLD, hips=V(0, 0.04, -0.10), hrot=(6, 0, 0), spine=(-4, 0, 0), head=(-20, 0, 0),
+                 fL=(AK(0.42, 0.0, 0.18), 0, 0, -22), kL=V(1, -0.3, 0), fR=(AK(-0.42, 0.0, 0.18), 0, 0, 22), kR=V(-1, -0.3, 0),
+                 hL=("rel", V(0.50, -0.04, 0.46)), eL=V(0.2, 0.6, -0.4), hR=("rel", V(-0.50, -0.04, 0.46)), eR=V(-0.2, 0.6, -0.4),
+                 pL=V(0.7, 0.5, -0.5), pR=V(-0.7, 0.5, -0.5))
+for gname, (hand, gp) in MORE_SKI.items():
+    gp = reach(gp, hand, gname)
+    CLIPS.append(("Ski_Grab_" + gname, 30, True, (lambda gp: lambda t: breathe(gp, t, 0.4))(gp)))
+for gname, gp in (("Daffy", SKI_DAFFY), ("IronCross", SKI_IRON), ("SpreadEagle", SKI_EAGLE)):
+    CLIPS.append(("Ski_Grab_" + gname, 30, True, (lambda gp: lambda t: breathe(gp, t, 0.4))(gp)))
+
+# The toboggan's further airs: superman (hanging on to the third batten, the body flown out flat behind the sled,
+# face down, arms straight, legs together); and stood up on it, surfing (side on, knees bent, arms out).
+SLED_SUPERMAN = over(SLED, hips=V(0, 1.05, -0.42), hrot=(84, 0, 0), spine=(-6, 0, 0), neck=(-24, 0, 0), head=(-30, 0, 0),
+                     **sym(fL=(V(0.10, 1.90, 0.40), 0, -80, 0), kL=V(0.1, 0, 1), hL=HOLD(1), eL=V(1, 0.2, 0.3), gL=1.0))
+SLED_STAND = over(SLED, hips=V(0, 0.0, -0.30), hrot=(14, 0, 58), spine=(10, 0, -10), neck=(0, 0, 0), head=(-10, 0, -40),
+                  fL=(V(0.0, -0.26, 0.09), 62, 0, 0), kL=side_pole(0.4, -1, 0.1), fR=(V(0.0, 0.26, 0.09), 62, 0, 0), kR=side_pole(-0.4, -1, 0.1),
+                  hL=("rel", V(0.48, -0.06, 0.20)), eL=V(0.2, 0.6, -0.5), gL=0.3, hR=("rel", V(-0.48, -0.06, 0.24)), eR=V(-0.2, 0.6, -0.5), gR=0.3)
+CLIPS.append(("Sled_Superman", 30, True, lambda t: breathe(SLED_SUPERMAN, t, 0.4)))
+CLIPS.append(("Sled_Stand", 30, True, lambda t: breathe(SLED_STAND, t, 0.5)))
+
+# The snow tube's airs (sat in it as MakeHero's Sit): the starfish, arms and legs flung wide; and hands up, both arms
+# straight up and the legs out together, like the front car of a roller coaster.
+TUBE_SIT = dict(hips=V(0, 0.09, -0.60), hrot=(-30, 0, 0), spine=(-6, 0, 0), neck=(0, 0, 0), head=(24, 0, 0),
+                kL=side_pole(0.2, -0.4, 1), kR=side_pole(-0.2, -0.4, 1))
+TUBE_STAR = P_(**dict(TUBE_SIT, hrot=(-40, 0, 0), head=(16, 0, 0), kL=side_pole(0.8, -0.2, 1), kR=side_pole(-0.8, -0.2, 1)),
+               fL=(V(0.52, -0.62, 0.42), 30, 30, 0), fR=(V(-0.52, -0.62, 0.42), -30, 30, 0),
+               hL=("rel", V(0.62, 0.04, 0.30)), eL=V(0.2, 0.6, -0.6), hR=("rel", V(-0.62, 0.04, 0.30)), eR=V(-0.2, 0.6, -0.6), gL=0.0, gR=0.0)
+TUBE_UP = P_(**dict(TUBE_SIT, hrot=(-22, 0, 0), spine=(4, 0, 0), head=(10, 0, 0)),
+             fL=(V(0.10, -0.80, 0.46), 4, 40, 0), fR=(V(-0.10, -0.80, 0.46), -4, 40, 0),
+             hL=("rel", V(0.16, 0.02, 0.64)), eL=V(0.6, 0.4, 0.0), hR=("rel", V(-0.16, 0.02, 0.64)), eR=V(-0.6, 0.4, 0.0), gL=0.1, gR=0.1)
+@rclip("Tube_Starfish", 30, True)
+def _(t): return breathe(TUBE_STAR, t, 0.5)
+@rclip("Tube_HandsUp", 30, True)
+def _(t):
+    p = breathe(TUBE_UP, t, 0.5)
+    w = math.sin(t * 2 * math.pi) * 0.04
+    p["hL"] = ("rel", p["hL"][1] + V(w, 0, 0)); p["hR"] = ("rel", p["hR"][1] + V(w, 0, 0))
+    return p
+
+# ----------------------------------------------------------------------------------------------- the fun rides
+# The kayak, the rally car and the bear (rides): Tools/MakeRidesVehicles.py, with everything above to hand
+exec(compile(open(os.path.join(HERE, "MakeRidesVehicles.py")).read(), os.path.join(HERE, "MakeRidesVehicles.py"), "exec"))
+
 print("RIDES clips:", ", ".join(c[0] for c in CLIPS[HERO_CLIPS:]))
 
 # ----------------------------------------------------------------------------------------------- export
@@ -534,8 +627,9 @@ def export_rides():
     print("RIDES check: %d rotations of the hero's own clips compared with the table Unity baked: worst %.2f deg (%s)" % (n, worst, where))
     if worst > 2.0: raise SystemExit("RIDES: this tool no longer matches the baked table; not writing it")
     mine = {c[0] for c in CLIPS[HERO_CLIPS:]}
+    if NEW_ONLY: mine -= {c[0] for c in clips}                               # (what's there stays as it is)
     keep = b"".join(data[c[1]:c[2]] for c in clips if c[0] not in mine)     # the hero's clips, byte for byte
-    out = data[:head] + keep + b"".join(clip_bytes(nm, fr, lp, fn, names) for nm, fr, lp, fn in CLIPS[HERO_CLIPS:])
+    out = data[:head] + keep + b"".join(clip_bytes(nm, fr, lp, fn, names) for nm, fr, lp, fn in CLIPS[HERO_CLIPS:] if nm in mine)
     open(table, "wb").write(out)
     print("RIDES wrote %s: %d KB, %d clips kept, %d added" % (table, len(out) // 1024, sum(1 for c in clips if c[0] not in mine), len(mine)))
 
@@ -545,7 +639,7 @@ def export_rides():
     common = dict(apply_unit_scale=True, add_leaf_bones=False, use_armature_deform_only=True, primary_bone_axis='Y',
                   secondary_bone_axis='X', armature_nodetype='NULL', path_mode='AUTO', embed_textures=False, mesh_smooth_type='OFF')
     bpy.ops.object.select_all(action='DESELECT')
-    for o in (SKI_OB, POLE_OB, SLED_OB): o.hide_render = False; o.select_set(True)
+    for o in [SKI_OB, POLE_OB, SLED_OB] + KAYAK_OBS + CAR_OBS: o.hide_render = False; o.select_set(True)
     bpy.context.view_layer.objects.active = SKI_OB
     bpy.ops.export_scene.fbx(filepath=rides, use_selection=True, object_types={'MESH'}, bake_anim=False, **common)
     for o in bpy.context.selected_objects: o.hide_render = True          # (the previews show copies of them)
@@ -607,6 +701,7 @@ def dress(s, kind, lift=0.0, at=Matrix.Identity(4)):
             po.matrix_world = at @ s.M[sd + "Hand"] @ REST[sd + "Hand"].inverted() @ pole_rest(sd)
     elif kind == "sled":
         g["sled"].hide_render = False; g["sled"].matrix_world = at
+    vehicle_dress(s, kind, at)
 
 def bank(deg, yaw=0.0):
     """The whole rider tipped about the line of travel through the snow under them, as the game banks a turn."""
@@ -671,6 +766,7 @@ if RENDER:
             ("No-hander", P_at("Sled_NoHands"), 0, I4, cam(front, 0.6, 4.4)),
             ("Bump", P_at("Sled_Bump", 0.3), 0, I4, cam(side, 0.45, 4.0)),
         ], 5)
+    vehicle_sheets(sheet, cam, front, side, back, I4, bank)
     if "gear" in WHAT or "all" in WHAT:
         # the models on their own, close up
         cycles_setup(900, 420, 24)

@@ -143,6 +143,13 @@ public static class TreeContactTest
             if (new Vector2(t.at.x - at.x, t.at.z - at.z).magnitude > 14f) continue;
             best = Mathf.Min(best, Clearance(t, trunk));
         }
+        // (a small tree snapped at the snow is gone from the forest by the time it is reported: judged by the board's
+        // nearest to where its trunk broke, against the body's reach and a thin trunk's girth)
+        if (trunk && best == float.MaxValue)
+        {
+            Vector3 d = at - stepFrom; d.y = 0f;
+            best = Mathf.Max(0f, d.magnitude - Forest.ThinGirth);
+        }
         if (best <= TreeBreak.BodyR) T.touched++;
         else if (best <= TreeBreak.BodyR + Clear) T.grazed++;
         else

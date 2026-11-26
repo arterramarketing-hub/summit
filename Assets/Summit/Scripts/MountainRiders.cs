@@ -286,7 +286,7 @@ namespace Summit
         {
             if (z < 8f || z > Slope.FinishZ + 60f) { Refused[0]++; return false; }
             if (Mathf.Abs(x - Slope.Centre(z)) > LaneMax(z, margin)) { Refused[1]++; return false; }
-            if (Mathf.Abs(Slope.Kicker(x, z)) > 0.01f) { Refused[2]++; return false; }
+            if (Mathf.Abs(Slope.Kicker(x, z)) > 0.01f || Lines.Keep(x, z, 1f)) { Refused[2]++; return false; }   // (and never on a feature line's lane: Lines)
             if (Course.NearFeature(x, z, 2f)) { Refused[3]++; return false; }
             if (Course.CrevasseNear(x, z, 1.5f)) { Refused[4]++; return false; }   // (no crack, nor a bridge over one: a field across the run ends the lap)
             if (Slope.StepNear(z, 8f, out var d) && d.step && Mathf.Abs(Slope.Across(x, z) - d.lane) > 1.8f) { Refused[5]++; return false; }
@@ -932,7 +932,19 @@ namespace Summit
             // (not followed closely until now: its last snow is stale, so start it on this)
             bool fresh = !r.wasNear;
             r.wasNear = near && !now && dt > 0f;
-            if (!near || now || dt <= 0f || fresh) { r.ground = g; r.pos.y = g; r.air = 0f; r.airV = 0f; r.groundV = 0f; return; }
+            if (!near || now || dt <= 0f || fresh)
+            {
+                // (on the snow and moving with it: its rate is the hill's along the way it rides, not nothing. Started at
+                // rest when drawn as a person near, on the mountain's 36 degrees the snow fell away from under it at 9 m/s
+                // and it flew off the open hill, 2 to 3 m up: PeopleTest.Riders)
+                float rate = 0f;
+                if (near)
+                {
+                    float hx = Mathf.Sin(r.heading) * 0.75f, hz = Mathf.Cos(r.heading) * 0.75f;
+                    rate = (Slope.DrawnHeight(x + hx, z + hz) - Slope.DrawnHeight(x - hx, z - hz)) / 1.5f * r.speed;
+                }
+                r.ground = g; r.pos.y = g; r.air = 0f; r.airV = rate; r.groundV = rate; return;
+            }
             // (on the snow the body goes up and down with it: airV is the snow's own rate then)
             float pull = r.air > 0f ? 4.9f : 14.7f;
             float body = r.pos.y + r.airV * dt - pull * dt * dt;

@@ -92,6 +92,11 @@ public static class ClosetShot
             meta.ClosetTry(Wardrobe.Cat.Ride, 1);
             Settle(10);
             Shoot("Closet10_ride_skis.png");
+            // (rides) the fun rides, beside the hero: the kayak, the rally car, the bear
+            meta.ClosetTry(Wardrobe.Cat.Ride, (int)RideKind.Kayak); Settle(10); Shoot("Closet10m_ride_kayak.png");
+            meta.ClosetTry(Wardrobe.Cat.Ride, (int)RideKind.Car); Settle(10); Shoot("Closet10n_ride_car.png");
+            meta.ClosetTry(Wardrobe.Cat.Ride, (int)RideKind.Bear); Settle(10); Shoot("Closet10o_ride_bear.png");
+            meta.ClosetTry(Wardrobe.Cat.Ride, 1); Settle(10);
             Log("ride");
 
             // who you ride as, and whose clothes: each try-on builds the rider anew and the studio copies them afresh
@@ -258,7 +263,9 @@ public static class ClosetShot
         foreach (var sk in skins)
         {
             if (!sk.enabled || !sk.gameObject.activeInHierarchy) continue;
-            var m = new Mesh(); sk.BakeMesh(m);
+            bool bear = false;   // (the bear's file scales its own root: baked with it. Its copy here has lost its Animation: known by its wrapper)
+            for (var t = sk.transform; t != null && !bear; t = t.parent) bear = t.name == "BearWrap";
+            var m = new Mesh(); sk.BakeMesh(m, bear);
             var g = new GameObject("b", typeof(MeshFilter), typeof(MeshRenderer));
             g.layer = sk.gameObject.layer;
             g.GetComponent<MeshFilter>().sharedMesh = m; g.GetComponent<MeshRenderer>().sharedMaterials = sk.sharedMaterials;

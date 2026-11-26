@@ -74,8 +74,19 @@ public static class SteerTest
                     if (r2 < 0f || r2 > 0.32f) Fail($"{v * 3.6f:0} km/h: flipped, the board is going the other way (2 m/s) only after {T(r2)} (0.25 to 0.3 s asked)");
                     // (judged from 79 km/h: slower, a tenth of the slide is under a metre a second, and the hill's own fall
                     // line wandering under the board is as much of it as the coast)
-                    if (v >= 22f && coast < 0.7f) Fail($"{v * 3.6f:0} km/h: let go, the board coasts only {T(coast)} on its slide (about 1 s asked)");
+                    // (steerB: a short coast, CoastTime 0.3 s, so the turn ends near when the finger lifts; the slow
+                    // return to the fall line after it is unchanged, checked below)
+                    if (v >= 22f && (coast < 0.15f || coast > 1f)) Fail($"{v * 3.6f:0} km/h: let go, the board coasts {T(coast)} on its slide (steerB: about {Rider.CoastTime:0.0} s asked, 0.15 to 1 s)");
                     if (!releaseAir && t5deg >= 0f && t5deg < 2f) Fail($"{v * 3.6f:0} km/h: let go, the board is back within 5 deg of the fall line in {T(t5deg)}: pulled downhill too soon (feel2: 3 to 4 s on an average pitch; this stretch is steeper)");
+                }
+                if (sc == 1f)
+                {
+                    // (steerB, bandfix2) a push begun on a slide: one the slide's own way keeps it (a drag never turns the
+                    // board against itself), but a thumb barely off the middle does not lock the board onto it
+                    float half = RePush(r, v, Rider.Unshape(0.5f), out float halfAsk), tiny = RePush(r, v, Rider.Unshape(0.05f), out float tinyAsk);
+                    Debug.Log($"STEER re-push v={v:0} m/s: from a whole drag's slide, let go 0.15 s, pushed again its way: half a drag asks {100f * halfAsk:0}% of the slide and keeps {100f * half:0}% after 1 s; a twentieth asks {100f * tinyAsk:0}% (the edge bleeds the rest gently, CheckBite) and keeps {100f * tiny:0}%");
+                    if (half < 0.9f) Fail($"{v * 3.6f:0} km/h: half a drag pushed the way the board slides kept only {100f * half:0}% of the slide (the push turned it against itself)");
+                    if (tinyAsk > 0.3f || tiny > half - 0.1f) Fail($"{v * 3.6f:0} km/h: a thumb barely off the middle asks for {100f * tinyAsk:0}% of the slide and keeps {100f * tiny:0}% (locked onto it; a twentieth of a drag asks for next to none)");
                 }
                 if (quick || sc != 1f) continue;   // (the slaloms at the stock setting)
                 string line = $"STEER slalom scale={sc:0.0} v={v:0} m/s ({v * 3.6f:0} km/h), speed held";
@@ -383,6 +394,20 @@ public static class SteerTest
         // and returns over a second and a half)
         for (int i = 0; i < 240; i++) { r.Steer = 0f; StepHeld(r, v); }
         lat0 = 0f; lat0 = Lat(r);
+    }
+
+    /// <summary>A whole drag held 1 s, the finger off 0.15 s (the board coasting on its slide), then pushed again the same way
+    /// at `s` for 1 s: the share of the slide (across the fall line) left at the end.</summary>
+    static float RePush(Rider r, float v, float s, out float asks)
+    {
+        Settle(r, v);
+        float steer = 0f;
+        for (int i = 0; i < 120; i++) { steer = SteerTo(steer, 1f); r.Steer = steer; StepHeld(r, v); }
+        for (int i = 0; i < 18; i++) { steer = SteerTo(steer, 0f); r.Steer = steer < 0.02f ? 0f : steer; StepHeld(r, v); }
+        float had = Mathf.Max(0.5f, Lat(r));
+        asks = r.SideWant(s) / Mathf.Max(0.5f, r.Side);   // (what the push asks for as it begins, against the slide the board has)
+        for (int i = 0; i < 120; i++) { r.Steer = s; StepHeld(r, v); }
+        return Lat(r) / had;
     }
 
     static int sideAir;   // steps of the last First spent off the snow

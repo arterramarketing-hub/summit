@@ -13,7 +13,7 @@ using Summit;
 ///   - solid as drawn: every collider under an end is an Obstacle on a drawn primitive (or the rack's one box over
 ///     the rack and what leans on it); the maze's posts and ropes have none; nothing solid on the groomed run, on a
 ///     hill or the lane to it, or inside another lift's station;
-///   - people: the bottom's queue (at least four in it at a station with room), its liftie, the chatting pair, someone
+///   - people: the bottom's queue (at least four in it at a station with room, counting the group stepping up to load), its liftie, the chatting pair, someone
 ///     clicking in; the top's people standing, sitting, pointing; all of them on the snow (or the deck), never inside
 ///     a solid; after 40 s, groups have loaded at the bottoms and people have got off, strapped in and pushed off at
 ///     the tops.
@@ -90,12 +90,13 @@ public static class LiftEndsTest
                         else if (t.name == "Gate") gates++;
                     }
                     solids += solidHere;
-                    int shown = 0, queue = 0, offSnow = 0; string what = "";
+                    int shown = 0, queue = 0, loading = 0, offSnow = 0; string what = "";
                     foreach (var a in ends.Shown())
                     {
                         if (a.end != e) continue;
                         shown++;
                         if (a.job == LiftEnds.Job.Queue) queue++;
+                        else if (a.job == LiftEnds.Job.Load) loading++;   // (the queue's front, stepping up to the chair: back in the queue after)
                         what += a.job + " ";
                         float y = a.p.transform.position.y, snow = Slope.DrawnHeight(a.pos.x, a.pos.z);
                         bool onDeck = a.job == LiftEnds.Job.Load && Mathf.Abs(y - e.st.y) < 0.6f;
@@ -107,7 +108,7 @@ public static class LiftEndsTest
                     people += shown;
                     if (offSnow > 0) Fail($"{tag}: {offSnow} people off the snow");
                     Debug.Log($"ENDS {tag}: z {e.st.z:0}, {posts} posts, {gates} gates, {huts} hut(s), {racks} rack(s), {boards} boards, {solidHere} solid pieces; {shown} people ({what.Trim()}), {queue} queueing; {e.queue.Count} places in the queue, {e.strap.Count} to strap in{(e.toCamp.Count > 0 ? $", path to the camp {e.toCamp.Count} points" : "")}");
-                    if (!e.top && e.queue.Count >= 6 && queue < 4) Fail($"{tag}: only {queue} queueing");
+                    if (!e.top && e.queue.Count >= 6 && queue + loading < 4) Fail($"{tag}: only {queue} queueing ({loading} loading)");
                     if (!e.top && e.queue.Count >= 6 && posts < 6) Fail($"{tag}: no maze ({posts} posts)");
                     if (e.lift.summit && e.top)
                     {

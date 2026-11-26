@@ -207,6 +207,14 @@ namespace Summit
             s.AddRow(game, "BLOOD", () => OnOff(blood.On), d => ToggleBlood(), true);
             s.AddRow(sound, "MUSIC", () => Mathf.RoundToInt(AudioPrefs.MusicVolume * 10f) * 10 + "%", StepMusic);
             s.AddRow(sound, "VOICE LINES", () => OnOff(SoundMix.VoiceLines), d => ToggleVoice(), true);
+            // (steerB) the feel's own numbers, live: drag one mid-run, resume, and feel it (Tuning; kept in PlayerPrefs)
+            int tune = s.AddTab(Hud.TabName[4]);
+            foreach (var k in Tuning.Knobs)
+            {
+                var kk = k;
+                s.AddSlider(tune, kk.label, () => kk.Text, () => kk.T, t => kk.T = t, () => Tuning.Save(kk));
+            }
+            s.AddButton(tune, "RESET TO DEFAULTS", "RESET", () => { Tuning.Reset(); hud.RefreshPause(); });
         }
 
         /// <summary>Make the start page (its settings are the HUD's: they open from the camp and the start pad).</summary>
@@ -290,6 +298,7 @@ namespace Summit
         bool SettingsStep()
         {
             if (!settingsOpen) return false;
+            if (hud.PauseDrag(RiderInput.PointerPosition(), RiderInput.PointerHeld())) return true;   // (a TUNE slider held)
             if (input.AnyPress())
             {
                 var p = RiderInput.PointerPosition();
@@ -439,6 +448,19 @@ namespace Summit
             };
             // a tree hit and still standing: it shudders and its snow comes down off it (SnowFX, TreeWind)
             rider.HitObstacle += (ob, at, into) => { if (ob.label == "Tree") ShakeTree(ob.GetComponent<Collider>(), into, rider.Body.linearVelocity); };
+            // arcadetrees: a tree clipped and ridden on, staggering: a branch's snap and the thud of the trunk, the snow off it
+            // (ShakeTree, above), the camera jolted and the rider flinching away from it
+            rider.TreeGlanced += (at, into, square) =>
+            {
+                if (state != State.Riding) return;
+                float sp = rider.Speed;
+                audioFx.PlayTree(Sfx.LimbSnap, 0.35f + 0.4f * square, sp, 0.55f + 0.35f * square);
+                audioFx.PlayTree(Sfx.TrunkCrack, 0.2f + 0.3f * square, sp, 0.3f + 0.4f * square);
+                audioFx.PlayTree(Sfx.SnowDump, 0.5f, sp, 0.5f + 0.3f * square);
+                audioFx.Play(Sfx.Branches, 0.5f + 0.3f * square);
+                hurtShake = Mathf.Max(hurtShake, 0.3f + 0.4f * square);
+                body.Flinch(at, 0.6f + 0.4f * square);
+            };
             body.RagdollStruck += (c, at, into) =>
             {
                 var ob = c != null ? c.GetComponentInParent<Obstacle>() : null;
@@ -556,7 +578,16 @@ namespace Summit
             {
                 if (state != State.Riding) return;
                 smasher.Hit(ob, at, v);
-                audioFx.Play(ob.label == "Rock" ? Sfx.SmashRock : Sfx.SmashWood);
+                if (ob.label == "Tree")
+                {
+                    // (treesfx: a tree smashed through is a trunk breaking, the recorded layers, not the crate's break)
+                    float sp = v.magnitude;
+                    audioFx.PlayTree(Sfx.TrunkCrack, 0.9f, sp);
+                    audioFx.PlayTree(Sfx.LimbSnap, 0.8f, sp, 0.6f);
+                    audioFx.PlayTree(Sfx.SnowDump, 0.9f, sp, 0.8f);
+                    audioFx.Play(Sfx.Branches, 0.7f);
+                }
+                else audioFx.Play(ob.label == "Rock" ? Sfx.SmashRock : Sfx.SmashWood);
                 if (ob.always) audioFx.Play(Sfx.BearRoar);
                 hurtShake = Mathf.Max(hurtShake, 0.35f);
                 Link(ob.always ? "BEAR BOWLED" : ob.label == "Rock" ? "ROCK SMASH" : "TIMBER!", ob.always ? 500 : 100, LinkKind.Smash);
@@ -654,6 +685,7 @@ namespace Summit
             lensFx.Build(cam);
             pov = PlayerPrefs.GetInt(ChaseCamera.PovPref, 0) == 1;
             chase.pov = pov; chase.body = body; chase.lensFx = lensFx;
+            Tuning.Load();
             FillSettings(hud.PauseSettings);
             hud.PauseSettings.Clicked = () => audioFx.Play(Sfx.Click);
             ApplyCamera();
@@ -661,6 +693,11 @@ namespace Summit
             bool tube = PlayerPrefs.GetInt("summit_tube", 0) == 1;
             rider.Tube = tube; body.SetTube(tube); ShowRider();
             rider.Bounced += into => { if (state != State.Riding) return; body.TubeKick(into); audioFx.Play(Sfx.Thump, Mathf.Clamp01(into / 12f)); };
+            // the fun rides' (rides): a paddle stroke's swish; the ridden bear roars as it leaps and grunts as it lands
+            rider.Stroke += side => { if (state == State.Riding) audioFx.Stroke(side); };
+            rider.Jumped += () => { if (state == State.Riding && body.OnVehicleNow && body.Ride == RideKind.Bear) audioFx.BearRoar(); };
+            rider.Landed += impact => { if (state == State.Riding && body.OnVehicleNow && body.Ride == RideKind.Bear && impact > 4f) audioFx.BearGrunt(Mathf.Clamp01(impact / 16f)); };
+            rider.SpunOut += sp => { if (state == State.Riding) audioFx.Play(Sfx.Scrape, Mathf.Clamp(sp * 0.3f, 2f, 8f)); };
             BuildMeta();
             dayNight.Hook(rider, fx, camp, spray, trail);
             weather = Weather.Build(rider, camp, cam, atmo, fx, snow, audioFx, () => start);   // the weather on top of the time of day (Weather.cs)
@@ -1051,6 +1088,7 @@ namespace Summit
                     if (paused)
                     {
                         hud.SetTapCue(false);
+                        if (hud.PauseDrag(RiderInput.PointerPosition(), RiderInput.PointerHeld())) break;   // (a TUNE slider held)
                         if (input.AnyPress())
                         {
                             var pp = RiderInput.PointerPosition();
@@ -1177,6 +1215,7 @@ namespace Summit
                 camp = state == State.Hub || state == State.Title, ended = state == State.Buried,
                 boost = riding && rider.BoostTime > 0f,
                 grind = riding && rider.Grinding ? (rider.GrindFeature.kind == Course.Kind.Rail ? 1 : 2) : 0,
+                vehicle = body.OnVehicleNow && !rider.Crashed ? (int)body.Ride : -1, rpm = rider.Rpm, throttle = rider.Throttle, gait = rider.GaitRate,
             });
             AirSounds(riding);
         }
@@ -1270,7 +1309,7 @@ namespace Summit
             string live = rider.Crashed ? null : rider.LiveName;
             if (live != null) combo.SetLive(live, rider.LivePoints, rider.LiveKind);
             else if (combo.LiveName != null) { combo.SetLive(null, 0, LinkKind.Trick); liveSteps = 0; }
-            combo.Step(dt, rider.Airborne || rider.Grinding);
+            combo.Step(dt, rider.Airborne || rider.Grinding || rider.InLineFlow);   // (and between a feature line's hits: RiderLines)
             // the fall's receipt: what followed is billed once the body has stopped (or the rider is up); up again,
             // it tears off into the corner's total
             if (rider.Crashed && receipt.Open)
@@ -1665,6 +1704,7 @@ namespace Summit
             else StartScreaming();                                     // the player's screams, from the impact until the body slows
             if (why.StartsWith("Crevasse")) { crevasseWatch = true; if (left <= 0) { wipeoutTimer = 2.0f; endTitle = "WIPED OUT"; rider.StayDown = true; } }
             else if (left <= 0) { wipeoutTimer = 2.0f; endTitle = "WIPED OUT"; rider.StayDown = true; }   // the last fall: no getting up   // let the tumble play out, then it's over
+            if (body.OnVehicleNow && body.Ride == RideKind.Bear) audioFx.BearGrunt(1f);   // thrown off the bear: it grunts (rides)
             if (why.StartsWith("Tree")) { audioFx.Play(Sfx.HitTree); audioFx.Play(Sfx.Crash, 0.6f); }
             else if (why.StartsWith("Rock") || why.StartsWith("Hit the rocks")) { audioFx.Play(Sfx.HitRock); audioFx.Play(Sfx.Crash, 0.6f); }
             else if (why.StartsWith("Crevasse")) { }   // only the "nooo": the old synthesized fall (a falling whoosh that read as a voice) is gone

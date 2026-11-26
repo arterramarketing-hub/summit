@@ -2,8 +2,12 @@ using UnityEngine;
 
 namespace Summit
 {
-    /// <summary>What the rider rides: a snowboard, skis or a wooden toboggan. Picked at the camp's rack (Progress.Ride); the rider's own copy is Rider.Ride.</summary>
-    public enum RideKind { Snowboard, Skis, Toboggan }
+    /// <summary>
+    /// What the rider rides: a snowboard, skis or a wooden toboggan; or, for fun (rides), a kayak, a rally car or a bear.
+    /// Picked in the closet's RIDE list or the pause menu's RIDE row (Progress.Ride); the rider's own copy is Rider.Ride.
+    /// (Saved by number: new ones go on the end.)
+    /// </summary>
+    public enum RideKind { Snowboard, Skis, Toboggan, Kayak, Car, Bear }
 
     /// <summary>
     /// How one ride feels: a handful of multipliers on the rider's carving model (RiderMove.cs), so every ride goes
@@ -32,6 +36,8 @@ namespace Summit
         public bool Rails = true;
         /// <summary>What its grabs are called, and for each the snowboard grabs a daily mission would accept it as.</summary>
         public string[] Grabs, GrabCountsAs;
+        /// <summary>What each grab adds on top of the grab's own points: the harder and the more distinct a shape, the more.</summary>
+        public int[] GrabBonus;
         /// <summary>What sliding a box and a rail are called on it (the stance it comes on in; the rest are in Rides.GrindName).</summary>
         public string BoxTrick = "50-50", RailTrick = "Boardslide";
         /// <summary>How fast it spins and flips in the air, against the snowboard (on Rider.SpinRate and Rider.FlipRate).</summary>
@@ -44,6 +50,12 @@ namespace Summit
 
         /// <summary>The multiplier on air drag that gives TopSpeed.</summary>
         public float Drag => 1f / (TopSpeed * TopSpeed);
+
+        /// <summary>The fun rides (rides): one that is not a board, skis or a toboggan, with its own extra physics
+        /// (RiderVehicle.cs), body and clips (RiderBodyVehicle.cs) and sounds (VehicleSound.cs).</summary>
+        public bool Vehicle;
+        /// <summary>What its crash is called when it goes over by itself (the car rolling: RiderVehicle).</summary>
+        public string Wreck;
     }
 
     public static class Rides
@@ -55,8 +67,9 @@ namespace Summit
             new RideFeel
             {
                 Name = "SNOWBOARD",
-                Grabs = new[] { "Indy", "Melon", "Mute", "Method", "Stalefish", "Tail Grab" },
-                GrabCountsAs = new[] { "Indy", "Melon", "Mute", "Method", "Stalefish", "Tail Grab" },
+                Grabs = new[] { "Indy", "Melon", "Mute", "Method", "Stalefish", "Tail Grab", "Nose Grab", "Japan", "Roast Beef", "Crail", "Truck Driver" },
+                GrabCountsAs = new[] { "Indy", "Melon", "Mute", "Method", "Stalefish", "Tail Grab", "Nose Grab", "Japan Mute", "Roast Beef", "Crail", "Truck Driver Indy Melon" },
+                GrabBonus = new[] { 0, 0, 0, 50, 50, 0, 0, 100, 100, 75, 150 },
             },
             // Skis: two edges and a stance that faces the way you go. Quicker from side to side, a little further
             // across for the same drag and quicker to stop sliding, a little faster flat out in a tuck's low stance;
@@ -66,8 +79,10 @@ namespace Summit
             {
                 Name = "SKIS",
                 TurnResponse = 1.25f, TurnRate = 1.08f, Grip = 1.18f, TopSpeed = 1.03f, Pop = 0.92f, AirControl = 1.15f,
-                Grabs = new[] { "Safety", "Mute", "Tail" },
-                GrabCountsAs = new[] { "Indy Stalefish", "Mute Melon", "Method Tail Grab" },
+                // (the old school's no-hand shapes ride in the grabs' place: a tap is a daffy as readily as a safety)
+                Grabs = new[] { "Safety", "Mute", "Tail", "Japan", "Octograb", "Daffy", "Iron Cross", "Spread Eagle" },
+                GrabCountsAs = new[] { "Indy Stalefish", "Mute Melon", "Method Tail Grab", "Japan Mute", "Indy Melon", "Method", "Stalefish", "Tail Grab" },
+                GrabBonus = new[] { 0, 0, 0, 75, 150, 50, 100, 50 },
                 BoxTrick = "Box Slide", RailTrick = "Rail Slide", Spin = 0.95f, SwitchStep = 2,
             },
             // The toboggan: a plank of wood with no edges and nobody's legs under it. It is mostly gravity's: it
@@ -79,9 +94,52 @@ namespace Summit
                 Name = "TOBOGGAN",
                 TurnResponse = 0.55f, TurnRate = 0.62f, Grip = 0.4f, TopSpeed = 0.95f, Pop = 0.6f, AirControl = 0.45f,
                 Bounce = 0.35f, Rails = false,
-                Grabs = new[] { "No-Hander" },
-                GrabCountsAs = new[] { "Indy Melon Mute Method Stalefish Tail Grab" },
+                Grabs = new[] { "No-Hander", "Superman", "Stand-Up" },
+                GrabCountsAs = new[] { "Indy Melon Mute Method Stalefish Tail Grab", "Indy Melon Mute Method Stalefish Tail Grab", "Indy Melon Mute Method Stalefish Tail Grab" },
+                GrabBonus = new[] { 0, 150, 200 },
                 BoxTrick = "Sled Slide", RailTrick = "Rail Bonk", Spin = 0.7f, Flip = 0.7f, Tweak = "Wild", SwitchStep = 2, Presses = false,
+            },
+            // The kayak: a plastic hull on snow, no edges at all. It slides on its hull (it slides on and on, and
+            // answers a push late), the paddle does the rest: each stroke a little push on and round (RiderVehicle:
+            // the game strokes on the outside of a turn, and to get going), the inside blade dragged as a rudder. Turned
+            // too hard it spins out, round on its own middle, and slides on backwards a moment before it comes round.
+            // A bit quicker than the toboggan flat out (a long, smooth hull), a hop for a jump, a flat landing that skips.
+            new RideFeel
+            {
+                Name = "KAYAK", Vehicle = true,
+                TurnResponse = 0.5f, TurnRate = 0.72f, Grip = 0.3f, TopSpeed = 1.0f, Pop = 0.62f, AirControl = 0.45f,
+                Bounce = 0.28f, Rails = false,
+                Grabs = new[] { "Paddle Up" },
+                GrabBonus = new[] { 100 },
+                GrabCountsAs = new[] { "Indy Melon Mute Method Stalefish Tail Grab" },
+                BoxTrick = "Hull Slide", RailTrick = "Rail Bonk", Spin = 0.8f, Flip = 0.6f, Tweak = "Wild", SwitchStep = 2, Presses = false,
+            },
+            // The rally car: four wheels on snow. It drifts (little grip, a long slide) but a push answers soon enough,
+            // and it is the quickest thing on the mountain flat out; the engine keeps it going where the hill gives up
+            // (RiderVehicle). It bounces on its springs off every landing; turned hard across a steep slope at speed, or
+            // landed on its side, it rolls over (Wreck). A jump is the springs' hop; there is little steering in the air.
+            new RideFeel
+            {
+                Name = "RALLY CAR", Vehicle = true, Wreck = "Rolled it!",
+                TurnResponse = 0.85f, TurnRate = 0.85f, Grip = 0.45f, TopSpeed = 1.07f, Pop = 0.55f, AirControl = 0.3f,
+                Bounce = 0.18f, Rails = false,
+                Grabs = new[] { "Window Wave" },
+                GrabBonus = new[] { 100 },
+                GrabCountsAs = new[] { "Indy Melon Mute Method Stalefish Tail Grab" },
+                BoxTrick = "Box Drift", RailTrick = "Rail Bonk", Spin = 0.55f, Flip = 0.5f, Tweak = "Wild", SwitchStep = 2, Presses = false,
+            },
+            // The bear: four legs and claws. It grips like skis and answers at once, a little slower flat out than a
+            // board, but it runs on by itself where the hill flattens (RiderVehicle) and it jumps big. Its gallop bounds
+            // the rider up and down. It cannot balance on a rail; a slam throws you off (and the bear runs on and stops).
+            new RideFeel
+            {
+                Name = "BEAR", Vehicle = true,
+                TurnResponse = 1.15f, TurnRate = 1.0f, Grip = 1.15f, TopSpeed = 0.93f, Pop = 1.2f, AirControl = 0.8f,
+                Rails = false,
+                Grabs = new[] { "Rodeo" },
+                GrabBonus = new[] { 150 },
+                GrabCountsAs = new[] { "Indy Melon Mute Method Stalefish Tail Grab" },
+                BoxTrick = "Bear Slide", RailTrick = "Rail Bonk", Spin = 0.6f, Flip = 0.5f, Tweak = "Wild", SwitchStep = 2, Presses = false,
             },
         };
 

@@ -98,7 +98,7 @@ namespace Summit
         // Every crack is a straight line in plan (bowed and wandering a little), with its own along (u) and across
         // (w) axes; Opening gives its half-width and the line of its middle at a point along it.
 
-        public static void ResetCaches() { Slope.BeforeChange(); crevFor = int.MinValue; featCache.Clear(); Slope.ForgetDrops(); Cliffs.ForgetLedges(); CliffBand.Forget(); Bowl.Forget(); }
+        public static void ResetCaches() { Slope.BeforeChange(); crevFor = int.MinValue; featCache.Clear(); Slope.ForgetDrops(); Cliffs.ForgetLedges(); CliffBand.Forget(); Bowl.Forget(); Lines.Forget(); }
 
         public enum CrevasseKind { Transverse, Chevron, Bergschrund, Splay }
 
@@ -390,7 +390,7 @@ namespace Summit
 
         // ---------------------------------------------------------------- park features
 
-        public enum Kind { Box, Rail }
+        public enum Kind { Box, Rail, Log }   // (a log: a fallen tree on a freeride line, slid like a rail: Lines)
         public struct Feature
         {
             public Kind kind;
@@ -412,14 +412,19 @@ namespace Summit
         static readonly float[] spotSide = { -7f, 7f, -7f, 7f };
         public static readonly float[] ParkKickers = { 78f, 166f };
         static readonly Dictionary<int, Feature[]> featCache = new Dictionary<int, Feature[]>();
+        [System.ThreadStatic] static List<Feature> lineJibsT;
+        static List<Feature> lineJibs => lineJibsT ??= new List<Feature>();
 
         public static Feature[] FeaturesOf(int cycle)
         {
             if (featCache.TryGetValue(cycle, out var list)) return list;
             float zs = First + cycle * Cycle + ParkAt;
-            if (zs + 180f > ClearFrom) { list = new Feature[0]; featCache[cycle] = list; return list; }
-            list = new Feature[spotAt.Length];
-            for (int i = 0; i < list.Length; i++)
+            // (and the feature lines' logs, boxes and rails after the park's: Lines)
+            lineJibs.Clear(); Lines.JibsOf(cycle, lineJibs);
+            if (zs + 180f > ClearFrom) { list = lineJibs.ToArray(); featCache[cycle] = list; return list; }
+            list = new Feature[spotAt.Length + lineJibs.Count];
+            for (int i = 0; i < lineJibs.Count; i++) list[spotAt.Length + i] = lineJibs[i];
+            for (int i = 0; i < spotAt.Length; i++)
             {
                 var k = spotKind[i];
                 float len = k == Kind.Box ? BoxLength : RailLength;
@@ -491,13 +496,14 @@ namespace Summit
             if (Cliffs.Keep(x, z, margin)) return true;
             if (CliffBand.Keep(x, z, margin)) return true;
             if (Bowl.Keep(x, z, margin)) return true;
+            if (Lines.Keep(x, z, margin)) return true;   // a feature line's lane
             return NearFeature(x, z, margin);
         }
 
         /// <summary>On or beside a park feature, or on the run-in to one.</summary>
         public static bool NearFeature(float x, float z, float margin)
         {
-            if (At(z) != Section.Park && At(z + 20f) != Section.Park) return false;
+            if (At(z) != Section.Park && At(z + 20f) != Section.Park && !Lines.JibNear(z)) return false;
             int c = CycleOf(z);
             for (int k = c - 1; k <= c + 1; k++)
             {

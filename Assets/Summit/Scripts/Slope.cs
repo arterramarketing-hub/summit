@@ -132,7 +132,9 @@ namespace Summit
             float y = -z * Fall;
             // the rollers and drops die away over the last stretch, so the finish is a clean straight
             float k = Mathf.Clamp01((FinishZ - z) / 250f);
-            y += k * (6f * (Noise(z * 0.014f, 13.7f) - 0.5f) + 2.6f * (Noise(z * 0.037f, 29.1f) - 0.5f) + 0.8f * (Noise(z * 0.09f, 41.3f) - 0.5f) + Drops(z));
+            // (graded along a feature line's stretch: its short rollers and its benches and roll-overs eased out, the long swell kept: Lines)
+            float keep = 1f - Lines.Grade(z);
+            y += k * (6f * (Noise(z * 0.014f, 13.7f) - 0.5f) + keep * (2.6f * (Noise(z * 0.037f, 29.1f) - 0.5f) + 0.8f * (Noise(z * 0.09f, 41.3f) - 0.5f) + Drops(z)));
             return y;
         }
 
@@ -201,6 +203,7 @@ namespace Summit
             if (Ridge.Has(zs) || Ridge.Has(zs + DropSeg)) return false;   // a roll-over on a crest would throw you off it
             if (Ridge.InCanyons(zs) || Ridge.InCanyons(zs + DropSeg)) return false;   // (nor a bench under a canyon filling back in: its floor would climb)
             if (Cliffs.JumpNear(zs + DropSeg * 0.5f, DropSeg * 0.5f + 20f, out _)) return false;   // nor run into a jump cliff's bench
+            if (Lines.ClaimedAt(zs) || Lines.ClaimedAt(zs + DropSeg)) return false;   // nor on the feature lines' graded stretch (Lines)
             d.s = s;
             d.H = 2f + 7f * Hash01(s, 12, 41);
             d.u0 = 0.35f + 0.4f * Hash01(s, 13, 41); d.w = 0.09f + 0.08f * Hash01(s, 14, 41);   // never a sudden kink
@@ -222,7 +225,7 @@ namespace Summit
                 // (it may run on into the next segment, short of where that one's own roll could start)
                 float nextLip = (s + 1 + 0.35f + 0.4f * Hash01(s + 1, 13, 41) - (0.09f + 0.08f * Hash01(s + 1, 14, 41))) * DropSeg;
                 d.step = Hash01(s, 18, 41) < 0.7f && sz + 26f < nextLip && (sec == Course.Section.Cruise || sec == Course.Section.Danger)
-                         && !Course.InGlacier(sz) && !Cliffs.JumpNear(sz, 25f, out _) && Kicker(Centre(sz), sz - 6f) <= 0f && !NearKicker(sz);
+                         && !Course.InGlacier(sz) && !Cliffs.JumpNear(sz, 25f, out _) && KickerCore(Centre(sz), sz - 6f, false) <= 0f && !NearKicker(sz);
                 if (d.step)
                 {
                     d.stepZ = sz;
@@ -377,7 +380,9 @@ namespace Summit
                 y = Mathf.Lerp(y, yp, pw);
             }
             y = Ridge.Shape(x, z, y);   // a narrow crest with cliffs either side, once a cycle
-            y += LiftLine.HillHeight(x, z);   // the hills under the lift lines that carry a rider up to the cables (LiftHill.cs)
+            // the hills under the lift lines that carry a rider up to the cables (LiftHill.cs) (not while a feature line is
+            // laid: the lines are laid first, on the mountain without them, and the lifts then keep off them)
+            if (!Lines.Laying) y += LiftLine.HillHeight(x, z);
             if (cut) y -= Course.CrevasseCut(x, z);
             return LiftTop.Shape(x, z, Start(x, z, y));   // (the Summit lift's top: its bench, the way into the camp, the far side down to the run)
         }
@@ -564,7 +569,11 @@ namespace Summit
         // a crisp lip, then a long smooth landing below it.
         public const float KickPeriod = 130f, KickRamp = 12f, KickHeight = 2.4f, KickDrop = 5f, KickWidth = 9f;
 
-        public static float Kicker(float x, float z)
+        /// <summary>The kickers' height at (x, z), and the feature lines' (Lines: under the same name, so whatever keeps clear of a kicker keeps clear of them).</summary>
+        public static float Kicker(float x, float z) => KickerCore(x, z, true) + Lines.Height(x, z);
+
+        /// <summary>The cruise kickers and the park's pair (none on a feature line's stretch, unless `lines` is false: for the drops, worked out before the lines).</summary>
+        static float KickerCore(float x, float z, bool lines)
         {
             var sec = Course.At(z);
             if (sec == Course.Section.Park)
@@ -588,6 +597,7 @@ namespace Summit
             if (z0 > FinishZ - 260f) return 0f;
             if (Course.At(z0) != Course.Section.Cruise || Course.At(z0 + KickRamp + KickDrop) != Course.Section.Cruise) return 0f;
             if (Cliffs.JumpNear(z0, 30f, out _)) return 0f;   // the jump cliff is the jump here
+            if (lines && Lines.NoKicker(z0)) return 0f;   // a feature line's stretch: its own hits are the jumps
             return KickShape(x, z, z0, Centre(z0) + side, 1f);
         }
 
@@ -618,7 +628,7 @@ namespace Summit
                 // (only one that is built: Kicker's own rules. A bot aimed at the cell's kicker on a cliff band's traverse,
                 // or in the park, the danger stretch or a ridge, where there is none)
                 if (z0 > FinishZ - 260f || Course.At(z0) != Course.Section.Cruise || Course.At(z0 + KickRamp + KickDrop) != Course.Section.Cruise
-                    || Cliffs.JumpNear(z0, 30f, out _)) continue;
+                    || Cliffs.JumpNear(z0, 30f, out _) || Lines.NoKicker(z0)) continue;
                 float cx = Centre(z0) + (Hash01((int)cell, 4, 9) - 0.5f) * 18f;
                 at = new Vector3(cx, Height(cx, z0 + KickRamp), z0 + KickRamp);
                 return true;

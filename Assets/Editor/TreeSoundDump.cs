@@ -4,8 +4,8 @@ using UnityEngine;
 using Summit;
 
 /// <summary>
-/// treesound: the wood-breaking layers (TreeSounds) written out as WAV files to listen to and measure, and how long
-/// making them takes.   Unity -batchmode -nographics -projectPath . -executeMethod TreeSoundDump.Run   (TREESOUND_OUT=dir)
+/// treesound: the wood-breaking layers (TreeSounds: recorded takes since treesfx) written out as WAV files to listen to and measure, and how long
+/// loading them takes.   Unity -batchmode -nographics -projectPath . -executeMethod TreeSoundDump.Run   (TREESOUND_OUT=dir)
 /// </summary>
 public static class TreeSoundDump
 {
@@ -24,7 +24,7 @@ public static class TreeSoundDump
                 var d = new float[c.samples]; c.GetData(d, 0);
                 Wav(Path.Combine(dir, $"{name}_{k}.wav"), d, c.frequency);
             }
-        Debug.Log($"TREESOUND made {sets.Length} layers, {samples} samples ({samples * 4 / 1048576f:0.0} MB as float) in {ms:0} ms (editor)");
+        Debug.Log($"TREESOUND loaded {sets.Length} layers ({sets[0].Item2.Length}/{sets[1].Item2.Length}/{sets[2].Item2.Length}/{sets[3].Item2.Length}/{sets[4].Item2.Length} takes), {samples} samples ({samples * 4 / 1048576f:0.0} MB as float) in {ms:0} ms (editor)");
         EditorApplication.Exit(0);
     }
 

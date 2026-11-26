@@ -70,19 +70,19 @@ namespace Summit
             score = NewText("Score", safe, new Vector2(0.5f, 1f), new Vector2(0f, -34f), 84, TextAnchor.UpperCenter);
             timer = NewText("Timer", safe, new Vector2(0f, 1f), new Vector2(40f, -104f), 46, TextAnchor.UpperLeft);
             timer.color = Brand.Snow;
-            medical = NewText("Medical", safe, new Vector2(1f, 1f), new Vector2(-40f, -232f), 40, TextAnchor.UpperRight);
+            medical = NewText("Medical", safe, new Vector2(1f, 1f), new Vector2(-40f, -232f - PauseRoom), 40, TextAnchor.UpperRight);
             medical.color = Brand.Alert;
             prompt = NewText("Prompt", safe, new Vector2(0.5f, 0f), new Vector2(0f, 230f), 58, TextAnchor.LowerCenter);
             altitude = NewText("Altitude", safe, new Vector2(0f, 1f), new Vector2(40f, -160f), 40, TextAnchor.UpperLeft);
             altitude.color = Brand.SnowMuted;
             // the avalanche's distance and bar, on their own canvas too: both change every frame while it's on its way
             var slideBox = NestedCanvas("Slide", safe);
-            slide = NewText("Slide", slideBox, new Vector2(1f, 1f), new Vector2(-40f, -40f), 44, TextAnchor.UpperRight);
+            slide = NewText("Slide", slideBox, new Vector2(1f, 1f), new Vector2(-40f, -40f - PauseRoom), 44, TextAnchor.UpperRight);
 
             var barBg = NewImage("SlideBar", slideBox, new Color(0f, 0f, 0f, 0.35f));
             slideBar = barBg.gameObject;
             slideBar.SetActive(false);   // (shown only while the avalanche is on its way: SetRun)
-            Place(barBg.rectTransform, new Vector2(1f, 1f), new Vector2(-40f, -104f), new Vector2(300f, 16f), new Vector2(1f, 1f));
+            Place(barBg.rectTransform, new Vector2(1f, 1f), new Vector2(-40f, -104f - PauseRoom), new Vector2(300f, 16f), new Vector2(1f, 1f));
             slideFill = NewImage("Fill", barBg.transform, new Color(1f, 1f, 1f, 0.95f));
             var fr = slideFill.rectTransform;
             fr.anchorMin = new Vector2(0f, 0f);
@@ -119,7 +119,7 @@ namespace Summit
             hitMark.raycastTarget = false;
             hitMark.enabled = false;
             // falls left this run: three red crosses, top right under the slide bar
-            fallsLabel = NewText("FallsLabel", safe, new Vector2(1f, 1f), new Vector2(-40f, -136f), 30, TextAnchor.UpperRight);
+            fallsLabel = NewText("FallsLabel", safe, new Vector2(1f, 1f), new Vector2(-40f, -136f - PauseRoom), 30, TextAnchor.UpperRight);
             fallsLabel.text = "";
             fallPips = new Image[4];   // three, and a fourth with the spare-helmet upgrade
             var cross = MakeCross(64);
@@ -127,7 +127,7 @@ namespace Summit
             {
                 var pip = NewImage("Fall" + i, safe, Brand.Alert);
                 pip.sprite = cross;
-                Place(pip.rectTransform, new Vector2(1f, 1f), new Vector2(-40f - i * 52f, -176f), new Vector2(42f, 42f), new Vector2(1f, 1f));
+                Place(pip.rectTransform, new Vector2(1f, 1f), new Vector2(-40f - i * 52f, -176f - PauseRoom), new Vector2(42f, 42f), new Vector2(1f, 1f));
                 fallPips[i] = pip;
             }
             // the timed power-ups running (Mountain Zoom, Super Jump, Invincible): a name, the seconds left
@@ -159,8 +159,10 @@ namespace Summit
             playBtn = Brand.Button("PlayButton", safe, "PLAY", Brand.Kind.Primary, new Vector2(0.5f, 0.5f), new Vector2(0f, -90f), new Vector2(560f, 132f), out playLabel);
             playLabel.fontSize = 40;
 
-            // the pause: a small square with the two bars, no word (bottom middle, as it was)
-            restartBtn = Brand.IconButton("RestartButton", safe, Brand.Pause, new Vector2(0.5f, 0f), new Vector2(0f, 40f), new Vector2(0.5f, 0f));
+            // the pause: a small square with the two bars, no word, in the top right corner (steerB; where the camp and
+            // the start pad keep their settings button, which is never up during a run). The right-hand column (the
+            // avalanche, the falls, the bill, the combo) starts under it (PauseRoom)
+            restartBtn = Brand.IconButton("RestartButton", safe, Brand.Pause, new Vector2(1f, 1f), new Vector2(-Brand.Margin, -Brand.Margin), new Vector2(1f, 1f));
             BuildPause();
             modeBtn = Brand.Button("ModeButton", safe, "", Brand.Kind.Secondary, new Vector2(0.5f, 0.5f), new Vector2(0f, -258f), new Vector2(560f, Brand.Control), out modeLabel);
             riderBtn = Brand.Button("RiderButton", safe, "", Brand.Kind.Secondary, new Vector2(0.5f, 0.5f), new Vector2(0f, -258f - Brand.Control - 20f), new Vector2(560f, Brand.Control), out riderLabel);
@@ -278,7 +280,9 @@ namespace Summit
         /// <summary>The pause menu's settings: every one of them, as on the start page.</summary>
         public SettingsSheet PauseSettings { get; private set; }
         /// <summary>The settings' tabs, in the order SummitGame.FillSettings adds them.</summary>
-        public static readonly string[] TabName = { "VIEW", "LOOK", "GAME", "SOUND" };
+        /// <summary>(steerB) How far the HUD's right-hand column starts under the top, to clear the pause button there.</summary>
+        public const float PauseRoom = Brand.Control + 24f;
+        public static readonly string[] TabName = { "VIEW", "LOOK", "GAME", "SOUND", "TUNE" };
 
         void BuildPause()
         {
@@ -291,6 +295,7 @@ namespace Summit
             shade.rectTransform.anchorMin = new Vector2(0f, 1f); shade.rectTransform.anchorMax = Vector2.one;
             shade.rectTransform.pivot = new Vector2(0.5f, 1f); shade.rectTransform.sizeDelta = new Vector2(0f, 760f);
             PauseSettings = new SettingsSheet(root, false);
+            PauseSettings.Resized = () => { if (pausePanel != null && pausePanel.activeSelf) LayoutPause(); };   // (the TUNE tab is taller)
             // over the sheet: PAUSED, and the two ways on, set as the start page's VISIT CAMP | GO FOR A RUN
             pauseTop = SettingsSheet.New("PauseTop", root);
             Place(pauseTop, new Vector2(0.5f, 0f), Vector2.zero, new Vector2(SettingsSheet.Width, 0f), new Vector2(0.5f, 0f));
@@ -348,6 +353,8 @@ namespace Summit
         public bool OnPauseRestart(Vector2 p) => Inside(againBtn, p);
         /// <summary>A finger on the pause menu's settings: a tab or a row, stepped. True if it hit one.</summary>
         public bool OnPauseSettings(Vector2 p) => PauseSettings.Tap(p);
+        /// <summary>(steerB) Each frame the menu is up: a TUNE slider held follows the finger. True while one is held.</summary>
+        public bool PauseDrag(Vector2 p, bool held) => pausePanel != null && pausePanel.activeSelf && PauseSettings.Drag(p, held);
         /// <summary>Read every setting again, if the menu is up (after a setting changed from anywhere).</summary>
         public void RefreshPause() { if (pausePanel != null && pausePanel.activeSelf) PauseSettings.Refresh(); }
         public int PauseTab => PauseSettings.Tab;

@@ -34,7 +34,7 @@ public static class SteerFightProbe
             Debug.Log($"FIGHT chain: RiderInput low-pass 60/s, its dead zone 0.025 + Curve (half the throw {RiderInput.Curve(0.5f):0.00}); Rider.Shape dead zone {Rider.DeadZone:0.00}, expo {Rider.InputExpo:0.0} " +
                       $"(half the thumb's throw asks for {Rider.Shape(RiderInput.Curve(0.5f)):0.00} of a whole drag, a quarter {Rider.Shape(RiderInput.Curve(0.25f)):0.00}); ramp {Rider.RampTime:0.00} s, settle {Rider.SettleTime:0.00} s, edge least {Rider.EdgeLeast:0} m/s^2; " +
                       $"a whole drag {Rider.SideShare:0.00} of the speed ({Rider.SideLeast:0}..{Rider.SideCap:0} m/s), never past {Rider.SideAngle * Mathf.Rad2Deg:0} deg off the fall line; fall line lag {Rider.FallLineLag:0.00} s; " +
-                      $"drawn nose {Rider.YawShare:0.0} of the line, capped {Rider.YawCap * Mathf.Rad2Deg:0} deg, {Rider.YawQuick:0}/s; camera 0.7 of the travel, ease {ChaseCamera.YawEase:0.00} s; tuck asks 0.7");
+                      $"drawn nose {Rider.YawShare:0.0} of the line, capped {Rider.YawCap * Mathf.Rad2Deg:0} deg, {Rider.YawQuick:0}/s; camera {ChaseCamera.TravelShare:0.00} of the travel, ease {ChaseCamera.YawEase:0.00} s; tuck asks 0.7");
             var sites = FindSites();
             foreach (var s in sites)
             {
@@ -148,14 +148,14 @@ public static class SteerFightProbe
             int pre = flip ? 120 : 0;
             // (flip: a second held the other way first)
             for (int i = 0; i < pre; i++) { steer = Mathf.Lerp(steer, pass == 0 ? 0f : -drag, 1f - Mathf.Exp(-Dt * 60f)); r.Steer = steer; Step(v); }
-            cy = Travel() * Mathf.Deg2Rad * 0.7f;
+            cy = Travel() * Mathf.Deg2Rad * ChaseCamera.TravelShare;
             for (int i = 0; i < N; i++)
             {
                 float to = pass == 0 ? 0f : (flip ? drag : (i < 180 ? drag : 0f));
                 steer = Mathf.Lerp(steer, to, 1f - Mathf.Exp(-Dt * 60f));   // (RiderInput's own low-pass)
                 r.Steer = steer; Step(v);
                 float tr = Travel();
-                cy = Mathf.SmoothDamp(cy, Mathf.Clamp(tr * Mathf.Deg2Rad, -1.4f, 1.4f) * 0.7f, ref cyv, ChaseCamera.YawEase, Mathf.Infinity, Dt);
+                cy = Mathf.SmoothDamp(cy, Mathf.Clamp(tr * Mathf.Deg2Rad, -1.4f, 1.4f) * ChaseCamera.TravelShare, ref cyv, ChaseCamera.YawEase, Mathf.Infinity, Dt);
                 if (pass == 0) { base_[i] = tr; camB[i] = cy * Mathf.Rad2Deg; }
                 else { line[i] = tr; nose[i] = r.Heading * Mathf.Rad2Deg; fall[i] = r.FallLine * Mathf.Rad2Deg; cam[i] = cy * Mathf.Rad2Deg; side[i] = r.Side; }
                 if (pass == 1 && i == 100) full = r.SideFull(r.Speed);

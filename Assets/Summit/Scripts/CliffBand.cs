@@ -96,7 +96,8 @@ namespace Summit
         static bool Eligible(int cycle)
         {
             float zb = Course.First + cycle * Course.Cycle;
-            return zb + From > Course.GlacierBottom + 80f && zb + 880f < Course.ClearFrom;   // (off the glacier's crevasses, short of the finish)
+            return zb + From > Course.GlacierBottom + 80f && zb + 880f < Course.ClearFrom   // (off the glacier's crevasses, short of the finish)
+                   && !Lines.Claims(cycle);   // (nor a stretch the feature lines have: Lines)
         }
 
         static bool Make(int c, float side, out Band b)

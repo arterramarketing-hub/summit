@@ -15,7 +15,7 @@ namespace Summit
     /// </summary>
     public class SettingsSheet
     {
-        public const float Width = 940f, RowHeight = 104f;
+        public const float Width = 940f, RowHeight = 104f, SliderHeight = 76f, TrackW = 300f;
         const float FirstRow = 232f, MinHeight = 900f, Foot = 40f;
 
         public static readonly Color Ink = Brand.Snow, Quiet = Brand.SnowMuted, Hair = Brand.Hair;
@@ -25,6 +25,10 @@ namespace Summit
             public int tab; public string label; public System.Func<string> value; public System.Action<int> step;
             public bool toggle; public System.Func<bool> live;
             public RectTransform rect, block; public Text name, val; public Image left, right, track, knob;
+            // (steerB) a slider: where it sits (0..1), set from a finger along it, and the drag let go; a button: one word
+            public bool slider, button; public System.Func<float> at; public System.Action<float> setAt; public System.Action done;
+            public Image fill, rail;
+            public float Height => slider || button ? SliderHeight : RowHeight;
         }
         readonly List<Row> rows = new List<Row>();
         readonly List<string> tabNames = new List<string>();
@@ -33,6 +37,9 @@ namespace Summit
         Image tabMark;
         int tab;
         bool built;
+        Row dragging;
+        /// <summary>The sheet's height changed (a tab of another length shown): what sits on top of it moves with it.</summary>
+        public System.Action Resized;
 
         readonly RectTransform frame;   // the screen, edge to edge, in the canvas's units
         readonly bool closable;
@@ -75,15 +82,33 @@ namespace Summit
             rows.Add(new Row { tab = inTab, label = label, value = value, step = step, toggle = toggle, live = live });
         }
 
-        /// <summary>How tall the sheet stands above the home indicator: room for its longest tab.</summary>
+        /// <summary>
+        /// (steerB) A slider: its name, its value in words, where it sits (0..1), what a finger along it sets, and what
+        /// happens when the drag is let go (keep it). Dragged with `Drag` while the finger stays down.
+        /// </summary>
+        public void AddSlider(int inTab, string label, System.Func<string> value, System.Func<float> at, System.Action<float> setAt, System.Action done)
+        {
+            rows.Add(new Row { tab = inTab, label = label, value = value, slider = true, at = at, setAt = setAt, done = done });
+        }
+
+        /// <summary>(steerB) A row that does one thing when tapped: `word` in the brand's gold on its right.</summary>
+        public void AddButton(int inTab, string label, string word, System.Action press)
+        {
+            rows.Add(new Row { tab = inTab, label = label, value = () => word, button = true, step = d => press() });
+        }
+
+        /// <summary>How tall the sheet stands above the home indicator: room for the tab shown (steerB: the TUNE tab's
+        /// sliders are many and shorter; the other tabs keep the height they had).</summary>
         public float Height
         {
             get
             {
-                var count = new int[Mathf.Max(1, tabNames.Count)];
-                int most = 0;
-                foreach (var r in rows) most = Mathf.Max(most, ++count[r.tab]);
-                return Mathf.Max(MinHeight, FirstRow + (most - 0.5f) * RowHeight + Foot);
+                float most = 0f, here = 0f;
+                var sum = new float[Mathf.Max(1, tabNames.Count)];
+                foreach (var r in rows) { sum[r.tab] += r.Height; if (r.tab == tab) here = sum[r.tab]; }
+                foreach (var r in rows) if (!r.slider && !r.button) most = Mathf.Max(most, sum[r.tab]);
+                float rows_ = Mathf.Max(most, here);
+                return Mathf.Max(MinHeight, FirstRow + rows_ - 0.5f * RowHeight + Foot);
             }
         }
 
@@ -114,13 +139,39 @@ namespace Summit
             tabMark = Img("TabMark", Safe, Brand.Gold);   // the selected tab: the brand's accent
             Place(tabMark.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -166f), new Vector2(72f, 4f), new Vector2(0.5f, 0.5f));
             var count = new int[tabNames.Count];
+            var down = new float[tabNames.Count];
             foreach (var r in rows)
             {
                 int i = count[r.tab]++;
+                float y = -FirstRow - down[r.tab] - (r.Height - RowHeight) * 0.5f;
+                down[r.tab] += r.Height;
                 r.rect = New(r.label, Safe);
-                Place(r.rect, new Vector2(0.5f, 1f), new Vector2(0f, -FirstRow - i * RowHeight), new Vector2(Width, RowHeight), new Vector2(0.5f, 0.5f));
+                Place(r.rect, new Vector2(0.5f, 1f), new Vector2(0f, y), new Vector2(Width, r.Height), new Vector2(0.5f, 0.5f));
                 r.name = Brand.Line("Name", r.rect, Brand.Type.Label, TextAnchor.MiddleLeft, Quiet, new Vector2(0f, 0.5f), new Vector2(26f, 0f), 460f);
                 r.name.text = r.label;
+                if (r.slider || r.button)
+                {
+                    // (steerB) a slider: a rail with the brand's gold up to where it sits, a knob, the value beside it
+                    r.block = New("Value", r.rect);
+                    Place(r.block, new Vector2(1f, 0.5f), new Vector2(-8f, 0f), new Vector2(TrackW + 190f, r.Height), new Vector2(1f, 0.5f));
+                    r.val = Brand.Line("Text", r.block, Brand.Type.Body, TextAnchor.MiddleRight, r.button ? Brand.Gold : Ink, new Vector2(1f, 0.5f), new Vector2(-18f, 0f), 170f);
+                    r.val.rectTransform.pivot = new Vector2(1f, 0.5f);
+                    if (r.slider)
+                    {
+                        r.rail = Img("Rail", r.block, Brand.A(Brand.Snow, 0.18f), Brand.Rounded);
+                        Place(r.rail.rectTransform, new Vector2(0f, 0.5f), new Vector2(10f, 0f), new Vector2(TrackW, 10f), new Vector2(0f, 0.5f));
+                        r.fill = Img("Fill", r.rail.transform, Brand.Gold, Brand.Rounded);
+                        Place(r.fill.rectTransform, new Vector2(0f, 0.5f), Vector2.zero, new Vector2(0f, 10f), new Vector2(0f, 0.5f));
+                        r.knob = Img("Knob", r.rail.transform, Ink, Brand.Disc);
+                        Place(r.knob.rectTransform, new Vector2(0f, 0.5f), Vector2.zero, new Vector2(40f, 40f), new Vector2(0.5f, 0.5f));
+                    }
+                    if (i > 0)
+                    {
+                        var hl0 = Img("Hair", r.rect, new Color(1f, 1f, 1f, 0.07f));
+                        Place(hl0.rectTransform, new Vector2(0.5f, 1f), Vector2.zero, new Vector2(Width, 2f), new Vector2(0.5f, 0.5f));
+                    }
+                    continue;
+                }
                 r.block = New("Value", r.rect);
                 Place(r.block, new Vector2(1f, 0.5f), new Vector2(-8f, 0f), new Vector2(470f, RowHeight), new Vector2(1f, 0.5f));
                 r.val = Brand.Line("Text", r.block, Brand.Type.Body, TextAnchor.MiddleCenter, Ink, new Vector2(0.5f, 0.5f), Vector2.zero, 360f);
@@ -176,7 +227,10 @@ namespace Summit
         public void ShowTab(int k)
         {
             Build();
+            float was = Height;
             tab = Mathf.Clamp(k, 0, Mathf.Max(0, tabNames.Count - 1));
+            dragging = null;
+            if (!Mathf.Approximately(was, Height)) { Layout(); Resized?.Invoke(); }
             foreach (var r in rows) r.rect.gameObject.SetActive(r.tab == tab);
             for (int i = 0; i < tabText.Count; i++) tabText[i].color = i == tab ? Ink : Quiet;
             if (tabBtn.Count > 0) tabMark.rectTransform.anchoredPosition = new Vector2(tabBtn[tab].anchoredPosition.x, -166f);
@@ -190,6 +244,16 @@ namespace Summit
             {
                 bool on = r.live == null || r.live();
                 string v = r.value != null ? r.value() : "";
+                if (r.button) { r.val.text = v; r.val.color = Brand.Gold; continue; }
+                if (r.slider)
+                {
+                    r.val.text = v;
+                    float t = Mathf.Clamp01(r.at());
+                    r.fill.rectTransform.sizeDelta = new Vector2(TrackW * t, 10f);
+                    r.knob.rectTransform.anchoredPosition = new Vector2(TrackW * t, 0f);
+                    r.knob.color = r == dragging ? Brand.Gold : Ink;
+                    continue;
+                }
                 bool sw = r.toggle && (v == "ON" || v == "OFF");
                 r.val.text = v;
                 r.val.enabled = !sw;
@@ -234,6 +298,15 @@ namespace Summit
             {
                 if (r.tab != tab || !Inside(r.rect, at, ui)) continue;
                 if (r.live != null && !r.live()) return true;
+                if (r.slider)
+                {
+                    // (a finger on the rail, or anywhere right of the name: the slider follows it while it stays down)
+                    if (!Inside(r.block, at, ui)) return true;
+                    dragging = r;
+                    SlideTo(r, at, ui);
+                    Clicked?.Invoke();
+                    return true;
+                }
                 int dir = 1;
                 if (!r.toggle && Inside(r.block, at, ui))
                 {
@@ -247,6 +320,37 @@ namespace Summit
             }
             return false;
         }
+
+        /// <summary>
+        /// (steerB) Each frame the finger is down after a `Tap` on a slider: the slider follows it; let go, its `done` runs
+        /// (the value kept). True while a slider is held.
+        /// </summary>
+        public bool Drag(Vector2 at, bool held)
+        {
+            if (dragging == null) return false;
+            var r = dragging;
+            if (!held) { dragging = null; r.done?.Invoke(); Refresh(); return false; }
+            SlideTo(r, at, UiCam);
+            return true;
+        }
+        /// <summary>A slider is held.</summary>
+        public bool Dragging => dragging != null;
+
+        void SlideTo(Row r, Vector2 at, Camera ui)
+        {
+            RectTransformUtility.ScreenPointToLocalPointInRectangle(r.rail.rectTransform, at, ui, out Vector2 lp);
+            float t = Mathf.Clamp01((lp.x - r.rail.rectTransform.rect.xMin) / TrackW);
+            r.setAt(t);
+            Refresh();
+        }
+        /// <summary>For the test tools: a screen point along a slider's rail, t of the way.</summary>
+        public Vector2 SliderPoint(int i, float t)
+        {
+            Build();
+            var rr = rows[i].rail.rectTransform;
+            return RectTransformUtility.WorldToScreenPoint(UiCam, rr.TransformPoint(new Vector3(rr.rect.xMin + TrackW * t, 0f, 0f)));
+        }
+        public bool RowSlider(int i) => rows[i].slider;
 
         /// <summary>A touch answers: the thing touched dips and comes back (`Step` each frame plays it).</summary>
         public void Press(RectTransform r) { pressed = r; pressT = 0.22f; Clicked?.Invoke(); }

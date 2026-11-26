@@ -183,6 +183,11 @@ public static class BandTest
         if (notDeadly > 0) Fail($"seed{seed} cycle{b.cycle}: {notDeadly} places below the tall band not marked deadly");
     }
 
+    /// <summary>(bandfix2) How far out past the band's edge, at the low place, the optional air is aimed: far enough that the board
+    /// crosses the edge across it rather than slicing along it (aimed 2 m out, it left nearly along the band and came down on
+    /// the face at up to 60 deg). BAND_DROPOUT to try others.</summary>
+    static readonly float DropOut = float.TryParse(System.Environment.GetEnvironmentVariable("BAND_DROPOUT"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float d_) ? d_ : 10f;
+
     static void Ride(int seed, CliffBand.Band b, float v0, System.Action<int> frame, bool hands = false, bool drop = false)
     {
         rides++;
@@ -208,11 +213,20 @@ public static class BandTest
             if (drop && r.Z > b.l0 - 40f && !dropped) { dropping = true; }
             if (dropping)
             {
-                var lip = CliffBand.PointAt(b, b.l0, CliffBand.EdgeAt(b.l0) + 2f);
+                var lip = CliffBand.PointAt(b, b.l0, CliffBand.EdgeAt(b.l0) + DropOut);
                 float aim = Mathf.Atan2(lip.x - r.X, lip.y - r.Z);
-                r.Steer = Rider.Unshape(Mathf.Clamp((aim - r.TravelHeading) * 2.5f, -1f, 1f));
+                // (bandfix2: asked as the way to be going, through the steering's own mapping (CarveBot.ForSide, steerB's
+                // push hold included), not as a heading error through the input's curve undone: that loop reached the edge
+                // 17-19 m past the low place at speed, over the tall band)
+                Vector3 u = r.Velocity;
+                r.Steer = CarveBot.ForSide(r, Mathf.Max(u.z, 1f) * Mathf.Tan(Mathf.Clamp(aim, -1.3f, 1.3f)));
+                if (r.Airborne && !dropped) Debug.Log($"BAND seed{seed} cycle{b.cycle} the drop leaves {Vector2.Distance(new Vector2(r.X, r.Z), CliffBand.PointAt(b, b.l0, CliffBand.EdgeAt(b.l0))):0.0} m from the low place's edge, {Mathf.Abs(Slope.Across(r.X, r.Z)) - CliffBand.EdgeAt(r.Z):+0.0;-0.0} m past the edge, going {(r.TravelHeading - Mathf.Atan2(lip.x - r.X, lip.y - r.Z)) * Mathf.Rad2Deg:+0;-0} deg off the aim, {r.Speed * 3.6f:0} km/h, finger {r.Steer:+0.00;-0.00}");
                 if (r.Airborne) dropped = true; if (dropped && !r.Airborne) dropping = false;
             }
+            // (bandfix2) down off the low place: ridden on as it landed, hands off, to 30 m past it. The bot's own line is
+            // the run's middle, up on the bench above the band: steered back toward it, a good landing rode straight into
+            // the rock and the trees at the band's foot
+            else if (dropped) r.Steer = 0f;
             r.TestContacts(Dt);
             r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
             if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }

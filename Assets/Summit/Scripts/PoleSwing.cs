@@ -57,8 +57,8 @@ namespace Summit
             aimL = Air + new Vector3(0.10f * sw2, 0.12f * sw, 0.34f * sw);
             aimR = Air + new Vector3(-0.10f * sw2, -0.12f * sw, -0.34f * sw);
             aimL = Vector3.Lerp(aimL, Tuck, fl); aimR = Vector3.Lerp(aimR, Tuck, fl);
-            if (grabHand == 0) aimL = Vector3.Lerp(aimL, Grab, grab);
-            else if (grabHand == 1) aimR = Vector3.Lerp(aimR, Grab, grab);
+            if (grabHand == 0 || grabHand == 2) aimL = Vector3.Lerp(aimL, Grab, grab);
+            if (grabHand == 1 || grabHand == 2) aimR = Vector3.Lerp(aimR, Grab, grab);
             var forward = Trail + new Vector3(0.15f, 0f, 0.30f);
             float ready = Sm(0.72f, 0.95f, k) * (1f - fl);
             aimL = Vector3.Lerp(aimL, forward, ready); aimR = Vector3.Lerp(aimR, forward, ready);

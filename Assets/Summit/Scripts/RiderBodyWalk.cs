@@ -81,7 +81,7 @@ namespace Summit
                 ShowRide();
                 return false;
             }
-            if (Tube || sledOn) { ShowRide(); return false; }
+            if (Tube || sledOn || (rideGear && Rides.Of(Ride).Vehicle)) { ShowRide(); return false; }   // (the toboggan and the fun rides go up on foot)
             if (!gearOut)
             {
                 gearOut = true;

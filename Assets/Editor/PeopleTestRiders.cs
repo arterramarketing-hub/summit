@@ -209,6 +209,10 @@ public static partial class PeopleTest
         EditorApplication.Exit(ok ? 0 : 1);
     }
 
+    static readonly bool Trace = System.Environment.GetEnvironmentVariable("RIDERS_TRACE") == "1";
+    static readonly Dictionary<int, Queue<string>> hist = new Dictionary<int, Queue<string>>();
+    static readonly HashSet<int> traced = new HashSet<int>();
+
     /// <summary>Well inside the picture (not at its edges, where things come in and go out as the view moves).</summary>
     static bool Deep(Camera cam, Vector3 at)
     {
@@ -241,6 +245,13 @@ public static partial class PeopleTest
                 if (was.air <= 0f && r.air <= 0f && run > 0.05f && drop > run * 1.5f + 0.2f) { below = true; }
             }
             st.last[r.serial] = (r.pos, r.air, f, r.drawn);
+            if (Trace)
+            {
+                if (!hist.TryGetValue(r.serial, out var q)) hist[r.serial] = q = new Queue<string>();
+                q.Enqueue($"f{f} {r.act} ({x - Slope.Centre(z):0.00}, {z:0.0}) y {r.pos.y:0.00} g {r.ground:0.00} air {r.air:0.00} airV {r.airV:0.0} gV {r.groundV:0.0} sp {r.speed:0.0} hd {r.heading:0.00} lane {r.lane:0.0}/{r.laneMid:0.0} kick {Slope.Kicker(x, z):0.00} keep {Lines.Keep(x, z, 0f)} grade {Lines.Grade(z):0.00} near {r.near != null} drawn {r.drawn}");
+                while (q.Count > 40) q.Dequeue();
+                if (r.air > 3f && traced.Add(r.serial)) Debug.Log("RIDERS-TRACE " + r.look.name + "\n  " + string.Join("\n  ", q));
+            }
             if (r.air > 3f) below = true;   // (flown off a drop: more than a hop or a roll)
             if (crev || below) { st.inHole++; if (st.holes.Count < 6 && (st.holes.Count == 0 || !st.holes[st.holes.Count - 1].StartsWith(r.look.name + " "))) st.holes.Add($"{r.look.name} {r.act} at ({x - Slope.Centre(z):0.0}, {z:0}) {(crev ? $"on a crack at {r.speed:0.0} m/s" : "")}{(below ? (r.air > 3f ? $"flying {r.air:0} m up off a drop (y {r.pos.y:0.0}, snow {r.ground:0.0}, drawn snow {Slope.DrawnHeight(x, z):0.0}, up {r.airV:0.0} m/s, snow's rate {r.groundV:0.0}, {r.speed:0.0} m/s, drawn {r.drawn}, d {r.d:0}, track {r.trail != null})" : "down a wall") : "")} [{Course.At(z)}, half {Slope.HalfAt(z):0}]"); }
             if (f % 3 == r.id % 3 && InThing(x, z, out string what)) { st.near.Add((new Vector3(x, r.pos.y, z), $"{r.look.name} {r.act} at ({x - Slope.Centre(z):0.0}, {z:0}): {what}")); }

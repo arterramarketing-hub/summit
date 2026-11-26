@@ -233,7 +233,7 @@ namespace Summit
         public void ResetAt(float x, float z)
         {
             var p = new Vector3(x, Slope.DrawnHeight(x, z) + R, z);
-            FreeHitUsed = false; PeopleHit = 0;
+            FreeHitUsed = false; PeopleHit = 0; TreeGlances = 0;
             Body.isKinematic = true;
             rb.position = p;
             transform.position = p;
@@ -243,7 +243,7 @@ namespace Summit
             Airborne = false; Crashed = false; Running = false; Grinding = false; pipeAir = false;
             HasCrashFollow = false; rb.detectCollisions = true; StayDown = false; HoldCrash = false;
             AirTime = 0f; Tuck = 0f; Carve = 0f; Skid = 0f; Peak = 0f; AboveGround = 0f;
-            Lean = 0f; edge = 0f; edgeVel = 0f; airTurn = 0f; YawRate = 0f; FallLine = 0f; PathSlope = 0f; groundKnown = false; faceSlide = false; yawSmooth = 0f; RunNow = 0f;
+            Lean = 0f; edge = 0f; edgeVel = 0f; airTurn = 0f; sideFrom = 0f; pushing = false; YawRate = 0f; FallLine = 0f; PathSlope = 0f; groundKnown = false; faceSlide = false; yawSmooth = 0f; RunNow = 0f;
             Slip = 0f; Side = 0f; sideNow = 0f; easeFor = 99f; fallSeen = 0f; fallClock = 0;
             latSmooth = 0f; biteNow = 0f; deepIn = 0f; bodyLean = 0f; bodyLeanVel = 0f; crouchNow = 0f; crouchVel = 0f; Sink = 0f; SideEdge = 0f; SideSlope = 0f; Sliding = false; wasSliding = false;
             ClearTrick(); SwitchOff(); grindScoring = false; LandSpin = 0f; LandFlip = 0f; GrindYaw = 0f; GrindPress = 0f; TrickX = TrickY = 0f; GrabHeld = false;
@@ -255,12 +255,12 @@ namespace Summit
             // (and the clocks behind the wobble and the churn: carried over, the same landing swung the board a
             // different way depending on every wobble before it, so a ride never came out the same twice)
             churnT = 0f; OnRock = false; rockScrapeT = 0f; popHold = 0f; missClock = 0f; lastMiss = 0;
-            RoofReset(); RideOverReset();
+            RoofReset(); RideOverReset(); LineReset(); VehicleReset();
         }
 
         public void Begin()
         {
-            FreeHitUsed = false; PeopleHit = 0;   // (a free hit each run: ridercrash)
+            FreeHitUsed = false; PeopleHit = 0; TreeGlances = 0;   // (a free hit each run: ridercrash)
             Running = true;
             Body.isKinematic = false;
             rb.linearVelocity = new Vector3(Mathf.Sin(Heading), 0f, Mathf.Cos(Heading)) * 5f;
@@ -372,7 +372,9 @@ namespace Summit
             rb.linearVelocity = v;
             lastV = v;
             contactsAsked = false;
+            if (!Crashed && feel.Vehicle) VehicleAfter(dt, p);   // (the car's springs, the gallop in the air: RiderVehicle)
             if (!Crashed) CloseCalls(dt, p);
+            LineWatch(dt);   // a feature line's hits, chained (RiderLines)
         }
 
         // ---------------------------------------------------------------- on the snow (GroundStep, the edge and the carve: RiderMove.cs)
@@ -613,7 +615,7 @@ namespace Summit
         {
             if (Tube) return false;
             // the park's boxes and rails, or a chalet's ridge (a box along the top of the roof: Roofs)
-            bool park = Course.At(p.z) == Course.Section.Park || Course.At(p.z + 10f) == Course.Section.Park;
+            bool park = Course.At(p.z) == Course.Section.Park || Course.At(p.z + 10f) == Course.Section.Park || Lines.JibNear(p.z);
             if (!park && !Roofs.Near(p, 2f)) return false;
             if (park) Course.FeaturesNear(p.z, grindNear); else Roofs.RidgesNear(p, grindNear);
             foreach (var feat in grindNear)
@@ -636,7 +638,7 @@ namespace Summit
                 // it, and a rider crossing a box at 90 km/h was stopped in his tracks onto a 30 km/h slide
                 float flatSp = new Vector2(v.x, v.z).magnitude, flatAlong = Vector2.Dot(new Vector2(v.x, v.z), new Vector2(dir.x, dir.z).normalized);
                 if (flatAlong < 0.707f * flatSp) continue;
-                if (!feel.Rails && feat.kind == Course.Kind.Rail)
+                if (!feel.Rails && feat.kind != Course.Kind.Box)
                 {
                     // a toboggan cannot balance on a rail: it clatters into the end of it and goes on by, slower
                     // and wobbling. Worth a few points for the nerve, and it counts
@@ -662,7 +664,7 @@ namespace Summit
                 Airborne = false;
                 ClearTrick();
                 Lean = 0f; edge = 0f; edgeVel = 0f;
-                GrindBegin(feat.kind == Course.Kind.Rail, false);
+                GrindBegin(feat.kind != Course.Kind.Box, false);
                 GrindStart?.Invoke(feat);
                 return true;
             }

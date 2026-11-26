@@ -86,6 +86,8 @@ make("SignLedges", w: 1024, h: 256, bg: NSColor(calibratedWhite: 0.07, alpha: 1)
 make("SignBand", w: 1024, h: 256, bg: NSColor(calibratedWhite: 0.07, alpha: 1), fg: .white, text: "◆◆  CLIFF BAND", sub: "TRAVERSE  ·  STAY HIGH  ·  DROP THE GAP", hazard: false, stripe: NSColor(calibratedRed: 1.0, green: 0.52, blue: 0.0, alpha: 1))
 make("SignJump", w: 1024, h: 256, bg: NSColor(calibratedRed: 0.95, green: 0.45, blue: 0.08, alpha: 1), fg: .white, text: "CLIFF JUMP", sub: "SPEED UP  ·  SEND IT  ·  LAND ON THE SLOPE", hazard: false, stripe: .white)
 make("SignCliffs", w: 1024, h: 256, bg: red, fg: .white, text: "DANGER  ·  CLIFFS", sub: "SHEER DROP  ·  STAY ON THE PISTE", hazard: true, stripe: .black)
+make("SignFreeride", w: 1024, h: 256, bg: NSColor(calibratedRed: 0.11, green: 0.42, blue: 0.24, alpha: 1), fg: .white, text: "FREERIDE LINE", sub: "ROLLERS  ·  DROPS  ·  LOGS  ·  KEEP YOUR SPEED", hazard: false, stripe: .white)
+make("SignJumpLine", w: 1024, h: 256, bg: NSColor(calibratedRed: 0.10, green: 0.32, blue: 0.78, alpha: 1), fg: .white, text: "JUMP LINE", sub: "KICKERS  ·  GAPS  ·  RAILS  ·  KEEP YOUR SPEED", hazard: false, stripe: .white)
 make("BannerFinish", w: 1024, h: 128, bg: NSColor(calibratedRed: 0.08, green: 0.30, blue: 0.70, alpha: 1), fg: .white, text: "FINISH", sub: nil, hazard: false, stripe: .white)
 
 // ---- the in-run warning signs: big safety-style panels (3:2) on posts before the lip

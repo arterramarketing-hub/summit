@@ -125,10 +125,11 @@ namespace Summit
         static Vector3 Snow(float x, float z) => new Vector3(x, Slope.DrawnHeight(x, z), z);
 
         /// <summary>Anything else stands here (or a tree within r of it).</summary>
-        static bool Blocked(float x, float z, float r)
+        static bool Blocked(float x, float z, float r, bool underCable = false)
         {
             if (Slope.OnPad(x, z)) return Fail("pad");
-            if (LiftLine.Taken(x, z, 1.5f)) return Fail("lift");
+            // (a blind lip's crossed pair may stand under a lift's cable, the chairs high over it: not on its hill or the lane to it)
+            if (underCable ? LiftLine.HillOrLane(x, z, 1.5f) : LiftLine.Taken(x, z, 1.5f)) return Fail("lift");
             if (Hamlets.Taken(x, z)) return Fail("hamlet");
             if (NightLights.Taken(x, z)) return Fail("floodlight");
             if (Mathf.Abs(Slope.Kicker(x, z)) > 0.01f) return Fail("kicker");
@@ -294,7 +295,7 @@ namespace Summit
                     {
                         float z = d.LipZ - 4f + o.y;
                         float x = Slope.Centre(z) + e * (Slope.HalfAt(z) + (0.8f + o.x) / Slope.Squash(z));
-                        if (Blocked(x, z, 0.8f)) continue;
+                        if (Blocked(x, z, 0.8f, true)) continue;
                         Add(list, Kind.Closed, Snow(x, z) - Vector3.up * 0.05f, Vector3.forward, ClosedH);
                         break;
                     }

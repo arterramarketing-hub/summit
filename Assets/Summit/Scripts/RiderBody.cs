@@ -1053,6 +1053,8 @@ namespace Summit
             snowy?.Step(dt, rider.Crashed, rider.Speed);
             LimbsStep(dt);   // the wounds bleed for a while (RiderBodyLimbs)
             BloodStep(dt);   // drips and a pool after a hard crash (RiderBodyBlood)
+            if (rider.Crashed && OnVehicle && Ride == RideKind.Bear) BearLooseStep(dt);   // thrown off the bear: it runs on by itself (RiderBodyVehicle)
+            if (rider.Crashed) HideLegs(false);   // (thrown out of the kayak: the legs are seen again)
             if (rider.Crashed && ((ragdoll != null && ragdoll.Active) || ragdollPending)) { }
             else if (rider.Crashed)
             {
@@ -1066,7 +1068,7 @@ namespace Summit
                 // the board's yaw on screen follows the physics a touch behind, so a correction at landing
                 // or a grind turns it smoothly instead of snapping
                 visYaw = dt <= 0f ? rider.Heading : Mathf.LerpAngle(visYaw * Mathf.Rad2Deg, rider.Heading * Mathf.Rad2Deg, 1f - Mathf.Exp(-dt * 16f)) * Mathf.Deg2Rad;
-                float yaw = visYaw;
+                float yaw = visYaw + (RidingGear && Ride == RideKind.Kayak ? rider.SpinOut : 0f);   // (a kayak spun out: the hull and the rider in it go round: RiderVehicle)
                 Vector3 up = normal;
                 if (rider.Grinding)
                 {
@@ -1105,7 +1107,9 @@ namespace Summit
                     tubeSpin += tubeSpinRate * dt;
                     // (and spun in the air by the stick: Rider.SpinNow, with what a landing leaves of it swinging out)
                     float spun = rider.Airborne ? rider.SpinNow : rider.LandSpin;
-                    rot = baseRot * Quaternion.Euler(0f, -90f + (tubeSpin + spun) * Mathf.Rad2Deg, 0f);
+                    // (and rolled over with it, head over heels down the line: the bail roll)
+                    float rolled = rider.Airborne ? rider.FlipNow : rider.Grinding ? 0f : rider.LandFlip;
+                    rot = baseRot * Quaternion.AngleAxis(rolled * Mathf.Rad2Deg, Vector3.right) * Quaternion.Euler(0f, -90f + (tubeSpin + spun) * Mathf.Rad2Deg, 0f);
                 }
                 Vector3 mid = new Vector3(0f, 0.9f, 0f);
                 pivot.rotation = rot;
@@ -1118,7 +1122,8 @@ namespace Summit
                 roll.localPosition = Tube || RidingGear ? Vector3.zero : Vector3.up * EdgeLift(leanDeg * 0.75f);   // (onto its edge, not about its middle: RiderBodyTouch)
                 upper.localRotation = Quaternion.Euler(0f, 0f, -leanDeg * 0.25f - rider.BodyLean * StanceSign);   // (and the body into the slide: Rider.BodyLean)
                 if (RidingGear) upper.localRotation = Quaternion.identity;   // a skier's upper body angles back out of the turn (in the clips)
-                if (RidingGear && Ride == RideKind.Toboggan)
+                if (RidingGear && Rides.Of(Ride).Vehicle) VehicleRoll(leanDeg, dt);   // a kayak, a car, a bear (RiderBodyVehicle)
+                else if (RidingGear && Ride == RideKind.Toboggan)
                 {
                     // a toboggan has no edge to stand on: it stays nearly flat and the rider leans over its side
                     roll.localRotation = Quaternion.Euler(0f, 0f, -leanDeg * 0.2f);
@@ -1132,8 +1137,8 @@ namespace Summit
 
             // the track: a groove pressed into the snow under the board (none in snow the avalanche is churning)
             bool tracking = rider.Running && !rider.Crashed && !rider.Airborne && !rider.Grinding && rider.Undercut < 0.05f;
-            bool onSkis = RidingGear && Ride == RideKind.Skis;        // two narrow tracks instead of the one trench
-            bool onSled = RidingGear && Ride == RideKind.Toboggan;    // a wide flat track, and the dragged heel's scuff beside it
+            bool onSkis = RidingGear && (Ride == RideKind.Skis || Ride == RideKind.Car || Ride == RideKind.Bear);   // two narrow tracks instead of the one trench (the car's: its tyres; the bear's: its paws)
+            bool onSled = RidingGear && (Ride == RideKind.Toboggan || Ride == RideKind.Kayak);   // a wide flat track (the sled's, a kayak's hull), and the dragged heel's scuff beside it
             FeedSideTracks(p + Vector3.down * Rider.R, tracking, Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Mathf.Clamp01(rider.Underfoot.powder + 0.5f * rider.Underfoot.slush)) * (1f - 0.3f * rider.Underfoot.ice), dt);
             trail.Mix = rider.Underfoot; trail.Bite = rider.Bite;   // (the cut's shape: the snow it is in, how hard the edge pushes)
             trail.Feed(p + Vector3.down * Rider.R, normal, rider.TravelHeading, tracking && !onSkis,

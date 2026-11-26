@@ -15,7 +15,8 @@ namespace Summit
     public class CourseDressing : MonoBehaviour
     {
         public Transform target;
-        Material metal, boxSide, railMat, post, ice, lipBand, lipDark, lipMid, hairDark, poleOrange, poleBlack, signPark, signDanger, signPipe, signBack, snow, signRidge, signGorge, signLedge;
+        Material metal, boxSide, railMat, post, ice, lipBand, lipDark, lipMid, hairDark, poleOrange, poleBlack, signPark, signDanger, signPipe, signBack, snow, signRidge, signGorge, signLedge,
+            bark, barkEnd, dye, poleBlue, signFreeride, signJumpLine;
         readonly Dictionary<int, GameObject> built = new Dictionary<int, GameObject>();
         readonly List<int> drop = new List<int>();
         /// <summary>The main thread's time each frame for building the cycle ahead (ms).</summary>
@@ -76,6 +77,13 @@ namespace Summit
             signRidge = Sign(lit, "Signs/SignRidge");
             signGorge = Sign(lit, "Signs/SignGorge");
             signLedge = Sign(lit, "Signs/SignLedge");
+            // the feature lines (Lines): a fallen tree's bark and its torn-up end, the park's blue dye across a lip, the signs at their entries
+            bark = M(new Color(0.24f, 0.17f, 0.12f), 0.12f);
+            barkEnd = M(new Color(0.42f, 0.31f, 0.2f), 0.1f);
+            dye = M(new Color(0.10f, 0.33f, 0.92f), 0.15f);
+            poleBlue = M(new Color(0.12f, 0.35f, 0.95f), 0.4f);
+            signFreeride = Sign(lit, "Signs/SignFreeride");
+            signJumpLine = Sign(lit, "Signs/SignJumpLine");
         }
 
         static Material Shade(Material snowSurface, float r, float g, float b)
@@ -197,6 +205,7 @@ namespace Summit
             // park: boxes and rails, in short straight pieces following the snow (see Course.FeaturePoint)
             foreach (var f in Course.FeaturesOf(k))
             {
+                if (f.kind == Course.Kind.Log) { Log(root.transform, f); building = null; yield return true; building = b; continue; }
                 bool box = f.kind == Course.Kind.Box;
                 float len = f.Length;
                 int n = Mathf.CeilToInt(len / (box ? 2f : 2.5f));
@@ -231,6 +240,9 @@ namespace Summit
                 }
                 building = null; yield return true; building = b;
             }
+
+            // the feature lines: the sign and the gate at each one's entry, and the park's dye across its lips
+            foreach (var L in Lines.Of(k)) { LineDress(root.transform, L); building = null; yield return true; building = b; }
 
             // the glacier: the crevasses themselves (snow lips, ice walls into the dark: no snow bridges), and a warning
             // sign up the hill of each field of them and of the bergschrund
@@ -621,15 +633,89 @@ namespace Summit
             return g;
         }
 
+        /// <summary>
+        /// A fallen tree on a freeride line (Lines), slid like a rail: a trunk along the feature's line, half sunk in the
+        /// snow and capped with it, its torn-up root plate at the top end and a few snapped-off branches.
+        /// </summary>
+        void Log(Transform root, Course.Feature f)
+        {
+            const float r = 0.3f;
+            float len = f.Length;
+            int n = Mathf.Max(2, Mathf.CeilToInt(len / 3f));
+            float seed = f.id * 1.37f;
+            for (int i = 0; i < n; i++)
+            {
+                Vector3 p0 = Course.FeaturePoint(f, i / (float)n), p1 = Course.FeaturePoint(f, (i + 1f) / n);
+                Vector3 d = p1 - p0; float seg = d.magnitude; d /= seg;
+                // (thinning toward the top of the tree, the far end)
+                float rr = r * (1.05f - 0.25f * i / n);
+                Vector3 mid = (p0 + p1) * 0.5f - Vector3.up * rr;
+                var along = Quaternion.LookRotation(d, Vector3.up) * Quaternion.Euler(90f, 0f, 0f);
+                Block(PrimitiveType.Cylinder, root, mid, along, new Vector3(2f * rr, seg * 0.5f + 0.05f, 2f * rr), bark);
+                // the snow lying along its top
+                Block(PrimitiveType.Cylinder, root, mid + Vector3.up * (rr - 0.04f), along, new Vector3(1.6f * rr, seg * 0.5f, 0.2f), snow);
+                var cc = BodyCollider(root, "LogCollider", mid, Quaternion.LookRotation(d, Vector3.up)).AddComponent<CapsuleCollider>();
+                cc.direction = 2; cc.height = seg + 2f * rr; cc.radius = rr;
+                // a snapped-off branch now and then, out to the side and up
+                if (i % 2 == 1)
+                {
+                    float s = Mathf.Sin(seed + i * 2.1f) > 0f ? 1f : -1f;
+                    var side = Vector3.Cross(Vector3.up, d).normalized * s;
+                    var bd = (side + Vector3.up * 0.7f + d * 0.3f).normalized;
+                    Block(PrimitiveType.Cylinder, root, mid + bd * (rr + 0.25f), Quaternion.FromToRotation(Vector3.up, bd), new Vector3(0.09f, 0.3f, 0.09f), bark);
+                }
+            }
+            // the root plate, torn up out of the snow at the top end, and the trunk's broken-off top at the other
+            Vector3 a = Course.FeaturePoint(f, 0f) - Vector3.up * r, dd = Course.FeatureDir(f, 0f);
+            Block(PrimitiveType.Cylinder, root, a - dd * 0.15f - Vector3.up * 0.35f, Quaternion.FromToRotation(Vector3.up, dd), new Vector3(2.3f, 0.18f, 1.9f), barkEnd);
+            Block(PrimitiveType.Cylinder, root, a - dd * 0.32f - Vector3.up * 0.2f, Quaternion.FromToRotation(Vector3.up, dd), new Vector3(1.9f, 0.05f, 1.6f), snow);
+        }
+
+        /// <summary>
+        /// A feature line's dressing (Lines): its sign at the side of the run above it, a pair of poles either side of its
+        /// lane where it starts (orange, a freeride line; blue, a jump line), and on a jump line a band of blue dye across
+        /// every lip, the way a park marks them so they read from up the in-run.
+        /// </summary>
+        void LineDress(Transform root, Lines.Line L)
+        {
+            bool nat = L.style == Lines.Style.Natural;
+            SignAt(root, L.z0 + 6f, nat ? signFreeride : signJumpLine, L.side);
+            var first = L.hits[0];
+            float gz = first.z0 - 24f, gx = Slope.Centre(gz) + first.lane;
+            foreach (float s in new[] { -1f, 1f }) Pole(root, gx + s * (first.half + 1.2f), gz, nat ? poleOrange : poleBlue);
+            if (nat) return;
+            var v = new List<Vector3>(); var uv = new List<Vector2>(); var t = new List<int>();
+            foreach (var h in L.hits)
+            {
+                if (!h.Air || h.H < 0.3f) continue;
+                const int across = 12;
+                float w0 = -(h.half - 1f), w1 = h.half - 1f;
+                int b0 = v.Count;
+                for (int i = 0; i <= across; i++)
+                {
+                    float w = Mathf.Lerp(w0, w1, i / (float)across);
+                    foreach (float du in new[] { -1.3f, -0.2f })
+                    {
+                        var q = Lines.HitPoint(h, h.Lr + du, w);
+                        v.Add(q + Vector3.up * 0.035f); uv.Add(new Vector2(i / (float)across, du));
+                    }
+                }
+                for (int i = 0; i < across; i++) { int a0 = b0 + i * 2; t.Add(a0); t.Add(a0 + 1); t.Add(a0 + 2); t.Add(a0 + 1); t.Add(a0 + 3); t.Add(a0 + 2); }   // (facing up)
+            }
+            if (v.Count > 0) MeshObject(root, "LipDye", v, uv, t, dye, false);
+        }
+
         /// <summary>An orange marker pole on a holder at its foot, so it can be knocked over (Breakable).</summary>
-        void Pole(Transform root, float x, float z)
+        void Pole(Transform root, float x, float z) => Pole(root, x, z, poleOrange);
+
+        void Pole(Transform root, float x, float z, Material colour)
         {
             float y = Slope.Height(x, z);
             var pole = new GameObject("CrevassePole").transform;
             pole.SetParent(root, false);
             pole.position = new Vector3(x, y, z);
             const float tall = 1.6f, h = tall * 0.5f;
-            Block(PrimitiveType.Cylinder, pole, new Vector3(x, y + h, z), Quaternion.identity, new Vector3(0.06f, h, 0.06f), poleOrange);
+            Block(PrimitiveType.Cylinder, pole, new Vector3(x, y + h, z), Quaternion.identity, new Vector3(0.06f, h, 0.06f), colour);
             Block(PrimitiveType.Cylinder, pole, new Vector3(x, y + tall - 0.15f, z), Quaternion.identity, new Vector3(0.065f, 0.12f, 0.065f), poleBlack);
             Breakable.Flag(pole, tall - 0.03f);
         }

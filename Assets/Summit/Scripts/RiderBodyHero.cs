@@ -46,15 +46,16 @@ namespace Summit
         public Quaternion HeroBaseRot => heroBaseRot;
         public Quaternion HeroRootRot => heroRootRot;
         public Transform RollFrame => roll;
-        /// <summary>Which hand holds the board in each grab (0 left, 1 right), as Rider.Grabs.</summary>
+        /// <summary>Which hand holds the board in each grab (0 left, 1 right, 2 both), as Rider.Grabs.</summary>
         public static int GrabHand(int i) => grabHand[i];
         int idIdle, idRide, idToe, idHeel, idTuck, idPop, idAir, idLand, idFlip, idFlail, idSit, idStand, idWalk, idRun;
-        int idWindL, idWindR, idSpinL, idSpinR, idCampJump, idCampRoll;
-        readonly int[] idGrab = new int[6];
-        // which hand holds the board in each grab (0 left, 1 right): Indy, Melon, Mute, Method, Stalefish, Tail
-        static readonly int[] grabHand = { 1, 0, 0, 0, 1, 1 };
+        int idWindL, idWindR, idSpinL, idSpinR, idCampJump, idCampRoll, idTubeStar, idTubeUp;
+        readonly int[] idGrab = new int[11];
+        // which hand holds the board in each grab (0 left, 1 right, 2 both): Indy, Melon, Mute, Method, Stalefish, Tail,
+        // Nose, Japan, Roast Beef, Crail, Truck Driver (Tools/MakeRides.py makes the last five)
+        static readonly int[] grabHand = { 1, 0, 0, 0, 1, 1, 0, 0, 1, 1, 2 };
         float popT = 9f, landT = 9f, landK, heroLift;
-        readonly HeroRig.Hold[] grabHold = new HeroRig.Hold[6];
+        readonly HeroRig.Hold[] grabHold = new HeroRig.Hold[11], grabHold2 = new HeroRig.Hold[11];   // (2: the right hand's, in a two-handed grab)
         HeroRig.Hold sitL, sitR;
         bool heroWasDown;
 
@@ -255,9 +256,16 @@ namespace Summit
             idPop = h.Id("Ollie_Pop"); idAir = h.Id("Air"); idLand = h.Id("Land"); idFlip = h.Id("Flip_Tuck"); idFlail = h.Id("Flail");
             idSit = h.Id("Sit"); idStand = h.Id("Stand"); idStandVal = h.Id("Stand_Val"); idWalk = h.Id("Walk"); idRun = h.Id("Run");
             idCampJump = h.Id("CampJump"); idCampRoll = h.Id("CampRoll");
+            idTubeStar = h.Id("Tube_Starfish"); idTubeUp = h.Id("Tube_HandsUp");
             idWindL = h.Id("Spin_WindL"); idWindR = h.Id("Spin_WindR"); idSpinL = h.Id("Spin_AirL"); idSpinR = h.Id("Spin_AirR");
-            string[] g = { "Indy", "Melon", "Mute", "Method", "Stalefish", "TailGrab" };
-            for (int i = 0; i < g.Length; i++) { idGrab[i] = h.Id("Grab_" + g[i]); grabHold[i] = h.CaptureHold(idGrab[i], grabHand[i]); }
+            string[] g = { "Indy", "Melon", "Mute", "Method", "Stalefish", "TailGrab", "NoseGrab", "Japan", "RoastBeef", "Crail", "TruckDriver" };
+            for (int i = 0; i < g.Length; i++)
+            {
+                idGrab[i] = h.Id("Grab_" + g[i]);
+                if (idGrab[i] < 0) continue;
+                grabHold[i] = h.CaptureHold(idGrab[i], grabHand[i] == 2 ? 0 : grabHand[i]);
+                if (grabHand[i] == 2) grabHold2[i] = h.CaptureHold(idGrab[i], 1);
+            }
             sitL = h.CaptureHold(idSit, 0); sitR = h.CaptureHold(idSit, 1);
             r.RestoreBind();
             if (!heroHooked)
@@ -408,7 +416,7 @@ namespace Summit
             bool down = rider.Crashed;
             if (heroWasDown && !down) h.ResetSprings();   // back up after the ragdoll: no spring kick from the jump
             heroWasDown = down;
-            if (RidingGear) { if (Ride == RideKind.Toboggan) PoseSled(dt, down); else PoseSkis(dt, down); return; }   // on skis or the toboggan: their own stance and clips (RiderBodyRide)
+            if (RidingGear) { if (Ride == RideKind.Toboggan) PoseSled(dt, down); else if (Rides.Of(Ride).Vehicle) PoseVehicle(dt, down); else PoseSkis(dt, down); return; }   // on skis or the toboggan: their own stance and clips (RiderBodyRide)
             model.localRotation = heroBaseRot;                 // side-on (skis turn the model to face forward)
             var d = new HeroRig.Drive
             {
@@ -421,8 +429,13 @@ namespace Summit
             if (Tube)
             {
                 Flutter(dt);
-                h.Want(down ? idFlail : idSit, 1f);
-                d.handL = d.handR = down ? 0f : 1f;
+                // in the air, a "grab" lets go of the handles: the starfish, or hands up
+                float free = !down && rider.Airborne && rider.TrickGrab > 0 ? rider.GrabPose : 0f;
+                int tg = free > 0f ? (rider.TrickGrab == 1 ? idTubeStar : idTubeUp) : -1;
+                if (tg < 0) free = 0f;
+                h.Want(down ? idFlail : idSit, Mathf.Max(0.05f, 1f - free));
+                if (tg >= 0) h.Want(tg, free * 3f);
+                d.handL = d.handR = down ? 0f : 1f - free;
                 d.holdL = sitL; d.holdR = sitR;
                 d.side = Mathf.Clamp(rider.Steer, -1f, 1f) * 14f;   // a weight shift to steer
             }
@@ -480,11 +493,12 @@ namespace Summit
                     // a spin: wound up against it at take-off, then wrapped tight (TrickSpin < 0 turns to the left)
                     h.Want(spin < 0f ? idWindL : idWindR, wind * rest);
                     h.Want(spin < 0f ? idSpinL : idSpinR, wrap * rest);
-                    if (grab > 0f && rider.TrickGrab <= idGrab.Length)
+                    if (grab > 0f && rider.TrickGrab <= idGrab.Length && idGrab[rider.TrickGrab - 1] >= 0)
                     {
                         int gi = rider.TrickGrab - 1;
                         h.Want(idGrab[gi], grab * 3f);
-                        if (grabHand[gi] == 0) { d.handL = grab; d.holdL = grabHold[gi]; } else { d.handR = grab; d.holdR = grabHold[gi]; }
+                        if (grabHand[gi] == 2) { d.handL = d.handR = grab; d.holdL = grabHold[gi]; d.holdR = grabHold2[gi]; }
+                        else if (grabHand[gi] == 0) { d.handL = grab; d.holdL = grabHold[gi]; } else { d.handR = grab; d.holdR = grabHold[gi]; }
                     }
                     if (fl > 0f) h.Want(idFlip, fl * 1.5f);
                     lift = 0.11f * Mathf.Max(grab, fl);   // the board comes up to the body

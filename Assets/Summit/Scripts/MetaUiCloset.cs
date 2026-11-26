@@ -239,7 +239,7 @@ namespace Summit
             {
                 // (a graphic is printed on the board and the skis: on the toboggan, show it on the board)
                 bool art = c == Wardrobe.Cat.Graphic;
-                Stage.ShowRide(art && Progress.Ride == RideKind.Toboggan ? RideKind.Snowboard : Progress.Ride, c == Wardrobe.Cat.Board || c == Wardrobe.Cat.Ride || art);
+                Stage.ShowRide(art && (Progress.Ride == RideKind.Toboggan || Rides.Of(Progress.Ride).Vehicle) ? RideKind.Snowboard : Progress.Ride, c == Wardrobe.Cat.Board || c == Wardrobe.Cat.Ride || art);
                 Stage.SpinRide(art);
                 Stage.Face(c == Wardrobe.Cat.Pack ? 160f : -22f);   // the pack is on their back: turn them round for it
             }

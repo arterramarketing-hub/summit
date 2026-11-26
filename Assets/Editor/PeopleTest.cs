@@ -299,7 +299,7 @@ public static partial class PeopleTest
     /// between the lodge, the lookout, the gate and the rail, and the edge giving way once: collisions (people into
     /// each other, the hero, the camp's solid things), people stuck, anyone near the edge, how far planted feet slide,
     /// and what it costs a frame. Batch: -executeMethod PeopleTest.Camp. Exit 1 on overlaps, anyone off the edge or
-    /// feet sliding.
+    /// feet sliding (SUMMIT_PEOPLE_LOG=1: why each one was stuck, and where feet slid, by 3 m square, with the worst steps).
     /// </summary>
     public static void Camp()
     {
@@ -343,6 +343,9 @@ public static partial class PeopleTest
         double stepMs = 0, stepMax = 0, applyMs = 0;
         int lod0 = 0, lod1 = 0, maxSkins = 0; long trisSum = 0, trisMax = 0;
         var slide = new Dictionary<CampLife.Agent, (Vector3 foot, int side)>();
+        bool slideLog = System.Environment.GetEnvironmentVariable("SUMMIT_PEOPLE_LOG") == "1";
+        var slideBy = new Dictionary<string, (float, float)>(); var slideLines = new List<string>();
+        var lastAt = new Dictionary<CampLife.Agent, Vector3>();
         double slideDist = 0, walkDist = 0; float slideWorst = 0f;
         int collapseAt = frames / 2;
         var reactLook = new List<float>();
@@ -429,11 +432,23 @@ public static partial class PeopleTest
                     {
                         float sl = new Vector2(footP.x - prev.foot.x, footP.z - prev.foot.z).magnitude;
                         slideDist += sl; slideWorst = Mathf.Max(slideWorst, sl / dt);
+                        if (slideLog)
+                        {
+                            bool st = Summit.Camp.OnStairs(a.pos, 0.3f);
+                            string zone = st ? "stairs" : $"({Mathf.RoundToInt((a.pos.x - cx) / 3f) * 3}, {Mathf.RoundToInt(a.pos.z / 3f) * 3})";
+                            var z0 = slideBy.TryGetValue(zone, out var z1) ? z1 : (0f, 0f); slideBy[zone] = (z0.Item1 + sl, z0.Item2);
+                            Vector3 mv = lastAt.TryGetValue(a, out var la) ? a.pos - la : Vector3.zero; mv.y = 0f;
+                            float mvYaw = mv.sqrMagnitude > 1e-8f ? Mathf.Atan2(mv.x, mv.z) * Mathf.Rad2Deg : float.NaN;
+                            var fw = Quaternion.Euler(0f, a.yaw, 0f) * Vector3.forward * 0.5f;
+                            if (sl > 0.01f && slideLines.Count < 80) slideLines.Add($"CAMP     slide {sl * 100f:0.0} cm {a.role}:{a.spot?.name} at ({a.pos.x - cx:0.00}, {a.pos.y:0.00}, {a.pos.z:0.00}) {(st ? "on the stairs" : "")} foot{low} {footP.y - a.pos.y:0.000} other {rig.Foot[1 - low].position.y - a.pos.y:0.000} speed {a.speed:0.00} moved {mv.magnitude * 100f:0.0} cm yaw {a.yaw:0} moving {mvYaw:0} ahead walkable {life.Walkable(a.pos + fw)} drawn yaw {a.p.transform.eulerAngles.y:0} pace {a.p.pace:0.00} f{f}");
+                        }
                     }
                     walkDist += a.speed * dt;
+                    if (slideLog) { bool st2 = Summit.Camp.OnStairs(a.pos, 0.3f); string zn = st2 ? "stairs" : $"({Mathf.RoundToInt((a.pos.x - cx) / 3f) * 3}, {Mathf.RoundToInt(a.pos.z / 3f) * 3})"; var w0 = slideBy.TryGetValue(zn, out var w1) ? w1 : (0f, 0f); slideBy[zn] = (w0.Item1, w0.Item2 + a.speed * dt); }
                     slide[a] = planted ? (footP, low) : (footP, -1);
                 }
                 else slide.Remove(a);
+                lastAt[a] = a.pos;
             }
             maxSkins = Mathf.Max(maxSkins, skins); trisSum += tris; trisMax = System.Math.Max(trisMax, tris);
             var ga = life.Agents[life.Agents.Count - 2];
@@ -464,6 +479,11 @@ public static partial class PeopleTest
         }
         sb.AppendLine($"CAMP off the edge: {nearEdge} frames; furthest toward the cliff {worstEdge:0.0} m from the run's centre, off the lookout's deck (the rail is at 24.1)");
         sb.AppendLine($"CAMP planted feet slid {slideDist * 100.0:0.0} cm over {walkDist:0} m walked ({(walkDist > 0 ? slideDist / walkDist * 100.0 : 0):0.00} cm per metre; worst {slideWorst * 100f:0} cm/s)");
+        if (slideLog)
+        {
+            foreach (var kv in slideBy) if (kv.Value.Item2 > 0.5f) sb.AppendLine($"CAMP     slid at {kv.Key}: {kv.Value.Item1 * 100f:0.0} cm over {kv.Value.Item2:0.0} m ({kv.Value.Item1 / kv.Value.Item2 * 100f:0.00} cm/m)");
+            foreach (var l in slideLines) sb.AppendLine(l);
+        }
         sb.AppendLine($"CAMP after the edge gave way: facing it within {avgReact:0} degrees on average");
         sb.AppendLine(reactLine);
         sb.AppendLine($"CAMP cost (editor): CampLife.Step {stepMs / frameCount:0.00} ms a frame on average, {stepMax:0.00} ms at most; one full-model person posed {applyMs * 1000.0:0} us");

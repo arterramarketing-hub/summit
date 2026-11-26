@@ -17,7 +17,7 @@ namespace Summit
         PointTick, Bank, ComboLost, BillTick,           // the points running up (a note that climbs), a combo banked (by its size, 0..4), one lost; the bill running up
         Branches,     // riding through a tree's branches: needles swishing past and twigs cracking (made here: BranchClips)
         ClothRip,     // a SLOW banner torn off its stakes: the fabric ripping and a flap (made here: ClothClips)
-        // wood breaking, in layers (made in TreeSounds; played with the size and speed: SoundMix.PlayTree)
+        // wood breaking, in layers (recorded: TreeSounds, Resources/Audio/TreeSfx; played with the size and speed: SoundMix.PlayTree)
         TwigCrack,    // a thin twig's sharp crack
         LimbSnap,     // a limb's deeper, splintering snap
         TrunkCrack,   // a trunk giving: a heavy crack, splinters, and the creak as it leans over
@@ -33,6 +33,8 @@ namespace Summit
         public bool onSnow, air, boost, riding;
         public bool camp, ended;   // walking round the summit camp; on an end screen (for the music)
         public int grind;   // 0 none, 1 rail, 2 box
+        public int vehicle;   // the fun ride under the rider (RideKind as a number: Kayak, Car, Bear), or -1 (SoundMixVehicles)
+        public float rpm, throttle, gait;   // the car's engine (Rider.Rpm, Throttle, 0..1), the bear's gallop (cycles a second)
     }
 
     /// <summary>
@@ -45,7 +47,7 @@ namespace Summit
     /// everything that happens, some of them placed in the world (the bear, birds, crows), and a
     /// low-pass over the lot that muffles the world when you are buried.
     /// </summary>
-    public class SoundMix : MonoBehaviour
+    public partial class SoundMix : MonoBehaviour
     {
         class Layer { public AudioSource src; public float vol, pitch = 1f; }
 
@@ -174,7 +176,7 @@ namespace Summit
         }
         AudioClip[] clothRips;
 
-        // the wood breaking (TreeSounds): made once, at the start, and the take last played of each
+        // the wood breaking (TreeSounds): loaded once, at the start, and the take last played of each
         AudioClip[] twigs, limbs, trunks, thuds, snowDumps;
         readonly int[] lastTake = new int[5];
 
@@ -278,6 +280,7 @@ namespace Summit
                             new Bag(Resources.LoadAll<AudioClip>("Audio/Buddy/Cheer")), new Bag(Resources.LoadAll<AudioClip>("Audio/Buddy/Ouch")),
                             new Bag(Resources.LoadAll<AudioClip>("Audio/Buddy/Warn")), new Bag(Resources.LoadAll<AudioClip>("Audio/Buddy/Deep")) };
             screamBag = new int[bigScreams.Length]; screamNext = screamBag.Length;   // shuffled on first use
+            BuildVehicles();   // the fun rides' (SoundMixVehicles)
             cue = gameObject.AddComponent<AudioSource>(); cue.playOnAwake = false; cue.spatialBlend = 0f;
             music = new GameObject("Music").AddComponent<Music>();
             music.transform.SetParent(transform, false);
@@ -404,6 +407,8 @@ namespace Summit
             Mix(avalanche, Mathf.Pow(Mathf.Clamp01(r.avalanche), 1.5f) * 0.9f, 0.9f + 0.15f * r.avalanche, 3f, 1.5f, dt);
             Mix(slideNear, Mathf.Pow(Mathf.Clamp01((r.avalanche - 0.55f) / 0.45f), 1.6f) * 0.85f, 0.95f + 0.1f * r.avalanche, 3f, 1.2f, dt);
             Mix(boost, r.boost ? 0.45f : 0f, 1f + 0.2f * s, 10f, 4f, dt);
+
+            SetVehicles(r, dt);   // the engine, the kayak's hull, the bear's paws (SoundMixVehicles)
 
             muffle = Mathf.Lerp(muffle, r.muffle, 1f - Mathf.Exp(-dt * 5f));
             // (falling snow hushes the world too, gently: Weather.Hush, 0..1, down to about 4.5 kHz at most)

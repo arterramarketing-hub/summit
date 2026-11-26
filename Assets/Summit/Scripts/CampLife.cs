@@ -108,6 +108,7 @@ namespace Summit
             public int stuck;
             public float sitW;
             public float turn;                     // degrees the body turns off its way, to look at something (the fall)
+            public float slip, slipWant;           // degrees the body turns off its way to face along an edge it slides along
             public bool goer;                      // hurrying to the rail after the fall
         }
         readonly List<Agent> agents = new List<Agent>();
@@ -907,6 +908,7 @@ namespace Summit
 
         void Walk(Agent a, float dt)
         {
+            a.slipWant = 0f;
             if (Reacting(a)) { a.speed = Mathf.MoveTowards(a.speed, 0f, dt * 4f); return; }   // (stopped dead, looking)
             if (a.pathAt >= a.path.Count) { a.speed = 0f; a.arrived?.Invoke(); return; }
             Vector3 goal = a.path[a.pathAt]; goal.y = a.pos.y;
@@ -963,6 +965,10 @@ namespace Summit
                 next = Walkable(nx) ? nx : Walkable(nz) ? nz : (Walkable(a.pos) || !Clear(next) ? a.pos : next);
             }
             float moved = new Vector2(next.x - a.pos.x, next.z - a.pos.z).magnitude;
+            // (slid along what's in the way, they face the way they go: facing into it as they slid along it, the planted
+            // foot skated sideways: campfix2. Only the body turns, not their way: where they walk is as it was)
+            if (moved > 1e-4f && a.speed * dt - moved > 1e-4f)
+                a.slipWant = Mathf.DeltaAngle(a.yaw, Mathf.Atan2(next.x - a.pos.x, next.z - a.pos.z) * Mathf.Rad2Deg);
             next.y = camp.FloorHeight(next, a.pos.y);
             a.pos = next;
             a.p.pace = Mathf.Clamp01(a.speed / Mathf.Max(0.3f, natural));
@@ -1049,7 +1055,8 @@ namespace Summit
                 if (to.sqrMagnitude > 0.01f) turnWant = Mathf.DeltaAngle(a.yaw, Mathf.Atan2(to.x, to.z) * Mathf.Rad2Deg);
             }
             a.turn = Mathf.MoveTowardsAngle(a.turn, turnWant, (turnWant != 0f ? 220f : 90f) * dt);
-            var rot = Quaternion.Euler(0f, a.yaw + a.turn, 0f);
+            a.slip = Mathf.MoveTowardsAngle(a.slip, a.doing == Doing.Walk ? a.slipWant : 0f, 600f * dt);
+            var rot = Quaternion.Euler(0f, a.yaw + a.turn + a.slip, 0f);
             var lookAhead = a.pos + rot * Vector3.forward * 20f + Vector3.up * 1.2f;
             float t = clock + a.role * 7.3f;
             if (a.gear && a.doing == Doing.Walk)

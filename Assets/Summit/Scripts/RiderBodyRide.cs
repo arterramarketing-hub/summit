@@ -42,15 +42,17 @@ namespace Summit
         bool sledGear;                                  // the toboggan and its clips are there
         Transform sledRoot, sled;                       // under the roll; the sled itself (thrown in a crash)
         int idSledIdle, idSledRide, idSledLeanL, idSledLeanR, idSledTuck, idSledAir, idSledNoHands, idSledBump;
+        readonly int[] idSledTrick = new int[3];   // the toboggan's airs, as Ride.cs names them: No-Hander, Superman, Stand-Up
         bool skisHooked, sledHooked;                    // the rider's Jumped and Landed are listened to once, whichever body is built
         static readonly Vector3 SledBox = new Vector3(0.47f, 0.10f, 1.42f), SledBoxAt = new Vector3(0f, -0.02f, -0.04f);
 
         int idSkiIdle, idSkiRide, idSkiTurnL, idSkiTurnR, idSkiTuck, idSkiPlantL, idSkiPlantR, idSkiPop, idSkiAir, idSkiLand;
         int idSkiWindL, idSkiWindR, idSkiSpinL, idSkiSpinR, idSkiFlip;
-        readonly int[] idSkiGrab = new int[3];
-        // which hand holds the ski in each grab (0 left, 1 right): Safety, Mute, Tail (as Ride.cs names them)
-        static readonly int[] skiGrabHand = { 1, 0, 1 };
-        readonly HeroRig.Hold[] skiGrabHold = new HeroRig.Hold[3];
+        readonly int[] idSkiGrab = new int[8];
+        // which hand holds the ski in each grab (0 left, 1 right, 2 both, -1 none: the old school's shapes), as Ride.cs
+        // names them: Safety, Mute, Tail, Japan, Octograb, Daffy, Iron Cross, Spread Eagle
+        static readonly int[] skiGrabHand = { 1, 0, 1, 1, 2, -1, -1, -1 };
+        readonly HeroRig.Hold[] skiGrabHold = new HeroRig.Hold[8], skiGrabHold2 = new HeroRig.Hold[8];
         float plantT = 9f; int plantSide, lastTurnSide;
         PoleSwing poleSwing;                            // the poles hang and swing from the hands (PoleSwing)
 
@@ -87,7 +89,7 @@ namespace Summit
             idSkiPop = h.Id("Ski_Pop"); idSkiAir = h.Id("Ski_Air"); idSkiLand = h.Id("Ski_Land");
             idSkiWindL = h.Id("Ski_WindL"); idSkiWindR = h.Id("Ski_WindR"); idSkiSpinL = h.Id("Ski_SpinL"); idSkiSpinR = h.Id("Ski_SpinR");
             idSkiFlip = h.Id("Ski_Flip");
-            string[] g = { "Safety", "Mute", "Tail" };
+            string[] g = { "Safety", "Mute", "Tail", "Japan", "Octograb", "Daffy", "IronCross", "SpreadEagle" };
             for (int i = 0; i < g.Length; i++) idSkiGrab[i] = h.Id("Ski_Grab_" + g[i]);
             if (idSkiIdle < 0 || idSkiRide < 0 || idSkiTurnL < 0 || idSkiTurnR < 0 || idSkiTuck < 0 || idSkiAir < 0)
             { Debug.LogWarning("Rides: the ski clips are not in HeroAnim.bytes (run Tools/MakeRides.py): snowboard only"); return; }
@@ -108,6 +110,7 @@ namespace Summit
             Shader lit = jacketShader != null ? jacketShader : Shader.Find("Universal Render Pipeline/Lit");
             Material Plain(Color col, float smooth) { var m = new Material(lit); m.SetColor("_BaseColor", col); m.SetFloat("_Smoothness", smooth); return m; }
             Material wood = Plain(new Color(0.66f, 0.47f, 0.26f), 0.3f), woodDark = Plain(new Color(0.38f, 0.24f, 0.12f), 0.3f), rope = Plain(new Color(0.84f, 0.78f, 0.60f), 0.1f);
+            Material carPaint = Plain(new Color(1f, 0.42f, 0.05f), 0.7f);   // (the rally car's: RiderBodyVehicle)
             foreach (var mr in go.GetComponentsInChildren<MeshRenderer>(true))
             {
                 // the graphics' uvs: a ski's top sheet; a pole's shaft takes the design's rail colour (before the skis are copied)
@@ -117,7 +120,7 @@ namespace Summit
                 for (int i = 0; i < mats.Length; i++)
                 {
                     string mn = mats[i] != null ? mats[i].name : "";
-                    mats[i] = mn.StartsWith("Board") ? boardPaint : mn.StartsWith("WoodDark") ? woodDark : mn.StartsWith("Wood") ? wood : mn.StartsWith("Rope") ? rope : gearM;
+                    mats[i] = mn.StartsWith("Board") ? boardPaint : mn.StartsWith("WoodDark") ? woodDark : mn.StartsWith("Wood") ? wood : mn.StartsWith("Rope") ? rope : mn.StartsWith("CarPaint") ? carPaint : gearM;
                 }
                 mr.sharedMaterials = mats;
                 mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
@@ -164,6 +167,7 @@ namespace Summit
             // the toboggan: its seat (the tops of the battens) at the Root bone, the curl the way the rider faces
             idSledIdle = h.Id("Sled_Idle"); idSledRide = h.Id("Sled_Ride"); idSledLeanL = h.Id("Sled_LeanL"); idSledLeanR = h.Id("Sled_LeanR");
             idSledTuck = h.Id("Sled_Tuck"); idSledAir = h.Id("Sled_Air"); idSledNoHands = h.Id("Sled_NoHands"); idSledBump = h.Id("Sled_Bump");
+            idSledTrick[0] = idSledNoHands; idSledTrick[1] = h.Id("Sled_Superman"); idSledTrick[2] = h.Id("Sled_Stand");
             if (sledMesh != null && idSledIdle >= 0 && idSledRide >= 0 && idSledLeanL >= 0 && idSledLeanR >= 0 && idSledTuck >= 0 && idSledAir >= 0 && idSledNoHands >= 0)
             {
                 sledRoot = new GameObject("Toboggan").transform;
@@ -184,9 +188,15 @@ namespace Summit
                 }
                 sledGear = true;
             }
+            SetUpVehicles(h, go, origin, square, deck);   // the kayak and its paddle, the rally car, the bear (RiderBodyVehicle)
             DestroyImmediate(go);   // (emptied: the meshes now live on their holders)
 
-            for (int i = 0; i < g.Length; i++) skiGrabHold[i] = h.CaptureHold(idSkiGrab[i], skiGrabHand[i]);
+            for (int i = 0; i < g.Length; i++)
+            {
+                if (idSkiGrab[i] < 0 || skiGrabHand[i] < 0) continue;
+                skiGrabHold[i] = h.CaptureHold(idSkiGrab[i], skiGrabHand[i] == 2 ? 0 : skiGrabHand[i]);
+                if (skiGrabHand[i] == 2) skiGrabHold2[i] = h.CaptureHold(idSkiGrab[i], 1);
+            }
             if (!skisHooked)
             {
                 skisHooked = true;   // (once: these act on whichever body is built now)
@@ -206,6 +216,7 @@ namespace Summit
             if (skiRoot != null) DestroyImmediate(skiRoot.gameObject);
             if (sledRoot != null) DestroyImmediate(sledRoot.gameObject);
             skiRoot = sledRoot = sled = null;
+            DropVehicles();
             for (int s = 0; s < 2; s++) { ski[s] = null; pole[s] = null; }
             poleSwing = null;
             rideGear = sledGear = false;
@@ -214,7 +225,7 @@ namespace Summit
         /// <summary>Snowboard, skis or toboggan (without the gear, always the snowboard).</summary>
         public void SetRide(RideKind k)
         {
-            if (!rideGear || (k == RideKind.Toboggan && !sledGear)) k = RideKind.Snowboard;
+            if (!rideGear || !HasRide(k)) k = RideKind.Snowboard;
             if (Ride == k && rideSet) return;
             rideSet = true;
             Ride = k;
@@ -231,8 +242,9 @@ namespace Summit
         {
             bool on = !Walking && !Tube;
             bool skis = rideGear && Ride == RideKind.Skis, onSled = sledGear && Ride == RideKind.Toboggan;
-            boardRoot.gameObject.SetActive(on && !skis && !onSled);
+            boardRoot.gameObject.SetActive(on && !skis && !onSled && !(rideGear && Rides.Of(Ride).Vehicle));
             if (!rideGear) return;
+            ShowVehicles(on);
             if (sledRoot != null) sledRoot.gameObject.SetActive(on && onSled);
             skiRoot.gameObject.SetActive(on && skis);
             for (int s = 0; s < 2; s++) if (pole[s] != null) pole[s].gameObject.SetActive(on && skis && !HandGone(s));
@@ -242,6 +254,7 @@ namespace Summit
         void RideRagdoll()
         {
             if (ragdoll == null || Tube) return;
+            if (VehicleRagdoll()) return;   // a kayak, a car, a bear (RiderBodyVehicle)
             if (sledGear && Ride == RideKind.Toboggan)
             {
                 ragdoll.SetBoard(sled, SledBox, SledBoxAt);
@@ -304,11 +317,13 @@ namespace Summit
                 h.Want(idSkiAir, Mathf.Max(0.05f, rest * (1f - Mathf.Max(wind, wrap))));
                 h.Want(spin < 0f ? idSkiWindL : idSkiWindR, wind * rest);
                 h.Want(spin < 0f ? idSkiSpinL : idSkiSpinR, wrap * rest);
-                if (grab > 0f && rider.TrickGrab <= idSkiGrab.Length)
+                if (grab > 0f && rider.TrickGrab <= idSkiGrab.Length && idSkiGrab[rider.TrickGrab - 1] >= 0)
                 {
                     int gi = rider.TrickGrab - 1;
                     h.Want(idSkiGrab[gi], grab * 3f);
-                    if (skiGrabHand[gi] == 0) { d.handL = grab; d.holdL = skiGrabHold[gi]; } else { d.handR = grab; d.holdR = skiGrabHold[gi]; }
+                    int gh = skiGrabHand[gi];
+                    if (gh == 2) { d.handL = d.handR = grab; d.holdL = skiGrabHold[gi]; d.holdR = skiGrabHold2[gi]; }
+                    else if (gh == 0) { d.handL = grab; d.holdL = skiGrabHold[gi]; } else if (gh == 1) { d.handR = grab; d.holdR = skiGrabHold[gi]; }
                 }
                 if (fl > 0f) h.Want(idSkiFlip, fl * 1.5f);
                 lift = 0.11f * Mathf.Max(grab, fl);   // the skis come up to the body
@@ -390,6 +405,7 @@ namespace Summit
         {
             if (sideTrail == null) return;
             bool skis = onSnow && RidingGear && Ride == RideKind.Skis, onSled = onSnow && RidingGear && Ride == RideKind.Toboggan;
+            bool car = onSnow && RidingGear && Ride == RideKind.Car, bear = onSnow && RidingGear && Ride == RideKind.Bear;
             float travel = rider.TravelHeading;
             var dir = new Vector3(Mathf.Sin(travel), 0f, Mathf.Cos(travel));
             Vector3 right = Vector3.Cross(normal, Vector3.ProjectOnPlane(dir, normal).normalized);
@@ -399,6 +415,10 @@ namespace Summit
                 sideTrail[s].Mix = rider.Underfoot; sideTrail[s].Bite = rider.Bite * 0.6f;
                 if (skis && ski[s] != null)
                     sideTrail[s].Feed(at + right * Vector3.Dot(ski[s].position - at, right), normal, travel, true, scale * 0.42f, turn, rider.Skid * 0.5f, dt);
+                else if (car)   // the rally car: its tyres' two tracks, a track's width apart (the rear wheels in the front ones')
+                    sideTrail[s].Feed(at + right * (s == 0 ? -0.70f : 0.70f), normal, travel, true, scale * 0.55f, 0f, rider.Skid * 0.6f, dt);
+                else if (bear)  // the bear: its paws' two scuffed lines, close together
+                    sideTrail[s].Feed(at + right * (s == 0 ? -0.2f : 0.2f), normal, travel, true, scale * 0.3f, 0f, 0.6f, dt);
                 else if (onSled && hero != null && (s == 0 ? turn < -0.3f : turn > 0.3f))   // the left heel in a left turn, the right in a right
                     sideTrail[s].Feed(at + right * Vector3.Dot(hero.Foot[s].position - at, right), normal, travel, true, scale * 0.5f, 0f, 0.3f, dt);
                 else sideTrail[s].Feed(at, normal, travel, false, scale, 0f, 0f, dt);
@@ -430,7 +450,8 @@ namespace Summit
                 float k = rider.TrickProgress;
                 float free = rider.TrickGrab > 0 ? rider.GrabPose : 0f;
                 h.Want(idSledAir, Mathf.Max(0.05f, 1f - free));
-                h.Want(idSledNoHands, free * 3f);
+                int st = rider.TrickGrab > 0 && rider.TrickGrab <= idSledTrick.Length && idSledTrick[rider.TrickGrab - 1] >= 0 ? idSledTrick[rider.TrickGrab - 1] : idSledNoHands;
+                h.Want(st, free * 3f);
             }
             else
             {
