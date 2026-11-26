@@ -284,6 +284,10 @@ namespace Summit
         const float CellSize = 0.5f;
         float gx0, gz0; int gw, gh;
         bool[] open; float[] floorY;
+        // a named point's own cell, opened for it though something solid stands in part of it (the bench behind its
+        // seats): walked only where a body stands clear of it, and not a way through to anywhere else
+        bool[] tight;
+        const float BodyR = 0.24f;
         bool gridDirty = true;
         public bool GridReady => open != null && !gridDirty;
 
@@ -292,7 +296,7 @@ namespace Summit
             gridDirty = false;
             gx0 = Cx - 22f; gz0 = -100f;
             gw = Mathf.CeilToInt(49f / CellSize); gh = Mathf.CeilToInt((-30f - gz0) / CellSize);   // (out to the lookout's deck past the cliff's rail: camplayout)
-            open = new bool[gw * gh]; floorY = new float[gw * gh];
+            open = new bool[gw * gh]; floorY = new float[gw * gh]; tight = new bool[gw * gh];
             for (int j = 0; j < gh; j++)
                 for (int i = 0; i < gw; i++)
                 {
@@ -329,7 +333,9 @@ namespace Summit
             foreach (var p in points.Values)
             {
                 if (!Cell(p.at, out int ci, out int cj)) continue;
-                open[cj * gw + ci] = true;
+                int c = cj * gw + ci;
+                if (!open[c] && BodyClear(p.at, floorY[c])) tight[c] = true;   // (the point itself is clear: only that much of the cell)
+                open[c] = true;
             }
         }
 
@@ -339,7 +345,13 @@ namespace Summit
             i = Mathf.FloorToInt((w.x - gx0) / CellSize); j = Mathf.FloorToInt((w.z - gz0) / CellSize);
             return i >= 0 && j >= 0 && i < gw && j < gh;
         }
-        public bool Walkable(Vector3 w) => open != null && Cell(w, out int i, out int j) && open[j * gw + i];
+        public bool Walkable(Vector3 w)
+        {
+            if (open == null || !Cell(w, out int i, out int j)) return false;
+            int c = j * gw + i;
+            return open[c] && (!tight[c] || BodyClear(w, floorY[c]));
+        }
+        bool BodyClear(Vector3 w, float feet) => (camp.PushOutOfThings(new Vector2(w.x, w.z), BodyR, feet) - new Vector2(w.x, w.z)).sqrMagnitude < 1e-6f;
         float FloorAt(Vector3 w) => Cell(w, out int i, out int j) ? camp.FloorHeight(w, w.y) : Slope.DrawnHeight(w.x, w.z);
 
         // A* over the grid, then the path pulled straight where the way is clear
@@ -348,7 +360,8 @@ namespace Summit
         readonly List<(float f, int c)> heap = new List<(float, int)>();
 
         bool roundPeople;
-        bool OpenFor(int c) => open[c] && (!roundPeople || !people.Contains(c));
+        int pathStart = -1, pathGoal = -1;
+        bool OpenFor(int c) => open[c] && (!tight[c] || c == pathStart || c == pathGoal) && (!roundPeople || !people.Contains(c));
         readonly HashSet<int> people = new HashSet<int>();
 
         /// <summary>A path again, this time round everyone standing still (they don't move out of the way).</summary>
@@ -381,6 +394,7 @@ namespace Summit
             if (!Cell(from, out int si, out int sj) || !Cell(to, out int ti, out int tj)) return false;
             int start = Nearest(si, sj), goal = Nearest(ti, tj);
             if (start < 0 || goal < 0) return false;
+            pathStart = start; pathGoal = goal;
             came.Clear(); cost.Clear(); heap.Clear();
             cost[start] = 0f; Push(0f, start);
             int gi = goal % gw, gj = goal / gw;
@@ -1183,13 +1197,30 @@ namespace Summit
         Vector2 PushHero(Vector2 p)
         {
             float feet = camp.WalkerPosition.y;
+            var from = new Vector2(camp.WalkerPosition.x, camp.WalkerPosition.z);
             foreach (var a in agents)
             {
                 if (a.p == null || !a.p.gameObject.activeSelf || a.doing == Doing.Ride || a.doing == Doing.Inside) continue;
                 if (Mathf.Abs(a.pos.y - feet) > OtherFloor) continue;   // (on another floor: up on the lodge's deck, down in its café)
-                var d = p - new Vector2(a.pos.x, a.pos.z);
+                var c = new Vector2(a.pos.x, a.pos.z);
+                var d = p - c;
                 float r = a.doing == Doing.Sit ? 0.55f : 0.62f, m = d.magnitude;
-                if (m < r) p = new Vector2(a.pos.x, a.pos.z) + (m > 1e-4f ? d / m : Vector2.right) * r;
+                if (m >= r) continue;
+                var q = c + (m > 1e-4f ? d / m : Vector2.right) * r;
+                // walking straight at them (within 25 degrees): round them, not stopped dead against them (pushed
+                // straight back, the walk makes no way at all: someone standing in a doorway). Along their edge by
+                // the step, to the walker's right, or on round the side they're already passing
+                var move = p - from; var rel = from - c;
+                float len = move.magnitude, rm = rel.magnitude;
+                if (len > 1e-4f && rm > 1e-4f && Vector2.Dot(move / len, -rel / rm) > 0.9f)
+                {
+                    var right = new Vector2(move.y, -move.x) / len;
+                    float ang = (Vector2.Dot(-rel, right) > 1e-3f ? -1f : 1f) * len / r;
+                    var u = rel / rm;
+                    float cs = Mathf.Cos(ang), sn = Mathf.Sin(ang);
+                    q = c + new Vector2(u.x * cs - u.y * sn, u.x * sn + u.y * cs) * r;
+                }
+                p = q;
             }
             return p;
         }

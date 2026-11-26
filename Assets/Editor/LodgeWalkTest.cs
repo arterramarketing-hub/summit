@@ -107,6 +107,8 @@ public static class LodgeWalkTest
             fails++;
             problems.Add((end, "stuck on " + name));
             Debug.LogError($"LODGEWALK {name}: NEVER REACHED mark {k} at {marks[k]}; stuck at {end} after {t:0.0} s ({camp.DebugHere()})");
+            // (and anyone of the camp's people standing in the way: the walk doesn't step them, so they stay put)
+            if (CampLife.Current != null) foreach (var a in CampLife.Current.Agents) if (a.p != null && a.p.gameObject.activeSelf && (a.pos - end).magnitude < 1.5f) { var l = Quaternion.Euler(0f, -camp.ChaletYaw, 0f) * (a.pos - camp.ChaletPoint(0, 0, 0)); Debug.LogError($"LODGEWALK   in the way: the camp's {a.role}, {a.doing} (for {a.spot?.name}) at the lodge's ({l.x:0.00}, {l.y:0.00}, {l.z:0.00})"); }
         }
         else Debug.Log($"LODGEWALK {name}: {path:0.0} m in {t:0.0} s{(want != Camp.Station.None ? ", " + want + " came up" : "")}; feet {end.y - camp.ChaletPoint(0, 0, 0).y:0.00} from the lodge's floor");
         return t;

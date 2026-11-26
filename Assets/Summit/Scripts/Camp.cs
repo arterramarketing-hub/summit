@@ -2210,7 +2210,15 @@ namespace Summit
                 if (b.floor) continue;
                 if ((PushOut(b, p2, 0.4f) - p2).sqrMagnitude > 1e-6f) sb.Append($"[block c={b.c} h={b.h} y={b.lo:0.0}..{b.hi:0.0}] ");
             }
-            return $"feet={pos.y:0.00} " + sb;
+            // and what else the walk pushes you out of, a step on the way you face (round ones, you stand right at their edge):
+            // Val and Breanna, the camp's people, trees and the like, snow piles
+            var f = new Vector2(Mathf.Sin(yaw), Mathf.Cos(yaw));
+            var ahead = p2 + f * 0.15f;
+            if (Couple != null && (Couple.PushOut(ahead, 0.38f) - ahead).sqrMagnitude > 1e-6f) sb.Append("[Val or Breanna] ");
+            if (PushWalker != null && (PushWalker(ahead) - ahead).sqrMagnitude > 1e-6f) sb.Append("[the camp's people] ");
+            if ((OffTrees(new Vector3(ahead.x, pos.y, ahead.y)) - new Vector3(ahead.x, pos.y, ahead.y)).sqrMagnitude > 1e-6f) sb.Append("[a tree or the like] ");
+            if ((OffPiles(ahead, pos.y) - ahead).sqrMagnitude > 1e-6f) sb.Append("[a snow pile] ");
+            return $"feet={pos.y:0.00} speed={speed:0.00} " + sb;
         }
 
         /// <summary>Test tools: stand at a world point (on whatever floor is there), facing this way.</summary>
