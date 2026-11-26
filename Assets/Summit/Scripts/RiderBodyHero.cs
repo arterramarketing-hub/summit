@@ -84,6 +84,7 @@ namespace Summit
         /// </summary>
         public interface ICampPose { bool Want(HeroRig h); void After(HeroRig h, Transform model, float dt); }
         public ICampPose CampPose;
+        bool campPosed;
 
         bool SetUpHero()
         {
@@ -420,7 +421,8 @@ namespace Summit
                 // on foot: the Root bone stands on the snow, the clips stride in time with the camp's footsteps
                 model.localPosition = heroRidePos - new Vector3(0f, BoardTop, 0f);
                 int move = CampMove == 1 ? idCampJump : CampMove == 2 ? idCampRoll : -1;
-                if (CampPose != null && CampPose.Want(h)) blend = 6f;   // the camp's own pose (on a stump at the fire, at the stove)
+                campPosed = CampPose != null && CampPose.Want(h);
+                if (campPosed) blend = 6f;   // the camp's own pose (on a stump at the fire, at the stove)
                 else if (move >= 0)
                 {
                     // a jump or a roll: its clip, held at the camp's own clock for it, so the push off and the
@@ -516,6 +518,9 @@ namespace Summit
             if (HandGone(1)) d.handR = 0f;
             h.Layer(d, dt);
             if (Walking && CampPose != null) CampPose.After(h, model, dt);
+            // on the camp's stairs, each foot on the tread under it (StairFeet)
+            if (Walking && CampMove == 0 && !campPosed && !float.IsNaN(FeetGround))
+                StairFeet.Plant(h, FeetGround, FeetFacing, stairFeet, dt);
             KeepOffSnow(dt, false);   // hips, knees and hands never through the snow (RiderBodyTouch)
         }
     }

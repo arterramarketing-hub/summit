@@ -41,6 +41,8 @@ namespace Summit
         /// <summary>The camera shows the rider from the front (while picking an outfit).</summary>
         public bool Showcase;
         public const float MaxSpeed = 3.4f, RunSpeed = 7.2f;   // walking; running with the stick pushed right out
+        public const float StairWalkSpeed = 2.0f, StairRunSpeed = 2.8f;   // up and down the stairs (CampStairs)
+        bool onStairs, stairRun;
 
         Shader lit;
         Transform root;
@@ -51,7 +53,7 @@ namespace Summit
 
         class Spot { public Station st; public Vector3 at; public float radius; public Transform root; }
         readonly List<Spot> spots = new List<Spot>();
-        struct Box { public Vector2 c, h; public float cos, sin, top, drop, lo, hi; public GameObject owner; public bool floor; }
+        struct Box { public Vector2 c, h; public float cos, sin, top, drop, lo, hi; public GameObject owner; public bool floor; public float[] prof; public float profStep; }   // (prof: a floor's height over top along it from its -z end, every profStep: the stairs, CampStairs)
         readonly List<Box> boxes = new List<Box>();
 
         // ---------------------------------------------------------------- materials
@@ -175,6 +177,7 @@ namespace Summit
             Trees();
             Birches();
             Mounds();
+            Stairs();         // up the bank from the gate (CampStairs.cs), before the path to their ends
             Footpath();
             CliffEdge();
             Mist();
@@ -698,8 +701,8 @@ namespace Summit
 
         /// <summary>
         /// (camplayout) The start corral before the gate, out of the DROP IN circle, where people get ready: a ski and
-        /// board rack on the left, and the trail map with today's missions pinned under it (the lodge's notes, tinted as
-        /// they're done: Redress), turned to the path as you come down it. The waxing stand on the right is the camp's
+        /// board rack on the left, and the missions board beside the stairs' foot (campstairs: CampBoard.cs, the trail
+        /// map on its back), turned to the gate. The waxing stand on the right is the camp's
         /// people's (CampLife); the bench by the drop and the strap-in places either side of the gate were there already.
         /// Solid as drawn.
         /// </summary>
@@ -707,7 +710,7 @@ namespace Summit
         {
             float gz = Slope.GateZ;
             // the rack: two posts and two rails, boards and skis leaning on its gate side
-            var r = Frame(-5.8f, gz - 8.4f, 0f); r.name = "CorralRack";
+            var r = Frame(-8.6f, gz - 8.4f, 0f); r.name = "CorralRack";   // (campstairs: out of the way of the missions board, seen from the gate)
             for (int s = -1; s <= 1; s += 2) Log(r, new Vector3(s * 1.35f, -0.3f, 0f), new Vector3(s * 1.35f, 1.15f, 0f), 0.07f, logs);
             Log(r, new Vector3(-1.45f, 1.05f, 0f), new Vector3(1.45f, 1.05f, 0f), 0.06f, logs);
             Log(r, new Vector3(-1.45f, 0.5f, 0f), new Vector3(1.45f, 0.5f, 0f), 0.05f, logs);
@@ -718,20 +721,8 @@ namespace Summit
             foreach (var x in new[] { 0.1f, 0.2f })
                 P(PrimitiveType.Cube, r, new Vector3(x, 0.78f, 0.3f), new Vector3(0.075f, 1.7f, 0.02f), new Vector3(-22f, 0f, 0f), corralGear[3]);
             Block(r, new Vector3(0f, 0f, 0.25f), new Vector2(1.45f, 0.45f));
-            // the trail map and today's missions on a board on two posts, turned to the path (its face toward -z: the camp)
-            var b = Frame(-3.7f, gz - 11.2f, -20f); b.name = "CorralBoard";
-            for (int s = -1; s <= 1; s += 2)
-            {
-                Log(b, new Vector3(s * 0.78f, -0.3f, 0.02f), new Vector3(s * 0.78f, 2.5f, 0.02f), 0.07f, logs);
-                Block(b, new Vector3(s * 0.78f, 0f, 0.02f), new Vector2(0.09f, 0.09f));
-            }
-            P(PrimitiveType.Cube, b, new Vector3(0f, 1.6f, 0.02f), new Vector3(1.5f, 1.7f, 0.06f), Vector3.zero, darkWood);
-            P(PrimitiveType.Cube, b, new Vector3(0f, 2.5f, 0.02f), new Vector3(1.66f, 0.08f, 0.24f), Vector3.zero, snowCap);
-            P(PrimitiveType.Quad, b, new Vector3(0f, 2.0f, -0.015f), new Vector3(1.38f, 0.78f, 1f), Vector3.zero, Sign("Signs/TrailMap"));
-            P(PrimitiveType.Quad, b, new Vector3(0f, 1.44f, -0.015f), new Vector3(1.2f, 0.3f, 1f), Vector3.zero, Sign("Camp/SignMissions"));
-            for (int i = 0; i < noteMats.Length; i++)
-                P(PrimitiveType.Quad, b, new Vector3((i - 1) * 0.44f, 1.0f, -0.015f), new Vector3(0.36f, 0.45f, 1f), Vector3.zero, noteMats[i]);
-            Block(b, new Vector3(0f, 0f, 0.02f), new Vector2(0.8f, 0.06f), null, false, 0f, 0f, 0.75f, 2.5f);   // (the board, at head height)
+            // (campstairs) the missions board, by the stairs' foot and turned to the gate: CampBoard.cs
+            MissionsBoard();
         }
         Material[] corralGear;   // (the rack's boards and skis: made once in Build, kept; made in a build they'd go at the next one: purplefix)
 
@@ -1433,6 +1424,7 @@ namespace Summit
             if (Active) Missions.Refresh();   // (not mid-run: a mission completing pays out, and Progress.Changed lands here)
             for (int i = 0; i < noteMats.Length && i < Missions.Today.Count; i++)
                 noteMats[i].SetColor("_BaseColor", Missions.Today[i].done ? new Color(0.62f, 0.95f, 0.62f) : Color.white);
+            BoardRefresh();   // (the board by the gate: CampBoard.cs)
         }
 
         // ---------------------------------------------------------------- walking
@@ -1601,8 +1593,11 @@ namespace Summit
                 float head = camYaw + Mathf.Atan2(stick.x, stick.y);
                 yaw = Mathf.LerpAngle(yaw * Mathf.Rad2Deg, head * Mathf.Rad2Deg, 1f - Mathf.Exp(-dt * 10f)) * Mathf.Deg2Rad;
             }
-            // pushed right out, the walk breaks into a run (and eases back down)
+            // pushed right out, the walk breaks into a run (and eases back down); on the stairs, a brisk walk, and a
+            // run no more than a quicker one (CampStairs)
             float want = mag > 0.92f ? RunSpeed : mag * MaxSpeed;
+            onStairs = OnStairs(pos, 0.1f);
+            if (onStairs) { stairRun = mag > 0.92f; want = Mathf.Min(want, stairRun ? StairRunSpeed : StairWalkSpeed); }
             if (!held) speed = Mathf.MoveTowards(speed, want, dt * (want > speed ? 9f : 14f));
             var f = new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw));
             Vector3 next = pos + f * speed * dt;
@@ -1741,13 +1736,20 @@ namespace Summit
                 var d = new Vector2(p.x, p.z) - b.c;
                 var q = new Vector2(d.x * b.cos - d.y * b.sin, d.x * b.sin + d.y * b.cos);
                 if (Mathf.Abs(q.x) > b.h.x || Mathf.Abs(q.y) > b.h.y) continue;
-                // a ramp (stairs) falls by drop from its -z end to its +z end
-                float top = b.top - b.drop * (q.y + b.h.y) / (2f * b.h.y);
+                // a ramp (stairs) falls by drop from its -z end to its +z end; or its own height along it (CampStairs)
+                float top = b.prof != null ? b.top + Prof(b, q.y + b.h.y) : b.top - b.drop * (q.y + b.h.y) / (2f * b.h.y);
                 if (top <= feet + 0.55f && top > y) { y = top; onSnow = false; }   // on a floor, a deck or steps
             }
             float pile = PileTop(p.x, p.z);   // (up on a pile of snow: CampSnow.cs)
             if (pile > y && pile <= feet + 0.55f) { y = pile; onSnow = true; }
             return y;
+        }
+
+        static float Prof(in Box b, float s)
+        {
+            float f = Mathf.Clamp(s / b.profStep, 0f, b.prof.Length - 1.001f);
+            int i = (int)f;
+            return Mathf.Lerp(b.prof[i], b.prof[i + 1], f - i);
         }
 
         void Place()
@@ -1761,6 +1763,22 @@ namespace Summit
             body.WalkPace = Mathf.Clamp01(speed / MaxSpeed);
             body.Cadence = Cadence;
             body.RunBlend = Mathf.Clamp01((speed - MaxSpeed) / (RunSpeed - MaxSpeed));
+            body.FeetGround = pos.y; body.FeetFacing = new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw));
+            body.Upright = OnStairs(pos, 0.3f);
+            body.PhaseLock = float.NaN;
+            if (onStairs && speed > 0.3f)
+            {
+                // a foot on every second tread (every one, slowly), the walk blended in as far as makes that its
+                // stride: each foot coming down wholly on a tread. (A run up them is the same stride, quicker: the run
+                // clip's two feet don't come down evenly spaced, so a run's every third tread had one foot on a nosing.)
+                int per = speed < 1.3f ? 1 : 2;
+                float step = per * StairGoing;
+                body.WalkPace = PeopleLod.BlendForStep(step);
+                body.RunBlend = 0f;
+                body.Cadence = speed / (2f * step);
+                float lead = StairLeadWalk * Mathf.Min(1f, step / (0.5f * PeopleLod.WalkCycle));
+                body.PhaseLock = StairPhase(pos, new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw)), per, lead);
+            }
         }
 
         /// <summary>The station under a tap on the screen, if any.</summary>

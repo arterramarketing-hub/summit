@@ -330,10 +330,23 @@ namespace Summit
         /// </summary>
         public void Advance(float metres)
         {
-            // (part way into the walk the clip's stride is that much shorter: a slow walk takes short steps)
-            float cycle = Mathf.Lerp(PeopleLod.WalkCycle, PeopleLod.RunCycle, run) * Scale * PeopleLod.StrideAt(Mathf.Max(pace, 0.15f));
+            // (part way into the walk the clip's stride is that much shorter: a slow walk takes short steps; on the
+            // camp's stairs a step is so many treads, StairStep)
+            float cycle = StairStep > 0f ? 2f * StairStep : Mathf.Lerp(PeopleLod.WalkCycle, PeopleLod.RunCycle, run) * Scale * PeopleLod.StrideAt(Mathf.Max(pace, 0.15f));
             phase = Mathf.Repeat(phase + metres / Mathf.Max(0.1f, cycle), 1f);
         }
+
+        /// <summary>On the camp's stairs: how far a step goes (a whole number of treads, near the clip's own step); 0 off them.</summary>
+        public float StairStep;
+        /// <summary>A walking step at full pace, the clip's own (m).</summary>
+        public float NaturalStep => 0.5f * PeopleLod.WalkCycle * Scale;
+        /// <summary>Draw the walk cycle toward a phase (0..1, mod a half: either foot), as the stairs want it (CampStairs).</summary>
+        public void LockPhase(float target, float dt)
+        {
+            float d = Mathf.Repeat(target - phase + 0.25f, 0.5f) - 0.25f;
+            phase = Mathf.Repeat(phase + d * Mathf.Min(1f, dt * 8f), 1f);
+        }
+        readonly StairFeet.State stairFeet = new StairFeet.State();
 
         /// <summary>How fast this body walks (or runs) at the clip's own cadence (m/s).</summary>
         public float NaturalSpeed => Mathf.Lerp(PeopleLod.WalkCycle / Mathf.Max(0.01f, Rig.Length(idWalk)), PeopleLod.RunCycle / Mathf.Max(0.01f, Rig.Length(idRun)), run) * Scale;
@@ -399,6 +412,7 @@ namespace Summit
             h.Layer(d, Lod == 0 ? dt : 0f);
             if (mode == Mode.Sit) SitLegs();
             if (mode == Mode.Walk && Lod == 0 && dt > 0f) LockFeet(); else locked[0] = locked[1] = false;
+            if (mode == Mode.Walk || mode == Mode.Stand) StairFeet.Plant(h, transform.position.y, SF, stairFeet, dt, Scale, false);   // (on the camp's stairs, on the treads)
             Hands();
             Gear();
             Wind(dt);

@@ -16,6 +16,15 @@ namespace Summit
         public float RunBlend;
         /// <summary>Walk cycles a second (two steps each), from how fast you're going; 0: work it out from the pace.</summary>
         public float Cadence;
+        /// <summary>On the camp's stairs: the cycle's phase (mod pi, either foot) that puts a heel down on a tread's middle (NaN: none).</summary>
+        public float PhaseLock = float.NaN;
+        /// <summary>The height of the floor the camp stands the body on (its feet's level), for setting the feet on the stairs' treads.</summary>
+        public float FeetGround = float.NaN;
+        /// <summary>On foot on the camp's stairs: stand upright (the camp sets it), not tipped to the snow under them.</summary>
+        public bool Upright;
+        /// <summary>The way the body faces on foot (the camp sets it), for the feet on the stairs.</summary>
+        public Vector3 FeetFacing = Vector3.forward;
+        readonly StairFeet.State stairFeet = new StairFeet.State();
         float runAmp, cadence;
         /// <summary>Thrown from on foot (the camp's edge giving way): the velocity the coming crash throws the body with.</summary>
         public void Tumble(Vector3 velocity) { lastVel = velocity; }
@@ -61,6 +70,12 @@ namespace Summit
             float want = Cadence > 0f ? Cadence : Mathf.Lerp(Mathf.Lerp(0.55f, 1.0f, walkAmp), 1.45f, runAmp);
             cadence = Mathf.MoveTowards(cadence, want, dt * 4f);
             walkPhase += dt * Mathf.PI * 2f * cadence * (walkAmp > 0.02f ? 1f : 0f);
+            if (!float.IsNaN(PhaseLock) && walkAmp > 0.05f)
+            {
+                // drawn toward the phase the stairs want, the nearer way round (either foot will do)
+                float d = Mathf.Repeat(PhaseLock - walkPhase + Mathf.PI * 0.5f, Mathf.PI) - Mathf.PI * 0.5f;
+                walkPhase += d * Mathf.Min(1f, dt * 8f);
+            }
             roll.localRotation = Quaternion.identity; roll.localPosition = Vector3.zero;
             upper.localRotation = Quaternion.identity;
             if (CampMove == 2)

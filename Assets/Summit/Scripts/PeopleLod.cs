@@ -33,6 +33,15 @@ namespace Summit
             return Mathf.Lerp(Blend[i], Blend[i + 1], f - i);
         }
         public static float RunCycle { get { if (runCycle < 0f) Measure(); return runCycle; } }
+        /// <summary>The walk's blend over standing (0.1 .. 1) whose step (half a cycle, at scale 1) is this long: the camp's stairs (CampStairs).</summary>
+        public static float BlendForStep(float step)
+        {
+            if (walkCycle < 0f) Measure();
+            float lo = 0.1f, hi = 1f;
+            if (0.5f * walkCycle * StrideAt(hi) <= step) return hi;
+            for (int i = 0; i < 14; i++) { float m = (lo + hi) * 0.5f; if (0.5f * walkCycle * StrideAt(m) < step) lo = m; else hi = m; }
+            return (lo + hi) * 0.5f;
+        }
 
         /// <summary>The planted foot's travel through each clip: the ground a cycle covers.</summary>
         static void Measure()

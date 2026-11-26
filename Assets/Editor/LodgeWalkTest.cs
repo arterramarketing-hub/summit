@@ -9,9 +9,9 @@ using Summit;
 
 /// <summary>
 /// Walks the lodge (CampLodge.cs) the way a player does, with the stick: from where you arrive in camp, up the steps,
-/// in at the door, to each station inside (the wardrobe, the missions board, the tune-up bench), into the wing, out
-/// the side door to the racks, round the terrace and down the wing's steps, and from the wardrobe out and down to
-/// DROP IN at the gate. A leg fails if the walker doesn't reach its mark in time (blocked, or stuck on something).
+/// in at the door, to each station inside (the wardrobe, the tune-up bench), into the wing, out the side door to the
+/// racks, round the terrace and down the wing's steps, and from the wardrobe out, down the path and the stairs to DROP
+/// IN at the gate, and up again from the missions board there (campstairs). A leg fails if the walker doesn't reach its mark in time (blocked, or stuck on something).
 /// Then it checks the lodge's walking against what is drawn there, with the drawn meshes given colliders for the test:
 ///   - every solid box the walker is pushed out of has drawn geometry along its sides (no invisible walls);
 ///   - nowhere the walker can stand has drawn geometry through its body (nothing to walk through);
@@ -128,6 +128,9 @@ public static class LodgeWalkTest
         Vector3 counter = ups[0], bench = ups[ups.Count - 1];
         foreach (var u in ups) { var l = Quaternion.Euler(0f, -camp.ChaletYaw, 0f) * (u - camp.ChaletPoint(0, 0, 0)); if (l.z > 2f) bench = u; else counter = u; }
         var door = L(4.5f, 5.5f);
+        // (campstairs) the stairs down the bank: just past their top deck, and a stride off their foot
+        var stairTop = new Vector3(cx + Camp.StairX, 0f, Camp.StairTopZ - Camp.StairTopDeck - 1.0f);
+        var stairFoot = new Vector3(cx + Camp.StairX, 0f, Camp.StairBottomZ + 1.2f);
         Debug.Log($"LODGEWALK lodge at {camp.ChaletPoint(0, 0, 0)}, steps' foot {foot} ({camp.LodgeStepsShowing} steps showing, the floor {camp.LodgeFrontDrop:0.00} m above the snow there); door {door}; DROP IN {dropIn}; straight line steps-to-DROP IN {Vector2.Distance(new Vector2(foot.x, foot.z), new Vector2(dropIn.x, dropIn.z)):0.0} m");
         if (lift.Count > 1)
         {
@@ -143,13 +146,13 @@ public static class LodgeWalkTest
             // back wall up to the loft's lounge (the window half, moved up there)
             var up = new[] { L(3.6f, 0.8f), L(3.0f, -4.4f), L(1.6f, -5.9f), L(0.4f, -5.9f), L(-5.0f, -5.9f), L(-6.4f, -5.6f), L(-7.2f, -4.4f), L(-8.6f, -4.0f) };
             var down = new[] { L(-7.2f, -4.4f), L(-6.4f, -5.6f), L(-5.0f, -5.9f), L(0.4f, -5.9f), L(1.6f, -5.9f), L(3.0f, -4.4f) };
-            Leg("the door to the missions board beside it", door, new[] { missions }, Camp.Station.Missions);
-            Leg("the missions board along the front glass to the wardrobe", missions, new[] { L(3.6f, 1.5f), L(-1.0f, 1.4f), style }, Camp.Station.Style);
+            // (campstairs: the missions board by the door is gone, the one by the gate the only one: walked to below)
+            Leg("the door along the front glass to the wardrobe", door, new[] { L(3.6f, 1.5f), L(-1.0f, 1.4f), style }, Camp.Station.Style);
             var toLoft = new List<Vector3> { L(-1.0f, 1.4f) }; toLoft.AddRange(up); toLoft.Add(U(-7.6f, 1.6f));
             Leg("the wardrobe up the stair along the back wall to the loft's lounge", style, toLoft.ToArray());
-            var toMissions = new List<Vector3>(down) { L(3.6f, 0.8f), missions };
-            Leg("the loft back down the stair to the missions board", U(-7.6f, 1.6f), new List<Vector3>(new[] { U(-7.3f, -0.7f), U(-7.3f, -3.4f) }).Concat(toMissions).ToArray(), Camp.Station.Missions);
-            Leg("the missions board to the board shop's counter", missions, new[] { L(3.6f, 1.0f), L(4.6f, -0.4f), counter }, Camp.Station.Upgrades);
+            var toDoor = new List<Vector3>(down) { L(3.6f, 0.8f), door };
+            Leg("the loft back down the stair to the door", U(-7.6f, 1.6f), new List<Vector3>(new[] { U(-7.3f, -0.7f), U(-7.3f, -3.4f) }).Concat(toDoor).ToArray());
+            Leg("the door to the board shop's counter", door, new[] { L(3.6f, 1.0f), L(4.6f, -0.4f), counter }, Camp.Station.Upgrades);
             Leg("the counter to the tuning bench", counter, new[] { L(7.2f, 2.5f), bench }, Camp.Station.Upgrades);
             Leg("the tuning bench through the snug's way into the café", bench, new[] { L(6f, 1.0f), L(-6f, 1.0f), L(-10f, 0.8f), L(-13.5f, 2.2f) });
             Leg("the café to the snug under the loft", L(-13.5f, 2.2f), new[] { L(-10f, 0.8f), L(-8.6f, 0.6f), L(-8.6f, -1.6f) });
@@ -167,7 +170,7 @@ public static class LodgeWalkTest
             else Debug.Log($"LODGEWALK standing at the deck's front rail: on the lookout; feet {((Vector3)fPos.GetValue(camp)).y - camp.ChaletPoint(0, 0, 0).y:0.00} above the lodge's floor, the camera at {cam(camp) - camp.ChaletPoint(0, 0, 0)}");
             Leg("round the deck: past the two talking by the viewer, round the fire bowl and the lounge chairs, by the drift, back to the doors", U(-13.2f, 4.7f), new[] { L(-13.0f, 2.6f), L(-14.2f, 2.3f), L(-15.4f, 1.9f), L(-16.2f, 0.6f), L(-14.0f, 0.2f), L(-13.4f, -1.6f), L(-13.4f, -3.9f), L(-14.6f, -4.3f), L(-12.4f, -3.4f), L(-12.2f, 0.0f) });
             Leg("the deck back in through the doors, across the loft and down the stair to its foot", U(-12.2f, 0.0f), new[] { L(-9.8f, -0.1f), L(-7.3f, -0.7f), L(-7.3f, -3.4f), L(-7.2f, -4.4f), L(-6.4f, -5.6f), L(-5.0f, -5.9f), L(0.4f, -5.9f), L(1.6f, -5.9f) });
-            var tdi = new List<Vector3> { L(-1.0f, 1.4f), L(3.6f, 1.5f), door, L(2f, 9f), foot, dropIn };   // (the wardrobe's by the door now)
+            var tdi = new List<Vector3> { L(-1.0f, 1.4f), L(3.6f, 1.5f), door, L(2f, 9f), foot, stairTop, stairFoot, dropIn };   // (the wardrobe's by the door now; campstairs: down the path and the stairs)
             toDropIn = tdi.ToArray();
         }
         Leg("the covered section from the racks round the front to the wing's steps and down", L(14.75f, -4.6f), new[] { L(14.75f, 3.95f), L(14.75f, 8.15f), L(6f, 8.15f), L(-10.5f, 8.2f), L(-11.9f, 9.2f), L(-11.9f, 11.6f), L(-13.0f, 12.3f), L(-13.0f, 17.5f), L(-13.0f, 20f) });
@@ -177,7 +180,10 @@ public static class LodgeWalkTest
         Leg("the door to the fire table and the chalkboard", door, new[] { L(4.5f, 8.2f), L(-5.5f, 8.3f), L(-5.5f, 9.0f), L(-4.4f, 10.4f) });
         float walk = Leg("the wardrobe out of the door, down the steps to DROP IN (walking)", style, toDropIn, Camp.Station.DropIn);
         float run = Leg("the wardrobe out of the door, down the steps to DROP IN (running)", style, toDropIn, Camp.Station.DropIn, 1f);
-        Leg("the steps' foot to DROP IN (walking, as CampWalkTest)", foot, new[] { dropIn }, Camp.Station.DropIn);
+        Leg("the steps' foot down the path and the stairs to DROP IN (walking; straight at it, CampWalkTest)", foot, new[] { stairTop, stairFoot, dropIn }, Camp.Station.DropIn);
+        Leg("up the stairs from DROP IN to the lodge's steps", dropIn, new[] { stairFoot, stairTop, foot });
+        Leg("DROP IN to the missions board by the stairs' foot", dropIn, new[] { missions }, Camp.Station.Missions);
+        Leg("the missions board by the gate up the stairs and in at the door", missions, new[] { stairFoot, stairTop, foot, L(0f, 12f), L(2.5f, 8.2f), door });
         Leg("the steps' foot to the lookout", foot, new[] { camp.StationPointLookout() });
         Debug.Log($"LODGEWALK wardrobe to DROP IN: {walk:0.0} s walking, {run:0.0} s running");
         // the cliff-fall rescue: back on your feet at the foot of the lodge's steps, clear of everything, and in from there

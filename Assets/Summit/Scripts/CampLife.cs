@@ -182,8 +182,10 @@ namespace Summit
             D("rail.2", Ground(21.2f, -61.0f), 85f);
             // open snow for standing about
             D("chat.1", Ground(9.0f, -71.0f), 0f);   // (clear of the shovelled path to the lookout, and the couple's Stroll)
-            D("chat.2", Ground(-7.5f, -58.5f), 0f);
-            D("chat.3", Ground(3.5f, -55f), 0f);
+            // (campstairs: these two stood out on the bank's steep snow, 40 to 50 per cent; now at its top either side
+            // of the stairs, on the level, looking down them to the gate)
+            D("chat.2", Ground(-6.6f, -63.8f), 10f);
+            D("chat.3", Ground(2.2f, -63.6f), -10f);
             // the bench by the drop, looking down the start (the points are where you stand to sit down, just in front)
             D("bench.1", Ground(-9.4f, -47.1f), 0f);
             D("bench.2", Ground(-8.6f, -47.1f), 0f);
@@ -287,6 +289,9 @@ namespace Summit
         // a named point's own cell, opened for it though something solid stands in part of it (the bench behind its
         // seats): walked only where a body stands clear of it, and not a way through to anywhere else
         bool[] tight;
+        // the cells whose floor is the snow, not the camp's stairs (CampStairs): up or down the bank's steep snow costs
+        // more than the stairs beside it
+        bool[] bank;
         const float BodyR = 0.24f;
         bool gridDirty = true;
         public bool GridReady => open != null && !gridDirty;
@@ -296,7 +301,7 @@ namespace Summit
             gridDirty = false;
             gx0 = Cx - 22f; gz0 = -100f;
             gw = Mathf.CeilToInt(49f / CellSize); gh = Mathf.CeilToInt((-30f - gz0) / CellSize);   // (out to the lookout's deck past the cliff's rail: camplayout)
-            open = new bool[gw * gh]; floorY = new float[gw * gh]; tight = new bool[gw * gh];
+            open = new bool[gw * gh]; floorY = new float[gw * gh]; tight = new bool[gw * gh]; bank = new bool[gw * gh];
             for (int j = 0; j < gh; j++)
                 for (int i = 0; i < gw; i++)
                 {
@@ -304,6 +309,7 @@ namespace Summit
                     float snow = Slope.DrawnHeight(w.x, w.z);
                     float y = camp.FloorHeight(new Vector3(w.x, snow, w.z), snow);
                     floorY[j * gw + i] = y;
+                    bank[j * gw + i] = y - snow < 0.05f && !Camp.OnStairs(w, 0.3f);
                     // (the cliff's rail is at +24, the left edge's mounds at -22; and the lookout's deck out over the lip)
                     bool ok = w.x - Cx < 21.5f && w.x - Cx > -21.5f || Camp.OnLookoutDeck(w.x - Cx, w.z);
                     if (ok)
@@ -415,7 +421,11 @@ namespace Summit
                         int n = nj * gw + ni;
                         if (!OpenFor(n)) continue;
                         if (di != 0 && dj != 0 && (!OpenFor(cj * gw + ni) || !OpenFor(nj * gw + ci))) continue;   // no cutting corners
-                        float step = (di != 0 && dj != 0 ? 1.414f : 1f) + Mathf.Abs(floorY[n] - floorY[c]) * 2f;
+                        float flat = di != 0 && dj != 0 ? 1.414f : 1f, rise = Mathf.Abs(floorY[n] - floorY[c]);
+                        float step = flat + rise * 2f;
+                        // (up or down the bank's steep snow costs more: a 50 per cent slope about four times its length, so
+                        // they go round by the stairs from anywhere along it: campstairs)
+                        if (bank[n] && bank[c]) step += Mathf.Max(0f, rise / (flat * CellSize) - 0.2f) * flat * 18f;
                         float nc = cc + step;
                         if (cost.TryGetValue(n, out float old) && old <= nc) continue;
                         cost[n] = nc; came[n] = c;
@@ -436,10 +446,27 @@ namespace Summit
             while (at < pts.Count - 1)
             {
                 int far = at + 1;
-                for (int k = pts.Count - 1; k > at + 1; k--) if (Clear(pts[at], pts[k])) { far = k; break; }
+                for (int k = pts.Count - 1; k > at + 1; k--) if (Clear(pts[at], pts[k]) && !Steep(pts[at], pts[k])) { far = k; break; }
                 path.Add(pts[far]); at = far;
             }
             return true;
+        }
+
+        /// <summary>A straight line between two points goes up or down steep snow off the stairs (more than 30 per cent).</summary>
+        bool Steep(Vector3 a, Vector3 b)
+        {
+            float d = new Vector2(b.x - a.x, b.z - a.z).magnitude;
+            int n = Mathf.CeilToInt(d / CellSize);
+            if (n < 1 || !Cell(a, out int i0, out int j0)) return false;
+            int c0 = j0 * gw + i0;
+            for (int k = 1; k <= n; k++)
+            {
+                if (!Cell(Vector3.Lerp(a, b, k / (float)n), out int i, out int j)) return false;
+                int c = j * gw + i;
+                if (bank[c] && bank[c0] && Mathf.Abs(floorY[c] - floorY[c0]) > 0.3f * d / n) return true;
+                c0 = c;
+            }
+            return false;
         }
 
         // the open list: a binary heap on f
@@ -939,7 +966,17 @@ namespace Summit
             next.y = camp.FloorHeight(next, a.pos.y);
             a.pos = next;
             a.p.pace = Mathf.Clamp01(a.speed / Mathf.Max(0.3f, natural));
+            // on the stairs: a whole number of treads a step (two, mostly), each foot down on a tread's middle
+            int per = Mathf.Clamp(Mathf.RoundToInt(a.p.NaturalStep / Camp.StairGoing), 1, 2);
+            a.p.StairStep = Camp.OnStairs(a.pos, 0.1f) ? per * Camp.StairGoing : 0f;
+            // (the walk blended in as far as makes that its stride: their own clip's step at their size)
+            if (a.p.StairStep > 0f) a.p.pace = Mathf.Min(a.p.pace, PeopleLod.BlendForStep(a.p.StairStep / a.p.Scale));
             a.p.Advance(moved);
+            if (a.p.StairStep > 0f && moved > 1e-4f)
+            {
+                float ph = Camp.StairPhase(a.pos, f, per, Camp.StairLeadWalk * Mathf.Min(1f, a.p.StairStep / a.p.NaturalStep) * a.p.Scale);
+                if (!float.IsNaN(ph)) a.p.LockPhase(ph / (2f * Mathf.PI), dt);
+            }
             // stuck? (no nearer the goal in a few seconds): find the way again, or give up and do something else
             float left = dist;
             if (left < a.progress - 0.3f) { a.progress = left; a.progressT = 0f; }

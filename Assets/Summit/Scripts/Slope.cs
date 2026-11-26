@@ -433,10 +433,27 @@ namespace Summit
         // buttresses and lying back in its gullies, and its foot spreads into fans of snow and rubble.
         public const float SummitLeft = -30f, SummitRight = 24.8f, SummitBack = -110f;
 
+        /// <summary>The summit's base (the height its bank and plateau are measured from): the in-run's level 38 m back from the lip.</summary>
+        public static float SummitBase => BaseAt(Centre(PadLip), PadLip) + PadDrop + 38f * 0.22f;
+        /// <summary>
+        /// The summit's own height over SummitBase at z, along the in-run's line without its noise: the plateau's 7 cm a
+        /// metre and the bank up from the gate to the camp (the stairs up it are laid on this: Camp.StairBed).
+        /// </summary>
+        public static float SummitBank(float z)
+            => 0.07f * Mathf.Max(0f, -z - 38f) + Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-41f, -53f, z)) * 6f * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-44f, -62f, z));
+
         static float Summit(float x, float z, float pad)
         {
             float w = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-41f, -53f, z));   // none at the pad (from just behind where a run starts), all of it from the camp's front
             if (w <= 0f) return pad;
+            float h = SummitNatural(x, z, pad, w);
+            // (campstairs: the bank graded under the stairs up it)
+            float sb = Camp.StairBed(x - Centre(PadLip), z, out float bed);
+            return sb > 0f ? Mathf.Lerp(h, SummitBase + bed, sb) : h;
+        }
+
+        static float SummitNatural(float x, float z, float pad, float w)
+        {
             float cx = Centre(PadLip), a = x - cx;
             float back = PadLip - z;
             float top = BaseAt(cx, PadLip) + PadDrop + 38f * 0.22f + Mathf.Max(0f, back - 38f) * 0.07f

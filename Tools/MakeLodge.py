@@ -375,6 +375,241 @@ def quad(mat, pos, w, h, yaw=0):
     add(b, mat, mat4(pos, (w, h, 1), (0, yaw, 0)), full_uv=True)
 
 
+# ---------------------------------------------------------------- modelled pieces (lodgeshop)
+# The shop's pieces were plain boxes and spheres; these give them bevelled edges that catch the light and real
+# outlines (lofted, swept, lathed), in the lodge's own shared materials (no new ones: one mesh a material still).
+
+def rbox(mat, pos, size, rot=(0, 0, 0), r=0.012, seg=1):
+    """A box with its edges bevelled r (one segment: a chamfer that catches the light; two or three: rounded)."""
+    b = bmesh.new()
+    bmesh.ops.create_cube(b, size=1.0)
+    for v in b.verts:
+        v.co = Vector((v.co.x * size[0], v.co.y * size[1], v.co.z * size[2]))
+    r = min(r, 0.45 * min(size))
+    if r > 2e-4 and max(size) > 0.12:   # (a small piece: a plain box, the bevel's triangles not worth it on a phone)
+        bmesh.ops.bevel(b, geom=list(b.edges), offset=r, segments=seg, profile=0.5, affect='EDGES', clamp_overlap=True)
+    add(b, mat, mat4(pos, (1, 1, 1), rot))
+
+
+def rlohi(mat, lo, hi, r=0.012, seg=1):
+    rbox(mat, [(lo[i] + hi[i]) / 2 for i in range(3)], [abs(hi[i] - lo[i]) for i in range(3)], r=r, seg=seg)
+
+
+def _frame(pts):
+    """Parallel-transported frames (tangent, normal, binormal) along a polyline."""
+    P = [Vector(p) for p in pts]
+    T_ = []
+    for i in range(len(P)):
+        if i == 0:
+            t = P[1] - P[0]
+        elif i == len(P) - 1:
+            t = P[-1] - P[-2]
+        else:
+            t = (P[i + 1] - P[i]).normalized() + (P[i] - P[i - 1]).normalized()
+        T_.append(t.normalized())
+    ref = Vector((0, 0, 1)) if abs(T_[0].z) < 0.9 else Vector((1, 0, 0))
+    n = (ref - T_[0] * ref.dot(T_[0])).normalized()
+    out = []
+    for i, t in enumerate(T_):
+        if i > 0:
+            n = (n - t * n.dot(t))
+            n = n.normalized() if n.length > 1e-6 else (Vector((1, 0, 0)) - t * t.x).normalized()
+        out.append((P[i], t, n, t.cross(n)))
+    return out
+
+
+def tube(mat, pts, r, seg=8, caps=True, smooth=True):
+    """A round bar along a polyline (game space): r one radius, or one a point."""
+    rs = r if isinstance(r, (list, tuple)) else [r] * len(pts)
+    b = bmesh.new()
+    rings = []
+    for (p, t, n, bn), rr in zip(_frame(pts), rs):
+        rings.append([b.verts.new(p + (n * math.cos(2 * math.pi * k / seg) + bn * math.sin(2 * math.pi * k / seg)) * rr) for k in range(seg)])
+    for i in range(len(rings) - 1):
+        for k in range(seg):
+            f = b.faces.new((rings[i][k], rings[i][(k + 1) % seg], rings[i + 1][(k + 1) % seg], rings[i + 1][k]))
+            f.smooth = smooth
+    if caps:
+        b.faces.new(rings[0])
+        b.faces.new(list(reversed(rings[-1])))
+    bmesh.ops.recalc_face_normals(b, faces=b.faces)
+    add(b, mat, Matrix.Identity(4))
+
+
+def loft(mat, rings, m=None, caps=True, smooth=True):
+    """A closed shape through rings of points (each the same count, the same way round), in a frame m (game space)."""
+    b = bmesh.new()
+    R = [[b.verts.new(Vector(p)) for p in ring] for ring in rings]
+    n = len(R[0])
+    for i in range(len(R) - 1):
+        for k in range(n):
+            f = b.faces.new((R[i][k], R[i][(k + 1) % n], R[i + 1][(k + 1) % n], R[i + 1][k]))
+            f.smooth = smooth
+    if caps:
+        b.faces.new(R[0])
+        b.faces.new(list(reversed(R[-1])))
+    bmesh.ops.recalc_face_normals(b, faces=b.faces)
+    add(b, mat, m if m is not None else Matrix.Identity(4))
+
+
+def ring_y(y, w, d, n=12, e=3.0, cz=0.0, cx=0.0):
+    """A level ring at height y, w across (x) and d deep (z): a superellipse (e 2 an ellipse, larger squarer)."""
+    pts = []
+    for k in range(n):
+        a = 2 * math.pi * k / n
+        c, s_ = math.cos(a), math.sin(a)
+        pts.append((cx + w / 2 * math.copysign(abs(c) ** (2 / e), c), y, cz + d / 2 * math.copysign(abs(s_) ** (2 / e), s_)))
+    return pts
+
+
+def place(pos, yaw=0.0, lean=0.0):
+    """A frame at pos turned yaw degrees about the up axis and tipped lean degrees about its own x first."""
+    return mat4(pos, (1, 1, 1), (lean, yaw, 0))
+
+
+def snowboard(mat, pos, yaw=0.0, lean=-8.0, h=1.5, bindings=False):
+    """A snowboard standing nose up (pos its middle), leaning back about it: its outline rounded at nose and tail and
+    narrower at the waist, the nose and tail kicked up toward its top sheet (which faces the way it faces), 12 mm thick."""
+    W, th = 0.29, 0.006
+    st = [0.0, 0.03, 0.11, 0.3, 0.5, 0.7, 0.89, 0.97, 1.0]
+    rings = []
+    for t in st:
+        if t < 0.11 or t > 0.89:
+            u = (0.11 - t) / 0.11 if t < 0.11 else (t - 0.89) / 0.11
+            hw = max(0.025, W / 2 * math.sqrt(max(0.0, 1 - u * u)))
+            kz = 0.045 * u * u
+        else:
+            c = (t - 0.5) / 0.39
+            hw = W / 2 - 0.02 * (1 - c * c)   # (the sidecut: 25 cm at the waist)
+            kz = 0.0
+        y = (t - 0.5) * h
+        rings.append([(-hw, y, kz - th), (hw, y, kz - th), (hw, y, kz + th), (-hw, y, kz + th)])
+    m = place(pos, yaw, lean)
+    loft(mat, rings, m, smooth=False)
+    if bindings:
+        for yb in (-0.14 * h, 0.12 * h):
+            # (a binding: its base plate on the top sheet and a highback standing off it)
+            for (c, s) in (((0, yb, 0.03), (0.22, 0.17, 0.035)), ((0, yb - 0.07, 0.11), (0.2, 0.03, 0.15))):
+                box("Charcoal", tuple(m @ Vector(c)), s, (lean, yaw, 0))
+
+
+def ski(mat, pos, yaw=0.0, lean=-6.0, L=1.8, bind=True):
+    """A ski standing tip up (pos its middle), the tip curling out toward its top: waisted, its tip rounded."""
+    th = 0.007
+    st = [0.0, 0.04, 0.5, 0.8, 0.9, 0.96, 1.0]
+    rings = []
+    for t in st:
+        hw = 0.04 if t < 0.04 else 0.033 + 0.008 * abs(t - 0.5) / 0.38 if t <= 0.88 else 0.044 * math.sqrt(max(0.06, 1 - ((t - 0.88) / 0.12) ** 2))
+        u = max(0.0, (t - 0.8) / 0.2)
+        kz = 0.07 * u * u
+        y = (t - 0.5) * L - 0.03 * u * u
+        rings.append([(-hw, y, kz - th), (hw, y, kz - th), (hw, y, kz + th), (-hw, y, kz + th)])
+    m = place(pos, yaw, lean)
+    loft(mat, rings, m, smooth=False)
+    if bind:
+        for (c, sz, mt) in (((0, -0.08, 0.02), (0.09, 0.12, 0.03), "Steel"), ((0, 0.12, 0.025), (0.088, 0.1, 0.04), "Charcoal")):   # (wider than the ski: not in the planes of its edges)
+            rbox(mt, tuple(m @ Vector(c)), sz, (lean, yaw, 0), 0.006)
+
+
+def jacket(col, hook, yaw=0.0, hood=True, hanger=True, s=1.0):
+    """A jacket on a hanger hung from a rail at hook (the rail's middle): its body lofted from collar to hem, sleeves
+    hanging at its sides, a hood rolled at its neck, the zip down its front (which faces +z turned by yaw)."""
+    m = place(hook, yaw) @ Matrix.Translation(Vector((0, -0.12 * s, 0))) @ Matrix.Diagonal(Vector((s, s, s, 1)))
+    rings = [ring_y(y, w, d, 8, 3.2) for (y, w, d) in ((0.035, 0.17, 0.12), (-0.03, 0.40, 0.15), (-0.12, 0.47, 0.18), (-0.42, 0.44, 0.17), (-0.66, 0.45, 0.16), (-0.74, 0.46, 0.15), (-0.755, 0.41, 0.11))]
+    loft(col, rings, m)
+    for sx in (-1, 1):
+        pts = [tuple(m @ Vector(p)) for p in ((sx * 0.205, -0.07, -0.01), (sx * 0.235, -0.34, 0.01), (sx * 0.232, -0.62, 0.035))]
+        tube(col, pts, [0.062 * s, 0.052 * s, 0.046 * s], 5)
+    if hood:
+        b = bmesh.new()
+        bmesh.ops.create_uvsphere(b, u_segments=6, v_segments=3, radius=0.5)
+        for f in b.faces:
+            f.smooth = True
+        add(b, col, m @ mat4((0, 0.01, -0.085), (0.24, 0.11, 0.14)))
+    box("Charcoal", tuple(m @ Vector((0, -0.4, 0.086))), (0.012 * s, 0.68 * s, 0.006 * s), (0, yaw, 0))
+    if hanger:
+        pts = [(-0.19, -0.03, 0), (0, 0.05, 0), (0.19, -0.03, 0)]
+        tube("Steel", [tuple(m @ Vector(p)) for p in pts], 0.005 * s, 4, smooth=False)
+        hookp = [(0, 0.05, 0), (0, 0.098, 0)] + [(0.022 * math.cos(a), 0.12 + 0.022 * math.sin(a), 0) for a in (math.radians(-60), math.radians(0), math.radians(60), math.radians(120), math.radians(170))]
+        tube("Steel", [tuple(m @ Vector(p)) for p in hookp], 0.004 * s, 4, smooth=False)
+
+
+def boot(pos, yaw=0.0, col="Charcoal", strap="Red"):
+    """A ski or snowboard boot (pos the middle of its sole), toes the way it faces: a thick sole, a high padded cuff, a strap."""
+    m = place(pos, yaw)
+    rings = [ring_y(y, w, l, 8, 3.0, cz) for (y, w, l, cz) in ((0.0, 0.11, 0.31, 0.0), (0.035, 0.115, 0.31, 0.0), (0.12, 0.1, 0.22, -0.04), (0.25, 0.105, 0.15, -0.07), (0.3, 0.1, 0.14, -0.075))]
+    loft(col, rings, m)
+    box(strap, tuple(m @ Vector((0, 0.2, -0.07))), (0.112, 0.035, 0.155), (0, yaw, 0))
+
+
+def helmet_m(pos, col, yaw=0.0, goggles=True, lens="Navy"):
+    """A ski helmet (pos the middle of its rim), its shell rounded and trimmed flat at the rim, three vents on top,
+    goggles round it on their strap, the lens to the front (+z turned by yaw)."""
+    m = place(pos, yaw)
+    b = bmesh.new()
+    bmesh.ops.create_uvsphere(b, u_segments=12, v_segments=6, radius=0.5)
+    for v in b.verts:
+        v.co = Vector((v.co.x * 0.25, max(v.co.y, -0.12) * 0.42 + 0.05, v.co.z * 0.3))   # (its lower third trimmed flat: the rim)
+    for f in b.faces:
+        f.smooth = True
+    add(b, col, m)
+    for k in (-1, 0, 1):
+        rbox("Charcoal", tuple(m @ Vector((k * 0.045, 0.255, -0.01))), (0.018, 0.012, 0.11), (0, yaw, 0), 0.004)
+    if goggles:
+        strap = [(0.128 * math.cos(a), 0.1, 0.152 * math.sin(a)) for a in [math.radians(d) for d in range(-60, 241, 50)]]
+        tube("Charcoal", [tuple(m @ Vector(p)) for p in strap], 0.012, 4, caps=True, smooth=False)
+        b = bmesh.new()
+        bmesh.ops.create_uvsphere(b, u_segments=8, v_segments=4, radius=0.5)
+        for f in b.faces:
+            f.smooth = True
+        add(b, lens, m @ mat4((0, 0.105, 0.14), (0.2, 0.075, 0.06)))
+
+
+def goggles(pos, yaw=0.0, lens="Navy", frame="Charcoal"):
+    """Goggles on a little steel stand (pos its foot): the lens round, its frame and strap behind it."""
+    m = place(pos, yaw)
+    cyl("Steel", tuple(m @ Vector((0, 0, 0))), 0.035, 0.01, 10)
+    tube("Steel", [tuple(m @ Vector(p)) for p in ((0, 0.01, 0), (0, 0.12, 0))], 0.004, 4, smooth=False)
+    strap = [(0.085 * math.cos(a), 0.15, -0.02 + 0.06 * math.sin(a)) for a in [math.radians(d) for d in range(-10, 191, 50)]]
+    tube(frame, [tuple(m @ Vector(p)) for p in strap], 0.009, 4, smooth=False)
+    b = bmesh.new()
+    bmesh.ops.create_uvsphere(b, u_segments=8, v_segments=4, radius=0.5)
+    for f in b.faces:
+        f.smooth = True
+    add(b, lens, m @ mat4((0, 0.15, 0.03), (0.19, 0.075, 0.05)))
+
+
+def beanie(pos, col="Red", bobble="Cream"):
+    b = bmesh.new()
+    bmesh.ops.create_uvsphere(b, u_segments=8, v_segments=4, radius=0.5)
+    for v in b.verts:
+        v.co = Vector((v.co.x * 0.2, max(v.co.y, 0.0) * 0.26, v.co.z * 0.2))
+    for f in b.faces:
+        f.smooth = True
+    add(b, col, mat4(pos))
+    sphere(bobble, (pos[0], pos[1] + 0.135, pos[2]), (0.07, 0.07, 0.07), 6)
+
+
+def folded(pos, cols, yaw=0.0, w=0.32, d=0.3):
+    """A stack of folded tops or fleeces, each rounded at its folds, a little askew."""
+    y = pos[1]
+    for k, c in enumerate(cols):
+        h = 0.055
+        rbox(c, (pos[0] + 0.006 * ((k * 7) % 3 - 1), y + h / 2, pos[2] + 0.005 * ((k * 5) % 3 - 1)), (w, h, d), (0, yaw + ((k * 13) % 5 - 2), 0), 0.018, 1)
+        y += h
+
+
+def pos_till(pos, yaw=0.0):
+    """A shop's point of sale on a counter (pos on its top): a screen tilted on a steel stand, a card reader, a printer."""
+    m = place(pos, yaw)
+    cyl("Steel", tuple(m @ Vector((0, 0, 0))), 0.09, 0.012, 14)
+    tube("Steel", [tuple(m @ Vector(p)) for p in ((0, 0.01, 0), (0, 0.16, -0.02))], 0.018, 8)
+    rbox("Charcoal", tuple(m @ Vector((0, 0.27, 0.0))), (0.34, 0.23, 0.025), (-18, yaw, 0), 0.008)
+    rbox("Steel", tuple(m @ Vector((0, 0.27, -0.016))), (0.3, 0.19, 0.01), (-18, yaw, 0), 0.004)
+    rbox("Charcoal", tuple(m @ Vector((0.28, 0.035, 0.06))), (0.08, 0.06, 0.15), (-25, yaw, 0), 0.01, 1)
+    rbox("White", tuple(m @ Vector((-0.28, 0.05, 0.0))), (0.13, 0.1, 0.16), (0, yaw, 0), 0.015, 1)
+
+
 def samples(a, b, r, step, fracs):
     L = b - a
     r = min(r, L / 2)
@@ -1217,10 +1452,10 @@ def rack(x0, x1, z, face, boards=True):
         x = x0 + 0.15 + i * (x1 - x0 - 0.3) / max(1, n - 1)
         sw = "Swatch%d" % (1 + (i * 3) % 5)
         if boards and i % 3 != 1:
-            box(sw, (x, 0.85, z + face * 0.04), (0.27, 1.5, 0.03), (face * -8, 0, 0))   # a board, nose up
+            snowboard(sw, (x, 0.85, z + face * 0.04), 0 if face > 0 else 180, -8, 1.5)   # a board, nose up
         else:
             for s in (-1, 1):   # a pair of skis
-                box(sw, (x + s * 0.045, 0.95, z + face * 0.05), (0.075, 1.75, 0.025), (face * -6, 0, 0))
+                ski(sw, (x + s * 0.05, 0.95, z + face * 0.05), 0 if face > 0 else 180, -6, 1.75, bind=False)
     helper("BLK_rack", (x0, 0.0, z - 0.3), (x1, 1.7, z + 0.3))
 
 
@@ -1316,9 +1551,9 @@ def sign(row, pos, w, h, yaw=0):
     add(b, "Signs", mat4(pos, (w, h, 1), (0, yaw, 0)), full_uv=True)
 
 
-def board(mat, x, y, z, yaw=0.0, lean=-8.0, h=1.5):
-    """A snowboard standing nose up (its base at height y), leaning back from the way it faces."""
-    box(mat, (x, y + h / 2, z), (0.28, h, 0.03), (lean, yaw, 0))
+def board(mat, x, y, z, yaw=0.0, lean=-8.0, h=1.5, bindings=False):
+    """A snowboard standing nose up (its base at height y), leaning back from the way it faces (snowboard)."""
+    snowboard(mat, (x, y + h / 2, z), yaw, lean, h, bindings)
 
 
 def plant(x, z, hgt=1.3, y=0.0):
@@ -1370,9 +1605,9 @@ def stool(x, z, h=0.75, y=0.0):
     helper("BLK_stool", (x - 0.22, y, z - 0.22), (x + 0.22, y + h + 0.05, z + 0.22))
 
 
-def helmet(x, y, z, mat):
-    sphere(mat, (x, y + 0.13, z), (0.27, 0.24, 0.3), 10)
-    box("Charcoal", (x, y + 0.11, z + 0.12), (0.2, 0.07, 0.04))   # goggles on it
+def helmet(x, y, z, mat, yaw=0.0, goggles=True):
+    """A helmet sitting on its rim at height y (helmet_m: a shell, vents, goggles round it)."""
+    helmet_m((x, y, z), mat, yaw, goggles)
 
 
 def pendants(pts, ceiling):
@@ -1422,42 +1657,78 @@ JACKETS = ("Red", "Fabric", "Navy", "ArtA", "Charcoal", "ArtB", "White", "Red", 
 
 
 def rail_x(x0, x1, z, y0=0.0, two_sided=False, blk=True):
-    """A clothes rail along x at z (black steel on two posts), jackets hanging on it."""
-    lohi("Steel", (x0, y0 + 2.05 - 0.3 * two_sided, z - 0.03), (x1, y0 + 2.09 - 0.3 * two_sided, z + 0.03))
+    """A clothes rail along x at z: a round black steel bar on two posts with flat feet, jackets on hangers along it,
+    shoulders across the rail as a shop hangs them, a hood here and there."""
+    top = y0 + 2.07 - 0.3 * two_sided
+    tube("Steel", [(x0 - 0.02, top, z), (x1 + 0.02, top, z)], 0.016, 8)
     for x in (x0, x1):
-        lohi("Steel", (x - 0.02, y0, z - 0.02), (x + 0.02, y0 + 2.09 - 0.3 * two_sided, z + 0.02))
-        lohi("Steel", (x - 0.02, y0, z - 0.3), (x + 0.02, y0 + 0.04, z + 0.3))
-    n = int((x1 - x0) / 0.45)
+        tube("Steel", [(x, y0 + 0.03, z), (x, top, z)], 0.018, 8)
+        rlohi("Steel", (x - 0.035, y0, z - 0.3), (x + 0.035, y0 + 0.035, z + 0.3), 0.012)
+    n = int((x1 - x0 - 0.3) / 0.23) + 1
     for k in range(n):
-        box(JACKETS[k % len(JACKETS)], (x0 + 0.22 + k * (x1 - x0 - 0.44) / max(1, n - 1), y0 + 1.5 - 0.3 * two_sided, z), (0.4, 0.95, 0.12))
+        x = x0 + 0.15 + k * (x1 - x0 - 0.3) / max(1, n - 1)
+        jacket(JACKETS[(k * 5) % len(JACKETS)], (x, top, z), 90, hood=k % 3 == 0)
     if blk:
         helper("BLK_rail", (x0 - 0.05, y0, z - 0.32), (x1 + 0.05, y0 + 2.1, z + 0.32))
 
 
 def display_table(tx, tz, y0=0.0, along_x=True):
+    """A display table: a thick oak top rounded at its edges on black steel sled legs; stacks of folded fleeces and tops,
+    a beanie and goggles on it."""
     w, d = (0.8, 0.4) if along_x else (0.4, 0.8)
-    lohi("Oak", (tx - w, y0 + 0.72, tz - d), (tx + w, y0 + 0.78, tz + d))
-    lohi("Steel", (tx - w + 0.05, y0, tz - d + 0.05), (tx + w - 0.05, y0 + 0.72, tz + d - 0.05))
-    for j in range(4):
-        o = -0.55 + j * 0.37
-        box(("Navy", "Red", "Fabric", "ArtB")[j], (tx + (o if along_x else 0), y0 + 0.84, tz + (0 if along_x else o)), (0.3, 0.12, 0.34) if along_x else (0.34, 0.12, 0.3))
+    rlohi("Oak", (tx - w, y0 + 0.72, tz - d), (tx + w, y0 + 0.785, tz + d), 0.02, 2)
+    for sgn in (-1, 1):
+        if along_x:
+            ex = tx + sgn * (w - 0.14)
+            pts = [(ex, y0 + 0.016, tz - d + 0.08), (ex, y0 + 0.704, tz - d + 0.08), (ex, y0 + 0.704, tz + d - 0.08), (ex, y0 + 0.016, tz + d - 0.08), (ex, y0 + 0.016, tz - d + 0.08)]
+        else:
+            ez = tz + sgn * (d - 0.14)
+            pts = [(tx - w + 0.08, y0 + 0.016, ez), (tx - w + 0.08, y0 + 0.704, ez), (tx + w - 0.08, y0 + 0.704, ez), (tx + w - 0.08, y0 + 0.016, ez), (tx - w + 0.08, y0 + 0.016, ez)]
+        tube("Steel", pts, 0.016, 6, caps=False)
+    def at(o):
+        return (tx + (o if along_x else 0), y0 + 0.785, tz + (0 if along_x else o))
+    folded(at(-0.52), ("Navy", "Red", "Navy"), 0 if along_x else 90)
+    folded(at(-0.14), ("Fabric", "ArtB"), 0 if along_x else 90)
+    beanie(at(0.22), "Red")
+    goggles(at(0.52), 0 if along_x else 90, "ArtA")
     helper("BLK_table", (tx - w - 0.02, y0, tz - d - 0.02), (tx + w + 0.02, y0 + 0.9, tz + d + 0.02))
 
 
 def till(x0, z0, x1, z1, y0=0.0):
-    lohi("Oak", (x0, y0, z0), (x1, y0 + 1.0, z1))
-    lohi("Concrete", (x0 - 0.05, y0 + 1.0, z0 - 0.05), (x1 + 0.05, y0 + 1.05, z1 + 0.05))
-    box("Charcoal", ((x0 + x1) / 2, y0 + 1.15, (z0 + z1) / 2), (0.35, 0.22, 0.25))
-    helper("BLK_till", (x0 - 0.05, y0, z0 - 0.05), (x1 + 0.05, y0 + 1.2, z1 + 0.05))
+    """The outfitters' till: an oak block fluted down its front on a dark recessed plinth, a pale stone top with
+    rounded edges, the point of sale on it."""
+    rlohi("Steel", (x0 + 0.05, y0, z0 + 0.05), (x1 - 0.05, y0 + 0.1, z1 - 0.05), 0.006)
+    rlohi("Oak", (x0, y0 + 0.1, z0), (x1, y0 + 1.0, z1), 0.012)
+    n = int((x1 - x0 - 0.08) / 0.07)
+    for k in range(n):
+        x = x0 + 0.06 + k * (x1 - x0 - 0.12) / max(1, n - 1)
+        box("Oak", (x, y0 + 0.55, z0 - 0.012), (0.034, 0.84, 0.026))
+    rlohi("CounterTop", (x0 - 0.05, y0 + 1.0, z0 - 0.06), (x1 + 0.05, y0 + 1.05, z1 + 0.05), 0.014, 2)
+    pos_till(((x0 + x1) / 2, y0 + 1.05, (z0 + z1) / 2 + 0.05), 0)
+    helper("BLK_till", (x0 - 0.05, y0, z0 - 0.06), (x1 + 0.05, y0 + 1.2, z1 + 0.05))
 
 
-def mannequin(mx, mz, col, y0=0.0):
-    cyl("Steel", (mx, y0, mz), 0.2, 0.03, 10)
-    cyl("Steel", (mx, y0, mz), 0.02, 0.9, 6)
-    box(col, (mx, y0 + 1.25, mz), (0.42, 0.62, 0.24))
-    box("Charcoal", (mx, y0 + 0.82, mz), (0.36, 0.26, 0.22))
-    sphere("White", (mx, y0 + 1.72, mz), (0.24, 0.26, 0.26), 10)
-    helper("BLK_mannequin", (mx - 0.28, y0, mz - 0.22), (mx + 0.28, y0 + 1.85, mz + 0.22))
+def mannequin(mx, mz, col, y0=0.0, yaw=180.0, strap="Red"):
+    """A shop's mannequin in an outfit: a white abstract head and hands, a jacket (col) over its torso and arms, dark
+    trousers, boots; on a round steel base, held up by a rod to its calf; facing +z turned by yaw."""
+    m = place((mx, y0, mz), yaw)
+
+    def P(x, y, z):
+        return tuple(m @ Vector((x, y, z)))
+    cyl("Steel", P(0, 0, 0), 0.22, 0.02, 18)
+    tube("Steel", [P(0.09, 0.02, -0.03), P(0.09, 0.42, -0.03)], 0.011, 6)
+    for sx in (-1, 1):
+        tube("Charcoal", [P(sx * 0.09, 0.93, 0.0), P(sx * 0.095, 0.52, 0.012), P(sx * 0.088, 0.16, 0.0)], [0.08, 0.06, 0.05], 8)
+        boot(P(sx * 0.09, 0.02, 0.02), yaw, "Charcoal", strap)
+    rings = [ring_y(y, w, d, 10, 3.0) for (y, w, d) in ((0.83, 0.40, 0.26), (0.9, 0.41, 0.27), (1.06, 0.37, 0.23), (1.28, 0.43, 0.25), (1.41, 0.45, 0.21), (1.47, 0.30, 0.15), (1.5, 0.15, 0.12))]
+    loft(col, rings, m)
+    rbox("Charcoal", P(0, 1.14, 0.122), (0.012, 0.56, 0.006), (0, yaw, 0), 0.002)
+    for sx in (-1, 1):
+        tube(col, [P(sx * 0.215, 1.41, 0.0), P(sx * 0.252, 1.15, 0.02), P(sx * 0.238, 0.93, 0.05)], [0.066, 0.056, 0.049], 8)
+        box("White", P(sx * 0.238, 0.87, 0.055), (0.06, 0.1, 0.07), (0, yaw, 0))
+    cyl("White", P(0, 1.48, 0), 0.05, 0.1, 10)
+    sphere("White", P(0, 1.68, 0.01), (0.19, 0.25, 0.21), 8)
+    helper("BLK_mannequin", (mx - 0.28, y0, mz - 0.24), (mx + 0.28, y0 + 1.85, mz + 0.24))
 
 
 def mirror(z0, z1, y0=0.0):
@@ -1468,12 +1739,14 @@ def mirror(z0, z1, y0=0.0):
 
 
 def hanging_sign(row, x, y, z, w, h, ceiling, yaw=0):
-    """A sign hung on two cords (from ceiling(x)), facing +z turned by yaw, and the same on its back."""
+    """A sign hung on two steel cables from the ceiling(x) in a thin rounded steel frame, facing +z turned by yaw, the
+    same on its back."""
     c, s_ = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
     for u in (-w / 2 + 0.15, w / 2 - 0.15):
         px, pz = x + u * c, z - u * s_
-        span("Steel", (px, y + h / 2, pz), (px, ceiling(px), pz), 0.012)
-    box("Steel", (x - 0.03 * s_, y, z - 0.03 * c), (w + 0.1, h + 0.1, 0.03), (0, yaw, 0))
+        tube("Steel", [(px, y + h / 2 + 0.05, pz), (px, ceiling(px) - 0.02, pz)], 0.005, 4, smooth=False)
+        cyl("Steel", (px, ceiling(px) - 0.02, pz), 0.03, 0.02, 10)
+    rbox("Steel", (x - 0.03 * s_, y, z - 0.03 * c), (w + 0.1, h + 0.1, 0.03), (0, yaw, 0), 0.012)
     sign(row, (x, y, z), w, h, yaw)
     sign(row, (x - 0.06 * s_, y, z - 0.06 * c), w, h, yaw + 180)   # (and on its back: hung in the open, seen both ways)
 
@@ -1494,58 +1767,95 @@ def missions_board(mx, w=3.2):
 
 
 def board_shop(back_x0=4.9, counter_z=-1.6):
-    """Boards on the back wall from back_x0 and down the low end's wall, bindings under the window, a board tree, and
-    the counter facing the door with a glass case of upgrades (it opens the upgrades)."""
+    """Boards on the back wall from back_x0 and down the low end's wall (bindings on every other), a low two-tier stand
+    under the window (helmets and goggles on top, bindings under), a board tree, and the counter facing the door: an
+    oak counter with a glass case of goggles and wax in its front, a stone top, the point of sale (it opens the
+    upgrades)."""
     nb = int((7.6 - back_x0 - 0.2) / 0.4) + 1
     for i in range(nb):
-        board("Swatch%d" % (1 + (i * 2) % 5), back_x0 + i * 0.4, 0.12, MZ + 0.1, lean=-7)
-    lohi("Glulam", (back_x0 - 0.2, 0.0, MZ), (7.6, 0.12, MZ + 0.3))
+        board("Swatch%d" % (1 + (i * 2) % 5), back_x0 + i * 0.4, 0.12, MZ + 0.1, lean=-7, bindings=i % 2 == 0)
+    rlohi("Glulam", (back_x0 - 0.2, 0.0, MZ), (7.6, 0.12, MZ + 0.3), 0.015, 2)
     helper("BLK_boards", (back_x0 - 0.2, 0.0, MZ), (7.6, 1.7, MZ + 0.35))
     for i in range(12):
-        board("Swatch%d" % (1 + (i * 3) % 5), XL - T - 0.1, 0.12, -6.3 + i * 0.42, yaw=-90, lean=-7)
-    lohi("Glulam", (XL - T - 0.3, 0.0, -6.55), (XL - T, 0.12, -1.5))
+        board("Swatch%d" % (1 + (i * 3) % 5), XL - T - 0.1, 0.12, -6.3 + i * 0.42, yaw=-90, lean=-7, bindings=i % 3 == 0)
+    rlohi("Glulam", (XL - T - 0.3, 0.0, -6.55), (XL - T, 0.12, -1.5), 0.015, 2)
     helper("BLK_boards", (XL - T - 0.35, 0.0, -6.6), (XL - T, 1.7, -1.5))
-    lohi("Oak", (7.8, 0.9, MZ), (10.2, 0.94, MZ + 0.35))
-    lohi("Steel", (7.8, 0.0, MZ), (10.2, 0.9, MZ + 0.35))
-    for i in range(6):
-        box(("Charcoal", "Red", "Charcoal", "Navy", "Charcoal", "ArtA")[i], (8.0 + i * 0.4, 1.02, MZ + 0.18), (0.22, 0.16, 0.3))
-    helper("BLK_shelf", (7.8, 0.0, MZ), (10.2, 1.1, MZ + 0.4))
+    # the stand under the window: black steel legs, two rounded oak shelves
+    SX0, SX1, SZ = 7.8, 10.2, MZ + 0.2
+    for x in (SX0 + 0.04, SX1 - 0.04):
+        for zz in (MZ + 0.04, MZ + 0.36):
+            tube("Steel", [(x, 0.0, zz), (x, 0.94, zz)], 0.016, 6)
+    for yy in (0.42, 0.9):
+        rlohi("Oak", (SX0, yy - 0.04, MZ), (SX1, yy, MZ + 0.4), 0.014, 2)
+    for i in range(3):
+        helmet(SX0 + 0.35 + i * 0.85, 0.9, SZ, ("White", "Red", "Charcoal")[i], 0)
+    for i in range(2):
+        goggles((SX0 + 0.78 + i * 0.85, 0.9, SZ), 0, ("ArtA", "Navy")[i])
+    for i in range(4):
+        x = SX0 + 0.35 + i * 0.57
+        rbox("Charcoal", (x, 0.43, SZ), (0.2, 0.02, 0.24), (0, 0, 0), 0.008)
+        rbox(("Charcoal", "Red", "Charcoal", "Navy")[i], (x, 0.52, SZ - 0.09), (0.19, 0.17, 0.025), (-12, 0, 0), 0.01, 1)
+        for sx in (-1, 1):
+            rbox("Charcoal", (x + sx * 0.06, 0.465, SZ + 0.02), (0.02, 0.05, 0.16), (0, 0, 0), 0.005)
+    helper("BLK_shelf", (SX0, 0.0, MZ), (SX1, 1.25, MZ + 0.4))
+    # the board tree: a round steel foot, its pole, boards leaning round it
     TX, TZ = 6.3, -4.1
-    cyl("Steel", (TX, 0.0, TZ), 0.55, 0.08, 16)
-    cyl("Steel", (TX, 0.0, TZ), 0.05, 1.6, 8)
+    cyl("Steel", (TX, 0.0, TZ), 0.55, 0.035, 18)
+    cyl("Steel", (TX, 0.035, TZ), 0.5, 0.012, 18)
+    tube("Steel", [(TX, 0.04, TZ), (TX, 1.6, TZ)], 0.035, 10)
+    cyl("Steel", (TX, 1.6, TZ), 0.05, 0.02, 10)
     for k in range(6):
         a = k * math.pi / 3
-        board("Swatch%d" % (1 + k % 5), TX + 0.42 * math.cos(a), 0.08, TZ + 0.42 * math.sin(a), yaw=90 - math.degrees(a), lean=-10, h=1.45)
+        tube("Steel", [(TX, 1.15, TZ), (TX + 0.3 * math.cos(a), 1.15, TZ + 0.3 * math.sin(a))], 0.012, 6)
+        board("Swatch%d" % (1 + k % 5), TX + 0.42 * math.cos(a), 0.08, TZ + 0.42 * math.sin(a), yaw=90 - math.degrees(a), lean=-10, h=1.45, bindings=k % 2 == 0)
     helper("BLK_tree", (TX - 0.65, 0.0, TZ - 0.65), (TX + 0.65, 1.6, TZ + 0.65))
+    # the counter
     CZ = counter_z
-    lohi("Oak", (5.8, 0.0, CZ - 0.35), (8.2, 1.0, CZ + 0.35))
-    lohi("Steel", (5.75, 1.0, CZ - 0.4), (8.25, 1.05, CZ + 0.4))
+    rlohi("Steel", (5.85, 0.0, CZ - 0.3), (8.15, 0.1, CZ + 0.3), 0.006)
+    rlohi("Oak", (5.8, 0.1, CZ - 0.35), (8.2, 1.0, CZ + 0.35), 0.014)
+    for k in range(17):   # (fluted down its back and ends: the staff's side, and what you see coming round it)
+        box("Oak", (5.86 + k * 0.143, 0.55, CZ - 0.362), (0.04, 0.84, 0.026))
+    rlohi("CounterTop", (5.74, 1.0, CZ - 0.41), (8.26, 1.055, CZ + 0.41), 0.016, 2)
     pane("x", CZ + 0.36, 5.9, 8.1, 0.25, 0.9, 0.9, 0.02, "GlassIn")
-    for i in range(5):
-        box(("Leaf", "ArtA", "Red", "Navy", "Cream")[i], (6.2 + i * 0.4, 0.55, CZ + 0.1), (0.18, 0.22, 0.18))
-    box("Charcoal", (7.7, 1.17, CZ - 0.1), (0.35, 0.22, 0.25))
+    for (a, b_) in (((5.88, 0.22, CZ + 0.355), (8.12, 0.25, CZ + 0.375)), ((5.88, 0.9, CZ + 0.355), (8.12, 0.93, CZ + 0.375)),
+                    ((5.88, 0.25, CZ + 0.355), (5.91, 0.9, CZ + 0.375)), ((8.09, 0.25, CZ + 0.355), (8.12, 0.9, CZ + 0.375))):
+        rlohi("Steel", a, b_, 0.004)
+    rlohi("Oak", (5.9, 0.5, CZ - 0.25), (8.1, 0.53, CZ + 0.32), 0.006)   # (the case's shelf)
+    for i in range(4):
+        goggles((6.25 + i * 0.5, 0.53, CZ + 0.12), 0, ("ArtA", "Navy", "Leaf", "Red")[i])
+    for i in range(4):
+        rbox(("Cream", "Red", "Leaf", "ArtB")[i], (6.45 + i * 0.5, 0.29, CZ + 0.1), (0.14, 0.05, 0.08), (0, 12 * (i - 1.5), 0), 0.012, 1)   # (wax bars)
+    pos_till((7.65, 1.055, CZ - 0.12), 180)
+    rbox("Steel", (7.0, 3.35, MZ + 0.022), (2.5, 0.7, 0.025), (0, 0, 0), 0.01)
     sign(1, (7.0, 3.35, MZ + 0.05), 2.4, 0.6)
     helper("TAP_Upgrades", (5.7, 0.0, CZ - 0.45), (8.3, 2.2, CZ + 0.45))
-    helper("BLK_counter", (5.75, 0.0, CZ - 0.4), (8.25, 1.2, CZ + 0.4))
+    helper("BLK_counter", (5.75, 0.0, CZ - 0.42), (8.25, 1.2, CZ + 0.42))
     marker("SPOT_Upgrades", (7.0, 0.0, CZ + 1.15))
 
 
 def tuning_bench():
-    """The wax and tuning bench by the side door (the racks are just outside it): it opens the upgrades too."""
+    """The wax and tuning bench by the side door (the racks are just outside it): a black steel cabinet under a thick
+    oak top, a board on its vices base up being waxed, the iron, scrapers and brushes, wax on a shelf; it opens the
+    upgrades too."""
     BX0, BX1, BZ0, BZ1 = 8.95, 10.6, 5.85, 6.62
-    lohi("Steel", (BX0, 0.0, BZ0), (BX1, 0.88, BZ1))
-    lohi("Oak", (BX0 - 0.05, 0.88, BZ0 - 0.05), (BX1, 0.94, BZ1))
-    box("BoardPaint", (9.75, 1.0, (BZ0 + BZ1) / 2), (1.45, 0.03, 0.3))
-    for s in (-1, 1):
-        cyl("BoardPaint", (9.75 + s * 0.72, 0.985, (BZ0 + BZ1) / 2), 0.15, 0.03, 12)
-        lohi("Steel", (9.75 + s * 0.55 - 0.05, 0.94, (BZ0 + BZ1) / 2 - 0.18), (9.75 + s * 0.55 + 0.05, 1.08, (BZ0 + BZ1) / 2 + 0.18))
-    lohi("Steel", (9.1, 0.94, BZ0 + 0.05), (9.4, 1.04, BZ0 + 0.2))
+    ZC = (BZ0 + BZ1) / 2
+    rlohi("Steel", (BX0, 0.0, BZ0), (BX1, 0.88, BZ1), 0.012)
+    for x in (BX0 + 0.41, BX0 + 0.82, BX0 + 1.23):
+        rlohi("Charcoal", (x - 0.006, 0.08, BZ0 - 0.005), (x + 0.006, 0.8, BZ0 + 0.002), 0.002)   # (its doors' joints)
+    rlohi("Oak", (BX0 - 0.05, 0.88, BZ0 - 0.05), (BX1, 0.94, BZ1), 0.014, 2)
+    snowboard("BoardPaint", (9.75, 1.08, ZC), 90, -90, 1.45)
+    for sx in (-1, 1):
+        rbox("Steel", (9.75 + sx * 0.55, 1.01, ZC), (0.1, 0.13, 0.36), (0, 0, 0), 0.01)
+        rbox("Charcoal", (9.75 + sx * 0.55, 1.075, ZC), (0.12, 0.012, 0.3), (0, 0, 0), 0.004)
+    rbox("Charcoal", (9.25, 0.975, BZ0 + 0.14), (0.26, 0.07, 0.13), (0, 15, 0), 0.02, 1)    # (the iron)
+    tube("Charcoal", [(9.15, 1.03, BZ0 + 0.1), (9.3, 1.07, BZ0 + 0.16)], 0.012, 6)
     for k in range(4):
-        lohi("Steel", (10.0 + k * 0.12, 0.94, BZ0 + 0.06), (10.08 + k * 0.12, 0.96, BZ0 + 0.3))
-    lohi("Oak", (XL - T - 0.25, 1.4, 5.0), (XL - T, 1.44, 6.6))
+        rbox(("Navy", "Cream", "Navy", "Cream")[k], (10.05 + k * 0.12, 0.95, BZ0 + 0.18), (0.08, 0.02, 0.24), (0, 0, 0), 0.006)
+    rlohi("Oak", (XL - T - 0.25, 1.4, 5.0), (XL - T, 1.44, 6.6), 0.01)
     for k in range(6):
-        box(("ArtA", "Red", "Navy", "Leaf", "Cream", "ArtB")[k], (XL - T - 0.12, 1.5, 5.15 + k * 0.24), (0.12, 0.1, 0.16))
+        rbox(("ArtA", "Red", "Navy", "Leaf", "Cream", "ArtB")[k], (XL - T - 0.12, 1.5, 5.15 + k * 0.24), (0.12, 0.1, 0.16), (0, 0, 0), 0.015, 1)
     sign(2, (9.75, 3.08, D - T - 0.03), 1.45, 0.36, 180)
+    rbox("Steel", (9.75, 3.08, D - T - 0.015), (1.53, 0.44, 0.02), (0, 0, 0), 0.008)
     helper("TAP_Upgrades_2", (BX0 - 0.1, 0.0, BZ0 - 0.4), (BX1, 2.0, D - T))
     helper("BLK_bench", (BX0 - 0.05, 0.0, BZ0 - 0.05), (BX1, 1.1, D - T))
     helper("BLK_wax", (XL - T - 0.27, 1.3, 5.0), (XL - T, 1.7, 6.6))
@@ -1621,8 +1931,8 @@ def welcome_mat():
 
 
 def b_rest():
-    """The low end and the wing: the missions board (by the door), the board shop, wax & tune (at the front glass), the café."""
-    missions_stand()
+    """The low end and the wing: the board shop, wax & tune (at the front glass), the café. (campstairs: the missions
+    board by the door is gone; the one by the gate is the only one, Camp's CampBoard.cs.)"""
     board_shop(back_x0=5.3)
     tuning_bench()
     welcome_mat()
@@ -1863,42 +2173,41 @@ def log_basket(x, z, r=0.32):
 
 
 def ski_wall(x0, x1, y0, n):
-    """Old wooden and painted skis in pairs up the back wall, tips turned out, bindings on, a strap round each pair."""
+    """Old wooden and painted skis in pairs up the back wall, tips curling out, bindings on, a strap round each pair,
+    each pair on a steel bracket."""
     for i in range(n):
         x = x0 + (x1 - x0) * (i + 0.5) / n
         mat = ("Glulam", "Red", "Glulam", "Navy", "Glulam", "ArtB", "Glulam", "ArtA")[i % 8]
         for sx in (-1, 1):
-            xx = x + sx * 0.065
-            lohi(mat, (xx - 0.04, y0, MZ + 0.02), (xx + 0.04, y0 + 1.85, MZ + 0.045))
-            box(mat, (xx, y0 + 1.92, MZ + 0.065), (0.08, 0.17, 0.022), (-35, 0, 0))
-            lohi("Steel", (xx - 0.046, y0 + 0.78, MZ + 0.045), (xx + 0.046, y0 + 0.92, MZ + 0.085))
-        lohi("Charcoal", (x - 0.15, y0 + 1.25, MZ + 0.045), (x + 0.15, y0 + 1.3, MZ + 0.055))
-        lohi("Steel", (x - 0.03, y0 + 1.2, MZ), (x + 0.03, y0 + 1.36, MZ + 0.02))
+            ski(mat, (x + sx * 0.06, y0 + 0.97, MZ + 0.035), 0, 0, 1.95)
+        rbox("Charcoal", (x, y0 + 1.27, MZ + 0.055), (0.29, 0.045, 0.03), (0, 0, 0), 0.008)
+        rbox("Steel", (x, y0 + 0.45, MZ + 0.012), (0.3, 0.04, 0.022), (0, 0, 0), 0.008)
 
 
 def coat_rack(z0, z1, x=XL - T):
-    """By the side door (on the low end's wall, facing in): an oak rail of black pegs, jackets, a beanie and a scarf
-    hung on it, an oak bench under it with boots beneath and a helmet on it."""
-    lohi("Oak", (x - 0.04, 1.62, z0), (x, 1.78, z1))
+    """By the side door (on the low end's wall, facing in): an oak rail of black pegs, jackets hung on them by their
+    hoods' loops, a beanie and a scarf; an oak bench under it with boots beneath and a helmet on it."""
+    rlohi("Oak", (x - 0.04, 1.62, z0), (x, 1.78, z1), 0.008)
     n = 5
     for k in range(n):
         zh = z0 + 0.15 + (z1 - z0 - 0.3) * k / (n - 1)
-        lohi("Steel", (x - 0.13, 1.68, zh - 0.015), (x - 0.04, 1.71, zh + 0.015))
+        tube("Steel", [(x - 0.04, 1.7, zh), (x - 0.13, 1.72, zh)], 0.014, 6)
         if k % 2 == 0:
-            box(JACKETS[(k * 3) % len(JACKETS)], (x - 0.16, 1.26, zh), (0.17, 0.78, 0.4), (0, 0, -4))
+            jacket(JACKETS[(k * 3) % len(JACKETS)], (x - 0.17, 1.84, zh), -90, hood=True, hanger=False, s=0.97)
         elif k == 1:
-            sphere("Red", (x - 0.16, 1.62, zh), (0.2, 0.17, 0.2), 10)
-            box("Navy", (x - 0.12, 1.25, zh), (0.05, 0.75, 0.13))
+            beanie((x - 0.16, 1.6, zh), "Red")
+            tube("Navy", [(x - 0.13, 1.7, zh - 0.05), (x - 0.12, 1.3, zh - 0.06), (x - 0.11, 1.08, zh - 0.06)], 0.025, 6)
+            tube("Navy", [(x - 0.13, 1.7, zh + 0.05), (x - 0.12, 1.35, zh + 0.06), (x - 0.11, 1.15, zh + 0.07)], 0.025, 6)
         else:
-            box("Cream", (x - 0.12, 1.3, zh), (0.05, 0.7, 0.16))
-    lohi("Oak", (x - 0.42, 0.42, z0 + 0.02), (x - 0.02, 0.47, z1 - 0.02))
+            tube("Cream", [(x - 0.13, 1.7, zh), (x - 0.12, 1.25, zh + 0.02), (x - 0.11, 1.0, zh + 0.03)], 0.03, 6)
+    rlohi("Oak", (x - 0.42, 0.42, z0 + 0.02), (x - 0.02, 0.47, z1 - 0.02), 0.012, 2)
     for zz in (z0 + 0.08, z1 - 0.08):
-        lohi("Steel", (x - 0.38, 0.0, zz - 0.02), (x - 0.06, 0.42, zz + 0.02))
-    helmet(x - 0.24, 0.47, z0 + 0.4, "White")
-    for k in range(3):
-        bz = z0 + 0.35 + k * 0.32
-        for sx in (-0.05, 0.05):
-            box("Charcoal", (x - 0.24, 0.09, bz + sx * 1.4), (0.26, 0.18, 0.1))
+        rlohi("Steel", (x - 0.38, 0.0, zz - 0.02), (x - 0.06, 0.42, zz + 0.02), 0.006)
+    helmet(x - 0.24, 0.47, z0 + 0.4, "White", -90)
+    for k in range(2):
+        bz = z0 + 0.4 + k * 0.45
+        for sx in (-0.06, 0.06):
+            boot((x - 0.24, 0.0, bz + sx), -90, "Charcoal", ("Red", "Navy")[k])
     helper("BLK_coats", (x - 0.45, 0.0, z0), (x, 1.9, z1))
 
 
@@ -1938,8 +2247,8 @@ def outfitters_front():
     table behind them, the till by the missions board, its sign hung over the rail; the way across the hall in front of
     it (z 0.2 to 2.2) kept clear, and the big glass's right half free for Val and Breanna (Camp.LodgeWindow). The
     wardrobe's station (the closet) at the rail."""
-    for (mx, col) in ((-4.6, "Red"), (-3.6, "ArtB"), (-2.6, "Navy")):
-        mannequin(mx, 6.15, col)
+    for (mx, col, yaw, strap) in ((-4.6, "Red", 200, "Navy"), (-3.6, "ArtB", 180, "Red"), (-2.6, "Navy", 160, "ArtA")):
+        mannequin(mx, 6.15, col, 0.0, yaw, strap)
     rail_x(-4.8, -2.2, 4.0, two_sided=True)
     display_table(-0.8, 3.2)
     till(0.35, 2.45, 1.05, 3.15)

@@ -85,7 +85,7 @@ namespace Summit
             if (mounds != null) foreach (Transform m in mounds) Mound(m);
             // the banks along the paved path and the shovelled one (meshes made here: their triangles)
             foreach (Transform t in root)
-                if (t.name == "PathBanks" || t.name == "DugBanks")
+                if (t.name == "PathBanks" || t.name == "PathBanksLower" || t.name == "DugBanks")
                 {
                     var mf = t.GetComponent<MeshFilter>();
                     if (mf != null && mf.sharedMesh != null && mf.sharedMesh.isReadable) Banks(t.name, mf.sharedMesh, t);
@@ -347,8 +347,15 @@ namespace Summit
                 trod.Add((wingFoot, wingFoot, 2.4f, 2.2f, 0.95f)); dirt.Add((wingFoot, wingFoot, 0.9f, 0.9f, 0.45f));
                 trod.Add((wingFoot, fire, 0.7f, 1.6f, 0.75f));     // the wing's steps to the fire
                 // along the paved path, either side of its banks: people step off it
-                var path = new List<Vector2> { F(stairsFoot - chalet.forward * 0.6f), G(-5.6f, -71.5f), G(-4.9f, -64.5f), G(-3.4f, -57f), G(-1.2f, -50.5f), G(0f, -44f) };
-                for (int i = 0; i + 1 < path.Count; i++) trod.Add((path[i], path[i + 1], 2.4f, 2.6f, 0.85f));
+                // (campstairs: in two runs, to the top of the stairs down the bank and from their foot to the gate)
+                for (int part = 0; part < 2; part++)
+                {
+                    var path = LodgePathPoints(part == 0).ConvertAll(F);
+                    for (int i = 0; i + 1 < path.Count; i++) trod.Add((path[i], path[i + 1], 2.4f, 2.6f, 0.85f));
+                }
+                // and round the stairs' ends, where people step off them and wait to go up
+                var sTop = G(StairX, StairTopZ - StairTopDeck - 0.6f); var sFoot = G(StairX, StairBottomZ + 0.8f);
+                trod.Add((sTop, sTop, 2.2f, 2f, 0.9f)); trod.Add((sFoot, sFoot, 2.2f, 2f, 0.9f));
             }
             var gate = G(0f, Slope.GateZ - 2.6f);
             trod.Add((gate, gate, 4.5f, 3f, 1f)); dirt.Add((gate, gate, 1.6f, 1.6f, 0.35f));
@@ -357,7 +364,7 @@ namespace Summit
             var wax = G(7.2f, Slope.GateZ - 10.4f);
             trod.Add((wax, wax, 1.6f, 1.6f, 0.8f));
             trod.Add((wax, gate, 0.8f, 1.4f, 0.7f));
-            trod.Add((G(-5.8f, Slope.GateZ - 8.9f), G(-3.7f, Slope.GateZ - 11.2f), 1.6f, 1.8f, 0.85f));
+            trod.Add((G(-8.6f, Slope.GateZ - 8.9f), G(BoardX + 0.8f, BoardZ + 1.6f), 1.6f, 1.8f, 0.85f));   // (the rack to the missions board: CampBoard)
             var snowman = G(SnowmanX, SnowmanZ);
             trod.Add((snowman, snowman, 2.0f, 1.8f, 0.9f));
             var look = G(LookoutX - 2.6f, LookoutZ);

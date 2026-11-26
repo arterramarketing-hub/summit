@@ -560,25 +560,65 @@ namespace Summit
         // ---------------------------------------------------------------- the paved path and its lamps
 
         /// <summary>
-        /// A paved path cleared through the snow from the foot of the lodge's steps, round the fire and down to the gate,
-        /// low banks of snow along its edges, and lamp posts along it (two of them real lamps at dusk).
+        /// The paved path's middle lines: from the foot of the lodge's steps, left of the fire, to the top of the stairs
+        /// down the bank (upper); and from the stairs' foot down to the gate (lower). (campstairs: it ran straight on down
+        /// the bank as one ramp, 40 to 60 per cent; the stairs take the bank now, CampStairs.cs.)
+        /// </summary>
+        List<Vector3> LodgePathPoints(bool upper) => upper
+            ? new List<Vector3> { stairsFoot - chalet.forward * 0.6f, Ground(-5.6f, -71.5f), Ground(-4.4f, -67.2f), Ground(-2.7f, -64.4f), Ground(StairX, StairTopZ - StairTopDeck + 0.05f) }
+            : new List<Vector3> { Ground(StairX, StairBottomZ + 0.02f), Ground(StairX, -45.6f), Ground(-1.6f, -43.9f), Ground(0f, -42.4f) };
+
+        /// <summary>
+        /// The paved path, cleared through the snow (low banks of shovelled snow along its edges), in two gentle runs:
+        /// from the foot of the lodge's steps round the fire to the top of the stairs, and from their foot to the gate;
+        /// lamp posts along it (two of them real lamps at dusk), more by the stairs (CampStairs).
         /// </summary>
         void LodgePath()
         {
             if (paver == null) { paver = M(new Color(0.58f, 0.58f, 0.6f), 0.18f, Resources.Load<Texture2D>("Camp/Stone"), new Vector2(1f, 1f)); }
-            var pts = new List<Vector3> { stairsFoot - chalet.forward * 0.6f, Ground(-5.6f, -71.5f), Ground(-4.9f, -64.5f), Ground(-3.4f, -57f), Ground(-1.2f, -50.5f), Ground(0f, -44f) };
-            var line = Spline(pts, 10);
-            const float half = 1.15f;
+            var posts = new GameObject("LampPosts").transform; posts.SetParent(root, false);
+            int n = 0;
+            for (int part = 0; part < 2; part++)
+            {
+                var line = Spline(LodgePathPoints(part == 0), 10);
+                PathStrip(part == 0 ? "Path" : "PathLower", line, out var bv, out var btri);
+                Strip(part == 0 ? "PathBanks" : "PathBanksLower", bv, null, btri, snowCap);
+                if (part == 1) continue;   // (the stairs' own lamps light its foot and the gate's are just beyond)
+                // lamp posts along the upper run, seven metres apart
+                float along = 0f, next = 4f;
+                for (int i = 1; i < line.Count && n < 3; i++)
+                {
+                    along += Vector3.Distance(line[i - 1], line[i]);
+                    if (along < next) continue;
+                    var dir = line[i] - line[i - 1]; dir.y = 0f; dir.Normalize();
+                    var side = new Vector3(dir.z, 0f, -dir.x);
+                    if (side.x > 0f) side = -side;   // (all on its outer side, away from the fire and the middle of the camp)
+                    var at = line[i] + side * (PathHalf + 0.45f);
+                    at.y = Slope.DrawnHeight(at.x, at.z);
+                    LampPost(posts, at, n == 1);
+                    next += 7f; n++;
+                }
+            }
+            LampPosts = n;
+            Combine(posts);
+            foreach (var r in posts.GetComponentsInChildren<MeshRenderer>())
+                if (r.sharedMaterial == bulb) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        }
+
+        const float PathHalf = 1.15f;
+
+        /// <summary>One run of the path: its paving (five rows across, on the snow) and its banks (returned, both sides).</summary>
+        void PathStrip(string name, List<Vector3> line, out List<Vector3> bv, out List<int> btri)
+        {
+            const float half = PathHalf;
             var v = new List<Vector3>(); var uv = new List<Vector2>(); var tri = new List<int>();
-            var bv = new List<Vector3>(); var btri = new List<int>();
-            float dist = 0f;
+            bv = new List<Vector3>(); btri = new List<int>();
             int across = 5;
             for (int i = 0; i < line.Count; i++)
             {
                 var a = line[Mathf.Max(0, i - 1)]; var b = line[Mathf.Min(line.Count - 1, i + 1)];
                 var dir = b - a; dir.y = 0f; dir.Normalize();
                 var side = new Vector3(dir.z, 0f, -dir.x);
-                if (i > 0) dist += Vector3.Distance(line[i - 1], line[i]);
                 for (int k = 0; k < across; k++)
                 {
                     float e = Mathf.Lerp(-half, half, k / (across - 1f));
@@ -609,27 +649,7 @@ namespace Summit
                             else btri.AddRange(new[] { p0, p1, p0 + 1, p0 + 1, p1, p1 + 1 });
                         }
             }
-            Strip("Path", v, uv, tri, paver);
-            Strip("PathBanks", bv, null, btri, snowCap);
-            // five lamp posts along it, seven metres apart
-            var posts = new GameObject("LampPosts").transform; posts.SetParent(root, false);
-            float along = 0f, next = 4f; int n = 0;
-            for (int i = 1; i < line.Count && n < 6; i++)
-            {
-                along += Vector3.Distance(line[i - 1], line[i]);
-                if (along < next) continue;
-                var dir = line[i] - line[i - 1]; dir.y = 0f; dir.Normalize();
-                var side = new Vector3(dir.z, 0f, -dir.x);
-                if (side.x > 0f) side = -side;   // (all on its outer side, away from the fire and the middle of the camp)
-                var at = line[i] + side * (half + 0.45f);
-                at.y = Slope.DrawnHeight(at.x, at.z);
-                LampPost(posts, at, n == 1 || n == 3);
-                next += 7f; n++;
-            }
-            LampPosts = n;
-            Combine(posts);
-            foreach (var r in posts.GetComponentsInChildren<MeshRenderer>())
-                if (r.sharedMaterial == bulb) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            Strip(name, v, uv, tri, paver);
         }
 
         void Strip(string name, List<Vector3> v, List<Vector2> uv, List<int> tri, Material m)
