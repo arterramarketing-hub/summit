@@ -284,7 +284,8 @@ namespace Summit
                 // (the banks die away at the path's ends, where it opens out by the fire and the lookout)
                 float t = i / (float)(line.Count - 1), ends = Mathf.Clamp01(Mathf.Min(t, 1f - t) / 0.12f);
                 foreach (var s in new[] { -1f, 1f })
-                    foreach (var (off, h) in new[] { (half - 0.05f, -0.03f), (half + 0.1f, 0.24f), (half + 0.32f, 0.32f), (half + 0.66f, -0.03f) })
+                    // (the inner face rising gently from the path's edge: walked along close to it, a knee doesn't go in)
+                    foreach (var (off, h) in new[] { (half - 0.05f, -0.03f), (half + 0.28f, 0.2f), (half + 0.5f, 0.32f), (half + 0.84f, -0.03f) })
                     {
                         var q = line[i] + side * s * off;
                         q.y = Slope.DrawnHeight(q.x, q.z) + Mathf.Lerp(-0.03f, h, ends) + 0.07f * Slope.Noise(q.x * 2.3f, q.z * 2.3f) * (h > 0f ? 1f : 0f);

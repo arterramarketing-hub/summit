@@ -454,6 +454,7 @@ namespace Summit
             var where = UseLodge ? LodgeBirches : new[] { new Vector2(-22.5f, -78f), new Vector2(-22f, -86f), new Vector2(3f, -94f), new Vector2(-17.5f, -63f), new Vector2(-25.5f, -70f), new Vector2(6f, -91f) };
             for (int i = 0; i < where.Length; i++)
             {
+                if (LiftTop.Covers(Cx + where[i].x, where[i].y, 2f)) continue;   // (off a design version's lift top: LiftTop)
                 var t = Frame(where[i].x, where[i].y, i * 53f);
                 t.name = "Birch";
                 float h = 9f + 4f * Slope.Hash01(i, 5, 31), lean = (Slope.Hash01(i, 6, 31) - 0.5f) * 6f;
@@ -530,9 +531,10 @@ namespace Summit
                 float s = 1.4f + 2.2f * Slope.Hash01(i, 5, 41);
                 if (UseLodge && !LodgeClear(p, s * 0.7f)) continue;   // (not into the lodge or onto its terrace)
                 if (NearSummitPath(p, s * 0.75f + 1.6f)) continue;   // (nor onto the Summit lift's path in: camplayout)
+                if (LiftTop.Covers(p.x, p.z, s * 0.75f + 1f)) continue;   // (nor onto a design version's lift top: LiftTop)
                 // (its middle no higher than the lowest snow under its rim: on a slope it bulged out over the snow below)
                 float low = p.y; for (int k = 0; k < 8; k++) low = Mathf.Min(low, Slope.DrawnHeight(p.x + 0.7f * s * Mathf.Cos(k * 0.785f), p.z + 0.5f * s * Mathf.Sin(k * 0.785f)));
-                if (p.y - low > 0.5f) continue;   // (none on steep ground: it doesn't sit on it)
+                if (p.y - low > Mathf.Min(0.5f, 0.1f * s + 0.08f)) continue;   // (none on steep ground, the bank up from the gate: it doesn't sit on it, and walked into from below it's in your knees)
                 P(PrimitiveType.Sphere, t, new Vector3(p.x, Mathf.Min(p.y - s * 0.22f, low - 0.02f), p.z), new Vector3(s * 1.4f, s * 0.6f, s), new Vector3(0f, i * 41f, 0f), snowCap);
             }
         }
@@ -929,6 +931,7 @@ namespace Summit
                                 new Vector2(-20.5f, -81f), new Vector2(2.6f, -84.5f) };   // the last two: spruces beside the chalet
             for (int i = 0; i < where.Length; i++)
             {
+                if (LiftTop.Covers(Cx + where[i].x, where[i].y, 2.5f)) continue;   // (off a design version's lift top: LiftTop)
                 if (real)
                 {
                     // grown and buried in the snow like the forest's trees up here, and casting shadows in the camp
@@ -1487,6 +1490,20 @@ namespace Summit
             Place();
             lastStep = body.WalkPhase;
             Redress();
+        }
+
+        /// <summary>
+        /// (lifttop) Into the camp on foot at a given place, facing a given way (degrees): where the hero's glide off the
+        /// Summit lift stopped (LiftArrive). Soft: the camera eases on from where it is, as it already sits behind them.
+        /// </summary>
+        public void EnterAt(Rider r, RiderBody b, Camera c, Vector3 at, float yawDeg, bool soft)
+        {
+            Enter(r, b, c);
+            pos = new Vector3(at.x, Slope.DrawnHeight(at.x, at.z), at.z);
+            yaw = yawDeg * Mathf.Deg2Rad; camYaw = yaw; speed = 0f;
+            snap = !soft;
+            Place();
+            lastStep = body.WalkPhase;
         }
 
         public void Leave()

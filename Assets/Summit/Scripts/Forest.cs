@@ -84,12 +84,16 @@ namespace Summit
                 density = glade > 0.78f ? 0.10f : 0.012f;                 // the odd tree island on the piste
             else
                 density = Mathf.Lerp(0.16f, 0.62f, Mathf.Clamp01((off - half) / 30f)) * Mathf.Lerp(0.35f, 1.3f, glade);
+            // (lifttop: clumps of firs either side of the Summit top's far side, and a few rock outcrops on its open slope)
+            float grove = LiftTop.Grove(wx, wz, out float outcrop);
+            density = Mathf.Max(density, grove);
             if (wz < 70f && off < 34f) density *= 0.1f;                  // a clean start
-            if (Slope.OnPad(wx, wz)) return Kind.None;
+            if (Slope.OnPad(wx, wz) || LiftTop.Covers(wx, wz, 3f)) return Kind.None;
             // how many trees grow at this height (Zone): rocks stand where they always did; above the tree line the
             // cells that would have held a tree are open snow, a few of them a boulder (none on the piste)
-            bool rock = Slope.Hash01(cx, cz, 8) < (off < Slope.PisteHalf ? 0.25f : 0.12f);
-            float grow = rock ? 1f : Zone(wx, wz);
+            bool rock = outcrop > 0f || Slope.Hash01(cx, cz, 8) < (off < Slope.PisteHalf ? 0.25f : 0.12f);
+            float grow = rock ? 1f : Mathf.Max(Zone(wx, wz), grove > 0.05f ? 1f : 0f);
+            if (outcrop > 0f) density = 1f;
             if (off < Slope.PisteHalf - 3f) grow = Mathf.Min(grow, 1f);   // (never more to hit on the piste than there was)
             if (!rock && grow < 1f && off > Slope.PisteHalf + WildMargin && Slope.Hash01(cx, cz, 19) < Boulders * Mathf.Clamp01(1f - grow / 0.25f)) { rock = true; grow = 1f; }
             if (Slope.Hash01(cx, cz, 1) >= density * grow) return Kind.None;
@@ -103,7 +107,7 @@ namespace Summit
             if (Mathf.Abs(Slope.Kicker(x, z)) > 0.01f || Mathf.Abs(Slope.Kicker(x, z - 14f)) > 0.01f) return Kind.None;   // keep kickers clear
             variant = (int)(Slope.Hash01(cx, cz, 7) * 64f);
             pos = new Vector3(x, Slope.DrawnHeight(x, z), z);
-            size = rock ? 0.8f + 1.4f * Slope.Hash01(cx, cz, 4) : (0.75f + 0.6f * Slope.Hash01(cx, cz, 4)) * Stature(z);
+            size = rock ? (outcrop > 0f ? outcrop : 0.8f + 1.4f * Slope.Hash01(cx, cz, 4)) : (0.75f + 0.6f * Slope.Hash01(cx, cz, 4)) * Mathf.Max(Stature(z), grove > 0.05f ? 0.7f : 0f);
             return rock ? Kind.Rock : Kind.Tree;
         }
 
@@ -118,7 +122,7 @@ namespace Summit
             float glade = Slope.Noise(x * 0.016f + 9f, z * 0.016f);
             float density = Mathf.Lerp(0.16f, 0.62f, Mathf.Clamp01((off - Slope.PisteHalf) / 30f)) * Mathf.Lerp(0.35f, 1.3f, glade);
             if (z < 70f && off < 34f) density *= 0.1f;
-            if (Slope.OnPad(x, z)) return 0f;
+            if (Slope.OnPad(x, z) || LiftTop.Covers(x, z, 3f)) return 0f;
             // (about one in eight of what stands off the piste is a rock; and only so many trees grow at this height,
             // in clumps too fine for the far field to show one by one)
             return Mathf.Clamp01(density * 0.88f / 0.62f * Mathf.Min(1.15f, ZoneCoarse(z)));
@@ -429,7 +433,7 @@ namespace Summit
             if (r >= 0.4f) return false;                                  // (the most a cell's chance can be: skip the sums)
             Stand(cx, cz, wx, wz, out float pines, out float young, out _, out _, out float edge);
             if (r >= (0.04f + 0.26f * edge + 0.2f * Mathf.Max(0f, young - 0.25f)) * Mathf.Min(1f, Zone(wx, wz))) return false;   // (none above the tree line)
-            if (Slope.OnPad(wx, wz) || Course.Keep(wx, wz, 1f)) return false;
+            if (Slope.OnPad(wx, wz) || Course.Keep(wx, wz, 1f) || LiftTop.Covers(wx, wz, 3f)) return false;
             if (LiftLine.Taken(wx, wz, 3.5f)) return false;   // not in a ski lift's cleared swath, like the trees
             float x = wx + (Slope.Hash01(cx, cz, 17) - 0.5f) * Cell * 0.75f;
             float z = wz + (Slope.Hash01(cx, cz, 18) - 0.5f) * Cell * 0.75f;

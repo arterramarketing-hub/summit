@@ -810,10 +810,14 @@ namespace Summit
             var h = new Vector3(v.x, 0f, v.z) * Mathf.Exp(-dt * 3f);
             if (HasCrashFollow)
             {
-                // stay with the thrown body, so the camera watches it and you get up where it lands
+                // stay with the thrown body, so the camera watches it and you get up where it lands: its own pace (from
+                // where it was the step before, smoothed) and a pull back onto it, so a fast slide doesn't leave it behind
+                if (followHave && dt > 1e-4f) { var fv = (CrashFollow - followPrev) / dt; fv.y = 0f; followVel = Vector3.Lerp(followVel, Vector3.ClampMagnitude(fv, 40f), 0.35f); }
+                followPrev = CrashFollow; followHave = true;
                 var d = CrashFollow - p; d.y = 0f;
-                h = Vector3.ClampMagnitude(d * 8f, 40f);
+                h = Vector3.ClampMagnitude(followVel + d * 8f, 45f);
             }
+            else { followHave = false; followVel = Vector3.zero; }
             Speed = h.magnitude;
             // get up only once the thrown body has come to rest (or after a long slide, regardless)
             // back on your feet only when the player asks: watching where the body ends up is half the fun
@@ -827,6 +831,7 @@ namespace Summit
             return new Vector3(h.x, (wantY - hereY) / dt, h.z);
         }
 
+        Vector3 followPrev, followVel; bool followHave;
         /// <summary>Where the thrown rider is, set by the ragdoll while a crash plays out.</summary>
         public Vector3 CrashFollow;
         public bool HasCrashFollow;

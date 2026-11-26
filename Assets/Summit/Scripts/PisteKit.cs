@@ -99,6 +99,7 @@ namespace Summit
                 LayBlindLips(list);
                 for (int i = 0; i < asked.Count; i++) if (askedSeed[i] == Slope.Seed) Line(list, rl, asked[i], true, true);
                 LayEdges(list);
+                LayFarSide(list, rl);
                 LayGuns(list);
                 LayHut(list);
                 list.Sort((a, b) => a.foot.z.CompareTo(b.foot.z));
@@ -328,6 +329,35 @@ namespace Summit
                     Add(list, Kind.EdgePole, Snow(x, z) - Vector3.up * 0.05f, new Vector3(-s * 0.25f, 0f, -1f).normalized, EdgeH);
                 }
                 z += step;
+            }
+        }
+
+        /// <summary>
+        /// (lifttop) The Summit top's far side, from its bench down to the run: poles along both edges, and where an
+        /// edge is open (the ground falling away past it) a rope line along it instead.
+        /// </summary>
+        static void LayFarSide(List<Item> list, List<Rope> rl)
+        {
+            var edges = LiftTop.FarEdges(9f);
+            for (int side = -1; side <= 1; side += 2)
+            {
+                var pts = new List<(Vector2 at, bool open)>();
+                foreach (var e in edges) if (e.side == side) pts.Add((e.at, e.open));
+                var run = new List<Vector2>();
+                for (int i = 0; i <= pts.Count; i++)
+                {
+                    bool open = i < pts.Count && pts[i].open;
+                    if (open) { run.Add(pts[i].at); continue; }
+                    if (run.Count >= 2) Line(list, rl, run, false, false);
+                    run.Clear();
+                    if (i >= pts.Count || (i & 1) == 1) continue;
+                    var at = pts[i].at;
+                    if (Blocked(at.x, at.y, 0.4f)) continue;
+                    var d = (pts[Mathf.Min(pts.Count - 1, i + 1)].at - pts[Mathf.Max(0, i - 1)].at).normalized;
+                    // the disc faces up the way, a little in toward the run's middle
+                    var inward = new Vector2(-d.y, d.x) * side;
+                    Add(list, Kind.EdgePole, Snow(at.x, at.y) - Vector3.up * 0.05f, new Vector3(-d.x - inward.x * 0.25f, 0f, -d.y - inward.y * 0.25f).normalized, EdgeH);
+                }
             }
         }
 

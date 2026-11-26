@@ -191,7 +191,7 @@ namespace Summit
             float a = Slope.Across(x, z), aa = Mathf.Abs(a);
             float rough = Smooth((aa - half) / EdgeBlend);
             // (a lift hill's cleared lane and the hill itself are packed, as the run is)
-            float lane = Lane(x, z);
+            float lane = Mathf.Max(Lane(x, z), LiftTop.Groomed(x, z));   // (and the Summit top's bench and its ways: LiftTop)
             rough *= 1f - lane;
             float groomed = 1f - rough;
 

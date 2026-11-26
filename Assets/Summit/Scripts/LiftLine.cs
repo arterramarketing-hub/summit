@@ -230,6 +230,7 @@ namespace Summit
                 if (lifts == null || laidFor != Slope.Seed)
                 {
                     laidFor = Slope.Seed;
+                    LiftTop.Warm();   // (the Summit top's ground laid out here, on the main thread, before anything else asks)
                     var watch = System.Diagnostics.Stopwatch.StartNew();
                     lifts = new Lift[0];   // (so nothing that asks about the ground while they are laid sees the old ones)
                     HideHills();           // (and they are laid on the mountain without hills: LiftHill.cs)
@@ -362,12 +363,17 @@ namespace Summit
             float b = Course.First;
             float cx = Slope.Centre(Slope.PadLip);
             int tries = 0;
+            // (lifttop: on the summit bench behind the lodge, LiftTop; should the bench not take it on some mountain,
+            // where it stood before, beside the lodge's wing, then in front of the camp's left corner)
+            var places = new List<(float[] zs, float[] offs)>();
+            if (LiftTop.Station(out var vz, out var voff)) places.Add((vz, voff));
+            foreach (var zs in SummitZ) places.Add((zs, SummitOff));
             // (the nearest to the camp first; then, on a summit face too steep for the usual towers, taller ones, as
             // real summit lifts have)
             // (every height and offset beside the lodge first; only then the old places in front of the camp)
-            foreach (var zs in SummitZ)
+            foreach (var (zs, offList) in places)
             foreach (float hm in new[] { HMax, SummitHMax })
-            foreach (float off in SummitOff)
+            foreach (float off in offList)
                 foreach (float zt in zs)
                     foreach (float zBottom in wallLeft ? new[] { b + Course.DangerAt - 12f } : new[] { zb, b + Course.DangerAt - 12f })
                         foreach (float ob in SummitBottom)
@@ -439,7 +445,8 @@ namespace Summit
         // (a lift stays out of a ridge stretch altogether, canyons, gorge and all, not just off its rock)
         // (asked with a small margin as well as a wide one: near two jump cliffs at once, Cliffs.Keep's wide look can
         // find the further one first and miss the nearer)
-        static bool Kept(float x, float z) => Ridge.InCanyons(z) || CliffBand.Near(z, 30f, out _) || Course.Keep(x, z, 3f) || Course.Keep(x, z, 0.5f) || Cliffs.WallCut(x, z) < -0.01f || Slope.OnPad(x, z);
+        static bool Kept(float x, float z) => Ridge.InCanyons(z) || CliffBand.Near(z, 30f, out _) || Course.Keep(x, z, 3f) || Course.Keep(x, z, 0.5f) || Cliffs.WallCut(x, z) < -0.01f || Slope.OnPad(x, z)
+            || (z > -100f && z < 80f && LiftTop.Covers(x, z, 2.5f));   // (nor on the Summit top's ways: its far side runs beside the line, and under it)
 
         static readonly float[] StationAcross = { -StationHalfWid, -Half, 0f, Half, StationHalfWid };
 

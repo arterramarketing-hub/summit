@@ -379,7 +379,7 @@ namespace Summit
             y = Ridge.Shape(x, z, y);   // a narrow crest with cliffs either side, once a cycle
             y += LiftLine.HillHeight(x, z);   // the hills under the lift lines that carry a rider up to the cables (LiftHill.cs)
             if (cut) y -= Course.CrevasseCut(x, z);
-            return Start(x, z, y);
+            return LiftTop.Shape(x, z, Start(x, z, y));   // (the Summit lift's top: its bench, the way into the camp, the far side down to the run)
         }
 
         // ---------------------------------------------------------------- the start
@@ -501,6 +501,13 @@ namespace Summit
                 y -= Mathf.Lerp(e * 0.9f, drop, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-34f, -84f, z)));
             }
             return Mathf.Lerp(pad, y, w);
+        }
+
+        /// <summary>The camp's plateau's own level at z (behind the gate's bank: rising gently to the back), without its lumps or the lodge's pad.</summary>
+        public static float PlateauAt(float z)
+        {
+            float cx = Centre(PadLip), back = PadLip - z;
+            return BaseAt(cx, PadLip) + PadDrop + 38f * 0.22f + Mathf.Max(0f, back - 38f) * 0.07f + 6f * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-44f, -62f, z));
         }
 
         /// <summary>

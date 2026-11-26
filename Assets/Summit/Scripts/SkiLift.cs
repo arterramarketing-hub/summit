@@ -114,6 +114,28 @@ namespace Summit
 
         bool Baking_(Mesh m) { foreach (var b in baking) if (b.mesh == m) { b.freed = true; return true; } return false; }
         static double Clock => TestClock >= 0.0 ? TestClock : Time.timeAsDouble;
+        /// <summary>The lifts' clock (what every chair's place is worked out from).</summary>
+        public static double Now => Clock;
+
+        /// <summary>
+        /// (lifttop: LiftArrive) One chair at a moment, as Chairs draws it: its frame (the grip, +z the way it goes,
+        /// swinging as it does), how far round its loop it is, and which lap.
+        /// </summary>
+        public static Matrix4x4 ChairAt(LiftLine.Lift l, int c, double clock, out float d, out int lap)
+        {
+            double along = c * (double)l.spacing + clock * LiftLine.Speed;
+            lap = (int)System.Math.Floor(along / l.loop);
+            d = (float)(along - lap * (double)l.loop);
+            l.Loop(d, out Vector3 pos, out Vector3 travel, out _, out float since);
+            float t = (float)(clock % 3600.0);
+            Vector3 flat = new Vector3(travel.x, 0f, travel.z);
+            if (flat.sqrMagnitude < 1e-6f) flat = -l.dir;
+            float kick = since < 60f ? 3.2f * Mathf.Exp(-since / 9f) * Mathf.Sin(since * 0.42f) : 0f;
+            float pitch = 1.6f * Mathf.Sin(t * 1.3f + c * 1.7f) + kick;
+            float roll = 1.1f * Mathf.Sin(t * 1.05f + c * 2.9f);
+            if (since < 4f) pos.y += 0.035f * Mathf.Exp(-since / 1.2f) * Mathf.Sin(since * 5.2f);
+            return Matrix4x4.TRS(pos, Quaternion.LookRotation(flat, Vector3.up) * Quaternion.Euler(pitch, 0f, roll), Vector3.one);
+        }
 
         Transform target;
         Rider rider;

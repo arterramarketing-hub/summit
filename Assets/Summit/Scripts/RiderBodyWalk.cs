@@ -40,6 +40,7 @@ namespace Summit
 
         public void SetWalking(bool on)
         {
+            if (gearOut) GearAt(null, Quaternion.identity);
             if (Walking == on) return;
             if (!boardHomeSet) { boardHomePos = boardRoot.localPosition; boardHomeRot = boardRoot.localRotation; boardHomeSet = true; }
             Walking = on;
@@ -60,6 +61,43 @@ namespace Summit
                 if (tubeBeforeWalk) SetTube(true);
             }
         }
+
+        bool gearOut; Vector3 skiHomePos; Quaternion skiHomeRot = Quaternion.identity;
+
+        /// <summary>
+        /// (lifttop: LiftArrive) On foot, with the ride's gear on show at a frame (world): the board, or the skis (and
+        /// the poles in the hands), across a chair's footrest under the feet. Null puts it back: hidden on foot, as
+        /// ever. True if there is gear to show (none for the tube or the toboggan: they ride up on foot).
+        /// </summary>
+        public bool GearAt(Vector3? at, Quaternion rot)
+        {
+            bool skis = rideGear && Ride == RideKind.Skis, sledOn = sledGear && Ride == RideKind.Toboggan;
+            if (at == null)
+            {
+                if (!gearOut) return false;
+                gearOut = false;
+                if (boardHomeSet) { boardRoot.localPosition = boardHomePos; boardRoot.localRotation = boardHomeRot; }
+                if (skiRoot != null) { skiRoot.localPosition = skiHomePos; skiRoot.localRotation = skiHomeRot; }
+                ShowRide();
+                return false;
+            }
+            if (Tube || sledOn) { ShowRide(); return false; }
+            if (!gearOut)
+            {
+                gearOut = true;
+                if (!boardHomeSet) { boardHomePos = boardRoot.localPosition; boardHomeRot = boardRoot.localRotation; boardHomeSet = true; }
+                if (skiRoot != null) { skiHomePos = skiRoot.localPosition; skiHomeRot = skiRoot.localRotation; }
+            }
+            var g = skis ? skiRoot : boardRoot;
+            boardRoot.gameObject.SetActive(!skis);
+            if (skiRoot != null) skiRoot.gameObject.SetActive(skis);
+            for (int s = 0; s < 2; s++) if (pole[s] != null) pole[s].gameObject.SetActive(skis && !HandGone(s));
+            g.SetPositionAndRotation(at.Value, rot);
+            return true;
+        }
+
+        /// <summary>The ride is skis (their own stance: facing forward on them), not a board.</summary>
+        public bool OnSkis => rideGear && Ride == RideKind.Skis && !Tube;
 
         /// <summary>Upright on foot: no edge lean, a bob in step, a slight lean into the walk.</summary>
         void WalkFrame(float dt)

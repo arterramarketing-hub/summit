@@ -261,7 +261,7 @@ namespace Summit
                     p.mode = Person.Mode.Sit; p.sitW = 1f;
                     p.feetDown = f.pose == "table"; p.footY = f.floorY; p.swing = 0f; p.toesDown = 20f;
                     p.feetForward = 0.03f; p.kneesShift = 0f;
-                    p.lean = f.pose == "table" ? 5f : 2f; p.hipsForward = 0f;
+                    p.lean = f.pose == "table" ? 3f : 2f; p.hipsForward = 0f;   // (at a picnic table nearly upright: leaning in, a bulky jacket met its edge)
                     p.kneesApart = p.Look.female ? 0.25f : 0.5f;
                     f.topY = f.floorY + (f.pose == "table" ? 0.78f : 1.07f);
                     bool talking = to != null && Talking(f);
@@ -278,7 +278,7 @@ namespace Summit
                     {
                         // at a picnic table: the hands resting on the thighs under it (a hand up over it would put the arm
                         // through its edge: they talk with their heads, nodding, turning to each other)
-                        Vector3 lap = f.seat + up * (0.17f * s) + fwd * 0.22f;
+                        Vector3 lap = f.seat + up * (0.15f * s) + fwd * 0.19f;
                         p.handAt[0] = lap - right * 0.1f; p.handW[0] = 1f;
                         p.handAt[1] = lap + right * 0.1f; p.handW[1] = 1f;
                     }

@@ -61,12 +61,15 @@ namespace Summit
             public readonly List<Vector3> toCamp = new List<Vector3>();  // the path into the camp (the Summit lift's top)
             public int walkEnd;       // how far along toCamp its walkers go (to the lodge's steps; the rest of the path is drawn on to the paved path)
             public readonly List<Vector3> pushWay = new List<Vector3>();  // the Summit top's riders' way off: round behind the station, down the far side
+            public readonly List<Vector3> rideWay = new List<Vector3>();  // (the Summit top, LiftTop) the way into the camp, for the share who ride in
+            public readonly List<(PersonLook look, int seat, Vector3 at, Vector3 travel)> arriving = new List<(PersonLook, int, Vector3, Vector3)>();
             public float lastTick = -1f;
+            public int seenAt = -1;   // (the chairs' count when it last ticked: LiftRiders.SeenCount)
             public readonly List<Agent> people = new List<Agent>();
             public Vector3 P(float u, float v) => Snow(st + side * u + dir * v);
         }
 
-        public enum Job { Queue, Load, Liftie, Chat, ClickIn, Unload, Strap, Push, Goggles, Point, Sit, Walk }
+        public enum Job { Queue, Load, Liftie, Chat, ClickIn, Unload, Strap, Push, Goggles, Point, Sit, Walk, Doff, Camp }
 
         public class Agent
         {
@@ -75,9 +78,11 @@ namespace Summit
             public End end;
             public Vector3 pos, goal;
             public float yaw, t, until, speed;
-            public int slot, group;
+            public int slot, group, seatSlot;
             public Agent partner;
             public CapsuleCollider hit;
+            public bool intoCamp;     // (the Summit top, LiftTop: riding into the camp, not off the far side)
+            public bool handed;       // off a chair as the same person who sat on it (LiftRiders.Unloaded): gear on, gliding
             public bool shown;
         }
 
@@ -96,6 +101,7 @@ namespace Summit
             var e = go.AddComponent<LiftEnds>();
             e.target = target; e.lit = lit;
             Instance = e;
+            LiftRiders.Unloaded = e.OffChair;
             return e;
         }
 
@@ -103,7 +109,7 @@ namespace Summit
         {
             Clear();
             foreach (var m in meshes) if (m != null) Destroy(m);
-            if (Instance == this) Instance = null;
+            if (Instance == this) { Instance = null; LiftRiders.Unloaded = null; }
         }
 
         static Vector3 Snow(Vector3 p) { p.y = Slope.DrawnHeight(p.x, p.z); return p; }
@@ -197,6 +203,20 @@ namespace Summit
         /// </summary>
         public static List<Vector3> CampPath(LiftLine.Lift l, out int walkEnd)
         {
+            // (lifttop: on the summit bench, from the unload's flat, the way it rides in along)
+            if (LiftTop.AtBench(l))
+            {
+                var ride = LiftTop.RideIn(out walkEnd);
+                if (ride.Count > 1)
+                {
+                    float L0 = LiftLine.StationHalfLen;
+                    float a1 = l.top.x - Slope.Centre(l.top.z);
+                    var side1 = l.across * (Vector3.Dot(l.across, Vector3.right) * (a1 > 0f ? -1f : 1f) >= 0f ? 1f : -1f);
+                    ride.Insert(0, Snow(l.top + side1 * 8f + l.dir * (-L0 - 2f)));
+                    walkEnd++;
+                    return ride;
+                }
+            }
             var pts = new List<Vector3>();
             float L = LiftLine.StationHalfLen, cx = Slope.Centre(Slope.PadLip);
             var st = l.top;
@@ -305,6 +325,26 @@ namespace Summit
                     // on along a path into the camp (CampPath), and the riders' way off down the shoulder on the station's
                     // far side, round behind its uphill end: not across the camp (camplayout)
                     e.toCamp.AddRange(CampPath(e.lift, out e.walkEnd));
+                    // (lifttop: on the summit bench some ride in down its way into the camp, the rest round behind the
+                    // station and off down the far side to the run, and on down the run's left side)
+                    if (LiftTop.AtBench(e.lift))
+                    {
+                        var ride = LiftTop.RideIn(out int rideEnd); for (int i = 0; i < rideEnd; i++) e.rideWay.Add(ride[i]);
+                        e.pushWay.Add(e.P(4f, -L - 9f)); e.pushWay.Add(e.P(-5f, -L - 9.5f));
+                        var far = LiftTop.FarSide();
+                        e.pushWay.AddRange(far);
+                        if (far.Count > 0)
+                        {
+                            var last = far[far.Count - 1];
+                            float off = last.x - Slope.Centre(last.z);
+                            for (float z = last.z + 12f; z < last.z + 260f; z += 12f)
+                            {
+                                float k = Mathf.Clamp01((z - last.z) / 40f);
+                                e.pushWay.Add(Snow(new Vector3(Slope.Centre(z) + Mathf.Lerp(off, -Slope.HalfAt(z) * 0.55f, k), 0f, z)));
+                            }
+                        }
+                    }
+                    else
                     foreach (var (u, v) in new[] { (4f, -L - 12f), (-9f, -L - 10f), (-14f, 10f), (-16f, 45f) }) e.pushWay.Add(e.P(u, v));
                 }
             }
@@ -578,6 +618,7 @@ namespace Summit
         {
             Plan();
             clock += dt;
+            Sight(eye);
             // the ends in range are built; those well out of it go
             foreach (var e in ends)
             {
@@ -592,20 +633,31 @@ namespace Summit
             foreach (var e in ends)
             {
                 if (e.people.Count == 0) continue;
-                // a chair goes by: the bottom's front group loads and the rest move up; the top lets someone off
+                // a chair goes by: the bottom's front group loads and the rest move up; at the top its riders get off
+                // (the same people: LiftRiders.Unloaded; without the chairs' people, someone new)
                 float T = Interval(e.lift);
                 int chair = Mathf.FloorToInt(clock / T);
                 if (Mathf.FloorToInt(e.lastTick / T) != chair)
                 {
                     e.lastTick = clock;
                     if (!e.top) Chair(e, Group(e.lift, chair));
-                    else Arrive(e, Group(e.lift, chair));
+                    else
+                    {
+                        // (the chairs not running here, the test tools' way: someone new gets off, as before)
+                        int seen = LiftRiders.SeenCount(e.lift.id);
+                        bool live = LiftRiders.On && e.seenAt >= 0 && seen != e.seenAt;
+                        e.seenAt = seen;
+                        if (!live) Arrive(e, Group(e.lift, chair));
+                    }
                 }
+                if (e.top) { foreach (var o in e.arriving) Handover(e, o.look, o.seat, o.at, o.travel); e.arriving.Clear(); }
                 work.Clear(); work.AddRange(e.people);
                 foreach (var a in work)
                 {
                     if (a.end != e) continue;
                     Move(a, dt);
+                    if (a.end != e) continue;
+                    if (a.job == Job.Camp) continue;   // (the camp walks them now: CampLife)
                     float d = Vector3.Distance(a.pos, eye);
                     int lod = !a.shown ? 2 : d < FullRange && shown < FullCap ? 0 : d < PeopleRange ? 1 : 2;
                     if (lod == 0) shown++;
@@ -640,13 +692,14 @@ namespace Summit
             }
         }
 
-        Agent Take(End e, Job job)
+        Agent Take(End e, Job job, PersonLook? as_ = null)
         {
             Agent a = null;
             foreach (var q in pool) if (q.end == null) { a = q; break; }
+            var look = as_ ?? NextLook();
             if (a == null)
             {
-                var p = Person.Make(NextLook(), transform, "LiftPerson");
+                var p = Person.Make(look, transform, "LiftPerson");
                 if (p == null) return null;
                 a = new Agent { p = p };
                 var h = new GameObject("Hit");
@@ -656,8 +709,8 @@ namespace Summit
                 h.AddComponent<Obstacle>().label = "Skier";
                 pool.Add(a);
             }
-            else a.p.Dress(NextLook());
-            a.end = e; a.job = job; a.t = 0f; a.until = 0f; a.partner = null; a.shown = true; a.speed = 0f;
+            else a.p.Dress(look);
+            a.end = e; a.job = job; a.t = 0f; a.until = 0f; a.partner = null; a.shown = true; a.speed = 0f; a.handed = false; a.intoCamp = false;
             a.p.gameObject.SetActive(true);
             e.people.Add(a);
             return a;
@@ -665,6 +718,8 @@ namespace Summit
 
         void Park(Agent a)
         {
+            if (a.job == Job.Camp && a.p != null && CampLife.Current != null) CampLife.Current.Release(a.p);
+            a.intoCamp = false; a.handed = false;
             a.end = null; a.shown = false; a.partner = null;
             if (a.p != null) { a.p.SetLod(2); a.p.gameObject.SetActive(false); }
             if (a.hit != null) a.hit.enabled = false;
@@ -744,33 +799,57 @@ namespace Summit
                     if (a.t > a.until) { a.t = 0f; a.until = 5f + 3f * Slope.Hash01(a.slot, (int)clock, 7); }
                     break;
                 case Job.Unload:
+                    if (a.handed) { Glide(a, dt); break; }
                     Walk(a, a.goal, 1.6f, dt);
                     if ((a.pos - a.goal).sqrMagnitude < 0.04f) { a.job = Job.Strap; a.t = 0f; a.until = a.p.Look.gear == PersonGear.Skis ? 3.5f : 7.5f; }
                     break;
                 case Job.Strap:
-                    if (a.t > a.until) { a.job = Job.Push; a.t = 0f; a.speed = 1.5f; a.slot = 0; }
+                    if (a.t > a.until) { a.job = Job.Push; a.t = 0f; a.speed = 1.5f; a.slot = 0; Pushed++; }
+                    break;
+                case Job.Doff:
+                    // at the foot of the way in: gear off (a boarder's straps, a skier's bindings), then the camp walks
+                    // them in, gear under an arm or on a shoulder, to the lodge's door and inside (CampLife)
+                    if (a.t > a.until) ToCamp(a);
+                    break;
+                case Job.Camp:
+                    // (the camp has them; given up if it lets go of them, or anything goes wrong)
+                    if (a.until < 0f || CampLife.Current == null || (a.t > 90f && Hidden(a))) { a.p.gameObject.SetActive(false); e.people.Remove(a); Park(a); }
                     break;
                 case Job.Push:
                 {
                     // off down the run: across onto it and down the fall line, gathering speed, out of sight. (At the
                     // Summit top the run is the camp: they go round behind the station and away down the shoulder on its
                     // far side instead, beside the line: camplayout)
-                    var to = e.side * 0.8f + Vector3.forward * 0.6f;
-                    if (e.pushWay.Count > 0)
+                    var to = (e.side * 0.8f + Vector3.forward * 0.6f).normalized;
+                    var way = a.intoCamp && e.rideWay.Count > 1 ? e.rideWay : e.pushWay;
+                    if (way.Count == 0 && a.t > 1f) { to = Quaternion.Euler(0f, a.yaw, 0f) * Vector3.forward; to = Vector3.RotateTowards(to, Vector3.forward, dt * 0.25f, 0f); }
+                    if (way.Count > 0)
                     {
-                        int w = Mathf.Min(a.slot, e.pushWay.Count - 1);
-                        to = e.pushWay[w] - a.pos;
-                        if (new Vector2(to.x, to.z).magnitude < 2.5f && a.slot < e.pushWay.Count - 1) a.slot++;
+                        int w = Mathf.Min(a.slot, way.Count - 1);
+                        to = way[w] - a.pos;
+                        if (new Vector2(to.x, to.z).magnitude < 2.5f && a.slot < way.Count - 1) a.slot++;
                         // (turning as a rider does, not on the spot)
                         var was = Quaternion.Euler(0f, a.yaw, 0f) * Vector3.forward;
                         to.y = 0f; to.Normalize();
                         to = Vector3.RotateTowards(was, to, dt * 2.2f, 0f);
                     }
                     to.y = 0f; to.Normalize();
-                    a.speed = Mathf.Min(a.speed + dt * 2.2f, 9f);
+                    // (into the camp: easing to a stop at the way's foot; off the far side and down the run, gathering speed)
+                    bool last = way.Count > 0 && a.slot >= way.Count - 1;
+                    float top = a.intoCamp ? (last ? 1.2f : 5f) : 9f;
+                    a.speed = Mathf.MoveTowards(a.speed, top, dt * (a.speed > top ? 3f : 2.2f));
                     a.pos = Snow(a.pos + to * a.speed * dt);
                     a.yaw = Yaw(to, to);
-                    if (a.t > 7f) { e.people.Remove(a); Park(a); Pushed++; }
+                    if (a.intoCamp)
+                    {
+                        // at the way's foot: stop, gear off, and in
+                        if (last && (way[way.Count - 1] - a.pos).sqrMagnitude < 2.5f) { a.job = Job.Doff; a.t = 0f; a.until = a.p.Look.gear == PersonGear.Skis ? 1.6f : 2.4f; a.speed = 0f; }
+                        else if (a.t > 60f && Hidden(a)) { e.people.Remove(a); Park(a); }
+                        break;
+                    }
+                    // gone only once nobody can see them: past where people are drawn, out of the view, or behind the
+                    // mountain (never on a timer; a very long ride down the run ends anyway, and then too only unseen)
+                    if (a.t > 1.5f && Hidden(a)) { e.people.Remove(a); Park(a); }
                     break;
                 }
                 case Job.Walk:
@@ -784,6 +863,132 @@ namespace Summit
                 }
             }
         }
+
+        // ---------------------------------------------------------------- off the chairs (lifttop)
+
+        /// <summary>LiftRiders: someone getting off a chair at a top (queued for that end's next step).</summary>
+        void OffChair(LiftLine.Lift l, PersonLook look, int seat, Vector3 at, Vector3 travel)
+        {
+            foreach (var e in ends)
+                if (e.top && e.lift == l && e.root != null && e.people.Count > 0) { if (e.arriving.Count < 8) e.arriving.Add((look, seat, at, travel)); return; }
+        }
+
+        /// <summary>The most at a top at once off the chairs (gliding, strapping in, riding off); past it only those in sight are taken.</summary>
+        public const int TopBusy = 9;
+
+        /// <summary>
+        /// The same person who sat on the chair stands up off it at the unload, gear on, and glides off the deck's
+        /// uphill end to a place to strap in (a skier just sorts their poles). At the Summit's bench one in three (no
+        /// more than three on their way in at once) then ride into the camp; the rest go off the far side.
+        /// </summary>
+        void Handover(End e, PersonLook look, int seat, Vector3 at, Vector3 travel)
+        {
+            if (e.strap.Count == 0) return;
+            int busy = 0, inCamp = 0;
+            foreach (var o in e.people)
+            {
+                if (o.job == Job.Unload || o.job == Job.Strap || o.job == Job.Push || o.job == Job.Walk || o.job == Job.Doff || o.job == Job.Camp) busy++;
+                if (o.intoCamp) inCamp++;
+            }
+            var stand = new Vector3(at.x, e.st.y, at.z);
+            if (busy >= TopBusy && !InSight(stand + Vector3.up * 1.2f)) return;   // (over the cap, and nobody would see them go: they don't)
+            var a = Take(e, Job.Unload, look);
+            if (a == null) return;
+            a.handed = true;
+            a.intoCamp = e.rideWay.Count > 1 && inCamp < LiftTop.IntoCampCap && Slope.Hash01(e.lift.id * 31 + seat, Mathf.FloorToInt(clock * 7f), 43) < LiftTop.IntoCampShare;
+            a.pos = stand;
+            var f = travel; f.y = 0f; if (f.sqrMagnitude < 1e-4f) f = -e.dir;
+            a.yaw = Yaw(f, -e.dir);
+            a.speed = 2.6f;
+            a.slot = 0; a.seatSlot = seat;
+            // where to: into the camp, straight on along the way in; otherwise a place to strap in (each seat its own)
+            a.goal = a.intoCamp ? (e.toCamp.Count > 0 ? e.toCamp[0] : e.rideWay[0]) : e.strap[(seat + Mathf.FloorToInt(clock)) % e.strap.Count];
+        }
+
+        /// <summary>Off the deck with the chair's way, slowing, then round to the goal and stop.</summary>
+        void Glide(Agent a, float dt)
+        {
+            var e = a.end;
+            var d = a.goal - a.pos; d.y = 0f;
+            float m = d.magnitude;
+            var was = Quaternion.Euler(0f, a.yaw, 0f) * Vector3.forward;
+            // (straight off the chair's way for the first metres, then turning toward where they're going)
+            var to = a.t < 0.7f ? was : Vector3.RotateTowards(was, m > 1e-3f ? d / m : was, dt * 2.4f, 0f);
+            float want = Mathf.Clamp(m * 0.8f, 0.4f, 3f);
+            a.speed = Mathf.MoveTowards(a.speed, want, dt * 1.6f);
+            var next = a.pos + to * a.speed * dt;
+            // (on the deck while over it, the snow once off it)
+            var local = next - e.st;
+            float v = Vector3.Dot(local, e.dir), u = Vector3.Dot(local, e.side);
+            bool deck = Mathf.Abs(v) < LiftLine.StationHalfLen && Mathf.Abs(u) < LiftLine.StationHalfWid;
+            next.y = deck ? Mathf.Max(e.st.y, Slope.DrawnHeight(next.x, next.z)) : Slope.DrawnHeight(next.x, next.z);
+            a.pos = next;
+            a.yaw = Yaw(to, to);
+            if (a.intoCamp && m < 2.5f) { a.job = Job.Push; a.t = 0f; a.slot = 0; Pushed++; return; }   // (already strapped in: on into the camp)
+            if (m < 0.6f || a.t > 12f)
+            {
+                a.job = Job.Strap; a.t = 0f; a.speed = 0f;
+                // a boarder sits to strap the back foot in; a skier sorts their poles and goggles
+                a.until = a.p.Look.gear == PersonGear.Skis ? 1.8f : 5.5f;
+            }
+        }
+
+        /// <summary>Gear off at the foot of the way in: the camp walks them to the lodge's door and in.</summary>
+        void ToCamp(Agent a)
+        {
+            var e = a.end;
+            var life = CampLife.Current;
+            var door = life != null ? life.P("door") : null;
+            if (life == null || door == null) { e.people.Remove(a); Park(a); return; }
+            a.job = Job.Camp; a.t = 0f;
+            if (a.hit != null) a.hit.enabled = false;   // (the camp's own pushing keeps the hero off them)
+            var ag = life.Add(a.p);
+            ag.gear = a.p.Look.gear != PersonGear.None;
+            a.until = 0f;
+            // through the door: inside, out of sight (let go of on the next step, not inside the camp's own)
+            life.WalkTo(a.p, door.at, () => { if (a.job == Job.Camp) a.until = -1f; });
+        }
+
+        // ---------------------------------------------------------------- who can see whom
+
+        readonly Plane[] frustum = new Plane[6];
+        bool haveFrustum;
+        Vector3 sightFrom;
+        float sightRange;
+
+        void Sight(Vector3 eye)
+        {
+            var cam = Camera.main;
+            haveFrustum = cam != null && cam.isActiveAndEnabled;
+            if (haveFrustum) GeometryUtility.CalculateFrustumPlanes(cam, frustum);
+            sightFrom = haveFrustum ? cam.transform.position : eye;
+            sightRange = PeopleRange + 8f;
+        }
+
+        /// <summary>Could the camera see a point: near enough to be drawn, in the view, and not behind the mountain.</summary>
+        bool InSight(Vector3 p)
+        {
+            var d = p - sightFrom;
+            float dist = d.magnitude;
+            if (dist > sightRange) return false;
+            if (RenderSettings.fog && RenderSettings.fogMode == FogMode.ExponentialSquared)
+            {
+                float f = RenderSettings.fogDensity * dist;
+                if (Mathf.Exp(-f * f) < 0.04f) return false;   // (lost in the fog: snow, cloud)
+            }
+            if (haveFrustum && !GeometryUtility.TestPlanesAABB(frustum, new Bounds(p, new Vector3(1.4f, 2.2f, 1.4f)))) return false;
+            // behind the snow: along the line from the eye, any point under the ground
+            int n = Mathf.Clamp(Mathf.CeilToInt(dist / 4f), 2, 40);
+            for (int i = 1; i < n; i++)
+            {
+                var q = sightFrom + d * (i / (float)n);
+                if (Slope.DrawnHeight(q.x, q.z) > q.y + 0.25f) return false;
+            }
+            return true;
+        }
+
+        /// <summary>Nobody can see this person now (head and feet both out of sight).</summary>
+        bool Hidden(Agent a) => !InSight(a.pos + Vector3.up * 1.6f) && !InSight(a.pos + Vector3.up * 0.3f);
 
         /// <summary>A chair goes by the bottom: its group (the front of the queue) steps up to load; everyone behind moves up.</summary>
         void Chair(End e, int group)
@@ -805,8 +1010,15 @@ namespace Summit
             foreach (var a in e.people) if (a.job == Job.Unload || a.job == Job.Strap || a.job == Job.Push || a.job == Job.Walk) busy++;
             for (int i = 0; i < Mathf.Min(group, 2) && busy < 5; i++, busy++)
             {
-                var a = Take(e, e.lift.summit && Slope.Hash01(e.lift.id, Mathf.FloorToInt(clock), 41) < 0.4f ? Job.Walk : Job.Unload);
+                bool bench = e.rideWay.Count > 1;
+                var a = Take(e, !bench && e.lift.summit && Slope.Hash01(e.lift.id, Mathf.FloorToInt(clock), 41) < 0.4f ? Job.Walk : Job.Unload);
                 if (a == null) return;
+                // (the bench: a share ride into the camp, so many at a time; the rest off the far side)
+                if (bench && Slope.Hash01(e.lift.id * 31 + i, Mathf.FloorToInt(clock * 7f), 43) < LiftTop.IntoCampShare)
+                {
+                    int inCamp = 0; foreach (var o in e.people) if (o.intoCamp && o != a) inCamp++;
+                    a.intoCamp = inCamp < LiftTop.IntoCampCap;
+                }
                 a.pos = e.load + e.dir * 0.3f * i;
                 a.yaw = Yaw(-e.dir, e.dir);
                 a.slot = 0;
@@ -900,6 +1112,35 @@ namespace Summit
                     p.lookAt = a.pos + rot * new Vector3(0f, 0f, 1f); p.lookWeight = 0.7f * Mathf.Sin(k * Mathf.PI);
                     break;
                 }
+                case Job.Unload when a.handed:
+                case Job.Push:
+                {
+                    // gear on: gliding off the chair, or riding away
+                    var v = Quaternion.Euler(0f, a.yaw, 0f) * Vector3.forward;
+                    if (skis)
+                    {
+                        p.mode = Person.Mode.Ski; p.pace = Mathf.Clamp01(a.speed / 3f); p.skisOn = true; p.polesOn = true; p.polesInOneHand = false;
+                        p.polesDir = (Vector3.down + rot * Vector3.back * (a.job == Job.Push ? 0.8f : 0.3f)).normalized;
+                        p.transform.SetPositionAndRotation(a.pos, rot);
+                    }
+                    else
+                    {
+                        p.mode = Person.Mode.Ride; p.pace = Mathf.Clamp01(a.speed / 3f); p.held = Person.Held.Underfoot;
+                        p.RideFrame(a.pos, v, Vector3.up);
+                    }
+                    break;
+                }
+                case Job.Doff:
+                {
+                    // bending to the bindings, then up with the gear
+                    float k = Mathf.Clamp01(a.t / Mathf.Max(0.1f, a.until));
+                    float down = Mathf.Sin(k * Mathf.PI);
+                    p.transform.SetPositionAndRotation(a.pos, rot);
+                    if (skis) { p.mode = Person.Mode.Ski; p.pace = 0f; p.skisOn = k < 0.6f; p.skisOnShoulder = k >= 0.6f; p.polesOn = k < 0.6f; p.polesInOneHand = false; p.crouch = 0.4f * down; }
+                    else if (k < 0.6f) { p.mode = Person.Mode.Ride; p.pace = 0f; p.held = Person.Held.Underfoot; p.RideFrame(a.pos, rot * Vector3.forward, Vector3.up); p.crouch = 0.7f * down; }
+                    else { p.mode = Person.Mode.Stand; p.held = Person.Held.Placed; p.boardInHand = 1; p.crouch = 0.5f * down; }
+                    break;
+                }
                 case Job.Unload:
                 case Job.Walk:
                     p.mode = Person.Mode.Walk; p.pace = moving; p.run = 0f;
@@ -938,22 +1179,6 @@ namespace Summit
                             p.mode = Person.Mode.Ride; p.pace = 0f; p.held = Person.Held.Underfoot;
                             p.RideFrame(a.pos, rot * Vector3.forward, Vector3.up);
                         }
-                    }
-                    break;
-                }
-                case Job.Push:
-                {
-                    var v = Quaternion.Euler(0f, a.yaw, 0f) * Vector3.forward;
-                    if (skis)
-                    {
-                        p.mode = Person.Mode.Ski; p.pace = Mathf.Clamp01(a.speed / 3f); p.skisOn = true; p.polesOn = true; p.polesInOneHand = false;
-                        p.polesDir = (Vector3.down + rot * Vector3.back * 0.8f).normalized;
-                        p.transform.SetPositionAndRotation(a.pos, rot);
-                    }
-                    else
-                    {
-                        p.mode = Person.Mode.Ride; p.pace = Mathf.Clamp01(a.speed / 3f); p.held = Person.Held.Underfoot;
-                        p.RideFrame(a.pos, v, Vector3.up);
                     }
                     break;
                 }

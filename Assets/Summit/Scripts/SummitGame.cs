@@ -15,7 +15,10 @@ namespace Summit
         public Material jacket, pants, board, skin, dark;
         public Material trail, spray;
 
-        enum State { Hub, Ready, Riding, Buried, Title }   // Hub: walking round the summit camp before a run; Title: the start page
+        enum State { Hub, Ready, Riding, Buried, Title, Arrive }   // Hub: walking round the summit camp before a run; Title: the start page; Arrive: riding the lift up into it (LiftArrive)
+        /// <summary>(lifttop) Coming into the camp on the Summit lift (from the start page, or back after a run): LiftArrive.</summary>
+        readonly LiftArrive arrive = new LiftArrive();
+        bool arriveNext;
         State state;
         Camp camp;
         MetaUi meta;
@@ -683,17 +686,52 @@ namespace Summit
         /// <summary>To the camp: on foot, with the menus. A fresh mountain unless you just came up from the start pad.</summary>
         void ToHub(bool fresh = true)
         {
+            bool arriving = arriveNext; arriveNext = false;
+            arrive.End();
             if (fresh) ToReady();
             CloseSettings();
             state = State.Hub;
             hud.Clear(); hud.SetButtons(false, false, "PLAY"); hud.SetPrompt("");
             chase.enabled = false;
             terrain.behindChunks = 4; props.behindCells = 16;   // you can turn round and look up the hill here
-            camp.Enter(rider, body, chase.GetComponent<Camera>(), !fresh);   // (back up from the start pad: at the gate; else off the Summit lift)
+            // (lifttop) up on the Summit lift and off it into the camp; failing that, straight into the camp as before
+            if (arriving)
+            {
+                camp.Leave();
+                if (arrive.Begin(rider, body, chase.GetComponent<Camera>()))
+                {
+                    state = State.Arrive;
+                    if (slideView != null) slideView.gameObject.SetActive(false);
+                    lensFx.Strength = 0.3f;
+                    terrain.Prewarm(); props.Prewarm();
+                    meta.SetMode(MetaUi.Mode.Off);
+                    input.SwallowCurrentPress();
+                    return;
+                }
+                Debug.Log("LiftArrive: straight into the camp (" + arrive.Why + ")");
+            }
+            camp.Enter(rider, body, chase.GetComponent<Camera>(), !fresh && !arriving);   // (back up from the start pad: at the gate; else off the Summit lift, on its bench)
             if (slideView != null) slideView.gameObject.SetActive(false);   // its toe waits just uphill of the camp: not drawn here
             lensFx.Strength = 0.3f;   // the camp's gentle lens at once (it's a cut); dropping in eases back to yours
             terrain.Prewarm(); props.Prewarm();
             meta.SetMode(MetaUi.Mode.Hub);
+        }
+
+        /// <summary>
+        /// (lifttop) A frame of the arrival on the lift (a tap skips it). True when it has just ended and the camp has the
+        /// hero: where the glide stopped (or, had it given up, where the camp puts them).
+        /// </summary>
+        bool ArriveStep(float dt, bool tapped)
+        {
+            if (state != State.Arrive) return false;
+            if (!arrive.Step(dt, tapped)) return false;
+            arrive.End();
+            state = State.Hub;
+            var cam = chase.GetComponent<Camera>();
+            if (arrive.EndPos != Vector3.zero) camp.EnterAt(rider, body, cam, arrive.EndPos, arrive.EndYaw, !arrive.Skipped && arrive.Why == "");
+            else camp.Enter(rider, body, cam, false);
+            meta.SetMode(MetaUi.Mode.Hub);
+            return true;
         }
 
         // ---------------------------------------------------------------- world
@@ -928,6 +966,10 @@ namespace Summit
             lensFx.Strength = ClosetStage.Showing != null ? 0f : Mathf.MoveTowards(lensFx.Strength, state == State.Hub ? 0.3f : 1f, Time.unscaledDeltaTime * 1.4f);
             switch (state)
             {
+                case State.Arrive:
+                    if (ArriveStep(dt, input.AnyPress())) input.SwallowCurrentPress();
+                    break;
+
                 case State.Hub:
                     if (autoplay)
                     {
@@ -950,7 +992,7 @@ namespace Summit
                     int go = start.Step(Time.unscaledDeltaTime, input.AnyPress(), RiderInput.PointerPosition());
                     if (go == 0) break;
                     start.Hide();
-                    if (go == 1) ToHub(false); else { audioFx.Play(Sfx.Play); ToReady(false); }
+                    if (go == 1) { arriveNext = true; ToHub(false); } else { audioFx.Play(Sfx.Play); ToReady(false); }
                     input.SwallowCurrentPress();
                     break;
                 }
@@ -1028,6 +1070,7 @@ namespace Summit
                     }
                     else if (stateTimer > 1.2f && input.AnyPress() && (Tapped(true) || SpacePressed()))
                     {
+                        arriveNext = true;
                         ToHub();
                         input.SwallowCurrentPress();
                     }

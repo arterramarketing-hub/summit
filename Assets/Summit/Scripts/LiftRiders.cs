@@ -91,19 +91,56 @@ namespace Summit
         public static System.Action<int, int, int, Vector3, int, bool> Seen;
 
         /// <summary>
+        /// (lifttop) Someone getting off a chair at a top station, as the chair crosses the unload: the lift, the person
+        /// as they sat (their look), their seat, where the seat is (world) and the way the chair is going. LiftEnds
+        /// stands that same person up there and they ride off: nobody new appears, nobody vanishes off a chair.
+        /// </summary>
+        public static System.Action<LiftLine.Lift, PersonLook, int, Vector3, Vector3> Unloaded;
+        /// <summary>The chair the hero rides up on (LiftArrive): nobody else is drawn on it (lift id, chair, lap; -1 none).</summary>
+        public static int HeroLift = -1, HeroChair = -1, HeroLap = -1;
+        static readonly Dictionary<long, float> lastAlong = new Dictionary<long, float>();
+        static readonly Dictionary<int, int> seenCount = new Dictionary<int, int>();
+        /// <summary>How many times a lift's chairs have been handed over (LiftEnds: are they running here at all?).</summary>
+        public static int SeenCount(int lift) => seenCount.TryGetValue(lift, out int n) ? n : 0;
+        /// <summary>How far round its loop a chair's riders get off (inside the top station), and how far the bottom's do.</summary>
+        public static float UnloadAt(LiftLine.Lift l) => l.cum[l.Spans + 1] + (LiftLine.StationHalfLen + LiftLine.WheelBack) * 0.45f;
+
+        /// <summary>
         /// One chair this frame: the lift, which chair, which lap of the loop, how far round the loop it is (m), its
         /// matrix (the grip on the cable, +z the way it travels).
         /// </summary>
         public static void Chair(LiftLine.Lift l, int c, int lap, float d, Matrix4x4 m)
         {
             if (!On || l.cum == null) return;
+            seenCount.TryGetValue(l.id, out int sc); seenCount[l.id] = sc + 1;
             int n = l.Spans;
             float straight = LiftLine.StationHalfLen + LiftLine.WheelBack;
             float h = Slope.Hash01(c + l.id * 977, lap, 151);
             int count = 0; bool down = false;
+            bool hero = l.id == HeroLift && c == HeroChair && lap == HeroLap;
+            // (lifttop) crossing the unload this frame: everyone aboard gets off, the same people
+            float unload = UnloadAt(l);
+            long ck = ((long)l.id << 32) ^ (uint)c;
+            if (lastAlong.TryGetValue(ck, out float was) && was < unload && d >= unload && d - was < 30f && Unloaded != null && !hero)
+            {
+                int up = AboardOf(h);
+                if (up > 0)
+                {
+                    int set = SeatSet(up, Slope.Hash01(c + l.id * 977, lap, 152));
+                    for (int s = 0; s < 4; s++)
+                    {
+                        if ((set & (1 << s)) == 0) continue;
+                        long key = ((long)l.id << 48) ^ ((long)c << 32) ^ ((long)(lap & 0xfffffff) << 3) ^ s;
+                        var look = riders.TryGetValue(key, out var known) ? known.look : LookFor(l, c, lap, s, false);
+                        Unloaded(l, look, s, (m * SeatLocal(s)).GetColumn(3), m.MultiplyVector(Vector3.forward));
+                    }
+                }
+            }
+            lastAlong[ck] = d;
+            if (lastAlong.Count > 4000) lastAlong.Clear();
             // aboard from just past the bottom bullwheel to the unloading inside the top station
             if (d >= l.cum[0] + 0.8f && d < l.cum[n + 1] + straight * 0.45f)
-                count = h < 0.27f ? 0 : h < 0.47f ? 1 : h < 0.70f ? 2 : h < 0.85f ? 3 : 4;
+                count = hero ? 0 : AboardOf(h);
             // and now and then someone riding down: on at the top, off at the bottom
             else if (h > 0.965f && d >= l.cum[n + 3] + 0.8f && d < l.cum[2 * n + 4] + straight * 0.45f) { count = h > 0.99f ? 2 : 1; down = true; }
             Vector3 pos = m.GetColumn(3);
@@ -122,10 +159,7 @@ namespace Summit
                 if (!riders.TryGetValue(key, out var r))
                 {
                     int seed = l.id * 7919 + c * 104729 + lap * 1299709 + s * 15485863;
-                    var look = PersonLook.Random(seed, 0.55f);
-                    if (down) { look.gear = PersonGear.None; }
-                    // four to a chair: no one broader than a quad's seat takes
-                    look.build = Mathf.Min(look.build, 1.06f); look.shoulders = Mathf.Min(look.shoulders, (s == 0 || s == 3) && look.pack != null ? 0.98f : 1.03f);
+                    var look = LookFor(l, c, lap, s, down);
                     r = new Rider { key = key, look = look, seat = s, lift = l.id, chair = c, down = down, phase = Slope.Hash01(seed, 1, 77) * 100f };
                     r.pose = down ? (int)Pose.SkiLap : look.gear == PersonGear.Skis ? (Slope.Hash01(seed, 2, 77) < 0.5f ? 0 : 1) : (Slope.Hash01(seed, 2, 77) < 0.5f ? 2 : 3);
                     r.head = look.head == PersonHead.Beanie ? 1 : 0;
@@ -135,6 +169,20 @@ namespace Summit
                 r.count = count; r.chairM = m; r.d2 = d2; r.seen = clock;
                 now.Add(r);
             }
+        }
+
+        /// <summary>How many ride up on a chair, from its hash: about a quarter empty, the rest one to four.</summary>
+        static int AboardOf(float h) => h < 0.27f ? 0 : h < 0.47f ? 1 : h < 0.70f ? 2 : h < 0.85f ? 3 : 4;
+
+        /// <summary>Who sits in a seat on a chair's lap (pure: the same person whenever asked).</summary>
+        static PersonLook LookFor(LiftLine.Lift l, int c, int lap, int s, bool down)
+        {
+            int seed = l.id * 7919 + c * 104729 + lap * 1299709 + s * 15485863;
+            var look = PersonLook.Random(seed, 0.55f);
+            if (down) { look.gear = PersonGear.None; }
+            // four to a chair: no one broader than a quad's seat takes
+            look.build = Mathf.Min(look.build, 1.06f); look.shoulders = Mathf.Min(look.shoulders, (s == 0 || s == 3) && look.pack != null ? 0.98f : 1.03f);
+            return look;
         }
 
         /// <summary>Which of the four seats count people take (a bit mask).</summary>
@@ -153,7 +201,7 @@ namespace Summit
         public static void Clear()
         {
             foreach (var r in riders.Values) if (r.near != null) Release(r);
-            riders.Clear(); now.Clear();
+            riders.Clear(); now.Clear(); lastAlong.Clear();
         }
 
         // ---------------------------------------------------------------- each frame
