@@ -42,73 +42,12 @@ Shader "Summit/SnowyCloth"
             half _PatternAt;
         CBUFFER_END
 
-        // value noise in 3D, 0..1
-        float Hash(float3 p) { p = frac(p * 0.3183099 + 0.1); p *= 17.0; return frac(p.x * p.y * p.z * (p.x + p.y + p.z)); }
-        float Noise(float3 x)
-        {
-            float3 i = floor(x), f = frac(x);
-            f = f * f * (3.0 - 2.0 * f);
-            return lerp(lerp(lerp(Hash(i), Hash(i + float3(1, 0, 0)), f.x), lerp(Hash(i + float3(0, 1, 0)), Hash(i + float3(1, 1, 0)), f.x), f.y),
-                        lerp(lerp(Hash(i + float3(0, 0, 1)), Hash(i + float3(1, 0, 1)), f.x), lerp(Hash(i + float3(0, 1, 1)), Hash(i + float3(1, 1, 1)), f.x), f.y), f.z);
-        }
-        // the cloth's pattern, laid out on the rest pose in metres (so it stays put on the garment however the limbs
-        // move): how much of the second colour shows, and a darkening for camo's third tone. One uniform branch;
-        // plain cloth pays for the test only
-        half StripeBand(float x)
-        {
-            float tri = abs(frac(x) - 0.5) * 2.0;           // 0 in the middle of one band, 1 in the middle of the next
-            float aa = max(fwidth(x) * 2.0, 1e-4);
-            return smoothstep(0.5 - aa, 0.5 + aa, tri);
-        }
-        // Nordic knit (Brianna's fleece): bands round the body, each a row of one motif in the second colour: open
-        // diamonds with a small one inside, a zigzag, a row of dots. x runs round the body, y up it, both in repeats
-        half Knit(float2 p)
-        {
-            float px = max(fwidth(p.x) + fwidth(p.y), 1e-4), aa = min(px, 0.03);
-            float y = frac(p.y);
-            // diamonds, two to a repeat: an outline and its middle
-            float2 d = float2(abs(frac(p.x * 2.0) - 0.5) * 0.5, abs(y - 0.26));
-            float dm = d.x + d.y;
-            half k = smoothstep(0.215 + aa, 0.215 - aa, dm) * smoothstep(0.15 - aa, 0.15 + aa, dm) + smoothstep(0.065 + aa, 0.065 - aa, dm);
-            // the zigzag, four points to a repeat
-            float zz = y - 0.63 - (abs(frac(p.x * 4.0) - 0.5) - 0.25) * 0.22;
-            k += smoothstep(0.024 + aa, 0.024 - aa, abs(zz));
-            // dots, set between the zigzag's points
-            float2 o = float2((frac(p.x * 4.0 + 0.5) - 0.5) * 0.25, y - 0.87);
-            k += smoothstep(0.032 + aa, 0.032 - aa, length(o));
-            // (far off, where a motif is a pixel or two, it settles to the even mix the knit averages to)
-            return lerp(saturate(k), 0.18, saturate((px - 0.03) / 0.07));
-        }
+        // the cloth's pattern (ClothPattern.hlsl, shared with the people far off: PeopleLit), and the value noise the
+        // snow's clumps are made of
+        #include "ClothPattern.hlsl"
         half3 PatternColour(half3 a, float3 restPos, float3 restNormal)
         {
-            if (_Pattern < 0.5) return a;
-            float h = dot(restPos, _SnowUp.xyz);
-            if (_Pattern < 1.5) return lerp(a, _Color2.rgb, StripeBand(h * _PatternScale));
-            if (_Pattern < 2.5)
-            {
-                float n = Noise(restPos * _PatternScale) * 0.65 + Noise(restPos * _PatternScale * 2.6 + 3.1) * 0.35;
-                half3 c = lerp(a, _Color2.rgb, smoothstep(0.53, 0.56, n));
-                return lerp(c, a * 0.5, smoothstep(0.37, 0.34, n));
-            }
-            if (_Pattern < 3.5)
-            {
-                float k = _PatternAt >= 0 ? smoothstep(_PatternAt - 0.006, _PatternAt + 0.006, h) : smoothstep(-_PatternAt + 0.006, -_PatternAt - 0.006, h);
-                return lerp(a, _Color2.rgb, k);
-            }
-            float3 side = normalize(cross(_SnowUp.xyz, float3(0.0, 0.0, 1.0)) + float3(1e-4, 0.0, 0.0));
-            if (_Pattern > 4.5)
-            {
-                // laid on from the front and back, or from the sides where the cloth faces that way, so the motifs
-                // keep their shape round the body (tone on tone, the join doesn't show)
-                float3 fwd = cross(side, _SnowUp.xyz);
-                float x = abs(dot(restNormal, side)) > abs(dot(restNormal, fwd)) ? dot(restPos, fwd) : dot(restPos, side);
-                return lerp(a, _Color2.rgb, Knit(float2(x, h) * _PatternScale));
-            }
-            // plaid: bands round the body and down it, crossed, with a thin dark line through each
-            half across = StripeBand(h * _PatternScale), down = StripeBand(dot(restPos, side) * _PatternScale);
-            half3 c = lerp(a, _Color2.rgb, (across + down) * 0.5);
-            half grid = StripeBand(h * _PatternScale * 4.0 + 0.5) * StripeBand(dot(restPos, side) * _PatternScale * 4.0 + 0.5);
-            return c * (1.0 - 0.25 * grid);
+            return ClothPattern(a, _Color2.rgb, _Pattern, _PatternScale, _PatternAt, restPos, restNormal, _SnowUp.xyz);
         }
 
         // big clumps with a finer crust on them

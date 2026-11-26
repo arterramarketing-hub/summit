@@ -6,7 +6,8 @@ namespace Summit
     /// <summary>
     /// People for distance, and what the walk clips measure:
     ///   - Skinned(look): the whole person (jacket, trousers, gear in the look's shape) as one simplified skinned
-    ///     mesh at rest, on the hero's skeleton, in the slot-coloured PeopleLit material: one draw, one skin.
+    ///     mesh at rest, on the hero's skeleton, in the slot-coloured PeopleLit material: one draw, one skin. The
+    ///     clothes keep their rest pose (uv2, uv3), so their patterns are drawn on them as on the full model.
     ///   - Bake(person, frame, cell): a posed person (a rider on a chair) frozen into one simplified static mesh in a
     ///     frame of its own, for drawing many at once with GPU instancing (each instance's colours from its palette row).
     ///   - WalkCycle, RunCycle: how far the body travels in one cycle of the Walk and Run clips (two steps), measured
@@ -104,15 +105,19 @@ namespace Summit
             int key = l.ShapeKey;
             if (skinned.TryGetValue(key, out var have) && have != null) return have;
             var pos = new List<Vector3>(); var slot = new List<int>(); var tris = new List<int>(); var w = new List<BoneWeight>();
+            var restPos = new List<Vector3>(); var restNrm = new List<Vector3>();   // (the clothes' rest pose: their patterns)
             var cut = PeopleKit.CutOf(l);
             var gearBones = cut.gear.bones;
             var index = new Dictionary<string, int>();
             for (int i = 0; i < gearBones.Length; i++) if (gearBones[i] != null) index[gearBones[i].name] = i;
-            void Add(Mesh m, Transform[] bones, System.Func<int, Vector2, int> slotOf)
+            void Add(Mesh m, Transform[] bones, System.Func<int, Vector2, int> slotOf, bool cloth = false)
             {
                 if (m == null) return;
                 var toModel = cut.meshToModel;
                 var v = m.vertices; var uv = m.uv; var bw = m.boneWeights; var t = m.triangles;
+                var rp = new List<Vector3>(); var rn = new List<Vector3>();
+                if (cloth) { m.GetUVs(2, rp); m.GetUVs(3, rn); }
+                bool rest = rp.Count == v.Length && rn.Count == v.Length;
                 // the source's bone indices, as the gear's
                 var remap = new int[bones.Length];
                 for (int i = 0; i < bones.Length; i++) remap[i] = bones[i] != null && index.TryGetValue(bones[i].name, out int g) ? g : 0;
@@ -121,19 +126,19 @@ namespace Summit
                 {
                     pos.Add(toModel.MultiplyPoint3x4(v[i]));
                     slot.Add(slotOf(i, uv != null && i < uv.Length ? uv[i] : Vector2.zero));
+                    restPos.Add(rest ? rp[i] : Vector3.zero); restNrm.Add(rest ? rn[i] : Vector3.zero);
                     var b = i < bw.Length ? bw[i] : new BoneWeight { weight0 = 1f };
                     b.boneIndex0 = remap[b.boneIndex0]; b.boneIndex1 = remap[b.boneIndex1]; b.boneIndex2 = remap[b.boneIndex2]; b.boneIndex3 = remap[b.boneIndex3];
                     w.Add(b);
                 }
                 foreach (var k in t) tris.Add(o + k);
             }
-            var rest = new List<Vector3>(); cut.Body.GetUVs(2, rest);
-            Add(cut.Body, cut.body.bones, (i, uv) => rest.Count > i && rest[i].y < 1.3f ? PeopleKit.SJacket2 : PeopleKit.SJacket);
-            Add(cut.Legs, cut.legs.bones, (i, uv) => PeopleKit.SPants);
+            Add(cut.Body, cut.body.bones, (i, uv) => PeopleKit.SJacket, true);
+            Add(cut.Legs, cut.legs.bones, (i, uv) => PeopleKit.SPants, true);
             var gear = PeopleKit.Gear(l);
             Add(gear, gearBones, (i, uv) => PeopleKit.SlotOfCell(PeopleKit.CellAt(uv)));
             if (cut.head != null) Add(PeopleKit.Head(l), cut.head.bones, (i, uv) => PeopleKit.SlotOfCell(PeopleKit.CellAt(uv)));
-            var mesh = PeopleKit.Simplify(pos, slot, tris, SkinnedCell, "PersonSimple" + key, w, cut.modelToMesh);
+            var mesh = PeopleKit.Simplify(pos, slot, tris, SkinnedCell, "PersonSimple" + key, w, cut.modelToMesh, restPos, restNrm);
             mesh.bindposes = gear.bindposes;
             if (System.Environment.GetEnvironmentVariable("SUMMIT_PEOPLE_LOG") == "1") Debug.Log($"People: simplified body {key}: {mesh.vertexCount} vertices, {mesh.triangles.Length / 3} triangles");
             skinned[key] = mesh;
@@ -149,8 +154,9 @@ namespace Summit
         public static Mesh Bake(Person p, Matrix4x4 worldToFrame, float cell, string name)
         {
             var pos = new List<Vector3>(); var slot = new List<int>(); var tris = new List<int>();
-            PeopleKit.Gather(p, worldToFrame, pos, slot, tris);
-            var mesh = PeopleKit.Simplify(pos, slot, tris, cell, name);
+            var restPos = new List<Vector3>(); var restNrm = new List<Vector3>();
+            PeopleKit.Gather(p, worldToFrame, pos, slot, tris, restPos, restNrm);
+            var mesh = PeopleKit.Simplify(pos, slot, tris, cell, name, null, null, restPos, restNrm);
             return mesh;
         }
     }

@@ -570,9 +570,15 @@ namespace Summit
 
         static Material lodMat;
         public static Texture2D Atlas { get; private set; }
-        public const int Slots = 16, Rows = 1024;   // (a row a person: the lifts draw a new look each lap, so rows are reused oldest first)
+        public const int Slots = 32, Rows = 1024;   // (a row a look: Row)
+        // A row's slots: each the colour (linear, sheen in alpha) of a part of the person, as the full model draws it.
+        // The jacket and trousers also have their pattern's second colour and the pattern itself (kind, repeats a
+        // metre, the colour block's height, as numbers: the palette is half floats), which PeopleLit draws on their
+        // rest pose as SnowyCloth does up close. (SJacket2 is the jacket too: it was its block's lower half once.)
         public const int SSkin = 0, SJacket = 1, SJacket2 = 2, SPants = 3, SHead = 4, SLens = 5, SFrame = 6, SGlove = 7, SBoot = 8,
-                         SBoard = 9, SDark = 10, SPack = 11, SHair = 12, SGaiter = 13, SMetal = 14, SPompom = 15;
+                         SBoard = 9, SDark = 10, SPack = 11, SHair = 12, SGaiter = 13, SMetal = 14, SPompom = 15,
+                         SJacketB = 16, SJacketP = 17, SPantsB = 18, SPantsP = 19,   // (PeopleLit.shader's SLOT_JACKET_B, SLOT_PANTS_B)
+                         SVent = 20, SCuff = 21, SPackSide = 22, SPackAccent = 23, SGaiterBand = 24, SLip = 25, SStrap = 26;
         static readonly Color[] atlasPx = new Color[Slots * Rows];
         static readonly Color[] rowBuf = new Color[Slots];
         static readonly Dictionary<PersonLook, int> rowOf = new Dictionary<PersonLook, int>();
@@ -602,7 +608,8 @@ namespace Summit
                 var sh = asset != null ? asset.shader : Resources.Load<Shader>("PeopleLit");
                 if (sh == null) { Debug.LogWarning("People: Resources/PeopleLit.shader is missing"); sh = Lit; }
                 if (asset == null) Debug.LogWarning("People: Resources/PeopleLit.mat is missing: a player build drops the riders' instanced shader (PeopleAssets.Ensure makes it)");
-                Atlas = new Texture2D(Slots, Rows, TextureFormat.RGBA32, false, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp, name = "PeoplePalette" };
+                // (half floats, linear: the colours as the materials up close take them, and the patterns' numbers exactly)
+                Atlas = new Texture2D(Slots, Rows, TextureFormat.RGBAHalf, false, true) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp, name = "PeoplePalette" };
                 for (int i = 0; i < atlasPx.Length; i++) atlasPx[i] = Color.grey;
                 Atlas.SetPixels(atlasPx); Atlas.Apply(false);
                 lodMat = asset != null ? new Material(asset) : new Material(sh);
@@ -670,26 +677,55 @@ namespace Summit
 
         static void WriteRow(PersonLook l, int r) => Fill(l, atlasPx, r * Slots);
 
+        static Color[] painted;
+
+        /// <summary>
+        /// A look's row: every part's colour exactly as the full model draws it (Person.Dress): the gear's from the
+        /// palette PaintPalette paints for it, swatch by swatch; the cloth's main and second colours, sheen and pattern
+        /// as Person.Cloth gives SnowyCloth; the board's as its material. Linear, as the materials take colours.
+        /// </summary>
         static void Fill(PersonLook l, Color[] atlasPx, int o)
         {
-            Color S(Color c, float smooth) => new Color(c.r, c.g, c.b, smooth);
-            Color Avg(Wardrobe.Item it) => it == null ? Color.grey : it.Patterned && it.pattern != Wardrobe.Pattern.Block ? Color.Lerp(it.a, it.b, it.pattern == Wardrobe.Pattern.Stripes ? 0.4f : 0.35f) : it.a;
-            atlasPx[o + SSkin] = S(l.skin, 0.25f);
-            atlasPx[o + SJacket] = S(Avg(l.jacket), l.jacket != null && l.jacket.smooth >= 0f ? l.jacket.smooth : 0.35f);
-            atlasPx[o + SJacket2] = l.jacket != null && l.jacket.pattern == Wardrobe.Pattern.Block ? S(l.jacket.b, 0.35f) : atlasPx[o + SJacket];
-            atlasPx[o + SPants] = S(Avg(l.pants), 0.2f);
-            atlasPx[o + SHead] = l.head == PersonHead.Beanie ? S(l.beanie, 0.05f) : S(l.helmet != null ? l.helmet.a : Color.white, l.helmet != null && l.helmet.smooth >= 0f ? l.helmet.smooth : 0.55f);
-            atlasPx[o + SLens] = S(l.goggles != null ? l.goggles.a : new Color(1f, 0.6f, 0.2f), 0.92f);
-            atlasPx[o + SFrame] = S(l.goggles != null && l.goggles.b.a > 0f ? l.goggles.b : new Color(0.06f, 0.06f, 0.07f), 0.45f);
-            atlasPx[o + SGlove] = S(l.gloves != null ? l.gloves.a : new Color(0.12f, 0.12f, 0.14f), 0.2f);
-            atlasPx[o + SBoot] = S(l.boots != null ? l.boots.a : new Color(0.2f, 0.18f, 0.16f), 0.3f);
-            atlasPx[o + SBoard] = S(l.board != null ? l.board.a : Color.blue, l.board != null && l.board.smooth >= 0f ? l.board.smooth : 0.6f);
-            atlasPx[o + SDark] = S(new Color(0.07f, 0.07f, 0.08f), 0.35f);
-            atlasPx[o + SPack] = S(l.pack != null ? l.pack.a : new Color(0.13f, 0.14f, 0.16f), 0.25f);
-            atlasPx[o + SHair] = S(l.hair, 0.3f);
-            atlasPx[o + SGaiter] = S(l.gaiter, 0.1f);
-            atlasPx[o + SMetal] = S(new Color(0.72f, 0.73f, 0.76f), 0.7f);
-            atlasPx[o + SPompom] = S(l.pompom, 0.02f);
+            bool lin = QualitySettings.activeColorSpace == ColorSpace.Linear;
+            Color L(Color c, float a) { var k = lin ? c.linear : c; return new Color(k.r, k.g, k.b, a); }
+            int w = PaletteSrc != null ? PaletteSrc.width : 8, h = PaletteSrc != null ? PaletteSrc.height : 8;
+            if (painted == null || painted.Length != w * h) painted = new Color[w * h];
+            if (PaletteBase != null) PaintPalette(l, painted, w, h); else for (int i = 0; i < painted.Length; i++) painted[i] = Color.grey;
+            // (as the full model's palette texture holds them: 8 bits a channel)
+            float Q(float x) => Mathf.Floor(Mathf.Clamp01(x) * 255f + 0.5f) / 255f;
+            Color Cell(int c) { int i = PalettePixel(c, w, h); var k = i >= 0 && i < painted.Length ? painted[i] : Color.grey; return L(new Color(Q(k.r), Q(k.g), Q(k.b)), Q(k.a)); }
+            void Cloth(Wardrobe.Item it, float smooth, int main, int second, int kind)
+            {
+                if (it == null) { atlasPx[o + main] = L(Color.grey, smooth); atlasPx[o + second] = atlasPx[o + main]; atlasPx[o + kind] = Color.clear; return; }
+                atlasPx[o + main] = L(it.a, it.smooth >= 0f ? it.smooth : smooth);
+                atlasPx[o + second] = L(it.b.a > 0f ? it.b : it.a, 1f);
+                atlasPx[o + kind] = new Color((float)it.pattern, it.scale, it.at, 0f);
+            }
+            atlasPx[o + SSkin] = Cell(CSkin);
+            atlasPx[o + SLip] = Cell(CLip);
+            Cloth(l.jacket, 0.35f, SJacket, SJacketB, SJacketP);
+            atlasPx[o + SJacket2] = atlasPx[o + SJacket];
+            Cloth(l.pants, 0.2f, SPants, SPantsB, SPantsP);
+            atlasPx[o + SHead] = Cell(CHelmet);
+            atlasPx[o + SVent] = Cell(CVent);
+            atlasPx[o + SLens] = Cell(CLens);
+            atlasPx[o + SFrame] = Cell(CFrame);
+            atlasPx[o + SStrap] = Cell(CStrap);
+            atlasPx[o + SGlove] = Cell(CGlove);
+            atlasPx[o + SCuff] = Cell(CCuff);
+            atlasPx[o + SBoot] = Cell(CBoot);
+            var b = l.board ?? Wardrobe.Get(Wardrobe.Cat.Board, 0);
+            atlasPx[o + SBoard] = b != null ? L(b.a, b.smooth >= 0f ? b.smooth : 0.6f) : L(Color.blue, 0.6f);
+            atlasPx[o + SDark] = Cell(CSole);
+            atlasPx[o + SPack] = Cell(CPack);
+            atlasPx[o + SPackSide] = Cell(CPackSide);
+            atlasPx[o + SPackAccent] = Cell(CPackAccent);
+            atlasPx[o + SHair] = Cell(CHair);
+            atlasPx[o + SGaiter] = Cell(CGaiter);
+            atlasPx[o + SGaiterBand] = Cell(CGaiterBand);
+            atlasPx[o + SMetal] = L(new Color(0.72f, 0.73f, 0.76f), 0.7f);
+            atlasPx[o + SPompom] = Cell(CPompom);
+            for (int k = SStrap + 1; k < Slots; k++) atlasPx[o + k] = Color.clear;
         }
 
         /// <summary>The distance slot of a gear swatch (-1: too fine to keep far off).</summary>
@@ -698,16 +734,23 @@ namespace Summit
             switch (cell)
             {
                 case CSkin: return SSkin;
-                case CHelmet: case CVent: return SHead;
-                case CFrame: case CStrap: return SFrame;
+                case CHelmet: return SHead;
+                case CVent: return SVent;
+                case CFrame: return SFrame;
+                case CStrap: return SStrap;
                 case CLens: return SLens;
-                case CGlove: case CCuff: return SGlove;
+                case CGlove: return SGlove;
+                case CCuff: return SCuff;
                 case CBoot: return SBoot;
                 case CSole: case CBinding: case CBStrap: case CDeckEdge: case CBase: return SDark;
-                case CPack: case CPackSide: case CPackAccent: return SPack;
+                case CPack: return SPack;
+                case CPackSide: return SPackSide;
+                case CPackAccent: return SPackAccent;
                 case CHair: return SHair;
                 case CPompom: return SPompom;
-                case CGaiter: case CGaiterBand: return SGaiter;
+                case CLip: return SLip;
+                case CGaiter: return SGaiter;
+                case CGaiterBand: return SGaiterBand;
                 // (the swatches the other riders' clothes and faces added: Val, Breanna, Paul)
                 case 24: case 35: case 44: case 32: case 33: case 34: case 37: case 38: return SSkin;   // skins, eyes, lips
                 case 25: case 36: case 45: case 26: case 51: case 40: return SHair;                       // hair, moustaches, a scrunchie
@@ -729,9 +772,12 @@ namespace Summit
         /// A soup of triangles with a slot on each vertex, merged by vertex clustering: every vertex in the same
         /// cube of the grid (and of the same slot, so colours never bleed) becomes one, at their average place;
         /// faces that collapse go. Normals are smoothed over what is left. With weights, each merged vertex keeps
-        /// those of the original nearest to it (good for a skinned body).
+        /// those of the original nearest to it (good for a skinned body). With the rest pose (the clothes' rest
+        /// position and normal, zero elsewhere), each merged vertex gets their average, in uv2 and uv3: where the
+        /// clothes' patterns are drawn (PeopleLit), as up close.
         /// </summary>
-        public static Mesh Simplify(List<Vector3> pos, List<int> slot, List<int> tris, float cell, string name, List<BoneWeight> weights = null, Matrix4x4? toMesh = null)
+        public static Mesh Simplify(List<Vector3> pos, List<int> slot, List<int> tris, float cell, string name, List<BoneWeight> weights = null, Matrix4x4? toMesh = null,
+                                    List<Vector3> restPos = null, List<Vector3> restNrm = null)
         {
             var map = new Dictionary<long, int>();
             var vid = new int[pos.Count];
@@ -739,14 +785,17 @@ namespace Summit
             var used = new bool[pos.Count];
             foreach (var k in tris) if (k >= 0 && k < used.Length) used[k] = true;
             var sum = new List<Vector3>(); var count = new List<int>(); var vslot = new List<int>();
+            bool rest = restPos != null && restPos.Count == pos.Count && restNrm != null && restNrm.Count == pos.Count;
+            var rsum = new List<Vector3>(); var nsum = new List<Vector3>();
             float inv = 1f / cell;
             for (int i = 0; i < pos.Count; i++)
             {
                 if (slot[i] < 0 || !used[i]) { vid[i] = -1; continue; }
                 var p = pos[i];
                 long k = ((long)(Mathf.FloorToInt(p.x * inv) + 4096) << 40) | ((long)(Mathf.FloorToInt(p.y * inv) + 4096) << 26) | ((long)(Mathf.FloorToInt(p.z * inv) + 4096) << 12) | (long)(slot[i] & 0xfff);
-                if (!map.TryGetValue(k, out int id)) { id = sum.Count; map[k] = id; sum.Add(Vector3.zero); count.Add(0); vslot.Add(slot[i]); }
+                if (!map.TryGetValue(k, out int id)) { id = sum.Count; map[k] = id; sum.Add(Vector3.zero); count.Add(0); vslot.Add(slot[i]); if (rest) { rsum.Add(Vector3.zero); nsum.Add(Vector3.zero); } }
                 vid[i] = id; sum[id] += p; count[id]++;
+                if (rest) { rsum[id] += restPos[i]; nsum[id] += restNrm[i]; }
             }
             var outPos = new Vector3[sum.Count];
             for (int i = 0; i < outPos.Length; i++) outPos[i] = sum[i] / count[i];
@@ -794,17 +843,27 @@ namespace Summit
             var mesh = new Mesh { name = name };
             if (outPos.Length > 65000) mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
             mesh.vertices = outPos; mesh.normals = nrm; mesh.uv = uvs;
+            if (rest)
+            {
+                var rp = new List<Vector3>(outPos.Length); var rn = new List<Vector3>(outPos.Length);
+                for (int i = 0; i < outPos.Length; i++) { rp.Add(rsum[i] / count[i]); rn.Add(nsum[i].sqrMagnitude > 1e-12f ? nsum[i].normalized : Vector3.zero); }
+                mesh.SetUVs(2, rp); mesh.SetUVs(3, rn);
+            }
             if (outW != null) mesh.boneWeights = outW;
             mesh.SetTriangles(outTris, 0);
             mesh.RecalculateBounds();
             return mesh;
         }
 
+        static readonly List<Vector3> gRest = new List<Vector3>(), gRestN = new List<Vector3>();
+
         /// <summary>
         /// Everything a posed person shows, as one soup in the given frame: the skinned meshes as they are posed now,
-        /// and the board, skis and poles where they hang. Each vertex gets its distance slot.
+        /// and the board, skis and poles where they hang. Each vertex gets its distance slot, and (given the lists) its
+        /// rest pose: the jacket's and trousers' (their patterns are drawn on it), zero for the rest.
         /// </summary>
-        public static void Gather(Person p, Matrix4x4 worldToFrame, List<Vector3> pos, List<int> slot, List<int> tris)
+        public static void Gather(Person p, Matrix4x4 worldToFrame, List<Vector3> pos, List<int> slot, List<int> tris,
+                                  List<Vector3> restPos = null, List<Vector3> restNrm = null)
         {
             var baked = new Mesh();
             foreach (var smr in p.Skins)
@@ -820,16 +879,15 @@ namespace Summit
                     pos.Add(m.MultiplyPoint3x4(v[i]));
                     if (gear) slot.Add(SlotOfCell(CellOf(uv[i])));
                     else if (legs) slot.Add(SPants);
-                    else
-                    {
-                        // the jacket: below a colour block's line, its second colour (rest height, from uv2)
-                        slot.Add(SJacket);
-                    }
+                    else slot.Add(SJacket);
                 }
-                if (!gear && !legs)
+                if (restPos != null)
                 {
-                    var rest = new List<Vector3>(); smr.sharedMesh.GetUVs(2, rest);
-                    if (rest.Count == v.Length) for (int i = 0; i < v.Length; i++) if (rest[i].y < 1.3f) slot[o + i] = SJacket2;
+                    // the clothes' rest pose (the meshes' uv2, uv3: RestBaked), the same vertices as the baked ones
+                    gRest.Clear(); gRestN.Clear();
+                    if (!gear) { smr.sharedMesh.GetUVs(2, gRest); smr.sharedMesh.GetUVs(3, gRestN); }
+                    bool has = gRest.Count == v.Length && gRestN.Count == v.Length;
+                    for (int i = 0; i < v.Length; i++) { restPos.Add(has ? gRest[i] : Vector3.zero); restNrm.Add(has ? gRestN[i] : Vector3.zero); }
                 }
                 foreach (var k in t) tris.Add(o + k);
             }
@@ -845,6 +903,7 @@ namespace Summit
                 bool isPole = mesh == PoleMesh;
                 var mats = mr.sharedMaterials;
                 for (int i = 0; i < v.Length; i++) { pos.Add(m.MultiplyPoint3x4(v[i])); slot.Add(SDark); }
+                if (restPos != null) for (int i = 0; i < v.Length; i++) { restPos.Add(Vector3.zero); restNrm.Add(Vector3.zero); }
                 for (int s = 0; s < mesh.subMeshCount; s++)
                 {
                     string mn = s < mats.Length && mats[s] != null ? mats[s].name : "";
