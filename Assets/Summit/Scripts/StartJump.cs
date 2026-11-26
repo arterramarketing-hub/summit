@@ -7,8 +7,10 @@ namespace Summit
     /// The start page's other view (StartPage.Home: JUMP): a still from a ski film come to life. Bright white snow and a
     /// pale sky, a kicker cut into the slope, and your rider (a copy of them as they are, in what they wear) coming
     /// down to it, popping off the lip and putting down a trick (a backside 360 with an indy, a backflip with a mute,
-    /// a frontside 540 with a method, in turn), slowing as they hang at the top of it, then landing in a burst of snow
-    /// and riding away. The camera is a film operator's: low and well off to the side on a long lens, panning with the
+    /// a frontside 540 with a method, in turn), in slow motion from the lip to the landing, then landing in a burst of
+    /// snow and riding away. Each loop is on the other gear: the snowboard, then skis with a pole in each hand (their
+    /// grabs a safety, a mute and a tail), never the two at once. The edges of the frame are soft (JumpEdgeBlur), the
+    /// rider sharp in the middle. The camera is a film operator's: low and well off to the side on a long lens, panning with the
     /// rider so they stand out against the sky, a little unsteady in the hand.
     ///
     /// Like the closet's studio (ClosetStage) it is far above everything else, on a layer of its own, and the game's
@@ -34,17 +36,36 @@ namespace Summit
         const float Fov = 28f;
         static readonly Vector3 CamAt = new Vector3(6f, 0f, -26f);
 
-        // the tricks, in turn: degrees of spin (+ backside), whole flips (+ back), and the grab (RiderBodyHero's order:
-        // Indy, Melon, Mute, Method, Stalefish, TailGrab)
-        static readonly (float spin, float flip, int grab)[] Tricks = { (360f, 0f, 0), (0f, 1f, 2), (-540f, 0f, 3) };
+        // the tricks, in turn: degrees of spin (+ backside), whole flips (+ back), the board's grab (RiderBodyHero's
+        // order: Indy, Melon, Mute, Method, Stalefish, TailGrab) and the skis' (RiderBodyRide's: Safety, Mute, Tail)
+        static readonly (float spin, float flip, int grab, int skiGrab)[] Tricks = { (360f, 0f, 0, 0), (0f, 1f, 2, 1), (-540f, 0f, 3, 2) };
+        // ---- the slow motion: how slow the clock runs through the air (eased in over the lip, out into the landing)
+        const float Slow = 0.3f;
 
         public bool Showing { get; private set; }
         /// <summary>Seconds into the loop (the test tools set it to look at any moment of it).</summary>
         public float Clock;
         /// <summary>Which trick the loop is on (0.. Tricks).</summary>
         public int Trick;
+        /// <summary>On skis (and poles) this loop, or the snowboard: never both. Each loop is the other one.</summary>
+        public bool OnSkis => onSkis;
+        /// <summary>How fast the loop's clock runs this frame (1 on the snow, Slow in the air). Only this scene's own
+        /// clock: Time.timeScale and the game's time are never touched.</summary>
+        public float Rate { get; private set; } = 1f;
+        static int visits;   // each visit to the page starts on the other one
 
         Transform stage, holder, board, model, skyT;
+        Transform skisT; readonly Transform[] skiT = new Transform[2], poleT = new Transform[2];
+        bool hasSkis, onSkis;
+        Vector3 skiModelPos; readonly Vector3[] skiOff = new Vector3[2]; readonly Quaternion[] skiTurn = new Quaternion[2];
+        int idSRide, idSTurnL, idSTurnR, idSPop, idSAir, idSLand, idSWindL, idSWindR, idSSpinL, idSSpinR, idSFlip;
+        readonly int[] idSGrab = new int[3];
+        readonly HeroRig.Hold[] sGrabHold = new HeroRig.Hold[3];
+        // ---- the blur at the edges of the frame (JumpEdgeBlur: one pass over URP's copy of the opaque picture)
+        Material blurMat; Transform blurT;
+        UnityEngine.Rendering.Universal.UniversalAdditionalCameraData camData;
+        bool colorKept; UnityEngine.Rendering.Universal.CameraOverrideOption colorWas;
+        Vector2 centre; bool centreSet;
         Material snowMat, skyMat;
         HeroRig rig;
         Camera cam;
@@ -71,7 +92,16 @@ namespace Summit
             stage.gameObject.SetActive(true);
             if (!CopyRider(body)) { stage.gameObject.SetActive(false); return false; }
             Showing = true;
-            Clock = 0f; Trick = 0; aimSet = false; lastPhase = -1;
+            Clock = 0f; Trick = 0; aimSet = false; lastPhase = -1; Rate = 1f; centreSet = false;
+            SetGear(hasSkis && (visits++ & 1) == 1);
+            // the blur reads URP's copy of the opaque picture: asked for on this camera while the page shows (the
+            // phone's pipeline doesn't make one otherwise), put back as it was on Hide
+            if (blurMat != null && !colorKept)
+            {
+                camData = cam.GetComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>();
+                if (camData != null) { colorWas = camData.requiresColorOption; camData.requiresColorOption = UnityEngine.Rendering.Universal.CameraOverrideOption.On; colorKept = true; }
+            }
+            if (blurT != null) blurT.gameObject.SetActive(colorKept);
             Frame(0f, 0f);
             return true;
         }
@@ -80,8 +110,22 @@ namespace Summit
         {
             Showing = false;
             if (holder != null) Kill(holder.gameObject);
-            holder = null; board = null; model = null; rig = null;
+            holder = null; board = null; model = null; rig = null; skisT = null;
+            for (int s = 0; s < 2; s++) { skiT[s] = null; poleT[s] = null; }
+            if (colorKept && camData != null) camData.requiresColorOption = colorWas;
+            colorKept = false;
+            Rate = 1f;
             if (stage != null) stage.gameObject.SetActive(false);
+        }
+
+        /// <summary>The snowboard, or the skis and the poles in the hands: one or the other, never both.</summary>
+        void SetGear(bool skis)
+        {
+            onSkis = skis && hasSkis;
+            if (board != null) board.gameObject.SetActive(!onSkis);
+            if (skisT != null) skisT.gameObject.SetActive(onSkis);
+            for (int s = 0; s < 2; s++) if (poleT[s] != null) poleT[s].gameObject.SetActive(onSkis);
+            if (rig != null) { rig.ResetSprings(); lastPhase = -1; }
         }
 
         // ---------------------------------------------------------------- the loop
@@ -95,21 +139,34 @@ namespace Summit
             if (!Showing || rig == null) return;
             OrientToSun();
             float loop = approachTime + airTime + OutTime + Gap;
-            // the hang at the top of the trick is slow motion: the clock runs slower through the middle of the air
-            float air = (Clock - approachTime) / airTime;
-            float rate = air > 0f && air < 1f ? Mathf.Lerp(1f, 0.42f, Sm(0.08f, 0.34f, air) * (1f - Sm(0.62f, 0.9f, air))) : 1f;
-            Clock += dt * rate;
-            if (Clock >= loop) { Clock -= loop; Trick = (Trick + 1) % Tricks.Length; aimSet = false; }
-            Pose(Clock, dt);
-            Shoot(dt, leave);
+            // the air is slow motion: the clock eases down as the rider comes up the kicker, hangs at Slow the whole
+            // way through the trick, and eases back up into the landing. Only this scene's clock (and its spray, and
+            // the camera's pan with it) runs slow: the game's time is never touched
+            Rate = SlowAt(Clock - approachTime);
+            float sdt = dt * Rate;
+            Clock += sdt;
+            if (Clock >= loop) { Clock -= loop; Trick = (Trick + 1) % Tricks.Length; aimSet = false; SetGear(!onSkis); }
+            var tm = trail.main; tm.simulationSpeed = Rate;
+            var bm = burst.main; bm.simulationSpeed = Rate;
+            Pose(Clock, sdt);
+            Shoot(sdt, leave);
+        }
+
+        /// <summary>The clock's rate at `u` seconds (loop time) from the lip.</summary>
+        float SlowAt(float u)
+        {
+            float into = Sm(-0.35f, 0.1f * airTime, u), outOf = Sm(0.86f * airTime, airTime + 0.3f, u);
+            return Mathf.Lerp(1f, Slow, into * (1f - outOf));
         }
 
         /// <summary>
         /// Test tools: play trick `trick` from the top of the loop to `airAt` through its air (0 the lip, 1 the landing;
         /// below 0 seconds before the lip, past 1 seconds after the landing), frame by frame as the game would.
+        /// `skis` 0 the snowboard, 1 the skis (-1 as it is).
         /// </summary>
-        public void Seek(int trick, float airAt)
+        public void Seek(int trick, float airAt, int skis = -1)
         {
+            if (skis >= 0) SetGear(skis == 1);
             Trick = trick % Tricks.Length; Clock = 0f; aimSet = false; lastPhase = -1;
             float t = airAt < 0f ? approachTime + airAt : airAt <= 1f ? approachTime + airAt * airTime : approachTime + airTime + (airAt - 1f);
             const float dt = 1f / 60f;
@@ -164,31 +221,49 @@ namespace Summit
             holder.localPosition = p;
             holder.localRotation = r;
 
-            // ---- the body, from the clips
+            // ---- the body, from the clips: the board's (side-on to the way they go), or the skis' (facing it)
             var h = rig;
+            bool sk = onSkis;
+            int cRide = sk ? idSRide : idRide, cPop = sk ? idSPop : idPop, cAir = sk ? idSAir : idAir, cLand = sk ? idSLand : idLand;
+            int cFlip = sk ? idSFlip : idFlip, cWindL = sk ? idSWindL : idWindL, cWindR = sk ? idSWindR : idWindR;
+            int cSpinL = sk ? idSSpinL : idSpinL, cSpinR = sk ? idSSpinR : idSpinR;
             h.Begin();
-            model.localPosition = ridePos; model.localRotation = baseRot;
-            var d = new HeroRig.Drive
+            Transform gear = sk ? skisT : board;
+            HeroRig.Drive d;
+            if (sk)
             {
-                board = board, rootInBoard = new Vector3(0f, 0.05f, 0f), rootRotInBoard = rootRot,
-                up = board.up, toe = board.right, nose = board.forward, feet = true,
-            };
+                model.localPosition = skiModelPos; model.localRotation = RiderBody.SkiFacing * baseRot;
+                d = new HeroRig.Drive
+                {
+                    board = skisT, rootInBoard = new Vector3(0f, RiderBody.DeckTop, 0f), rootRotInBoard = RiderBody.SkiFacing * rootRot,
+                    up = holder.up, toe = holder.forward, nose = -holder.right, feet = true,
+                };
+            }
+            else
+            {
+                model.localPosition = ridePos; model.localRotation = baseRot;
+                d = new HeroRig.Drive
+                {
+                    board = board, rootInBoard = new Vector3(0f, RiderBody.DeckTop, 0f), rootRotInBoard = rootRot,
+                    up = board.up, toe = board.right, nose = board.forward, feet = true,
+                };
+            }
             float blend = 9f, liftWant = 0f;
             if (phase != lastPhase)
             {
-                if (phase == 1) { h.Restart(idPop); Puff(lipPos, 14, 2.5f); }
-                if (phase == 2) { h.Restart(idLand); compV = -2.4f; Puff(p, 70, 5.5f); }
+                if (phase == 1) { h.Restart(cPop); Puff(lipPos, 14, 2.5f); }
+                if (phase == 2) { h.Restart(cLand); compV = -2.4f; Puff(p, 70, 5.5f); }
                 if (phase == 0) { h.ResetSprings(); }
             }
             float ft = phase == 0 ? t : phase == 1 ? t - approachTime : t - approachTime - airTime;
             if (phase == 0)
             {
-                // a few small carves on the way in, then square to the lip and down into the legs for the pop
+                // a few small carves (or turns) on the way in, then square to the lip and down into the legs for the pop
                 float toLip = approachTime - t;
                 float carve = Mathf.Sin(t * 2.1f) * 0.35f * Sm(0.6f, 1.6f, toLip);
-                h.Want(idRide, 1f - Mathf.Abs(carve));
-                h.Want(carve > 0f ? idToe : idHeel, Mathf.Abs(carve));
-                d.lean = carve * 10f;
+                h.Want(cRide, 1f - Mathf.Abs(carve));
+                if (sk) h.Want(carve > 0f ? idSTurnR : idSTurnL, Mathf.Abs(carve));
+                else { h.Want(carve > 0f ? idToe : idHeel, Mathf.Abs(carve)); d.lean = carve * 10f; }
                 d.drop = 0.16f * Sm(0.45f, 0.1f, toLip) - 0.0f;
                 d.look = Vector3.right * 4f + Vector3.down;
                 d.lookWeight = 0.5f;
@@ -201,25 +276,28 @@ namespace Summit
                 float wind = spinning ? 1f - Sm(0f, 0.14f, f) : 0f;
                 float wrap = spinning ? Sm(0.08f, 0.2f, f) * (1f - Sm(0.85f, 0.97f, f)) : 0f;
                 float restW = 1f - Mathf.Max(grab, fl);
-                h.Want(idAir, Mathf.Max(0.05f, restW * (1f - Mathf.Max(wind, wrap))));
-                h.Want(tr.spin < 0f ? idWindL : idWindR, wind * restW);
-                h.Want(tr.spin < 0f ? idSpinL : idSpinR, wrap * restW);
-                int gi = tr.grab;
-                if (grab > 0f && idGrab[gi] >= 0)
+                h.Want(cAir, Mathf.Max(0.05f, restW * (1f - Mathf.Max(wind, wrap))));
+                h.Want(tr.spin < 0f ? cWindL : cWindR, wind * restW);
+                h.Want(tr.spin < 0f ? cSpinL : cSpinR, wrap * restW);
+                int gi = sk ? tr.skiGrab : tr.grab;
+                int gClip = sk ? idSGrab[gi] : idGrab[gi];
+                if (grab > 0f && gClip >= 0)
                 {
-                    h.Want(idGrab[gi], grab * 3f);
-                    if (RiderBody.GrabHand(gi) == 0) { d.handL = grab; d.holdL = grabHold[gi]; } else { d.handR = grab; d.holdR = grabHold[gi]; }
+                    h.Want(gClip, grab * 3f);
+                    var hold = sk ? sGrabHold[gi] : grabHold[gi];
+                    int hand = sk ? RiderBody.SkiGrabHand(gi) : RiderBody.GrabHand(gi);
+                    if (hand == 0) { d.handL = grab; d.holdL = hold; } else { d.handR = grab; d.holdR = hold; }
                 }
-                if (fl > 0f) h.Want(idFlip, fl * 1.5f);
+                if (fl > 0f) h.Want(cFlip, fl * 1.5f);
                 liftWant = 0.11f * Mathf.Max(grab, fl);
-                if (ft < h.Length(idPop)) h.Want(idPop, 2f * (1f - Sm(0.55f, 1f, ft / Mathf.Max(0.01f, h.Length(idPop)))));
+                if (ft < h.Length(cPop)) h.Want(cPop, 2f * (1f - Sm(0.55f, 1f, ft / Mathf.Max(0.01f, h.Length(cPop)))));
                 // spotting the landing as it comes round
                 d.look = (landPos - p) + Vector3.right * 3f; d.lookWeight = 0.35f + 0.4f * Sm(0.55f, 0.85f, f);
             }
             else
             {
-                h.Want(idRide, 1f);
-                if (ft < h.Length(idLand)) h.Want(idLand, 2f * (1f - Sm(0.3f, 1f, ft / Mathf.Max(0.01f, h.Length(idLand)))));
+                h.Want(cRide, 1f);
+                if (ft < h.Length(cLand)) h.Want(cLand, 2f * (1f - Sm(0.3f, 1f, ft / Mathf.Max(0.01f, h.Length(cLand)))));
                 d.look = Vector3.right * 4f + Vector3.down; d.lookWeight = 0.4f;
             }
             // the legs take the landing and spring back
@@ -227,10 +305,14 @@ namespace Summit
             comp = Mathf.Clamp(comp + compV * dt, -0.15f, 0.6f);
             d.drop += Mathf.Max(0f, comp) * 0.18f;
             lift = dt <= 0f ? liftWant : Mathf.Lerp(lift, liftWant, 1f - Mathf.Exp(-dt * 12f));
-            board.localPosition = Vector3.up * lift;
+            gear.localPosition = Vector3.up * lift;
             if (dt <= 0f || phase != lastPhase && phase == 0) h.Snap();
             h.Evaluate(Mathf.Max(dt, 0f), blend);
             h.Layer(d, Mathf.Max(dt, 0f));
+            // each ski goes with its own foot (as on a run: RiderBodyRide.PoseSkis)
+            if (sk)
+                for (int s = 0; s < 2; s++)
+                    if (skiT[s] != null) { Transform ft2 = h.Foot[s]; skiT[s].SetPositionAndRotation(ft2.position + ft2.rotation * skiOff[s], ft2.rotation * skiTurn[s]); }
             lastPhase = phase;
 
             // ---- the snow: the trail of spray off the tail on the snow, the shadow under the rider
@@ -249,7 +331,7 @@ namespace Summit
             Vector3 want = holder.localPosition + Vector3.up * 0.9f;
             // the operator leads the rider a touch, and keeps them a little low in the frame on the way in
             if (!aimSet) { aim = want; aimVel = Vector3.zero; aimSet = true; }
-            else aim = Vector3.SmoothDamp(aim, want, ref aimVel, 0.16f, Mathf.Infinity, Mathf.Max(dt, 1e-4f));
+            else aim = Vector3.SmoothDamp(aim, want, ref aimVel, 0.07f, Mathf.Infinity, Mathf.Max(dt, 1e-4f));
             Vector3 pos = CamAt; pos.y = Height(CamAt.x, CamAt.z) + 1.1f;
             // breathing in the hand
             float tt = Time.unscaledTime;
@@ -262,7 +344,24 @@ namespace Summit
             cam.nearClipPlane = 0.3f; cam.farClipPlane = 3000f;
             skyT.position = cam.transform.position;
             snowMat.SetVector("_Cam", pos);
+            // the blur's sharp middle on the rider (the operator keeps them near the middle anyway: this holds it on
+            // them as the pan lags or leads)
+            if (blurMat != null && blurT != null)
+            {
+                blurT.position = cam.transform.position;
+                Vector3 vp = cam.WorldToViewportPoint(holder.position + stage.up * 0.9f);
+                var c = new Vector2(Mathf.Clamp(vp.x, 0.2f, 0.8f), Mathf.Clamp(vp.y, 0.2f, 0.8f));
+                if (vp.z <= 0f) c = new Vector2(0.5f, 0.5f);
+                centre = !centreSet || dt <= 0f ? c : Vector2.Lerp(centre, c, 1f - Mathf.Exp(-dt * 10f));
+                centreSet = true;
+                blurMat.SetVector("_Centre", new Vector4(centre.x, centre.y, 0f, 0f));
+                // and a little more of it as the lens pushes in on the way into the game
+                blurMat.SetFloat("_Radius", BlurRadius * (1f + 1.5f * k));
+            }
         }
+        const float BlurRadius = 0.02f;
+        /// <summary>The blurred edges on or off (the test tools compare the two).</summary>
+        public bool Blur { get => blurT != null && blurT.gameObject.activeSelf; set { if (blurT != null) blurT.gameObject.SetActive(value && colorKept); } }
 
         /// <summary>The scene turns so the sun is behind the camera's left shoulder: the rider's front is lit.</summary>
         void OrientToSun()
@@ -323,6 +422,9 @@ namespace Summit
             // drifts and rolls away from the kicker's line
             h += (Mathf.PerlinNoise(x * 0.045f + 3.1f, z * 0.05f + 7.7f) - 0.5f) * 1.4f * Sm(5f, 14f, az);
             h += (Mathf.PerlinNoise(x * 0.21f + 1.7f, z * 0.19f + 2.3f) - 0.5f) * 0.12f * Sm(3.5f, 6f, az);
+            // wind-sculpted swells: long soft waves across the wind, steeper on their lee side
+            float sw = Mathf.Sin(x * 0.11f + z * 0.24f + Mathf.PerlinNoise(x * 0.03f, z * 0.03f) * 4f);
+            h += (sw + 0.35f * sw * sw) * 0.28f * Sm(3.5f, 9f, az);
             return h;
         }
 
@@ -372,7 +474,7 @@ namespace Summit
             snowMat.SetTexture("_Grain", Grain(128));
             // white as a ski film's snow: pure in the sun, the shade only just blue, the far snow into a white haze
             // (the camera draws it without the game's grading while it shows: StartPage)
-            snowMat.SetColor("_Lit", Bright * Color.white); snowMat.SetColor("_Shade", Bright * new Color(0.86f, 0.9f, 0.96f));
+            snowMat.SetColor("_Lit", Bright * Color.white); snowMat.SetColor("_Shade", Bright * new Color(0.76f, 0.83f, 0.94f));
             snowMat.SetColor("_Haze", Bright * Haze);
             var g = Piece("Snow", HillMesh(), snowMat);
             g.SetParent(stage, false);
@@ -386,6 +488,19 @@ namespace Summit
             // the spray: a trail off the tail, and bursts at the pop and the landing
             trail = Spray("Trail", false);
             burst = Spray("Burst", true);
+            // the blur at the edges: a screen-filling quad drawn last (no shader, no blur; the scene still shows)
+            var eb = Resources.Load<Shader>("JumpEdgeBlur");
+            if (eb != null && eb.isSupported)
+            {
+                blurMat = new Material(eb) { name = "JumpEdgeBlur" };
+                var qm = new Mesh { name = "JumpEdgeBlur" };
+                qm.vertices = new[] { new Vector3(-1f, -1f, 0f), new Vector3(1f, -1f, 0f), new Vector3(-1f, 1f, 0f), new Vector3(1f, 1f, 0f) };
+                qm.triangles = new[] { 0, 2, 1, 1, 2, 3 };
+                qm.bounds = new Bounds(Vector3.zero, Vector3.one * 1e5f);   // (placed at the camera: never culled)
+                blurT = Piece("EdgeBlur", qm, blurMat);
+                blurT.SetParent(stage, false);
+            }
+            else Debug.LogWarning("StartJump: no JumpEdgeBlur shader: the jump without its blurred edges");
             Plan();
             SetLayer(stage);
             stage.gameObject.SetActive(false);
@@ -448,11 +563,12 @@ namespace Summit
             holder = c;
             holder.SetParent(stage, false);
             holder.localScale = roll.lossyScale;
-            // only the board and the person: no skis, toboggan or anything else the rider carries about
+            // only the person and what they ride down the jump (the board, or the skis): no toboggan or anything else
+            // the rider carries about (SetGear shows one of the two)
             for (int i = 0; i < holder.childCount; i++)
             {
                 var ch = holder.GetChild(i);
-                bool keep = ch.name == "Board" || ch.name == "Body";
+                bool keep = ch.name == "Board" || ch.name == "Body" || ch.name == "Skis";
                 ch.gameObject.SetActive(keep);
                 if (keep) { ch.localPosition = Vector3.zero; ch.localRotation = Quaternion.identity; }
             }
@@ -460,6 +576,18 @@ namespace Summit
             model = Follow(holder, path);
             if (board == null || model == null) { Hide(); return false; }
             foreach (Transform b in board) if (b.name == "Snowboard") b.gameObject.SetActive(true);
+            // the skis (under the roll) and the poles (in the hands): only if the rider has them
+            skisT = holder.Find("Skis");
+            skiT[0] = skisT != null ? skisT.Find("SkiL") : null; skiT[1] = skisT != null ? skisT.Find("SkiR") : null;
+            foreach (var t in holder.GetComponentsInChildren<Transform>(true)) { if (t.name == "PoleL") poleT[0] = t; else if (t.name == "PoleR") poleT[1] = t; }
+            for (int s = 0; s < 2; s++)
+            {
+                if (poleT[s] != null) poleT[s].gameObject.SetActive(false);
+                skiOff[s] = body.HasSkis ? body.SkiOffset(s) : Vector3.zero; skiTurn[s] = body.HasSkis ? body.SkiTurnOf(s) : Quaternion.identity;
+                if (skiT[s] != null) skiT[s].gameObject.SetActive(true);
+            }
+            if (skisT != null) skisT.gameObject.SetActive(false);
+            skiModelPos = body.SkiModelPos;
             var table = Resources.Load<TextAsset>("Rider/HeroAnim");
             var h = table != null ? new HeroRig(model, table) : null;
             if (h == null || !h.Ok) { Hide(); return false; }
@@ -470,6 +598,14 @@ namespace Summit
             idWindL = h.Id("Spin_WindL"); idWindR = h.Id("Spin_WindR"); idSpinL = h.Id("Spin_AirL"); idSpinR = h.Id("Spin_AirR");
             string[] gn = { "Indy", "Melon", "Mute", "Method", "Stalefish", "TailGrab" };
             for (int i = 0; i < gn.Length; i++) { idGrab[i] = h.Id("Grab_" + gn[i]); grabHold[i] = h.CaptureHold(idGrab[i], RiderBody.GrabHand(i)); }
+            // the skis' clips (RiderBodyRide's)
+            idSRide = h.Id("Ski_Ride"); idSTurnL = h.Id("Ski_TurnL"); idSTurnR = h.Id("Ski_TurnR");
+            idSPop = h.Id("Ski_Pop"); idSAir = h.Id("Ski_Air"); idSLand = h.Id("Ski_Land"); idSFlip = h.Id("Ski_Flip");
+            idSWindL = h.Id("Ski_WindL"); idSWindR = h.Id("Ski_WindR"); idSSpinL = h.Id("Ski_SpinL"); idSSpinR = h.Id("Ski_SpinR");
+            string[] sg = { "Safety", "Mute", "Tail" };
+            for (int i = 0; i < sg.Length; i++) { idSGrab[i] = h.Id("Ski_Grab_" + sg[i]); sGrabHold[i] = h.CaptureHold(idSGrab[i], RiderBody.SkiGrabHand(i)); }
+            hasSkis = body.HasSkis && skiT[0] != null && skiT[1] != null && poleT[0] != null && poleT[1] != null
+                      && idSRide >= 0 && idSAir >= 0 && idSPop >= 0 && idSLand >= 0 && idSTurnL >= 0 && idSTurnR >= 0;
             // at rest on the deck, to take the face's and hood's frames from (as the rider was made)
             holder.localPosition = Surface(StartX); holder.localRotation = OnSnow(StartX, 0f);
             model.localPosition = ridePos; model.localRotation = baseRot;
@@ -517,6 +653,22 @@ namespace Summit
                     v[j * nx + i] = new Vector3(x, Height(x, z), z);
                     n[j * nx + i] = Normal(x, z);
                 }
+            // soft occlusion in the dips (in the vertices' red): how far the snow lies below its surroundings
+            var col = new Color[nx * nz];
+            for (int j = 0; j < nz; j++)
+                for (int i = 0; i < nx; i++)
+                {
+                    float x = xs[i], z = zs[j], hh = v[j * nx + i].y;
+                    float around = 0f;
+                    for (int a = 0; a < 6; a++)
+                    {
+                        float ang = a * Mathf.PI / 3f;
+                        around += Height(x + Mathf.Cos(ang) * 2.5f, z + Mathf.Sin(ang) * 2.5f) + Height(x + Mathf.Cos(ang + 0.5f) * 6f, z + Mathf.Sin(ang + 0.5f) * 6f);
+                    }
+                    float dip = around / 12f - hh;
+                    float ao = 1f - Mathf.Clamp01(dip * 2.2f);
+                    col[j * nx + i] = new Color(ao, ao, ao, 1f);
+                }
             var tri = new int[(nx - 1) * (nz - 1) * 6];
             int k = 0;
             for (int j = 0; j < nz - 1; j++)
@@ -526,7 +678,7 @@ namespace Summit
                     tri[k++] = a; tri[k++] = c; tri[k++] = b; tri[k++] = b; tri[k++] = c; tri[k++] = d;
                 }
             var m = new Mesh { name = "JumpHill", indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
-            m.vertices = v; m.normals = n; m.triangles = tri; m.RecalculateBounds();
+            m.vertices = v; m.normals = n; m.colors = col; m.triangles = tri; m.RecalculateBounds();
             return m;
         }
 

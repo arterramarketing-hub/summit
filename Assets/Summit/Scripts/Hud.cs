@@ -112,6 +112,12 @@ namespace Summit
                 Place(pip.rectTransform, new Vector2(0f, 1f), new Vector2(40f + i * 54f, -218f), new Vector2(44f, 44f), new Vector2(0f, 1f));
                 shieldPips[i] = pip;
             }
+            // (ridercrash) the free hit used: a small red diamond under the shields, for the rest of the run
+            hitMark = NewImage("HitMark", safe, new Color(0.9f, 0.12f, 0.1f, 0.95f));
+            Place(hitMark.rectTransform, new Vector2(0f, 1f), new Vector2(46f, -276f), new Vector2(30f, 30f), new Vector2(0f, 1f));
+            hitMark.rectTransform.localRotation = Quaternion.Euler(0f, 0f, 45f);
+            hitMark.raycastTarget = false;
+            hitMark.enabled = false;
             // falls left this run: three red crosses, top right under the slide bar
             fallsLabel = NewText("FallsLabel", safe, new Vector2(1f, 1f), new Vector2(-40f, -136f), 30, TextAnchor.UpperRight);
             fallsLabel.text = "";
@@ -190,6 +196,17 @@ namespace Summit
 
         /// <summary>A red flash across the screen.</summary>
         public void Hurt(float a = 0.45f) { hurtA = Mathf.Max(hurtA, a); }
+        Image hitMark; float hitPop;
+        /// <summary>(ridercrash) The free hit used: the marker shown (it pops in when it first comes on).</summary>
+        public void SetHitMark(bool on)
+        {
+            if (hitMark == null) return;
+            if (on && !hitMark.enabled) hitPop = 1f;
+            if (hitMark.enabled != on) hitMark.enabled = on;
+            if (hitPop > 0f) { hitPop = Mathf.MoveTowards(hitPop, 0f, Time.unscaledDeltaTime * 2.5f); hitMark.rectTransform.localScale = Vector3.one * (1f + 0.8f * hitPop * hitPop); }
+        }
+        /// <summary>True while the free-hit marker shows (the tests).</summary>
+        public bool HitMarkShown => hitMark != null && hitMark.enabled;
 
         static Sprite MakeCircle(int px)
         {

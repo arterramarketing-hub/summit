@@ -216,6 +216,9 @@ namespace Summit
                 float band = 0.55f + 0.45f * Slope.Noise(x * 0.045f + z * 0.02f + 11.3f, z * 0.06f - x * 0.015f + 5.9f);
                 m.LayCrust(place * wind * band * keep);
             }
+            // (a cornice's face, its crown and the top of its landing: scoured by the wind that built it, whatever the day)
+            float cf = Cliffs.CorniceFace(x, z);
+            if (cf > 0f) m.LayCrust(cf * (0.7f + 0.2f * Slope.Noise(x * 0.11f + 2.3f, z * 0.09f + 7.1f)));
 
             // ---- crud: where people are
             float crud = Mathf.Max(Stations(x, z), Hamlet(x, z, a, half));

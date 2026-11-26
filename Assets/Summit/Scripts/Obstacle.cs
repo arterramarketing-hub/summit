@@ -3,9 +3,20 @@ using UnityEngine;
 namespace Summit
 {
     /// <summary>Marks a collider the rider can hit (a tree, a rock, an animal).</summary>
+    /// <summary>(ridercrash) Someone the rider can run into who goes down when hit (MountainRiders): how they were moving, and knocking them over.</summary>
+    public interface IPersonHit
+    {
+        Vector3 VelocityOf(Collider c);
+        /// <summary>Who this is (a capsule is passed from one rider to the next: the same collider, someone else).</summary>
+        int IdOf(Collider c);
+        void Knock(Collider c, Vector3 throwVelocity, Vector3 at);
+    }
+
     public class Obstacle : MonoBehaviour
     {
         public string label = "Tree";
+        /// <summary>A person on the mountain (null for everything else): hit, they ragdoll; the rider has one free hit a run (Rider.MeetPerson).</summary>
+        public IPersonHit person;
         public bool always;   // knocks you down however lightly it touches (animals)
         /// <summary>A roof's solid, under the snow that is ridden (Roofs): riding past it on top is no close call.</summary>
         public bool roof;

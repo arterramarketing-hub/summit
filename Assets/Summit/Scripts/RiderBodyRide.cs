@@ -57,6 +57,17 @@ namespace Summit
         static readonly Vector3 SkiBox = new Vector3(0.10f, 0.06f, 1.62f), SkiBoxAt = new Vector3(0f, -0.01f, 0.09f);
         static readonly Vector3 PoleBox = new Vector3(0.03f, 1.16f, 0.03f), PoleBoxAt = new Vector3(0f, -0.5f, 0f);
 
+        /// <summary>For a copy of the rider on skis (the start page's jump, StartJump): whether there are skis at all,
+        /// the model's place facing forward, its turn from side-on, the deck's height, each ski's place from its foot
+        /// bone, and which hand holds the ski in each ski grab (Safety, Mute, Tail).</summary>
+        public bool HasSkis => rideGear;
+        public Vector3 SkiModelPos => rideModelPos;
+        public static Quaternion SkiFacing => RideTurn;
+        public static float DeckTop => BoardTop;
+        public Vector3 SkiOffset(int s) => skiOff[s];
+        public Quaternion SkiTurnOf(int s) => skiTurn[s];
+        public static int SkiGrabHand(int i) => skiGrabHand[i];
+
         /// <summary>
         /// Called by SetUpHero with the hero placed side-on and its bones at rest: build the skis and poles on
         /// them. Without the gear or its clips the rider simply stays on the snowboard.

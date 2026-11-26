@@ -233,6 +233,7 @@ namespace Summit
         public void ResetAt(float x, float z)
         {
             var p = new Vector3(x, Slope.DrawnHeight(x, z) + R, z);
+            FreeHitUsed = false; PeopleHit = 0;
             Body.isKinematic = true;
             rb.position = p;
             transform.position = p;
@@ -259,6 +260,7 @@ namespace Summit
 
         public void Begin()
         {
+            FreeHitUsed = false; PeopleHit = 0;   // (a free hit each run: ridercrash)
             Running = true;
             Body.isKinematic = false;
             rb.linearVelocity = new Vector3(Mathf.Sin(Heading), 0f, Mathf.Cos(Heading)) * 5f;

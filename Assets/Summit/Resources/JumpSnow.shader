@@ -35,25 +35,51 @@ Shader "Summit/JumpSnow"
                 float4 _SunDir, _Blob, _Track, _Cam, _HazeFrom;
                 float _BlobA;
             CBUFFER_END
-            struct Attributes { float4 positionOS : POSITION; float3 normalOS : NORMAL; };
-            struct Varyings { float4 positionCS : SV_POSITION; float3 p : TEXCOORD0; float3 n : TEXCOORD1; };
+            struct Attributes { float4 positionOS : POSITION; float3 normalOS : NORMAL; float4 color : COLOR; };
+            struct Varyings { float4 positionCS : SV_POSITION; float3 p : TEXCOORD0; float3 n : TEXCOORD1; half ao : TEXCOORD2; };
             Varyings vert(Attributes i)
             {
                 Varyings o;
                 o.positionCS = TransformObjectToHClip(i.positionOS.xyz);
                 o.p = i.positionOS.xyz;
                 o.n = i.normalOS;
+                o.ao = i.color.r;   // the dips' occlusion, baked per vertex from the hill's shape (StartJump.HillMesh)
                 return o;
             }
             half4 frag(Varyings i) : SV_Target
             {
                 float3 n = normalize(i.n);
-                // the slope against the sun: a soft wrap, so the shade side is a cool blue and never grey
-                float l = saturate(dot(n, normalize(_SunDir.xyz)) * 0.62 + 0.38);
+                float dist = length(i.p.xz - _Cam.xz);
+                float near = 1.0 - smoothstep(25.0, 90.0, dist);          // the surface detail fades with distance
+                float groomed = smoothstep(2.6, 5.5, abs(i.p.z));           // the kicker's line is shaped smooth
+                // wind ripples and low sastrugi: long crests across the wind, sharp on the lee side, bent by a slow warp
+                float2 wind = normalize(float2(0.42, 0.91));
+                float warp = SAMPLE_TEXTURE2D(_Grain, sampler_Grain, i.p.xz * 0.006 + 0.11).r;
+                float ph = dot(i.p.xz, wind) * 2.2 + warp * 9.0 + sin(dot(i.p.xz, float2(-wind.y, wind.x)) * 0.35) * 1.4;
+                float s1 = sin(ph), s2 = sin(ph * 2.7 + 1.3);
+                float2 dh = wind * (2.2 * cos(ph) * (0.6 + 0.4 * s1) + 0.35 * 2.7 * cos(ph * 2.7 + 1.3));
+                float rip = 0.15 * groomed * near;
+                // the fine grain as a normal: wind-packed crystals catching the light
+                float2 gu = i.p.xz * 0.9;
+                float g0 = SAMPLE_TEXTURE2D(_Grain, sampler_Grain, gu).r;
+                float gx = SAMPLE_TEXTURE2D(_Grain, sampler_Grain, gu + float2(0.012, 0)).r;
+                float gz = SAMPLE_TEXTURE2D(_Grain, sampler_Grain, gu + float2(0, 0.012)).r;
+                float2 dg = float2(gx - g0, gz - g0) * 1.5 * (1.0 - smoothstep(6.0, 30.0, dist));
+                n = normalize(n + float3(-(dh.x * rip + dg.x), 0, -(dh.y * rip + dg.y)));
+                // the slope against the sun: a soft wrap with some form to it; the shade side a cool blue-grey
+                float l = saturate(dot(n, normalize(_SunDir.xyz)) * 0.86 + 0.18);
                 half3 c = lerp(_Shade.rgb, _Lit.rgb, l);
+                // soft occlusion in the dips and hollows, bluer than the shade
+                half ao = lerp(1.0h, i.ao, 0.9h);
+                c *= lerp(half3(0.68, 0.77, 0.91), half3(1, 1, 1), ao);
                 // the grain: wind-packed snow, finer near, gone into the haze far off
-                float g = SAMPLE_TEXTURE2D(_Grain, sampler_Grain, i.p.xz * 0.21).r + SAMPLE_TEXTURE2D(_Grain, sampler_Grain, i.p.xz * 0.043 + 0.37).r * 0.6;
-                c *= 1.0 + (g - 0.8) * 0.045;
+                float g = g0 + SAMPLE_TEXTURE2D(_Grain, sampler_Grain, i.p.xz * 0.043 + 0.37).r * 0.6;
+                c *= 1.0 + (g - 0.8) * 0.04;
+                // faint old tracks across the slope, filled in by the wind
+                float t1 = abs(i.p.z - (-14.0 + 4.0 * sin(i.p.x * 0.09))) , t2 = abs(i.p.z - (11.0 + 5.0 * sin(i.p.x * 0.07 + 2.0)));
+                float t3 = abs(i.p.z - (-23.0 + 6.0 * sin(i.p.x * 0.05 + 0.7)));
+                float old = max(max(1.0 - smoothstep(0.05, 0.22, t1), 1.0 - smoothstep(0.05, 0.25, t2)), 1.0 - smoothstep(0.06, 0.3, t3));
+                c *= 1.0 - 0.05 * old * near;
                 // the line the board carved in, up to the lip and on from the landing
                 float tr = (step(i.p.x, _Track.x) + step(_Track.y, i.p.x)) * (1.0 - smoothstep(_Track.z * 0.4, _Track.z, abs(i.p.z)));
                 c *= 1.0 - 0.09 * saturate(tr);

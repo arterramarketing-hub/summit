@@ -19,6 +19,7 @@ namespace Summit
         ParticleSystem spray;
         ParticleSystem.EmissionModule sprayEm, wakeEm;
         float skidBurst;        // the board was just thrown across at this speed (Rider.Skidded): a burst of spray is owed
+        bool wasUp;             // in the air last frame (a puff of the cornice's snow as the board leaves its lip)
         ParticleSystem wake;
         Vector3 normal = Vector3.up;
         float lean, lastTravel, yawRate, crashSpin;
@@ -1151,6 +1152,10 @@ namespace Summit
                 if (rider.Running && !rider.Crashed && !rider.Airborne && !Tube) spray.Emit(Mathf.RoundToInt(Mathf.Clamp(skidBurst * 1.6f, 12f, 70f) * (1f + snow.powder + 0.4f * snow.slush - 0.6f * hard)));
                 skidBurst = 0f;
             }
+            // off a cornice's lip: the curl's crown sprays off the board's tail (Cliffs.CorniceFace: only at the moment it leaves)
+            if (rider.Airborne && !wasUp && rider.Running && !rider.Crashed && !Tube && Cliffs.CorniceFace(p.x, p.z + 0.8f) > 0.4f)
+                spray.Emit(Mathf.RoundToInt(Mathf.Clamp(rider.Speed * 1.4f, 14f, 45f)));
+            wasUp = rider.Airborne;
 
 
             // shield bubble: fuller with each shield held, flashes when it saves you

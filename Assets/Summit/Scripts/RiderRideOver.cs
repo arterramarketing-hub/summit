@@ -291,6 +291,7 @@ namespace Summit
             float into = Mathf.Max(0f, -Vector3.Dot(v, normal));
             bool square = sp < 1e-3f || into >= sp * DeadOnCos;
             if (first) LastHitAngle = sp > 1e-3f ? Mathf.Acos(Mathf.Clamp(into / sp, 0f, 1f)) * Mathf.Rad2Deg : 0f;
+            if (ob.person != null) return MeetPerson(ob, col, normal, at, v, first);   // (ridercrash: another rider)
             if (ob.always) { into = Mathf.Max(into, 10f); square = true; }   // animals always knock you down
             // invincible: smashed and ridden on through, minus the smash's toll
             if (InvincibleTime > 0f && ob.Smashable && Smash(ob, col)) return v * SmashKeep;
@@ -344,6 +345,63 @@ namespace Summit
             if (into > CrashInto) { DoCrash(ob.label); return v; }
             Scraped?.Invoke(into);
             return Slide(v, normal) * 0.85f;
+        }
+
+        /// <summary>Closing on another rider at least this fast (m/s, the two speeds together) is a real hit; slower, a brush you slide past.</summary>
+        public const float PersonHitMin = 1.8f;
+        /// <summary>The free hit of this run is used (the first rider you hit goes down and you stay up: the warning). Reset each run.</summary>
+        public bool FreeHitUsed;
+        /// <summary>The free hit was just used: who was hit, where.</summary>
+        public System.Action<Obstacle, Vector3> PersonWarned;
+        /// <summary>Riders knocked down this run (for the tests).</summary>
+        public int PeopleHit;
+        int lastPersonId = -1; float lastPersonAt = -9f;
+
+        /// <summary>
+        /// (ridercrash) Into another rider. A real hit (closing at PersonHitMin or more, the first touch) knocks them down,
+        /// thrown by how fast you met; you: the first time in a run, you stay up, staggered, a third of your speed gone
+        /// (the warning); after that, a shield takes it if you have one, or you go down too, as into anything else.
+        /// Invincible, you go through. A brush, or still touching after the hit, slides past.
+        /// </summary>
+        Vector3 MeetPerson(Obstacle ob, Collider col, Vector3 normal, Vector3 at, Vector3 v, bool first)
+        {
+            var theirs = ob.person.VelocityOf(col);
+            var rel = v - theirs;
+            float closing = Mathf.Max(0f, -Vector3.Dot(rel, normal));
+            // (the first touch of this person: by who they are, not the capsule, which passes from one rider to the next)
+            int who = ob.person.IdOf(col);
+            first = who != lastPersonId || contactClock - lastPersonAt > 0.6f;
+            if (first && closing >= PersonHitMin) { lastPersonId = who; lastPersonAt = contactClock; }
+            else if (who == lastPersonId) lastPersonAt = contactClock;
+            if (!first || closing < PersonHitMin) return Slide(v, normal);
+            // they go down: thrown along the way you met, with some of the speed you had over theirs
+            var push = new Vector3(rel.x, 0f, rel.z) * 0.6f - new Vector3(normal.x, 0f, normal.z) * closing * 0.4f;
+            ob.person.Knock(col, theirs + push, at);
+            PeopleHit++;
+            if (InvincibleTime > 0f) return v * 0.9f;
+            if (!FreeHitUsed)
+            {
+                FreeHitUsed = true;
+                const float over = 0.25f;
+                slowFor = over; slowRate = -Mathf.Log(0.8f) / over;
+                wobble = Mathf.Max(wobble, 0.7f);
+                invulnerable = Mathf.Max(invulnerable, 0.6f);
+                PersonWarned?.Invoke(ob, at);
+                // (knocked aside, not stopped: half of the speed into them taken off)
+                Vector3 nh = new Vector3(normal.x, 0f, normal.z);
+                if (nh.sqrMagnitude > 1e-4f) { nh.Normalize(); float vn = Vector3.Dot(v, nh); if (vn < 0f) v -= nh * vn * 0.5f; }
+                return v;
+            }
+            if (Shields > 0)
+            {
+                Shields--;
+                invulnerable = 0.9f;
+                ShieldHit?.Invoke();
+                return Slide(v, normal) * 0.8f;
+            }
+            HitCollider = col; HitPoint = at; HitObstacle?.Invoke(ob, col.bounds.center, closing);
+            DoCrash(ob.label);
+            return v;
         }
 
         /// <summary>Along a face: the part of v into it taken away (on the snow, sideways only: the snow has the rest).</summary>

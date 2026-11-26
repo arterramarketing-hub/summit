@@ -84,6 +84,7 @@ namespace Summit
         public static float Rockiness(float ny, float x, float z, float hollow = 0f)
         {
             if (Cliffs.OnJumpLanding(x, z) || Ridge.SnowAt(x, z) || Cliffs.OnLedgeSnow(x, z) || CliffBand.OnBench(x, z)) return 0f;   // a jump cliff's landing, a ridge's snow side, a wall's apron
+            if (Cliffs.OnCorniceFace(x, z)) return 0f;   // a cornice's face: wind-packed snow, not a rock band (Cliffs)
             float allowed = 1f;
             if (Cliffs.OnJumpFace(x, z) || Cliffs.OnWallFace(x, z) || Cliffs.OnLedgeFace(x, z) || Slope.OnStepFace(x, z) || CliffBand.OnFace(x, z)) { }   // a cliff's rock band shows, piste or not
             // beside a ridge (and the spine below it), only its top: the canyon walls are rock right up to the edge

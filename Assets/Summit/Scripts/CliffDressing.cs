@@ -34,7 +34,9 @@ namespace Summit
             {
                 if (!Cliffs.JumpOf(cycle, k, out var j)) continue;
                 Sign(root, j.Start - 18f, signJump, k == 0 ? 1f : -1f, post, signBack);
-                // wands along the lip, across the piste and a little way into the rough either side
+                // wands along the lip, across the piste and a little way into the rough either side (none on a cornice:
+                // its curl and the shadow under it are the line, Cornices)
+                if (!Cliffs.Cornice(j))
                 for (float a = -Slope.PisteHalf - 4f; a <= Slope.PisteHalf + 4.01f; a += 4f)
                 {
                     float x = Slope.Centre(j.z) + a, z = Cliffs.LipZ(j, a) - 0.6f;
@@ -49,7 +51,7 @@ namespace Summit
                 float zs = L.Start - 22f;
                 SignAt(root, Slope.Centre(zs) + L.side * (Slope.PisteHalf + 2.5f), zs, signLedges, post, signBack);
                 // short wands along each lip, across the strip (black: off the piste)
-                for (int i = 0; i < L.count; i++)
+                for (int i = 0; i < L.count && !Cliffs.Cornice(L); i++)
                 {
                     for (float b = -L.half + 1f; b <= L.half - 0.99f; b += 3.5f)
                     {

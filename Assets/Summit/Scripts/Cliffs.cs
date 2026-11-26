@@ -136,6 +136,82 @@ namespace Summit
             return u >= j.face + 0.6f && u < j.face + JumpLanding;
         }
 
+        // ---------------------------------------------------------------- cornices
+
+        // Half the jump cliffs and half the ledge lines are cornices: the wind has built the lip out into a rounded,
+        // overhanging curl of packed snow (Cornices draws it, on top of the same heightfield lip, so the takeoff and the
+        // landing ride exactly as before), the face under it is snow scoured by the wind (sastrugi: Surfaces lays crust on
+        // it), not a rock band, and no wands stand along the lip: the curl and the shadow under it are the line.
+
+        /// <summary>Off for before/after renders and tests: CORNICE_OFF=1 in the environment (never set on a phone).</summary>
+        public static bool CorniceOn = System.Environment.GetEnvironmentVariable("CORNICE_OFF") != "1";
+
+        /// <summary>Would this jump cliff be a cornice (whether or not they are on)?</summary>
+        public static bool CorniceRule(in Jump j) => Slope.Hash01(j.cycle, j.k, 87) < 0.5f;
+        /// <summary>Would this ledge line's lips be cornices (whether or not they are on)?</summary>
+        public static bool CorniceRule(in LedgeLine L) => L.count > 0 && Slope.Hash01(L.cycle, 3, 88) < 0.5f;
+        public static bool Cornice(in Jump j) => CorniceOn && CorniceRule(j);
+        public static bool Cornice(in LedgeLine L) => CorniceOn && CorniceRule(L);
+
+        /// <summary>How the jump cliff's lip fades across the run, 0..1 (the cornice's overhang goes with it).</summary>
+        public static float JumpAcross(float a) => Across(a);
+        /// <summary>How a ledge line's lip fades across its strip, 0..1 (b: across the strip from its middle).</summary>
+        public static float LedgeAcrossAt(in LedgeLine L, float b)
+        {
+            float d = Mathf.Abs(b) - L.half;
+            if (d <= 0f) return 1f;
+            float t = Mathf.Clamp01(d / LedgeFade);
+            return 1f - t * t * (3f - 2f * t);
+        }
+
+        static float Smooth01(float t) { t = Mathf.Clamp01(t); return t * t * (3f - 2f * t); }
+        // (a cornice's face: from the crown behind the lip, where the curl sits, down to the foot of the face; eased in
+        // and out over 3 m either end, so the snow underfoot never changes in a step, SurfaceTest)
+        static float FaceShare(float u, float face) => Smooth01((u + 3.5f) / 3f) * (1f - Smooth01((u - face - 1f) / 3f));
+
+        /// <summary>
+        /// How much (x, z) is a cornice's wind-scoured face, 0..1: its crown just behind the lip and the face under the curl
+        /// (none on the landing: it rides as it always did), faded with the lip across the run (the look: Surfaces lays wind crust on it).
+        /// </summary>
+        public static float CorniceFace(float x, float z)
+        {
+            if (!On || !CorniceOn || z < Course.First) return 0f;
+            float best = 0f;
+            if (JumpNear(z, 4f, out var j) && Cornice(j))
+            {
+                float a = x - Slope.Centre(j.z);
+                float wx = Across(a);
+                if (wx > 0f) best = wx * FaceShare(z - LipZ(j, a), j.face);
+            }
+            if (LedgeNear(z, 4f, out var L) && Cornice(L))
+            {
+                float b = (x - Slope.Centre(z)) * L.side - L.off;
+                float wx = LedgeAcrossAt(L, b);
+                if (wx > 0f)
+                    for (int i = 0; i < L.count; i++) best = Mathf.Max(best, wx * FaceShare(z - LedgeLipZ(L, i, b), L[i].face));
+            }
+            return best;
+        }
+
+        /// <summary>On a cornice's face (snow, not rock: the wind has packed it on).</summary>
+        public static bool OnCorniceFace(float x, float z)
+        {
+            if (!On || !CorniceOn || z < Course.First) return false;
+            if (JumpNear(z, 2f, out var j) && Cornice(j))
+            {
+                float a = x - Slope.Centre(j.z);
+                float u = z - LipZ(j, a);
+                if (Across(a) > 0f && u > -1f && u < j.face + 0.6f) return true;
+            }
+            if (LedgeNear(z, 2f, out var L) && Cornice(L))
+            {
+                float b = (x - Slope.Centre(z)) * L.side - L.off;
+                if (LedgeAcrossAt(L, b) > 0f)
+                    for (int i = 0; i < L.count; i++) { float u = z - LedgeLipZ(L, i, b); if (u > -1f && u < L[i].face + 0.6f) return true; }
+            }
+            return false;
+        }
+
         // ---------------------------------------------------------------- deadly cliffs
 
         public struct Wall

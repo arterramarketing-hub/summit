@@ -104,8 +104,9 @@ namespace Summit
             var g = new Groups();
             if (Ridge.Built(cycle)) { RidgeRock(g, cycle); yield return true; }
             if (Cliffs.WallOf(cycle, out var w)) { WallRock(g, w); yield return true; }
-            for (int k = 0; k < 2; k++) if (Cliffs.JumpOf(cycle, k, out var j)) { JumpRock(g, j); yield return true; }
-            if (Cliffs.LedgeOf(cycle, out var L)) { LedgeRock(g, L); yield return true; }
+            // (a cornice's face is snow: no rock band to break out of it, Cornices)
+            for (int k = 0; k < 2; k++) if (Cliffs.JumpOf(cycle, k, out var j) && !Cliffs.Cornice(j)) { JumpRock(g, j); yield return true; }
+            if (Cliffs.LedgeOf(cycle, out var L) && !Cliffs.Cornice(L)) { LedgeRock(g, L); yield return true; }
             StepRock(g, cycle); yield return true;
             if (CliffBand.Of(cycle, out var band)) { BandRock(g, band); yield return true; }
             foreach (var kv in g.map) { Bake(root, kv.Value); yield return true; }

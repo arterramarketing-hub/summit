@@ -299,6 +299,41 @@ namespace Summit
             return true;
         }
 
+        // ---- (ridercrash) the free hit's warning: no words. A red pulse round the screen's edges (the look's own vignette,
+        //      turned red and drawn in for a moment), a thump and a tap in the hand, the other rider's grunt (MountainRiders),
+        //      and a red diamond under the shields for the rest of the run (Hud.SetHitMark)
+        float hitPulse = -1f, vignetteWas; Color vignetteColWas;
+        void FreeHit()
+        {
+            if (state != State.Riding) return;
+            if (hitPulse < 0f && post != null && post.TryGet(out UnityEngine.Rendering.Universal.Vignette vg)) { vignetteWas = vg.intensity.value; vignetteColWas = vg.color.value; }
+            hitPulse = 1f;
+            FreeHits++;
+            audioFx.Play(Sfx.Thump, 0.8f);
+#if UNITY_IOS || UNITY_ANDROID
+            Handheld.Vibrate();
+#endif
+        }
+        /// <summary>The free hit's marker and pulse, a frame (Update; the tests call it).</summary>
+        void HitWarningStep(float dt)
+        {
+            hud.SetHitMark(state == State.Riding && rider.FreeHitUsed);
+            HitPulse(dt);
+        }
+        /// <summary>Free hits warned of (for the tests).</summary>
+        public static int FreeHits;
+        void HitPulse(float dt)
+        {
+            if (hitPulse < 0f || post == null || !post.TryGet(out UnityEngine.Rendering.Universal.Vignette vg)) return;
+            hitPulse = Mathf.MoveTowards(hitPulse, 0f, dt / 0.5f);
+            float k = hitPulse * hitPulse;
+            vg.color.Override(Color.Lerp(vignetteColWas, new Color(0.85f, 0.04f, 0.03f), k));
+            vg.intensity.Override(Mathf.Lerp(vignetteWas, Mathf.Max(vignetteWas, 0.52f), k));
+            if (hitPulse <= 0f) { vg.color.Override(vignetteColWas); vg.intensity.Override(vignetteWas); hitPulse = -1f; }
+        }
+        /// <summary>The warning's pulse now (0..1; -1 none), for the tests.</summary>
+        public float HitPulseNow => hitPulse;
+
         void SetPaused(bool on)
         {
             paused = on;
@@ -457,6 +492,9 @@ namespace Summit
             wild.BearSpotted += () => { };   // (the bear is there to see and hear: no caption)
             SkiLift.Create(rg.transform, snow.shader);   // ski lifts beside the run (SkiLift.cs): they stream, and follow a new mountain, by themselves
             MountainRiders.Create(null, rider, snow.shader);   // other people riding the run (MountainRiders.cs): the same, by themselves (not under the rider: their solids would ride along with him)
+            // (ridercrash) into another rider: they go down; the first time a run you stay up, and know it without a word
+            rider.PersonWarned += (ob, at) => FreeHit();
+            if (MountainRiders.Current != null) MountainRiders.Current.Grunted = (at, female) => { if (state == State.Riding) audioFx.Play(female ? Sfx.Yelp : Sfx.Grunt); };
             rider.GrindStart += f => { if (state == State.Riding) audioFx.Play(f.kind == Course.Kind.Rail ? Sfx.GrindRail : Sfx.GrindBox); };
             // a numbered flag wherever a fall came to rest, for the rest of the run
             flags = new GameObject("FallFlags").AddComponent<FallFlags>();
@@ -1106,6 +1144,7 @@ namespace Summit
             // the combo and the bill, as they run up (held while paused; real time, so a crash's slow motion does not slow them)
             if (!paused) { hud.ComboShow(state == State.Riding ? combo : null); hud.StepPoints(Time.unscaledDeltaTime); }
             hud.SetPower(runTime, rider.Shields, state == State.Riding);
+            HitWarningStep(Time.unscaledDeltaTime);
             hud.SetTimers(state == State.Riding, rider.BoostTime, ZoomSeconds, rider.SuperJumpTime, SuperJumpSeconds, rider.InvincibleTime, InvincibleSeconds);
             hud.SetAltitude(Slope.AltitudeFeet(rider.Z), state == State.Riding);
             hud.SetMedical(medical, state == State.Riding);

@@ -30,7 +30,8 @@ public static partial class PeopleTest
     /// rider: on the groomed run (never off it, never in a crevasse or under a cliff), never under the drawn snow,
     /// never in a tree, a rock (the forest's own layout), a lift tower, a cabin or a floodlight; solid only while drawn,
     /// the solid where the pose is; and none coming into sight, or going from it, inside the view (not at its edges or
-    /// at the edge of the drawing range): a pop. What they cost. Then the player into one: square on (a crash), a
+    /// at the edge of the drawing range): a pop. What they cost. Then the player into one: square on (the run's first:
+    /// they go down and the player rides on, the free hit; the run's second: a crash too, ridercrash), a
     /// glancing touch (no crash: past it), passing close by (nothing). -executeMethod PeopleTest.Riders (no graphics
     /// needed). Logs/people-riders.txt; exit 1 on any of it.
     /// </summary>
@@ -154,6 +155,8 @@ public static partial class PeopleTest
         {
             var ai = mr.TestOnly(spot, ski);
             rider.ResetAt(spot.x + off, spot.z - 16f); body.ResetVisual(); rider.Begin();
+            // (ridercrash: the first rider hit in a run is free, the warning; the skier square on is the run's second)
+            if (ski && off < 0.2f) rider.FreeHitUsed = true;
             rider.Heading = 0f;
             rider.Body.linearVelocity = Vector3.ProjectOnPlane(Vector3.forward, Slope.Normal(spot.x + off, spot.z - 16f)).normalized * 15f;
             lastCrash = "";
@@ -183,14 +186,15 @@ public static partial class PeopleTest
                 if (p.z > spot.z + 4f) break;
             }
             string what = rider.Crashed ? $"crashed ({lastCrash})" : "rode on";
-            if (off < 0.2f && !rider.Crashed) results.AddRange(trace);
+            if (off < 0.2f && ski && !rider.Crashed) results.AddRange(trace);   // (the run's second square on that didn't crash: how it went)
             if (nearest > 1.5f) results.Add("RIDERS   (" + startInfo + $", it ended at ({ai.pos.x:0.0}, {ai.pos.z:0.0}) {ai.act}, active {ai.active}, the player at ({rider.transform.position.x:0.0}, {rider.transform.position.z:0.0}))");
             results.Add($"RIDERS the player into one, {name} ({off:0.00} m off its middle, 54 km/h): {what}; came within {nearest:0.00} m of it ({lateral:0.00} m to its side); it {(touched ? "went down" : "stayed up")}");
             if (off > 0.2f && off < 1f && rider.Crashed) side = false;
             if (off > 1f && rider.Crashed) past = false;
         }
-        // (both square-on runs must crash)
-        headOn = results[0].Contains("crashed (Snowboarder!)") && results[1].Contains("crashed (Skier!)");
+        // (square on, the run's first: they go down, the player rides on; the run's second: the player goes down too)
+        headOn = results.Exists(l => l.Contains("into one, square on, a boarder") && l.Contains("rode on") && l.Contains("went down"))
+              && results.Exists(l => l.Contains("into one, square on, a skier") && l.Contains("crashed (Skier!)"));
         MountainRiders.TestWant = -1;
         Physics.simulationMode = SimulationMode.FixedUpdate;
         foreach (var l in results) sb.AppendLine(l);

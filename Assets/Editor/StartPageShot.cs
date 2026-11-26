@@ -210,35 +210,84 @@ public static class StartPageShot
         var j = start.Jump;
         dayNight.ApplyNow();
         string[] trick = { "360indy", "backflip", "540method" };
-        var names = new System.Collections.Generic.List<string>();
-        for (int k = 0; k < 3; k++)
+        string[] gear = { "board", "skis" };
+        for (int g = 0; g < 2; g++)
         {
-            foreach (var (label, at) in new[] { ("in", -0.9f), ("pop", 0.05f), ("rise", 0.3f), ("top", 0.5f), ("fall", 0.72f), ("land", 1.03f), ("away", 1.5f) })
+            var names = new System.Collections.Generic.List<string>();
+            for (int k = 0; k < 3; k++)
             {
-                j.Seek(k, at);
-                start.Preview(30f);
-                string nm = $"jump_{trick[k]}_{label}.png";
-                Shoot(nm, false);
-                names.Add(nm);
+                foreach (var (label, at) in new[] { ("in", -0.9f), ("pop", 0.05f), ("rise", 0.3f), ("top", 0.5f), ("fall", 0.72f), ("land", 1.03f), ("away", 1.5f) })
+                {
+                    j.Seek(k, at, g);
+                    start.Preview(30f);
+                    string nm = $"jump_{gear[g]}_{trick[k]}_{label}.png";
+                    Shoot(nm, false);
+                    names.Add(nm);
+                }
             }
+            Debug.Log($"STARTJUMP gear {gear[g]}: on skis={j.OnSkis}" + (j.OnSkis != (g == 1) ? " WRONG" : ""));
+            Grid($"sheet_jump_{gear[g]}.png", 7, names.ToArray());
         }
-        Grid("sheet_jump.png", 7, names.ToArray());
-        // the page over it
+        // the page over it, on each
         foreach (var (label, at) in new[] { ("rise", 0.3f), ("top", 0.5f), ("in", -0.9f) })
         {
-            j.Seek(0, at); start.Preview(30f);
+            j.Seek(0, at, 0); start.Preview(30f);
             Shoot($"jump_page_{label}.png", true);
         }
-        j.Seek(1, 0.5f); start.Preview(30f); Shoot("jump_page_flip.png", true);
-        j.Seek(0, 0.5f); start.Preview(3.6f); Shoot("jump_page_easing_in.png", true);
+        j.Seek(1, 0.5f, 1); start.Preview(30f); Shoot("jump_page_flip_skis.png", true);
+        j.Seek(0, 0.5f, 1); start.Preview(30f); Shoot("jump_page_top_skis.png", true);
+        j.Seek(2, 0.4f, 1); start.Preview(30f); Shoot("jump_page_540_skis.png", true);
+        j.Seek(0, 0.5f, 0); start.Preview(3.6f); Shoot("jump_page_easing_in.png", true);
         foreach (float t in new[] { 0.3f, 0.6f, 0.8f })
         {
-            j.Seek(0, 0.45f);
+            j.Seek(0, 0.45f, 0);
             start.PreviewLeaving(t, 2);
             Shoot($"jump_leaving_{t * 100f:0}.png", true);
         }
         start.Preview(30f);
-        Sheet("sheet_jump_page.png", "jump_page_in.png", "jump_page_rise.png", "jump_page_top.png", "jump_page_flip.png", "jump_leaving_60.png");
+        Sheet("sheet_jump_page.png", "jump_page_in.png", "jump_page_top.png", "jump_page_top_skis.png", "jump_page_flip_skis.png", "jump_leaving_60.png");
+        // the blurred edges: the same frame without and with them; how much each part of the picture changes
+        {
+            j.Seek(0, 0.3f, 1); start.Preview(30f);
+            j.Blur = false; Shoot("jump_noblur.png", false);
+            j.Blur = true; Shoot("jump_blur.png", false);
+            var t0 = new Texture2D(2, 2); t0.LoadImage(File.ReadAllBytes(Path.Combine(outDir, "jump_noblur.png")));
+            var t1 = new Texture2D(2, 2); t1.LoadImage(File.ReadAllBytes(Path.Combine(outDir, "jump_blur.png")));
+            var p0 = t0.GetPixels(); var p1 = t1.GetPixels();
+            double mid = 0, edge = 0; int nm = 0, ne = 0;
+            for (int y = 0; y < t0.height; y += 2)
+                for (int x = 0; x < t0.width; x += 2)
+                {
+                    int i = y * t0.width + x;
+                    float dd = Mathf.Abs(p0[i].r - p1[i].r) + Mathf.Abs(p0[i].g - p1[i].g) + Mathf.Abs(p0[i].b - p1[i].b);
+                    float u = x / (float)t0.width - 0.5f, v = y / (float)t0.height - 0.5f;
+                    if (Mathf.Abs(u) < 0.08f && Mathf.Abs(v) < 0.05f) { mid += dd; nm++; }
+                    if (Mathf.Abs(v) > 0.4f) { edge += dd; ne++; }
+                }
+            Debug.Log($"STARTJUMP BLUR change at the middle {mid / Mathf.Max(1, nm) * 255:0.00}, at the top and bottom {edge / Mathf.Max(1, ne) * 255:0.00} (of 765)" + (ne > 0 && edge / ne > 0.002 ? "" : " WRONG (no blur)"));
+            Object.DestroyImmediate(t0); Object.DestroyImmediate(t1);
+        }
+        // the slow motion: the scene's own clock, never the game's. Through one whole loop at 60 frames a second:
+        // the rate on the snow and in the air, how long the air really takes, and the game's time scale untouched;
+        // then the next loop is on the other gear
+        {
+            j.Seek(0, -2f, 0);
+            float scaleWas = Time.timeScale, fixedWas = Time.fixedDeltaTime;
+            float minRate = 9f, maxSnow = 0f, real = 0f, realAir = 0f; bool scaleOk = true;
+            float airStart = j.Clock + 2f;
+            for (int f = 0; f < 60 * 30 && j.Trick == 0; f++)
+            {
+                start.Frame(1f / 60f);
+                real += 1f / 60f;
+                float u = j.Clock - airStart;
+                if (u > 0.05f * j.AirTime && u < 0.9f * j.AirTime) { minRate = Mathf.Min(minRate, j.Rate); realAir += 1f / 60f; }
+                if (u < -0.5f || u > j.AirTime + 0.5f) maxSnow = Mathf.Max(maxSnow, j.Rate);
+                if (Time.timeScale != scaleWas || Time.fixedDeltaTime != fixedWas) scaleOk = false;
+            }
+            bool ok = minRate <= 0.4f && minRate >= 0.25f && maxSnow > 0.99f && scaleOk && j.Trick == 1 && j.OnSkis;
+            Debug.Log($"STARTJUMP SLOWMO air {j.AirTime:0.00} s of the scene's clock took ~{realAir / 0.85f:0.0} s real; rate in the air {minRate:0.00}, on the snow {maxSnow:0.00}; " +
+                      $"Time.timeScale {Time.timeScale} fixedDeltaTime {Time.fixedDeltaTime} (unchanged={scaleOk}); loop {real:0.0} s; next loop trick {j.Trick} on skis={j.OnSkis}" + (ok ? "" : " WRONG"));
+        }
         // the cost: a minute of the loop at 60 frames a second, and what's drawn
         var sw = new System.Diagnostics.Stopwatch();
         float worst = 0f, sum = 0f; int n = 600;

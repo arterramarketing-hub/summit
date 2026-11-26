@@ -24,7 +24,7 @@ namespace Summit
     /// short one each) and spray (SnowFX puffs) only near you. They keep out of your way: a rider in your line moves
     /// off it, and nobody falls, stops or hops in front of you.
     /// </summary>
-    public class MountainRiders : MonoBehaviour
+    public class MountainRiders : MonoBehaviour, IPersonHit
     {
         public static MountainRiders Current { get; private set; }
         public static bool On = true;
@@ -72,6 +72,8 @@ namespace Summit
             public float ground, groundV;            // the snow's height under it (a bump under the board's ends lifts it), and how fast that changes
             public float snow;                       // the drawn snow right under its middle
             public bool wasNear, three;
+            public float bornAt;                     // (when it last started riding: nobody can hit you on their first moments)
+            public Ragdoll down; public float downT, downStill;   // knocked over by the rider (ridercrash): thrown, limp
         }
         public class Group { public Rider lead; public readonly List<Rider> members = new List<Rider>(); public float nextStop; }
 
@@ -126,9 +128,12 @@ namespace Summit
             NewRider(r, at, 0f);
             r.look.gear = ski ? PersonGear.Skis : PersonGear.Snowboard; r.ski = ski;
             StopAt(r, at, 999f, false, true);
+            r.bornAt = clock - 10f;   // (stood there a while: solid)
             placedAll = true; seed = Slope.Seed;
             return r;
         }
+        /// <summary>For the tests: this one has only just started riding (not solid for its first moments).</summary>
+        public void TestFresh(Rider r) { r.bornAt = clock; }
         public int Active { get; private set; }
         public int Shown { get; private set; }
         public int PeopleShown { get; private set; }
@@ -193,6 +198,7 @@ namespace Summit
             foreach (var r in riders)
             {
                 if (!r.active) { if (n < want && frame % 4 == r.id % 4 && Spawn(r, false)) n = Count(); continue; }
+                if (r.down != null) { Down(r, dt); if (!r.active) { n = Count(); continue; } continue; }
                 Move(r, dt);
                 // a lap over, out of the stretch round you, or one too many: gone, when nobody can see it go
                 bool outside = r.pos.z < eye.z - Behind || r.pos.z > eye.z + Ahead + 150f;
@@ -389,7 +395,7 @@ namespace Summit
         void NewRider(Rider r, Vector3 at, float skillBias)
         {
             serial++;
-            r.serial = serial;
+            r.serial = serial; r.bornAt = clock;
             int s = Slope.Seed * 31 + serial * 7919 + 17;
             var look = LookFor(s);
             if (look.gear == PersonGear.None) look.gear = Slope.Hash01(s, 5, 91) < 0.55f ? PersonGear.Skis : PersonGear.Snowboard;
@@ -999,10 +1005,11 @@ namespace Summit
         {
             // the nearest drawn, as people
             byDistance.Clear();
-            foreach (var r in riders) if (r.drawn && r.d < SimpleRange) byDistance.Add(r);
+            foreach (var r in riders) if (r.drawn && r.d < SimpleRange && r.down == null) byDistance.Add(r);
             byDistance.Sort(ByD.I);
             if (byDistance.Count > NearCap) byDistance.RemoveRange(NearCap, byDistance.Count - NearCap);
-            foreach (var r in riders) if (r.near != null && !byDistance.Contains(r)) ReleasePerson(r);
+            foreach (var r in riders) if (r.near != null && r.down == null && !byDistance.Contains(r)) ReleasePerson(r);
+            foreach (var r in riders) if (r.down != null) PeopleShown++;   // (thrown: their body is the ragdoll's, posed by nobody)
             PeopleShown = 0; DrawCalls = 0; Triangles = 0;
             PeopleLod.BuildPending();
             for (int i = 0; i < byDistance.Count; i++)
@@ -1021,7 +1028,7 @@ namespace Summit
             for (int t = 0; t < Tiers; t++) foreach (var l in mats[t]) l.Clear();
             foreach (var r in riders)
             {
-                if (!r.drawn || r.near != null) { r.tier = r.near != null ? -2 : -1; continue; }
+                if (!r.drawn || r.near != null || r.down != null) { r.tier = r.near != null ? -2 : -1; continue; }
                 int tier = r.d < MidRange ? 0 : 1;
                 int v = PoseOf(r) * Heads + (r.look.head == PersonHead.Beanie ? 1 : 0);
                 var list = mats[tier][v];
@@ -1084,6 +1091,7 @@ namespace Summit
 
         void Release(Rider r)
         {
+            Up(r);
             ReleasePerson(r);
             if (r.solid != null) { r.solid.gameObject.SetActive(false); r.solid = null; }
             if (r.trail != null) { trailOf.Remove(r.trail); r.trail.Feed(r.pos, Vector3.up, 0f, false, 1f, 0f, 0f, 0f); r.trail = null; }
@@ -1097,6 +1105,110 @@ namespace Summit
             foreach (var r in riders) if (r != null) Release(r);
         }
 
+        // ---------------------------------------------------------------- knocked over (ridercrash)
+
+        /// <summary>Riders the hero has knocked over (for the tests), and those back up again or gone unseen.</summary>
+        public static int Knocked, GotUp, GoneDown;
+        readonly Dictionary<Person, Ragdoll> rags = new Dictionary<Person, Ragdoll>();
+        /// <summary>A knocked rider's grunt, for the game to play (where).</summary>
+        public System.Action<Vector3, bool> Grunted;
+
+        Rider Of(Collider c) { if (c == null) return null; foreach (var r in riders) if (r.solid == c) return r; return null; }
+
+        public int IdOf(Collider c) { var r = Of(c); return r != null ? r.serial : -1; }
+
+        public Vector3 VelocityOf(Collider c)
+        {
+            var r = Of(c);
+            return r == null || r.act == Act.Fall ? Vector3.zero : new Vector3(Mathf.Sin(r.heading), 0f, Mathf.Cos(r.heading)) * r.speed;
+        }
+
+        /// <summary>
+        /// Hit by the rider: thrown off their feet as the rider is in a crash (Ragdoll, on their own skeleton: its joints'
+        /// limits, the powered start, laid still when it stops), from where they were. Once they've lain still a moment
+        /// they get up (as from a fall of their own) where they lie; out of sight before that, they're gone.
+        /// </summary>
+        public void Knock(Collider c, Vector3 throwVelocity, Vector3 at)
+        {
+            var r = Of(c);
+            if (r == null || r.down != null) return;
+            Knocked++;
+            if (r.group != null && r.group.lead == r) r.group.nextStop = clock + 30f;
+            Grunted?.Invoke(r.pos + Vector3.up, r.look.female);
+            var rag = r.near != null || TakePerson(r) ? RagFor(r) : null;
+            if (rag == null)
+            {
+                // (no body to throw: down in the snow, as their own fall)
+                r.act = Act.Fall; r.t = 0f; r.until = Random.Range(3f, 4.5f); r.speed = Mathf.Max(r.speed, 3f);
+                return;
+            }
+            PoseFor(r, 0f); r.near.Apply(0f);
+            r.near.SetLod(0); r.lod = 0;
+            for (int i = 0; i < 2; i++) { if (r.near.Skis[i] != null) r.near.Skis[i].enabled = false; if (r.near.Poles[i] != null) r.near.Poles[i].enabled = false; }
+            rag.Begin(throwVelocity);
+            r.down = rag; r.downT = 0f; r.downStill = 0f;
+            r.act = Act.Fall; r.t = 0f; r.until = 0f; r.speed = 0f; r.sitW = 0f;
+            if (r.solid != null) { r.solid.gameObject.SetActive(false); r.solid = null; }
+        }
+
+        Ragdoll RagFor(Rider r)
+        {
+            var p = r.near;
+            if (p == null) return null;
+            if (rags.TryGetValue(p, out var rag)) return rag;
+            var rig = new RiderRig(p.Model);
+            if (!rig.Ok) return null;
+            Transform board;
+            if (p.Board != null && !r.ski) board = p.Board.transform;
+            else
+            {
+                // (a skier: the skis stay on their feet, hidden while thrown; a token board flies off, unseen)
+                var g = new GameObject("KnockToken"); g.transform.SetParent(p.transform, false); board = g.transform;
+            }
+            var heroCol = player != null ? player.GetComponent<Collider>() : null;
+            rag = new Ragdoll(rig, board, heroCol);
+            if (p.Board == null || r.ski) rag.SetBoard(board, new Vector3(0.08f, 0.02f, 0.2f), Vector3.zero, false);
+            rags[p] = rag;
+            return rag;
+        }
+
+        /// <summary>The thrown riders' physics: a fixed step's worth (FixedUpdate; the tests call it).</summary>
+        public void PhysicsStep()
+        {
+            foreach (var r in riders) if (r != null && r.down != null) r.down.PhysicsStep();
+        }
+        void FixedUpdate() { PhysicsStep(); }
+        void LateUpdate() { foreach (var r in riders) if (r != null && r.down != null) r.down.LateStep(); }
+
+        /// <summary>A thrown rider, a frame: lying still a moment, laid to rest, then up again; out of sight, gone.</summary>
+        void Down(Rider r, float dt)
+        {
+            var rag = r.down;
+            r.downT += dt;
+            Vector3 c = rag.Centre;
+            r.pos = new Vector3(c.x, Slope.DrawnHeight(c.x, c.z), c.z); r.ground = r.pos.y;
+            if (rag.Speed < 0.7f) r.downStill += dt; else r.downStill = 0f;
+            if (r.downStill > 1.2f) rag.Settle(dt, r.downStill > 2.4f);
+            bool seen = Seen(r.pos, 4f);
+            if ((!seen && r.downT > 1.5f) || r.downT > 40f && !seen) { GoneDown++; Up(r); Recycle(r); return; }
+            if (r.downStill > 3.2f || r.downT > 25f)
+            {
+                // up, where they lie: sat in the snow, then on their feet (their own fall's getting up)
+                GotUp++; Up(r);
+                r.act = Act.Fall; r.t = 0f; r.until = 0.6f; r.sitW = 1f; r.speed = 0f;
+                r.heading = 0f; r.board = r.ski ? Mathf.PI / 2f : -Mathf.PI / 2f;
+            }
+        }
+
+        /// <summary>Back from thrown to posed (the skeleton home, the skis back on).</summary>
+        void Up(Rider r)
+        {
+            if (r.down == null) return;
+            r.down.End();
+            r.down = null;
+            if (r.near != null) { for (int i = 0; i < 2; i++) { if (r.near.Skis[i] != null) r.near.Skis[i].enabled = true; if (r.near.Poles[i] != null) r.near.Poles[i].enabled = true; } PoseFor(r, 0f); }
+        }
+
         // ---------------------------------------------------------------- solid
 
         /// <summary>The nearest few drawn are solid: a capsule round the pose (an Obstacle: square on, a crash; glancing, a slide by).</summary>
@@ -1104,7 +1216,9 @@ namespace Summit
         {
             Solid = 0;
             byDistance.Clear();
-            foreach (var r in riders) if (r.drawn && r.d < ColliderRange) byDistance.Add(r);
+            // (not the thrown, their own body is solid; nor anyone in their first two seconds on the snow: nobody
+            // appears into you)
+            foreach (var r in riders) if (r.drawn && r.d < ColliderRange && r.down == null && clock - r.bornAt > 2f) byDistance.Add(r);
             byDistance.Sort(ByD.I);
             if (byDistance.Count > ColliderCap) byDistance.RemoveRange(ColliderCap, byDistance.Count - ColliderCap);
             foreach (var r in riders) if (r.solid != null && !byDistance.Contains(r)) { r.solid.gameObject.SetActive(false); r.solid = null; }
@@ -1126,6 +1240,7 @@ namespace Summit
                     }
                     c.gameObject.SetActive(true);
                     c.GetComponent<Obstacle>().label = r.ski ? "Skier!" : "Snowboarder!";
+                    c.GetComponent<Obstacle>().person = this;
                     r.solid = c;
                 }
                 // as tall as the pose: riding (crouched lower), sat in the snow

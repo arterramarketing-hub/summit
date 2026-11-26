@@ -270,6 +270,8 @@ namespace Summit
             building = null; yield return true; building = b;
             foreach (var _ in CliffSpires.Steps(root.transform, k, post.shader))   // jagged rock along the cliffs' edges and faces
             { building = null; yield return true; building = b; }
+            foreach (var _ in Cornices.Steps(root.transform, k))   // the wind's curls over the cornice lips (Cliffs.Cornice)
+            { building = null; yield return true; building = b; }
             building = null;
         }
 
