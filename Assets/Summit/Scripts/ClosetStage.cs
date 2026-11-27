@@ -340,7 +340,7 @@ namespace Summit
             spin = new GameObject("Turn").transform;
             spin.SetParent(stage, false);
             var sh = Resources.Load<Shader>("StudioBackdrop");
-            if (sh == null) sh = Shader.Find("Universal Render Pipeline/Lit");
+            if (sh == null) sh = Mats.LitShader;
             // the floor: a soft bright spot round the feet, a darker touch right under them, fading out to the wall's foot
             var floor = Piece("Floor", FloorMesh(9f), Paint(sh, FloorTexture(128)));
             floor.SetParent(stage, false);

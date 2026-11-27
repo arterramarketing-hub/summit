@@ -51,7 +51,7 @@ public static class StreamPerf
         point.position = new Vector3(Slope.Centre(z), Slope.Height(Slope.Centre(z), z), z);
         terrain.target = point; dressing.target = point;
         terrain.Rebuild(); dressing.Rebuild();
-        var trail = new SnowTrail(Shader.Find("Universal Render Pipeline/Lit"));
+        var trail = new SnowTrail(Mats.LitShader);
         var tUpd = typeof(SlopeStreamer).GetMethod("Update", NP);
         var dUpd = typeof(CourseDressing).GetMethod("Update", NP);
         var live = (Dictionary<Vector2Int, GameObject>)typeof(SlopeStreamer).GetField("live", NP).GetValue(terrain);
@@ -157,7 +157,7 @@ public static class StreamPerf
     /// </summary>
     public static void Trail()
     {
-        var trail = new SnowTrail(Shader.Find("Universal Render Pipeline/Lit"));
+        var trail = new SnowTrail(Mats.LitShader);
         var meshField = typeof(SnowTrail).GetField("currentMesh", NP);
         double worst = 0; int checks = 0;
         var p = Vector3.zero; float heading = 0f;

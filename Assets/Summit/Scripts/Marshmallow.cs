@@ -174,8 +174,7 @@ namespace Summit
 
         // ---------------------------------------------------------------- bits
 
-        static Shader lit;
-        public static Shader Lit() { if (lit == null) lit = Shader.Find("Universal Render Pipeline/Lit"); return lit; }
+        public static Shader Lit() => Mats.LitShader;
 
         /// <summary>
         /// A plain lit colour, shared: one material per colour and sheen for the whole game, however often the camp is
@@ -185,7 +184,7 @@ namespace Summit
         {
             var key = (c, smooth);
             if (plain.TryGetValue(key, out var m) && m != null) return m;
-            m = new Material(Lit()) { name = "Plain" }; m.SetColor("_BaseColor", c); m.SetFloat("_Smoothness", smooth);
+            m = Mats.Lit(c, smooth); m.name = "Plain";
             plain[key] = m;
             return m;
         }

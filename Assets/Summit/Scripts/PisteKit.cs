@@ -460,7 +460,7 @@ namespace Summit
         public static Material KitMaterial(string name, Color c, float smooth, bool vertexColour)
         {
             var sh = Resources.Load<Shader>("PisteKit");
-            if (sh == null) sh = Shader.Find("Universal Render Pipeline/Lit");
+            if (sh == null) sh = Mats.LitShader;
             var m = new Material(sh) { name = name };
             m.SetColor("_BaseColor", c);
             m.SetFloat("_VertexColor", vertexColour ? 1f : 0f);

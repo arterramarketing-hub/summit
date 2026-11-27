@@ -120,7 +120,7 @@ namespace Summit
 
         Material Mat(string name, Color c, float smooth = 0.2f)
         {
-            var sh = lit != null ? lit : Shader.Find("Universal Render Pipeline/Lit");
+            var sh = lit != null ? lit : Mats.LitShader;
             var m = new Material(sh) { name = "LiftEnds" + name };
             if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", c);
             m.color = c;

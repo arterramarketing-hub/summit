@@ -744,7 +744,7 @@ namespace Summit
             static void Dress(Person p)
             {
                 int set = p.who == 1 ? 1 : p.who == 2 ? 5 : 3;   // their own clothes (Wardrobe.OwnOutfit): Val's pyjamas, her fleece, his puffer
-                var lit = Shader.Find("Universal Render Pipeline/Lit");
+                var lit = Mats.LitShader;
                 var snowy = new SnowyClothes();
                 if (!snowy.Ok) snowy = null;
                 Material Cloth(Color c, float smooth, float holds)

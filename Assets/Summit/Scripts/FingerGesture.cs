@@ -8,7 +8,8 @@ namespace Summit
     /// <summary>
     /// What one finger is doing, frame by frame: touching down, lifting, a tap (down and up quickly without
     /// moving), a double tap (a second touch close by, soon after a tap: it fires the moment the second finger
-    /// lands, with nothing waited for), a quick flick up. RiderInput feeds it the steering finger (or, with tilt
+    /// lands, with nothing waited for), a quick flick up, a swipe (groundspin: put down, thrown sideways a good way
+    /// and lifted, all quickly; it fires as it lifts). RiderInput feeds it the steering finger (or, with tilt
     /// steering, any finger) and turns those into the jump, the pop off a rail and the grab by context.
     /// No Unity input of its own: the test tools drive it the same way.
     /// </summary>
@@ -23,9 +24,16 @@ namespace Summit
         // fractions of the screen: a tap moves less than TapSlop of its width; the second tap of a double lands
         // within PairSlop of the first; a flick climbs FlickMin of its height
         public const float TapSlop = 0.04f, PairSlop = 0.15f, FlickMin = 0.07f;
+        /// <summary>A swipe (groundspin): down and lifted within SwipeMax s, SwipeMin of the screen's width across (past
+        /// the steering's full lock, 0.22) and at least twice as far across as up or down. Steering is a finger held on;
+        /// a swipe is let go of.</summary>
+        public const float SwipeMax = 0.3f, SwipeMin = 0.25f;
 
         // ---- this frame
         public bool Began, Ended, Tap, DoubleTap, Flick;
+        /// <summary>A swipe just lifted: -1 left, +1 right (0 with none); and how far across it went, in screen widths.</summary>
+        public int Swipe;
+        public float SwipeLength;
         /// <summary>This touch landed close to where the finger lifted, soon after (it carries on from where it was).</summary>
         public bool Resumed;
         public bool Down { get; private set; }
@@ -48,7 +56,7 @@ namespace Summit
         public void Reset()
         {
             chain = false; consumed = Down; flicked = true; SinceUp = 99f;
-            Began = Ended = Tap = DoubleTap = Flick = Resumed = false;
+            Began = Ended = Tap = DoubleTap = Flick = Resumed = false; Swipe = 0;
         }
 
         /// <summary>The press in progress counts for nothing (the tap that closed a menu, that got the rider up).</summary>
@@ -59,7 +67,7 @@ namespace Summit
 
         public void Step(bool down, Vector2 pos, float dt, Vector2 screen)
         {
-            Began = Ended = Tap = DoubleTap = Flick = Resumed = false;
+            Began = Ended = Tap = DoubleTap = Flick = Resumed = false; Swipe = 0;
             float w = Mathf.Max(screen.x, 320f), hgt = Mathf.Max(screen.y, 480f);
             h += dt;
             if (down && !Down)
@@ -75,6 +83,9 @@ namespace Summit
             {
                 Ended = true;
                 if (!consumed && Held <= TapMax && Travel <= TapSlop * w) { Tap = true; tapPos = downPos; chain = true; }
+                Vector2 thrown = last - downPos;
+                if (!consumed && Held <= SwipeMax && Mathf.Abs(thrown.x) >= SwipeMin * w && Mathf.Abs(thrown.x) >= 2f * Mathf.Abs(thrown.y))
+                { Swipe = thrown.x > 0f ? 1 : -1; SwipeLength = Mathf.Abs(thrown.x) / w; }
                 upPos = last; SinceUp = 0f;
             }
             if (down)

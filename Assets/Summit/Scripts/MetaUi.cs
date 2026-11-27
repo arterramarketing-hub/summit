@@ -44,7 +44,7 @@ namespace Summit
 
         public void Build()
         {
-            font = LoadFont();
+            font = Brand.Builtin();
             round = Brand.Rounded; coin = Coin(96); disc = Disc(128, false); ring = Disc(128, true);
             var canvas = gameObject.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
@@ -53,23 +53,23 @@ namespace Summit
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1080f, 1920f);
             scaler.matchWidthOrHeight = 0.5f;
-            safe = New("Safe", transform);
+            safe = Brand.New("Safe", transform);
             ApplySafeArea();
 
             // ---- the camp: points and missions up top, the stick, and a button for the station you're at
-            hubRoot = New("Hub", safe); Stretch(hubRoot);
+            hubRoot = Brand.New("Hub", safe); Brand.Stretch(hubRoot);
             // the camp's chips, one row along the top, all a control high (45 pt): the points, the way back to the
             // start page (the brand's peak, in a square), today's missions, and in the corner the settings (settingsBtn)
             float H = Brand.Control;
             var pc = Brand.Plate("PointsChip", hubRoot, Brand.Panel);
-            Place(pc.rectTransform, new Vector2(0f, 1f), new Vector2(Brand.Margin, -Brand.Margin), new Vector2(280f, H), new Vector2(0f, 1f));
-            Place(Img("Coin", pc.transform, Color.white, coin).rectTransform, new Vector2(0f, 0.5f), new Vector2(22f, 0f), new Vector2(60f, 60f), new Vector2(0f, 0.5f));
+            Brand.Place(pc.rectTransform, new Vector2(0f, 1f), new Vector2(Brand.Margin, -Brand.Margin), new Vector2(280f, H), new Vector2(0f, 1f));
+            Brand.Place(Brand.Img("Coin", pc.transform, Color.white, coin).rectTransform, new Vector2(0f, 0.5f), new Vector2(22f, 0f), new Vector2(60f, 60f), new Vector2(0f, 0.5f));
             pointsText = Brand.Line("Points", pc.transform, new Brand.Style(Brand.Weight.SemiBold, 40, 0.04f), TextAnchor.MiddleLeft, Brand.Snow, new Vector2(0f, 0.5f), new Vector2(98f, 1f), 170f);
             var tb0 = Brand.IconButton("TitleChip", hubRoot, Brand.Peak, new Vector2(0f, 1f), new Vector2(Brand.Margin + 280f + 16f, -Brand.Margin), new Vector2(0f, 1f));
             tb0.Find("Icon").GetComponent<Image>().color = Brand.Gold;
             buttons.Add(new KeyValuePair<RectTransform, string>(tb0, "title"));
             var mc = Brand.Plate("MissionsChip", hubRoot, Brand.Panel);
-            Place(mc.rectTransform, new Vector2(1f, 1f), new Vector2(-Brand.Margin - H - 16f, -Brand.Margin), new Vector2(340f, H), new Vector2(1f, 1f));
+            Brand.Place(mc.rectTransform, new Vector2(1f, 1f), new Vector2(-Brand.Margin - H - 16f, -Brand.Margin), new Vector2(340f, H), new Vector2(1f, 1f));
             missionsText = Brand.Line("Missions", mc.transform, Brand.Type.Label, TextAnchor.MiddleCenter, Brand.Snow, new Vector2(0.5f, 0.5f), new Vector2(0f, 1f), 320f);
             buttons.Add(new KeyValuePair<RectTransform, string>(mc.rectTransform, "missions"));
             contextBtn = Brand.Button("Context", hubRoot, "", Brand.Kind.Primary, new Vector2(0.5f, 0f), new Vector2(0f, 300f), new Vector2(600f, 132f), out contextText);
@@ -78,27 +78,27 @@ namespace Summit
             buttons.Add(new KeyValuePair<RectTransform, string>(contextBtn, "context"));
             // the controls, on a plate, fitted to the screen (SetContext)
             hintPlate = Brand.Plate("HintPlate", hubRoot, Brand.Panel);
-            Place(hintPlate.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 96f), new Vector2(600f, 80f), new Vector2(0.5f, 0.5f));
+            Brand.Place(hintPlate.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 96f), new Vector2(600f, 80f), new Vector2(0.5f, 0.5f));
             hintText = Brand.Line("Hint", hubRoot, Brand.Type.Hint, TextAnchor.MiddleCenter, Brand.Snow, new Vector2(0.5f, 0f), new Vector2(0f, 96f), 1000f);
             // the walk stick, fixed in the bottom left corner: a translucent dark base with a fine rim (gold while it's
             // walking) and a white knob. stickHome marks its centre in the safe area; the parts are placed on it
-            stickHome = New("StickHome", hubRoot);
-            Place(stickHome, Vector2.zero, new Vector2(Brand.Margin + stickR, Brand.Margin + stickR), Vector2.zero, new Vector2(0.5f, 0.5f));
+            stickHome = Brand.New("StickHome", hubRoot);
+            Brand.Place(stickHome, Vector2.zero, new Vector2(Brand.Margin + stickR, Brand.Margin + stickR), Vector2.zero, new Vector2(0.5f, 0.5f));
             stickBase = Brand.Img("StickRing", transform, Brand.A(Brand.Ink, 0.45f), Brand.Disc); stickRing = stickBase.rectTransform;
             stickRim = Brand.Img("StickRim", stickRing, Brand.SnowFaint, Brand.DiscRing);
-            Place(stickRim.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f));
+            Brand.Place(stickRim.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f));
             stickKnobImg = Brand.Img("StickKnob", transform, Brand.Snow, Brand.Disc); stickKnob = stickKnobImg.rectTransform;
             stickBase.raycastTarget = stickRim.raycastTarget = stickKnobImg.raycastTarget = false;
             stickRing.gameObject.SetActive(false); stickKnob.gameObject.SetActive(false);
-            var lr = Img("LookRing", transform, new Color(0.75f, 0.88f, 1f, 0.2f), ring); lookRing = lr.rectTransform;
-            var lk = Img("LookKnob", transform, new Color(0.75f, 0.88f, 1f, 0.65f), disc); lookKnob = lk.rectTransform;
+            var lr = Brand.Img("LookRing", transform, new Color(0.75f, 0.88f, 1f, 0.2f), ring); lookRing = lr.rectTransform;
+            var lk = Brand.Img("LookKnob", transform, new Color(0.75f, 0.88f, 1f, 0.65f), disc); lookKnob = lk.rectTransform;
             lookRing.gameObject.SetActive(false); lookKnob.gameObject.SetActive(false);
             // down after a fall off the camp's edge: a soft ripple, no words (a tap brings you back)
             tapCue = new Brand.TapCue(safe, new Vector2(0.5f, 0f), new Vector2(0f, 250f));
-            tapDot = Img("TapDot", safe, new Color(1f, 1f, 1f, 0f), disc);
-            Place(tapDot.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 250f), new Vector2(26f, 26f), new Vector2(0.5f, 0.5f));
-            tapRipple = Img("TapRipple", safe, new Color(1f, 1f, 1f, 0f), disc);
-            Place(tapRipple.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 250f), new Vector2(26f, 26f), new Vector2(0.5f, 0.5f));
+            tapDot = Brand.Img("TapDot", safe, new Color(1f, 1f, 1f, 0f), disc);
+            Brand.Place(tapDot.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 250f), new Vector2(26f, 26f), new Vector2(0.5f, 0.5f));
+            tapRipple = Brand.Img("TapRipple", safe, new Color(1f, 1f, 1f, 0f), disc);
+            Brand.Place(tapRipple.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 250f), new Vector2(26f, 26f), new Vector2(0.5f, 0.5f));
             tapDot.raycastTarget = tapRipple.raycastTarget = false;
             tapDot.enabled = tapRipple.enabled = false;
 
@@ -110,18 +110,18 @@ namespace Summit
             // ---- at the start pad: back to camp
             campBtn = Brand.Button("CampButton", safe, "CAMP", Brand.Kind.Secondary, new Vector2(0f, 1f), new Vector2(Brand.Margin + 120f, -Brand.Margin - Brand.Control * 0.5f), new Vector2(240f, Brand.Control), out var campLabel);
             campLabel.rectTransform.anchoredPosition = new Vector2(14f, 1f);
-            var back = Img("Back", campBtn, Brand.Snow, Brand.Chevron);
-            Place(back.rectTransform, new Vector2(0f, 0.5f), new Vector2(38f, 0f), new Vector2(30f, 30f), new Vector2(0.5f, 0.5f));
+            var back = Brand.Img("Back", campBtn, Brand.Snow, Brand.Chevron);
+            Brand.Place(back.rectTransform, new Vector2(0f, 0.5f), new Vector2(38f, 0f), new Vector2(30f, 30f), new Vector2(0.5f, 0.5f));
             back.rectTransform.localScale = new Vector3(-1f, 1f, 1f);
             buttons.Add(new KeyValuePair<RectTransform, string>(campBtn, "camp"));
 
             // ---- the end of a run: what it earned, and a quick way straight back to the start
-            endRoot = New("End", safe);
-            Place(endRoot, new Vector2(0.5f, 0.5f), new Vector2(0f, -330f), new Vector2(900f, 400f), new Vector2(0.5f, 1f));
-            var eb = Img("EndCard", endRoot, Brand.PanelStrong, round); Stretch(eb.rectTransform);
+            endRoot = Brand.New("End", safe);
+            Brand.Place(endRoot, new Vector2(0.5f, 0.5f), new Vector2(0f, -330f), new Vector2(900f, 400f), new Vector2(0.5f, 1f));
+            var eb = Brand.Img("EndCard", endRoot, Brand.PanelStrong, round); Brand.Stretch(eb.rectTransform);
             var eh = Label(endRoot, new Vector2(0f, 1f), new Vector2(40f, -26f), new Vector2(400f, 60f), 40, TextAnchor.UpperLeft);
             eh.text = "POINTS EARNED"; eh.color = Dim;
-            Place(Img("EndCoin", endRoot, Color.white, coin).rectTransform, new Vector2(1f, 1f), new Vector2(-250f, -20f), new Vector2(64f, 64f), new Vector2(1f, 1f));
+            Brand.Place(Brand.Img("EndCoin", endRoot, Color.white, coin).rectTransform, new Vector2(1f, 1f), new Vector2(-250f, -20f), new Vector2(64f, 64f), new Vector2(1f, 1f));
             endTotal = Label(endRoot, new Vector2(1f, 1f), new Vector2(-40f, -16f), new Vector2(220f, 80f), 64, TextAnchor.UpperRight);
             endTotal.color = Gold;
             endLines = Label(endRoot, new Vector2(0f, 1f), new Vector2(40f, -96f), new Vector2(820f, 220f), 34, TextAnchor.UpperLeft);
@@ -132,28 +132,28 @@ namespace Summit
 
             // ---- mission-complete toast: below the score, as ever, except during a run, where the combo and the medical
             //      bill run up there now (HudPoints): then it comes up at the bottom, over the pause button (see Update)
-            toastRoot = New("Toast", safe);
-            Place(toastRoot, new Vector2(0.5f, 0f), new Vector2(0f, ToastY), new Vector2(860f, 170f), new Vector2(0.5f, 0f));
+            toastRoot = Brand.New("Toast", safe);
+            Brand.Place(toastRoot, new Vector2(0.5f, 0f), new Vector2(0f, ToastY), new Vector2(860f, 170f), new Vector2(0.5f, 0f));
             toastGroup = toastRoot.gameObject.AddComponent<CanvasGroup>();
-            var tb = Img("ToastCard", toastRoot, Brand.PanelStrong, round); Stretch(tb.rectTransform);
-            var tl = Img("ToastEdge", toastRoot, Gold, null);
-            Place(tl.rectTransform, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(14f, 170f), new Vector2(0f, 0f));
+            var tb = Brand.Img("ToastCard", toastRoot, Brand.PanelStrong, round); Brand.Stretch(tb.rectTransform);
+            var tl = Brand.Img("ToastEdge", toastRoot, Gold, null);
+            Brand.Place(tl.rectTransform, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(14f, 170f), new Vector2(0f, 0f));
             toastHead = Label(toastRoot, new Vector2(0f, 1f), new Vector2(44f, -20f), new Vector2(560f, 50f), 34, TextAnchor.UpperLeft);
             toastHead.color = Gold; toastHead.text = "MISSION COMPLETE";
             toastTitle = Label(toastRoot, new Vector2(0f, 1f), new Vector2(44f, -70f), new Vector2(600f, 90f), 40, TextAnchor.UpperLeft);
             toastTitle.horizontalOverflow = HorizontalWrapMode.Wrap;
-            Place(Img("ToastCoin", toastRoot, Color.white, coin).rectTransform, new Vector2(1f, 0.5f), new Vector2(-170f, 0f), new Vector2(60f, 60f), new Vector2(1f, 0.5f));
+            Brand.Place(Brand.Img("ToastCoin", toastRoot, Color.white, coin).rectTransform, new Vector2(1f, 0.5f), new Vector2(-170f, 0f), new Vector2(60f, 60f), new Vector2(1f, 0.5f));
             toastReward = Label(toastRoot, new Vector2(1f, 0.5f), new Vector2(-30f, 0f), new Vector2(140f, 70f), 52, TextAnchor.MiddleRight);
             toastReward.color = Gold;
             toastRoot.gameObject.SetActive(false);
 
             // ---- the panel: a dim over everything and a card at the bottom (contents built per panel)
-            panelRoot = New("Panel", transform); Stretch(panelRoot);
-            var dim = Img("Dim", panelRoot, new Color(0.02f, 0.04f, 0.09f, 0.55f), null); Stretch(dim.rectTransform);
+            panelRoot = Brand.New("Panel", transform); Brand.Stretch(panelRoot);
+            var dim = Brand.Img("Dim", panelRoot, new Color(0.02f, 0.04f, 0.09f, 0.55f), null); Brand.Stretch(dim.rectTransform);
             dimImg = dim;   // (the closet has no dim: its studio shows through)
             panelRoot.gameObject.SetActive(false);
             // a black fade over everything (the camp's rescue after a fall)
-            fadeImg = Img("Fade", transform, new Color(0f, 0f, 0f, 0f), null); Stretch(fadeImg.rectTransform);
+            fadeImg = Brand.Img("Fade", transform, new Color(0f, 0f, 0f, 0f), null); Brand.Stretch(fadeImg.rectTransform);
             fadeImg.gameObject.SetActive(false);
             SetMode(Mode.Off);
         }
@@ -368,10 +368,10 @@ namespace Summit
             panelBits.Clear();
             buttons.RemoveAll(b => b.Key == null || b.Key.IsChildOf(panelRoot));
             panelRoot.gameObject.SetActive(true);
-            var cardSafe = New("CardSafe", panelRoot); panelBits.Add(cardSafe.gameObject);
+            var cardSafe = Brand.New("CardSafe", panelRoot); panelBits.Add(cardSafe.gameObject);
             CopySafe(cardSafe);
-            var c = Img("Card", cardSafe, Navy, round);
-            Place(c.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 30f), new Vector2(1010f, height), new Vector2(0.5f, 0f));
+            var c = Brand.Img("Card", cardSafe, Navy, round);
+            Brand.Place(c.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 30f), new Vector2(1010f, height), new Vector2(0.5f, 0f));
             card = c.rectTransform;
             // laid out 1010 wide; on a narrower screen (a 19.5:9 phone's canvas is ~978) the whole card shrinks to fit
             float room = cardSafe.rect.width - 40f;
@@ -404,16 +404,16 @@ namespace Summit
             for (int i = 0; i < Missions.Today.Count; i++)
             {
                 var m = Missions.Today[i];
-                var r = Img("Mission", c, m.done ? Brand.A(Brand.Gold, 0.16f) : Row, round);
-                Place(r.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -200f - i * 290f), new Vector2(930f, 260f), new Vector2(0.5f, 1f));
+                var r = Brand.Img("Mission", c, m.done ? Brand.A(Brand.Gold, 0.16f) : Row, round);
+                Brand.Place(r.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -200f - i * 290f), new Vector2(930f, 260f), new Vector2(0.5f, 1f));
                 var tt = Label(r.transform, new Vector2(0f, 1f), new Vector2(36f, -28f), new Vector2(600f, 120f), 46, TextAnchor.UpperLeft);
                 tt.horizontalOverflow = HorizontalWrapMode.Wrap; tt.text = Missions.TitleFor(m);
-                Place(Img("Coin", r.transform, Color.white, coin).rectTransform, new Vector2(1f, 1f), new Vector2(-170f, -32f), new Vector2(60f, 60f), new Vector2(1f, 1f));
+                Brand.Place(Brand.Img("Coin", r.transform, Color.white, coin).rectTransform, new Vector2(1f, 1f), new Vector2(-170f, -32f), new Vector2(60f, 60f), new Vector2(1f, 1f));
                 var rw = Label(r.transform, new Vector2(1f, 1f), new Vector2(-30f, -28f), new Vector2(140f, 70f), 50, TextAnchor.UpperRight);
                 rw.text = "+" + m.reward; rw.color = Gold;
-                var bg = Img("Bar", r.transform, new Color(0f, 0f, 0f, 0.4f), round);
-                Place(bg.rectTransform, new Vector2(0f, 0f), new Vector2(36f, 40f), new Vector2(560f, 30f), new Vector2(0f, 0f));
-                var fill = Img("Fill", bg.transform, m.done ? Green : Gold, round);
+                var bg = Brand.Img("Bar", r.transform, new Color(0f, 0f, 0f, 0.4f), round);
+                Brand.Place(bg.rectTransform, new Vector2(0f, 0f), new Vector2(36f, 40f), new Vector2(560f, 30f), new Vector2(0f, 0f));
+                var fill = Brand.Img("Fill", bg.transform, m.done ? Green : Gold, round);
                 fill.rectTransform.anchorMin = Vector2.zero; fill.rectTransform.anchorMax = new Vector2(Mathf.Max(0.04f, m.Fraction), 1f);
                 fill.rectTransform.offsetMin = fill.rectTransform.offsetMax = Vector2.zero;
                 var ct = Label(r.transform, new Vector2(1f, 0f), new Vector2(-30f, 30f), new Vector2(300f, 50f), 36, TextAnchor.LowerRight);
@@ -430,13 +430,13 @@ namespace Summit
             ShopTab = tab;
             var c = OpenCard(tab == 0 ? 1640f : 1180f, tab == 0 ? "UPGRADES" : "OUTFITS & RIDE", null);
             // balance, top left of the card
-            Place(Img("Coin", c, Color.white, coin).rectTransform, new Vector2(0f, 1f), new Vector2(36f, -40f), new Vector2(64f, 64f), new Vector2(0f, 1f));
+            Brand.Place(Brand.Img("Coin", c, Color.white, coin).rectTransform, new Vector2(0f, 1f), new Vector2(36f, -40f), new Vector2(64f, 64f), new Vector2(0f, 1f));
             var bal = Label(c, new Vector2(0f, 1f), new Vector2(112f, -40f), new Vector2(260f, 70f), 50, TextAnchor.UpperLeft);
             bal.text = Progress.Points.ToString("N0"); bal.color = Gold;
             for (int k = 0; k < 2; k++)
             {
-                var tb = Img("Tab", c, k == tab ? Brand.Snow : Grey, round);
-                Place(tb.rectTransform, new Vector2(0.5f, 1f), new Vector2(-230f + k * 460f, -130f), new Vector2(440f, 96f), new Vector2(0.5f, 1f));
+                var tb = Brand.Img("Tab", c, k == tab ? Brand.Snow : Grey, round);
+                Brand.Place(tb.rectTransform, new Vector2(0.5f, 1f), new Vector2(-230f + k * 460f, -130f), new Vector2(440f, 96f), new Vector2(0.5f, 1f));
                 var tl = Brand.Line("Text", tb.transform, Brand.Type.Button, TextAnchor.MiddleCenter, k == tab ? Brand.Ink : Brand.Snow, new Vector2(0.5f, 0.5f), new Vector2(0f, 1f), 420f);
                 tl.text = k == 0 ? "UPGRADES" : "OUTFITS";
                 buttons.Add(new KeyValuePair<RectTransform, string>(tb.rectTransform, "tab" + k));
@@ -452,25 +452,25 @@ namespace Summit
                 int lvl = Progress.Level(it.id);
                 bool maxed = Progress.Maxed(it.id);
                 int cost = Progress.NextCost(it.id);
-                var r = Img("Item", c, Row, round);
-                Place(r.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -256f - i * 152f), new Vector2(930f, 140f), new Vector2(0.5f, 1f));
+                var r = Brand.Img("Item", c, Row, round);
+                Brand.Place(r.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -256f - i * 152f), new Vector2(930f, 140f), new Vector2(0.5f, 1f));
                 var tt = Label(r.transform, new Vector2(0f, 1f), new Vector2(30f, -18f), new Vector2(500f, 60f), 42, TextAnchor.UpperLeft);
                 tt.text = it.title;
                 var bl = Label(r.transform, new Vector2(0f, 0f), new Vector2(30f, 18f), new Vector2(560f, 50f), 30, TextAnchor.LowerLeft);
                 bl.text = it.blurb; bl.color = Dim;
                 if (it.Max > 1)
                     for (int k = 0; k < it.Max; k++)
-                        Place(Img("Pip", r.transform, k < lvl ? Gold : new Color(1f, 1f, 1f, 0.2f), round).rectTransform,
+                        Brand.Place(Brand.Img("Pip", r.transform, k < lvl ? Gold : new Color(1f, 1f, 1f, 0.2f), round).rectTransform,
                               new Vector2(0f, 1f), new Vector2(470f + k * (it.Max > 5 ? 19f : 46f), it.Max > 5 ? -36f : -28f),
                               it.Max > 5 ? new Vector2(15f, 15f) : new Vector2(34f, 34f), new Vector2(0f, 1f));   // ten levels: small pips
                 bool afford = !maxed && Progress.Points >= cost;
-                var b = Img("Buy", r.transform, maxed ? new Color(1f, 1f, 1f, 0.08f) : afford ? Green : Grey, round);
-                Place(b.rectTransform, new Vector2(1f, 0.5f), new Vector2(-18f, 0f), new Vector2(250f, 104f), new Vector2(1f, 0.5f));
+                var b = Brand.Img("Buy", r.transform, maxed ? new Color(1f, 1f, 1f, 0.08f) : afford ? Green : Grey, round);
+                Brand.Place(b.rectTransform, new Vector2(1f, 0.5f), new Vector2(-18f, 0f), new Vector2(250f, 104f), new Vector2(1f, 0.5f));
                 if (maxed)
                     Label(b.transform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(240f, 90f), 40, TextAnchor.MiddleCenter).text = it.Max > 1 ? "MAXED" : "OWNED";
                 else
                 {
-                    Place(Img("Coin", b.transform, Color.white, coin).rectTransform, new Vector2(0f, 0.5f), new Vector2(22f, 0f), new Vector2(52f, 52f), new Vector2(0f, 0.5f));
+                    Brand.Place(Brand.Img("Coin", b.transform, Color.white, coin).rectTransform, new Vector2(0f, 0.5f), new Vector2(22f, 0f), new Vector2(52f, 52f), new Vector2(0f, 0.5f));
                     var cl = Label(b.transform, new Vector2(1f, 0.5f), new Vector2(-24f, 0f), new Vector2(160f, 90f), 40, TextAnchor.MiddleRight);
                     cl.text = cost.ToString("N0"); if (afford) { cl.color = Brand.Ink; cl.GetComponent<Shadow>().enabled = false; }
                     buttons.Add(new KeyValuePair<RectTransform, string>(b.rectTransform, "buy" + (int)it.id));
@@ -564,49 +564,19 @@ namespace Summit
 
         // ---------------------------------------------------------------- building blocks
 
-        static Font LoadFont()
-        {
-            Font f = null;
-            try { f = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"); } catch { }
-            if (f == null) try { f = Resources.GetBuiltinResource<Font>("Arial.ttf"); } catch { }
-            return f;
-        }
-
-        static RectTransform New(string name, Transform parent)
-        {
-            var r = new GameObject(name, typeof(RectTransform)).GetComponent<RectTransform>();
-            r.SetParent(parent, false);
-            return r;
-        }
-
-        static Image Img(string name, Transform parent, Color c, Sprite s)
-        {
-            var i = New(name, parent).gameObject.AddComponent<Image>();
-            i.color = c; i.raycastTarget = false;
-            if (s != null) { i.sprite = s; i.type = s.border.sqrMagnitude > 0f ? Image.Type.Sliced : Image.Type.Simple; }
-            return i;
-        }
-
         Text Label(Transform parent, Vector2 anchor, Vector2 pos, Vector2 size, int fontSize, TextAnchor align)
         {
-            var t = New("Text", parent).gameObject.AddComponent<Text>();
+            var t = Brand.New("Text", parent).gameObject.AddComponent<Text>();
             t.font = font; t.fontSize = fontSize; t.fontStyle = FontStyle.Bold; t.alignment = align; t.color = Color.white;
             t.horizontalOverflow = HorizontalWrapMode.Overflow; t.verticalOverflow = VerticalWrapMode.Overflow;
             t.raycastTarget = false;
             float px = align == TextAnchor.UpperLeft || align == TextAnchor.MiddleLeft || align == TextAnchor.LowerLeft ? 0f
                      : align == TextAnchor.UpperRight || align == TextAnchor.MiddleRight || align == TextAnchor.LowerRight ? 1f : 0.5f;
-            Place(t.rectTransform, anchor, pos, size, new Vector2(px, anchor.y));
+            Brand.Place(t.rectTransform, anchor, pos, size, new Vector2(px, anchor.y));
             var sh = t.gameObject.AddComponent<Shadow>();
             sh.effectColor = Brand.A(Brand.Ink, 0.45f); sh.effectDistance = new Vector2(0f, -2f);
             return t;
         }
-
-        static void Place(RectTransform r, Vector2 anchor, Vector2 pos, Vector2 size, Vector2 pivot)
-        {
-            r.anchorMin = r.anchorMax = anchor; r.pivot = pivot; r.anchoredPosition = pos; r.sizeDelta = size;
-        }
-
-        static void Stretch(RectTransform r) { r.anchorMin = Vector2.zero; r.anchorMax = Vector2.one; r.offsetMin = r.offsetMax = Vector2.zero; }
 
         void ApplySafeArea()
         {
@@ -617,7 +587,7 @@ namespace Summit
         static void CopySafe(RectTransform r)
         {
             Rect a = Screen.safeArea;
-            if (Screen.width <= 0 || Screen.height <= 0) { Stretch(r); return; }
+            if (Screen.width <= 0 || Screen.height <= 0) { Brand.Stretch(r); return; }
             r.anchorMin = new Vector2(a.xMin / Screen.width, a.yMin / Screen.height);
             r.anchorMax = new Vector2(a.xMax / Screen.width, a.yMax / Screen.height);
             r.offsetMin = r.offsetMax = Vector2.zero;

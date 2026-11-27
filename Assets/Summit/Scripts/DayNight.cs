@@ -572,7 +572,7 @@ namespace Summit
         /// </summary>
         void BuildTorch()
         {
-            var lensSh0 = Shader.Find("Universal Render Pipeline/Particles/Unlit") ?? Shader.Find("Universal Render Pipeline/Lit");
+            var lensSh0 = Shader.Find("Universal Render Pipeline/Particles/Unlit") ?? Mats.LitShader;
             var root = new GameObject("ChestTorch").transform;
             root.SetParent(transform, false);
             var bodyGo = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
@@ -580,7 +580,7 @@ namespace Summit
             bodyGo.transform.SetParent(root, false);
             bodyGo.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
             bodyGo.transform.localScale = new Vector3(0.045f, 0.045f, 0.045f);   // 4.5 cm across, 9 cm long
-            var darkSh = Shader.Find("Universal Render Pipeline/Lit");
+            var darkSh = Mats.LitShader;
             if (darkSh == null || lensSh0 == null) { Kill(root.gameObject); return; }   // (never stop the game for a prop)
             var dark = new Material(darkSh) { name = "TorchBody" };
             dark.SetColor("_BaseColor", new Color(0.12f, 0.12f, 0.13f)); dark.SetFloat("_Smoothness", 0.6f);

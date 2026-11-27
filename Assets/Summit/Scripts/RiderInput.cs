@@ -44,6 +44,14 @@ namespace Summit
         public bool TrickTap { get; private set; }
         /// <summary>The trick finger is down: the grab is being held.</summary>
         public bool GrabHold { get; private set; }
+        /// <summary>
+        /// (groundspin) A swipe on the snow just lifted (the one frame): -1 left, +1 right, 0 with none; and how far
+        /// across it went (screen widths: FingerGesture). Q / E in the editor. The rider spins on it (RiderGroundSpin).
+        /// </summary>
+        public int Swipe { get; private set; }
+        public float SwipeLength { get; private set; }
+        /// <summary>The one finger touched down this frame (the rider notes its line then: a swipe's own drag is undone).</summary>
+        public bool TouchBegan { get; private set; }
         /// <summary>Set by the rider: in an air long enough to trick, or on a rail. Out of it the fingers only steer, jump and tuck.</summary>
         public bool TrickMode;
         /// <summary>Set by the rider: on a rail, a box or a cable (TrickMode too).</summary>
@@ -231,6 +239,13 @@ namespace Summit
             GrabHold = air && (button || (useTilt && finger && !gesture.Consumed && gesture.Held >= TapTime && gesture.Travel <= FingerGesture.TapSlop * Mathf.Max(screen.x, 320f)));
             RailPop = rail && (beganB || onePop);
             Jump = snow && (jumpB || oneJump);
+            // (groundspin) a swipe: only ever on the snow, and never one of the jump's gestures (a tap hardly moves, a
+            // flick goes up, a double tap's second touch is consumed)
+            TouchBegan = gesture.Began;
+            Swipe = snow && !oneJump ? gesture.Swipe : 0;
+            SwipeLength = Swipe != 0 ? gesture.SwipeLength : 0f;
+            int ks = snow ? KeySwipe() : 0;
+            if (ks != 0) { Swipe = ks; SwipeLength = 0.45f; }
             // the tuck: a button held; with tilt the finger held still (as ever)
             bool down = downB || (useTilt && finger && snow && gesture.Held >= TapTime && gesture.Travel <= FingerGesture.TapSlop * Mathf.Max(screen.x, 320f));
             Pressed = down && !wasDown;
@@ -395,6 +410,19 @@ namespace Summit
             return v;
 #else
             return Input.GetAxisRaw("Horizontal");
+#endif
+        }
+
+        /// <summary>Q / E pressed this frame: a swipe left / right (groundspin, for the editor).</summary>
+        static int KeySwipe()
+        {
+            if (TestDrive) return 0;
+#if ENABLE_INPUT_SYSTEM
+            var k = Keyboard.current;
+            if (k == null) return 0;
+            return k.qKey.wasPressedThisFrame ? -1 : k.eKey.wasPressedThisFrame ? 1 : 0;
+#else
+            return Input.GetKeyDown(KeyCode.Q) ? -1 : Input.GetKeyDown(KeyCode.E) ? 1 : 0;
 #endif
         }
 

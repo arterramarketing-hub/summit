@@ -311,9 +311,13 @@ namespace Summit
                 return v * (first ? 0.6f : 1f);
             }
             if (first) { HitCollider = col; HitPoint = at; HitObstacle?.Invoke(ob, col.bounds.center, into); }
+            // (groundspin) turned across the line mid-spin on the snow there is no glancing off anything: a real touch
+            // of its side, the first, takes you down (a shield still saves it). Spinning alone never does
+            bool spunInto = first && invulnerable <= 0f && normal.y < 0.7f && MidSpin && !Airborne && !ob.always && sp > SpinHitInto;
+            if (spunInto) { square = true; into = Mathf.Max(into, CrashInto + 0.01f); }
             // arcadetrees: a tree only knocks you down near head on and fast; anything else clipped (a trunk, a crown's
             // skirt down at the snow) turns you along it, staggering, some speed gone
-            if (first && invulnerable <= 0f && normal.y < 0.7f && ob.label == "Tree" && !ob.always)
+            if (first && invulnerable <= 0f && normal.y < 0.7f && ob.label == "Tree" && !ob.always && !spunInto)
             {
                 // judged on the level (a trunk stands upright: on a steep slope the downhill part of the speed, which
                 // the board carries down the fall line, is not into it)
@@ -345,7 +349,7 @@ namespace Summit
                 bool tree = ob.label == "Tree";
                 if (!tree || CarDents + 1 < CarTreesToWreck) return CarDent(normal, at, v, into, tree);
             }
-            if (Tube && into > 6f && into < 16f && !ob.always)
+            if (Tube && into > 6f && into < 16f && !ob.always && !spunInto)
             {
                 // the tube is a big rubber ring: it bounces off, spinning, and you keep going
                 invulnerable = 0.5f;

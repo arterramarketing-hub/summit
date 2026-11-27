@@ -17,7 +17,12 @@ TEXTURE2D(_SurfaceMap); SAMPLER(sampler_SurfaceMap);
 float4 _SurfaceMapST;   // xy: 1 / (metres the map spans), across and down the hill
 float4 _SurfaceWin;     // xy: the middle of what the map covers (world x, z); zw: half its size (0: no map)
 float4 _SurfaceDay;     // x: where slush starts (world z); y: 1 / the metres it comes in over; z: how much of it
-float4 _SurfaceRun;     // xy: the way across the run under the rider (unit, in x and z); z: the lines' strength
+float4 _SurfaceRun;     // z: the lines' strength
+// (cordflicker) the run's own line down the mountain, for the grooming's lines and the ice's streaks: a texel a step of z,
+// R how far the traverses have swung the run sideways there (world x), G and B the cos and sin of its heading, A how far
+// along it (m). Read with Load (no sampler: the terrain's are all taken), between two texels by hand.
+TEXTURE2D(_SurfaceGroom);
+float4 _SurfaceGroomST; // x: the first texel's z, y: 1 / the step, z: the last texel (0: none: the lines straight down z)
 float4 _SurfaceGlacier; // x: the glacier's top (world z), y: its bottom, z: the metres the grooming fades over at each (0: none)
 // (the camp's two maps borrow the snow's own sampler, sampler_BaseMap, a repeating one: Metal's pass has 16 and the
 // terrain's is full. The camp map is held off its edge by half a texel below, so it reads as if clamped.)
@@ -37,6 +42,27 @@ float IceNoise(float2 p)
     float2 i = floor(p), f = frac(p);
     f = f * f * (3.0 - 2.0 * f);
     return lerp(lerp(IceHash(i), IceHash(i + float2(1.0, 0.0)), f.x), lerp(IceHash(i + float2(0.0, 1.0)), IceHash(i + 1.0), f.x), f.y);
+}
+
+// The run's own axes at a place on the snow: across it (m, from its swung line) and along it (m), and the way across
+// (in x and z). Fixed to the snow: where a cliff band's traverse turns the run, the lines turn with it, curving with the
+// turn in, rather than all of them being swung round the map's middle by the run's heading under the rider (from
+// kilometres away, a degree's turn swept every line across the snow in a frame: they crawled and flickered)
+void GroomAxes(float2 wp, out float across, out float along, out float2 dir)
+{
+    across = wp.x; along = wp.y; dir = float2(1.0, 0.0);
+    UNITY_BRANCH
+    if (_SurfaceGroomST.z > 0.0)
+    {
+        float u = clamp((wp.y - _SurfaceGroomST.x) * _SurfaceGroomST.y, 0.0, _SurfaceGroomST.z);
+        float i = min(floor(u), _SurfaceGroomST.z - 1.0);
+        float4 g = lerp(LOAD_TEXTURE2D(_SurfaceGroom, int2((int)i, 0)), LOAD_TEXTURE2D(_SurfaceGroom, int2((int)i + 1, 0)), u - i);
+        float2 cs = g.yz * rsqrt(max(dot(g.yz, g.yz), 1e-6));
+        float dx = wp.x - g.x;
+        across = dx * cs.x;
+        along = g.w + dx * cs.y;
+        dir = float2(cs.x, -cs.y);
+    }
 }
 
 // The snow underfoot, drawn into the lit surface (albedo, smoothness, the relief's strength and the
@@ -80,9 +106,9 @@ void SnowSurface(float3 positionWS, float2 uv, inout SurfaceData s)
     // the snow's own grain again, four times the size (the lumps of tracked snow, below; and the ice's edge)
     half3 chop = UnpackNormalScale(SAMPLE_TEXTURE2D(_DetailNormalMap, sampler_DetailNormalMap, uv * _DetailAlbedoMap_ST.xy * 0.27 + 0.19), 1.0h);
 
-    // the run's own axes under the rider (the grooming's lines and the ice's streaks follow them)
-    float across = dot(positionWS.xz, _SurfaceRun.xy);
-    float along = dot(positionWS.xz, float2(-_SurfaceRun.y, _SurfaceRun.x));
+    // the run's own axes there (the grooming's lines and the ice's streaks follow them)
+    float across, along; float2 runAcross;
+    GroomAxes(positionWS.xz, across, along, runAcross);
 
     // ice, by height (as a height-blended terrain does it): where the map says some ice, it lies in the low spots
     // first and the snow stays on the high ones, so a patch's edge is ragged, not a linear fade. The height is not the
@@ -154,7 +180,7 @@ void SnowSurface(float3 positionWS, float2 uv, inout SurfaceData s)
     half fine3 = (half)saturate((px3 - 4.0) / 8.0); fine3 *= fine3;
     half lines = combed * (half)_SurfaceRun.z;
     half ridge = (half)cos(phase) * fine * 0.55h + (half)cos(phase3) * fine3 * 0.45h;
-    s.normalTS.xy += (half2)_SurfaceRun.xy * (ridge * 0.28h * lines);
+    s.normalTS.xy += (half2)runAcross * (ridge * 0.28h * lines);
     float lanePhase = across * 0.2222;   // (4.5 m a pass)
     float laneW = max(fwidth(lanePhase), 1e-4);
     half lane = (half)(saturate((abs(frac(lanePhase + 0.5) - 0.5) - 0.25) / (laneW * 1.5)) * 2.0 - 1.0);

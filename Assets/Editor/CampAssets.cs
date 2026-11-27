@@ -31,7 +31,7 @@ public static class CampAssets
 
     static Material Transparent()
     {
-        var m = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+        var m = new Material(Summit.Mats.LitShader);
         m.SetFloat("_Surface", 1f);
         m.SetFloat("_Blend", 0f);
         m.SetFloat("_ZWrite", 0f);

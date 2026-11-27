@@ -430,7 +430,7 @@ public static class RidgeTest
         var game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
         Physics.simulationMode = SimulationMode.Script;
-        Debug.Log($"ROCKSHOT rock material shader: {RockFace.Material(Shader.Find("Universal Render Pipeline/Lit")).shader.name}");
+        Debug.Log($"ROCKSHOT rock material shader: {RockFace.Material(Mats.LitShader).shader.name}");
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
         var rider = Get<Rider>("rider"); var body = Get<RiderBody>("body");
         var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props"); var dayNight = Get<DayNight>("dayNight");
@@ -544,7 +544,7 @@ public static class RidgeTest
         {
             // the left shoulder's snow bands: as drawn, without the strata's shelf snow, without the strata at all,
             // without the rock's own up-facing snow, and without the snow line's push
-            var trm = RockFace.TerrainMaterial(Shader.Find("Universal Render Pipeline/Lit"));
+            var trm = RockFace.TerrainMaterial(Mats.LitShader);
             Vector3 eye = new Vector3(cx - 190f, top - 20f, -40f), at = new Vector3(cx - 45f, top - 30f, -110f);
             Vector4 st = trm.GetVector("_Strata");
             View("DbgL0Base.png", eye, at, 60f, false);
@@ -560,7 +560,7 @@ public static class RidgeTest
             // what the far rock's white flecks are: the camp cliff from 330 m and from 110 m, as drawn, then with the
             // rock's snow turned off piece by piece, then (from 110 m) with both terrain materials flat colours: holes
             // show the sky, and blue is snow no rock covers
-            var trm = RockFace.TerrainMaterial(Shader.Find("Universal Render Pipeline/Lit"));
+            var trm = RockFace.TerrainMaterial(Mats.LitShader);
             Vector3 farEye = new Vector3(cx + 330f, top - 140f, -260f), at = new Vector3(cx + 40f, top - 150f, -130f);
             Vector3 nearEye = at + (farEye - at).normalized * 110f;
             void Both(string tag) { View($"Dbg{tag}Far.png", farEye, at, 60f, false); View($"Dbg{tag}Near.png", nearEye, at, 60f, false); }
@@ -607,7 +607,7 @@ public static class RidgeTest
                 if (!night) Debug.Log($"SNOWLINE mid-run view at z {mz} side {ms} depth {md} ({Ridge.SideAt(mz, ms)})");
             }
         }
-        var tm = RockFace.TerrainMaterial(Shader.Find("Universal Render Pipeline/Lit"));
+        var tm = RockFace.TerrainMaterial(Mats.LitShader);
         Debug.Log($"SNOWLINE seed {seed} wall z {zw} height {hw} side {w.side}; terrain rock {tm.shader.name} keyword {tm.IsKeywordEnabled("SUMMIT_ROCK_TERRAIN")} queue {tm.renderQueue}");
         TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt;
         Physics.simulationMode = SimulationMode.FixedUpdate;

@@ -28,10 +28,8 @@ namespace Summit
         static Font boardFont, boardThin;
         static Font BoardFont(bool thin)
         {
-            if (thin && boardThin == null)
-                try { boardThin = Font.CreateDynamicFontFromOSFont(new[] { "Avenir Next Regular", "AvenirNext-Regular", "Avenir Next", "Helvetica Neue", "Arial" }, 64); } catch { }
-            if (!thin && boardFont == null)
-                try { boardFont = Font.CreateDynamicFontFromOSFont(new[] { "Avenir Next Medium", "AvenirNext-Medium", "Avenir Next", "Helvetica Neue", "Arial" }, 64); } catch { }
+            if (thin && boardThin == null) boardThin = Brand.Os("Avenir Next Regular", "AvenirNext-Regular", "Avenir Next", "Helvetica Neue", "Arial");
+            if (!thin && boardFont == null) boardFont = Brand.Os("Avenir Next Medium", "AvenirNext-Medium", "Avenir Next", "Helvetica Neue", "Arial");
             var f = thin ? boardThin : boardFont;
             if (f == null) f = SettingsSheet.Face;
             return f;

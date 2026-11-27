@@ -344,7 +344,7 @@ namespace Summit
             if (domeMesh == null) domeMesh = Dome();
             if (fleshMat == null)
             {
-                var sh = jacketShader != null ? jacketShader : Shader.Find("Universal Render Pipeline/Lit");
+                var sh = jacketShader != null ? jacketShader : Mats.LitShader;
                 fleshMat = new Material(sh) { name = "Stump" }; fleshMat.SetColor("_BaseColor", new Color(0.50f, 0.05f, 0.06f)); fleshMat.SetFloat("_Smoothness", 0.62f);
                 boneMat = new Material(sh) { name = "StumpBone" }; boneMat.SetColor("_BaseColor", new Color(0.93f, 0.90f, 0.80f)); boneMat.SetFloat("_Smoothness", 0.35f);
             }
@@ -382,7 +382,7 @@ namespace Summit
         Material Plain(Material cloth)
         {
             if (plain.TryGetValue(cloth, out var m)) return m;
-            var sh = jacketShader != null ? jacketShader : Shader.Find("Universal Render Pipeline/Lit");
+            var sh = jacketShader != null ? jacketShader : Mats.LitShader;
             Color c = cloth.HasProperty("_BaseColor") ? cloth.GetColor("_BaseColor") : cloth.HasProperty("_Color") ? cloth.GetColor("_Color") : Color.grey;
             m = new Material(sh) { name = "StumpCloth" };
             m.SetColor("_BaseColor", new Color(c.r * 0.8f, c.g * 0.8f, c.b * 0.8f, 1f));

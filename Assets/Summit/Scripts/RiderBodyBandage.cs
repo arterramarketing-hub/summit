@@ -179,7 +179,7 @@ namespace Summit
         void BandageMats()
         {
             if (bandageMat != null) return;
-            var sh = jacketShader != null ? jacketShader : Shader.Find("Universal Render Pipeline/Lit");
+            var sh = jacketShader != null ? jacketShader : Mats.LitShader;
             bandageMat = new Material(sh) { name = "Bandage" }; bandageMat.SetColor("_BaseColor", new Color(0.97f, 0.96f, 0.91f)); bandageMat.SetFloat("_Smoothness", 0.08f);
             bandageLine = new Material(sh) { name = "BandageLine" }; bandageLine.SetColor("_BaseColor", new Color(0.88f, 0.86f, 0.80f)); bandageLine.SetFloat("_Smoothness", 0.05f);
             if (stainHeavy == null)

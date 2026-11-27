@@ -214,15 +214,8 @@ namespace Summit
         /// <summary>The camp's people's own things: a log bench by the drop, a waxing stand beside the lodge.</summary>
         void BuildProps()
         {
-            var lit = Shader.Find("Universal Render Pipeline/Lit");
             Material M(Color c, float sm, string tex = null, Vector2 tile = default)
-            {
-                var m = new Material(lit);
-                m.SetColor("_BaseColor", c); m.SetFloat("_Smoothness", sm);
-                if (tex != null) { var t = Resources.Load<Texture2D>(tex); if (t != null) { m.SetTexture("_BaseMap", t); if (tile != default) m.SetTextureScale("_BaseMap", tile); } }
-                m.enableInstancing = true;
-                return m;
-            }
+                => Mats.Lit(c, sm, tex: tex != null ? Resources.Load<Texture2D>(tex) : null, tile: tile, instanced: true);
             if (wood == null) { wood = M(new Color(0.95f, 0.88f, 0.8f), 0.18f, "Camp/Wood"); logs = M(new Color(1f, 0.92f, 0.85f), 0.12f, "Camp/Logs", new Vector2(1f, 2f)); steel = M(new Color(0.12f, 0.12f, 0.13f), 0.5f); steel.SetFloat("_Metallic", 0.5f); }
             Transform Part(PrimitiveType type, Transform parent, Vector3 pos, Vector3 scale, Vector3 euler, Material m)
             {

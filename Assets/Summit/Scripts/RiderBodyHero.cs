@@ -135,7 +135,7 @@ namespace Summit
 
             // materials: the jacket and trousers can take snow (SnowyClothes), the gear is one palette texture
             // (colour, and smoothness in its alpha: the lens shines, the gloves don't)
-            Shader sh = jacketShader != null ? jacketShader : Shader.Find("Universal Render Pipeline/Lit");
+            Shader sh = jacketShader != null ? jacketShader : Mats.LitShader;
             snowy = new SnowyClothes();
             if (!snowy.Ok) snowy = null;
             Material Cloth(Color c, float smooth, float holds)
@@ -146,7 +146,7 @@ namespace Summit
             var jacketM = Cloth(new Color(0.93f, 0.31f, 0.14f), 0.35f, 0.85f);   // (it was 1.5 while a bug kept the jacket clean: see RiderBodyWalk.OwnMaterials)
             var pantsM = Cloth(new Color(0.17f, 0.19f, 0.24f), 0.2f, 0.5f);    // (white on the dark trousers shows far more)
             pantsMat = pantsM;
-            var gearM = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? sh);
+            var gearM = new Material(Mats.LitShader ?? sh);
             var pal = Resources.Load<Texture2D>("Rider/HeroPalette");
             if (pal != null)
             {
@@ -163,7 +163,7 @@ namespace Summit
             Material Face(Shader lit)
             {
                 // Val's painted face (cheeks, the beard's shadow, lids): plain lit skin with its picture
-                var m = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? lit);
+                var m = new Material(Mats.LitShader ?? lit);
                 var tex = Resources.Load<Texture2D>(who == 2 ? "Rider/BreannaFace" : who == 3 ? "Rider/PaulFace" : "Rider/BuddyFace");
                 if (tex != null) { m.SetTexture("_BaseMap", tex); m.mainTexture = tex; }
                 m.SetColor("_BaseColor", Color.white); m.SetFloat("_Smoothness", 0.3f);
@@ -178,7 +178,7 @@ namespace Summit
             Material Print(Shader lit)
             {
                 // the pyjama print: a plain lit cloth with its picture (it takes no snow: the snowy cloth has no picture)
-                var m = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? lit);
+                var m = new Material(Mats.LitShader ?? lit);
                 var tex = Resources.Load<Texture2D>(outfit == 2 ? "Rider/BreannaPants" : "Rider/BuddyPants");
                 if (tex != null) { m.SetTexture("_BaseMap", tex); m.mainTexture = tex; }
                 m.SetColor("_BaseColor", Color.white); m.SetFloat("_Smoothness", 0.12f);

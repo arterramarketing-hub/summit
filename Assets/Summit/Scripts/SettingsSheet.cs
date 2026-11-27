@@ -60,14 +60,14 @@ namespace Summit
         public SettingsSheet(RectTransform frame, bool closable)
         {
             this.frame = frame; this.closable = closable;
-            Root = New("Settings", frame);
+            Root = Brand.New("Settings", frame);
             Root.anchorMin = Vector2.zero; Root.anchorMax = new Vector2(1f, 0f); Root.pivot = new Vector2(0.5f, 0f);
-            var body = Img("Body", Root, Brand.PanelStrong);
-            Stretch(body.rectTransform);
-            var lip = Img("Lip", Root, Brand.PanelStrong, FadeUp);
+            var body = Brand.Img("Body", Root, Brand.PanelStrong);
+            Brand.Stretch(body.rectTransform);
+            var lip = Brand.Img("Lip", Root, Brand.PanelStrong, FadeUp);
             lip.rectTransform.anchorMin = new Vector2(0f, 1f); lip.rectTransform.anchorMax = Vector2.one; lip.rectTransform.pivot = new Vector2(0.5f, 0f);
             lip.rectTransform.sizeDelta = new Vector2(0f, 150f); lip.rectTransform.anchoredPosition = Vector2.zero;
-            Safe = New("SettingsSafe", Root);
+            Safe = Brand.New("SettingsSafe", Root);
         }
 
         /// <summary>A page of settings.</summary>
@@ -119,25 +119,25 @@ namespace Summit
             built = true;
             if (closable)
             {
-                closeBtn = New("Close", Safe);
-                Place(closeBtn, new Vector2(0.5f, 1f), new Vector2(0f, -8f), new Vector2(260f, 96f), new Vector2(0.5f, 0.5f));
-                var ch = Img("Chevron", closeBtn, new Color(1f, 1f, 1f, 0.6f), Chevron);
-                Place(ch.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(44f, 44f), new Vector2(0.5f, 0.5f));
+                closeBtn = Brand.New("Close", Safe);
+                Brand.Place(closeBtn, new Vector2(0.5f, 1f), new Vector2(0f, -8f), new Vector2(260f, 96f), new Vector2(0.5f, 0.5f));
+                var ch = Brand.Img("Chevron", closeBtn, new Color(1f, 1f, 1f, 0.6f), Chevron);
+                Brand.Place(ch.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(44f, 44f), new Vector2(0.5f, 0.5f));
                 ch.rectTransform.localRotation = Quaternion.Euler(0f, 0f, -90f);   // the chevron points right as drawn: down, to put the sheet away
             }
             float tabW = Width / Mathf.Max(1, tabNames.Count);
             for (int k = 0; k < tabNames.Count; k++)
             {
-                var b = New(tabNames[k] + "Tab", Safe);
-                Place(b, new Vector2(0.5f, 1f), new Vector2(-Width * 0.5f + tabW * (k + 0.5f), -112f), new Vector2(tabW, 110f), new Vector2(0.5f, 0.5f));
+                var b = Brand.New(tabNames[k] + "Tab", Safe);
+                Brand.Place(b, new Vector2(0.5f, 1f), new Vector2(-Width * 0.5f + tabW * (k + 0.5f), -112f), new Vector2(tabW, 110f), new Vector2(0.5f, 0.5f));
                 var t = Brand.Line("Text", b, Brand.Type.Button, TextAnchor.MiddleCenter, Quiet, new Vector2(0.5f, 0.5f), Vector2.zero, tabW);
                 t.text = tabNames[k];
                 tabBtn.Add(b); tabText.Add(t);
             }
-            var line = Img("TabLine", Safe, Hair);
-            Place(line.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -166f), new Vector2(Width, 2f), new Vector2(0.5f, 0.5f));
-            tabMark = Img("TabMark", Safe, Brand.Gold);   // the selected tab: the brand's accent
-            Place(tabMark.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -166f), new Vector2(72f, 4f), new Vector2(0.5f, 0.5f));
+            var line = Brand.Img("TabLine", Safe, Hair);
+            Brand.Place(line.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -166f), new Vector2(Width, 2f), new Vector2(0.5f, 0.5f));
+            tabMark = Brand.Img("TabMark", Safe, Brand.Gold);   // the selected tab: the brand's accent
+            Brand.Place(tabMark.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -166f), new Vector2(72f, 4f), new Vector2(0.5f, 0.5f));
             var count = new int[tabNames.Count];
             var down = new float[tabNames.Count];
             foreach (var r in rows)
@@ -145,56 +145,56 @@ namespace Summit
                 int i = count[r.tab]++;
                 float y = -FirstRow - down[r.tab] - (r.Height - RowHeight) * 0.5f;
                 down[r.tab] += r.Height;
-                r.rect = New(r.label, Safe);
-                Place(r.rect, new Vector2(0.5f, 1f), new Vector2(0f, y), new Vector2(Width, r.Height), new Vector2(0.5f, 0.5f));
+                r.rect = Brand.New(r.label, Safe);
+                Brand.Place(r.rect, new Vector2(0.5f, 1f), new Vector2(0f, y), new Vector2(Width, r.Height), new Vector2(0.5f, 0.5f));
                 r.name = Brand.Line("Name", r.rect, Brand.Type.Label, TextAnchor.MiddleLeft, Quiet, new Vector2(0f, 0.5f), new Vector2(26f, 0f), 460f);
                 r.name.text = r.label;
                 if (r.slider || r.button)
                 {
                     // (steerB) a slider: a rail with the brand's gold up to where it sits, a knob, the value beside it
-                    r.block = New("Value", r.rect);
-                    Place(r.block, new Vector2(1f, 0.5f), new Vector2(-8f, 0f), new Vector2(TrackW + 190f, r.Height), new Vector2(1f, 0.5f));
+                    r.block = Brand.New("Value", r.rect);
+                    Brand.Place(r.block, new Vector2(1f, 0.5f), new Vector2(-8f, 0f), new Vector2(TrackW + 190f, r.Height), new Vector2(1f, 0.5f));
                     r.val = Brand.Line("Text", r.block, Brand.Type.Body, TextAnchor.MiddleRight, r.button ? Brand.Gold : Ink, new Vector2(1f, 0.5f), new Vector2(-18f, 0f), 170f);
                     r.val.rectTransform.pivot = new Vector2(1f, 0.5f);
                     if (r.slider)
                     {
-                        r.rail = Img("Rail", r.block, Brand.A(Brand.Snow, 0.18f), Brand.Rounded);
-                        Place(r.rail.rectTransform, new Vector2(0f, 0.5f), new Vector2(10f, 0f), new Vector2(TrackW, 10f), new Vector2(0f, 0.5f));
-                        r.fill = Img("Fill", r.rail.transform, Brand.Gold, Brand.Rounded);
-                        Place(r.fill.rectTransform, new Vector2(0f, 0.5f), Vector2.zero, new Vector2(0f, 10f), new Vector2(0f, 0.5f));
-                        r.knob = Img("Knob", r.rail.transform, Ink, Brand.Disc);
-                        Place(r.knob.rectTransform, new Vector2(0f, 0.5f), Vector2.zero, new Vector2(40f, 40f), new Vector2(0.5f, 0.5f));
+                        r.rail = Brand.Img("Rail", r.block, Brand.A(Brand.Snow, 0.18f), Brand.Rounded);
+                        Brand.Place(r.rail.rectTransform, new Vector2(0f, 0.5f), new Vector2(10f, 0f), new Vector2(TrackW, 10f), new Vector2(0f, 0.5f));
+                        r.fill = Brand.Img("Fill", r.rail.transform, Brand.Gold, Brand.Rounded);
+                        Brand.Place(r.fill.rectTransform, new Vector2(0f, 0.5f), Vector2.zero, new Vector2(0f, 10f), new Vector2(0f, 0.5f));
+                        r.knob = Brand.Img("Knob", r.rail.transform, Ink, Brand.Disc);
+                        Brand.Place(r.knob.rectTransform, new Vector2(0f, 0.5f), Vector2.zero, new Vector2(40f, 40f), new Vector2(0.5f, 0.5f));
                     }
                     if (i > 0)
                     {
-                        var hl0 = Img("Hair", r.rect, new Color(1f, 1f, 1f, 0.07f));
-                        Place(hl0.rectTransform, new Vector2(0.5f, 1f), Vector2.zero, new Vector2(Width, 2f), new Vector2(0.5f, 0.5f));
+                        var hl0 = Brand.Img("Hair", r.rect, new Color(1f, 1f, 1f, 0.07f));
+                        Brand.Place(hl0.rectTransform, new Vector2(0.5f, 1f), Vector2.zero, new Vector2(Width, 2f), new Vector2(0.5f, 0.5f));
                     }
                     continue;
                 }
-                r.block = New("Value", r.rect);
-                Place(r.block, new Vector2(1f, 0.5f), new Vector2(-8f, 0f), new Vector2(470f, RowHeight), new Vector2(1f, 0.5f));
+                r.block = Brand.New("Value", r.rect);
+                Brand.Place(r.block, new Vector2(1f, 0.5f), new Vector2(-8f, 0f), new Vector2(470f, RowHeight), new Vector2(1f, 0.5f));
                 r.val = Brand.Line("Text", r.block, Brand.Type.Body, TextAnchor.MiddleCenter, Ink, new Vector2(0.5f, 0.5f), Vector2.zero, 360f);
                 if (r.toggle)
                 {
                     // an ON / OFF setting reads as a switch (Refresh shows it in place of the words); one between two
                     // named choices keeps its words and the ‹ › of a stepper, since a tap anywhere steps it
-                    r.track = Img("Switch", r.block, Hair, Brand.Rounded);
-                    Place(r.track.rectTransform, new Vector2(1f, 0.5f), new Vector2(-24f, 0f), new Vector2(92f, 48f), new Vector2(1f, 0.5f));
-                    r.knob = Img("Knob", r.track.transform, Ink, Brand.Disc);
-                    Place(r.knob.rectTransform, new Vector2(0f, 0.5f), new Vector2(24f, 0f), new Vector2(38f, 38f), new Vector2(0.5f, 0.5f));
+                    r.track = Brand.Img("Switch", r.block, Hair, Brand.Rounded);
+                    Brand.Place(r.track.rectTransform, new Vector2(1f, 0.5f), new Vector2(-24f, 0f), new Vector2(92f, 48f), new Vector2(1f, 0.5f));
+                    r.knob = Brand.Img("Knob", r.track.transform, Ink, Brand.Disc);
+                    Brand.Place(r.knob.rectTransform, new Vector2(0f, 0.5f), new Vector2(24f, 0f), new Vector2(38f, 38f), new Vector2(0.5f, 0.5f));
                 }
                 {
-                    r.left = Img("Less", r.block, Quiet, Chevron);
-                    Place(r.left.rectTransform, new Vector2(0f, 0.5f), new Vector2(30f, 0f), new Vector2(30f, 30f), new Vector2(0.5f, 0.5f));
+                    r.left = Brand.Img("Less", r.block, Quiet, Chevron);
+                    Brand.Place(r.left.rectTransform, new Vector2(0f, 0.5f), new Vector2(30f, 0f), new Vector2(30f, 30f), new Vector2(0.5f, 0.5f));
                     r.left.rectTransform.localScale = new Vector3(-1f, 1f, 1f);
-                    r.right = Img("More", r.block, Quiet, Chevron);
-                    Place(r.right.rectTransform, new Vector2(1f, 0.5f), new Vector2(-30f, 0f), new Vector2(30f, 30f), new Vector2(0.5f, 0.5f));
+                    r.right = Brand.Img("More", r.block, Quiet, Chevron);
+                    Brand.Place(r.right.rectTransform, new Vector2(1f, 0.5f), new Vector2(-30f, 0f), new Vector2(30f, 30f), new Vector2(0.5f, 0.5f));
                 }
                 if (i > 0)
                 {
-                    var hl = Img("Hair", r.rect, new Color(1f, 1f, 1f, 0.07f));
-                    Place(hl.rectTransform, new Vector2(0.5f, 1f), Vector2.zero, new Vector2(Width, 2f), new Vector2(0.5f, 0.5f));
+                    var hl = Brand.Img("Hair", r.rect, new Color(1f, 1f, 1f, 0.07f));
+                    Brand.Place(hl.rectTransform, new Vector2(0.5f, 1f), Vector2.zero, new Vector2(Width, 2f), new Vector2(0.5f, 0.5f));
                 }
             }
             Layout();
@@ -388,30 +388,9 @@ namespace Summit
             {
                 if (face != null) return face;
                 face = Brand.Face(Brand.Weight.Regular);
-                if (face == null) try { face = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"); } catch { }
-                if (face == null) try { face = Resources.GetBuiltinResource<Font>("Arial.ttf"); } catch { }
+                if (face == null) face = Brand.Builtin();
                 return face;
             }
-        }
-
-
-        public static RectTransform New(string name, Transform parent)
-        {
-            var r = new GameObject(name, typeof(RectTransform)).GetComponent<RectTransform>();
-            r.SetParent(parent, false);
-            return r;
-        }
-
-        public static void Place(RectTransform r, Vector2 anchor, Vector2 pos, Vector2 size, Vector2 pivot)
-        {
-            r.anchorMin = r.anchorMax = anchor; r.pivot = pivot; r.anchoredPosition = pos; r.sizeDelta = size;
-        }
-
-        public static void Stretch(RectTransform r) { r.anchorMin = Vector2.zero; r.anchorMax = Vector2.one; r.offsetMin = r.offsetMax = Vector2.zero; }
-
-        public static Image Img(string name, Transform parent, Color c, Sprite s = null)
-        {
-            return Brand.Img(name, parent, c, s);
         }
 
         public static Text Label(string name, Transform parent, Vector2 anchor, Vector2 pos, Vector2 size, int fontSize, TextAnchor align, Color c)
@@ -419,7 +398,7 @@ namespace Summit
             // (Brand's type, spaced; a soft dark edge so it reads where there's no plate behind it)
             var t = Brand.Line(name, parent, new Brand.Style(Brand.Weight.Regular, fontSize, 0.2f), align, c, true);
             float px = align == TextAnchor.MiddleLeft ? 0f : align == TextAnchor.MiddleRight ? 1f : 0.5f;
-            Place(t.rectTransform, anchor, pos, size, new Vector2(px, 0.5f));
+            Brand.Place(t.rectTransform, anchor, pos, size, new Vector2(px, 0.5f));
             return t;
         }
 

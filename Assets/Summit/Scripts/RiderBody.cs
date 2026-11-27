@@ -92,10 +92,10 @@ namespace Summit
             FindJacket(upper.gameObject); boardMat = board; if (jacket != null) { jacketMats.Add(jacket); jacketShade.Add(1f); }
 
             // a groove pressed into the snow behind the board
-            trail = new SnowTrail(jacket != null ? jacket.shader : Shader.Find("Universal Render Pipeline/Lit"));
-            sideTrail = new[] { new SnowTrail(jacket != null ? jacket.shader : Shader.Find("Universal Render Pipeline/Lit")),
-                                new SnowTrail(jacket != null ? jacket.shader : Shader.Find("Universal Render Pipeline/Lit")) };   // the skis' two tracks (RiderBodyRide)
-            craters = new Craters(jacket != null ? jacket.shader : Shader.Find("Universal Render Pipeline/Lit"));
+            trail = new SnowTrail(jacket != null ? jacket.shader : Mats.LitShader);
+            sideTrail = new[] { new SnowTrail(jacket != null ? jacket.shader : Mats.LitShader),
+                                new SnowTrail(jacket != null ? jacket.shader : Mats.LitShader) };   // the skis' two tracks (RiderBodyRide)
+            craters = new Craters(jacket != null ? jacket.shader : Mats.LitShader);
 
             // powder off the edge
             var sg = new GameObject("Spray");
@@ -197,7 +197,7 @@ namespace Summit
             bpr.material = sprayMat;
             bpr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             bow.Play();
-            SetUpSpray(sprayMat, jacket != null ? jacket.shader : Shader.Find("Universal Render Pipeline/Lit"));   // lit, soft, by the snow (RiderBodySpray)
+            SetUpSpray(sprayMat, jacket != null ? jacket.shader : Mats.LitShader);   // lit, soft, by the snow (RiderBodySpray)
 
             marks = new SnowMarks(transform.parent, Imprint(trailMat, CraterTexture()), 80);
             BuildShield(trailMat);
@@ -325,7 +325,7 @@ namespace Summit
         {
             tubeRoot = new GameObject("Tube").transform;
             tubeRoot.SetParent(roll, false);
-            var sh = accent != null ? accent.shader : Shader.Find("Universal Render Pipeline/Lit");
+            var sh = accent != null ? accent.shader : Mats.LitShader;
             var rubber = new Material(sh); rubber.SetColor("_BaseColor", new Color(0.95f, 0.22f, 0.12f)); rubber.SetFloat("_Smoothness", 0.55f);
             var band = new Material(sh); band.SetColor("_BaseColor", new Color(0.98f, 0.97f, 0.94f)); band.SetFloat("_Smoothness", 0.4f);
             var ring = new GameObject("Ring", typeof(MeshFilter), typeof(MeshRenderer));
@@ -687,8 +687,12 @@ namespace Summit
                                   * Quaternion.Euler(9f * tw, 24f * tw, 0f);
                 }
                 // just landed short of the line (a half turn lands switch): the board swings round under the rider
-                else if (!rider.Airborne && !rider.Grinding && (rider.LandSpin != 0f || rider.LandFlip != 0f))
-                    rot = stance * Quaternion.AngleAxis(rider.LandSpin * Mathf.Rad2Deg, Vector3.up) * Quaternion.AngleAxis(rider.LandFlip * Mathf.Rad2Deg, flipAxis);
+                // (and a flat spin on the snow, groundspin: round on the snow, over a bump too)
+                else if (!rider.Grinding && (rider.GroundSpinNow != 0f || (!rider.Airborne && (rider.LandSpin != 0f || rider.LandFlip != 0f))))
+                {
+                    float ls = rider.Airborne ? 0f : rider.LandSpin, lf = rider.Airborne ? 0f : rider.LandFlip;
+                    rot = stance * Quaternion.AngleAxis((ls + rider.GroundSpinNow) * Mathf.Rad2Deg, Vector3.up) * Quaternion.AngleAxis(lf * Mathf.Rad2Deg, flipAxis);
+                }
                 // a press on a rail: the nose (or the tail) down, the other end up
                 else if (rider.GrindLive && rider.GrindPress != 0f)
                     rot = stance * Quaternion.AngleAxis(rider.GrindPress * 11f, Vector3.right);
@@ -699,7 +703,7 @@ namespace Summit
                     tubeSpinRate *= Mathf.Exp(-dt * 0.8f);
                     tubeSpin += tubeSpinRate * dt;
                     // (and spun in the air by the stick: Rider.SpinNow, with what a landing leaves of it swinging out)
-                    float spun = rider.Airborne ? rider.SpinNow : rider.LandSpin;
+                    float spun = (rider.Airborne ? rider.SpinNow : rider.LandSpin) + rider.GroundSpinNow;   // (and on the snow: groundspin)
                     // (and rolled over with it, head over heels down the line: the bail roll)
                     float rolled = rider.Airborne ? rider.FlipNow : rider.Grinding ? 0f : rider.LandFlip;
                     rot = baseRot * Quaternion.AngleAxis(rolled * Mathf.Rad2Deg, Vector3.right) * Quaternion.Euler(0f, -90f + (tubeSpin + spun) * Mathf.Rad2Deg, 0f);

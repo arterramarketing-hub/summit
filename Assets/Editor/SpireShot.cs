@@ -359,7 +359,7 @@ public static class SpireShot
             // what building one cycle's spires costs (the shapes are already made by the rebuild above)
             var tmp = new GameObject("SpireTiming").transform;
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            CliffSpires.Build(tmp, 0, Shader.Find("Universal Render Pipeline/Lit"));
+            CliffSpires.Build(tmp, 0, Mats.LitShader);
             sw.Stop();
             Debug.Log($"SPIREHIT building cycle 0's spires took {sw.Elapsed.TotalMilliseconds:0.0} ms ({tmp.GetComponentsInChildren<Collider>().Length} spires, {tmp.childCount} groups)");
             Object.DestroyImmediate(tmp.gameObject);

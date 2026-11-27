@@ -533,27 +533,27 @@ namespace Summit
             scaler.referenceResolution = new Vector2(1080f, 1920f);
             scaler.matchWidthOrHeight = 0.5f;
 
-            page = New("Page", cg.transform); Stretch(page);
+            page = Brand.New("Page", cg.transform); Brand.Stretch(page);
             // the frame's top and bottom a little darker, so small type reads over cloud and snow (edge to edge, past the safe area)
-            topShade = Img("TopShade", page, Brand.A(Brand.Ink, 0.24f), FadeDown);
+            topShade = Brand.Img("TopShade", page, Brand.A(Brand.Ink, 0.24f), FadeDown);
             topShade.rectTransform.anchorMin = new Vector2(0f, 1f); topShade.rectTransform.anchorMax = Vector2.one;
             topShade.rectTransform.pivot = new Vector2(0.5f, 1f); topShade.rectTransform.sizeDelta = new Vector2(0f, 760f);
-            bottomShade = Img("BottomShade", page, Brand.A(Brand.Ink, 0.4f), FadeUp);
+            bottomShade = Brand.Img("BottomShade", page, Brand.A(Brand.Ink, 0.4f), FadeUp);
             bottomShade.rectTransform.anchorMin = Vector2.zero; bottomShade.rectTransform.anchorMax = new Vector2(1f, 0f);
             bottomShade.rectTransform.pivot = new Vector2(0.5f, 0f); bottomShade.rectTransform.sizeDelta = new Vector2(0f, 820f);
 
-            safe = New("Safe", page);
+            safe = Brand.New("Safe", page);
             ApplySafeArea();
 
             // the title, high in the sky
-            titleRect = New("Title", safe);
-            Place(titleRect, new Vector2(0.5f, 1f), new Vector2(0f, -TitleY), new Vector2(TitleWidth, TitleWidth * TitleArt.Height / TitleArt.Width), new Vector2(0.5f, 0.5f));
+            titleRect = Brand.New("Title", safe);
+            Brand.Place(titleRect, new Vector2(0.5f, 1f), new Vector2(0f, -TitleY), new Vector2(TitleWidth, TitleWidth * TitleArt.Height / TitleArt.Width), new Vector2(0.5f, 0.5f));
             titleGroup = titleRect.gameObject.AddComponent<CanvasGroup>();
             // the mountain's name, drawn (TitleArt: our own letterforms, ice and snow, made at start-up off the main
             // thread) and lit by the day (TitleLetters.shader). Until its texture is ready nothing shows
-            titleImage = New("Lettering", titleRect).gameObject.AddComponent<RawImage>();
+            titleImage = Brand.New("Lettering", titleRect).gameObject.AddComponent<RawImage>();
             titleImage.raycastTarget = false;
-            Place(titleImage.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(TitleWidth, TitleWidth * TitleArt.Height / TitleArt.Width), new Vector2(0.5f, 0.5f));
+            Brand.Place(titleImage.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(TitleWidth, TitleWidth * TitleArt.Height / TitleArt.Width), new Vector2(0.5f, 0.5f));
             var tsh = Resources.Load<Shader>("TitleLetters");
             if (tsh != null && tsh.isSupported) titleMat = new Material(tsh) { name = "TitleLetters" };
             titleImage.material = titleMat;
@@ -562,14 +562,14 @@ namespace Summit
 
             // the two ways in: a run (the gold one: what the game is for) and, under it, the camp. (No settings here:
             // they open from the camp, the start pad and the pause menu: Hud.)
-            var choices = New("Choices", safe); Stretch(choices);
+            var choices = Brand.New("Choices", safe); Brand.Stretch(choices);
             choiceGroup = choices.gameObject.AddComponent<CanvasGroup>();
             runBtn = Brand.Button("GoForARun", choices, "GO FOR A RUN", Brand.Kind.Primary, new Vector2(0.5f, 0f), new Vector2(0f, 300f), new Vector2(640f, Brand.Control), out runText);
             campBtn = Brand.Button("VisitCamp", choices, "VISIT CAMP", Brand.Kind.Secondary, new Vector2(0.5f, 0f), new Vector2(0f, 300f - Brand.Control - 24f), new Vector2(640f, Brand.Control), out campText);
 
             // cloud over everything: what the game changes scene behind (it outlives the page)
-            cover = Img("Cloud", cg.transform, new Color(1f, 1f, 1f, 0f));
-            Stretch(cover.rectTransform);
+            cover = Brand.Img("Cloud", cg.transform, new Color(1f, 1f, 1f, 0f));
+            Brand.Stretch(cover.rectTransform);
             cover.gameObject.SetActive(false);
             page.gameObject.SetActive(false);
         }
@@ -578,7 +578,7 @@ namespace Summit
         {
             Rect a = Screen.safeArea;
             lastSafe = a;
-            if (Screen.width <= 0 || Screen.height <= 0) { Stretch(safe); return; }
+            if (Screen.width <= 0 || Screen.height <= 0) { Brand.Stretch(safe); return; }
             safe.anchorMin = new Vector2(a.xMin / Screen.width, a.yMin / Screen.height);
             safe.anchorMax = new Vector2(a.xMax / Screen.width, a.yMax / Screen.height);
             safe.offsetMin = safe.offsetMax = Vector2.zero;

@@ -36,7 +36,7 @@ namespace Summit
 
         public void Build()
         {
-            font = LoadFont();
+            font = Brand.Builtin();
             var canvas = gameObject.AddComponent<Canvas>();
             canvasRef = canvas;
             canvasRect = (RectTransform)transform;
@@ -51,14 +51,14 @@ namespace Summit
             // loose, and the red flash as it fades, and a canvas is re-batched whole whenever anything in it changes
             var washes = NestedCanvas("Washes", transform);
             // full-screen white that rises as the slide closes in
-            whiteout = NewImage("Whiteout", washes, new Color(1f, 1f, 1f, 0f));
-            Stretch(whiteout.rectTransform);
+            whiteout = Brand.Img("Whiteout", washes, new Color(1f, 1f, 1f, 0f));
+            Brand.Stretch(whiteout.rectTransform);
             whiteout.raycastTarget = false;
             whiteout.canvasRenderer.cullTransparentMesh = true;   // (nothing drawn while it's clear: two full-screen blends saved)
 
             // a red flash when something breaks
-            hurt = NewImage("Hurt", washes, new Color(0.85f, 0.05f, 0.05f, 0f));
-            Stretch(hurt.rectTransform);
+            hurt = Brand.Img("Hurt", washes, new Color(0.85f, 0.05f, 0.05f, 0f));
+            Brand.Stretch(hurt.rectTransform);
             hurt.raycastTarget = false;
             hurt.canvasRenderer.cullTransparentMesh = true;
 
@@ -79,11 +79,11 @@ namespace Summit
             var slideBox = NestedCanvas("Slide", safe);
             slide = NewText("Slide", slideBox, new Vector2(1f, 1f), new Vector2(-40f, -40f - PauseRoom), 44, TextAnchor.UpperRight);
 
-            var barBg = NewImage("SlideBar", slideBox, new Color(0f, 0f, 0f, 0.35f));
+            var barBg = Brand.Img("SlideBar", slideBox, new Color(0f, 0f, 0f, 0.35f));
             slideBar = barBg.gameObject;
             slideBar.SetActive(false);   // (shown only while the avalanche is on its way: SetRun)
-            Place(barBg.rectTransform, new Vector2(1f, 1f), new Vector2(-40f, -104f - PauseRoom), new Vector2(300f, 16f), new Vector2(1f, 1f));
-            slideFill = NewImage("Fill", barBg.transform, new Color(1f, 1f, 1f, 0.95f));
+            Brand.Place(barBg.rectTransform, new Vector2(1f, 1f), new Vector2(-40f, -104f - PauseRoom), new Vector2(300f, 16f), new Vector2(1f, 1f));
+            slideFill = Brand.Img("Fill", barBg.transform, new Color(1f, 1f, 1f, 0.95f));
             var fr = slideFill.rectTransform;
             fr.anchorMin = new Vector2(0f, 0f);
             fr.anchorMax = new Vector2(1f, 1f);
@@ -107,14 +107,14 @@ namespace Summit
             shieldPips = new Image[Rider.MaxShields];
             for (int i = 0; i < shieldPips.Length; i++)
             {
-                var pip = NewImage("Shield" + i, safe, Brand.A(Brand.Snow, 0.95f));
+                var pip = Brand.Img("Shield" + i, safe, Brand.A(Brand.Snow, 0.95f));
                 pip.sprite = circle;
-                Place(pip.rectTransform, new Vector2(0f, 1f), new Vector2(40f + i * 54f, -218f), new Vector2(44f, 44f), new Vector2(0f, 1f));
+                Brand.Place(pip.rectTransform, new Vector2(0f, 1f), new Vector2(40f + i * 54f, -218f), new Vector2(44f, 44f), new Vector2(0f, 1f));
                 shieldPips[i] = pip;
             }
             // (ridercrash) the free hit used: a small red diamond under the shields, for the rest of the run
-            hitMark = NewImage("HitMark", safe, new Color(0.9f, 0.12f, 0.1f, 0.95f));
-            Place(hitMark.rectTransform, new Vector2(0f, 1f), new Vector2(46f, -276f), new Vector2(30f, 30f), new Vector2(0f, 1f));
+            hitMark = Brand.Img("HitMark", safe, new Color(0.9f, 0.12f, 0.1f, 0.95f));
+            Brand.Place(hitMark.rectTransform, new Vector2(0f, 1f), new Vector2(46f, -276f), new Vector2(30f, 30f), new Vector2(0f, 1f));
             hitMark.rectTransform.localRotation = Quaternion.Euler(0f, 0f, 45f);
             hitMark.raycastTarget = false;
             hitMark.enabled = false;
@@ -125,9 +125,9 @@ namespace Summit
             var cross = MakeCross(64);
             for (int i = 0; i < fallPips.Length; i++)
             {
-                var pip = NewImage("Fall" + i, safe, Brand.Alert);
+                var pip = Brand.Img("Fall" + i, safe, Brand.Alert);
                 pip.sprite = cross;
-                Place(pip.rectTransform, new Vector2(1f, 1f), new Vector2(-40f - i * 52f, -176f - PauseRoom), new Vector2(42f, 42f), new Vector2(1f, 1f));
+                Brand.Place(pip.rectTransform, new Vector2(1f, 1f), new Vector2(-40f - i * 52f, -176f - PauseRoom), new Vector2(42f, 42f), new Vector2(1f, 1f));
                 fallPips[i] = pip;
             }
             // the timed power-ups running (Mountain Zoom, Super Jump, Invincible): a name, the seconds left
@@ -138,17 +138,17 @@ namespace Summit
             {
                 timerText[i] = NewText("Timer" + i, safe, new Vector2(0f, 1f), Vector2.zero, 34, TextAnchor.UpperLeft);
                 timerText[i].color = TimerColors[i];
-                timerBg[i] = NewImage("TimerBar" + i, safe, new Color(0f, 0f, 0f, 0.35f));
-                Place(timerBg[i].rectTransform, new Vector2(0f, 1f), Vector2.zero, new Vector2(260f, 14f), new Vector2(0f, 1f));
-                timerFill[i] = NewImage("Fill", timerBg[i].transform, TimerColors[i]);
+                timerBg[i] = Brand.Img("TimerBar" + i, safe, new Color(0f, 0f, 0f, 0.35f));
+                Brand.Place(timerBg[i].rectTransform, new Vector2(0f, 1f), Vector2.zero, new Vector2(260f, 14f), new Vector2(0f, 1f));
+                timerFill[i] = Brand.Img("Fill", timerBg[i].transform, TimerColors[i]);
                 var bf = timerFill[i].rectTransform;
                 bf.anchorMin = Vector2.zero; bf.anchorMax = Vector2.one; bf.offsetMin = bf.offsetMax = Vector2.zero;
                 timerText[i].enabled = timerBg[i].enabled = timerFill[i].enabled = false;
                 lastTimer[i] = -1;
             }
-            var ring = NewImage("StickRing", transform, new Color(1f, 1f, 1f, 0.22f));
+            var ring = Brand.Img("StickRing", transform, new Color(1f, 1f, 1f, 0.22f));
             ring.sprite = circle; stickRing = ring.rectTransform;
-            var knob = NewImage("StickKnob", transform, new Color(1f, 1f, 1f, 0.7f));
+            var knob = Brand.Img("StickKnob", transform, new Color(1f, 1f, 1f, 0.7f));
             knob.sprite = circle; stickKnob = knob.rectTransform;
             stickRing.gameObject.SetActive(false); stickKnob.gameObject.SetActive(false);
             // down after a fall: no words, a soft ripple where the old prompt was (a tap carries on)
@@ -286,19 +286,19 @@ namespace Summit
 
         void BuildPause()
         {
-            var dim = NewImage("Pause", transform, Brand.A(Brand.Ink, 0.42f));
-            Stretch(dim.rectTransform);
+            var dim = Brand.Img("Pause", transform, Brand.A(Brand.Ink, 0.42f));
+            Brand.Stretch(dim.rectTransform);
             pausePanel = dim.gameObject;
             var root = dim.rectTransform;
             // the top of the frame a little darker as on the start page, so the type reads over sky and snow
-            var shade = SettingsSheet.Img("TopShade", root, Brand.A(Brand.Ink, 0.3f), SettingsSheet.FadeDown);
+            var shade = Brand.Img("TopShade", root, Brand.A(Brand.Ink, 0.3f), SettingsSheet.FadeDown);
             shade.rectTransform.anchorMin = new Vector2(0f, 1f); shade.rectTransform.anchorMax = Vector2.one;
             shade.rectTransform.pivot = new Vector2(0.5f, 1f); shade.rectTransform.sizeDelta = new Vector2(0f, 760f);
             PauseSettings = new SettingsSheet(root, false);
             PauseSettings.Resized = () => { if (pausePanel != null && pausePanel.activeSelf) LayoutPause(); };   // (the TUNE tab is taller)
             // over the sheet: PAUSED, and the two ways on, set as the start page's VISIT CAMP | GO FOR A RUN
-            pauseTop = SettingsSheet.New("PauseTop", root);
-            Place(pauseTop, new Vector2(0.5f, 0f), Vector2.zero, new Vector2(SettingsSheet.Width, 0f), new Vector2(0.5f, 0f));
+            pauseTop = Brand.New("PauseTop", root);
+            Brand.Place(pauseTop, new Vector2(0.5f, 0f), Vector2.zero, new Vector2(SettingsSheet.Width, 0f), new Vector2(0.5f, 0f));
             pauseTitle = Brand.Line("PausedTitle", pauseTop, Brand.Type.Title, TextAnchor.MiddleCenter, Brand.Snow, new Vector2(0.5f, 0f), new Vector2(0f, 300f), 900f, true);
             pauseTitle.text = "PAUSED";
             // RESUME is the gold one; starting the run again is the quieter choice beside it
@@ -360,18 +360,9 @@ namespace Summit
         public int PauseTab => PauseSettings.Tab;
         public void ShowTab(int k) => PauseSettings.ShowTab(k);
 
-        static Font LoadFont()
-        {
-            Font f = null;
-            try { f = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"); } catch { }
-            if (f == null) try { f = Resources.GetBuiltinResource<Font>("Arial.ttf"); } catch { }
-            return f;
-        }
-
         Text NewText(string name, Transform parent, Vector2 anchor, Vector2 pos, int size, TextAnchor align)
         {
-            var go = new GameObject(name, typeof(RectTransform));
-            go.transform.SetParent(parent, false);
+            var go = Brand.New(name, parent).gameObject;
             var t = go.AddComponent<Text>();
             t.font = font;
             t.fontSize = size;
@@ -383,29 +374,11 @@ namespace Summit
             t.raycastTarget = false;
             Vector2 pivot = new Vector2(align == TextAnchor.UpperLeft ? 0f : align == TextAnchor.UpperRight ? 1f : 0.5f,
                                         anchor.y);
-            Place(t.rectTransform, anchor, pos, new Vector2(900f, size * 1.3f), pivot);
+            Brand.Place(t.rectTransform, anchor, pos, new Vector2(900f, size * 1.3f), pivot);
             var sh = go.AddComponent<Shadow>();
             sh.effectColor = Brand.A(Brand.Ink, 0.6f);
             sh.effectDistance = new Vector2(0f, -3f);
             return t;
-        }
-
-        static Image NewImage(string name, Transform parent, Color c)
-        {
-            var go = new GameObject(name, typeof(RectTransform));
-            go.transform.SetParent(parent, false);
-            var i = go.AddComponent<Image>();
-            i.color = c;
-            i.raycastTarget = false;
-            return i;
-        }
-
-        static void Place(RectTransform r, Vector2 anchor, Vector2 pos, Vector2 size, Vector2 pivot)
-        {
-            r.anchorMin = r.anchorMax = anchor;
-            r.pivot = pivot;
-            r.anchoredPosition = pos;
-            r.sizeDelta = size;
         }
 
         /// <summary>A canvas inside the HUD's, filling its parent and drawn in its place among the parent's children.</summary>
@@ -413,23 +386,16 @@ namespace Summit
         {
             var r = new GameObject(name, typeof(RectTransform)).GetComponent<RectTransform>();
             r.SetParent(parent, false);
-            Stretch(r);
+            Brand.Stretch(r);
             r.gameObject.AddComponent<Canvas>();
             return r;
-        }
-
-        static void Stretch(RectTransform r)
-        {
-            r.anchorMin = Vector2.zero;
-            r.anchorMax = Vector2.one;
-            r.offsetMin = r.offsetMax = Vector2.zero;
         }
 
         void ApplySafeArea()
         {
             Rect a = Screen.safeArea;
             lastSafe = a;
-            if (Screen.width <= 0 || Screen.height <= 0) { Stretch(safe); if (pts != null) Stretch(pts); return; }
+            if (Screen.width <= 0 || Screen.height <= 0) { Brand.Stretch(safe); if (pts != null) Brand.Stretch(pts); return; }
             safe.anchorMin = new Vector2(a.xMin / Screen.width, a.yMin / Screen.height);
             safe.anchorMax = new Vector2(a.xMax / Screen.width, a.yMax / Screen.height);
             safe.offsetMin = safe.offsetMax = Vector2.zero;

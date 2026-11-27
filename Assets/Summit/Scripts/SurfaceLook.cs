@@ -27,7 +27,8 @@ namespace Summit
         static int epoch = 1, paintedStamp;
         static Weathering painted;
         static SnowMix? paintedForce;
-        static float runShown;
+        static Texture2D groom;
+        static int groomStamp;
 
         static Shader shader;
         static Material source;
@@ -36,6 +37,7 @@ namespace Summit
         static readonly int MapId = Shader.PropertyToID("_SurfaceMap"), StId = Shader.PropertyToID("_SurfaceMapST"), WinId = Shader.PropertyToID("_SurfaceWin"),
                             DayId = Shader.PropertyToID("_SurfaceDay"), RunId = Shader.PropertyToID("_SurfaceRun"),
                             GlacierId = Shader.PropertyToID("_SurfaceGlacier"),
+                            GroomId = Shader.PropertyToID("_SurfaceGroom"), GroomStId = Shader.PropertyToID("_SurfaceGroomST"),
                             ColorId = Shader.PropertyToID("_BaseColor"), SmoothId = Shader.PropertyToID("_Smoothness"), BumpId = Shader.PropertyToID("_BumpScale");
 
         /// <summary>The snow material the terrain is drawn from (null until Terrain has been asked for it): the board's
@@ -72,7 +74,8 @@ namespace Summit
 
         /// <summary>
         /// Once a frame: the day's warmth, and the map round `focus` (the rider, or the camera) kept painted for the
-        /// terrain's shader. `run` is the run's own heading there (Rider.RunNow): the grooming's lines follow it.
+        /// terrain's shader. `run` (the run's heading under the rider) is no longer used: the grooming's lines follow the run's
+        /// own line, fixed to the snow (LayGroom).
         /// `all`: paint everything that is due now (the render tools; otherwise a few rows a frame).
         /// </summary>
         public static void Step(Vector3 focus, float run, float dt, bool all = false)
@@ -143,14 +146,48 @@ namespace Summit
             }
             if (dirty) { map.SetPixels32(px); map.Apply(false); }
 
-            runShown = dt > 0f ? Mathf.Lerp(runShown, run, 1f - Mathf.Exp(-dt * 3f)) : run;
+            if (groom == null || groomStamp != stamp) LayGroom();
             Shader.SetGlobalTexture(MapId, map);
             Shader.SetGlobalVector(StId, new Vector4(1f / (Cell * MapW), 1f / (Cell * MapH), 0f, 0f));
             Shader.SetGlobalVector(WinId, new Vector4((x0 + MapW / 2) * Cell, (z0 + MapH / 2) * Cell, (MapW / 2 - 1) * Cell, (MapH / 2 - 1) * Cell));
             // (one kind everywhere, for the render tools: its slush everywhere too)
             Shader.SetGlobalVector(DayId, Force.HasValue ? new Vector4(-1e6f, 1f, Force.Value.slush, Day.fresh)
                                                          : new Vector4(Slope.FinishZ - SlushAbove, 1f / SlushRamp, SlushMost * Day.warm * (1f - Day.fresh), Day.fresh));
-            Shader.SetGlobalVector(RunId, new Vector4(Mathf.Cos(runShown), -Mathf.Sin(runShown), On ? 1f : 0f, 0f));
+            Shader.SetGlobalVector(RunId, new Vector4(1f, 0f, On ? 1f : 0f, 0f));
+        }
+
+        /// <summary>
+        /// (cordflicker) The run's own line down the mountain for the grooming's lines (SnowSurfaceLook: GroomAxes), laid
+        /// once a mountain: a texel a metre of z (more if the mountain is longer than a texture is wide), each holding
+        /// how far the cliff bands' traverses have swung the run sideways by there, the cos and sin of its heading
+        /// (Slope.RunHeading), and how far along the run it is. The lines are fixed to the snow and turn with the run.
+        /// They used to be laid along the run's heading under the rider, about the map's middle. On a traverse that
+        /// heading turns as you ride, and from kilometres off a degree's turn swept every line across the snow in a
+        /// frame: the corduroy and the groomer's lanes crawled and flickered.
+        /// </summary>
+        static void LayGroom()
+        {
+            groomStamp = stamp;
+            float zA = -2000f, zB = Slope.FinishZ + 500f;
+            float step = Mathf.Max(1f, (zB - zA) / 16000f);
+            int n = Mathf.CeilToInt((zB - zA) / step) + 1;
+            if (groom == null || groom.width != n)
+            {
+                if (groom != null) Object.DestroyImmediate(groom);
+                groom = new Texture2D(n, 1, TextureFormat.RGBAFloat, false, true) { name = "GroomLine", wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Point, hideFlags = HideFlags.HideAndDontSave };
+            }
+            var c = new Color[n];
+            float off = 0f, arc = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float z = zA + i * step, h = Slope.RunHeading(z);
+                c[i] = new Color(off, Mathf.Cos(h), Mathf.Sin(h), arc);
+                float hm = Slope.RunHeading(z + step * 0.5f);   // (on to the next, by its middle)
+                off += Mathf.Tan(hm) * step; arc += step / Mathf.Cos(hm);
+            }
+            groom.SetPixels(c); groom.Apply(false);
+            Shader.SetGlobalTexture(GroomId, groom);
+            Shader.SetGlobalVector(GroomStId, new Vector4(zA, 1f / step, n - 1, 0f));
         }
 
         static bool Same(in SnowMix a, in SnowMix b) => a.powder == b.powder && a.ice == b.ice && a.crud == b.crud && a.crust == b.crust && a.slush == b.slush;

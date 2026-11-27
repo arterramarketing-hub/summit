@@ -49,6 +49,9 @@ public static class LiftHillCheck
     {
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
         var game = Object.FindFirstObjectByType<SummitGame>();
+        // a fresh player's settings (TestPrefs): the ride is the one the prefs hold, and one another run left on a
+        // toboggan, kayak, car or bear (none of them take a cable) grinds nothing at all
+        TestPrefs.Pin();
         TestBoot.Boot(game);
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
         var rider = Get<Rider>("rider"); var body = Get<RiderBody>("body");

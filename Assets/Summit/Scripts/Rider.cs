@@ -244,7 +244,7 @@ namespace Summit
             Lean = 0f; edge = 0f; edgeVel = 0f; airTurn = 0f; sideFrom = 0f; pushing = false; YawRate = 0f; FallLine = 0f; PathSlope = 0f; groundKnown = false; faceSlide = false; yawSmooth = 0f; RunNow = 0f;
             Slip = 0f; Side = 0f; sideNow = 0f; easeFor = 99f; fallSeen = 0f; fallClock = 0;
             latSmooth = 0f; biteNow = 0f; deepIn = 0f; bodyLean = 0f; bodyLeanVel = 0f; crouchNow = 0f; crouchVel = 0f; Sink = 0f; SideEdge = 0f; SideSlope = 0f; Sliding = false; wasSliding = false;
-            ClearTrick(); SwitchOff(); grindScoring = false; LandSpin = 0f; LandFlip = 0f; GrindYaw = 0f; GrindPress = 0f; TrickX = TrickY = 0f; GrabHeld = false;
+            ClearTrick(); SwitchOff(); GroundSpinClear(); grindScoring = false; LandSpin = 0f; LandFlip = 0f; GrindYaw = 0f; GrindPress = 0f; TrickX = TrickY = 0f; GrabHeld = false;
             popPending = false; airLock = 0f; lastGrind = -1;
             Flow = 0f; Shields = 0; BoostTime = 0f; invulnerable = 0f; SuperJumpTime = 0f; InvincibleTime = 0f; superAir = false;
             Undercut = 0f; Lift = 0f; fixVy = 0f;
@@ -282,6 +282,9 @@ namespace Summit
             input.OnRail = Grinding && !Crashed;
             if (input.RailPop && Grinding) { popPending = true; popHold = TapPop; }
             if (input.TrickTap && trick) tapQueue++;
+            // (groundspin) a swipe on the snow spins the rider round (RiderGroundSpin); the touch it began with is noted
+            if (input.TouchBegan) SwipeSnap();
+            if (input.Swipe != 0 && !trick && !Grinding) GroundSwipe(input.Swipe, input.SwipeLength);
             if (input.Jump && !trick && !Grinding)
             {
                 popPending = true;
@@ -367,6 +370,7 @@ namespace Summit
                 else if (Airborne) v = AirStep(dt, p, v);
                 else v = GroundStep(dt, p, v);
             }
+            v = GroundSpinStep(dt, v);   // (a flat spin on the snow: the look and the yaw only, RiderGroundSpin)
             rb.linearVelocity = v;
             lastV = v;
             contactsAsked = false;
@@ -783,7 +787,7 @@ namespace Summit
             rb.detectCollisions = false;
             Carve = 0f; Skid = 0f; Lean = 0f; edge = 0f; edgeVel = 0f; Sliding = false; wasSliding = false;
             crashCause = why;
-            ClearTrick(); SwitchOff(); grindScoring = false;   // (up again the normal way round)
+            ClearTrick(); SwitchOff(); GroundSpinClear(); grindScoring = false;   // (up again the normal way round)
             Crash?.Invoke(why);
         }
 

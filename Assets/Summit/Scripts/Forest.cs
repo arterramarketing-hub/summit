@@ -65,7 +65,7 @@ namespace Summit
             PlayerPrefs.SetInt(TreesPref, on ? 1 : 0); PlayerPrefs.Save();
             loaded = false;
             treeParts.Clear(); treeH.Clear();   // rocks stay as they are
-            nearL.Clear(); farL.Clear(); richL.Clear();
+            nearL.Clear(); farL.Clear(); richL.Clear(); shadeL.Clear();
             Rebuild();   // (and the rows placed for the old look go: DropAllStrips)
         }
 
@@ -608,6 +608,9 @@ namespace Summit
         // ---- drawing lists, rebuilt when the rider crosses into a new cell
 
         readonly Dictionary<int, List<Matrix4x4>> nearL = new Dictionary<int, List<Matrix4x4>>(), farL = new Dictionary<int, List<Matrix4x4>>();
+        /// <summary>(treeshadow) Trees drawn into the shadow map only: too far off to be drawn as cards (their pictures are),
+        /// but the sun low enough that their shadows reach the snow near the rider (CastsFar).</summary>
+        readonly Dictionary<int, List<Matrix4x4>> shadeL = new Dictionary<int, List<Matrix4x4>>();
         Vector2Int lastCell = new Vector2Int(int.MinValue, int.MinValue);
 
         static int Key(Kind k, int idx, int part) => (k == Kind.Tree ? 0 : 4096) + idx * 16 + part;
@@ -638,6 +641,13 @@ namespace Summit
                     draws += d; tris += t; instances += n;
                     if (set == nearL) { shadowDraws += d; shadowTris += t; }
                 }
+            foreach (var kv in shadeL)   // trees drawn into the shadow map only (CastsFar)
+            {
+                int n = kv.Value.Count; if (n == 0) continue;
+                var part = PartsOf(kv.Key)[kv.Key & 15];
+                int d = (n + 999) / 1000; long t = (long)part.mesh.GetIndexCount(part.sub) / 3 * n;
+                draws += d; shadowDraws += d; shadowTris += t; instances += n;
+            }
             foreach (var kv in richL)   // the rich trees: no shadow pass, and each also counted above as its plain tree
             {
                 int n = kv.Value.Count; if (n == 0) continue;
@@ -695,6 +705,51 @@ namespace Summit
                 return (urp != null ? urp.shadowDistance : 140f) + 10f;
             }
         }
+        /// <summary>
+        /// (treeshadow) The way the trees' shadows fall over the ground (unit, x and z: away from the sun) and how far a
+        /// shadow reaches per metre of tree, with some over for the ground falling away from the sun. 0 with the sun
+        /// high (short shadows: the shadow range's margin covers them) or down.
+        /// </summary>
+        static void SunReach(out Vector2 away, out float perMetre)
+        {
+            away = Vector2.zero; perMetre = 0f;
+            var sun = RenderSettings.sun;
+            if (sun == null || !sun.isActiveAndEnabled || sun.shadows == LightShadows.None) return;
+            Vector3 to = -sun.transform.forward;   // toward the sun
+            if (to.y <= 0.01f) return;
+            var flat = new Vector2(-to.x, -to.z);
+            if (flat.sqrMagnitude < 1e-6f) return;
+            away = flat.normalized;
+            perMetre = 1.3f * flat.magnitude / to.y;   // (1 / tan of its height; and 30% over for a slope falling away)
+            if (perMetre < 0.4f) perMetre = 0f;        // (under 0.4 m a metre: within the range's 10 m for any tree here)
+        }
+
+        /// <summary>The tallest a tree here stands (m), and the furthest a shadow is followed (m): the rows behind that are
+        /// looked through for shadows falling on past the rider.</summary>
+        const float TallTree = 36f, ShadowReachMax = 260f;
+
+        /// <summary>How far behind the forest's middle (the rider) a shadow still counts: the camera is a few metres back,
+        /// looking on down the hill, and no shadow further back is seen.</summary>
+        const float ShadowSeenBehind = 14f;
+
+        /// <summary>A tree (dx, dz from the forest's middle, `h` m tall) whose shadow falls on the ground that is seen and
+        /// shadowed: within the shadow range of the middle, and not behind the camera.</summary>
+        static bool CastsFar(float dx, float dz, float h, Vector2 away, float perMetre, float range2)
+        {
+            if (perMetre <= 0f) return false;
+            float len = Mathf.Min(h * perMetre, ShadowReachMax);
+            // the shadow's line, from the tree's foot `len` away from the sun, cut to the ground ahead of -ShadowSeenBehind
+            float u0 = 0f, u1 = len, zMin = -ShadowSeenBehind;
+            if (Mathf.Abs(away.y) < 1e-4f) { if (dz < zMin) return false; }
+            else if (away.y > 0f) u0 = Mathf.Max(u0, (zMin - dz) / away.y);
+            else u1 = Mathf.Min(u1, (zMin - dz) / away.y);
+            if (u0 > u1) return false;
+            // and its nearest point to the middle
+            float u = Mathf.Clamp(-(dx * away.x + dz * away.y), u0, u1);
+            float px = dx + away.x * u, pz = dz + away.y * u;
+            return px * px + pz * pz < range2;
+        }
+
         /// <summary>How far a stump, or a tree's damage (DrawDamaged), is drawn.</summary>
         const float DetailRange = 150f;
 
@@ -705,8 +760,8 @@ namespace Summit
         /// <summary>A tree, rock or sapling in a strip: its cell's x, and where its matrices are in the strip's `mats`:
         /// at mat0 its own (pl.m), then each part's (pl.m times the part's own), then (the classic look's trees) its far
         /// stand-in fir's. `one` and `two`: the lists a sapling's or a realistic tree's own matrix goes in (a sapling's
-        /// cards; a realistic tree's rich model and its picture).</summary>
-        struct Stood { public int x, idx, mat0, parts; public Kind kind; public bool deco, far; public List<Matrix4x4> one, two; }
+        /// cards; a realistic tree's rich model and its picture). `h`: how tall it stands (its shadow's reach: CastsFar).</summary>
+        struct Stood { public int x, idx, mat0, parts; public Kind kind; public bool deco, far; public float h; public List<Matrix4x4> one, two; }
 
         /// <summary>A row of cells as placed, x0..x1: what stands in it (the empty cells left out). For each matrix in
         /// `mats`, the list it is drawn from near (casting a shadow) and far.</summary>
@@ -715,17 +770,17 @@ namespace Summit
             public int x0, x1, n, nm;
             public Stood[] stood = new Stood[48];
             public Matrix4x4[] mats = new Matrix4x4[96];
-            public List<Matrix4x4>[] near = new List<Matrix4x4>[96], far = new List<Matrix4x4>[96];
+            public List<Matrix4x4>[] near = new List<Matrix4x4>[96], far = new List<Matrix4x4>[96], shade = new List<Matrix4x4>[96];
 
-            public void Clear() { System.Array.Clear(near, 0, nm); System.Array.Clear(far, 0, nm); n = 0; nm = 0; }
+            public void Clear() { System.Array.Clear(near, 0, nm); System.Array.Clear(far, 0, nm); System.Array.Clear(shade, 0, nm); n = 0; nm = 0; }
 
-            public int Mat(Matrix4x4 m, List<Matrix4x4> nearList, List<Matrix4x4> farList)
+            public int Mat(Matrix4x4 m, List<Matrix4x4> nearList, List<Matrix4x4> farList, List<Matrix4x4> shadeList = null)
             {
                 if (nm == mats.Length)
                 {
-                    System.Array.Resize(ref mats, nm * 2); System.Array.Resize(ref near, nm * 2); System.Array.Resize(ref far, nm * 2);
+                    System.Array.Resize(ref mats, nm * 2); System.Array.Resize(ref near, nm * 2); System.Array.Resize(ref far, nm * 2); System.Array.Resize(ref shade, nm * 2);
                 }
-                mats[nm] = m; near[nm] = nearList; far[nm] = farList;
+                mats[nm] = m; near[nm] = nearList; far[nm] = farList; shade[nm] = shadeList;
                 return nm++;
             }
 
@@ -776,7 +831,7 @@ namespace Summit
             {
                 var pl = Get(x, z);
                 if (pl.kind == Kind.None && !pl.deco) continue;
-                var e = new Stood { x = x, kind = pl.kind, idx = pl.idx, deco = pl.deco, mat0 = s.Mat(pl.m, null, null) };
+                var e = new Stood { x = x, kind = pl.kind, idx = pl.idx, deco = pl.deco, h = pl.vis, mat0 = s.Mat(pl.m, null, null) };
                 if (pl.deco) e.one = ListFor(nearL, Key(Kind.Tree, pl.idx, 0));
                 else
                 {
@@ -785,7 +840,7 @@ namespace Summit
                     for (int i = 0; i < parts.Count; i++)
                     {
                         int key = Key(pl.kind, pl.idx, i);
-                        s.Mat(pl.m * parts[i].local, ListFor(nearL, key), ListFor(farL, key));
+                        s.Mat(pl.m * parts[i].local, ListFor(nearL, key), ListFor(farL, key), pl.kind == Kind.Tree ? ListFor(shadeL, key) : null);
                     }
                     e.parts = parts.Count;
                     // (the classic look's far firs)
@@ -843,22 +898,43 @@ namespace Summit
             foreach (var l in nearL.Values) l.Clear();
             foreach (var l in farL.Values) l.Clear();
             foreach (var l in richL.Values) l.Clear();
+            foreach (var l in shadeL.Values) l.Clear();
             distL.Clear();
             rockFarL.Clear();
             damagedL.Clear();
             if (impL != null) foreach (var l in impL) l.Clear();
-            // shadows for every tree within the shadow range, so none pops a shadow on as it nears
+            // shadows for every tree within the shadow range, so none pops a shadow on as it nears; and (treeshadow) for
+            // every tree whose shadow reaches into it: with the sun low (7-8 degrees up, mornings and evenings) a fir's
+            // shadow runs 150 m and more, and a tree well out of the range laid one across the run, all at once, as it
+            // came into it
             float shadow2 = ShadowRange * ShadowRange, detail2 = DetailRange * DetailRange;
+            SunReach(out Vector2 away, out float perMetre);
             float band0 = (FadeStart - FadeSlack) * (FadeStart - FadeSlack), band1 = (FadeEnd + FadeSlack) * (FadeEnd + FadeSlack);
             float rich = (RichEnd + FadeSlack) * (RichEnd + FadeSlack), lod = LodRange * LodRange;
             farRocks = farRock != null && Farview.On;
             float rockFar0 = (RockNear - FadeSlack) * (RockNear - FadeSlack), rockNear1 = (RockFar + FadeSlack) * (RockFar + FadeSlack);
             int zFrom = c.y - behindCells, zTo = c.y + farAhead, xFrom = c.x - farSide, xTo = c.x + farSide;
-            for (int z = zFrom; z <= zTo; z++)
+            // (and with the sun behind, the rows of trees already passed whose shadows fall on down the hill past the
+            // rider: into the shadow map only. Before, a passed tree's shadow went from in front of you all at once)
+            int shadeFrom = zFrom;
+            if (perMetre > 0f && away.y > 0.05f)
+                shadeFrom = c.y - Mathf.CeilToInt(Mathf.Min(ShadowReachMax, TallTree * perMetre) * away.y / Cell) - 1;
+            for (int z = Mathf.Min(zFrom, shadeFrom); z <= zTo; z++)
             {
                 var s = StripAt(z, xFrom, xTo);
                 float dzm = (z - c.y) * Cell;
                 var stood = s.stood; var mats = s.mats;
+                if (z < zFrom)
+                {
+                    for (int j = 0; j < s.n; j++)
+                    {
+                        ref var e = ref stood[j];
+                        if (e.deco || e.kind != Kind.Tree || e.x < xFrom || e.x > xTo) continue;
+                        if (CastsFar((e.x - c.x) * Cell, dzm, e.h, away, perMetre, shadow2))
+                            for (int i = e.mat0 + 1; i <= e.mat0 + e.parts; i++) s.shade[i]?.Add(mats[i]);
+                    }
+                    continue;
+                }
                 for (int j = 0; j < s.n; j++)
                 {
                     ref var e = ref stood[j];
@@ -876,11 +952,17 @@ namespace Summit
                         damagedL.Add(new Vector2Int(e.x, z));   // drawn on its own, with its damage (DrawDamaged)
                         continue;
                     }
+                    bool casts = d2 < shadow2 || (e.kind == Kind.Tree && CastsFar(dxm, dzm, e.h, away, perMetre, shadow2));
                     if (real && e.kind == Kind.Tree)
                     {
                         // far realistic tree: its picture on two crossed quads; through the band, the cards too
                         if (d2 > band0) e.two.Add(mats[e.mat0]);
-                        if (d2 > band1) continue;
+                        if (d2 > band1)
+                        {
+                            // (its picture casts no shadow: the plain tree into the shadow map alone, if its shadow reaches)
+                            if (casts) for (int i = e.mat0 + 1; i <= e.mat0 + e.parts; i++) s.shade[i]?.Add(mats[i]);
+                            continue;
+                        }
                         // close by, the rich tree as well (the plain one below still casts the shadow for both)
                         if (d2 < rich) e.one.Add(mats[e.mat0]);
                     }
@@ -896,12 +978,12 @@ namespace Summit
                         if (e.far && e.kind == Kind.Tree) distL.Add(mats[e.mat0 + 1 + e.parts]);
                         continue;
                     }
-                    var lists = d2 < shadow2 ? s.near : s.far;
+                    var lists = casts ? s.near : s.far;
                     for (int i = e.mat0 + 1; i <= e.mat0 + e.parts; i++) lists[i].Add(mats[i]);
                 }
             }
             // rows out of reach go (a few kept either side, for a turn back up the hill)
-            DropStrips(zFrom - 4, zTo + 4);
+            DropStrips(Mathf.Min(zFrom, shadeFrom) - 4, zTo + 4);
             PlaceColliders(c);
             stumpL.Clear();
             foreach (var kv in stumps)
@@ -933,7 +1015,7 @@ namespace Summit
                 if (e.x != cell.x) continue;
                 s.stood[j] = s.stood[--s.n];
                 if (e.deco) return;
-                for (int i = e.mat0 + 1; i <= e.mat0 + e.parts; i++) { DropFrom(s.near[i], s.mats[i]); DropFrom(s.far[i], s.mats[i]); }
+                for (int i = e.mat0 + 1; i <= e.mat0 + e.parts; i++) { DropFrom(s.near[i], s.mats[i]); DropFrom(s.far[i], s.mats[i]); if (s.shade[i] != null) DropFrom(s.shade[i], s.mats[i]); }
                 if (e.one != null) DropFrom(e.one, s.mats[e.mat0]);
                 if (e.two != null) DropFrom(e.two, s.mats[e.mat0]);
                 if (e.far) { DropFrom(distL, s.mats[e.mat0 + 1 + e.parts]); DropFrom(rockFarL, s.mats[e.mat0 + 1 + e.parts]); }
@@ -958,6 +1040,7 @@ namespace Summit
             }
             DrawSet(nearL, UnityEngine.Rendering.ShadowCastingMode.On);
             DrawSet(farL, UnityEngine.Rendering.ShadowCastingMode.Off);
+            DrawSet(shadeL, UnityEngine.Rendering.ShadowCastingMode.ShadowsOnly);
             DrawSet(richL, UnityEngine.Rendering.ShadowCastingMode.Off);
             if (stumpL.Count > 0) TreeBreak.DrawStumps(stumpL, real, bark);
             if (damagedL.Count > 0) DrawDamaged();

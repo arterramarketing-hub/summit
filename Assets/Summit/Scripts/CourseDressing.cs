@@ -52,10 +52,7 @@ namespace Summit
             snow = Farview.Snow(snowSurface, true);
             Material M(Color c, float smooth, float metallic = 0f, Color emit = default)
             {
-                var m = new Material(lit);
-                m.SetColor("_BaseColor", c); m.SetFloat("_Smoothness", smooth); m.SetFloat("_Metallic", metallic);
-                if (emit.maxColorComponent > 0f) { m.EnableKeyword("_EMISSION"); m.SetColor("_EmissionColor", emit); }
-                return Farview.Adopt(m);
+                return Farview.Adopt(Mats.Lit(c, smooth, lit, metallic, emit: emit));
             }
             metal = M(new Color(0.78f, 0.80f, 0.84f), 0.75f, 0.8f);
             boxSide = M(new Color(0.10f, 0.42f, 0.85f), 0.4f);

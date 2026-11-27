@@ -91,7 +91,7 @@ namespace Summit
 
         void BuildCloset()
         {
-            closetRoot = New("Closet", panelRoot); panelBits.Add(closetRoot.gameObject);
+            closetRoot = Brand.New("Closet", panelRoot); panelBits.Add(closetRoot.gameObject);
             CopySafe(closetRoot);
             float W = closetRoot.rect.width, H = closetRoot.rect.height;
             if (W < 10f) { W = 1080f; H = 1920f; }
@@ -99,19 +99,19 @@ namespace Summit
             tabs.Clear(); rows.Clear();
 
             // the money, top right over the studio
-            var bc = Img("Balance", closetRoot, new Color(0f, 0f, 0f, 0.45f), round);
-            Place(bc.rectTransform, new Vector2(1f, 1f), new Vector2(-24f, -28f), new Vector2(300f, 92f), new Vector2(1f, 1f));
-            Place(Img("Coin", bc.transform, Color.white, coin).rectTransform, new Vector2(0f, 0.5f), new Vector2(16f, 0f), new Vector2(62f, 62f), new Vector2(0f, 0.5f));
+            var bc = Brand.Img("Balance", closetRoot, new Color(0f, 0f, 0f, 0.45f), round);
+            Brand.Place(bc.rectTransform, new Vector2(1f, 1f), new Vector2(-24f, -28f), new Vector2(300f, 92f), new Vector2(1f, 1f));
+            Brand.Place(Brand.Img("Coin", bc.transform, Color.white, coin).rectTransform, new Vector2(0f, 0.5f), new Vector2(16f, 0f), new Vector2(62f, 62f), new Vector2(0f, 0.5f));
             balText = Label(bc.transform, new Vector2(1f, 0.5f), new Vector2(-22f, 0f), new Vector2(200f, 70f), 48, TextAnchor.MiddleRight);
             balText.color = Gold;
 
             // the panel down the left
-            var panel = Img("ClosetPanel", closetRoot, PanelBg, round).rectTransform;
+            var panel = Brand.Img("ClosetPanel", closetRoot, PanelBg, round).rectTransform;
             panel.anchorMin = new Vector2(0f, 0f); panel.anchorMax = new Vector2(0f, 1f); panel.pivot = new Vector2(0f, 0.5f);
             panel.offsetMin = new Vector2(20f, footer); panel.offsetMax = new Vector2(20f + panelW, -28f);
             float PH = H - footer - 28f;
-            var ban = Img("Banner", panel, Banner, round);
-            Place(ban.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -10f), new Vector2(panelW - 20f, 112f), new Vector2(0.5f, 1f));
+            var ban = Brand.Img("Banner", panel, Banner, round);
+            Brand.Place(ban.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -10f), new Vector2(panelW - 20f, 112f), new Vector2(0.5f, 1f));
             Label(ban.transform, new Vector2(0f, 0.5f), new Vector2(26f, 0f), new Vector2(panelW - 60f, 90f), 54, TextAnchor.MiddleLeft).text = "WARDROBE";
 
             // the tabs: three to a row under the banner
@@ -122,8 +122,8 @@ namespace Summit
                 int row = k / perRow, col = k % perRow;
                 int inRow = Mathf.Min(perRow, cats.Count - row * perRow);
                 float rowW = inRow * tabW + (inRow - 1) * tabGap;
-                var tb = Img("Tab", panel, Grey, round);
-                Place(tb.rectTransform, new Vector2(0.5f, 1f), new Vector2(-rowW * 0.5f + tabW * 0.5f + col * (tabW + tabGap), -134f - row * (tabH + tabGap)), new Vector2(tabW, tabH), new Vector2(0.5f, 1f));
+                var tb = Brand.Img("Tab", panel, Grey, round);
+                Brand.Place(tb.rectTransform, new Vector2(0.5f, 1f), new Vector2(-rowW * 0.5f + tabW * 0.5f + col * (tabW + tabGap), -134f - row * (tabH + tabGap)), new Vector2(tabW, tabH), new Vector2(0.5f, 1f));
                 var tt = Label(tb.transform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(tabW - 10f, tabH - 12f), 26, TextAnchor.MiddleCenter);
                 tt.resizeTextForBestFit = true; tt.resizeTextMinSize = 18; tt.resizeTextMaxSize = 28;
                 tt.horizontalOverflow = HorizontalWrapMode.Wrap; tt.verticalOverflow = VerticalWrapMode.Truncate;
@@ -138,11 +138,11 @@ namespace Summit
             float listTop = tabsBottom + 62f, detailH = 130f;
 
             // the list, in a window it scrolls behind
-            listView = New("List", panel);
+            listView = Brand.New("List", panel);
             listView.anchorMin = new Vector2(0f, 0f); listView.anchorMax = new Vector2(1f, 1f);
             listView.offsetMin = new Vector2(12f, detailH); listView.offsetMax = new Vector2(-12f, -listTop);
             listView.gameObject.AddComponent<RectMask2D>();
-            listContent = New("Rows", listView);
+            listContent = Brand.New("Rows", listView);
             listContent.anchorMin = new Vector2(0f, 1f); listContent.anchorMax = new Vector2(1f, 1f); listContent.pivot = new Vector2(0.5f, 1f);
             listContent.offsetMin = listContent.offsetMax = Vector2.zero;
             listContent.sizeDelta = new Vector2(0f, 10f);
@@ -158,19 +158,19 @@ namespace Summit
             }
 
             // BACK and BUY / WEAR along the bottom
-            var bk = Img("Back", closetRoot, new Color(0f, 0f, 0f, 0.6f), round);
-            Place(bk.rectTransform, new Vector2(0f, 0f), new Vector2(20f, 36f), new Vector2(W * 0.36f, 124f), new Vector2(0f, 0f));
+            var bk = Brand.Img("Back", closetRoot, new Color(0f, 0f, 0f, 0.6f), round);
+            Brand.Place(bk.rectTransform, new Vector2(0f, 0f), new Vector2(20f, 36f), new Vector2(W * 0.36f, 124f), new Vector2(0f, 0f));
             Label(bk.transform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(W * 0.34f, 100f), 48, TextAnchor.MiddleCenter).text = "BACK";
             backBtn = bk.rectTransform;
-            buyImg = Img("Buy", closetRoot, Green, round);
-            Place(buyImg.rectTransform, new Vector2(1f, 0f), new Vector2(-20f, 36f), new Vector2(W - W * 0.36f - 60f, 124f), new Vector2(1f, 0f));
+            buyImg = Brand.Img("Buy", closetRoot, Green, round);
+            Brand.Place(buyImg.rectTransform, new Vector2(1f, 0f), new Vector2(-20f, 36f), new Vector2(W - W * 0.36f - 60f, 124f), new Vector2(1f, 0f));
             buyBtn = buyImg.rectTransform;
-            buyCoin = Img("Coin", buyBtn, Color.white, coin);
-            Place(buyCoin.rectTransform, new Vector2(0f, 0.5f), new Vector2(28f, 0f), new Vector2(60f, 60f), new Vector2(0f, 0.5f));
+            buyCoin = Brand.Img("Coin", buyBtn, Color.white, coin);
+            Brand.Place(buyCoin.rectTransform, new Vector2(0f, 0.5f), new Vector2(28f, 0f), new Vector2(60f, 60f), new Vector2(0f, 0.5f));
             buyText = Label(buyBtn, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(W * 0.55f, 100f), 46, TextAnchor.MiddleCenter);
 
             // the studio's side: drag there to turn
-            previewZone = New("Preview", closetRoot);
+            previewZone = Brand.New("Preview", closetRoot);
             previewZone.anchorMin = new Vector2(0f, 0f); previewZone.anchorMax = new Vector2(1f, 1f);
             previewZone.offsetMin = new Vector2(20f + panelW, footer); previewZone.offsetMax = new Vector2(0f, -130f);
             var hint = Label(closetRoot, new Vector2(1f, 1f), new Vector2(-30f, -132f), new Vector2(W - panelW - 60f, 40f), 28, TextAnchor.UpperRight);
@@ -186,7 +186,7 @@ namespace Summit
             for (int i = 0; i < items.Length; i++)
             {
                 var it = Shown(i);
-                var bg = Img("Row", listContent, Row, round);
+                var bg = Brand.Img("Row", listContent, Row, round);
                 var rt = bg.rectTransform;
                 rt.anchorMin = new Vector2(0f, 1f); rt.anchorMax = new Vector2(1f, 1f); rt.pivot = new Vector2(0.5f, 1f);
                 rt.offsetMin = new Vector2(0f, -(n * (RowH + RowGap) + RowH)); rt.offsetMax = new Vector2(0f, -n * (RowH + RowGap));
@@ -195,19 +195,19 @@ namespace Summit
                 if (art != null)
                 {
                     // a graphic: the deck itself, seen from above
-                    v.thumb = Img("Deck", rt, Color.white, art);
+                    v.thumb = Brand.Img("Deck", rt, Color.white, art);
                     v.thumb.preserveAspect = true;
-                    Place(v.thumb.rectTransform, new Vector2(0f, 0.5f), new Vector2(12f, 0f), new Vector2(136f, 26f), new Vector2(0f, 0.5f));
+                    Brand.Place(v.thumb.rectTransform, new Vector2(0f, 0.5f), new Vector2(12f, 0f), new Vector2(136f, 26f), new Vector2(0f, 0.5f));
                 }
                 else if (cat != Wardrobe.Cat.Ride)
                 {
                     // a swatch: the colour, with the pattern's (or the trim's) inside it
-                    v.chip = Img("Chip", rt, it.a, disc);
-                    Place(v.chip.rectTransform, new Vector2(0f, 0.5f), new Vector2(20f, 0f), new Vector2(58f, 58f), new Vector2(0f, 0.5f));
+                    v.chip = Brand.Img("Chip", rt, it.a, disc);
+                    Brand.Place(v.chip.rectTransform, new Vector2(0f, 0.5f), new Vector2(20f, 0f), new Vector2(58f, 58f), new Vector2(0f, 0.5f));
                     if (it.b.a > 0f && (it.Patterned || cat >= Wardrobe.Cat.Helmet))
                     {
-                        v.chip2 = Img("Chip2", v.chip.transform, it.b, disc);
-                        Place(v.chip2.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(26f, 26f), new Vector2(0.5f, 0.5f));
+                        v.chip2 = Brand.Img("Chip2", v.chip.transform, it.b, disc);
+                        Brand.Place(v.chip2.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(26f, 26f), new Vector2(0.5f, 0.5f));
                     }
                 }
                 // (a graphic's name sits right of its little board, short of the price's coin)
@@ -217,8 +217,8 @@ namespace Summit
                 v.name.horizontalOverflow = HorizontalWrapMode.Wrap; v.name.verticalOverflow = VerticalWrapMode.Truncate;
                 v.name.resizeTextForBestFit = true; v.name.resizeTextMinSize = cat == Wardrobe.Cat.Graphic ? 18 : 22; v.name.resizeTextMaxSize = cat == Wardrobe.Cat.Graphic ? 30 : 34;   // (the long names shrink, short of the price)
                 v.stat = Label(rt, new Vector2(1f, 0.5f), new Vector2(-22f, 0f), new Vector2(170f, 60f), 30, TextAnchor.MiddleRight);
-                v.coin = Img("Coin", rt, Color.white, coin);
-                Place(v.coin.rectTransform, new Vector2(1f, 0.5f), new Vector2(-110f, 0f), new Vector2(40f, 40f), new Vector2(1f, 0.5f));
+                v.coin = Brand.Img("Coin", rt, Color.white, coin);
+                Brand.Place(v.coin.rectTransform, new Vector2(1f, 0.5f), new Vector2(-110f, 0f), new Vector2(40f, 40f), new Vector2(1f, 0.5f));
                 // (the labels' shadows are for the dark panel; on the white highlight they'd blur the dark text)
                 rows.Add(v);
                 n++;

@@ -119,7 +119,7 @@ namespace Summit
         {
             if (board != null) return board;
             var sh = Resources.Load<Shader>("GateBoard");
-            board = new Material(sh != null ? sh : Shader.Find("Universal Render Pipeline/Lit")) { name = "GateBoard" };
+            board = new Material(sh != null ? sh : Mats.LitShader) { name = "GateBoard" };
             board.SetVector("_Size", new Vector4(BoardW, BoardH, 0f, 0f));
             if (letters != null) board.SetTexture("_MainTex", letters);
             else if (job == null) job = System.Threading.Tasks.Task.Run(() => SignArt.Build());   // (routed resort lettering, SignArt.cs)
@@ -130,7 +130,7 @@ namespace Summit
         {
             if (bulb != null) return bulb;
             var sh = Resources.Load<Shader>("StudioBackdrop");   // unlit: the bulb is its own light
-            bulb = new Material(sh != null ? sh : Shader.Find("Universal Render Pipeline/Lit")) { name = "GateBulb" };
+            bulb = new Material(sh != null ? sh : Mats.LitShader) { name = "GateBulb" };
             return bulb;
         }
 
@@ -154,6 +154,131 @@ namespace Summit
             float k = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.15f, 0.7f, night));
             if (lamp != null) { lamp.intensity = 9f * k; lamp.enabled = k > 0.01f; }
             if (bulb != null) bulb.SetColor("_Tint", Color.Lerp(new Color(0.85f, 0.8f, 0.68f), new Color(2.2f, 1.7f, 1.1f), k));
+        }
+
+        // ---------------------------------------------------------------- the site round it
+
+        /// <summary>
+        /// The start, rebuilt for every new mountain (SummitGame.RebuildGate): this gate, flags along the lip you jump
+        /// from and its wooden kicker edge, the finish arch at the foot of the mountain, the safety signs before the
+        /// lip and the caution tape (StartTape; clack plays as it tears). Its materials are made on sh, once each,
+        /// into mats, which the caller keeps across rebuilds, so they neither leak nor pile up in DayNight's list of
+        /// reflective signs. Returns the root.
+        /// </summary>
+        public static Transform BuildSite(Shader sh, System.Collections.Generic.Dictionary<string, Material> mats, Rider rider, System.Action clack)
+        {
+            Material M(Color c)
+            {
+                string k = "c" + c;
+                if (!mats.TryGetValue(k, out var m)) { m = Mats.Lit(c, 0.3f, sh); mats[k] = m; }
+                return m;
+            }
+            var red = M(new Color(0.85f, 0.12f, 0.10f)); var white = M(new Color(0.95f, 0.95f, 0.97f)); var wood = M(new Color(0.45f, 0.30f, 0.18f));
+            Material GateSign(string path)
+            {
+                if (!mats.TryGetValue(path, out var m)) { m = CourseDressing.Sign(sh, path); mats[path] = m; }
+                return m;
+            }
+            var root = new GameObject("StartGate").transform;
+            float cx = Slope.Centre(Slope.PadLip);
+            // the gate, where every run starts
+            Build(root, cx, (c, smooth) =>
+            {
+                string k = "c" + c + smooth;
+                if (!mats.TryGetValue(k, out var m)) { m = Mats.Lit(c, smooth, sh); mats[k] = m; }
+                return m;
+            });
+            // flags lining the lip and a wooden kicker edge
+            for (int i = 0; i < 6; i++)
+                for (int sgn = -1; sgn <= 1; sgn += 2)
+                {
+                    float z = Slope.PadLip - 2f - i * 6f, x = cx + sgn * (Slope.PadHalf - 1f);
+                    float y = Slope.DrawnHeight(x, z);
+                    var flag = Holder("LipFlag", root, new Vector3(x, y, z));
+                    Block(PrimitiveType.Cylinder, flag, new Vector3(x, y + 0.9f, z), new Vector3(0.06f, 0.9f, 0.06f), white);
+                    Block(PrimitiveType.Cube, flag, new Vector3(x - sgn * 0.3f, y + 1.55f, z), new Vector3(0.6f, 0.4f, 0.03f), (i % 2 == 0) ? red : white);
+                    Breakable.Flag(flag, 1.8f);
+                }
+            // the finish line at the base of the mountain: a blue arch across the run
+            {
+                float fz = Slope.FinishZ + 30f, fx = Slope.Centre(fz), fy = Slope.DrawnHeight(fx, fz);
+                var blue = M(new Color(0.08f, 0.30f, 0.70f));
+                var arch = Holder("FinishArch", root, new Vector3(fx, fy, fz));
+                var archBrk = Breakable.Sign(arch);
+                for (int sgn = -1; sgn <= 1; sgn += 2)
+                    archBrk.Post(Block(PrimitiveType.Cube, arch, new Vector3(fx + sgn * 9f, fy + 2.6f, fz), new Vector3(0.45f, 5.2f, 0.45f), blue));
+                var archFrame = Block(PrimitiveType.Cube, arch, new Vector3(fx, fy + 5.0f, fz + 0.06f), new Vector3(18.6f, 1.6f, 0.08f), blue);
+                var fb = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                Object.DestroyImmediate(fb.GetComponent<Collider>());
+                fb.transform.SetParent(arch, false);
+                fb.transform.SetPositionAndRotation(new Vector3(fx, fy + 5.0f, fz - 0.01f), Quaternion.identity);
+                fb.transform.localScale = new Vector3(18.2f, 1.4f, 1f);
+                fb.GetComponent<MeshRenderer>().sharedMaterial = GateSign("Signs/BannerFinish");
+                archBrk.Board(archFrame, fb.transform);
+                archBrk.Arm();
+            }
+            // the last chance: safety signs either side of the in-run before the lip, and caution tape strung
+            // chest-high between the last pair and on across the mountain, tree to tree (ride through it and it tears)
+            var post = M(new Color(0.55f, 0.57f, 0.6f));
+            WarningSign(root, cx, Slope.PadLip - 22f, -1f, GateSign("Signs/SignTurnAround"), post);
+            WarningSign(root, cx, Slope.PadLip - 22f, 1f, GateSign("Signs/SignRemote"), post);
+            var wl = WarningSign(root, cx, Slope.PadLip - 11f, -1f, GateSign("Signs/SignWarning"), post);
+            var wr = WarningSign(root, cx, Slope.PadLip - 11f, 1f, GateSign("Signs/SignDangerStart"), post);
+            StartTape.Build(root, wl, wr, SignPostX, rider, GateSign("Signs/Tape"), clack);
+            float ly = Slope.DrawnHeight(cx, Slope.PadLip - 0.3f);
+            Block(PrimitiveType.Cube, root, new Vector3(cx, ly - 0.15f, Slope.PadLip - 0.2f), new Vector3(2f * Slope.PadHalf - 4f, 0.35f, 0.3f), wood);
+            return root;
+        }
+
+        const float SignW = 3.6f, SignPostX = SignW * 0.4f;
+
+        /// <summary>A 3:2 safety sign on two posts beside the in-run (side -1 / 1), turned in toward the rider coming down.</summary>
+        static Transform WarningSign(Transform root, float cx, float z, float side, Material face, Material post)
+        {
+            const float W = SignW, H = W / 1.5f, lift = 1.3f;
+            float x = cx + side * 6.5f;
+            var t = new GameObject("WarningSign").transform;
+            t.SetParent(root, false);
+            t.SetPositionAndRotation(new Vector3(x, Slope.DrawnHeight(x, z), z), Quaternion.Euler(0f, side * 28f, 0f));
+            Transform Local(PrimitiveType type, Vector3 at, Vector3 scale, Material m)
+            {
+                var go = GameObject.CreatePrimitive(type);
+                Object.DestroyImmediate(go.GetComponent<Collider>());
+                go.transform.SetParent(t, false);
+                go.transform.localPosition = at; go.transform.localScale = scale;
+                go.GetComponent<MeshRenderer>().sharedMaterial = m;
+                if (type == PrimitiveType.Quad) go.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                return go.transform;
+            }
+            var brk = Breakable.Sign(t);
+            // posts run a little into the snow, so they stand on the bank whatever its tilt
+            float top = lift + H;
+            for (int s = -1; s <= 1; s += 2)
+                brk.Post(Local(PrimitiveType.Cylinder, new Vector3(s * SignPostX, top * 0.5f - 0.3f, 0.08f), new Vector3(0.1f, (top + 0.6f) * 0.5f, 0.1f), post));
+            var back = Local(PrimitiveType.Cube, new Vector3(0f, lift + H * 0.5f, 0.03f), new Vector3(W + 0.1f, H + 0.1f, 0.04f), post);
+            brk.Board(back, Local(PrimitiveType.Quad, new Vector3(0f, lift + H * 0.5f, -0.001f), new Vector3(W, H, 1f), face));
+            brk.Arm();
+            return t;
+        }
+
+        static Transform Block(PrimitiveType t, Transform parent, Vector3 pos, Vector3 scale, Material m)
+        {
+            var go = GameObject.CreatePrimitive(t);
+            Object.DestroyImmediate(go.GetComponent<Collider>());
+            go.transform.SetParent(parent, false);
+            go.transform.position = pos;
+            go.transform.localScale = scale;
+            go.GetComponent<MeshRenderer>().sharedMaterial = m;
+            return go.transform;
+        }
+
+        /// <summary>An empty holder at a spot on the snow, for something that can be broken or knocked down (Breakable).</summary>
+        static Transform Holder(string name, Transform parent, Vector3 at)
+        {
+            var t = new GameObject(name).transform;
+            t.SetParent(parent, false);
+            t.position = at;
+            return t;
         }
     }
 

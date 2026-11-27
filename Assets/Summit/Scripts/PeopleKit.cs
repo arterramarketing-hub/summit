@@ -83,7 +83,7 @@ namespace Summit
             Prefab = Resources.Load<GameObject>("Rider/Hero");
             Clips = Resources.Load<TextAsset>("Rider/HeroAnim");
             ClothTemplate = Resources.Load<Material>("SnowyCloth");
-            Lit = Shader.Find("Universal Render Pipeline/Lit");
+            Lit = Mats.LitShader;
             PaletteSrc = Resources.Load<Texture2D>("Rider/HeroPalette");
             if (Prefab == null || Clips == null || PaletteSrc == null) { Debug.LogWarning("People: the hero's model, clips or palette is missing"); return false; }
             try { PaletteBase = PaletteSrc.GetPixels(); } catch (UnityException) { Debug.LogWarning("People: the hero's palette can't be read"); return false; }

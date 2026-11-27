@@ -35,34 +35,34 @@ namespace Summit
 
         void BuildTalk()
         {
-            talkRoot = New("Talk", safe); Stretch(talkRoot);
-            var card = Img("TalkCard", talkRoot, TalkGlass, round);
+            talkRoot = Brand.New("Talk", safe); Brand.Stretch(talkRoot);
+            var card = Brand.Img("TalkCard", talkRoot, TalkGlass, round);
             talkCard = card.rectTransform;
-            Place(talkCard, new Vector2(0.5f, 0f), new Vector2(0f, 60f), new Vector2(TalkW, 400f), new Vector2(0.5f, 0f));
+            Brand.Place(talkCard, new Vector2(0.5f, 0f), new Vector2(0f, 60f), new Vector2(TalkW, 400f), new Vector2(0.5f, 0f));
             // the ice along the top edge, and a fainter one under the name
-            var edge = Img("TalkIce", talkCard, IceLine, round);
-            Place(edge.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -10f), new Vector2(TalkW - 70f, 6f), new Vector2(0.5f, 1f));
+            var edge = Brand.Img("TalkIce", talkCard, IceLine, round);
+            Brand.Place(edge.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -10f), new Vector2(TalkW - 70f, 6f), new Vector2(0.5f, 1f));
             talkName = Label(talkCard, new Vector2(0f, 1f), new Vector2(TalkPad, -34f), new Vector2(600f, 64f), 50, TextAnchor.UpperLeft);
             talkName.fontStyle = FontStyle.BoldAndItalic;   // slanted, as the VERTIGO letters are
             talkName.color = Ice;
             var sh = talkName.GetComponent<Shadow>(); sh.effectColor = new Color(0.1f, 0.3f, 0.6f, 0.8f); sh.effectDistance = new Vector2(3f, -3f);
-            var under = Img("TalkRule", talkCard, new Color(0.62f, 0.84f, 1f, 0.3f), null);
-            Place(under.rectTransform, new Vector2(0f, 1f), new Vector2(TalkPad, -104f), new Vector2(180f, 3f), new Vector2(0f, 1f));
+            var under = Brand.Img("TalkRule", talkCard, new Color(0.62f, 0.84f, 1f, 0.3f), null);
+            Brand.Place(under.rectTransform, new Vector2(0f, 1f), new Vector2(TalkPad, -104f), new Vector2(180f, 3f), new Vector2(0f, 1f));
             talkBody = Label(talkCard, new Vector2(0f, 1f), new Vector2(TalkPad, -128f), new Vector2(TalkW - 2f * TalkPad, 200f), 44, TextAnchor.UpperLeft);
             talkBody.fontStyle = FontStyle.Normal;   // calm: plain weight for her words
             talkBody.horizontalOverflow = HorizontalWrapMode.Wrap;
             talkBody.lineSpacing = 1.12f;
             talkBody.color = new Color(0.96f, 0.98f, 1f);
             // the "go on" mark: a small diamond of ice, breathing, bottom right
-            var more = Img("TalkMore", talkCard, Ice, null);
+            var more = Brand.Img("TalkMore", talkCard, Ice, null);
             talkMore = more.rectTransform;
-            Place(talkMore, new Vector2(1f, 0f), new Vector2(-TalkPad - 6f, 34f), new Vector2(20f, 20f), new Vector2(0.5f, 0.5f));
+            Brand.Place(talkMore, new Vector2(1f, 0f), new Vector2(-TalkPad - 6f, 34f), new Vector2(20f, 20f), new Vector2(0.5f, 0.5f));
             talkMore.localRotation = Quaternion.Euler(0f, 0f, 45f);
             for (int i = 0; i < 3; i++)
             {
-                var b = Img("TalkReply" + i, talkCard, Frost, round);
-                var bar = Img("Ice", b.transform, IceLine, null);
-                Place(bar.rectTransform, new Vector2(0f, 0.5f), new Vector2(18f, 0f), new Vector2(6f, ReplyH - 40f), new Vector2(0f, 0.5f));
+                var b = Brand.Img("TalkReply" + i, talkCard, Frost, round);
+                var bar = Brand.Img("Ice", b.transform, IceLine, null);
+                Brand.Place(bar.rectTransform, new Vector2(0f, 0.5f), new Vector2(18f, 0f), new Vector2(6f, ReplyH - 40f), new Vector2(0f, 0.5f));
                 var tx = Label(b.transform, new Vector2(0f, 0.5f), new Vector2(46f, 0f), new Vector2(TalkW - 2f * TalkPad - 70f, ReplyH - 10f), 40, TextAnchor.MiddleLeft);
                 tx.horizontalOverflow = HorizontalWrapMode.Wrap;
                 tx.resizeTextForBestFit = true; tx.resizeTextMinSize = 28; tx.resizeTextMaxSize = 40;
@@ -148,7 +148,7 @@ namespace Summit
                 if (!on) continue;
                 talkReplyText[i].text = line.replies[i].text;
                 float y = 30f + (n - 1 - i) * (ReplyH + ReplyGap);
-                Place(talkReplies[i], new Vector2(0.5f, 0f), new Vector2(0f, y), new Vector2(TalkW - 2f * TalkPad, ReplyH), new Vector2(0.5f, 0f));
+                Brand.Place(talkReplies[i], new Vector2(0.5f, 0f), new Vector2(0f, y), new Vector2(TalkW - 2f * TalkPad, ReplyH), new Vector2(0.5f, 0f));
             }
             talkBody.text = "";
             Show();

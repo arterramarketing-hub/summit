@@ -385,7 +385,7 @@ namespace Summit
 
         void Setup()
         {
-            var lit = Shader.Find("Universal Render Pipeline/Lit");
+            var lit = Mats.LitShader;
             poleMat = new Material(lit) { name = "LightPole", enableInstancing = true };
             poleMat.SetColor("_BaseColor", new Color(0.34f, 0.35f, 0.37f));
             poleMat.SetFloat("_Smoothness", 0.45f); poleMat.SetFloat("_Metallic", 0.6f);

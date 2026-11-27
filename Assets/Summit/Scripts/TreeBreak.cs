@@ -659,7 +659,7 @@ namespace Summit
             if (heapMesh == null) heapMesh = BuildHeap();
             if (heapMat == null)
             {
-                var sh = Shader.Find("Universal Render Pipeline/Lit");
+                var sh = Mats.LitShader;
                 if (sh == null) return;
                 heapMat = new Material(sh) { name = "SnowHeap", enableInstancing = true };
                 heapMat.SetColor("_BaseColor", new Color(0.93f, 0.95f, 0.98f)); heapMat.SetFloat("_Smoothness", 0.18f);

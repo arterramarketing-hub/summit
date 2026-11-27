@@ -6,8 +6,12 @@ namespace Summit
     /// Builds the whole game at start-up and runs the loop:
     /// start page → camp → ready → riding → buried → camp. Drop it on one empty GameObject.
     /// The Summit ▸ Build Scene menu does that for you and makes the materials.
+    ///
+    /// In parts: the world built at start-up (Awake, SummitGameWorld.cs), every setting and its row on the two
+    /// settings sheets (SummitGameSettings.cs), and the buddy's voice watching the run (SummitGameVoice.cs). The
+    /// start gate and everything round it is StartGate.BuildSite.
     /// </summary>
-    public class SummitGame : MonoBehaviour
+    public partial class SummitGame : MonoBehaviour
     {
         [Header("Materials (made by Summit ▸ Build Scene; plain ones are made if empty)")]
         public Material snow;
@@ -91,134 +95,7 @@ namespace Summit
         string RideName => rider.Tube ? "SNOW TUBE" : Rides.Of(rider.Ride).Name;
         /// <summary>The start pad's RIDER label: the ride's own name, or the tube.</summary>
         void ShowRider() => hud.SetRider(RideName);
-        // pause menu and the camera distance setting
-        bool paused;
-        static readonly float[] CamDist = { 0.65f, 0.82f, 1f, 1.22f, 1.5f };
-        static readonly string[] CamName = { "CLOSEST", "CLOSE", "NORMAL", "FAR", "FARTHEST" };
-        int camLevel = 2;
-        // camera angle (height) and lens (field of view and barrel distortion), from the pause menu
-        static readonly float[] AngleHeight = { 0.62f, 0.9f, 1.1f, 1.55f, 2.2f };   // times ChaseCamera's Lift/Clear heights
-        static readonly string[] AngleName = { "GROUND", "LOW", "NORMAL", "HIGH", "OVERHEAD" };
-        static readonly float[] LensFov = { -14f, 0f, 8f, 18f };
-        static readonly float[] LensWarp = { 0f, -0.28f, -0.42f, -0.6f };
-        static readonly string[] LensName = { "STANDARD", "WIDE", "WIDER", "FISHEYE" };
-        int angleLevel = 1, lensLevel = 1;
-        bool pov;   // first person instead of the chase camera (the VIEW button; ChaseCamera does the rest)
-        UnityEngine.Rendering.Universal.LensDistortion lens;
-        // colour filter (LookGrade) and its strength in tenths, from the settings
-        int filterLevel, filterStrength = 10;
-        int halation;   // the film glow round highlights (LensFX): OFF, SUBTLE, STRONG
-        LensFX lensFx;
-        DayNight dayNight;   // the time of day's light (TimeOfDay, DayNight.cs), and the pause menu's TIME row
-        Weather weather;     // rolled for each new mountain (Weather.cs); null in the test tools unless they ask for one
-        UnityEngine.Rendering.VolumeProfile post;
-
-        void ApplyCamera()
-        {
-            chase.heightScale = AngleHeight[angleLevel];
-            chase.extraFov = LensFov[lensLevel];
-            lensFx.Apply(lens, LensWarp[lensLevel], lensLevel);
-            hud.RefreshPause();
-            PlayerPrefs.SetInt("summit_angle", angleLevel); PlayerPrefs.SetInt("summit_lens", lensLevel); PlayerPrefs.Save();
-        }
-
-        void SetPov(bool on)
-        {
-            pov = on; chase.pov = on;
-            hud.RefreshPause();
-            PlayerPrefs.SetInt(ChaseCamera.PovPref, on ? 1 : 0); PlayerPrefs.Save();
-        }
-
-        void ApplyLook()
-        {
-            atmo.BaseVignette = LookGrade.Apply(post, filterLevel, filterStrength / 10f);
-            lensFx.SetHalation(halation);
-            hud.RefreshPause();
-            PlayerPrefs.SetInt("summit_filter", filterLevel); PlayerPrefs.SetInt("summit_filterstrength", filterStrength); PlayerPrefs.SetInt("summit_halation", halation); PlayerPrefs.Save();
-        }
-
-        // the SOUND tab's music volume, in steps of 10%
-        void StepMusic(int dir)
-        {
-            int v = Mathf.Clamp(Mathf.RoundToInt(AudioPrefs.MusicVolume * 10f) + dir, 0, 10);
-            AudioPrefs.MusicVolume = v / 10f;
-            hud.RefreshPause();
-        }
-
-        // the GAME tab's TURN: how sharp the carve is (SteerPrefs, Rider.TurnScale), felt the moment the run resumes
-        void StepTurn(int dir) => SetTurnStop(SteerPrefs.Stop + dir);
-        void SetTurnStop(int k)
-        {
-            SteerPrefs.Stop = k;
-            hud.RefreshPause();
-        }
-
-        // ---- every setting has one method here, which the pause menu's and the start page's settings both call
-        //      (FillSettings hands them to both sheets as rows), so the two can never disagree and a change made in
-        //      one shows in the other
-        void StepCam(int dir) => SetCamLevel(camLevel + dir);
-        void StepAngle(int dir) { angleLevel = Mathf.Clamp(angleLevel + dir, 0, AngleHeight.Length - 1); ApplyCamera(); }
-        void StepLens(int dir) { lensLevel = Mathf.Clamp(lensLevel + dir, 0, LensFov.Length - 1); ApplyCamera(); }
-        void StepFilter(int dir) { filterLevel = (filterLevel + dir + LookGrade.Names.Length) % LookGrade.Names.Length; ApplyLook(); }
-        void StepStrength(int dir) { filterStrength = Mathf.Clamp(filterStrength + dir, 0, 10); ApplyLook(); }
-        void StepHalation(int dir) { halation = Mathf.Clamp(halation + dir, 0, LensFX.HalationName.Length - 1); ApplyLook(); }
-        void StepTime(int dir) { TimeOfDay.StepLock(dir); hud.RefreshPause(); }
-        void ToggleSteer() { input.SetTilt(!input.useTilt); hud.SetMode(input.useTilt); hud.RefreshPause(); }
-        // how the one finger jumps: a double tap (the default), a tap, or a flick up (RiderInput, FingerGesture)
-        void StepJump(int dir) { input.SetJumpStyle((JumpStyle)(((int)input.jumpStyle + dir + 3) % 3)); hud.RefreshPause(); if (state == State.Ready) ShowReadyHint(); }
-        string JumpName => RiderInput.JumpNames[(int)input.jumpStyle];
-        /// <summary>The jump, in words, for the hints: as the JUMP setting has it.</summary>
-        string JumpWords => input.jumpStyle == JumpStyle.Tap ? "tap" : input.jumpStyle == JumpStyle.FlickUp ? "flick up" : "double-tap";
-        // (tilt steering the other way round: the game has always read "summit_invert", but nothing could set it)
-        void ToggleInvert() { input.invertTilt = !input.invertTilt; PlayerPrefs.SetInt("summit_invert", input.invertTilt ? 1 : 0); PlayerPrefs.Save(); }
-        void ToggleTrees() { props.SetRealistic(!props.IsRealistic); hud.RefreshPause(); }
-        void ToggleVoice() { SoundMix.VoiceLines = !SoundMix.VoiceLines; hud.RefreshPause(); PlayerPrefs.SetInt("summit_voicelines", SoundMix.VoiceLines ? 1 : 0); PlayerPrefs.Save(); }
-        void ToggleFlashlight() { DayNight.FlashlightOn = !DayNight.FlashlightOn; hud.RefreshPause(); PlayerPrefs.SetInt("summit_flashlight", DayNight.FlashlightOn ? 1 : 0); PlayerPrefs.Save(); dayNight.ApplyNow(); }
-        void ToggleBlood() { blood.SetOn(!blood.On); hud.RefreshPause(); PlayerPrefs.SetInt("summit_blood", blood.On ? 1 : 0); PlayerPrefs.Save(); }
-
         // ---------------------------------------------------------------- the start page
-
-        /// <summary>
-        /// Every setting there is, a row each under four headings, onto a settings sheet: the start page's and the pause
-        /// menu's get the very same rows (one list, here), so the two read and behave alike.
-        /// </summary>
-        void FillSettings(SettingsSheet s)
-        {
-            string OnOff(bool on) => on ? "ON" : "OFF";
-            int view = s.AddTab(Hud.TabName[0]), look = s.AddTab(Hud.TabName[1]), game = s.AddTab(Hud.TabName[2]), sound = s.AddTab(Hud.TabName[3]);
-            s.AddRow(view, "VIEW", () => pov ? "FIRST PERSON" : "CHASE CAMERA", d => SetPov(!pov), true);
-            s.AddRow(view, "CAMERA DISTANCE", () => pov ? "N/A" : CamName[camLevel], StepCam, false, () => !pov);
-            s.AddRow(view, "CAMERA ANGLE", () => pov ? "N/A" : AngleName[angleLevel], StepAngle, false, () => !pov);
-            s.AddRow(view, "LENS", () => LensName[lensLevel], StepLens);
-            s.AddRow(view, "HOME SCREEN", () => StartPage.HomeName, d => { StartPage.StepHome(d); hud.RefreshPause(); }, true);
-            s.AddRow(look, "TIME OF DAY", () => TimeOfDay.LockLabel, StepTime);
-            s.AddRow(look, "WEATHER", () => Weather.ChoiceLabel, Weather.StepChoice);
-            s.AddRow(look, "FILTER", () => LookGrade.Names[filterLevel], StepFilter);
-            s.AddRow(look, "FILTER STRENGTH", () => filterStrength * 10 + "%", StepStrength);
-            s.AddRow(look, "HALATION", () => LensFX.HalationName[halation], StepHalation);
-            s.AddRow(game, "TURN", () => SteerPrefs.Label, StepTurn);
-            s.AddRow(game, "STEERING", () => input.useTilt ? "TILT" : "DRAG", d => ToggleSteer(), true);
-            s.AddRow(game, "JUMP", () => JumpName, StepJump);
-            s.AddRow(game, "INVERT TILT", () => OnOff(input.invertTilt), d => ToggleInvert(), true, () => input.useTilt);
-            // (not mid-run: what you ride is changed on the start pad, or before you go)
-            s.AddRow(game, "RIDE", () => RideName, StepRide, false, () => state != State.Riding);
-            s.AddRow(game, "TREES", () => props.IsRealistic ? "REALISTIC" : "ORIGINAL", d => ToggleTrees(), true);
-            s.AddRow(game, "FLASHLIGHT", () => OnOff(DayNight.FlashlightOn), d => ToggleFlashlight(), true);
-            s.AddRow(game, "BLOOD", () => OnOff(blood.On), d => ToggleBlood(), true);
-            s.AddRow(sound, "MUSIC", () => Mathf.RoundToInt(AudioPrefs.MusicVolume * 10f) * 10 + "%", StepMusic);
-            s.AddRow(sound, "VOICE LINES", () => OnOff(SoundMix.VoiceLines), d => ToggleVoice(), true);
-            // (steerB) the feel's own numbers, live: drag one mid-run, resume, and feel it (Tuning; kept in PlayerPrefs)
-            if (Tuning.Enabled)
-            {
-                int tune = s.AddTab(Hud.TabName[4]);
-                foreach (var k in Tuning.Knobs)
-                {
-                    var kk = k;
-                    s.AddSlider(tune, kk.label, () => kk.Text, () => kk.T, t => kk.T = t, () => Tuning.Save(kk));
-                }
-                s.AddButton(tune, "RESET TO DEFAULTS", "RESET", () => { Tuning.Reset(); hud.RefreshPause(); });
-            }
-        }
 
         /// <summary>Make the start page (its settings are the HUD's: they open from the camp and the start pad).</summary>
         void BuildStart()
@@ -393,346 +270,6 @@ namespace Summit
         bool ledgeCued, ledgeFading;   // the first-ledge sting has played this run / is on its way out
         static readonly bool autoplay = System.Environment.GetEnvironmentVariable("SUMMIT_AUTOPLAY") == "1";
 
-        void Awake()
-        {
-            QualitySettings.vSyncCount = 0;
-            Application.targetFrameRate = 60;
-            Time.fixedDeltaTime = 1f / 120f;   // physics in small steps; the rider is interpolated between them
-            // after a long frame, catch up at most 50 ms of physics (6 steps), not a third of a second's worth, which only
-            // made the next frame long too (set here: the batch tools leave TimeManager.asset changed)
-            Time.maximumDeltaTime = 0.05f;
-            Physics.simulationMode = SimulationMode.FixedUpdate;   // never left on manual by a test tool
-            Screen.sleepTimeout = SleepTimeout.NeverSleep;
-            Screen.orientation = ScreenOrientation.Portrait;
-            Slope.Init(Slope.TodaysSeed());
-            best = PlayerPrefs.GetInt("summit_best", 0);
-            SteerPrefs.Apply();   // (the TURN setting)
-            MakeMissingMaterials();
-            SetUpWorld();
-
-            input = gameObject.AddComponent<RiderInput>();
-
-            var rg = new GameObject("Rider");
-            rider = rg.AddComponent<Rider>();
-            rider.input = input;
-            _ = rider.Body;   // its physics body exists before the ragdoll is built (as on device; edit-mode tools skip Awake)
-            body = rg.AddComponent<RiderBody>();
-            body.Build(rider, jacket, pants, board, skin, dark, trail, spray);
-            rider.Link += OnLink;
-            rider.Crash += OnCrash;
-            rider.RoughLanding += OnRough;
-            rider.Jumped += () => { if (state == State.Riding) { audioFx.Play(Sfx.Pop); popped = true; } };
-            rider.Landed += impact =>
-            {
-                if (state != State.Riding || impact <= 3f) return;
-                if (impact > 11f) audioFx.Play(Sfx.LandHard);
-                if (impact > 13f && impact <= 18f && !rider.Crashed) audioFx.Play(Sfx.BuddyClose);   // a big landing ridden away (harder is the ouch)
-                hurtShake = Mathf.Max(hurtShake, Mathf.Clamp01((impact - 7f) / 12f) * 0.7f);
-                audioFx.Play(Sfx.Land, Mathf.Clamp01(impact / 14f));
-            };
-            rider.Scraped += hit => { if (state == State.Riding) audioFx.Play(Sfx.Scrape, hit); };
-            body.BoneBroke += (limb, at) =>
-            {
-                if (state != State.Riding) return;   // the bill is closed once the run is over
-                // a harsh crack for each kind of break: the neck, the spine, a big bone in the leg, an arm
-                audioFx.Play(limb == "Head" ? Sfx.BoneNeck : limb == "Ribs" ? Sfx.BoneBack : limb.EndsWith("leg") ? Sfx.BoneLeg : Sfx.BoneArm);
-                hud.Hurt(0.5f);
-                hurtShake = 1f;   // (the bill hears the hit itself, with the break: body.Injured)
-            };
-            body.LimbLost += (limb, at, whole) =>
-            {
-                // a limb torn off: it goes on the bill, and you get up and ride on without it (RiderBodyLimbs).
-                // (the crash it came off in has already counted as a fall)
-                if (state != State.Riding) return;
-                receipt.Lost(LostPart(limb), whole);
-                hud.Hurt(1f); hurtShake = 1f;
-                audioFx.Play(Sfx.Bone); audioFx.Play(Sfx.Crash);
-                if (audioFx.Screaming) audioFx.ScreamHit();
-            };
-            // a tree hit and still standing: it shudders and its snow comes down off it (SnowFX, TreeWind)
-            rider.HitObstacle += (ob, at, into) => { if (ob.label == "Tree") ShakeTree(ob.GetComponent<Collider>(), into, rider.Body.linearVelocity); };
-            // arcadetrees: a tree clipped and ridden on, staggering: a branch's snap and the thud of the trunk, the snow off it
-            // (ShakeTree, above), the camera jolted and the rider flinching away from it
-            rider.TreeGlanced += (at, into, square) =>
-            {
-                if (state != State.Riding) return;
-                float sp = rider.Speed;
-                audioFx.PlayTree(Sfx.LimbSnap, 0.35f + 0.4f * square, sp, 0.55f + 0.35f * square);
-                audioFx.PlayTree(Sfx.TrunkCrack, 0.2f + 0.3f * square, sp, 0.3f + 0.4f * square);
-                audioFx.PlayTree(Sfx.SnowDump, 0.5f, sp, 0.5f + 0.3f * square);
-                audioFx.Play(Sfx.Branches, 0.5f + 0.3f * square);
-                hurtShake = Mathf.Max(hurtShake, 0.3f + 0.4f * square);
-            };
-            body.RagdollStruck += (c, at, into) =>
-            {
-                var ob = c != null ? c.GetComponentInParent<Obstacle>() : null;
-                if (ob != null && ob.label == "Tree" && into > 4f) ShakeTree(c, into, c.transform.position - at);
-            };
-            body.RagdollHit += (v, isBoard) =>
-            {
-                if (!isBoard && v > 6f) hurtShake = Mathf.Max(hurtShake, Mathf.Clamp01((v - 6f) / 10f) * 0.8f);
-                if (v < 1.5f || Time.time < nextImpactSound) return;
-                // mid-tumble: a fresh scream on each big hit, above all against trees, rocks and signs
-                if (audioFx.Screaming && rider.Crashed && !isBoard && (v > 14f || (v > 7f && body.RagdollHitObject)))
-                    audioFx.ScreamHit();
-                // a hard hit into a tree, rock or sign mid-tumble gets its own beat (never the rolling on the snow)
-                if (rider.Crashed && !isBoard && state == State.Riding && v > 8f && body.RagdollHitObject)
-                    HitStop(0.25f + (v - 8f) / 30f);
-                nextImpactSound = Time.time + 0.07f;
-                audioFx.Play(isBoard ? Sfx.Clack : Sfx.Thump, Mathf.Clamp01(v / 10f));
-            };
-
-            var tg = new GameObject("Terrain");
-            terrain = tg.AddComponent<SlopeStreamer>();
-            terrain.snowMaterial = snow;
-            terrain.target = rg.transform;
-            SnowLayer.Create(snow);   // the snow the thrown body ploughs into (see RiderBody.PhysicsStep)
-
-            var pg = new GameObject("Trees");
-            props = pg.AddComponent<Forest>();
-            props.foliage = foliage;
-            props.bark = bark;
-            props.target = rg.transform;
-            Farview.Create(rg.transform, snow, foliage);   // the world's far band and the far field beyond it (Farview.cs)
-
-            power = new GameObject("PowerUps").AddComponent<PowerUps>();
-            power.rider = rider;
-            power.Build(snow.shader, trail, spray);
-            power.Collected += OnPickup;
-            rider.ShieldHit += () =>
-            {
-                if (state != State.Riding) return;
-                hud.Flash("SHIELD SAVED YOU", rider.Shields + " left", 1.1f);
-                audioFx.Play(Sfx.ShieldHit);
-            };
-            BuildStartGate();
-            dressing = new GameObject("Course").AddComponent<CourseDressing>();
-            dressing.target = rg.transform;
-            dressing.Build(snow.shader, snow);
-            Hamlets.Create(rg.transform, snow.shader, spray);   // hamlets beside the piste (Hamlets.cs): they stream and rebuild themselves
-            wild = new GameObject("Wildlife").AddComponent<Wildlife>();
-            wild.rider = rider;
-            wild.Build(snow.shader);
-            wild.BearSpotted += () => { };   // (the bear is there to see and hear: no caption)
-            SkiLift.Create(rg.transform, snow.shader);   // ski lifts beside the run (SkiLift.cs): they stream, and follow a new mountain, by themselves
-            MountainRiders.Create(null, rider, snow.shader);   // other people riding the run (MountainRiders.cs): the same, by themselves (not under the rider: their solids would ride along with him)
-            // (ridercrash) into another rider: they go down; the first time a run you stay up, and know it without a word
-            rider.PersonWarned += (ob, at) => FreeHit();
-            if (LiftEnds.Instance != null) LiftEnds.Instance.Grunted = (at, female) => { if (state == State.Riding) audioFx.Play(female ? Sfx.Yelp : Sfx.Grunt); };
-            // (rides2) the car and the bear run people down: the thud of it, the spray, and on you go
-            rider.RanOver += (at, into, person) =>
-            {
-                if (state != State.Riding) return;
-                audioFx.Play(Sfx.Thump, Mathf.Clamp01(into / 8f));
-                if (person) { if (blood != null && blood.On && into > Blood.ObstacleHard) audioFx.Play(Sfx.Bone, 0.6f); PeopleBlood.Hit(at + Vector3.up * 0.9f, rider.Velocity, into); }
-                hurtShake = Mathf.Max(hurtShake, 0.25f);
-            };
-            // (rides2) the car dented by a tree (or bumped off anything built): the crunch, a jolt, and how many it has left
-            rider.CarDented += (trees, at) =>
-            {
-                if (state != State.Riding) return;
-                audioFx.Play(Sfx.SmashWood, 0.8f); audioFx.Play(Sfx.Thump, 1f);
-                hurtShake = Mathf.Max(hurtShake, 0.5f);
-                if (trees > 0)
-                {
-                    int left = Rider.CarTreesToWreck - trees;
-                    hud.Flash("DENTED", left == 1 ? "one more tree and you're out" : left + " more trees and you're out", 1.1f);
-                }
-            };
-            if (MountainRiders.Current != null) MountainRiders.Current.Grunted = (at, female) => { if (state == State.Riding) audioFx.Play(female ? Sfx.Yelp : Sfx.Grunt); };
-            rider.GrindStart += f => { if (state == State.Riding) audioFx.Play(f.kind == Course.Kind.Rail ? Sfx.GrindRail : Sfx.GrindBox); };
-            // a numbered flag wherever a fall came to rest, for the rest of the run
-            flags = new GameObject("FallFlags").AddComponent<FallFlags>();
-            flags.Build(jacket != null ? jacket.shader : null);
-            body.Injured += inj => { if (state == State.Riding) receipt.Hit(inj); };   // each hit on the receipt (Receipt)
-            receipt.Printed += OnBilled;
-            body.FallRested += at => { if (state == State.Riding) flags.Plant(at, falls); };
-            body.Killed += fell =>
-            {
-                // off a cliff and into the snow far below: it's over (see RiderBodyFall)
-                if (state == State.Hub) { HitStop(1f); audioFx.Play(Sfx.Crash); return; }   // off the camp's edge: just the thump
-                if (state != State.Riding) return;
-                Vector3 c = body.RagdollCentre;
-                rider.StayDown = true; wipeoutTimer = 2.6f; endTitle = "WIPED OUT";
-                receipt.Killed(fell, RockFace.IsRock(Slope.Normal(c.x, c.z), c.x, c.z));
-                HitStop(1f);   // the body hitting the snow at the foot of the cliff
-                audioFx.Play(Sfx.BoneBack); audioFx.Play(Sfx.Crash);
-            };
-
-            var cam = Camera.main;
-            if (cam == null)
-            {
-                var cg = new GameObject("Main Camera");
-                cg.tag = "MainCamera";
-                cam = cg.AddComponent<Camera>();
-                cg.AddComponent<AudioListener>();
-            }
-            cam.nearClipPlane = 0.2f;
-            cam.farClipPlane = 2300f;
-            chase = cam.gameObject.GetComponent<ChaseCamera>();
-            if (chase == null) chase = cam.gameObject.AddComponent<ChaseCamera>();
-            chase.rider = rider;
-            chase.floor = slide.Depth;   // the camera rides up over the avalanche's debris
-            camLevel = Mathf.Clamp(PlayerPrefs.GetInt("summit_camdist", 2), 0, CamDist.Length - 1);
-            chase.distScale = CamDist[camLevel];
-            angleLevel = Mathf.Clamp(PlayerPrefs.GetInt("summit_angle", 1), 0, AngleHeight.Length - 1);
-            lensLevel = Mathf.Clamp(PlayerPrefs.GetInt("summit_lens", 1), 0, LensFov.Length - 1);
-            PlayerPrefs.DeleteKey("summit_lenstype");   // (the lens is always spherical now: an old ANAMORPHIC choice is forgotten)
-            filterLevel = Mathf.Clamp(PlayerPrefs.GetInt("summit_filter", 0), 0, LookGrade.Names.Length - 1);
-            filterStrength = Mathf.Clamp(PlayerPrefs.GetInt("summit_filterstrength", 10), 0, 10);
-            halation = Mathf.Clamp(PlayerPrefs.GetInt("summit_halation", 0), 0, LensFX.HalationName.Length - 1);
-
-            fx = new GameObject("SnowFX").AddComponent<SnowFX>();
-            fx.Build(cam, spray);
-            body.fx = fx;
-            // blood on the hardest crashes (can be switched off in the pause menu: it raises the age rating)
-            blood = new GameObject("Blood").AddComponent<Blood>();
-            blood.Build(spray);
-            blood.SetOn(PlayerPrefs.GetInt("summit_blood", 1) == 1);
-            body.blood = blood;
-            blood.forest = props;
-            PeopleBlood.blood = blood;   // (the people knocked over bleed too: rides2)
-
-            // invincible: what you run through is smashed, not crashed into
-            smasher = new GameObject("Smasher").AddComponent<Smasher>();
-            smasher.Build(fx, props, wild, spray);
-            aura = rg.AddComponent<PowerAura>();
-            aura.Build(rider, spray);
-            rider.Smashed += (ob, at, v) =>
-            {
-                if (state != State.Riding) return;
-                smasher.Hit(ob, at, v);
-                if (ob.label == "Tree")
-                {
-                    // (treesfx: a tree smashed through is a trunk breaking, the recorded layers, not the crate's break)
-                    float sp = v.magnitude;
-                    audioFx.PlayTree(Sfx.TrunkCrack, 0.9f, sp);
-                    audioFx.PlayTree(Sfx.LimbSnap, 0.8f, sp, 0.6f);
-                    audioFx.PlayTree(Sfx.SnowDump, 0.9f, sp, 0.8f);
-                    audioFx.Play(Sfx.Branches, 0.7f);
-                }
-                else audioFx.Play(ob.label == "Rock" ? Sfx.SmashRock : Sfx.SmashWood);
-                if (ob.always) audioFx.Play(Sfx.BearRoar);
-                hurtShake = Mathf.Max(hurtShake, 0.35f);
-                Link(ob.always ? "BEAR BOWLED" : ob.label == "Rock" ? "ROCK SMASH" : "TIMBER!", ob.always ? 500 : 100, LinkKind.Smash);
-            };
-            // young trees and dead snags hit fast enough snap: the top falls, you go down but carry on (TreeBreak)
-            treeBreak = new GameObject("TreeBreak").AddComponent<TreeBreak>();
-            treeBreak.Build(props, fx, smasher);
-            // the sound of it in layers (SoundMix.PlayTree, by the size of what broke and how fast it was hit): a twig's
-            // sharp crack, a limb's splintering snap, a trunk's heavy crack and creak, the thump as it lands, the snow
-            // falling off the branches
-            treeBreak.Snapped += (at, into, byRider) =>
-            {
-                if (state != State.Riding) return;
-                audioFx.PlayTree(Sfx.TrunkCrack, byRider ? 0.85f : 0.7f, into);
-                audioFx.PlayTree(Sfx.LimbSnap, 0.9f, into, 0.5f);
-                audioFx.PlayTree(Sfx.SnowDump, 0.9f, into, 0.9f);
-                audioFx.Play(Sfx.Branches, 0.6f);
-                hurtShake = Mathf.Max(hurtShake, byRider ? 0.8f : 0.5f);
-            };
-            // a thin trunk ridden through (a small tree, a treetop) and branches brushed: you ride on. Heard, felt in the
-            // camera, the hero flinching from them (the rest - the snow, the needles, the pieces - is TreeBreak's)
-            treeBreak.Broke += (at, into, top) =>
-            {
-                if (state != State.Riding) return;
-                audioFx.PlayTree(Sfx.LimbSnap, top ? 0.75f : 0.55f, into);
-                audioFx.PlayTree(Sfx.TrunkCrack, top ? 0.35f : 0.15f, into, top ? 0.55f : 0.4f);
-                audioFx.PlayTree(Sfx.SnowDump, top ? 0.8f : 0.6f, into, top ? 0.9f : 0.7f);
-                audioFx.Play(Sfx.Branches, 0.8f);
-                hurtShake = Mathf.Max(hurtShake, top ? 0.4f : 0.5f);
-            };
-            treeBreak.Brushed += (at, side, depth) =>
-            {
-                if (state != State.Riding) return;
-                float sp = rider.Speed;
-                audioFx.Play(Sfx.Branches, depth * 0.8f);
-                // the tips: twigs; deeper in, limbs torn out too; and the snow knocked off them
-                audioFx.PlayTree(Sfx.TwigCrack, 0.3f * depth, sp, 0.5f + 0.5f * depth);
-                if (depth > 0.45f) audioFx.PlayTree(Sfx.LimbSnap, 0.2f + 0.4f * depth, sp, depth);
-                if (depth > 0.2f || Random.value < 0.5f) audioFx.PlayTree(Sfx.SnowDump, 0.3f * depth, sp, 0.35f + 0.55f * depth);
-                hurtShake = Mathf.Max(hurtShake, 0.2f + 0.3f * depth);
-            };
-            treeBreak.Landed += (at, size, force) =>
-            {
-                if (state == State.Riding) audioFx.TreeLanded(at, size, force);
-            };
-            // signs and flags: ridden into (or tumbled into), signs break and flags go down (Breakables)
-            breaks = new GameObject("Breakables").AddComponent<Breakables>();
-            breaks.Build(rider, fx, smasher);
-            breaks.Broke += (b, crashed, invincible, thrown) =>
-            {
-                if (state != State.Riding) return;
-                bool sign = b.kind == Breakable.Kind.Sign;
-                if (sign) audioFx.Play(Sfx.SmashWood, crashed || invincible ? 1f : 0.8f);
-                else if (b.kind == Breakable.Kind.Fence) { audioFx.Play(Sfx.SmashWood, 0.55f); if (!thrown) hurtShake = Mathf.Max(hurtShake, 0.2f); }
-                else if (b.kind == Breakable.Kind.Banner) audioFx.Play(Sfx.ClothRip, thrown ? 0.5f : Mathf.Clamp01(rider.Speed / 25f));
-                else audioFx.Play(Sfx.Clack, 0.7f);
-                if (!sign || thrown) return;
-                hurtShake = Mathf.Max(hurtShake, crashed ? 0.8f : 0.45f);
-                if (invincible) Link("SIGN SMASH", 100, LinkKind.Smash);
-            };
-
-            // a sign (or a banner's stake) ridden into: you stay up, and it hurts. The camera shakes, the hero flinches
-            // from it, and it goes on the receipt while you ride: one line that pops up and folds into the corner's total
-            breaks.RiderHit += (kind, speed, at, part, cost) =>
-            {
-                if (state != State.Riding) return;
-                float k = Mathf.Clamp01(speed / 30f);
-                hurtShake = Mathf.Max(hurtShake, kind == Breakable.Kind.Sign ? 0.4f + 0.45f * k : 0.25f);
-                if (kind == Breakable.Kind.Sign && speed > 12f) audioFx.Play(Sfx.Grunt);
-                receipt.RideHit(kind == Breakable.Kind.Sign, part, speed, cost);
-            };
-
-            atmo = new GameObject("Atmosphere").AddComponent<Atmosphere>();
-            atmo.Build(cam, rider, spray);
-
-            slideView = new GameObject("Avalanche").AddComponent<AvalancheView>();
-            slideView.Build(cam, rider, body, slide, snow, spray);
-
-            var hg = new GameObject("HUD");
-            hud = hg.AddComponent<Hud>();
-            hud.Build();
-
-            var ag = new GameObject("Audio");
-            audioFx = ag.AddComponent<SoundMix>();
-            audioFx.Build();
-            audioFx.Track(wild);
-            HookPoints();
-
-            var vol = Object.FindFirstObjectByType<UnityEngine.Rendering.Volume>();
-            post = vol != null ? vol.profile : null;
-            lensFx = cam.gameObject.AddComponent<LensFX>();
-            lensFx.Build(cam);
-            pov = PlayerPrefs.GetInt(ChaseCamera.PovPref, 0) == 1;
-            chase.pov = pov; chase.body = body; chase.lensFx = lensFx;
-            Tuning.Load();
-            FillSettings(hud.PauseSettings);
-            hud.PauseSettings.Clicked = () => audioFx.Play(Sfx.Click);
-            ApplyCamera();
-            ApplyLook();
-            bool tube = PlayerPrefs.GetInt("summit_tube", 0) == 1;
-            rider.Tube = tube; body.SetTube(tube); ShowRider();
-            rider.Bounced += into => { if (state != State.Riding) return; body.TubeKick(into); audioFx.Play(Sfx.Thump, Mathf.Clamp01(into / 12f)); };
-            // the fun rides' (rides): a paddle stroke's swish; the ridden bear roars as it leaps and grunts as it lands
-            rider.Stroke += side => { if (state == State.Riding) audioFx.Stroke(side); };
-            rider.Jumped += () => { if (state == State.Riding && body.OnVehicleNow && body.Ride == RideKind.Bear) audioFx.BearRoar(); };
-            rider.Landed += impact => { if (state == State.Riding && body.OnVehicleNow && body.Ride == RideKind.Bear && impact > 4f) audioFx.BearGrunt(Mathf.Clamp01(impact / 16f)); };
-            rider.SpunOut += sp => { if (state == State.Riding) audioFx.Play(Sfx.Scrape, Mathf.Clamp(sp * 0.3f, 2f, 8f)); };
-            BuildMeta();
-            dayNight.Hook(rider, fx, camp, spray, trail);
-            weather = Weather.Build(rider, camp, cam, atmo, fx, snow, audioFx, () => start);   // the weather on top of the time of day (Weather.cs)
-            NightLights.Build(rider, cam, dayNight, atmo, spray);   // floodlights down the mountain at dusk and night (NightLights.cs)
-            PisteKit.Build(rider);   // piste poles, rope lines, snow guns, the patrol hut, trail signs (PisteKit.cs, TrailSigns.cs)
-            ToHub();
-            // the game opens on the start page (StartPage.cs), over the camp it has just set up. Not for the
-            // device-test autoplay, which carries straight on into a run, nor for the editor's test tools, which
-            // call Awake themselves outside play mode and expect to find themselves in the camp
-            if (!autoplay && Application.isPlaying) ToTitle();
-            // device testing: launched with SUMMIT_TREEBENCH=1 (and SUMMIT_AUTOPLAY=1) it times both tree looks
-            if (System.Environment.GetEnvironmentVariable("SUMMIT_TREEBENCH") == "1") gameObject.AddComponent<TreeBench>().forest = props;
-        }
-
         // ---------------------------------------------------------------- the meta game: camp, points, missions
 
         void BuildMeta()
@@ -896,13 +433,8 @@ namespace Summit
 
         static Material Plain(Color c, float smooth)
         {
-            // (no fallback: the built-in pipeline's "Standard" has no pass URP draws, and a player build leaves it out)
-            var m = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-            m.SetColor("_BaseColor", c);
-            m.SetColor("_Color", c);
-            m.SetFloat("_Smoothness", smooth);
-            m.SetFloat("_Glossiness", smooth);
-            m.enableInstancing = true;
+            var m = Mats.Lit(c, smooth, instanced: true);
+            m.SetColor("_Color", c); m.SetFloat("_Glossiness", smooth);   // (the names other shaders read them by)
             return m;
         }
 
@@ -1333,7 +865,7 @@ namespace Summit
             string live = rider.Crashed ? null : rider.LiveName;
             if (live != null) combo.SetLive(live, rider.LivePoints, rider.LiveKind);
             else if (combo.LiveName != null) { combo.SetLive(null, 0, LinkKind.Trick); liveSteps = 0; }
-            combo.Step(dt, rider.Airborne || rider.Grinding || rider.InLineFlow);   // (and between a feature line's hits: RiderLines)
+            combo.Step(dt, rider.Airborne || rider.Grinding || rider.InLineFlow || rider.GroundSpinning);   // (a flat spin on the snow holds it too: groundspin)   // (and between a feature line's hits: RiderLines)
             // the fall's receipt: what followed is billed once the body has stopped (or the rider is up); up again,
             // it tears off into the corner's total
             if (rider.Crashed && receipt.Open)
@@ -1389,133 +921,17 @@ namespace Summit
         // the start gate is rebuilt for every new mountain; its materials are made once and reused, so they neither
         // leak nor pile up in DayNight's list of reflective signs
         readonly System.Collections.Generic.Dictionary<string, Material> gateMats = new System.Collections.Generic.Dictionary<string, Material>();
-        Material GateSign(string path)
-        {
-            if (!gateMats.TryGetValue(path, out var m)) { m = CourseDressing.Sign(snow.shader, path); gateMats[path] = m; }
-            return m;
-        }
-
         void RebuildGate()
         {
             if (gateRoot != null) { if (Application.isPlaying) Destroy(gateRoot.gameObject); else DestroyImmediate(gateRoot.gameObject); }
             BuildStartGate();
         }
 
-        void BuildStartGate()
-        {
-            var sh = snow.shader;
-            Material M(Color c)
-            {
-                string k = "c" + c;
-                if (!gateMats.TryGetValue(k, out var m)) { m = new Material(sh); m.SetColor("_BaseColor", c); m.SetFloat("_Smoothness", 0.3f); gateMats[k] = m; }
-                return m;
-            }
-            var red = M(new Color(0.85f, 0.12f, 0.10f)); var white = M(new Color(0.95f, 0.95f, 0.97f)); var wood = M(new Color(0.45f, 0.30f, 0.18f));
-            var root = new GameObject("StartGate").transform;
-            gateRoot = root;
-            float cx = Slope.Centre(Slope.PadLip);
-            // the gate, where every run starts (StartGate.cs)
-            StartGate.Build(root, cx, (c, smooth) =>
-            {
-                string k = "c" + c + smooth;
-                if (!gateMats.TryGetValue(k, out var m)) { m = new Material(sh); m.SetColor("_BaseColor", c); m.SetFloat("_Smoothness", smooth); gateMats[k] = m; }
-                return m;
-            });
-            // flags lining the lip and a wooden kicker edge
-            for (int i = 0; i < 6; i++)
-                for (int sgn = -1; sgn <= 1; sgn += 2)
-                {
-                    float z = Slope.PadLip - 2f - i * 6f, x = cx + sgn * (Slope.PadHalf - 1f);
-                    float y = Slope.DrawnHeight(x, z);
-                    var flag = Holder("LipFlag", root, new Vector3(x, y, z));
-                    Block(PrimitiveType.Cylinder, flag, new Vector3(x, y + 0.9f, z), new Vector3(0.06f, 0.9f, 0.06f), white);
-                    Block(PrimitiveType.Cube, flag, new Vector3(x - sgn * 0.3f, y + 1.55f, z), new Vector3(0.6f, 0.4f, 0.03f), (i % 2 == 0) ? red : white);
-                    Breakable.Flag(flag, 1.8f);
-                }
-            // the finish line at the base of the mountain: a blue arch across the run
-            {
-                float fz = Slope.FinishZ + 30f, fx = Slope.Centre(fz), fy = Slope.DrawnHeight(fx, fz);
-                var blue = M(new Color(0.08f, 0.30f, 0.70f));
-                var arch = Holder("FinishArch", root, new Vector3(fx, fy, fz));
-                var archBrk = Breakable.Sign(arch);
-                for (int sgn = -1; sgn <= 1; sgn += 2)
-                    archBrk.Post(Block(PrimitiveType.Cube, arch, new Vector3(fx + sgn * 9f, fy + 2.6f, fz), new Vector3(0.45f, 5.2f, 0.45f), blue));
-                var archFrame = Block(PrimitiveType.Cube, arch, new Vector3(fx, fy + 5.0f, fz + 0.06f), new Vector3(18.6f, 1.6f, 0.08f), blue);
-                var fb = GameObject.CreatePrimitive(PrimitiveType.Quad);
-                Object.DestroyImmediate(fb.GetComponent<Collider>());
-                fb.transform.SetParent(arch, false);
-                fb.transform.SetPositionAndRotation(new Vector3(fx, fy + 5.0f, fz - 0.01f), Quaternion.identity);
-                fb.transform.localScale = new Vector3(18.2f, 1.4f, 1f);
-                fb.GetComponent<MeshRenderer>().sharedMaterial = GateSign("Signs/BannerFinish");
-                archBrk.Board(archFrame, fb.transform);
-                archBrk.Arm();
-            }
-            // the last chance: safety signs either side of the in-run before the lip, and caution tape strung
-            // chest-high between the last pair and on across the mountain, tree to tree (ride through it and it tears)
-            var post = M(new Color(0.55f, 0.57f, 0.6f));
-            WarningSign(root, cx, Slope.PadLip - 22f, -1f, "Signs/SignTurnAround", post);
-            WarningSign(root, cx, Slope.PadLip - 22f, 1f, "Signs/SignRemote", post);
-            var wl = WarningSign(root, cx, Slope.PadLip - 11f, -1f, "Signs/SignWarning", post);
-            var wr = WarningSign(root, cx, Slope.PadLip - 11f, 1f, "Signs/SignDangerStart", post);
-            StartTape.Build(root, wl, wr, SignPostX, rider, GateSign("Signs/Tape"), () => audioFx.Play(Sfx.Clack));
-            float ly = Slope.DrawnHeight(cx, Slope.PadLip - 0.3f);
-            Block(PrimitiveType.Cube, root, new Vector3(cx, ly - 0.15f, Slope.PadLip - 0.2f), new Vector3(2f * Slope.PadHalf - 4f, 0.35f, 0.3f), wood);
-        }
-
-        const float SignW = 3.6f, SignPostX = SignW * 0.4f;
-
-        /// <summary>A 3:2 safety sign on two posts beside the in-run (side -1 / 1), turned in toward the rider coming down.</summary>
-        Transform WarningSign(Transform root, float cx, float z, float side, string face, Material post)
-        {
-            const float W = SignW, H = W / 1.5f, lift = 1.3f;
-            float x = cx + side * 6.5f;
-            var t = new GameObject("WarningSign").transform;
-            t.SetParent(root, false);
-            t.SetPositionAndRotation(new Vector3(x, Slope.DrawnHeight(x, z), z), Quaternion.Euler(0f, side * 28f, 0f));
-            Transform Local(PrimitiveType type, Vector3 at, Vector3 scale, Material m)
-            {
-                var go = GameObject.CreatePrimitive(type);
-                Object.DestroyImmediate(go.GetComponent<Collider>());
-                go.transform.SetParent(t, false);
-                go.transform.localPosition = at; go.transform.localScale = scale;
-                go.GetComponent<MeshRenderer>().sharedMaterial = m;
-                if (type == PrimitiveType.Quad) go.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                return go.transform;
-            }
-            var brk = Breakable.Sign(t);
-            // posts run a little into the snow, so they stand on the bank whatever its tilt
-            float top = lift + H;
-            for (int s = -1; s <= 1; s += 2)
-                brk.Post(Local(PrimitiveType.Cylinder, new Vector3(s * SignPostX, top * 0.5f - 0.3f, 0.08f), new Vector3(0.1f, (top + 0.6f) * 0.5f, 0.1f), post));
-            var back = Local(PrimitiveType.Cube, new Vector3(0f, lift + H * 0.5f, 0.03f), new Vector3(W + 0.1f, H + 0.1f, 0.04f), post);
-            brk.Board(back, Local(PrimitiveType.Quad, new Vector3(0f, lift + H * 0.5f, -0.001f), new Vector3(W, H, 1f), GateSign(face)));
-            brk.Arm();
-            return t;
-        }
-
-        static Transform Block(PrimitiveType t, Transform parent, Vector3 pos, Vector3 scale, Material m)
-        {
-            var go = GameObject.CreatePrimitive(t);
-            Object.DestroyImmediate(go.GetComponent<Collider>());
-            go.transform.SetParent(parent, false);
-            go.transform.position = pos;
-            go.transform.localScale = scale;
-            go.GetComponent<MeshRenderer>().sharedMaterial = m;
-            return go.transform;
-        }
-
-        /// <summary>An empty holder at a spot on the snow, for something that can be broken or knocked down (Breakable).</summary>
-        static Transform Holder(string name, Transform parent, Vector3 at)
-        {
-            var t = new GameObject(name).transform;
-            t.SetParent(parent, false);
-            t.position = at;
-            return t;
-        }
+        void BuildStartGate() => gateRoot = StartGate.BuildSite(snow.shader, gateMats, rider, () => audioFx.Play(Sfx.Clack));
 
         // airborne sounds: a whoosh as you leave the snow without popping, and one for each half turn of a spin
         bool popped, wasAir;
-        float spinSounded, nextImpactSound;
+        float spinSounded, groundSounded, nextImpactSound;
         void AirSounds(bool riding)
         {
             bool air = riding && rider.Airborne;
@@ -1526,6 +942,9 @@ namespace Summit
             }
             if (!air) popped = false;
             wasAir = air;
+            // (and a flat spin on the snow: one for each half turn, groundspin)
+            if (!rider.GroundSpinning) groundSounded = 0f;
+            else if (Mathf.Abs(rider.GroundSpinNow) > groundSounded + 0.35f) { audioFx.Play(Sfx.Spin); groundSounded += Mathf.PI; }
             if (air && rider.TrickName != null)
             {
                 float turned = Mathf.Abs(rider.SpinNow) + Mathf.Abs(rider.FlipNow);
@@ -1574,95 +993,6 @@ namespace Summit
         }
 
         static void SetTimeScale(float s) { Time.timeScale = s; Time.fixedDeltaTime = FixedStep; }
-
-        // the "nooo": down a crevasse it fades with the depth; off a cliff, a short one the moment you are clearly
-        // falling far below where you left the snow
-        bool cliffNooo, crevNooo;
-        // the warnings, a beat before it happens: "don't go down there" with a deadly drop or a crevasse ahead on the
-        // line you're riding, "lookout" with a tree, rock or sign right in the way
-        float nextWarnCheck;
-        void WatchWarn()
-        {
-            if (state != State.Riding || audioFx == null || rider.Crashed || rider.Airborne || paused) return;
-            if (Time.unscaledTime < nextWarnCheck) return;
-            nextWarnCheck = Time.unscaledTime + 0.25f;
-            Vector3 p = rider.transform.position, v = rider.Body.linearVelocity;
-            Vector3 flat = new Vector3(v.x, 0f, v.z);
-            float sp = flat.magnitude;
-            if (sp < 8f) return;
-            Vector3 dir = flat / sp;
-            for (float t = 0.8f; t <= 1.6f; t += 0.4f)
-            {
-                Vector3 q = p + dir * sp * t;
-                if (Deadly.Below(q.x, q.z) || Course.CrevasseNear(q.x, q.z, 1.5f)) { audioFx.Play(Sfx.BuddyDeep); return; }
-            }
-            if (Physics.SphereCast(p + Vector3.up * 0.8f, 0.5f, dir, out RaycastHit hit, sp * 0.9f, ~0, QueryTriggerInteraction.Ignore) &&
-                hit.collider.GetComponentInParent<Obstacle>() != null)
-                audioFx.Play(Sfx.BuddyWarn);
-        }
-
-        // the woahs: high off a jump (once per air), and now and then at full tilt
-        bool airWoah; float nextSpeedWoah;
-        void WatchWoah()
-        {
-            if (state != State.Riding || audioFx == null || rider.Crashed) { airWoah = false; return; }
-            if (!rider.Airborne) airWoah = false;
-            else if (!airWoah && rider.AboveGround > 5f) { airWoah = true; audioFx.Play(Sfx.BuddyWoah); }
-            if (!rider.Airborne && rider.Speed * 3.6f > 150f && Time.unscaledTime > nextSpeedWoah)
-            {
-                nextSpeedWoah = Time.unscaledTime + 25f;
-                if (Random.value < 0.5f) audioFx.Play(Sfx.BuddyWoah);
-            }
-        }
-        void WatchDrop()
-        {
-            if (audioFx == null) return;
-            if (state != State.Riding && state != State.Buried) return;
-            Vector3 c = rider.Crashed ? body.RagdollCentre : rider.transform.position;
-            bool overCrevasse = Course.CrevasseNear(c.x, c.z, 2.5f);
-            if (rider.Crashed)
-            {
-                audioFx.NoooDepth(body.RagdollBelowSnow);
-                // into a crevasse, however you got there: only the "nooo", never a scream over it
-                if (!crevNooo && overCrevasse && body.RagdollBelowSnow > 0.8f)
-                {
-                    crevNooo = true;
-                    audioFx.StopScreaming(true);
-                    if (!audioFx.NoooPlaying) audioFx.Play(Sfx.Nooo);
-                }
-            }
-            if (state != State.Riding) return;
-            if (!rider.Airborne && !rider.Crashed) { cliffNooo = false; return; }
-            if (cliffNooo || crevasseWatch || overCrevasse || audioFx.NoooPlaying) return;
-            // off a cliff: only once the snow under you is further down than anyone survives (a jump, however big,
-            // comes down onto a slope that isn't that far below, so it never cries out)
-            Vector3 d = rider.DropFrom;
-            float ground = Slope.DrawnHeight(c.x, c.z);
-            float toFall = d.y - ground - Slope.Fall * Mathf.Max(0f, c.z - d.z);
-            float falling = rider.Crashed ? -1f : rider.Body.linearVelocity.y;
-            if (toFall > Rider.DeathFall && c.y - ground > 3f && falling < -1f) { cliffNooo = true; audioFx.StopScreaming(true); audioFx.NoooFor(1.5f); }
-        }
-
-        void StartScreaming()
-        {
-            screamT = 0f; screamSlowT = 0f; audioFx.StartScreaming();
-            if (autoplay || showDiag) Debug.Log("SUMMIT SCREAM start v=" + (rider.Speed * 3.6f).ToString("F0") + " km/h");
-        }
-
-        // the screaming goes on, clip after clip, until the body has slowed below 10 km/h (held for a moment, so a
-        // bounce doesn't cut it) or you're back on your feet; then it dies away
-        void WatchScream(float dt)
-        {
-            if (audioFx == null || !audioFx.Screaming || dt <= 0f) return;
-            screamT += dt;
-            bool slow = body.RagdollSpeed * 3.6f < 10f;
-            screamSlowT = slow ? screamSlowT + dt : 0f;
-            if (!rider.Crashed || (screamT > 0.8f && screamSlowT > 0.3f))
-            {
-                audioFx.StopScreaming();
-                if (autoplay || showDiag) Debug.Log("SUMMIT SCREAM stop after " + screamT.ToString("F1") + " s, body at " + (body.RagdollSpeed * 3.6f).ToString("F0") + " km/h");
-            }
-        }
 
         // ---- after a fall: wait for the player's tap (ResumeTap)
 

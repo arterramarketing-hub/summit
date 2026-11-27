@@ -76,7 +76,7 @@ namespace Summit
             float s = Mathf.Max(1e-4f, neck.lossyScale.x);
             go.transform.localScale = Vector3.one * (PovHelmet / s);
             var r = go.GetComponent<MeshRenderer>();
-            var sh = Shader.Find("Universal Render Pipeline/Lit");
+            var sh = Mats.LitShader;
             if (sh != null) r.sharedMaterial = new Material(sh) { name = "PovHeadShadow" };
             r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.ShadowsOnly;
             r.receiveShadows = false;

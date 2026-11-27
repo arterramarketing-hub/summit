@@ -141,7 +141,7 @@ namespace Summit
         static Material FaceMaterial()
         {
             if (faceCache != null) return faceCache;
-            var m = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Marshmallow.Lit()) { name = "AlyssaFace" };
+            var m = new Material(Mats.LitShader) { name = "AlyssaFace" };
             var tex = Resources.Load<Texture2D>("Rider/AlyssaFace");
             if (tex != null) { m.SetTexture("_BaseMap", tex); m.mainTexture = tex; }
             m.SetColor("_BaseColor", Color.white); m.SetFloat("_Smoothness", 0.3f);

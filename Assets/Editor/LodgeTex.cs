@@ -74,7 +74,7 @@ public static class LodgeTex
             }
         }
         // the materials
-        var lit = Shader.Find("Universal Render Pipeline/Lit");
+        var lit = Summit.Mats.LitShader;
         System.IO.Directory.CreateDirectory(Dir + "/Materials");
         foreach (var d in Defs)
         {

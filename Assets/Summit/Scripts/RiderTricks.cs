@@ -206,6 +206,7 @@ namespace Summit
             grabFirst = pick % Grabs.Length;
             // a direction already held as you leave the snow is a hold (it spins only as far as will fit), not a flick
             xOn = Mathf.Abs(TrickX) >= FlickAt; yOn = Mathf.Abs(TrickY) >= FlickAt;
+            GroundSpinIntoAir();   // (off the snow mid-spin: the spin goes on as this air's: RiderGroundSpin)
         }
 
         bool Fits(float rad, float rate) => rad / rate + 0.13f <= landIn;

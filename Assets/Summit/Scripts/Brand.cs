@@ -41,9 +41,28 @@ namespace Summit
         public static Font Face(Weight w)
         {
             if (face != null) return face;
-            try { face = Font.CreateDynamicFontFromOSFont(new[] { "Avenir Next", "Avenir", "Helvetica Neue", "Arial" }, 64); } catch { }
-            if (face == null) try { face = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"); } catch { }
+            face = Os("Avenir Next", "Avenir", "Helvetica Neue", "Arial");
+            if (face == null) face = Builtin();
             return face;
+        }
+
+        /// <summary>The first of these the system has, at 64 (null if none, or no system fonts at all).</summary>
+        public static Font Os(params string[] names)
+        {
+            try { return Font.CreateDynamicFontFromOSFont(names, 64); } catch { return null; }
+        }
+
+        static Font builtin;
+        /// <summary>
+        /// Unity's own face (LegacyRuntime, or Arial in older editors), shipped with every build: the HUD's and the
+        /// start page's bold type, and what the system faces fall back to.
+        /// </summary>
+        public static Font Builtin()
+        {
+            if (builtin != null) return builtin;
+            try { builtin = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"); } catch { }
+            if (builtin == null) try { builtin = Resources.GetBuiltinResource<Font>("Arial.ttf"); } catch { }
+            return builtin;
         }
 
         /// <summary>A step of the type scale: face, size (canvas units: ×0.4 for points on a phone) and letter spacing (em).</summary>

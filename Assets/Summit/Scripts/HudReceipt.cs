@@ -67,20 +67,20 @@ namespace Summit
             var one = new Vector2(1f, 1f);
             rcpt = new GameObject("Receipt", typeof(RectTransform)).GetComponent<RectTransform>();
             rcpt.SetParent(pts, false);
-            Place(rcpt, one, new Vector2(Right, Top), new Vector2(RW, 400f), one);
+            Brand.Place(rcpt, one, new Vector2(Right, Top), new Vector2(RW, 400f), one);
             rGroup = rcpt.gameObject.AddComponent<CanvasGroup>();
             rGroup.alpha = 0f; rGroup.blocksRaycasts = false; rGroup.interactable = false;
 
-            rPaper = NewImage("Paper", rcpt, Paper);
+            rPaper = Brand.Img("Paper", rcpt, Paper);
             rPaper.sprite = panelSprite; rPaper.type = Image.Type.Sliced;
-            Place(rPaper.rectTransform, one, Vector2.zero, new Vector2(RW, 200f), one);
-            rEdge = NewImage("Torn", rcpt, Paper);
+            Brand.Place(rPaper.rectTransform, one, Vector2.zero, new Vector2(RW, 200f), one);
+            rEdge = Brand.Img("Torn", rcpt, Paper);
             rEdge.sprite = zigSprite; rEdge.type = Image.Type.Tiled;
-            Place(rEdge.rectTransform, one, Vector2.zero, new Vector2(RW, REdge), one);
+            Brand.Place(rEdge.rectTransform, one, Vector2.zero, new Vector2(RW, REdge), one);
             // the top, torn from the printer as it goes (only while it flies off: Tear)
-            rEdgeTop = NewImage("TornTop", rcpt, new Color(Paper.r, Paper.g, Paper.b, 0f));
+            rEdgeTop = Brand.Img("TornTop", rcpt, new Color(Paper.r, Paper.g, Paper.b, 0f));
             rEdgeTop.sprite = zigSprite; rEdgeTop.type = Image.Type.Tiled;
-            Place(rEdgeTop.rectTransform, one, new Vector2(0f, 1f), new Vector2(RW, REdge), one);   // (flipped: the teeth up)
+            Brand.Place(rEdgeTop.rectTransform, one, new Vector2(0f, 1f), new Vector2(RW, REdge), one);   // (flipped: the teeth up)
             rEdgeTop.rectTransform.localScale = new Vector3(1f, -1f, 1f);
 
             rHeader = NewText("Header", rcpt, one, new Vector2(-RW * 0.5f, -14f), 26, TextAnchor.UpperCenter);
@@ -91,30 +91,30 @@ namespace Summit
 
             rRows = new GameObject("Rows", typeof(RectTransform)).GetComponent<RectTransform>();
             rRows.SetParent(rcpt, false);
-            Place(rRows, one, new Vector2(0f, -RHead), new Vector2(RW, 0f), one);
+            Brand.Place(rRows, one, new Vector2(0f, -RHead), new Vector2(RW, 0f), one);
             rRows.gameObject.AddComponent<RectMask2D>();
-            rFlash = NewImage("Flash", rRows, new Color(1f, 0.15f, 0.1f, 0f));
+            rFlash = Brand.Img("Flash", rRows, new Color(1f, 0.15f, 0.1f, 0f));
             rFlash.sprite = panelSprite; rFlash.type = Image.Type.Sliced;
-            Place(rFlash.rectTransform, one, Vector2.zero, new Vector2(RW - 12f, RRow - 4f), new Vector2(1f, 0.5f));
-            rGlint = NewImage("Glint", rRows, new Color(0.85f, 0.94f, 1f, 0f));
+            Brand.Place(rFlash.rectTransform, one, Vector2.zero, new Vector2(RW - 12f, RRow - 4f), new Vector2(1f, 0.5f));
+            rGlint = Brand.Img("Glint", rRows, new Color(0.85f, 0.94f, 1f, 0f));
             rGlint.sprite = soft;
-            Place(rGlint.rectTransform, one, Vector2.zero, new Vector2(22f, RRow * 1.8f), new Vector2(0.5f, 0.5f));
+            Brand.Place(rGlint.rectTransform, one, Vector2.zero, new Vector2(22f, RRow * 1.8f), new Vector2(0.5f, 0.5f));
             rGlint.rectTransform.localRotation = Quaternion.Euler(0f, 0f, -18f);
 
             // the riding hit's slip: over the corner's total (where it folds to), above the combo
             rideRt = new GameObject("RideHit", typeof(RectTransform)).GetComponent<RectTransform>();
             rideRt.SetParent(pts, false);
-            Place(rideRt, one, new Vector2(-24f, -214f), new Vector2(RideW, RideH), new Vector2(1f, 0.5f));
+            Brand.Place(rideRt, one, new Vector2(-24f, -214f), new Vector2(RideW, RideH), new Vector2(1f, 0.5f));
             rideRt.anchoredPosition = new Vector2(-24f, -214f - RideH * 0.5f);
-            rideSlip = NewImage("Slip", rideRt, Paper);
+            rideSlip = Brand.Img("Slip", rideRt, Paper);
             rideSlip.sprite = panelSprite; rideSlip.type = Image.Type.Sliced;
-            Stretch(rideSlip.rectTransform);
+            Brand.Stretch(rideSlip.rectTransform);
             rideRow = NewRow(rideRt, RideW - 36f, 34, false);
             rideRow.rt.anchorMin = rideRow.rt.anchorMax = new Vector2(1f, 0.5f);
             rideRow.rt.anchoredPosition = new Vector2(-18f, 0f);
-            rideGlint = NewImage("Glint", rideRt, new Color(0.85f, 0.94f, 1f, 0f));
+            rideGlint = Brand.Img("Glint", rideRt, new Color(0.85f, 0.94f, 1f, 0f));
             rideGlint.sprite = soft;
-            Place(rideGlint.rectTransform, new Vector2(1f, 0.5f), Vector2.zero, new Vector2(22f, RideH * 1.5f), new Vector2(0.5f, 0.5f));
+            Brand.Place(rideGlint.rectTransform, new Vector2(1f, 0.5f), Vector2.zero, new Vector2(22f, RideH * 1.5f), new Vector2(0.5f, 0.5f));
             rideGlint.rectTransform.localRotation = Quaternion.Euler(0f, 0f, -18f);
             rideRt.gameObject.SetActive(false);
 
@@ -129,9 +129,9 @@ namespace Summit
 
         Image Rule(string name, Transform parent, float y)
         {
-            var r = NewImage(name, parent, new Color(Ice.r, Ice.g, Ice.b, 0.5f));
+            var r = Brand.Img(name, parent, new Color(Ice.r, Ice.g, Ice.b, 0.5f));
             r.sprite = dashSprite; r.type = Image.Type.Tiled;
-            Place(r.rectTransform, new Vector2(1f, 1f), new Vector2(-RPadX, y), new Vector2(RW - RPadX * 2f, 3f), new Vector2(1f, 0.5f));
+            Brand.Place(r.rectTransform, new Vector2(1f, 1f), new Vector2(-RPadX, y), new Vector2(RW - RPadX * 2f, 3f), new Vector2(1f, 0.5f));
             return r;
         }
 
@@ -141,7 +141,7 @@ namespace Summit
             var row = new SlipRow();
             row.rt = new GameObject("Row", typeof(RectTransform)).GetComponent<RectTransform>();
             row.rt.SetParent(parent, false);
-            Place(row.rt, new Vector2(1f, 1f), Vector2.zero, new Vector2(w, size * 1.25f), new Vector2(1f, 0.5f));
+            Brand.Place(row.rt, new Vector2(1f, 1f), Vector2.zero, new Vector2(w, size * 1.25f), new Vector2(1f, 0.5f));
             row.name = NewText("Name", row.rt, new Vector2(0f, 0.5f), Vector2.zero, size, TextAnchor.MiddleLeft);
             row.name.rectTransform.pivot = new Vector2(0f, 0.5f);
             row.amount = NewText("Amount", row.rt, new Vector2(1f, 0.5f), Vector2.zero, size, TextAnchor.MiddleRight);

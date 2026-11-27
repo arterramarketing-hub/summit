@@ -299,7 +299,7 @@ namespace Summit
                 foreach (var p in parts) p.local = turn * p.local;
             }
 
-            var urp = Shader.Find("Universal Render Pipeline/Lit");
+            var urp = Mats.LitShader;
             if (urp != null) lit = urp;   // (whatever the snow is drawn with these days, the lift wants the plain lit shader)
             var paintTex = Resources.Load<Texture2D>("Lift/LiftPaint");
             var glowTex = Resources.Load<Texture2D>("Lift/LiftGlow");

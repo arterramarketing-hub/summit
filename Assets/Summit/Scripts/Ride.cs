@@ -48,6 +48,12 @@ namespace Summit
         public int SwitchStep = 1;
         public bool Presses = true;
 
+        /// <summary>
+        /// (groundspin) What a flat spin on the snow is called on it (the degrees go after: "Butter 360"), or null if it
+        /// cannot do one (the car, the bear). The snow tube's is "Spin" (Rider.Tube).
+        /// </summary>
+        public string GroundSpin = "Butter";
+
         /// <summary>The multiplier on air drag that gives TopSpeed.</summary>
         public float Drag => 1f / (TopSpeed * TopSpeed);
 
@@ -81,7 +87,7 @@ namespace Summit
                 Grabs = new[] { "Safety", "Mute", "Tail", "Japan", "Octograb", "Daffy", "Iron Cross", "Spread Eagle" },
                 GrabCountsAs = new[] { "Indy Stalefish", "Mute Melon", "Method Tail Grab", "Japan Mute", "Indy Melon", "Method", "Stalefish", "Tail Grab" },
                 GrabBonus = new[] { 0, 0, 0, 75, 150, 50, 100, 50 },
-                BoxTrick = "Box Slide", RailTrick = "Rail Slide", Spin = 0.95f, SwitchStep = 2,
+                BoxTrick = "Box Slide", RailTrick = "Rail Slide", Spin = 0.95f, SwitchStep = 2, GroundSpin = "Flat",
             },
             // The toboggan: a plank of wood with no edges and nobody's legs under it. It is mostly gravity's: it
             // answers a push late, goes less far across for it, and slides on a good while after. A released tuck is only a hop; it flies off kickers like anything
@@ -95,7 +101,7 @@ namespace Summit
                 Grabs = new[] { "No-Hander", "Superman", "Stand-Up" },
                 GrabCountsAs = new[] { "Indy Melon Mute Method Stalefish Tail Grab", "Indy Melon Mute Method Stalefish Tail Grab", "Indy Melon Mute Method Stalefish Tail Grab" },
                 GrabBonus = new[] { 0, 150, 200 },
-                BoxTrick = "Sled Slide", RailTrick = "Rail Bonk", Spin = 0.7f, Flip = 0.7f, Tweak = "Wild", SwitchStep = 2, Presses = false,
+                BoxTrick = "Sled Slide", RailTrick = "Rail Bonk", Spin = 0.7f, Flip = 0.7f, Tweak = "Wild", SwitchStep = 2, Presses = false, GroundSpin = "Spin",
             },
             // The kayak: a plastic hull on snow, no edges at all. It slides on its hull (it slides on and on, and
             // answers a push late), the paddle does the rest: each stroke a little push on and round (RiderVehicle:
@@ -110,7 +116,7 @@ namespace Summit
                 Grabs = new[] { "Paddle Up" },
                 GrabBonus = new[] { 100 },
                 GrabCountsAs = new[] { "Indy Melon Mute Method Stalefish Tail Grab" },
-                BoxTrick = "Hull Slide", RailTrick = "Rail Bonk", Spin = 0.8f, Flip = 0.6f, Tweak = "Wild", SwitchStep = 2, Presses = false,
+                BoxTrick = "Hull Slide", RailTrick = "Rail Bonk", Spin = 0.8f, Flip = 0.6f, Tweak = "Wild", SwitchStep = 2, Presses = false, GroundSpin = "Kayak Flatspin",
             },
             // The rally car: four wheels on snow. It drifts (little grip, a long slide) but a push answers soon enough,
             // and it is the quickest thing on the mountain flat out; the engine keeps it going where the hill gives up
@@ -125,7 +131,7 @@ namespace Summit
                 Grabs = new[] { "Window Wave" },
                 GrabBonus = new[] { 100 },
                 GrabCountsAs = new[] { "Indy Melon Mute Method Stalefish Tail Grab" },
-                BoxTrick = "Box Drift", RailTrick = "Rail Bonk", Spin = 0.55f, Flip = 0.5f, Tweak = "Wild", SwitchStep = 2, Presses = false,
+                BoxTrick = "Box Drift", RailTrick = "Rail Bonk", Spin = 0.55f, Flip = 0.5f, Tweak = "Wild", SwitchStep = 2, Presses = false, GroundSpin = null,
             },
             // The bear: four legs and claws. It grips like skis and answers at once, a little slower flat out than a
             // board, but it runs on by itself where the hill flattens (RiderVehicle) and it jumps big. Its gallop bounds
@@ -138,7 +144,7 @@ namespace Summit
                 Grabs = new[] { "Rodeo" },
                 GrabBonus = new[] { 150 },
                 GrabCountsAs = new[] { "Indy Melon Mute Method Stalefish Tail Grab" },
-                BoxTrick = "Bear Slide", RailTrick = "Rail Bonk", Spin = 0.6f, Flip = 0.5f, Tweak = "Wild", SwitchStep = 2, Presses = false,
+                BoxTrick = "Bear Slide", RailTrick = "Rail Bonk", Spin = 0.6f, Flip = 0.5f, Tweak = "Wild", SwitchStep = 2, Presses = false, GroundSpin = null,
             },
         };
 

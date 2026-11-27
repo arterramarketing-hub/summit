@@ -363,13 +363,7 @@ namespace Summit
         void MakeMaterials()
         {
             Material M(Color c, float smooth, Texture2D tex = null, float metallic = 0f)
-            {
-                var m = new Material(lit);
-                m.SetColor("_BaseColor", c); m.SetFloat("_Smoothness", smooth); m.SetFloat("_Metallic", metallic);
-                if (tex != null) m.SetTexture("_BaseMap", tex);
-                m.enableInstancing = true;
-                return m;
-            }
+                => Mats.Lit(c, smooth, lit, metallic, tex, instanced: true);
             Material Shining(string day, string night, float smooth)
             {
                 var m = M(Color.white, smooth, Resources.Load<Texture2D>(day));

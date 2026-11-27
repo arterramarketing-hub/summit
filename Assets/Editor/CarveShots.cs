@@ -121,8 +121,8 @@ public static class CarveShots
     static List<GameObject> Gates(float z, float g0, float spacing, float swing, int gates)
     {
         var made = new List<GameObject>();
-        var bark = new Material(Shader.Find("Universal Render Pipeline/Lit")); bark.color = new Color(0.25f, 0.17f, 0.11f);
-        var green = new Material(Shader.Find("Universal Render Pipeline/Lit")); green.color = new Color(0.07f, 0.22f, 0.12f);
+        var bark = new Material(Mats.LitShader); bark.color = new Color(0.25f, 0.17f, 0.11f);
+        var green = new Material(Mats.LitShader); green.color = new Color(0.07f, 0.22f, 0.12f);
         for (int k = 0; k < gates; k++)
         {
             float gz = g0 + k * spacing, gx = Slope.Centre(gz) - swing * Mathf.Cos(Mathf.PI * k);

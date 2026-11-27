@@ -75,19 +75,7 @@ namespace Summit
             glow.SetColor("_BaseColor", new Color(1f, 1f, 1f, 0.55f));
         }
 
-        static Material Mat(Shader sh, Color c, float smooth, Color emit)
-        {
-            var m = new Material(sh);
-            m.SetColor("_BaseColor", c);
-            m.SetFloat("_Smoothness", smooth);
-            m.SetFloat("_Metallic", 0.3f);
-            if (emit.maxColorComponent > 0f)
-            {
-                m.EnableKeyword("_EMISSION");
-                m.SetColor("_EmissionColor", emit);
-            }
-            return m;
-        }
+        static Material Mat(Shader sh, Color c, float smooth, Color emit) => Mats.Lit(c, smooth, sh, 0.3f, emit: emit);
 
         public void ResetRun()
         {

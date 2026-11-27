@@ -107,8 +107,8 @@ namespace Summit
             if (skiMesh == null || poleMesh == null || fingersL == null || fingersR == null || h.Foot[0] == null || h.Foot[1] == null || h.Hand[0] == null || h.Hand[1] == null)
             { Debug.LogWarning("Rides: no Ski or Pole in Rides.fbx: snowboard only"); DestroyImmediate(go); return; }
             // the sled's own materials: pale ash slats, darker battens, a hemp rope
-            Shader lit = jacketShader != null ? jacketShader : Shader.Find("Universal Render Pipeline/Lit");
-            Material Plain(Color col, float smooth) { var m = new Material(lit); m.SetColor("_BaseColor", col); m.SetFloat("_Smoothness", smooth); return m; }
+            Shader lit = jacketShader != null ? jacketShader : Mats.LitShader;
+            Material Plain(Color col, float smooth) => Mats.Lit(col, smooth, lit);
             Material wood = Plain(new Color(0.66f, 0.47f, 0.26f), 0.3f), woodDark = Plain(new Color(0.38f, 0.24f, 0.12f), 0.3f), rope = Plain(new Color(0.84f, 0.78f, 0.60f), 0.1f);
             Material carPaint = Plain(new Color(1f, 0.42f, 0.05f), 0.7f);   // (the rally car's: RiderBodyVehicle)
             foreach (var mr in go.GetComponentsInChildren<MeshRenderer>(true))
