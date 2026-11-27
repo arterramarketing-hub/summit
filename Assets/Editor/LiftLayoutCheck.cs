@@ -5,23 +5,40 @@ using Summit;
 /// <summary>
 /// The lift layout on a dozen mountains (no scene: pure functions): every lift's report line (LiftLine.Report), and the
 /// checks the layout keeps:
-///   - the Summit lift: there on every mountain, its top station beside the camp (its deck within SummitReach of the
-///     camp's left edge and no more than SummitDrop below the camp's plateau), its bottom at cycle 0's gathering point;
+///   - the Summit lift: there on every mountain, its top station on the top's pad by the camp's bench (LiftTop.AtBench:
+///     the hero's arrival rides it, so it must be there on every mountain: liftfit), within SummitReach of the camp's
+///     left edge and no more than SummitDrop below the camp's plateau, its deck flush with the snow, its bottom at
+///     cycle 0's gathering point;
 ///   - the park lifts: where laid, bottom at the park's run-out and top at its top, on the other side of the run from the
 ///     first line, beside it no nearer than LiftLine.ParkApart, never carried over another line;
 ///   - no two stations within LiftLine.StationApart (Crowds), as before.
-/// -executeMethod LiftLayoutCheck.Run (LAYOUT_SEEDS=...). Log lines: LAYOUT, LAYOUT-FAIL, LAYOUT done.
+/// -executeMethod LiftLayoutCheck.Run (LAYOUT_SEEDS=..., or LAYOUT_SWEEP=n for n mountains as the game picks them, and
+/// round 59's). Log lines: LAYOUT, LAYOUT-FAIL, LAYOUT done.
 /// </summary>
 public static class LiftLayoutCheck
 {
-    static readonly int[] Seeds = System.Array.ConvertAll((System.Environment.GetEnvironmentVariable("LAYOUT_SEEDS") ?? "1000,1077,1154,1231,1308,1385,1462,1539,1616,1693,2131,2208").Split(','), int.Parse);
+    static readonly int[] Seeds = SeedList();
+    /// <summary>LAYOUT_SEEDS (a list), or LAYOUT_SWEEP=n: n mountains picked as the game picks them (Slope.RandomSeed's
+    /// range), from a fixed start so a sweep is the same each time (liftfit); else the dozen it has always checked.</summary>
+    static int[] SeedList()
+    {
+        var sweep = System.Environment.GetEnvironmentVariable("LAYOUT_SWEEP");
+        if (!string.IsNullOrEmpty(sweep))
+        {
+            int n = int.Parse(sweep); var r = new System.Random(20261127); var list = new int[n + 1];
+            list[0] = 973736;   // (round 59's: its face under the bench too steep for a tower)
+            for (int i = 1; i <= n; i++) list[i] = r.Next(1, 999983);
+            return list;
+        }
+        return System.Array.ConvertAll((System.Environment.GetEnvironmentVariable("LAYOUT_SEEDS") ?? "1000,1077,1154,1231,1308,1385,1462,1539,1616,1693,2131,2208,973736").Split(','), int.Parse);
+    }
     const float SummitReach = 32f, SummitDrop = 6f;
     static int fails;
     static void Fail(string s) { fails++; Debug.Log("LAYOUT-FAIL " + s); }
 
     public static void Run()
     {
-        int summits = 0, parks = 0, across = 0, cycles = 0, lifts = 0, onPad = 0;
+        int summits = 0, parks = 0, across = 0, cycles = 0, lifts = 0, onPad = 0, steepFace = 0; double summitMsMax = 0;
         try
         {
             foreach (int seed in Seeds)
@@ -70,8 +87,12 @@ public static class LiftLayoutCheck
                     float cx = Slope.Centre(Slope.PadLip);
                     float plateau = Camp.GroundAt(-20f, summit.top.z).y;
                     float edge = Mathf.Abs(summit.top.x - cx) - Camp.HalfWidth;
-                    Debug.Log($"LAYOUT seed{seed} Summit: top at z {summit.top.z:0}, {summit.top.x - cx:+0;-0} m off the run ({edge:0} m past the camp's edge), deck {summit.top.y - plateau:+0.0;-0.0} m against the plateau; bottom at z {summit.bottom.z:0} ({Course.At(summit.bottom.z)}); {summit.plan:0} m, {summit.top.y - summit.bottom.y:0} m up, {summit.s.Length} towers");
+                    float tallest = 0f; float longest = 0f; for (int i = 0; i < summit.h.Length; i++) tallest = Mathf.Max(tallest, summit.h[i]);
+                    for (int i = 0; i + 1 < summit.s.Length; i++) longest = Mathf.Max(longest, summit.s[i + 1] - summit.s[i]);
+                    Debug.Log($"LAYOUT seed{seed} Summit: top at z {summit.top.z:0}, {summit.top.x - cx:+0;-0} m off the run ({edge:0} m past the camp's edge), deck {summit.top.y - plateau:+0.0;-0.0} m against the plateau; bottom at z {summit.bottom.z:0} ({Course.At(summit.bottom.z)}); {summit.plan:0} m, {summit.top.y - summit.bottom.y:0} m up, {summit.s.Length} towers (tallest {tallest:0} m, first span {(summit.s.Length > 0 ? summit.s[0] : 0f):0} m, longest between {longest:0} m); laid in {LiftLine.SummitMs:0} ms, level {LiftLine.SummitLevel}");
                     if (edge > SummitReach) Fail($"seed{seed}: the Summit lift's top is {edge:0} m past the camp's edge");
+                    if (LiftLine.SummitLevel == 2) steepFace++;
+                    summitMsMax = System.Math.Max(summitMsMax, LiftLine.SummitMs);
                     // (lifttop2: its top's place is on the pad at the gate's level, LiftTop; say why not, where it isn't)
                     if (LiftTop.AtBench(summit))
                     {
@@ -96,7 +117,7 @@ public static class LiftLayoutCheck
                     {
                         var sbw = new System.Text.StringBuilder();
                         foreach (var kv in LiftLine.SummitWhy) sbw.Append($" {kv.Key} x{kv.Value}");
-                        Debug.Log($"LAYOUT seed{seed} Summit: not on the top's pad (tries:{sbw})");
+                        Fail($"seed{seed}: the Summit lift is not on the top's pad by the camp's bench, so the arrival cannot play there (tries:{sbw})");
                     }
                     if (plateau - summit.top.y > SummitDrop) Fail($"seed{seed}: the Summit lift's deck is {plateau - summit.top.y:0.0} m below the camp");
                 }
@@ -121,6 +142,7 @@ public static class LiftLayoutCheck
             }
         }
         catch (System.Exception e) { Fail("exception " + e); }
+        Debug.Log($"LAYOUT the Summit lift down a steep face from the bench (liftfit) on {steepFace} of {Seeds.Length} mountains; laid in {summitMsMax:0} ms at most");
         Debug.Log($"LAYOUT done: {lifts} lifts on {Seeds.Length} mountains; {summits} Summit lifts at the camp ({onPad} on the top's pad at the gate's level); {parks} park lifts and {across} lines across the run in {cycles} cycles with a first line; {fails} failure(s)");
         TestHarness.Exit(fails == 0 ? 0 : 1);
     }

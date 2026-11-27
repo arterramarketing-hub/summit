@@ -63,6 +63,15 @@ namespace Summit
         // (the limits sit half a metre off the spots' 4 m grid, so rounding never decides whether a span is allowed)
         const float SpanMin = 39.5f, SpanWant = 70f, SpanEasy = 92f, SpanMax = 140.5f;
         const float EndMin = 22f, EndWant = 45f, EndMax = 80f;
+        /// <summary>
+        /// (liftfit) The Summit lift from its bench (LiftTop) on a face too steep for the usual line: on about one mountain
+        /// in twenty the ground under the bench is 50 degrees and more for a long way, or a crest just below it needs a
+        /// tower on it. Tried there when nothing else from the bench will do (the hero's arrival rides it, so it must be
+        /// there on every mountain): towers footed into ground up to about 55 degrees, as tall as SummitHMaxFace, spans as
+        /// long as SummitSpanMax, the first off the station as long as SummitEndMax, as summit lifts on steep faces have.
+        /// </summary>
+        public const float SummitEndMax = 175f, SummitSpanMax = 220f, SummitHMaxFace = 45f;
+        static float endMaxTop, spanMaxTop;   // (while the Summit lift is tried from the bench: its first span's limit, its spans')
         static readonly float[] Offsets = { 38f, 46f, 54f, 62f, 72f, 84f };
         public const float BottomAt = 505f;                       // a lift's bottom station, metres into its cycle
         const float Knoll = 0.8f;                                 // what a metre of knoll under a tower is worth to the chain
@@ -350,9 +359,17 @@ namespace Summit
 
         public static readonly Dictionary<string, int> SummitWhy = new Dictionary<string, int>();
 
+        /// <summary>How long the Summit lift took to lay (ms), and how far into its fallbacks it went (0: as any lift from the
+        /// bench; 2: down its steep face; 3: off the bench, which the arrival cannot ride): the test tools.</summary>
+        public static double SummitMs; public static int SummitLevel;
         static Lift LaySummit(float zb)
         {
-            SummitWhy.Clear();
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            try { return LaySummitTry(zb); } finally { SummitMs = sw.Elapsed.TotalMilliseconds; }
+        }
+        static Lift LaySummitTry(float zb)
+        {
+            SummitWhy.Clear(); SummitLevel = 0;
             // The top goes on the camp's left (the right is the cliff). Through the danger stretch a line keeps away
             // from the deadly wall (LayTo); with the wall on the left that would carry it diagonally across the run, a
             // span too long for any tower chain, so then it ends above the wall instead, still on the left: at the
@@ -364,27 +381,33 @@ namespace Summit
             // (lifttop2: at the camp's front left at the gate's level, LiftTop; should its pad not take it on some
             // mountain, where it stood before, beside the lodge's wing, then in front of the camp's left corner)
             var places = new List<(float[] zs, float[] offs)>();
-            if (LiftTop.Station(out var vz, out var voff)) places.Add((vz, voff));
+            bool bench = LiftTop.Station(out var vz, out var voff);
+            if (bench) places.Add((vz, voff));
             foreach (var zs in SummitZ) places.Add((zs, SummitOff));
+            int pi = 0;
             // (the nearest to the camp first; then, on a summit face too steep for the usual towers, taller ones, as
             // real summit lifts have)
             // (every height and offset beside the lodge first; only then the old places in front of the camp)
             foreach (var (zs, offList) in places)
-            foreach (float hm in new[] { HMax, SummitHMax })
+            for (int fromBench = bench && pi++ == 0 ? 1 : 0, span = 0; span < (fromBench == 1 ? 3 : 1); span += fromBench == 1 ? 2 : 1)
+            foreach (float hm in span < 2 ? new[] { HMax, SummitHMax } : new[] { SummitHMaxFace })
             foreach (float off in offList)
                 foreach (float zt in zs)
                     foreach (float zBottom in wallLeft ? new[] { b + Course.DangerAt - 12f } : new[] { zb, b + Course.DangerAt - 12f })
                         foreach (float ob in SummitBottom)
                         {
                             hMaxSummit = hm;
+                            // (liftfit: from the bench, first as any lift; then, failing that everywhere, down its steep
+                            // face: the arrival needs the bench on every mountain)
+                            endMaxTop = span == 2 ? SummitEndMax : 0f; spanMaxTop = span == 2 ? SummitSpanMax : 0f;
                             tries++;
                             float ot = cx + off - Slope.Centre(zt);   // (from the camp's own centre line: the run wanders)
                             var l = Try(0, zt, zBottom, ot, -ob);
-                            hMaxSummit = 0f;
+                            hMaxSummit = 0f; endMaxTop = 0f; spanMaxTop = 0f;
                             if (l == null) { SummitWhy[Why] = SummitWhy.TryGetValue(Why, out int c) ? c + 1 : 1; continue; }
                             // its deck about level with the camp's plateau, a walk from it
                             if (l.top.y < Camp.GroundAt(-20f, zt).y - SummitDrop) { SummitWhy["low"] = SummitWhy.TryGetValue("low", out int c2) ? c2 + 1 : 1; continue; }
-                            l.summit = true; l.tries = tries;
+                            l.summit = true; l.tries = tries; SummitLevel = fromBench == 1 ? span : 3;
                             PlaceHill(l);
                             return l;
                         }
@@ -438,6 +461,9 @@ namespace Summit
             if (z < 40f && LiftTop.OnWayDown(x, z, 2.5f)) return false;   // (nor on the Summit top's way down to the run)
             float gx = (Slope.Height(x + 3f, z) - Slope.Height(x - 3f, z)) / 6f;
             float gz = (Slope.Height(x, z + 3f) - Slope.Height(x, z - 3f)) / 6f;
+            // (the Summit lift's last resort down a steep face from the bench: a tower footed into ground half as steep
+            // again, as summit lifts' are: liftfit)
+            if (spanMaxTop > 0f) return Mathf.Abs(gx) <= 0.95f && gz <= 0.6f && gz >= -1.7f;
             return Mathf.Abs(gx) <= 0.55f && gz <= 0.3f && gz >= -1.25f;
         }
 
@@ -545,13 +571,13 @@ namespace Summit
                 cost[i] = Inf; prev[i] = -1;
                 if (!ok[i]) continue;
                 float g = spot[i] - s0;
-                if (g <= EndMax) cost[i] = EndCost(g) - knoll[i];
+                if (g <= (endMaxTop > 0f ? endMaxTop : EndMax)) cost[i] = EndCost(g) - knoll[i];
                 for (int j = i - 1; j >= 0; j--)
                 {
                     g = spot[i] - spot[j];
-                    if (g > (gorge != 0f ? GorgeSpanMax : SpanMax)) break;
+                    if (g > (gorge != 0f ? GorgeSpanMax : spanMaxTop > 0f ? spanMaxTop : SpanMax)) break;
                     if (g < SpanMin || cost[j] >= Inf) continue;
-                    if (g > SpanMax && (deep == null || deep[i] - deep[j + 1] <= 0)) continue;   // (only the span over the gorge is that long)
+                    if (g > SpanMax && spanMaxTop <= 0f && (deep == null || deep[i] - deep[j + 1] <= 0)) continue;   // (only the span over the gorge is that long; or the summit's down its face)
                     float c = cost[j] + SpanCost(g) - knoll[i];
                     if (c < cost[i]) { cost[i] = c; prev[i] = j; }
                 }
@@ -592,7 +618,7 @@ namespace Summit
             if (!done) { Why = "clearance"; return null; }
             Nodes(l);
             // (and where each foot has ended up, the snow must not be too steep to stand a tower on: about 50 degrees)
-            for (int i = 0; i < l.foot.Length; i++) if (Slope.Normal(l.foot[i].x, l.foot[i].z).y < 0.64f) { Why = "steepfoot"; return null; }
+            for (int i = 0; i < l.foot.Length; i++) if (Slope.Normal(l.foot[i].x, l.foot[i].z).y < (spanMaxTop > 0f ? 0.5f : 0.64f)) { Why = "steepfoot"; return null; }
             // (a gorge line's feet, wherever their heights have put them, on ground that will hold them; and a real drop under it)
             if (gorge != 0f)
             {

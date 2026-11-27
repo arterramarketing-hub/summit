@@ -10,7 +10,9 @@ using Summit;
 /// the arrival asked for, then its frames): it plays (a chair, the hero alone on it, standing up in the station,
 /// gliding off and stopping on the bench, in about ten seconds); a tap skips it; with it switched off, and with it
 /// failing half way, it falls back. Every way it must end with the hero on foot in the camp, standing on the snow of
-/// the bench or its way in, with the camp's controls: a push on the stick walks them. Logs LIFTARRIVE lines; exits 1 on
+/// the bench or its way in, with the camp's controls: a push on the stick walks them. It plays on every mountain (the
+/// Summit lift is always on the bench: liftfit), a fresh one and round 59's, whose face under the bench was too steep.
+/// Logs LIFTARRIVE lines; exits 1 on
 /// any failure. Batch: -executeMethod LiftArriveTest.Run (no graphics needed).
 /// </summary>
 public static class LiftArriveTest
@@ -48,6 +50,8 @@ public static class LiftArriveTest
             Play("fails half way", 0f, false, 3.0f);
             Play("off", 0f, true);
             Play("plays again (a fresh mountain)", 0f, false, 0f, true);
+            // (liftfit) round 59's mountain: the face under the bench too steep for the usual line, the lift laid down it
+            Play("plays on mountain 973736 (its face too steep before)", 0f, false, 0f, false, false, 973736);
         }
         catch (System.Exception e) { Fail("exception " + e); }
         ChaseCamera.TestDt = 0f; SkiLift.TestClock = -1.0; LiftArrive.On = true; LiftArrive.TestFailAt = 0f;
@@ -59,7 +63,7 @@ public static class LiftArriveTest
     static string State() => stateF.GetValue(game).ToString();
 
     /// <summary>Into the camp on the lift; tap at `tapAt` s (0: never); fail on purpose at `failAt`; with it off; on a new mountain.</summary>
-    static void Play(string name, float tapAt, bool off, float failAt = 0f, bool fresh = false, bool skis = false)
+    static void Play(string name, float tapAt, bool off, float failAt = 0f, bool fresh = false, bool skis = false, int seed = 0)
     {
         LiftArrive.On = !off; LiftArrive.TestFailAt = failAt;
         var rideWas = body.Ride;
@@ -67,6 +71,8 @@ public static class LiftArriveTest
         var arrive = (LiftArrive)arriveF.GetValue(game);
         arriveNextF.SetValue(game, true);
         SkiLift.TestClock = clock;
+        // (liftfit) on a mountain of the test's own: the terrain, the forest and the gate made for it, as a new one is
+        if (seed > 0) TestBoot.NewMountain(game, seed, (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game), (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game));
         toHub.Invoke(game, new object[] { fresh });
         string first = State();
         if (off)
@@ -125,7 +131,7 @@ public static class LiftArriveTest
             lastHero = hp;
         }
         string st = State();
-        Log($"{name}: {(first == "Arrive" ? $"{t:0.0} s" : "not played")}, phases {string.Join(" > ", phases)}, ended in {st}; {(arrive.Skipped ? "skipped; " : "")}{(arrive.Why != "" ? "why: " + arrive.Why + "; " : "")}fastest the hero moved {maxJump:0.0} m/s");
+        Log($"{name} (mountain {Slope.Seed}): {(first == "Arrive" ? $"{t:0.0} s" : "not played")}, phases {string.Join(" > ", phases)}, ended in {st}; {(arrive.Skipped ? "skipped; " : "")}{(arrive.Why != "" ? "why: " + arrive.Why + "; " : "")}fastest the hero moved {maxJump:0.0} m/s");
         if (!ended) Fail($"{name}: never ended (after {t:0.0} s)");
         if (st != "Hub") Fail($"{name}: ended in {st}, not the camp");
         if (!camp.Active) Fail($"{name}: the camp isn't active");
