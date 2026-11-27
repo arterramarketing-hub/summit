@@ -85,7 +85,6 @@ func sign(_ name: String, w: Int, h: Int, text: String, sub: String?, seed: Int)
 sign("SignCamp", w: 1024, h: 256, text: "SUMMIT CAMP", sub: "MT. VERTIGO  ·  ELEV. 10,000 FT", seed: 3)
 sign("SignMissions", w: 1024, h: 256, text: "DAILY MISSIONS", sub: nil, seed: 5)
 sign("SignUpgrades", w: 1024, h: 256, text: "TUNE-UP BENCH", sub: nil, seed: 7)
-sign("SignDropIn", w: 1024, h: 256, text: "DROP IN", sub: "THIS WAY TO THE START", seed: 11)
 sign("SignLookout", w: 1024, h: 256, text: "LOOKOUT", sub: nil, seed: 13)
 
 // wood tile for logs, planks and benches (grain runs along U)

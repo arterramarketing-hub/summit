@@ -37,10 +37,8 @@ namespace Summit
 
         // outfits (the closet's stock is Wardrobe's): the colours and names of the jackets and boards, for the camp's
         // board rack and the older callers
-        public static Color[] Jackets => Colours(Wardrobe.Cat.Jacket);
         public static Color[] Boards => Colours(Wardrobe.Cat.Board);
         static Color[] Colours(Wardrobe.Cat c) { var it = Wardrobe.Items(c); var r = new Color[it.Length]; for (int i = 0; i < r.Length; i++) r[i] = it[i].a; return r; }
-        public static int OutfitCost(int i) => Wardrobe.Get(Wardrobe.Cat.Jacket, i).cost;
 
         // ---------------------------------------------------------------- state
 
@@ -129,7 +127,6 @@ namespace Summit
         public static System.Action Changed;
 
         public static int Points { get { Load(); return points; } }
-        public static int Lifetime { get { Load(); return lifetime; } }
 
         public static void Add(int pts)
         {
@@ -163,10 +160,7 @@ namespace Summit
 
         public static int Jacket => Worn(Wardrobe.Cat.Jacket);
         public static int Board => Worn(Wardrobe.Cat.Board);
-        public static bool OwnsJacket(int i) => Owns(Wardrobe.Cat.Jacket, i);
-        public static bool OwnsBoard(int i) => Owns(Wardrobe.Cat.Board, i);
         public static bool PickJacket(int i) => Wear(Wardrobe.Cat.Jacket, i);
-        public static bool PickBoard(int i) => Wear(Wardrobe.Cat.Board, i);
 
         /// <summary>The item worn in a closet category (the ride: what you ride).</summary>
         public static int Worn(Wardrobe.Cat c) { Load(); return c == Wardrobe.Cat.Ride ? ride : worn[(int)c]; }

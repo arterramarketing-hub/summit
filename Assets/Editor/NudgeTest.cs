@@ -95,17 +95,16 @@ public static class NudgeTest
         if (F(fSlow) > 0f || F(fKnock) > 0f) return "sign / flag / snapped tree";
         if (now - tLand < 0.3f) return "landing";
         if (r.Airborne && r.AboveGround < 0.4f && Slope.Normal(p.x, p.z).y < 0.62f) return "falling down a face too steep to ride";
-        if (r.Airborne) return Course.InPipe(p.x, p.z) ? "pipe air" : "in the air";
+        if (r.Airborne) return "in the air";
         if (r.Undercut > 0f) return "avalanche";
         if (F(fWobble) > 0f) return r.OnRock ? "wobble on rock" : "wobble (after a landing or a knock)";
         if (r.Speed < 3.2f) return "stalled (turned downhill)";
         if (Mathf.Abs(r.TravelHeading) > 1.44f || Mathf.Abs(r.Heading) > 1.44f) return "across the hill (the heading's limit)";
-        if (Course.InPipe(p.x, p.z)) return "pipe wall";
         if (r.OnRock) return "rock under the board";
         return "nothing the model accounts for";
     }
 
-    static bool Open(Vector3 p) => Course.At(p.z) == Course.Section.Cruise && Mathf.Abs(p.x - Slope.Centre(p.z)) < Slope.PisteHalf - 2f && !Course.InPipe(p.x, p.z);
+    static bool Open(Vector3 p) => Course.At(p.z) == Course.Section.Cruise && Mathf.Abs(p.x - Slope.Centre(p.z)) < Slope.PisteHalf - 2f;
 
     static float Quant(float s) => Mathf.Round(Mathf.Clamp(s, -1f, 1f) * 16f) / 16f;   // (sixteenths: with the input's curve, an eighth was too coarse to hold a line with)
     static readonly bool logDrift = System.Environment.GetEnvironmentVariable("NUDGE_DRIFTS") != "0";

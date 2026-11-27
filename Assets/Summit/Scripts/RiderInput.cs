@@ -57,8 +57,6 @@ namespace Summit
         public JumpStyle jumpStyle;
         public static readonly string[] JumpNames = { "DOUBLE TAP", "TAP", "FLICK UP" };
         readonly FingerGesture gesture = new FingerGesture();
-        /// <summary>The one finger's gestures (for the test tools).</summary>
-        public FingerGesture Gesture => gesture;
         public void SetJumpStyle(JumpStyle s) { jumpStyle = s; PlayerPrefs.SetInt("summit_jump", (int)s); PlayerPrefs.Save(); }
 
         // ---- the test tools drive it without a screen: fingers and where the first is, and the step's length
@@ -82,7 +80,6 @@ namespace Summit
         bool wasDown, swallow;
 
         /// <summary>Thumb throw (0..1, past the dead zone) to edge: fine near the middle, full lock at the end.</summary>
-        public static float Curve(float a) => a;   // (steerB: in proportion; the one curve is Rider.Shape's)
 
         void OnEnable()
         {
@@ -158,7 +155,7 @@ namespace Summit
                 a = a < 0.025f ? 0f : (a - 0.025f) / 0.975f;
                 // how far you drag is how fast you go sideways: in proportion here, shaped once by Rider.Shape (half
                 // the throw asks about 45% of a whole drag)
-                target = Mathf.Sign(d) * Curve(a);
+                target = Mathf.Sign(d) * a;   // (in proportion; the one curve is Rider.Shape's)
                 holding = !on && TrickMode && gesture.SinceUp <= FingerGesture.DoubleGap;
                 if (holding) target = heldSteer; else heldSteer = target;
                 twoTime = fingers >= 2 ? twoTime + dt : 0f;
@@ -372,7 +369,7 @@ namespace Summit
             var g = Gamepad.current;
             if (g == null) return 0f;
             float x = g.leftStick.ReadValue().x, a = Mathf.Abs(x);
-            return a < 0.12f ? 0f : Mathf.Sign(x) * Curve((a - 0.12f) / 0.88f);
+            return a < 0.12f ? 0f : Mathf.Sign(x) * ((a - 0.12f) / 0.88f);
 #else
             return 0f;
 #endif

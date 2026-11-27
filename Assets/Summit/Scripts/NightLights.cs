@@ -638,7 +638,6 @@ namespace Summit
         public float Haze { get; private set; }
         /// <summary>The lamps the falling snow is lit by this frame, and the real lights' lamps (the test tools log them).</summary>
         public int NearCount { get; private set; }
-        public int RealLamp(int i) => realId[i];
         readonly int[] realId = { -1, -1 };
 
         void OnApplied(DayNight dn)

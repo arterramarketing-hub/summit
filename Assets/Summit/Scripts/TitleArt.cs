@@ -38,20 +38,6 @@ namespace Summit
                 top = new Color(0.66f, 0.8f, 0.96f), bottom = new Color(0.26f, 0.41f, 0.66f), snowCol = new Color(0.97f, 0.985f, 1f), shadowCol = new Color(0.02f, 0.04f, 0.1f),
                 spec = 0.55f, edge = 0.8f, frost = 0.45f, shadow = 0.45f, drift = 1f,
             },
-            // 2. GRANITE: upright, monumental, dark rock with frost on its edges and a little snow on the tops
-            new Style
-            {
-                name = "GRANITE", slant = 0f, stem = 0.27f, bar = 0.22f, chamfer = 0.14f, gap = 0.13f, snow = 0.045f, mound = 0.045f, bevel = 0.06f,
-                top = new Color(0.4f, 0.385f, 0.38f), bottom = new Color(0.2f, 0.195f, 0.205f), snowCol = new Color(0.95f, 0.97f, 1f), shadowCol = new Color(0.02f, 0.03f, 0.06f),
-                spec = 0.25f, edge = 1.2f, frost = 0.08f, shadow = 0.3f, drift = 0.35f,
-            },
-            // 3. FROST: light, widely spaced letters of clear ice, a thin line of snow on their tops: the quiet one
-            new Style
-            {
-                name = "FROST", slant = 0.12f, stem = 0.135f, bar = 0.115f, chamfer = 0.12f, gap = 0.19f, snow = 0.05f, mound = 0.04f, bevel = 0.05f,
-                top = new Color(0.9f, 0.95f, 1f), bottom = new Color(0.56f, 0.69f, 0.87f), snowCol = new Color(0.98f, 0.99f, 1f), shadowCol = new Color(0.02f, 0.04f, 0.1f),
-                spec = 0.45f, edge = 0.6f, frost = 0.35f, shadow = 0.45f, drift = 0.6f,
-            },
         };
 
         /// <summary>The one shown unless something chooses another.</summary>

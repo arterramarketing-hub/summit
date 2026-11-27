@@ -78,7 +78,7 @@ namespace Summit
         {
             Place(z, s, out Vector3 at, out float yaw);
             var rot = Quaternion.Euler(0f, yaw, 0f);
-            if (Ridge.Has(z - 20f) || Ridge.Has(z + 20f) || Course.PipeWeight(z) > 0f) return false;
+            if (Ridge.Has(z - 20f) || Ridge.Has(z + 20f)) return false;
             // not on top of a section sign (they stand 30 m before each section, at the side)
             float zb = Course.CycleBase(z);
             foreach (float sec in new[] { Course.ParkAt, Course.DangerAt, Course.PipeAt, Ridge.At })

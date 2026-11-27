@@ -535,8 +535,6 @@ namespace Summit
 
         /// <summary>Down after a fall, waiting for the tap: a dark dot with a gold ring spreading from it, fading in, no words (Brand.TapCue).</summary>
         public void SetTapCue(bool on) { if (tapCue != null) tapCue.Set(on); }
-        /// <summary>Test tools: the cue held at a moment of its ripple (0..1).</summary>
-        public void FreezeTapCue(float phase) { if (tapCue != null) tapCue.Freeze(phase); }
 
         public void SetPrompt(string text)
         {

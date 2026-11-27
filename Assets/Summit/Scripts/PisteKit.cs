@@ -55,7 +55,6 @@ namespace Summit
 
         /// <summary>Everything on today's mountain (laid out the first time it is asked for).</summary>
         public static Item[] Items { get { Lay(); return items; } }
-        public static Rope[] Ropes { get { Lay(); return ropes; } }
 
         /// <summary>
         /// A rope line along these points (x, z), on bamboo poles, with a crossed "closed" pair at each end: for

@@ -34,7 +34,6 @@ namespace Summit
         /// <summary>How the last marshmallow came out (test tools; never shown as words).</summary>
         public string LastRoast { get; private set; } = "";
         public Marshmallow HeroMallow => heroMallow;
-        public float RoastHeat => closeK;
 
         void Campfire()
         {
@@ -239,8 +238,6 @@ namespace Summit
 
         /// <summary>Test tools: take the marshmallow out now (TAKE IT OUT), or blow it out.</summary>
         public void TestTakeOut() { if (act == Act.Roast && rp == Roast.Hold) { heroMallow.BlowOut(); Next(Roast.Pull); } }
-        public void TestBlow() { if (act == Act.Roast && heroMallow != null && heroMallow.Alight) blowT = 0.6f; }
-        public bool RoastHolding => act == Act.Roast && rp == Roast.Hold;
 
         /// <summary>Over the embers, or (held) down in the flames: where the stick points while it's out.</summary>
         Vector3 OverFire() => fireAt + Vector3.up * Mathf.Lerp(0.85f, 0.4f, closeK) - heroFace * Mathf.Lerp(0.3f, 0.08f, closeK);

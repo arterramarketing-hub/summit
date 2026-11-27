@@ -208,13 +208,16 @@ namespace Summit
             s.AddRow(sound, "MUSIC", () => Mathf.RoundToInt(AudioPrefs.MusicVolume * 10f) * 10 + "%", StepMusic);
             s.AddRow(sound, "VOICE LINES", () => OnOff(SoundMix.VoiceLines), d => ToggleVoice(), true);
             // (steerB) the feel's own numbers, live: drag one mid-run, resume, and feel it (Tuning; kept in PlayerPrefs)
-            int tune = s.AddTab(Hud.TabName[4]);
-            foreach (var k in Tuning.Knobs)
+            if (Tuning.Enabled)
             {
-                var kk = k;
-                s.AddSlider(tune, kk.label, () => kk.Text, () => kk.T, t => kk.T = t, () => Tuning.Save(kk));
+                int tune = s.AddTab(Hud.TabName[4]);
+                foreach (var k in Tuning.Knobs)
+                {
+                    var kk = k;
+                    s.AddSlider(tune, kk.label, () => kk.Text, () => kk.T, t => kk.T = t, () => Tuning.Save(kk));
+                }
+                s.AddButton(tune, "RESET TO DEFAULTS", "RESET", () => { Tuning.Reset(); hud.RefreshPause(); });
             }
-            s.AddButton(tune, "RESET TO DEFAULTS", "RESET", () => { Tuning.Reset(); hud.RefreshPause(); });
         }
 
         /// <summary>Make the start page (its settings are the HUD's: they open from the camp and the start pad).</summary>
@@ -1525,8 +1528,6 @@ namespace Summit
         public static bool TestHitStops;
         float hitClock;
         public void TestTickHitStop(float realDt) => TickHitStop(realDt);
-        /// <summary>The time scale the hit-stop has set right now (1 when none is running).</summary>
-        public static float HitStopScaleNow => Time.timeScale;
 
         void HitStop(float strength)
         {
@@ -1646,8 +1647,7 @@ namespace Summit
 
         readonly ResumeTap crashTap = new ResumeTap();
         bool crashTapQueued;
-        /// <summary>Test tools: the tap that ends a fall, and whether one is waiting for the fall to be decided.</summary>
-        public ResumeTap CrashTap => crashTap;
+        /// <summary>Test tools: whether a tap that ends a fall is waiting for the fall to be decided.</summary>
         public bool CrashTapQueued => crashTapQueued;
 
         /// <summary>

@@ -30,6 +30,13 @@ namespace Summit
             }
         }
 
+        /// <summary>
+        /// The one switch for all of it: the TUNE tab in the pause menu, and the saved numbers put over the game's own at
+        /// start. On, in release builds too, while the owner playtests release builds on the phone; off, the game rides
+        /// on the numbers it ships with and the tab is not there (anything saved stays saved, unused).
+        /// </summary>
+        public static readonly bool Enabled = true;
+
         public const string Prefix = "summit_tune_";
         public static readonly List<Knob> Knobs = new List<Knob>();
         static bool loaded;
@@ -63,6 +70,7 @@ namespace Summit
         public static void Load()
         {
             loaded = true;
+            if (!Enabled) return;
             foreach (var k in Knobs) if (PlayerPrefs.HasKey(Prefix + k.key)) k.Set(PlayerPrefs.GetFloat(Prefix + k.key));
         }
 

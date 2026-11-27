@@ -1139,10 +1139,10 @@ namespace Summit
             bool tracking = rider.Running && !rider.Crashed && !rider.Airborne && !rider.Grinding && rider.Undercut < 0.05f;
             bool onSkis = RidingGear && (Ride == RideKind.Skis || Ride == RideKind.Car || Ride == RideKind.Bear);   // two narrow tracks instead of the one trench (the car's: its tyres; the bear's: its paws)
             bool onSled = RidingGear && (Ride == RideKind.Toboggan || Ride == RideKind.Kayak);   // a wide flat track (the sled's, a kayak's hull), and the dragged heel's scuff beside it
-            FeedSideTracks(p + Vector3.down * Rider.R, tracking, Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Mathf.Clamp01(rider.Underfoot.powder + 0.5f * rider.Underfoot.slush)) * (1f - 0.3f * rider.Underfoot.ice), dt);
+            FeedSideTracks(p + Vector3.down * Rider.R, tracking, Mathf.Lerp(0.9f, 1.25f, Mathf.Clamp01(rider.Underfoot.powder + 0.5f * rider.Underfoot.slush)) * (1f - 0.3f * rider.Underfoot.ice), dt);
             trail.Mix = rider.Underfoot; trail.Bite = rider.Bite;   // (the cut's shape: the snow it is in, how hard the edge pushes)
             trail.Feed(p + Vector3.down * Rider.R, normal, rider.TravelHeading, tracking && !onSkis,
-                       (Tube ? 1.25f : Course.At(p.z) == Course.Section.Pipe ? 0.6f : Mathf.Lerp(0.9f, 1.25f, Mathf.Clamp01(rider.Underfoot.powder + 0.5f * rider.Underfoot.slush)) * (1f - 0.3f * rider.Underfoot.ice)) * (onSled ? 1.6f : 1f),
+                       (Tube ? 1.25f : Mathf.Lerp(0.9f, 1.25f, Mathf.Clamp01(rider.Underfoot.powder + 0.5f * rider.Underfoot.slush)) * (1f - 0.3f * rider.Underfoot.ice)) * (onSled ? 1.6f : 1f),
                        Tube || onSled ? 0f : rider.Lean / Rider.MaxLean, Tube ? 0.5f : onSled ? rider.Skid * 0.3f : rider.Skid, dt);   // a tube leaves a wide, shallow chute
 
             // the snow the board throws: the edge's crystals and clumps, the bow wave, the wake, a dragged hand (RiderBodySpray)

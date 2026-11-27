@@ -841,15 +841,6 @@ namespace Summit
             return a > lo - margin && a < hi + margin;
         }
 
-        /// <summary>The run's half that a line leaves clear at z: (lo, hi) across from the centre line. False off every line.</summary>
-        public static bool ClearSide(float z, out float lo, out float hi)
-        {
-            lo = -Slope.PisteHalf; hi = Slope.PisteHalf;
-            if (!LineNear(z, 0f, out var L)) return false;
-            if (L.side > 0f) hi = 2f; else lo = -2f;
-            return true;
-        }
-
         // ---------------------------------------------------------------- jibs: logs, boxes and rails
 
         /// <summary>The lines' ride-on features of a cycle (Course.FeaturesOf adds them to the park's).</summary>

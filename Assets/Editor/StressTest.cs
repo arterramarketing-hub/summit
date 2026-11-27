@@ -682,7 +682,7 @@ public static class StressTest
                     flaggedLaunch = true; launchedRides++; Count("high");
                     Debug.Log($"STRESS-FLAG {name}: {r.AboveGround:0} m over the snow at t={t:0.00} {here}; last: {lastEvt}");
                 }
-                if (!flaggedBack && !r.Airborne && !r.Grinding && v.z < -2f && !Course.InPipe(p.x, p.z))
+                if (!flaggedBack && !r.Airborne && !r.Grinding && v.z < -2f)
                 {
                     flaggedBack = true; reversed++; Count("uphill");
                     Debug.Log($"STRESS-FLAG {name}: riding back up the hill vz={v.z:0.0} at t={t:0.00} {here}; 0.2 s before: {where[i % Back]}; last: {lastEvt}");

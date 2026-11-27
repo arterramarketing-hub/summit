@@ -49,7 +49,6 @@ namespace Summit
         /// <summary>Sips left in the mug in your hand (test tools).</summary>
         public int SipsLeft => mug != null ? sipsLeft : 0;
         public bool MugOnPost { get; private set; }
-        public float MugLevel => level;
 
         /// <summary>
         /// Where the station goes: one place and one facing (where you stand to make it, and the way you face the

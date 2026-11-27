@@ -131,7 +131,6 @@ namespace Summit
         public System.Action<Obstacle, Vector3, Vector3> Smashed;     // invincible: what you went through, where, your velocity
         Vector3 grindOff;
         bool faceSlide; // in the air but against a face too steep to stand on, sliding down it (AirStep)
-        bool pipeAir;   // flying off a halfpipe wall: drift back in over the pipe   // what, where (its middle), how hard
 
         // ---- power-ups
         public const int MaxShields = 3;
@@ -159,8 +158,6 @@ namespace Summit
 
         // ---- signs and flags ridden through (see Breakables)
         float wobble, slowFor, slowRate;
-        /// <summary>Off balance (a knock, a hard landing, rock under the board), 0..1: the body's chatter, never the board's line.</summary>
-        public float Wobble => Mathf.Clamp01(wobble / 0.35f);
         /// <summary>Just back on your feet (or saved by a shield): nothing can knock you down for a moment.</summary>
         public bool Invulnerable => invulnerable > 0f;
         /// <summary>The share of your speed the thrown body carries on with in this crash (a snapped tree: TreeBreak).</summary>
@@ -240,7 +237,7 @@ namespace Summit
             StartZ = z;
             DropFrom = p;
             Heading = 0f; Speed = 0f; Steer = 0f; groundVy = 0f; fixVy = 0f;
-            Airborne = false; Crashed = false; Running = false; Grinding = false; pipeAir = false;
+            Airborne = false; Crashed = false; Running = false; Grinding = false;
             HasCrashFollow = false; rb.detectCollisions = true; StayDown = false; HoldCrash = false;
             AirTime = 0f; Tuck = 0f; Carve = 0f; Skid = 0f; Peak = 0f; AboveGround = 0f;
             Lean = 0f; edge = 0f; edgeVel = 0f; airTurn = 0f; sideFrom = 0f; pushing = false; YawRate = 0f; FallLine = 0f; PathSlope = 0f; groundKnown = false; faceSlide = false; yawSmooth = 0f; RunNow = 0f;
@@ -383,20 +380,6 @@ namespace Summit
         public Vector3 DropFrom;
 
         /// <summary>
-        /// Leaving a pipe wall: the air goes straight up off the coping and drops back in, never out over
-        /// the deck, and tops out around 5 m however hard you hit the wall.
-        /// </summary>
-        Vector3 PipeAir(Vector3 p, Vector3 v)
-        {
-            float side = Mathf.Sign(p.x - Slope.Centre(p.z));
-            // (height is held to a few metres by extra pull while rising in AirStep, not by clipping speed here)
-            // keep a little of the outward speed (the wall is nearly vertical up there); AirStep then curves
-            // the flight back over the pipe, so nothing changes in a single step
-            pipeAir = true;   // the near-vertical lip has already turned most of the speed upward
-            return v;
-        }
-
-        /// <summary>
         /// The snow drops away from the line the board would fly: clear of it by TakeoffClearance 0.12 s on, and never
         /// under it on the way there. (At speed that look-ahead is several metres: from part way up a kicker's ramp it
         /// reaches past the lip, and a launch from there would fly into the rest of the ramp.)
@@ -421,9 +404,6 @@ namespace Summit
             Airborne = true;
             if (fromHere) DropFrom = p;
             OnRock = false;
-            // leaving a pipe wall or its deck by any route: the air arcs back over the pipe
-            float off = Mathf.Abs(p.x - Slope.Centre(p.z));
-            if (Course.PipeWeight(p.z) > 0.5f && off > Course.PipeFlat + 1f && off < Course.PipeHalfWidth + Course.PipeDeck) pipeAir = true;
             airLock = lockTime; faceSlide = false;
             fixVy = 0f;
             // (the board leaves the snow pointing as it was: whatever slip it had it flies with, until the finger turns it)
@@ -455,20 +435,13 @@ namespace Summit
             v.y -= G * dt;
             float sp = v.magnitude;
             v -= v * Mathf.Min(1f, 0.0025f * sp * dt);
-            if (pipeAir)
-            {
-                // back over the pipe: a steady pull toward the middle, ending with the board pointing back down
-                float side = Mathf.Sign(p.x - Slope.Centre(p.z));
-                v.x -= side * 28f * dt;
-                if (v.y > 0f) v.y -= 0.8f * G * dt;   // pipe airs top out at a few metres, smoothly
-            }
             // the flight is mostly the flight's: gravity has it. The finger steers it a little (aircontrol): straight
             // from the finger, no edge to wait for, it swings the flight its way (AirDrift m/s^2 at a whole drag, a
             // fraction of what the edge gives on the snow) by no more than AirSideMost m/s of sideways speed over the
             // whole air, and it turns the board's nose ahead of the flight (AirTurn). So a landing can be lined up,
             // never flown somewhere else. While a spin is coming round, a drag its own way is the spin's; the other way
             // still steers. It comes down with that line and that slip, and the carving model takes it from there.
-            // (Not in the pipe, which steers itself, nor sliding down a face too steep to ride: the rock has it)
+            // (Not sliding down a face too steep to ride: the rock has it)
             float flat = Mathf.Sqrt(v.x * v.x + v.z * v.z);
             RunNow = RunHeading(p.z) * Mathf.Clamp01((flat - 5f) / 5f);
             EdgeStep(dt);
@@ -477,7 +450,7 @@ namespace Summit
             if (flat > 2f)
             {
                 float line = Mathf.Atan2(v.x, v.z);
-                if (!pipeAir && !sliding && !Tube && Mathf.Abs(line) <= MaxHeading)
+                if (!sliding && !Tube && Mathf.Abs(line) <= MaxHeading)
                 {
                     float a = AirAsked();
                     if (trickAir && spinHalves != 0 && a * spinDir > 0f) a = 0f;   // (the spin's own way: the spin's)
@@ -512,7 +485,7 @@ namespace Summit
                 // goes on falling down it, sliding on its surface, until it reaches ground it can stand on. Landing on it
                 // threw the board straight back off again, a step or two later, over and over: hopping in the air on the
                 // spot at a crawl, juddering down a cliff at speed
-                if (fn.y < 0.62f && !Course.InPipe(nx, nz) && !pipeAir)
+                if (fn.y < 0.62f)
                 {
                     float into = Vector3.Dot(v, fn);
                     if (into < 0f) v -= fn * into;
@@ -553,7 +526,6 @@ namespace Summit
             if (bad != null) { DoCrash(bad); return v; }
             Airborne = false;
             AboveGround = 0f;
-            pipeAir = false;
             // (moving away from that face, not into it, the board is only a few centimetres into the drawn snow where its
             // facets cut the corner of a lip: put back on it, it keeps its own line. Laid onto the face it was leaving, a
             // kicker's back side took two thirds of the speed)
@@ -712,7 +684,7 @@ namespace Summit
         public void CableBoard(Course.Feature f, bool announce)
         {
             if (Airborne && announce) LandTrick(true);   // a trick come round as the board met the cable still counts
-            Grinding = true; GrindFeature = f; Airborne = false; pipeAir = false; fixVy = 0f;
+            Grinding = true; GrindFeature = f; Airborne = false; fixVy = 0f;
             ClearTrick(); Lean = 0f; edge = 0f; edgeVel = 0f;
             if (announce) { GrindBegin(true, true); GrindStart?.Invoke(f); }
             else grindScoring = false;   // (a launch ramp is only the way up)
@@ -803,7 +775,6 @@ namespace Summit
             if (Crashed) return;
             Crashed = true;
             Flow = 0f;
-            pipeAir = false;
             Airborne = false; Grinding = false;
             crashTimer = 0.25f;   // a beat (a tap already under way isn't one), then the player taps to get up (RequestUp), even mid-tumble
             RequestUp = false;

@@ -500,7 +500,6 @@ namespace Summit
 
         /// <summary>For the tests: the riders on chairs this frame (and the near ones' people).</summary>
         public static int Aboard => now.Count;
-        public static IEnumerable<Person> NearPeople { get { foreach (var r in now) if (r.near != null) yield return r.near; } }
         public static void Riders(List<(Matrix4x4 chair, int seat, int pose, PersonLook look, Person near)> into)
         {
             into.Clear();

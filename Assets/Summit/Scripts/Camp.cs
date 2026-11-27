@@ -119,8 +119,6 @@ namespace Summit
             // drawn magenta (an empty material slot) every second camp (purplefix)
             railMetal = kerbMat = flagMat = paver = null;
         }
-        /// <summary>Test tools: how many things the current build made for itself.</summary>
-        public int MadeCount => made.Count;
 
         Material M(Color c, float smooth, Texture2D tex = null, Vector2 tile = default, Color emit = default)
         {
@@ -1813,7 +1811,7 @@ namespace Summit
         // ---------------------------------------------------------------- footsteps
 
         // One footstep each time a foot lands, on the beat of the feet at any pace. The player's own recording of
-        // boots crunching through snow (Resources/Audio/user_snow_steps) is cut into single steps by Tools/CutSteps.py
+        // boots crunching through snow (Tools/Source/user_snow_steps.mp3) is cut into single steps by Tools/CutSteps.py
         // (Resources/Audio/Steps: each clip's crunch starts 4 ms in). The walk cycle says when each heel strikes
         // (the left at pi/2, the right at 3pi/2, as the footprints and the hero's walk and run clips have it), so each
         // step is scheduled for the exact moment the cycle will reach the next strike, never a frame late. Running,

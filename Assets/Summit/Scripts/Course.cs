@@ -9,18 +9,16 @@ namespace Summit
     ///   Park    - ride-on boxes and rails you grind automatically, and a jump line
     ///   Danger  - the deadly cliff beside the piste; a bear may come out of the trees (crevasses lie on the glacier
     ///             up the mountain, wherever it is: see Glacier)
-    ///   Pipe    - a halfpipe cut into the slope (switched off: see HalfpipeOn)
-    ///   Ridge   - the piste narrows onto a crest with cliffs falling away beside it (in the pipe's old stretch: see Ridge)
+    ///   Ridge   - the piste narrows onto a crest with cliffs falling away beside it (from PipeAt, the stretch a halfpipe
+    ///             once had: see Ridge)
     /// Everything here is a pure function of position, like the rest of the mountain.
     /// </summary>
     public static class Course
     {
-        public enum Section { Start, Cruise, Park, Danger, Pipe, Ridge, Band, Bowl }
+        public enum Section { Start, Cruise, Park, Danger, Ridge, Band, Bowl }
         public const float First = 60f, Cycle = 900f;
-        /// <summary>The halfpipe is switched off: its stretch of each cycle is open cruising piste instead.</summary>
-        public const bool HalfpipeOn = false;
-        // where each section begins within a cycle
-        public const float ParkAt = 200f, DangerAt = 380f, PipeAt = 520f, PipeEnd = 760f;
+        // where each section begins within a cycle (PipeAt: where the halfpipe was, now the ridge's stretch or cruising piste)
+        public const float ParkAt = 200f, DangerAt = 380f, PipeAt = 520f;
 
         static float Local(float z) => Mathf.Repeat(z - First, Cycle);
         public static int CycleOf(float z) => Mathf.FloorToInt((z - First) / Cycle);
@@ -37,53 +35,11 @@ namespace Summit
             if (Ridge.Has(z)) return Section.Ridge;
             if (CliffBand.Has(z)) return Section.Band;
             if (Bowl.Has(z)) return Section.Bowl;
-            if (u < PipeEnd) return HalfpipeOn ? Section.Pipe : Section.Cruise;
             return Section.Cruise;
         }
 
-        /// <summary>Distance to the start of the next section of a kind (for signs).</summary>
-        public static float NextStart(float z, Section s)
-        {
-            float at = s == Section.Park ? ParkAt : s == Section.Danger ? DangerAt : PipeAt;
-            float c = Mathf.Floor((z - First) / Cycle);
-            float z0 = First + c * Cycle + at;
-            if (z0 < z) z0 += Cycle;
-            return z0;
-        }
-
-        // ---------------------------------------------------------------- halfpipe
-
-        public const float PipeFlat = 6f, PipeR = 6f, PipeCap = 0.93f, PipeDeck = 5f, PipeRamp = 30f;
-        public static float PipeWallTop => PipeR - Mathf.Sqrt(PipeR * PipeR - (PipeCap * PipeR) * (PipeCap * PipeR));
-        public static float PipeHalfWidth => PipeFlat + PipeCap * PipeR;
-
-        /// <summary>0 outside the pipe, 1 inside, easing in and out at the ends.</summary>
         /// <summary>Nothing is built past here: the last stretch to the finish is a clean run.</summary>
         public static float ClearFrom => Slope.FinishZ - 260f;
-
-        public static float PipeWeight(float z)
-        {
-            if (!HalfpipeOn || z < First) return 0f;
-            float pipeStart = z - Local(z) + PipeAt;
-            if (pipeStart + (PipeEnd - PipeAt) > ClearFrom) return 0f;   // a pipe that would run into the finish is not built
-            float u = Local(z);
-            if (u < PipeAt || u > PipeEnd) return 0f;
-            float w = Mathf.Min((u - PipeAt) / PipeRamp, (PipeEnd - u) / PipeRamp);
-            w = Mathf.Clamp01(w);
-            return w * w * (3f - 2f * w);
-        }
-
-        /// <summary>Height of the pipe's cross-section above its floor, at distance a from the centre line.</summary>
-        public static float PipeProfile(float a)
-        {
-            float d = Mathf.Abs(a) - PipeFlat;
-            if (d <= 0f) return 0f;
-            float cap = PipeCap * PipeR;
-            if (d < cap) return PipeR - Mathf.Sqrt(PipeR * PipeR - d * d);
-            return PipeWallTop;   // the deck
-        }
-
-        public static bool InPipe(float x, float z) => PipeWeight(z) > 0.15f && Mathf.Abs(x - Slope.Centre(z)) < PipeHalfWidth + 0.5f;
 
         // ---------------------------------------------------------------- crevasses: the glacier
         // The upper mountain is glacier (GlacierTop..GlacierBottom, the open snow of the piste and its margins), and
@@ -490,7 +446,6 @@ namespace Summit
         /// <summary>True where trees, rocks, pickups or kickers must stay away.</summary>
         public static bool Keep(float x, float z, float margin)
         {
-            if (PipeWeight(z) > 0f && Mathf.Abs(x - Slope.Centre(z)) < PipeHalfWidth + PipeDeck + 6f + margin) return true;
             if (CrevasseNear(x, z, margin + 2f)) return true;
             if (Ridge.Keep(x, z, margin)) return true;
             if (Cliffs.Keep(x, z, margin)) return true;

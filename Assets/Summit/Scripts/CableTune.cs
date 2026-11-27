@@ -36,7 +36,6 @@ namespace Summit
         // ---- what it scores (a 45 m rail is worth 1,275)
         public const int SpanPoints = 400;          // a span begun
         public const float PointsPerMetre = 12f;    // and for each metre slid
-        public const int ChainMax = 5;              // each span in a row without touching snow multiplies it, up to this
         public const int ChairPoints = 40;          // a chair's grip skimmed under the board
         public const int BonkPoints = 80;           // a toboggan clattering off the cable
         public const float BonkKeep = 0.8f;         // the share of its speed it keeps

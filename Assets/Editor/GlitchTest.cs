@@ -366,17 +366,17 @@ public static class GlitchTest
             // a jerk: velocity changing far faster than gravity, landings or grip could manage
             float acc = (v - vprev).magnitude / Dt;
             bool landing = wasAir && !r.Airborne;
-            if (acc > 400f && !landing && !popped) Report($"{name}: jerk {acc:0} m/s^2 at t={t:0.00} z={p.z:0} x-c={p.x - Slope.Centre(p.z):0.0} air={r.Airborne} pipe={Course.InPipe(p.x, p.z)} v={v} prev={vprev}");
+            if (acc > 400f && !landing && !popped) Report($"{name}: jerk {acc:0} m/s^2 at t={t:0.00} z={p.z:0} x-c={p.x - Slope.Centre(p.z):0.0} air={r.Airborne} v={v} prev={vprev}");
             // a flip: the board turning more than 60 degrees in one step
             float dh = Mathf.Abs(Mathf.DeltaAngle(h0 * Mathf.Rad2Deg, r.Heading * Mathf.Rad2Deg));
-            if (dh > 60f) Report($"{name}: heading jumped {dh:0} deg at t={t:0.00} z={p.z:0} air={r.Airborne} landing={landing} pipe={Course.InPipe(p.x, p.z)}");
+            if (dh > 60f) Report($"{name}: heading jumped {dh:0} deg at t={t:0.00} z={p.z:0} air={r.Airborne} landing={landing}");
             // backwards: moving up the hill while on the snow outside the pipe
-            if (!r.Airborne && v.z < -3f && !Course.InPipe(p.x, p.z)) Report($"{name}: travelling backwards vz={v.z:0.0} at t={t:0.00} z={p.z:0}");
+            if (!r.Airborne && v.z < -3f) Report($"{name}: travelling backwards vz={v.z:0.0} at t={t:0.00} z={p.z:0}");
             // board facing against travel
             if (r.Speed > 6f && !r.Airborne)
             {
                 float rel = Mathf.Abs(Mathf.DeltaAngle(r.Heading * Mathf.Rad2Deg, r.TravelHeading * Mathf.Rad2Deg));
-                if (rel > 100f) Report($"{name}: board facing backwards ({rel:0} deg off travel) at t={t:0.00} z={p.z:0} pipe={Course.InPipe(p.x, p.z)}");
+                if (rel > 100f) Report($"{name}: board facing backwards ({rel:0} deg off travel) at t={t:0.00} z={p.z:0}");
             }
             // a teleport
             if ((p - p1).magnitude > v.magnitude * Dt * 2f + 0.5f) Report($"{name}: jumped {(p - p1).magnitude:0.0} m in a step at t={t:0.00}");

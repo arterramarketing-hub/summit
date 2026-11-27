@@ -29,9 +29,8 @@ namespace Summit
         public bool TalkOpen => talkRoot != null && talkRoot.gameObject.activeSelf;
         /// <summary>The talk ended with a stick in your hand: roast one (Camp starts it).</summary>
         public bool TalkRoast { get; private set; }
-        /// <summary>The line she's on, and whether its text has all typed on (test tools).</summary>
+        /// <summary>The line she's on (test tools).</summary>
         public int TalkLine => talkAt;
-        public bool TalkLineDone => talk != null && talkShown >= talk[talkAt].text.Length;
         public int TalkRepliesShown { get { int n = 0; foreach (var r in talkReplies) if (r.gameObject.activeSelf) n++; return n; } }
 
         void BuildTalk()

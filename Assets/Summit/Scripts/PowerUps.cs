@@ -16,7 +16,6 @@ namespace Summit
     {
         // (Soda is the Mountain Zoom can; the old name is kept so saved code and tests still read)
         public enum Kind { Soda, Shield, SuperJump, Invincible }
-        public static string NameOf(Kind k) => k == Kind.Soda ? "MOUNTAIN ZOOM" : k == Kind.Shield ? "SHIELD" : k == Kind.SuperJump ? "SUPER JUMP" : "INVINCIBLE";
         public const float Spacing = 38f;
         public Rider rider;
         public System.Action<Kind> Collected;
@@ -39,7 +38,6 @@ namespace Summit
             if (Slope.OnPad(x, z) || Mathf.Abs(Slope.Kicker(x, z)) > 0.01f) return false;
             if (Course.CrevasseNear(x, z, 2f)) return false;
             if (Course.NearFeature(x, z, 0f)) return false;   // never floating over a rail or a box
-            if (Course.PipeWeight(z) > 0f) x = Slope.Centre(z) + (Slope.Hash01(slot, 15, 21) - 0.5f) * 8f;   // on the pipe floor
             // the mix: the boost is the common one, invincibility the rare one
             float k = Slope.Hash01(slot, 14, 21);
             kind = k < 0.44f ? Kind.Soda : k < 0.70f ? Kind.Shield : k < 0.87f ? Kind.SuperJump : Kind.Invincible;

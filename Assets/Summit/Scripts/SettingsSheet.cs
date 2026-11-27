@@ -221,7 +221,6 @@ namespace Summit
         public int Tab => tab;
         /// <summary>Laid out yet (the rows are laid out the first time the sheet is shown).</summary>
         public bool IsBuilt => built;
-        public int TabCount => tabNames.Count;
         public string TabName(int k) => tabNames[k];
 
         public void ShowTab(int k)
@@ -284,8 +283,6 @@ namespace Summit
 
         /// <summary>Is a screen point on the sheet?</summary>
         public bool Contains(Vector2 at) => Inside(Root, at, UiCam);
-        /// <summary>Is a screen point on the chevron that puts the sheet away?</summary>
-        public bool OnClose(Vector2 at) => Inside(closeBtn, at, UiCam);
 
         /// <summary>A finger came down at `at`: a tab, or a row (its left half steps down, its right half up). True if it hit one.</summary>
         public bool Tap(Vector2 at)
@@ -333,8 +330,6 @@ namespace Summit
             SlideTo(r, at, UiCam);
             return true;
         }
-        /// <summary>A slider is held.</summary>
-        public bool Dragging => dragging != null;
 
         void SlideTo(Row r, Vector2 at, Camera ui)
         {
@@ -367,10 +362,8 @@ namespace Summit
         }
 
         // ---------------------------------------------------------------- for the test tools
-        public int RowCount => rows.Count;
         public string RowText(int i) => tabNames[rows[i].tab] + " / " + rows[i].label + " = " + (rows[i].value != null ? rows[i].value() : "") + (rows[i].toggle ? " (toggle)" : "") + (rows[i].live != null && !rows[i].live() ? " (greyed)" : "");
         public void RowStep(int i, int dir) { rows[i].step?.Invoke(dir); Refresh(); }
-        public bool RowToggle(int i) => rows[i].toggle;
         /// <summary>Where on the screen a finger would tap row `i`: its value's left half (`right` false) or right half.</summary>
         public Vector2 RowPoint(int i, bool right)
         {
@@ -401,8 +394,6 @@ namespace Summit
             }
         }
 
-        /// <summary>Kept for callers: the letters are spaced by the Tracking on every Label now, not padded with spaces.</summary>
-        public static string Track(string s, int gap) => s;
 
         public static RectTransform New(string name, Transform parent)
         {

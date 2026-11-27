@@ -231,7 +231,7 @@ public static class UphillTest
         if (TreeBreak.Instance != null && fBrushing != null && ((System.Collections.IDictionary)fBrushing.GetValue(TreeBreak.Instance)).Count > 0) parts.Add("TreeBreak brush");
         s.code = parts.Count == 0 ? "GroundStep (plain)" : string.Join(" + ", parts);
         string sec = Course.At(p.z).ToString();
-        string ground = r.OnRoof != null ? "a roof" : deck ? "lift deck" : r.OnRock ? "rock" : Course.InPipe(p.x, p.z) ? "pipe" : "snow";
+        string ground = r.OnRoof != null ? "a roof" : deck ? "lift deck" : r.OnRock ? "rock" : "snow";
         s.surface = $"{ground} ({sec}, slope {Mathf.Acos(Mathf.Clamp01(nrm.y)) * Mathf.Rad2Deg:0} deg)";
         return s;
     }

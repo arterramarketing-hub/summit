@@ -7,7 +7,7 @@ using UnityEngine;
 using Summit;
 
 /// <summary>
-/// The Summit lift's top (LiftTop; SUMMIT_LIFTTOP=none draws it as it was before lifttop), drawn from the same places every time so the versions can be compared: arriving on a chair; standing at
+/// The Summit lift's top (LiftTop), drawn from the same places every time so the versions can be compared: arriving on a chair; standing at
 /// the unload; the station and its slope from the side; looking down into the camp from the top; the top from the
 /// camp; from high above the camp's front; and straight down. The lift and its unload run a while first, so its chairs
 /// carry people and some have come off and ride in.
@@ -28,9 +28,7 @@ public static class LiftTopShot
 
     public static void Run()
     {
-        string v = (System.Environment.GetEnvironmentVariable("SUMMIT_LIFTTOP") ?? "").Trim().ToLowerInvariant();
-        LiftTop.On = v != "none" && v != "off" && v != "before";
-        tag = System.Environment.GetEnvironmentVariable("SUMMIT_LIFTTOP_TAG") ?? (LiftTop.On ? "after" : "before");
+        tag = System.Environment.GetEnvironmentVariable("SUMMIT_LIFTTOP_TAG") ?? "after";
         outDir = System.Environment.GetEnvironmentVariable("SUMMIT_LIFTTOP_OUT") ?? "LiftTopShots";
         Directory.CreateDirectory(outDir);
         SummitImport.EnsureSky(); SummitImport.EnsureBackdrop(); CampAssets.Ensure();
@@ -117,7 +115,6 @@ public static class LiftTopShot
                 clear.Append($"{s0 - top.nodeS[0]:0}:{worst:0.0} ");
             }
             Log($"{tag}: the chairs past the deck's downhill end, metres out: a rider's feet over the snow: {clear}");
-            if (LiftTop.On)
             {
                 float yl = Slope.DrawnHeight(cx, Slope.PadLip);
                 for (float z = -75f; z <= 10f; z += 5f)
@@ -194,7 +191,7 @@ public static class LiftTopShot
             float cx = Slope.Centre(Slope.PadLip);
             var eye = new Vector3(cx + 6f, Slope.PlateauAt(-60f) + 42f, -30f);
             Place(new Vector3(cx + 10f, 0f, -50f), 0f);
-            Frame("6-overview", eye, LiftTop.On ? new Vector3(cx - 26f, Slope.PlateauAt(-50f) - 4f, -48f) : new Vector3(cx - 30f, Slope.PlateauAt(-88f), -88f), 50f, false);
+            Frame("6-overview", eye, new Vector3(cx - 26f, Slope.PlateauAt(-50f) - 4f, -48f), 50f, false);
         });
         // 8. the split: from above the station's uphill end, down the line: the share riding into the camp (right), the
         // rest round behind the station and off down the far side (left)
@@ -303,7 +300,7 @@ public static class LiftTopShot
         {
             steps.Add(() =>
             {
-                if (top == null || !LiftTop.On) return;
+                if (top == null) return;
                 var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
                 var arrive = (LiftArrive)typeof(SummitGame).GetField("arrive", NP).GetValue(game);
                 if (arrive.Active()) arrive.End();
@@ -321,7 +318,7 @@ public static class LiftTopShot
                 int k = i; var ts = times; string rn = ride;
                 steps.Add(() =>
                 {
-                    if (top == null || !LiftTop.On) return;
+                    if (top == null) return;
                     var arrive = (LiftArrive)typeof(SummitGame).GetField("arrive", NP).GetValue(game);
                     var step = typeof(SummitGame).GetMethod("ArriveStep", NP);
                     var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
@@ -364,7 +361,7 @@ public static class LiftTopShot
             if (top == null) return;
             float cx = Slope.Centre(Slope.PadLip);
             Place(new Vector3(cx + 10f, 0f, -50f), 0f);
-            var c = LiftTop.On ? new Vector3(cx - 26f, Slope.PlateauAt(-60f), -58f) : new Vector3(cx - 24f, Slope.PlateauAt(-82f), -82f);
+            var c = new Vector3(cx - 26f, Slope.PlateauAt(-60f), -58f);
             cam.orthographic = true; cam.orthographicSize = 50f;
             // (the cables are drawn a pixel or more wide whatever the distance: from straight above, as bands; not here)
             var cables = new List<Renderer>();

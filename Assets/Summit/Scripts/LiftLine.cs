@@ -186,8 +186,6 @@ namespace Summit
                 }
             }
 
-            /// <summary>How far round the loop a chair going up is as it crosses tower i (the cable node i + 1).</summary>
-            public float LoopAtTowerUp(int i) => cum[Spans - i];
 
             internal void MakeLoop()
             {

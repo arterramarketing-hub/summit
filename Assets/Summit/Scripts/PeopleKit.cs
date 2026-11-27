@@ -592,7 +592,6 @@ namespace Summit
         public const int RowKeep = 256;
         static int nextRow, atlasDirty;
         static bool toldFull;
-        public static int RowsInUse => rowOf.Count;
         public static int RowsMade { get; private set; }
         public static int RowsHeld { get { int n = 0; foreach (var h in rowHeld) if (h > 0) n++; return n; } }
 

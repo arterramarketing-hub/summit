@@ -494,7 +494,7 @@ namespace Summit
             // breaks at a lip, the board has tipped with it, and it only leaves if the snow still falls away from that)
             float tipped = sp * g0 / Mathf.Sqrt(1f + g0 * g0);
             Vector3 asCame = new Vector3(d.x * flat, Mathf.Clamp(groundVy, tipped - 2f, tipped + 2f), d.y * flat);
-            if (lip && sp > 7f && !roofEdge && Undercut <= 0f && !popPending && n.y >= (Course.InPipe(p.x, p.z) ? 0.22f : 0.62f) && FallsAway(p, asCame))
+            if (lip && sp > 7f && !roofEdge && Undercut <= 0f && !popPending && n.y >= 0.62f && FallsAway(p, asCame))
             {
                 Speed = sp;
                 return TakeOff(p, asCame, 0.08f);
@@ -603,23 +603,18 @@ namespace Summit
             if ((roofHere != null || roofNext != null) && wantY < hereY - 0.4f) { RoofStep(null); return TakeOff(p, vt, 0.08f); }
             // (or already past the edge: down on its very edge, the step carried the board off it)
             if (roofHere == null && roofUnder != null && p.y > hereY + 0.4f) { RoofStep(null); return TakeOff(p, vIn, 0.08f); }
-            // a face too steep to ride: you are falling, not riding (pipe walls are ridden almost to vertical)
-            bool inPipe = Course.InPipe(p.x, p.z);
-            float steep = inPipe ? 0.22f : 0.62f;
-            if (n.y < steep)
+            // a face too steep to ride: you are falling, not riding
+            if (n.y < 0.62f)
             {
                 // off the edge of a drop: the face falls away from the way you are going, so you leave it on your own
                 // line (laid onto that face, the speed into the air would be taken away, or turned back up the hill)
                 // (the fall counts from where you last stood on rideable snow, not from each touch on the way down)
-                if (!inPipe && Vector3.Dot(vIn, n) >= 0f) return TakeOff(p, vIn, 0.05f, false);
+                if (Vector3.Dot(vIn, n) >= 0f) return TakeOff(p, vIn, 0.05f, false);
                 // running into a wall that rises in front must not turn the speed into a launch straight up, so the
                 // climb is capped at the ground's own rate
-                if (!inPipe) vt.y = Mathf.Min(vt.y, Mathf.Max(groundVy, 0f) + 1.5f);
-                return TakeOff(p, inPipe ? PipeAir(p, vt) : vt, 0.05f, inPipe);
+                vt.y = Mathf.Min(vt.y, Mathf.Max(groundVy, 0f) + 1.5f);
+                return TakeOff(p, vt, 0.05f, false);
             }
-            // riding up a pipe wall: leave it with the wall's own vertical speed
-            if (inPipe && vt.y > 1f && surfVy < groundVy - G * dt * 2f)
-                return TakeOff(p, PipeAir(p, vt), 0.08f);
 
             groundVy = surfVy; fixVy = fix;
             DropFrom = p;

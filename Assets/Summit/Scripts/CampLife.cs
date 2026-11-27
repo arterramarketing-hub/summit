@@ -295,7 +295,6 @@ namespace Summit
         bool[] bank;
         const float BodyR = 0.24f;
         bool gridDirty = true;
-        public bool GridReady => open != null && !gridDirty;
 
         void BuildGrid()
         {

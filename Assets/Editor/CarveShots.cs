@@ -51,7 +51,7 @@ public static class CarveShots
         {
             float z = OpenStretch(Course.First + 60f, 150f);
             // 1. side to side: 60% of the drag each way, 0.75 s a side
-            Strip("Carve", Slope.Centre(z), z, 22f, 22f, 0.5f, 0.15f, (t, n) => t < 0.5f ? 0f : RiderInput.Curve(0.6f) * (Mathf.Sin((t - 0.5f) * Mathf.PI * 2f / 1.5f) > 0f ? 1f : -1f));
+            Strip("Carve", Slope.Centre(z), z, 22f, 22f, 0.5f, 0.15f, (t, n) => t < 0.5f ? 0f : 0.6f * (Mathf.Sin((t - 0.5f) * Mathf.PI * 2f / 1.5f) > 0f ? 1f : -1f));
             // 2. the whole drag one way at 100 km/h, flipped after half a second, then let go
             Strip("Skid", Slope.Centre(z), z, 28f, 0f, 0.5f, 0.1f, (t, n) => t < 0.6f ? 0f : t < 1.1f ? 1f : t < 1.5f ? -1f : 0f);
             // 3. the tree slalom: gates 3 m wide, 5 m side to side every 9 m

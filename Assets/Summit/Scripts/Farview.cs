@@ -131,8 +131,6 @@ namespace Summit
             if (to != null) foreach (var r in to) Fade(r, true);
         }
 
-        /// <summary>Is anything still handing over?</summary>
-        public static int FadingCount => Instance != null ? Instance.fading.Count : 0;
 
         int Find(Renderer r)
         {

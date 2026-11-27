@@ -132,7 +132,6 @@ namespace Summit
         /// <summary>Hold a clip at this point of its cycle (0..1) instead of letting it run.</summary>
         public void At(int id, float t01) { if (id < 0) return; held[id] = true; time[id] = Mathf.Repeat(t01, 1f) * Length(id); }
 
-        public float TimeOf(int id) => id < 0 ? 0f : time[id];
 
         /// <summary>Snap straight to the wanted weights (the first frame, or after a teleport).</summary>
         public void Snap() { System.Array.Copy(target, weight, weight.Length); }

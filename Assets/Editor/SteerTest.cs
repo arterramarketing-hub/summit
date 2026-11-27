@@ -65,7 +65,7 @@ public static class SteerTest
                 Reverse(r, v, 1f, out float r0, out float r2, out float rHalf);
                 Release(r, v, 1f, out float tTenth, out float t5deg, out float back);
                 float coast = releaseCoast;
-                First(r, v, RiderInput.Curve(0.25f), out _, out _, out _, out float quarter);
+                First(r, v, 0.25f, out _, out _, out _, out float quarter);
                 Debug.Log($"STEER push scale={sc:0.0} v={v:0} m/s ({v * 3.6f:0} km/h) whole drag: sideways 1 m/s in {T(t1)}, 3 m/s in {T(t3)}, {at05:0.0} m/s after 0.05 s, 90% of what it settles at in {T(t90)}; it settles at {steady:0.0} m/s sideways ({100f * steady / v:0}% of the speed, {Mathf.Asin(Mathf.Clamp(steady / v, -1f, 1f)) * Mathf.Rad2Deg:0} deg off the fall line); a quarter of the drag settles at {quarter:0.0} m/s | flipped the other way: through zero in {T(r0)}, 2 m/s the other way in {T(r2)}, half of the whole in {T(rHalf)} | let go: it coasts {T(coast)} before a tenth of its sideways speed is gone, a tenth of it left in {T(tTenth)}, within 5 deg of the fall line in {T(t5deg)}{(releaseAir ? " (it left the snow on the way)" : "")}, pulled back at {back:0} m/s^2 at most");
                 if (sc == 1f)
                 {
@@ -335,7 +335,7 @@ public static class SteerTest
                 }
                 // (and the response rides themselves, as they are ridden: on the snow all the way, at each speed)
                 foreach (float v in new[] { 15f, 22f, 30f })
-                    foreach (float s in new[] { 1f, RiderInput.Curve(0.5f) })
+                    foreach (float s in new[] { 1f, (0.5f) })
                     {
                         if (air) break;
                         First(r, v, s, out _, out _, out _, out _);

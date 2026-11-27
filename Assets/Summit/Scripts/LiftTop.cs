@@ -23,9 +23,6 @@ namespace Summit
     /// </summary>
     public static class LiftTop
     {
-        /// <summary>Off: the top as it was before lifttop (the station beside the lodge's wing, no pad): for the before pictures.</summary>
-        public static bool On = true;
-
         // ---------------------------------------------------------------- the design
 
         class Pad { public Rect r; public float corner; public float H; }
@@ -92,7 +89,7 @@ namespace Summit
 
         static bool Ready()
         {
-            if (!On || raw) return false;
+            if (raw) return false;
             if (ready && preparedSeed == Slope.Seed) return true;
             lock (gate)
             {
@@ -109,7 +106,7 @@ namespace Summit
         }
 
         /// <summary>Lay it out now (the main thread, before the terrain's workers ask: LiftLine does, before laying the lifts).</summary>
-        public static void Warm() { if (On) Ready(); }
+        public static void Warm() { Ready(); }
 
         static void Prepare(float cx)
         {
@@ -389,8 +386,6 @@ namespace Summit
         /// <summary>Where the Summit lift's top station may stand (camp terms), the first that will go first.</summary>
         public static bool Station(out float[] zs, out float[] offs)
         {
-            zs = offs = null;
-            if (!On) return false;
             zs = StationZ; offs = StationOff;
             return true;
         }
@@ -398,7 +393,7 @@ namespace Summit
         /// <summary>Is this lift's top on the pad (it is, unless the pad would not take it on this mountain)?</summary>
         public static bool AtBench(LiftLine.Lift l)
         {
-            if (!On || l == null || !l.summit) return false;
+            if (l == null || !l.summit) return false;
             float a = l.top.x - Slope.Centre(Slope.PadLip);
             float o0 = Mathf.Min(StationOff), o1 = Mathf.Max(StationOff), z0 = Mathf.Min(StationZ), z1 = Mathf.Max(StationZ);
             return a > o0 - 1.5f && a < o1 + 1.5f && l.top.z > z0 - 1.5f && l.top.z < z1 + 1.5f;

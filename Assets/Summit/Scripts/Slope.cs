@@ -197,7 +197,6 @@ namespace Summit
             if (s < 1) return false;   // (none before 95 m)
             if (Hash01(s, 11, 41) < 0.25f) return false;               // some stretches just keep their pitch
             float zs = s * DropSeg;
-            if (Course.At(zs) == Course.Section.Pipe || Course.At(zs + DropSeg) == Course.Section.Pipe) return false;
             if (CliffBand.Near(zs + DropSeg * 0.5f, DropSeg * 0.5f + 30f, out _)) return false;   // nor on a cliff band's bench
             if (Bowl.Near(zs + DropSeg * 0.5f, DropSeg * 0.5f + 20f, out _)) return false;   // nor in the bowl (its roll-over is the drop)
             if (Ridge.Has(zs) || Ridge.Has(zs + DropSeg)) return false;   // a roll-over on a crest would throw you off it
@@ -368,17 +367,6 @@ namespace Summit
             y += Cliffs.JumpHeight(x, z) + Cliffs.WallCut(x, z);   // cliffs to jump off, and cliffs to stay away from
             y += Cliffs.LedgeHeight(x, z);   // a staircase of ledges beside the run, once a cycle
             y += StepHeight(x, z);   // a rock step under some blind roll-overs, with a clean lane through it
-            // the halfpipe: a U cut along the piste, with decks either side, easing in and out
-            float pw = Course.PipeWeight(z);
-            if (pw > 0f)
-            {
-                float c = Centre(z);
-                float floor = FallLine(z) + (Noise(c * 0.011f + 50f, z * 0.009f) - 0.5f) * 7f;
-                float deckEnd = Course.PipeHalfWidth + Course.PipeDeck;
-                float yp = floor + Course.PipeProfile(a);
-                if (aa > deckEnd) yp = Mathf.Lerp(yp, y, Mathf.Clamp01((aa - deckEnd) / 10f));
-                y = Mathf.Lerp(y, yp, pw);
-            }
             y = Ridge.Shape(x, z, y);   // a narrow crest with cliffs either side, once a cycle
             // the hills under the lift lines that carry a rider up to the cables (LiftHill.cs) (not while a feature line is
             // laid: the lines are laid first, on the mountain without them, and the lifts then keep off them)
@@ -639,9 +627,6 @@ namespace Summit
         /// <summary>Height of the drawn triangle under (x, z): the rider stands on exactly what you see.</summary>
         public static float DrawnHeight(float x, float z)
         {
-            // in the halfpipe, ride the true curve: its 1.5 m facets would jolt the board at every edge
-            // (the drawn facets sit at most a few centimetres off it)
-            if (Course.PipeWeight(z) > 0.01f && Mathf.Abs(x - Centre(z)) < Course.PipeHalfWidth + 1.5f) return Height(x, z);
             float gx = x / Quad, gz = z / Quad;
             int i = Mathf.FloorToInt(gx), j = Mathf.FloorToInt(gz);
             // the rounded edge of a ridge's crest, where the mesh is cut into narrower strips to follow the curve

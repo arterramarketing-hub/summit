@@ -15,7 +15,7 @@ namespace Summit
     public class CourseDressing : MonoBehaviour
     {
         public Transform target;
-        Material metal, boxSide, railMat, post, ice, lipBand, lipDark, lipMid, hairDark, poleOrange, poleBlack, signPark, signDanger, signPipe, signBack, snow, signRidge, signGorge, signLedge,
+        Material metal, boxSide, railMat, post, ice, lipBand, lipDark, lipMid, hairDark, poleOrange, poleBlack, signPark, signDanger, signBack, snow, signRidge, signGorge, signLedge,
             bark, barkEnd, dye, poleBlue, signFreeride, signJumpLine;
         readonly Dictionary<int, GameObject> built = new Dictionary<int, GameObject>();
         readonly List<int> drop = new List<int>();
@@ -73,7 +73,6 @@ namespace Summit
             signBack = M(new Color(0.35f, 0.36f, 0.4f), 0.3f);
             signPark = Sign(lit, "Signs/SignPark");
             signDanger = Sign(lit, "Signs/SignDanger");
-            signPipe = Sign(lit, "Signs/SignPipe");
             signRidge = Sign(lit, "Signs/SignRidge");
             signGorge = Sign(lit, "Signs/SignGorge");
             signLedge = Sign(lit, "Signs/SignLedge");
@@ -268,7 +267,6 @@ namespace Summit
 
             // a sign at the start of each section, at the side of the piste, facing up the hill
             if (zb + Course.ParkAt + 180f < Course.ClearFrom) SignAt(root.transform, zb + Course.ParkAt - 30f, signPark, 1f);
-            if (Course.PipeWeight(zb + (Course.PipeAt + Course.PipeEnd) * 0.5f) > 0f) SignAt(root.transform, zb + Course.PipeAt - 30f, signPipe, 1f);
             if (Ridge.Built(k))
             {
                 var form = Ridge.FormOf(k);   // a ridge, a valley's gorge, or a ledge between a cliff and a wall

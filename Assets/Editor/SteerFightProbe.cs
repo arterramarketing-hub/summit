@@ -31,8 +31,8 @@ public static class SteerFightProbe
         r = new GameObject("Rider").AddComponent<Rider>();
         try
         {
-            Debug.Log($"FIGHT chain: RiderInput low-pass 60/s, its dead zone 0.025 + Curve (half the throw {RiderInput.Curve(0.5f):0.00}); Rider.Shape dead zone {Rider.DeadZone:0.00}, expo {Rider.InputExpo:0.0} " +
-                      $"(half the thumb's throw asks for {Rider.Shape(RiderInput.Curve(0.5f)):0.00} of a whole drag, a quarter {Rider.Shape(RiderInput.Curve(0.25f)):0.00}); ramp {Rider.RampTime:0.00} s, settle {Rider.SettleTime:0.00} s, edge least {Rider.EdgeLeast:0} m/s^2; " +
+            Debug.Log($"FIGHT chain: RiderInput low-pass 60/s, its dead zone 0.025 + Curve (half the throw {(0.5f):0.00}); Rider.Shape dead zone {Rider.DeadZone:0.00}, expo {Rider.InputExpo:0.0} " +
+                      $"(half the thumb's throw asks for {Rider.Shape((0.5f)):0.00} of a whole drag, a quarter {Rider.Shape((0.25f)):0.00}); ramp {Rider.RampTime:0.00} s, settle {Rider.SettleTime:0.00} s, edge least {Rider.EdgeLeast:0} m/s^2; " +
                       $"a whole drag {Rider.SideShare:0.00} of the speed ({Rider.SideLeast:0}..{Rider.SideCap:0} m/s), never past {Rider.SideAngle * Mathf.Rad2Deg:0} deg off the fall line; fall line lag {Rider.FallLineLag:0.00} s; " +
                       $"drawn nose {Rider.YawShare:0.0} of the line, capped {Rider.YawCap * Mathf.Rad2Deg:0} deg, {Rider.YawQuick:0}/s; camera {ChaseCamera.TravelShare:0.00} of the travel, ease {ChaseCamera.YawEase:0.00} s; tuck asks 0.7");
             var sites = FindSites();
@@ -41,7 +41,7 @@ public static class SteerFightProbe
                 Debug.Log($"FIGHT site {s.kind}: x-c={s.x - Slope.Centre(s.z):0} z={s.z:0}, pitch {s.pitch:0} deg, the snow falls {s.fall:+0;-0} deg off the run's line (the hill's fall line at the board {Rider_FallAt(s) * Mathf.Rad2Deg:+0;-0} deg)");
                 foreach (float v in s.kind == "flat" ? new[] { 10f, 18f } : new[] { 12f, 22f, 30f })
                 {
-                    foreach (float drag in new[] { 1f, -1f, RiderInput.Curve(0.5f), -RiderInput.Curve(0.5f) })
+                    foreach (float drag in new[] { 1f, -1f, (0.5f), -(0.5f) })
                         Trial(s, v, drag, false);
                     Trial(s, v, 1f, true);
                     Trial(s, v, -1f, true);

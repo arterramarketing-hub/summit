@@ -118,7 +118,6 @@ namespace Summit
         /// <summary>What they've done (for the tests and the readout): laps begun, ended at a lift, ended above something
         /// that blocks the run, stops (alone, with friends), sat down, falls, hops, and stops that found no place.</summary>
         public static int Laps, LapsAtLift, LapsBlocked, StopsAlone, StopsGroup, SatDown, Falls, Hops, NoPlace, NoStand, NoWay, WayClear, WayDrop;
-        public static float StepDt = 1f / 30f;   // (a frame, when the frame has no time of its own: the tests)
 
         /// <summary>For the tests: nobody on the mountain but one rider, stopped and standing here.</summary>
         public Rider TestOnly(Vector3 at, bool ski)

@@ -56,7 +56,6 @@ namespace Summit
         public static class Type
         {
             public static readonly Style Title = new Style(Weight.Light, 60, 0.30f);           // PAUSED, DAILY MISSIONS
-            public static readonly Style Number = new Style(Weight.Light, 84, 0.04f);          // the score
             public static readonly Style Button = new Style(Weight.SemiBold, 32, 0.22f);       // buttons and tabs
             public static readonly Style Body = new Style(Weight.Regular, 30, 0.10f);          // settings values, mission titles
             public static readonly Style Label = new Style(Weight.SemiBold, 28, 0.22f);        // chips, row names, credit lines
@@ -161,18 +160,6 @@ namespace Summit
         }
 
         public static RectTransform Button(string name, Transform parent, string label, Kind kind, Vector2 anchor, Vector2 pos, Vector2 size) => Button(name, parent, label, kind, anchor, pos, size, out _);
-
-        /// <summary>Restyle a button's plate (a primary that becomes secondary, and back).</summary>
-        public static void SetKind(RectTransform button, Kind kind)
-        {
-            var fill = button.Find("Fill")?.GetComponent<Image>();
-            var edge = button.Find("Edge")?.GetComponent<Image>();
-            var text = button.Find("Text")?.GetComponent<Text>();
-            if (fill != null) { fill.enabled = kind != Kind.Quiet; fill.color = kind == Kind.Primary ? Gold : Panel; }
-            if (edge == null && kind == Kind.Secondary) { edge = Img("Edge", button, A(Snow, 0.38f), Ring); Stretch(edge.rectTransform); edge.transform.SetSiblingIndex(1); }
-            if (edge != null) edge.enabled = kind == Kind.Secondary;
-            if (text != null) text.color = kind == Kind.Primary ? Ink : Snow;
-        }
 
         /// <summary>A square button holding a line icon (sliders, a peak, a pause).</summary>
         public static RectTransform IconButton(string name, Transform parent, Sprite icon, Vector2 anchor, Vector2 pos, Vector2 pivot, bool plate = true)

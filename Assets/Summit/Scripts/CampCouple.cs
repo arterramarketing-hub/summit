@@ -51,8 +51,6 @@ namespace Summit
                              + (paul != null && paul.shown ? "; Paul " + paul.doing : "");
         /// <summary>Test tools: go to this spot next (by name: Lookout, Fire, Chalet, Gate, Snowman, Stroll).</summary>
         public void Send(string spot) { forced = spot; foreach (var p in new[] { val, bri }) if (p != null) { p.stay = 0f; p.path.Clear(); } }
-        /// <summary>Test tools: Paul goes to this spot next.</summary>
-        public void SendPaul(string spot) { if (paul == null) return; paulForced = spot; paul.stay = 0f; paul.path.Clear(); }
         string paulForced;
         string forced;
         /// <summary>Test tools: she leans in now (at a stop); the one alone waves now.</summary>

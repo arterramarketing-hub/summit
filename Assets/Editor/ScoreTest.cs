@@ -319,7 +319,7 @@ public static class ScoreTest
             {
                 Vector3 s = Vector3.Lerp(p, q, i / 6f);
                 if (Course.CrevasseNear(s.x, s.z, 2f) || Deadly.Below(s.x, s.z)) return false;
-                if (Slope.Normal(s.x, s.z).y < 0.7f && !Course.InPipe(s.x, s.z)) return false;
+                if (Slope.Normal(s.x, s.z).y < 0.7f) return false;
             }
             var from = p + Vector3.up * 0.8f;
             foreach (var h in Physics.SphereCastAll(from, 1.3f, d / len, len, ~0, QueryTriggerInteraction.Ignore))

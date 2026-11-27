@@ -73,7 +73,7 @@ public static class LiftLayoutCheck
                     Debug.Log($"LAYOUT seed{seed} Summit: top at z {summit.top.z:0}, {summit.top.x - cx:+0;-0} m off the run ({edge:0} m past the camp's edge), deck {summit.top.y - plateau:+0.0;-0.0} m against the plateau; bottom at z {summit.bottom.z:0} ({Course.At(summit.bottom.z)}); {summit.plan:0} m, {summit.top.y - summit.bottom.y:0} m up, {summit.s.Length} towers");
                     if (edge > SummitReach) Fail($"seed{seed}: the Summit lift's top is {edge:0} m past the camp's edge");
                     // (lifttop2: its top's place is on the pad at the gate's level, LiftTop; say why not, where it isn't)
-                    if (LiftTop.On && LiftTop.AtBench(summit))
+                    if (LiftTop.AtBench(summit))
                     {
                         onPad++;
                         // (lifttop2) its deck flush with the snow: beside its sides and off its uphill end (people get off
@@ -92,7 +92,7 @@ public static class LiftLayoutCheck
                         Debug.Log($"LAYOUT seed{seed} Summit: on the top's pad; its deck {worst:+0.00;-0.00} m over the snow at most ({where}), {fall:0.0} m over it 3 m past its downhill end");
                         if (Mathf.Abs(worst) > 0.12f) Fail($"seed{seed}: the Summit lift's deck isn't flush with the snow ({worst:+0.00;-0.00} m at {where})");
                     }
-                    else if (LiftTop.On)
+                    else
                     {
                         var sbw = new System.Text.StringBuilder();
                         foreach (var kv in LiftLine.SummitWhy) sbw.Append($" {kv.Key} x{kv.Value}");
