@@ -182,7 +182,9 @@ namespace Summit
             bearAnim.Play(bearState.name);
 
             // measure the back through the cycle: the top of the back over its middle (the saddle), tracked by the
-            // same few vertices from the first sample on
+            // same few vertices from the first sample on. (A baked skin with no bones comes out in its renderer's own
+            // space without that renderer's scale, but it is drawn with it: the clip's x100 on the model's root. Taken
+            // as baked, the bear was sized 100 times too big; the shot tools bake too, so only the phone showed it: rides2)
             const int N = 24;
             var baked = new Mesh();
             var verts = new System.Collections.Generic.List<Vector3>();
@@ -199,7 +201,7 @@ namespace Summit
                 {
                     var pts = new Vector3[verts.Count];
                     Vector3 lo = Vector3.one * 1e9f, hi = -lo;
-                    for (int k = 0; k < verts.Count; k++) { pts[k] = bearYaw.InverseTransformPoint(tr.position + tr.rotation * verts[k]); lo = Vector3.Min(lo, pts[k]); hi = Vector3.Max(hi, pts[k]); }
+                    for (int k = 0; k < verts.Count; k++) { pts[k] = bearYaw.InverseTransformPoint(tr.localToWorldMatrix.MultiplyPoint3x4(verts[k])); lo = Vector3.Min(lo, pts[k]); hi = Vector3.Max(hi, pts[k]); }
                     float cx = (lo.x + hi.x) * 0.5f, cz = (lo.z + hi.z) * 0.5f, w = hi.x - lo.x, len = hi.z - lo.z;
                     // the back's middle: a little behind the middle of its length (its head is at +z), near its centre line
                     var cand = new System.Collections.Generic.List<int>();
@@ -210,10 +212,10 @@ namespace Summit
                     if (track.Length == 0) break;
                 }
                 Vector3 s = Vector3.zero;
-                foreach (int k in track) s += bearYaw.InverseTransformPoint(tr.position + tr.rotation * verts[k]);
+                foreach (int k in track) s += bearYaw.InverseTransformPoint(tr.localToWorldMatrix.MultiplyPoint3x4(verts[k]));
                 saddle[i] = s / track.Length;
                 float lowest = float.MaxValue;
-                foreach (var vv in verts) lowest = Mathf.Min(lowest, bearYaw.InverseTransformPoint(tr.position + tr.rotation * vv).y);
+                foreach (var vv in verts) lowest = Mathf.Min(lowest, bearYaw.InverseTransformPoint(tr.localToWorldMatrix.MultiplyPoint3x4(vv)).y);
                 floor[i] = lowest;
             }
             DestroyImmediate(baked);
@@ -236,6 +238,8 @@ namespace Summit
                 bearLift[i] = (saddle[i].y - mean.y) * scale;
                 bearRun[i] = (Quaternion.Euler(0f, Wildlife.BearYawFix, 0f) * (saddle[i] - mean)).z * scale;
             }
+            // (left stood waiting, not at the last sample's bound: the closet's copy is taken as it is: rides2)
+            bearState.time = BearIdleGait * bearLen; bearAnim.Sample();
             bearDummy = new GameObject("BearThrown").transform; bearDummy.SetParent(roll, false);   // (what the ragdoll throws: nothing to see)
             bearGear = true;
         }

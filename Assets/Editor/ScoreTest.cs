@@ -4,13 +4,16 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using Summit;
+using Progress = Summit.Progress;
 
 /// <summary>
 /// The points, measured.
 ///
 /// ScoreTest.Run: airs and grinds with scripted inputs (no input, taps only, directions only, both, more rotation
 /// than the air has room for; each ride), printing the trick that was built, its points, how the landing went and
-/// what the combo banked. The whole table is ridden twice and the two must match line for line.
+/// what the combo banked. The whole table is ridden twice and the two must match line for line; no line's ride
+/// changes under it, and nothing but the snowboard is given a snowboard's grind names (rides2: a mission done
+/// mid-grind used to put the toboggan back on the board, Boardslide and Noseslide on a sled, in one pass only).
 ///
 /// ScoreTest.Runs: whole runs by bots of three kinds (hands off, steering only, some trick input, heavy trick
 /// input) on five mountains: score, what was banked, the longest combo, falls.
@@ -65,7 +68,10 @@ public static class ScoreTest
     static void Ride(RideKind kind, bool tube)
     {
         body.SetRide(kind); r.SetRide(body.Ride); r.Tube = tube; body.SetTube(tube);
+        rideNow = r.Ride;
     }
+    static RideKind rideNow;
+    static readonly string[] BoardGrinds = { "Boardslide", "Noseslide", "Tailslide", "Lipslide", "Nose Press", "50-50" };
 
     /// <summary>A fresh run, the rider put down at (x, z) going v0 down the fall line.</summary>
     static void Start(float x, float z, float v0)
@@ -95,7 +101,12 @@ public static class ScoreTest
         if (n % 2 == 0 || r.Crashed) body.Apply(r.Crashed ? Dt : 2f * Dt);
     }
 
-    static void Say(string s) { lines.Add(s); Debug.Log("SCORE " + s); }
+    static void Say(string s)
+    {
+        lines.Add(s); Debug.Log("SCORE " + s);
+        // (rides2) whatever happened on the way (a mission done, points banked), the ride is the one it started on
+        if (r != null && r.Ride != rideNow) { Debug.Log($"SCORE FAIL the ride changed under it, {rideNow} -> {r.Ride}: {s}"); fails++; }
+    }
 
     // ---------------------------------------------------------------- airs
 
@@ -207,6 +218,11 @@ public static class ScoreTest
         if (!r.Crashed) Settle(ref n);
         since = 0f;
         Say($"{label,-34} on it {on:0.00}s |{(links == "" ? " -" : links)} | {(crash != null ? "CRASH '" + crash + "'" : "rode away")} | combo peaked x{topMult} at {topTotal} | banked {game.Points.Banked}");
+        // (rides2) whatever happens on the way (a mission done, points banked), the ride is the one it started on, and
+        // only a snowboard's grinds are called a snowboard's
+        if (rideNow != RideKind.Snowboard)
+            foreach (var board in BoardGrinds)
+                if (links.Contains("[" + board + " ") || links.Contains(" " + board + " ")) { Debug.Log($"SCORE FAIL {label}: a snowboard's grind ({board}) on the {rideNow}"); fails++; break; }
     }
 
     static void Grinds()
@@ -299,6 +315,12 @@ public static class ScoreTest
                 if (i >= first.Count || i >= lines.Count || first[i] != lines[i]) { diff++; Debug.Log($"SCORE DIFFERS line {i}:\n  1: {(i < first.Count ? first[i] : "")}\n  2: {(i < lines.Count ? lines[i] : "")}"); }
             Debug.Log($"SCORE {(diff == 0 ? "PASS" : "FAIL")}: the table ridden twice, {first.Count} lines, {diff} different; {fails} failure(s)");
             if (diff > 0) fails++;
+            // (rides2) the progress changing mid-run (a mission's reward) leaves what is ridden alone
+            Ride(RideKind.Toboggan, false);
+            Progress.Changed?.Invoke();
+            bool kept = r.Ride == RideKind.Toboggan;
+            Debug.Log($"SCORE {(kept ? "PASS" : "FAIL")}: the progress changing mid-run leaves the toboggan a toboggan (now {r.Ride})");
+            if (!kept) fails++;
         }
         catch (System.Exception e) { Debug.LogError("SCORE exception " + e); fails++; }
         Done();

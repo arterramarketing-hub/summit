@@ -30,7 +30,7 @@ namespace Summit
     /// build keeps their variants with the rest (InstancedAssets). People are the mountain's own (Person), pooled, posed
     /// by this, drawn by distance (the full model near, the simplified one further, none past PeopleRange).
     /// </summary>
-    public class LiftEnds : MonoBehaviour
+    public class LiftEnds : MonoBehaviour, IPersonHit
     {
         public static bool On = true;
         public static LiftEnds Instance { get; private set; }
@@ -84,6 +84,8 @@ namespace Summit
             public bool intoCamp;     // (the Summit top, LiftTop: riding into the camp, not off the far side)
             public bool handed;       // off a chair as the same person who sat on it (LiftRiders.Unloaded): gear on, gliding
             public bool shown;
+            public Ragdoll down;      // run down (rides2): thrown, and lying where they landed
+            public float downT, downStill;
         }
 
         readonly List<End> ends = new List<End>();
@@ -657,6 +659,7 @@ namespace Summit
                 foreach (var a in work)
                 {
                     if (a.end != e) continue;
+                    if (a.down != null) { Down(a, dt); continue; }   // (run down: thrown, lying there: rides2)
                     Move(a, dt);
                     if (a.end != e) continue;
                     if (a.job == Job.Camp) continue;   // (the camp walks them now: CampLife)
@@ -672,6 +675,97 @@ namespace Summit
         }
 
         readonly List<Agent> work = new List<Agent>();
+
+        // ---------------------------------------------------------------- run down (rides2)
+        // The people here are as solid as the mountain's riders and go down the same way when run into (Rider.MeetPerson):
+        // thrown on their own skeleton (Ragdoll, as MountainRiders.Knock), bleeding as the rider does (PeopleBlood), and
+        // once they have lain still a moment, sat up in the snow where they landed, dazed, until they are next sent off.
+
+        /// <summary>People here knocked over (for the tests).</summary>
+        public static int Knocked;
+        /// <summary>A knocked person's grunt, for the game to play (where, a woman's?).</summary>
+        public System.Action<Vector3, bool> Grunted;
+        readonly Dictionary<Person, Ragdoll> rags = new Dictionary<Person, Ragdoll>();
+        global::Summit.Rider hero;
+
+        Agent Of(Collider c) { if (c == null) return null; foreach (var a in pool) if (a.hit == c) return a; return null; }
+        public int IdOf(Collider c) { var a = Of(c); return a != null ? a.p.GetInstanceID() : -1; }
+        public Vector3 VelocityOf(Collider c)
+        {
+            var a = Of(c);
+            return a == null || a.down != null ? Vector3.zero : Quaternion.Euler(0f, a.yaw, 0f) * Vector3.forward * a.speed;
+        }
+
+        public void Knock(Collider c, Vector3 throwVelocity, Vector3 at)
+        {
+            var a = Of(c);
+            if (a == null || a.down != null || a.end == null || a.job == Job.Camp || a.p == null) return;
+            var rag = RagFor(a.p);
+            if (rag == null) return;
+            Knocked++;
+            Grunted?.Invoke(a.pos + Vector3.up, a.p.Look.female);
+            if (a.partner != null) { a.partner.partner = null; a.partner = null; }
+            // (posed as they stood, in the full model, then thrown from there)
+            a.p.gameObject.SetActive(true); a.p.SetLod(0); Pose(a, 0f); a.p.Apply(0f);
+            for (int i = 0; i < 2; i++) { if (a.p.Skis[i] != null) a.p.Skis[i].enabled = false; if (a.p.Poles[i] != null) a.p.Poles[i].enabled = false; }
+            if (a.p.Board != null) a.p.Board.enabled = false;
+            rag.Begin(throwVelocity);
+            a.down = rag; a.downT = 0f; a.downStill = 0f; a.speed = 0f;
+            if (a.hit != null) a.hit.enabled = false;
+        }
+
+        Ragdoll RagFor(Person p)
+        {
+            if (rags.TryGetValue(p, out var rag)) return rag;
+            var rig = new RiderRig(p.Model);
+            if (!rig.Ok) return null;
+            if (hero == null) hero = FindFirstObjectByType<global::Summit.Rider>();
+            var heroCol = hero != null ? hero.GetComponent<Collider>() : null;
+            // (nothing in their hands flies off: a token, unseen)
+            var g = new GameObject("KnockToken"); g.transform.SetParent(p.transform, false);
+            rag = new Ragdoll(rig, g.transform, heroCol);
+            rag.SetBoard(g.transform, new Vector3(0.08f, 0.02f, 0.2f), Vector3.zero, false);
+            PeopleBlood.Hook(rag, rig);
+            rags[p] = rag;
+            return rag;
+        }
+
+        /// <summary>A thrown person, a frame: lying still a moment, laid to rest, then sat up where they lie.</summary>
+        void Down(Agent a, float dt)
+        {
+            var rag = a.down;
+            a.downT += dt;
+            Vector3 c = rag.Centre;
+            a.pos = Snow(c);
+            if (rag.Speed < 0.7f) a.downStill += dt; else a.downStill = 0f;
+            if (a.downStill > 1.2f) rag.Settle(dt, a.downStill > 2.4f);
+            PeopleBlood.Body(rag, dt);
+            if (a.downStill > 3.2f || a.downT > 25f)
+            {
+                var face = rag.Velocity; face.y = 0f;
+                Up(a);
+                a.job = Job.Sit; a.t = 0f; a.until = 0f; a.speed = 0f;
+                if (face.sqrMagnitude > 0.01f) a.yaw = Yaw(face, Vector3.forward);
+                if (a.hit != null) a.hit.enabled = true;
+            }
+        }
+
+        void Up(Agent a)
+        {
+            if (a.down == null) return;
+            a.down.End();
+            a.down = null;
+            if (a.p != null)
+            {
+                for (int i = 0; i < 2; i++) { if (a.p.Skis[i] != null) a.p.Skis[i].enabled = true; if (a.p.Poles[i] != null) a.p.Poles[i].enabled = true; }
+                if (a.p.Board != null) a.p.Board.enabled = true;
+            }
+        }
+
+        /// <summary>The thrown people's physics: a fixed step's worth (FixedUpdate; the tests call it).</summary>
+        public void PhysicsStep() { foreach (var a in pool) if (a.down != null) a.down.PhysicsStep(); }
+        void FixedUpdate() { PhysicsStep(); }
+        void LateUpdate() { foreach (var a in pool) if (a.down != null) a.down.LateStep(); }
 
         static Vector3 Flat(Vector3 p) { p.y = 0f; return p; }
 
@@ -708,7 +802,7 @@ namespace Summit
                 h.transform.SetParent(p.transform, false);
                 a.hit = h.AddComponent<CapsuleCollider>();
                 a.hit.radius = 0.3f; a.hit.height = 1.75f; a.hit.center = new Vector3(0f, 0.88f, 0f);
-                h.AddComponent<Obstacle>().label = "Skier";
+                var ob = h.AddComponent<Obstacle>(); ob.label = "Skier"; ob.person = this;   // (run into: knocked over, rides2)
                 pool.Add(a);
             }
             else a.p.Dress(look);
@@ -720,6 +814,7 @@ namespace Summit
 
         void Park(Agent a)
         {
+            if (a.down != null) Up(a);
             if (a.job == Job.Camp && a.p != null && CampLife.Current != null) CampLife.Current.Release(a.p);
             a.intoCamp = false; a.handed = false;
             a.end = null; a.shown = false; a.partner = null;

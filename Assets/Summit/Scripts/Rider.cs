@@ -171,6 +171,7 @@ namespace Summit
         {
             if (!Running || Crashed) return false;
             if (InvincibleTime > 0f) { keep = Mathf.Max(keep, SmashKeep); wobbleFor = 0f; }
+            else if (Ride == RideKind.Car) wobbleFor = Mathf.Min(wobbleFor, 0.3f);   // (a sign or a flag is nothing to a car: rides2)
             else if (into > crashAbove && invulnerable <= 0f)
             {
                 if (Shields <= 0) { DoCrash(why); return true; }
@@ -523,7 +524,7 @@ namespace Summit
             bool rock = roof == null && (onTop || RockFace.IsRock(n, p.x, p.z));
             // a trick that had not come round: the board meets the snow upside down or across the way you are going
             string bad = BadLanding();
-            if (bad != null) { DoCrash(bad); return v; }
+            if (bad != null && !RideOutBad(bad)) { DoCrash(bad); return v; }
             Airborne = false;
             AboveGround = 0f;
             // (moving away from that face, not into it, the board is only a few centimetres into the drawn snow where its
@@ -543,7 +544,8 @@ namespace Summit
             // a slam is hard AND square on: landed down a slope at a glancing angle the legs soak it, however big the
             // air, and the board rides away (slowed, and wobbling as you find your feet)
             // (onto rock a little sooner: it gives nothing)
-            if (impact > SlamImpact * (rock ? RockSlam : 1f) && LastLandAngle > MaxLandAngle - (rock ? 10f : 0f)) { DoCrash("Slammed!"); return v; }
+            // (the car comes down on its springs, however hard: a hard landing, never out through the windscreen: rides2)
+            if (impact > SlamImpact * (rock ? RockSlam : 1f) && LastLandAngle > MaxLandAngle - (rock ? 10f : 0f) && Ride != RideKind.Car) { DoCrash("Slammed!"); return v; }
             bool hard = impact > 18f;
             float keep = Mathf.Max(0.5f, 1f - Mathf.Clamp01((impact - 8f) * 0.012f));
             if (hard)

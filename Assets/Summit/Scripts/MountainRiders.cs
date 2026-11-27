@@ -1179,6 +1179,7 @@ namespace Summit
             var heroCol = player != null ? player.GetComponent<Collider>() : null;
             rag = new Ragdoll(rig, board, heroCol);
             if (p.Board == null || r.ski) rag.SetBoard(board, new Vector3(0.08f, 0.02f, 0.2f), Vector3.zero, false);
+            PeopleBlood.Hook(rag, rig);   // (they bleed as the rider does: rides2)
             rags[p] = rag;
             return rag;
         }
@@ -1200,6 +1201,7 @@ namespace Summit
             r.pos = new Vector3(c.x, Slope.DrawnHeight(c.x, c.z), c.z); r.ground = r.pos.y;
             if (rag.Speed < 0.7f) r.downStill += dt; else r.downStill = 0f;
             if (r.downStill > 1.2f) rag.Settle(dt, r.downStill > 2.4f);
+            PeopleBlood.Body(rag, dt);
             bool seen = Seen(r.pos, 4f);
             if ((!seen && r.downT > 1.5f) || r.downT > 40f && !seen) { GoneDown++; Up(r); Recycle(r); return; }
             if (r.downStill > 3.2f || r.downT > 25f)

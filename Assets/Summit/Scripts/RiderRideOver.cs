@@ -292,6 +292,9 @@ namespace Summit
             bool square = sp < 1e-3f || into >= sp * DeadOnCos;
             if (first) LastHitAngle = sp > 1e-3f ? Mathf.Acos(Mathf.Clamp(into / sp, 0f, 1f)) * Mathf.Rad2Deg : 0f;
             if (ob.person != null) return MeetPerson(ob, col, normal, at, v, first);   // (ridercrash: another rider)
+            // (rides2) the car and the bear run an animal down: it goes cartwheeling off (Smasher, as the invincible
+            // rider bowls it), and they go on
+            if (ob.always && RunsOver && first && Smash(ob, col)) { RunOverCount++; RanOver?.Invoke(at, Mathf.Max(into, sp), false); return v * RunOverKeep; }
             if (ob.always) { into = Mathf.Max(into, 10f); square = true; }   // animals always knock you down
             // invincible: smashed and ridden on through, minus the smash's toll
             if (InvincibleTime > 0f && ob.Smashable && Smash(ob, col)) return v * SmashKeep;
@@ -334,6 +337,14 @@ namespace Summit
                 }
                 return v;
             }
+            // (rides2) the car takes a knock: only a rock, or the third tree hit hard, throws the driver out through the
+            // windscreen. The trees before it dent it and it bounces off; anything else built (a cabin, a fence, a lift
+            // tower, a hut) is a bump
+            if (Ride == RideKind.Car && into > CrashInto && ob.label != "Rock")
+            {
+                bool tree = ob.label == "Tree";
+                if (!tree || CarDents + 1 < CarTreesToWreck) return CarDent(normal, at, v, into, tree);
+            }
             if (Tube && into > 6f && into < 16f && !ob.always)
             {
                 // the tube is a big rubber ring: it bounces off, spinning, and you keep going
@@ -354,7 +365,7 @@ namespace Summit
                 ShieldHit?.Invoke();
                 return v * 0.8f;
             }
-            if (into > CrashInto) { DoCrash(ob.label); return v; }
+            if (into > CrashInto) { if (Ride == RideKind.Car) CarDents = 0; DoCrash(ob.label); return v; }
             Scraped?.Invoke(into);
             return Slide(v, normal) * 0.85f;
         }
@@ -431,7 +442,8 @@ namespace Summit
         /// (ridercrash) Into another rider. A real hit (closing at PersonHitMin or more, the first touch) knocks them down,
         /// thrown by how fast you met; you: the first time in a run, you stay up, staggered, a third of your speed gone
         /// (the warning); after that, a shield takes it if you have one, or you go down too, as into anything else.
-        /// Invincible, you go through. A brush, or still touching after the hit, slides past.
+        /// Invincible, you go through. A brush, or still touching after the hit, slides past. In the car or on the bear
+        /// (RunsOver: rides2) they are run down, thrown up and on, and you go on, every time.
         /// </summary>
         Vector3 MeetPerson(Obstacle ob, Collider col, Vector3 normal, Vector3 at, Vector3 v, bool first)
         {
@@ -446,8 +458,18 @@ namespace Summit
             if (!first || closing < PersonHitMin) return Slide(v, normal);
             // they go down: thrown along the way you met, with some of the speed you had over theirs
             var push = new Vector3(rel.x, 0f, rel.z) * 0.6f - new Vector3(normal.x, 0f, normal.z) * closing * 0.4f;
+            // (rides2: run down by the car or the bear, thrown harder and up off their feet, and the ride goes on: no
+            // warning, no shield, never down)
+            if (RunsOver) push = new Vector3(rel.x, 0f, rel.z) * 0.85f - new Vector3(normal.x, 0f, normal.z) * closing * 0.3f + Vector3.up * Mathf.Min(6f, 1.5f + 0.15f * closing);
             ob.person.Knock(col, theirs + push, at);
             PeopleHit++;
+            if (RunsOver)
+            {
+                RunOverCount++;
+                RanOver?.Invoke(at, closing, true);
+                wobble = Mathf.Max(wobble, 0.3f);
+                return v * RunOverKeep;
+            }
             if (InvincibleTime > 0f) return v * 0.9f;
             if (!FreeHitUsed)
             {

@@ -16,9 +16,12 @@ namespace Summit
     /// round to face the way it goes (or slides backwards a moment first).
     ///
     /// The car: an engine that keeps it going where the hill gives up (CruiseSpeed) and pulls harder held (the tuck is
-    /// the throttle), through five gears for the sound. Its springs tip it over in a hard turn and on a side slope
-    /// (Tip: the pull across the way it goes, in g, with the snow's own tilt that way): past RollTip for RollHold s it
-    /// rolls over, a crash like any other (Feel.Wreck).
+    /// the throttle), through five gears for the sound. Its springs lean it over in a hard turn and on a side slope
+    /// (Tip: the pull across the way it goes, in g, with the snow's own tilt that way), the look only: however hard it
+    /// is turned it stays on its wheels (rides2: a hard turn rolled it and threw the driver out, which nobody wants).
+    /// What it hits (RiderRideOver.Meet): a rock throws the driver out through the windscreen; a tree hit hard dents it
+    /// and bounces it off, and only the third does (CarTreesToWreck); anything else built is a bump. It runs down the
+    /// people and the animals in its way (RunsOver), as the bear does.
     ///
     /// The bear: it runs by itself where the hill flattens (BearRun), galloping (Gait, the cycle the body plays) a
     /// stride a cycle, its paws coming down twice a cycle (Pawfall, for the sound).
@@ -50,11 +53,24 @@ namespace Summit
         public int Gear { get; private set; }
         public float Throttle { get; private set; }
         /// <summary>How far over the car is on its springs: its tip (the pull across the way it goes in g, and the
-        /// snow's tilt), + to the right. Past RollTip for RollHold s it goes over.</summary>
+        /// snow's tilt), + to the right. The look only: it never goes over.</summary>
         public float Tip { get; private set; }
-        public static float RollTip = 2.1f, RollHold = 0.22f, RollSpeed = 16f;
-        float tipOver;
         public System.Action<int> GearChange;
+        /// <summary>Hit hard (as a tree knocks a board rider down), the first trees only dent the car: the third throws
+        /// the driver out (rides2). A rock does at once.</summary>
+        public static int CarTreesToWreck = 3;
+        /// <summary>Trees the car has hit hard since it was last wrecked (a new run starts at none).</summary>
+        public int CarDents { get; private set; }
+        /// <summary>The car dented and bounced off: how many trees so far (0: not a tree, a bump), and where.</summary>
+        public System.Action<int, Vector3> CarDented;
+        /// <summary>The car and the bear run down the people and the animals in their way: knocked flying, and on they go.</summary>
+        public bool RunsOver => Ride == RideKind.Car || Ride == RideKind.Bear;
+        /// <summary>Someone run down (or an animal: false): where, how fast into them.</summary>
+        public System.Action<Vector3, float, bool> RanOver;
+        /// <summary>Run down this run (the tests).</summary>
+        public int RunOverCount;
+        /// <summary>The share of the speed kept running someone down.</summary>
+        public static float RunOverKeep = 0.9f;
 
         // ---- the bear
         public static float BearRun = 11f, BearRunPull = 6f, BearStride = 4.2f;
@@ -66,7 +82,7 @@ namespace Summit
         void VehicleReset()
         {
             PaddleSide = 0; PaddleT = 0f; strokeClock = 0f; lastStrokeSide = -1; SpinOut = 0f; spinRate = 0f;
-            Rpm = 0f; Gear = 0; Throttle = 0f; Tip = 0f; tipOver = 0f; Gait = 0f; GaitRate = 0f;
+            Rpm = 0f; Gear = 0; Throttle = 0f; Tip = 0f; Gait = 0f; GaitRate = 0f; CarDents = 0; RunOverCount = 0;
         }
 
         /// <summary>The sideways pull a paddle stroke adds (m/s^2 across the fall line, + right): GroundStep's.</summary>
@@ -175,12 +191,12 @@ namespace Summit
                 {
                     // off the snow the wheels spin up (held) or the revs drop back
                     Rpm = Mathf.Lerp(Rpm, Throttle > 0.5f ? 1f : 0.55f, 1f - Mathf.Exp(-dt * 3f));
-                    Tip = Mathf.Lerp(Tip, 0f, 1f - Mathf.Exp(-dt * 3f)); tipOver = 0f;
+                    Tip = Mathf.Lerp(Tip, 0f, 1f - Mathf.Exp(-dt * 3f));
                     return;
                 }
-                if (Grinding) { Tip = 0f; tipOver = 0f; return; }
+                if (Grinding) { Tip = 0f; return; }
                 // over on its springs: the pull across the way it goes (in g) and the snow's tilt across it, the outside
-                // of the turn the way it leans. Past RollTip at speed for long enough, over it goes
+                // of the turn the way it leans
                 float line = TravelHeading;
                 var right = new Vector3(Mathf.Cos(line), 0f, -Mathf.Sin(line));
                 Vector3 n = Slope.Normal(p.x, p.z);
@@ -188,19 +204,55 @@ namespace Summit
                 float pull = -SideEdge / G;            // (the push left (SideEdge < 0) throws the car's weight right)
                 float tip = pull + 1.6f * tilt;
                 Tip = Mathf.Lerp(Tip, tip, 1f - Mathf.Exp(-dt * 10f));
-                tipOver = Mathf.Abs(Tip) > RollTip && Speed > RollSpeed && invulnerable <= 0f ? tipOver + dt : Mathf.Max(0f, tipOver - 2f * dt);
-                if (tipOver > RollHold && Undercut <= 0f)
-                {
-                    tipOver = 0f;
-                    if (Shields > 0) { Shields--; invulnerable = 0.9f; ShieldHit?.Invoke(); }
-                    else { RollDir = Mathf.Sign(Tip); DoCrash(feel.Wreck ?? "Rolled it!"); }
-                }
             }
             else if (Ride == RideKind.Bear && Airborne) GaitRate = Mathf.Lerp(GaitRate, 0.9f, 1f - Mathf.Exp(-dt * 2f));
             else if (Ride == RideKind.Kayak && Airborne) SpinStep(dt);   // (a spin-out goes on round through the air)
         }
 
-        /// <summary>Which way the car went over (+1 to the right): the thrown car is set rolling that way.</summary>
-        public float RollDir { get; private set; }
+        /// <summary>
+        /// (rides2) A landing a board falls on that these ride out, the trick not paid: the car always comes down on its
+        /// wheels (on its springs, whatever it did up there: only a rock or the third tree throws the driver out), and the
+        /// kayak come down across its way spins out (a hull has no edge to catch: it goes on round, as thrown across on
+        /// the snow). False for everything else: down it goes.
+        /// </summary>
+        bool RideOutBad(string bad)
+        {
+            if (Ride == RideKind.Car)
+            {
+                ClearTrick();
+                wobble = Mathf.Max(wobble, 0.8f);
+                RoughLanding?.Invoke("Hard landing");
+                return true;
+            }
+            if (Ride == RideKind.Kayak && bad == "Landed sideways!")
+            {
+                float rem = Mathf.DeltaAngle(0f, spinNow * Mathf.Rad2Deg) * Mathf.Deg2Rad;
+                ClearTrick();
+                SpinOut = rem;
+                spinRate = (rem >= 0f ? 1f : -1f) * SpinKick * 0.5f;
+                SpunOut?.Invoke(Speed);
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// The car hit something hard that does not throw the driver out (a tree before the third, anything built): it
+        /// bounces back off it, most of its speed gone, the driver jolted (wobble) and nothing else hit for a moment.
+        /// </summary>
+        Vector3 CarDent(Vector3 normal, Vector3 at, Vector3 v, float into, bool tree)
+        {
+            if (tree) CarDents++;
+            invulnerable = Mathf.Max(invulnerable, 0.6f);
+            wobble = Mathf.Max(wobble, 0.6f);
+            Vector3 nb = new Vector3(normal.x, 0f, normal.z);
+            if (nb.sqrMagnitude < 1e-4f) nb = -new Vector3(v.x, 0f, v.z);
+            nb.Normalize();
+            float vn = Vector3.Dot(v, nb);
+            if (vn < 0f) v -= nb * vn * 1.25f;   // (its front crumples: a little back off it)
+            Scraped?.Invoke(into);
+            CarDented?.Invoke(tree ? CarDents : 0, at);
+            return v * 0.6f;
+        }
     }
 }

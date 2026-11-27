@@ -250,13 +250,14 @@ public static class ClosetShot
         foreach (var sk in skins)
         {
             if (!sk.enabled || !sk.gameObject.activeInHierarchy) continue;
-            bool bear = false;   // (the bear's file scales its own root: baked with it. Its copy here has lost its Animation: known by its wrapper)
-            for (var t = sk.transform; t != null && !bear; t = t.parent) bear = t.name == "BearWrap";
-            var m = new Mesh(); sk.BakeMesh(m, bear);
+            var m = new Mesh(); sk.BakeMesh(m);
             var g = new GameObject("b", typeof(MeshFilter), typeof(MeshRenderer));
             g.layer = sk.gameObject.layer;
             g.GetComponent<MeshFilter>().sharedMesh = m; g.GetComponent<MeshRenderer>().sharedMaterials = sk.sharedMaterials;
             g.transform.SetPositionAndRotation(sk.transform.position, sk.transform.rotation);
+            // (a skin with no bones is drawn with its renderer's whole scale, which a bake leaves out: the bear's file
+            // keys x100 on its root. Drawn as the phone draws it: rides2)
+            if (sk.bones.Length == 0) g.transform.localScale = sk.transform.lossyScale;
             sk.enabled = false; off.Add(sk); baked.Add(g);
         }
         cam.Render();

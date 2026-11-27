@@ -54,8 +54,6 @@ namespace Summit
         /// <summary>The fun rides (rides): one that is not a board, skis or a toboggan, with its own extra physics
         /// (RiderVehicle.cs), body and clips (RiderBodyVehicle.cs) and sounds (VehicleSound.cs).</summary>
         public bool Vehicle;
-        /// <summary>What its crash is called when it goes over by itself (the car rolling: RiderVehicle).</summary>
-        public string Wreck;
     }
 
     public static class Rides
@@ -116,11 +114,12 @@ namespace Summit
             },
             // The rally car: four wheels on snow. It drifts (little grip, a long slide) but a push answers soon enough,
             // and it is the quickest thing on the mountain flat out; the engine keeps it going where the hill gives up
-            // (RiderVehicle). It bounces on its springs off every landing; turned hard across a steep slope at speed, or
-            // landed on its side, it rolls over (Wreck). A jump is the springs' hop; there is little steering in the air.
+            // (RiderVehicle). It bounces on its springs off every landing and leans in a hard turn, but never goes over.
+            // It is built to take a knock: a tree only dents it (the third throws you out), a rock throws you out, and
+            // the people and animals in its way go flying (rides2). A jump is the springs' hop; little steering in the air.
             new RideFeel
             {
-                Name = "RALLY CAR", Vehicle = true, Wreck = "Rolled it!",
+                Name = "RALLY CAR", Vehicle = true,
                 TurnResponse = 0.85f, TurnRate = 0.85f, Grip = 0.45f, TopSpeed = 1.07f, Pop = 0.55f, AirControl = 0.3f,
                 Bounce = 0.18f, Rails = false,
                 Grabs = new[] { "Window Wave" },

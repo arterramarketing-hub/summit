@@ -17,8 +17,8 @@ using Progress = Summit.Progress;
 /// - A crash on purpose, and a tap: thrown (the ragdoll; the hull, the car or the paddle flying off, the bear
 ///   running on by itself), then up again within a few frames with everything back under the rider, riding on.
 /// - Each one's own: the kayak strokes (more on the outside of a turn) and spins out thrown from one way to the
-///   other at speed; the car keeps itself going on the flat (its engine), and rolls over thrown hard across at speed
-///   (a crash, got up from); the bear gallops (its paws) and jumps big.
+///   other at speed; the car keeps itself going on the flat (its engine), and thrown hard across at speed leans on
+///   its springs but stays on its wheels (rides2: it used to roll over); the bear gallops (its paws) and jumps big.
 /// Lines start RIDES; exits 1 on any failure. With $RIDES_SHOTS (and graphics) it writes pictures of each in action.
 /// Run: Unity -batchmode -nographics -quit -projectPath . -executeMethod RideModeTest.Run -logFile rides.log
 /// </summary>
@@ -308,24 +308,13 @@ public static class RideModeTest
         ToStart();
         for (int i = 0; i < 60; i++) Frame(0f);
         Check("CAR: its engine turns (revs, a gear)", rider.Rpm > 0.2f, $"rpm {rider.Rpm:0.00} gear {rider.Gear}");
-        // thrown hard from one way to the other at speed: over it goes, a crash, got up from
+        // thrown hard from one way to the other at speed: it leans right over on its springs, and stays on its wheels
+        // (rides2: past a tip of 2.1 it used to roll, throwing the driver out; nobody wants a turn to do that)
         UpTo(27f, 40f);
-        string was = lastCrash; int c0 = crashCount; float most = 0f;
+        int c0 = crashCount; float most = 0f;
         for (float t = 0f; t < 6f && crashCount == c0; t += Dt) { Frame(Mathf.Repeat(t, 1.0f) < 0.5f ? 1f : -1f); most = Mathf.Max(most, Mathf.Abs(rider.Tip)); }
-        bool rolled = crashCount > c0 && lastCrash == "Rolled it!";
-        Check("CAR: thrown hard across at speed, it rolls over", rolled, $"tip {most:0.00} (rolls past {Summit.Rider.RollTip}), crash \"{(crashCount > c0 ? lastCrash : "none")}\"");
-        if (rolled)
-        {
-            if (shots != null) { for (int i = 0; i < 25; i++) Frame(0f); Shoot("Car_5_rolled.png", Watch(body.RagdollCentre, 8f)); }
-            for (int i = 0; i < 60; i++) Frame(0f);
-            int took = TapUp();
-            Check("CAR: rolled, a tap, and back on its wheels", !rider.Crashed && took < 12 && FindChild(body.CarGear, "Body") != null, $"{took} frames");
-        }
-        // ridden normally it does not roll: a weaving run's worth of tip
-        ToStart(); UpTo(24f, 40f);
-        int c1 = crashCount; float tipMost = 0f;
-        for (float t = 0f; t < 20f; t += Dt) { if (rider.Crashed) break; Frame(Pilot(t)); tipMost = Mathf.Max(tipMost, Mathf.Abs(rider.Tip)); }
-        Check("CAR: steered normally, it stays on its wheels", crashCount == c1 || lastCrash != "Rolled it!", $"most tip {tipMost:0.00}");
+        Check("CAR: thrown hard across at speed, it leans on its springs and stays on its wheels", crashCount == c0 && most > 0.5f, $"tip {most:0.00}, crash \"{(crashCount > c0 ? lastCrash : "none")}\"");
+        if (shots != null) Shoot("Car_5_leaning.png", Chase());
     }
 
     static void Bear()
@@ -379,15 +368,16 @@ public static class RideModeTest
         foreach (var sk in skins)
         {
             if (!sk.enabled || !sk.gameObject.activeInHierarchy) continue;
-            // (the bear's file scales its own root: baked with that scale; the riders' as the other shot tools bake them)
-            bool bear = sk.GetComponentInParent<Animation>() != null;
-            var m = new Mesh(); sk.BakeMesh(m, bear);
-            if (shotLog++ < 12) Debug.Log($"RIDES skin {sk.name} scale {sk.transform.lossyScale} bear {bear}");
+            var m = new Mesh(); sk.BakeMesh(m);
+            if (shotLog++ < 12) Debug.Log($"RIDES skin {sk.name} scale {sk.transform.lossyScale} bones {sk.bones.Length}");
             var g = new GameObject("b", typeof(MeshFilter), typeof(MeshRenderer)); g.layer = sk.gameObject.layer;
             g.GetComponent<MeshFilter>().sharedMesh = m;
             var mr2 = g.GetComponent<MeshRenderer>(); mr2.sharedMaterials = sk.sharedMaterials;
             var mpb = new MaterialPropertyBlock(); sk.GetPropertyBlock(mpb); mr2.SetPropertyBlock(mpb);
             g.transform.SetPositionAndRotation(sk.transform.position, sk.transform.rotation);
+            // (a skin with no bones is drawn with its renderer's whole scale, which a bake leaves out: the bear's file
+            // keys x100 on its root. Drawn as the phone draws it: rides2)
+            if (sk.bones.Length == 0) g.transform.localScale = sk.transform.lossyScale;
             sk.enabled = false; off.Add(sk); baked.Add(g);
         }
         Canvas.ForceUpdateCanvases();

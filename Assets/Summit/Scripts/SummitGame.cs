@@ -518,6 +518,27 @@ namespace Summit
             MountainRiders.Create(null, rider, snow.shader);   // other people riding the run (MountainRiders.cs): the same, by themselves (not under the rider: their solids would ride along with him)
             // (ridercrash) into another rider: they go down; the first time a run you stay up, and know it without a word
             rider.PersonWarned += (ob, at) => FreeHit();
+            if (LiftEnds.Instance != null) LiftEnds.Instance.Grunted = (at, female) => { if (state == State.Riding) audioFx.Play(female ? Sfx.Yelp : Sfx.Grunt); };
+            // (rides2) the car and the bear run people down: the thud of it, the spray, and on you go
+            rider.RanOver += (at, into, person) =>
+            {
+                if (state != State.Riding) return;
+                audioFx.Play(Sfx.Thump, Mathf.Clamp01(into / 8f));
+                if (person) { if (blood != null && blood.On && into > Blood.ObstacleHard) audioFx.Play(Sfx.Bone, 0.6f); PeopleBlood.Hit(at + Vector3.up * 0.9f, rider.Velocity, into); }
+                hurtShake = Mathf.Max(hurtShake, 0.25f);
+            };
+            // (rides2) the car dented by a tree (or bumped off anything built): the crunch, a jolt, and how many it has left
+            rider.CarDented += (trees, at) =>
+            {
+                if (state != State.Riding) return;
+                audioFx.Play(Sfx.SmashWood, 0.8f); audioFx.Play(Sfx.Thump, 1f);
+                hurtShake = Mathf.Max(hurtShake, 0.5f);
+                if (trees > 0)
+                {
+                    int left = Rider.CarTreesToWreck - trees;
+                    hud.Flash("DENTED", left == 1 ? "one more tree and you're out" : left + " more trees and you're out", 1.1f);
+                }
+            };
             if (MountainRiders.Current != null) MountainRiders.Current.Grunted = (at, female) => { if (state == State.Riding) audioFx.Play(female ? Sfx.Yelp : Sfx.Grunt); };
             rider.GrindStart += f => { if (state == State.Riding) audioFx.Play(f.kind == Course.Kind.Rail ? Sfx.GrindRail : Sfx.GrindBox); };
             // a numbered flag wherever a fall came to rest, for the rest of the run
@@ -570,6 +591,7 @@ namespace Summit
             blood.SetOn(PlayerPrefs.GetInt("summit_blood", 1) == 1);
             body.blood = blood;
             blood.forest = props;
+            PeopleBlood.blood = blood;   // (the people knocked over bleed too: rides2)
 
             // invincible: what you run through is smashed, not crashed into
             smasher = new GameObject("Smasher").AddComponent<Smasher>();
@@ -752,9 +774,13 @@ namespace Summit
             // another rider or set of clothes is a new body: the closet's studio copies it afresh
             if (body.Built != built && meta != null && meta.Stage != null) meta.Stage.Recopy();
             // what was picked at the rack (Progress.Ride): the rider's physics and what you see of them
-            // (the physics follows what the body could actually put on: without the gear's files it stays a snowboard)
-            if (rider.Ride != Progress.Ride) { body.SetRide(Progress.Ride); rider.SetRide(body.Ride); if (hud != null) ShowRider(); }
+            // (the physics follows what the body could actually put on: without the gear's files it stays a snowboard).
+            // Only when the pick itself changed: the progress changes for other things too (a mission's reward, mid-run),
+            // and then whatever the rider is on stays as it is. (rides2: checked against the rider's own ride, a mission
+            // done mid-grind put a toboggan back on the board: Boardslide and Noseslide on a sled)
+            if (Progress.Ride != ridePicked) { ridePicked = Progress.Ride; body.SetRide(Progress.Ride); rider.SetRide(body.Ride); if (hud != null) ShowRider(); }
         }
+        RideKind? ridePicked;
 
         /// <summary>To the camp: on foot, with the menus. A fresh mountain unless you just came up from the start pad.</summary>
         void ToHub(bool fresh = true)
