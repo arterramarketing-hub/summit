@@ -5,16 +5,14 @@
 //   - two scales of the same rock: the near one for its grain and cracks, a far one (eight times larger) tinting
 //     it in broad patches, so it never tiles, near or a kilometre off
 //   - relief: the scan's normals bend the light at both scales, so cracks and blocks catch a low sun, the moon
-//     and the lamps; and close to the camera the near rock is looked up where the eye's ray would really meet
-//     the scanned surface (parallax occlusion: a few steps down a height map), so blocks stand proud of the
-//     cracks between them. That part fades out with distance and at grazing angles, and RockFace.Parallax
-//     switches it off altogether (the keyword SUMMIT_ROCK_NO_PARALLAX); the normals stay either way.
+//     and the lamps. (A parallax-occlusion step near the camera used to sit on top behind a keyword; it was never
+//     switched on in the game and doubled the variants, so it is gone.)
 //     The silhouette and the depth buffer stay the flat face's: no depth is written from the fragment shader.
 //   - strata: horizontal bands of slightly different rock, each with a dark bedding seam, wandering a little
 //   - snow caught on whatever faces up enough to hold it (ledges, the tops of blocks), and in broken lines along
 //     the strata's seams, which is what still reads from across a canyon when the face is in shade
 // Lit like everything else (the sun or moon with its shadows, the sky's light, the headlamp and other lamps, fog),
-// so it works at night too. Twelve texture samples a pixel, and near the camera the parallax steps on top.
+// so it works at night too. Twelve texture samples a pixel.
 // The terrain's own rock (RockFace.TerrainMaterial: the keyword SUMMIT_ROCK_TERRAIN) is drawn over the snow wherever
 // any of it may show, and lets the snow through pixel by pixel: each corner says how bare the ground is there (its
 // colour's alpha: RockFace.Rockiness), and the rock's own patches and cracks move the line about, so the snow line
@@ -68,7 +66,6 @@ Shader "Summit/Rock"
             #pragma multi_compile _ _ADDITIONAL_LIGHTS_VERTEX _ADDITIONAL_LIGHTS
             #pragma multi_compile_fragment _ _SHADOWS_SOFT
             #pragma multi_compile_fog
-            #pragma multi_compile_fragment _ SUMMIT_ROCK_NO_PARALLAX
             // (multi_compile, not shader_feature: the terrain's material is made at run time, so no saved material
             // would keep the variant in a build)
             #pragma multi_compile_local _ SUMMIT_ROCK_TERRAIN
@@ -164,47 +161,6 @@ Shader "Summit/Rock"
             }
             #endif
 
-            #if !defined(SUMMIT_ROCK_NO_PARALLAX)
-            #define RELIEF_STEPS 6
-            // the near rock's height alone, at a mip level given by hand (it is sampled inside a branch and a loop,
-            // where the GPU cannot work one out), and only from the sides that count on this face
-            half ReliefHeight(float3 p, float3 w, float k, float lod)
-            {
-                half h = 0.0;
-                UNITY_BRANCH if (w.x > 0.0) h += w.x * SAMPLE_TEXTURE2D_LOD(_ReliefMap, sampler_ReliefMap, p.zy * k, lod).b;
-                UNITY_BRANCH if (w.y > 0.0) h += w.y * SAMPLE_TEXTURE2D_LOD(_ReliefMap, sampler_ReliefMap, p.xz * k, lod).b;
-                UNITY_BRANCH if (w.z > 0.0) h += w.z * SAMPLE_TEXTURE2D_LOD(_ReliefMap, sampler_ReliefMap, p.xy * k, lod).b;
-                return h;
-            }
-
-            // parallax occlusion: follow the eye's ray from the flat face down into the rock, in a few even steps,
-            // until it is under the scanned surface (the height map: 1 is the face itself, 0 is `depth` metres in),
-            // and return the point where it went under (between the last two steps, by their slopes). The near
-            // rock is then looked up there instead of at p. All in world space, so it serves all three sides at once.
-            float3 Parallax(float3 p, float3 w, float3 n, float3 toCam, float lod, float depth)
-            {
-                float k = 1.0 / _Scales.x;
-                // (sides that barely count on this face are dropped, smoothly, to save their samples)
-                float3 wr = max(w - 0.04, 0.0); wr /= (wr.x + wr.y + wr.z);
-                // seen side-on the ray would run a long way under the face: the cause of POM's swimming, so the
-                // run is capped (at about 70 degrees off the normal) and the caller has already thinned the depth
-                float3 ray = -toCam * (depth / max(dot(n, toCam), 0.35));
-                float inv = 1.0 / RELIEF_STEPS;
-                float prev = 1.0 - ReliefHeight(p, wr, k, lod);   // how far the surface is under the ray, in depths
-                float t = 1.0, done = 0.0;
-                for (int s = 1; s <= RELIEF_STEPS; s++)
-                {
-                    float layer = s * inv;
-                    float under = (1.0 - ReliefHeight(p + ray * layer, wr, k, lod)) - layer;
-                    float hit = step(under, 0.0) * (1.0 - done);
-                    t = lerp(t, (s - 1.0 + saturate(prev / max(prev - under, 1e-4))) * inv, hit);
-                    done = max(done, hit);
-                    prev = under;
-                }
-                return p + ray * t;
-            }
-            #endif
-
             half4 frag(Varyings i) : SV_Target
             {
                 FarviewClip(i.positionWS, i.positionCS);
@@ -218,16 +174,9 @@ Shader "Summit/Rock"
                 float dist = length(toCam);
                 toCam /= max(dist, 1e-4);
 
-                // where the near rock is looked up: on the face itself, or, close to the camera, where the eye's
-                // ray meets the scanned relief. Full depth within _Relief.y metres, none past _Relief.z (far rock
-                // skips the whole branch and costs what it would without), and thinner the more side-on the face
+                // where the near rock is looked up: on the face itself
                 float3 q = p;
                 float3 dpx = ddx(p), dpy = ddy(p);
-                #if !defined(SUMMIT_ROCK_NO_PARALLAX)
-                float lod = max(0.0, 0.5 * log2(max(dot(dpx, dpx), dot(dpy, dpy)) * _ReliefMap_TexelSize.z * _ReliefMap_TexelSize.z / (_Scales.x * _Scales.x) + 1e-12));
-                float depth = _Relief.x * saturate((_Relief.z - dist) / max(_Relief.z - _Relief.y, 0.01)) * saturate(dot(n, toCam) * 3.0);
-                UNITY_BRANCH if (depth > 0.0005) q = Parallax(p, w, n, toCam, lod, depth);
-                #endif
 
                 half3 nearRock = Tri(q, w, _Scales.x, dpx, dpy);
                 half3 farRock = Tri(p + 17.3, w, _Scales.y, dpx, dpy);

@@ -243,6 +243,8 @@ namespace Summit
             slideNear = Loop("avalanche_near"); slideHit = C("slide_hit"); slideCrack = C("slide_crack");
             iceScrape = Loop("ice_scrape"); iceHiss = Loop("ice_hiss"); iceSqueal = Loop("ice_squeal"); iceChatter = Loop("ice_chatter");
             iceSkid = C("ice_skid");
+            // the made sounds, made now (a few milliseconds) rather than on the first branch or banner hit mid-ride
+            branches = BranchClips(); clothRips = ClothClips();
 
             shots = new AudioSource[10];
             for (int i = 0; i < shots.Length; i++) { shots[i] = gameObject.AddComponent<AudioSource>(); shots[i].playOnAwake = false; shots[i].spatialBlend = 0f; }

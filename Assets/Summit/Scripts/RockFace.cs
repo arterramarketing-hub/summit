@@ -6,8 +6,8 @@ namespace Summit
     /// Bare rock for faces too steep to hold snow: ridge cliffs, and the odd steep bank in the open mountain.
     /// The terrain chunks draw those triangles with this material instead of the snow (see SlopeStreamer).
     /// The rock is a scanned cliff face (Resources/RockTex, shaded by Resources/RockLit.shader): its colour, and
-    /// its relief, which bends the light and, near the camera, gives the blocks real depth (parallax).
-    /// <see cref="Parallax"/> is the one quality switch for that depth. Only where that shader cannot run is the
+    /// its relief, which bends the light.
+    /// Only where that shader cannot run is the
     /// texture made here, procedurally: grey granite with dark cracks and pale bands of rime in them.
     /// </summary>
     public static class RockFace
@@ -18,24 +18,6 @@ namespace Summit
         public const float Tile = 11f;
 
         static Material shared;
-        static bool parallax = false;
-
-        /// <summary>
-        /// The rock's depth near the camera (parallax occlusion mapping in RockLit.shader): off unless switched on,
-        /// because it is the costly part and adds little to a still view beside the normal-mapped relief.
-        /// Off, rock keeps that relief but costs a handful of texture samples less per pixel close up.
-        /// Takes effect at once, on every rock face (one global shader keyword).
-        /// </summary>
-        public static bool Parallax
-        {
-            get { return parallax; }
-            set
-            {
-                parallax = value;
-                if (value) Shader.DisableKeyword(NoParallax); else Shader.EnableKeyword(NoParallax);
-            }
-        }
-        const string NoParallax = "SUMMIT_ROCK_NO_PARALLAX";
 
         public static Material Material(Shader lit)
         {
@@ -50,7 +32,6 @@ namespace Summit
             var m = new Material(full ? sh : lit) { name = "Rock" };
             m.SetTexture("_BaseMap", full ? tex : Texture());
             if (full && relief != null) m.SetTexture("_ReliefMap", relief);   // (without it the shader's default is a flat face)
-            Parallax = parallax;   // the keyword is global and outlives a domain reload in the editor: make it match
             m.SetColor("_BaseColor", Color.white);
             m.SetFloat("_Smoothness", 0.12f);
             m.SetFloat("_Metallic", 0f);

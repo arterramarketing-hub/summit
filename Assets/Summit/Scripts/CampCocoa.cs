@@ -15,6 +15,7 @@ namespace Summit
     {
         public const int Sips = 8;
         Transform cocoaCorner, mug, mugFill, mugTops, mugSteam, workMug, pot, stream, spoon;
+        Transform steamOf; ParticleSystem steamPs;
         Vector3 cocoaStand, cocoaFace;
         float cocoaT, sipT = -1f, finishT = -1f, level;
         int sipsLeft;
@@ -276,7 +277,11 @@ namespace Summit
             if (mugFill != null) mugFill.localPosition = new Vector3(0f, Mathf.Lerp(0.012f, 0.105f, level), 0f);
             if (mugFill != null) mugFill.gameObject.SetActive(level > 0.01f);
             if (mugTops != null && level < 0.3f) mugTops.gameObject.SetActive(false);   // (the marshmallows go with the first sips)
-            if (mugSteam != null) { var em = mugSteam.GetComponent<ParticleSystem>().emission; em.rateOverTime = 6f * Mathf.Clamp01(level + 0.2f); }
+            if (mugSteam != null)
+            {
+                if (steamOf != mugSteam) { steamOf = mugSteam; steamPs = mugSteam.GetComponent<ParticleSystem>(); }   // (looked up once a mug, not every frame)
+                var em = steamPs.emission; em.rateOverTime = 6f * Mathf.Clamp01(level + 0.2f);
+            }
         }
 
         /// <summary>Dropping in with a mug: it's left standing on the gate's left post, still steaming.</summary>

@@ -966,18 +966,32 @@ namespace Summit
                 {
                     worldBounds = bounds, shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On, receiveShadows = true
                 };
+                if (placed == null) Place();
                 for (int v = 0; v < lists.Length; v++)
                 {
                     if (lists[v].Count == 0) continue;
-                    foreach (var part in scans[v])
+                    var ps = scans[v];
+                    for (int i = 0; i < ps.Count; i++) Graphics.RenderMeshInstanced(rp, ps[i].mesh, ps[i].sub, placed[v][i]);
+                }
+            }
+
+            // each scan part's matrices, worked out once (the boulders never move): the group's own where the part sits
+            // at the scan's origin, otherwise each boulder's times the part's place in the scan (was a new list per
+            // part every frame)
+            List<Matrix4x4>[][] placed;
+            void Place()
+            {
+                placed = new List<Matrix4x4>[lists.Length][];
+                for (int v = 0; v < lists.Length; v++)
+                {
+                    var ps = scans[v];
+                    placed[v] = new List<Matrix4x4>[ps.Count];
+                    for (int i = 0; i < ps.Count; i++)
                     {
-                        if (part.local == Matrix4x4.identity) Graphics.RenderMeshInstanced(rp, part.mesh, part.sub, lists[v]);
-                        else
-                        {
-                            var l = new List<Matrix4x4>(lists[v].Count);
-                            foreach (var m in lists[v]) l.Add(m * part.local);
-                            Graphics.RenderMeshInstanced(rp, part.mesh, part.sub, l);
-                        }
+                        if (ps[i].local == Matrix4x4.identity) { placed[v][i] = lists[v]; continue; }
+                        var l = new List<Matrix4x4>(lists[v].Count);
+                        foreach (var m in lists[v]) l.Add(m * ps[i].local);
+                        placed[v][i] = l;
                     }
                 }
             }

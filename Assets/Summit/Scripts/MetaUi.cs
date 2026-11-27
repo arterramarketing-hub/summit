@@ -299,7 +299,7 @@ namespace Summit
         float StickR(float radiusPx)
         {
             if (radiusPx <= 0f) return 150f;
-            var cv = GetComponent<Canvas>();
+            var cv = Cv;
             return radiusPx / Mathf.Max(0.01f, cv != null ? cv.scaleFactor : 1f);
         }
 
@@ -318,7 +318,10 @@ namespace Summit
         }
 
         /// <summary>Canvas units to screen pixels (the canvas spans the screen, or the camera's picture).</summary>
-        float Scale { get { var cv = GetComponent<Canvas>(); return Mathf.Max(0.01f, cv != null ? cv.scaleFactor : 1f); } }
+        /// <summary>The canvas, looked up once (Scale is read every frame the stick or the hint moves).</summary>
+        Canvas Cv => canvasC != null ? canvasC : (canvasC = GetComponent<Canvas>());
+        Canvas canvasC;
+        float Scale { get { var cv = Cv; return Mathf.Max(0.01f, cv != null ? cv.scaleFactor : 1f); } }
         /// <summary>A screen point (pixels) on the canvas's own plane. (Not through the camera: a camera-drawn canvas
         /// in the test tools follows its camera a frame late.)</summary>
         Vector2 ToCanvas(Vector2 px) { var cr = (RectTransform)transform; return px / Scale + cr.rect.min; }
@@ -697,11 +700,11 @@ namespace Summit
 
         /// <summary>Test tools: render the overlay with a camera (overlay canvases don't draw into render textures).</summary>
         /// <summary>The camera the menus are drawn by (null when they're an overlay, as on the phone).</summary>
-        Camera UiCam { get { var cv = GetComponent<Canvas>(); return cv != null && cv.renderMode == RenderMode.ScreenSpaceCamera ? cv.worldCamera : null; } }
+        Camera UiCam { get { var cv = Cv; return cv != null && cv.renderMode == RenderMode.ScreenSpaceCamera ? cv.worldCamera : null; } }
 
         public void UseCamera(Camera cam)
         {
-            var cv = GetComponent<Canvas>();
+            var cv = Cv;
             cv.renderMode = cam != null ? RenderMode.ScreenSpaceCamera : RenderMode.ScreenSpaceOverlay;
             cv.worldCamera = cam; cv.planeDistance = 0.5f;
             Canvas.ForceUpdateCanvases();
