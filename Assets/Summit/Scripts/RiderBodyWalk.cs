@@ -4,7 +4,7 @@ namespace Summit
 {
     /// <summary>
     /// The rider on foot in the summit camp (no board: it waits at the gate), and the outfit colours. Kept apart from RiderBody's riding
-    /// code: RiderBody only calls WalkFrame and WalkMuscles while Walking is set.
+    /// code: RiderBody only calls WalkFrame while Walking is set.
     /// </summary>
     public partial class RiderBody
     {
@@ -126,35 +126,11 @@ namespace Summit
                 var rot = Quaternion.AngleAxis(-ang, Vector3.forward);   // the top tips the way you're going (+X)
                 roll.localRotation = rot; roll.localPosition = pv - rot * pv;
             }
-            // the humanoid's feet are planted at a board's height: stand them on the snow instead
-            // (the rig plants its own feet, see RiderRig.PoseWalk)
-            if (poser != null) pivot.position += pivot.up * (Mathf.Abs(Mathf.Sin(walkPhase)) * Mathf.Lerp(0.05f, 0.09f, runAmp) * walkAmp - BoardTop - 0.02f);
-        }
-
-        /// <summary>Muscle targets for a walk cycle (over the snowboard pose RiderBody built this frame).</summary>
-        void WalkMuscles(float t)
-        {
-            float a = walkAmp, r = runAmp, s = Mathf.Sin(walkPhase), c = Mathf.Cos(walkPhase);
-            // legs swing opposite each other; the leg coming forward bends at the knee (much more running)
-            float sw = Mathf.Lerp(0.7f, 1f, r);
-            W(mHipL, 0.08f + 0.2f * r + sw * s * a); W(mHipR, 0.08f + 0.2f * r - sw * s * a);
-            W(mKneeL, 0.95f - a * (0.15f + Mathf.Lerp(1.2f, 1.8f, r) * Mathf.Max(0f, c)));
-            W(mKneeR, 0.95f - a * (0.15f + Mathf.Lerp(1.2f, 1.8f, r) * Mathf.Max(0f, -c)));
-            W(mSpreadL, 0.02f); W(mSpreadR, 0.02f);
-            W(mSpine, 0.06f + 0.08f * a + 0.25f * r); W(mChest, 0.02f + 0.1f * r);
-            W(mTwist, -0.15f * s * a);
-            // arms down at the sides, swinging against the legs
-            W(mArmL, -0.8f); W(mArmR, -0.8f);
-            W(mArmFL, -Mathf.Lerp(0.55f, 0.9f, r) * s * a + 0.05f); W(mArmFR, Mathf.Lerp(0.55f, 0.9f, r) * s * a + 0.05f);
-            W(mElbowL, Mathf.Lerp(0.7f, -0.3f, r)); W(mElbowR, Mathf.Lerp(0.7f, -0.3f, r));   // running: both arms bent and pumping
-            // standing about: look round the camp
-            W(mNeck, 0f);
-            W(mHead, (1f - a) * 0.25f * Mathf.Sin(t * 0.45f));
         }
 
         // ---- outfit colours (bought at the board rack)
 
-        Material boardMat, gearJacket;
+        Material boardMat;
         readonly System.Collections.Generic.List<Material> jacketMats = new System.Collections.Generic.List<Material>();
         readonly System.Collections.Generic.List<float> jacketShade = new System.Collections.Generic.List<float>();
 
@@ -165,7 +141,6 @@ namespace Summit
         {
             if (!ownMats) OwnMaterials();
             if (boardMat != null) boardMat.SetColor("_BaseColor", board);
-            if (gearJacket != null) gearJacket.SetColor("_BaseColor", jacket);
             // each jacket material keeps its own shade (the trim is lighter than the body)
             for (int i = 0; i < jacketMats.Count; i++) jacketMats[i].SetColor("_BaseColor", jacket * (i < jacketShade.Count ? jacketShade[i] : 1f));
         }
@@ -209,14 +184,13 @@ namespace Summit
             if (!ownMats) OwnMaterials();
             // (on another rider's set of clothes the first row is that set as made: Paul's black puffer, his red trousers)
             var j = Wardrobe.Shown(Wardrobe.Cat.Jacket, o[(int)Wardrobe.Cat.Jacket], heroOutfit);
-            if (gearJacket != null) Cloth(gearJacket, j, 1f);
             for (int i = 0; i < jacketMats.Count; i++) Cloth(jacketMats[i], j, i < jacketShade.Count ? jacketShade[i] : 1f);
             if (pantsMat != null) Cloth(pantsMat, Wardrobe.Shown(Wardrobe.Cat.Pants, o[(int)Wardrobe.Cat.Pants], heroOutfit), 1f);
             WearFleece(o);   // (pyjamas: the fleece as made, or dyed by the jacket's row, RiderBodyHero)
             var b = Wardrobe.Get(Wardrobe.Cat.Board, o[(int)Wardrobe.Cat.Board]);
             // a graphic, when one is on, in place of the plain colour (on the hero's own deck and skis: the previous
             // rider's board was never laid out for one)
-            var art = !Wardrobe.Classic && hero != null ? Wardrobe.Get(Wardrobe.Cat.Graphic, o[(int)Wardrobe.Cat.Graphic]) : null;
+            var art = hero != null ? Wardrobe.Get(Wardrobe.Cat.Graphic, o[(int)Wardrobe.Cat.Graphic]) : null;
             if (boardMat != null)
             {
                 bool printed = BoardArt.Put(boardMat, art, b.a);

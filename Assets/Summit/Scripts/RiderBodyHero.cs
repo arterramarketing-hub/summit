@@ -5,16 +5,10 @@ namespace Summit
     /// <summary>
     /// The hero (Resources/Rider/Hero.fbx, built by Tools/MakeHero.py): set up on the rider, and posed each frame
     /// from the Blender clips plus the procedural layer (see HeroRig). Kept apart from RiderBody's own code:
-    /// RiderBody only tries SetUpHero first and hands PoseRig over to PoseHero when it worked.
-    /// The old rider is still there behind the switch, for comparison: RiderBody.UseHero = false (or the
-    /// PlayerPrefs key "summit_oldhero" = 1) builds the previous model instead.
+    /// RiderBody builds the rider with SetUpHero and poses it with PoseHero.
     /// </summary>
     public partial class RiderBody
     {
-        /// <summary>Build the new hero (true) or the previous rider (false). Read when the rider is built.</summary>
-        public static bool UseHero = true;
-        public const string OldHeroPref = "summit_oldhero";
-
         /// <summary>Test tools: build this rider whatever is saved (-1: the saved one). 0 the summit rider, 1 the buddy.</summary>
         public static int TestCharacter = -1;
         int heroChar = -1, heroLook = -1; bool heroHooked;
@@ -100,7 +94,6 @@ namespace Summit
 
         bool SetUpHero()
         {
-            if (!UseHero || PlayerPrefs.GetInt(OldHeroPref, 0) == 1) return false;
             // who you ride as: both are built on one skeleton, so they share every clip
             // (the look: who + 10 x what they wear + 100 x how the summit kit is cut, see Progress.RiderLook)
             int look = TestCharacter >= 0 ? TestCharacter : wantLook >= 0 ? wantLook : Progress.RiderLook;
@@ -125,7 +118,7 @@ namespace Summit
                 if (smr.name.StartsWith("HeroHands")) smr.gameObject.SetActive(outfit != 0);
             var h = new HeroRig(go.transform, table);
             var r = new RiderRig(go.transform);
-            if (!h.Ok || !r.Ok) { Debug.LogWarning($"Hero not usable (clips {h.Ok}, bones {r.Ok}): the previous rider instead"); DestroyImmediate(go); return false; }
+            if (!h.Ok || !r.Ok) { Debug.LogError($"Hero not usable (clips {h.Ok}, bones {r.Ok})"); DestroyImmediate(go); return false; }
             foreach (var a in go.GetComponentsInChildren<Animator>()) a.enabled = false;   // posed by HeroRig
             foreach (var c in go.GetComponentsInChildren<Collider>()) DestroyImmediate(c);
             model = go.transform;

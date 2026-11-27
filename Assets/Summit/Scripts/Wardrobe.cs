@@ -284,15 +284,6 @@ namespace Summit
             }
         }
 
-        /// <summary>
-        /// True when the rider is the previous model (the "summit_oldhero" switch): it has a jacket and a board to
-        /// paint but none of the hero's gear, so the closet shows only jackets (plain ones), boards and the ride.
-        /// </summary>
-        public static bool Classic;
-
-        public static bool Shows(Cat c) => !Classic || c == Cat.Jacket || c == Cat.Board || c == Cat.Ride;
-        public static bool Shows(Cat c, int i) => Shows(c) && !(Classic && Items(c)[i].Patterned);
-
         /// <summary>What is worn now, one item a category.</summary>
         public static int[] Worn()
         {

@@ -30,8 +30,7 @@ namespace Summit
         {
             get
             {
-                if (rig != null && rig.Ok && rig.Head != null) return rig.Head;
-                return anim != null && anim.isHuman ? anim.GetBoneTransform(HumanBodyBones.Head) : null;
+                return rig != null && rig.Ok ? rig.Head : null;
             }
         }
 

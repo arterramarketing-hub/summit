@@ -462,7 +462,6 @@ namespace Summit
                 audioFx.PlayTree(Sfx.SnowDump, 0.5f, sp, 0.5f + 0.3f * square);
                 audioFx.Play(Sfx.Branches, 0.5f + 0.3f * square);
                 hurtShake = Mathf.Max(hurtShake, 0.3f + 0.4f * square);
-                body.Flinch(at, 0.6f + 0.4f * square);
             };
             body.RagdollStruck += (c, at, into) =>
             {
@@ -620,7 +619,6 @@ namespace Summit
                 audioFx.PlayTree(Sfx.SnowDump, top ? 0.8f : 0.6f, into, top ? 0.9f : 0.7f);
                 audioFx.Play(Sfx.Branches, 0.8f);
                 hurtShake = Mathf.Max(hurtShake, top ? 0.4f : 0.5f);
-                if (!rider.Crashed) body.Flinch(at, 1f);
             };
             treeBreak.Brushed += (at, side, depth) =>
             {
@@ -632,7 +630,6 @@ namespace Summit
                 if (depth > 0.45f) audioFx.PlayTree(Sfx.LimbSnap, 0.2f + 0.4f * depth, sp, depth);
                 if (depth > 0.2f || Random.value < 0.5f) audioFx.PlayTree(Sfx.SnowDump, 0.3f * depth, sp, 0.35f + 0.55f * depth);
                 hurtShake = Mathf.Max(hurtShake, 0.2f + 0.3f * depth);
-                if (!rider.Crashed) body.Flinch(at, depth);
             };
             treeBreak.Landed += (at, size, force) =>
             {
@@ -661,7 +658,6 @@ namespace Summit
                 if (state != State.Riding) return;
                 float k = Mathf.Clamp01(speed / 30f);
                 hurtShake = Mathf.Max(hurtShake, kind == Breakable.Kind.Sign ? 0.4f + 0.45f * k : 0.25f);
-                body.Flinch(at, 0.5f + 0.5f * k);
                 if (kind == Breakable.Kind.Sign && speed > 12f) audioFx.Play(Sfx.Grunt);
                 receipt.RideHit(kind == Breakable.Kind.Sign, part, speed, cost);
             };
@@ -725,7 +721,6 @@ namespace Summit
             meta.Bought = () => audioFx.Play(Sfx.ShieldGet, 2);
             meta.Denied = () => audioFx.Play(Sfx.Scrape, 0.4f);
             // the closet's studio, and the rider repainted for each try-on (ApplyOutfit shows meta.TryOn while it's open)
-            Wardrobe.Classic = body.Hero == null;
             var closet = new GameObject("Closet").AddComponent<ClosetStage>();
             closet.Setup(body, Camera.main);
             meta.Stage = closet;

@@ -12,7 +12,6 @@ using Summit;
 /// in the snow tube, crashing (the ragdoll), and walking and running in the camp. Frame sequences go to
 /// HeroShots/seq_*/ for ffmpeg. Also times the hero's posing per frame.
 /// Run: Unity -batchmode -projectPath . -executeMethod HeroShot.Run -logFile hero.log   (log lines start HEROSHOT)
-/// HERO_OLD=1 renders the previous rider instead (the "before" pictures, file names start Old).
 /// </summary>
 public static class HeroShot
 {
@@ -22,7 +21,6 @@ public static class HeroShot
     static Camp camp; static Camera cam; static ChaseCamera chase; static MethodInfo late, aLate, tUpd, fUpd; static Atmosphere atmo;
     static string outDir, pre;
     static int step;
-    static bool old;
 
     static T F<T>(string name) => (T)typeof(SummitGame).GetField(name, NP).GetValue(game);
     static void Log(string s) => Debug.Log("HEROSHOT " + s);
@@ -30,12 +28,10 @@ public static class HeroShot
     public static void Run()
     {
         TestPrefs.Pin();   // a fresh player (the outfit and the riders' colours as the game starts them), put back on exit
-        old = System.Environment.GetEnvironmentVariable("HERO_OLD") == "1";
-        pre = old ? "Old" : "";
+        pre = "";
         outDir = System.Environment.GetEnvironmentVariable("HERO_OUT") ?? "HeroShots";
         Directory.CreateDirectory(outDir);
-        if (!old) HeroBake.Bake();
-        RiderBody.UseHero = !old;
+        HeroBake.Bake();
         // HERO_CHAR=buddy: start as the summit rider, swap to the buddy at the camp's rack, then everything as him
         string heroChar = System.Environment.GetEnvironmentVariable("HERO_CHAR") ?? "";
         bool buddy = heroChar == "buddy" || heroChar == "breanna" || heroChar == "paul";
@@ -142,22 +138,22 @@ public static class HeroShot
         }
         var b = new Bounds(); bool first = true;
         foreach (var r in body.GetComponentsInChildren<SkinnedMeshRenderer>(true)) { if (first) { b = r.bounds; first = false; } else b.Encapsulate(r.bounds); }
-        Log($"{(old ? "old rider" : "hero")}: {smrs} skinned meshes, {tris} tris, {verts} verts; height {b.size.y:0.00} m; materials: {body.MaterialNames()}");
+        Log($"hero: {smrs} skinned meshes, {tris} tris, {verts} verts; height {b.size.y:0.00} m; materials: {body.MaterialNames()}");
         if (body.Hero != null) Log($"hero clips: {body.Hero.ClipCount}");
     }
 
-    // ---- per frame cost of posing the body (editor, Mac: compare old vs new, not absolute iPhone numbers)
+    // ---- per frame cost of posing the body (editor, Mac: not absolute iPhone numbers)
     static void Timing()
     {
         RideFor(1.0f, () => Mathf.Sin(step * Dt * 2f));
-        var m = typeof(RiderBody).GetMethod(old ? "PoseRig" : "PoseHero", NP);
+        var m = typeof(RiderBody).GetMethod("PoseHero", NP);
         var args = new object[] { 1f / 60f };
         for (int i = 0; i < 200; i++) m.Invoke(body, args);
         var sw = System.Diagnostics.Stopwatch.StartNew();
         const int n = 3000;
         for (int i = 0; i < n; i++) { rider.Steer = Mathf.Sin(i * 0.01f); m.Invoke(body, args); }
         sw.Stop();
-        Log($"posing cost ({(old ? "old RiderRig" : "hero clips + procedural layer")}): {sw.Elapsed.TotalMilliseconds * 1000.0 / n:0.0} us per frame (editor, reflection call included)");
+        Log($"posing cost (hero clips + procedural layer): {sw.Elapsed.TotalMilliseconds * 1000.0 / n:0.0} us per frame (editor, reflection call included)");
     }
 
     // ---- riding: a slalom of heel- and toe-side carves, then a straight run into a tuck
@@ -187,7 +183,7 @@ public static class HeroShot
     static void Jump()
     {
         string[] grabs = { "Indy", "Melon", "Mute", "Method", "Stalefish", "TailGrab" };
-        for (int gi = 0; gi < (old ? 1 : 6); gi++)
+        for (int gi = 0; gi < 6; gi++)
         {
             Reset(Course.First + 110f, 18f);
             RideFor(1f, Hold);
@@ -219,7 +215,6 @@ public static class HeroShot
                 if (rider.Crashed) { Log("crashed on the jump"); break; }
             }
         }
-        if (old) return;
         // a spin and a flip, a frame each at the middle
         foreach (var (name, spin, flip) in new[] { ("Spin360", Mathf.PI * 2f, 0f), ("Backflip", 0f, -Mathf.PI * 2f) })
         {

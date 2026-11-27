@@ -9,7 +9,7 @@ using Summit;
 /// <summary>
 /// Limbs torn off by the worst hits (RiderBodyLimbs). Run: Unity -batchmode -projectPath . -executeMethod
 /// LimbShot.Run -logFile x.log (no -nographics: it renders). Writes LimbShot*.png into $SUMMIT_OUT (default
-/// LimbRenders/). SUMMIT_OLDHERO=1 runs it on the previous rider (LimbShotOld*).
+/// LimbRenders/).
 ///
 /// First a tally: natural crashes (into trees, tumbles on the snow, big falls) at a range of speeds, with the
 /// hardest limb hits and whatever came off, to check it stays rare. Then the shots: an arm into a tree and a leg in
@@ -37,9 +37,7 @@ public static class LimbShot
 
     public static void Run()
     {
-        bool old = System.Environment.GetEnvironmentVariable("SUMMIT_OLDHERO") == "1";
-        RiderBody.UseHero = !old;
-        tag = old ? "LimbShotOld" : "LimbShot";
+        tag = "LimbShot";
         outDir = System.Environment.GetEnvironmentVariable("SUMMIT_OUT");
         if (string.IsNullOrEmpty(outDir)) outDir = "LimbRenders";
         Directory.CreateDirectory(outDir);
@@ -62,14 +60,14 @@ public static class LimbShot
         body.LimbLost += (limb, at, whole) => { lostNames.Add(limb + (whole ? " (whole)" : "")); lostAt = at; Log($"sever {limb}: mesh split {RiderBody.LastSeverMs:0.00} ms"); };
         Physics.simulationMode = SimulationMode.Script;
         ChaseCamera.TestDt = Dt;
-        try { Sequence(old); }
+        try { Sequence(); }
         catch (System.Exception e) { Debug.LogError("LIMBSHOT exception " + e); }
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
         TestHarness.Exit(0);
     }
 
-    static void Sequence(bool old)
+    static void Sequence()
     {
         Log($"rider: {(body.Hero != null ? "hero" : "previous")}, blood on={blood.On}");
         ToRiding();
@@ -78,15 +76,15 @@ public static class LimbShot
         terrain.Prewarm(); props.Prewarm();
         Shoot("Warmup", true); Shoot("Warmup2", true);   // the first renders come out unlit (and the cloth shader half-compiled)
 
-        if (!old && System.Environment.GetEnvironmentVariable("SUMMIT_TALLY") == "1") Tally();
-        if (System.Environment.GetEnvironmentVariable("SUMMIT_MODE") == "rides") { RidesCheck(old); return; }
-        if (System.Environment.GetEnvironmentVariable("SUMMIT_MODE") == "phantom") { PhantomCheck(old); return; }
+        if (System.Environment.GetEnvironmentVariable("SUMMIT_TALLY") == "1") Tally();
+        if (System.Environment.GetEnvironmentVariable("SUMMIT_MODE") == "rides") { RidesCheck(); return; }
+        if (System.Environment.GetEnvironmentVariable("SUMMIT_MODE") == "phantom") { PhantomCheck(); return; }
 
         // the moment it comes off: an arm into a tree, a leg in a big fall
         blood.SetOn(true);
         Arm(true, rig.LowerR, false, "ArmGore", true);
         Leg(true, rig.ThighL, true, "LegGore");
-        if (!old) Arm(false, rig.LowerR, false, "ArmClean", false);
+        Arm(false, rig.LowerR, false, "ArmClean", false);
 
         // and then getting up and riding on: without a forearm, without a lower leg, with both legs broken,
         // gore on and off; then a second crash with the limb already gone
@@ -163,7 +161,7 @@ public static class LimbShot
         }
     }
 
-    static void RidesCheck(bool old)
+    static void RidesCheck()
     {
         string tagged = System.Environment.GetEnvironmentVariable("SUMMIT_TAG") ?? "";
         blood.SetOn(true);
@@ -171,9 +169,8 @@ public static class LimbShot
         foreach (var kind in new[] { RideKind.Snowboard, RideKind.Skis, RideKind.Toboggan })
         {
             body.SetRide(kind); rider.SetRide(body.Ride);
-            if (old && kind != RideKind.Snowboard) break;   // (the previous rider has only the board)
             string name = "Rides" + tagged + body.Ride;
-            Log($"{name}: riding {body.Ride} ({(old ? "previous rider" : "hero")})");
+            Log($"{name}: riding {body.Ride} (hero)");
             // bandages on and how big the wrapped bones are, from the start
             foreach (var t in new[] { rig.Head, rig.HandR, rig.HandL, rig.ShinL }) Log($"{name}: bone {t.name} lossy {t.lossyScale.x:0.####}");
             float worst = 0f; string worstWhat = "";
@@ -207,7 +204,6 @@ public static class LimbShot
             }
             Log($"{name}: WORST {worst:0.00} m ({worstWhat})");
         }
-        if (!old)
         {
             // first person, on skis, after the breaks: the head (and its bandage) has to stay out of the lens
             body.SetRide(RideKind.Skis); rider.SetRide(body.Ride);
@@ -239,13 +235,13 @@ public static class LimbShot
     /// on their bone; and shots from behind (the game's chase camera), the side, close, and in first person, by day
     /// and by night. SUMMIT_TAG labels the files (Before / After).
     /// </summary>
-    static void PhantomCheck(bool old)
+    static void PhantomCheck()
     {
         string tg = System.Environment.GetEnvironmentVariable("SUMMIT_TAG") ?? "";
         var dayNight = (DayNight)typeof(SummitGame).GetField("dayNight", NP).GetValue(game);
         var brk = typeof(RiderBody).GetMethod("Break", NP);
         void SetTime(bool night) { TimeOfDay.TestClock = night ? 3.4f : 1.4f; dayNight.ApplyNow(); }
-        foreach (string rn in old ? new[] { "Snowboard" } : new[] { "Snowboard", "Skis", "Toboggan", "Tube" })
+        foreach (string rn in new[] { "Snowboard", "Skis", "Toboggan", "Tube" })
         {
             bool tube = rn == "Tube";
             body.SetRide(tube ? RideKind.Toboggan : (RideKind)System.Enum.Parse(typeof(RideKind), rn)); rider.SetRide(body.Ride);
@@ -267,7 +263,7 @@ public static class LimbShot
                 else if (crash == 2) Log($"{name}: crash 2: right arm {body.Sever(rig.UpperR, true, Vector3.up)}, left leg (broken last time) {body.Sever(rig.ThighL, true, Vector3.up)}");
                 else Log($"{name}: crash 3: left arm again {body.Sever(rig.UpperL, true, Vector3.up)} (want False: lost already)");
                 Settle();
-                bool pov = !old && crash == 2;
+                bool pov = crash == 2;
                 if (pov) { chase.pov = true; povFirst = true; }
                 float up = GetUp();
                 if (rider.Crashed) { Log($"{name}: crash {crash}: NEVER GOT UP"); break; }

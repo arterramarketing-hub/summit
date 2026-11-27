@@ -32,15 +32,13 @@ public static class ClosetShot
         var kept = new Dictionary<string, int>();
         foreach (var k in AllKeys()) if (PlayerPrefs.HasKey(k)) kept[k] = PlayerPrefs.GetInt(k);
         foreach (var k in AllKeys()) PlayerPrefs.DeleteKey(k);
-        bool oldHero = PlayerPrefs.GetInt(RiderBody.OldHeroPref, 0) == 1;
-        PlayerPrefs.SetInt(RiderBody.OldHeroPref, 0);
         try
         {
             Boot();
             Progress.Grant(2400);
             Progress.Wear(Wardrobe.Cat.Jacket, 1);   // a few things already bought: a cobalt jacket, black gloves are free
             Progress.Wear(Wardrobe.Cat.Helmet, 1);
-            Debug.Log($"CLOSET hero={body.Hero != null} classic={Wardrobe.Classic} points={Progress.Points}");
+            Debug.Log($"CLOSET hero={body.Hero != null} points={Progress.Points}");
 
             meta.ShowShop(1);   // the board rack's station opens the closet
             Settle(30);
@@ -154,22 +152,11 @@ public static class ClosetShot
             meta.UseCamera(cam);
             for (int i = 0; i < 60; i++) Frame();
             Shoot("Closet14_back_in_camp.png");
-
-            // the previous rider: jackets, boards and the ride only
-            RiderBody.UseHero = false;
-            Boot();
-            Debug.Log($"CLOSET classic: hero={body.Hero != null} classic={Wardrobe.Classic}");
-            meta.ShowShop(1);
-            Settle(20);
-            Shoot("Closet15_classic.png");
-            meta.ClosetBack();
-            RiderBody.UseHero = true;
         }
         finally
         {
             foreach (var k in AllKeys()) PlayerPrefs.DeleteKey(k);
             foreach (var kv in kept) PlayerPrefs.SetInt(kv.Key, kv.Value);
-            PlayerPrefs.SetInt(RiderBody.OldHeroPref, oldHero ? 1 : 0);
             PlayerPrefs.Save();
             ChaseCamera.TestDt = 0f;
             TimeOfDay.TestClock = -1f;

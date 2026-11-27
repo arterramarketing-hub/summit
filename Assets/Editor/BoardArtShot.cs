@@ -35,7 +35,6 @@ public static class BoardArtShot
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
         game = Object.FindFirstObjectByType<SummitGame>();
         TestPrefs.Pin();
-        PlayerPrefs.SetInt(RiderBody.OldHeroPref, 0);
         TestBoot.Boot(game, riding);
         body = F<RiderBody>("body"); meta = F<MetaUi>("meta"); camp = F<Camp>("camp"); stage = meta.Stage; cam = Camera.main;
     }

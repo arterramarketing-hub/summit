@@ -64,7 +64,7 @@ namespace Summit
             ShopTab = 1;
             ClosetOpen = true;
             cats.Clear();
-            foreach (var c in Wardrobe.Order) if (Wardrobe.Shows(c)) cats.Add(c);   // (who you are and the set of clothes first)
+            foreach (var c in Wardrobe.Order) cats.Add(c);   // (who you are and the set of clothes first)
             BuildCloset();
             if (Stage != null) { Stage.Show(Progress.Ride); }
             SelectCat(Wardrobe.Cat.Jacket, false);
@@ -185,7 +185,6 @@ namespace Summit
             int n = 0;
             for (int i = 0; i < items.Length; i++)
             {
-                if (!Wardrobe.Shows(cat, i)) continue;
                 var it = Shown(i);
                 var bg = Img("Row", listContent, Row, round);
                 var rt = bg.rectTransform;
@@ -233,7 +232,6 @@ namespace Summit
         {
             cat = c;
             hi = Progress.Worn(c);
-            if (!Wardrobe.Shows(c, hi)) hi = 0;
             TryOn = Wardrobe.Worn();   // every other category back to what's worn
             if (Stage != null)
             {

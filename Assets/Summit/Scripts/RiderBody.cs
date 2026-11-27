@@ -6,9 +6,7 @@ namespace Summit
     /// Everything you see of the rider: the board, the person on it, the groove left
     /// in the snow and the powder thrown off the edge. Reads the physics after it has
     /// been interpolated for this frame, so it never stutters.
-    /// Uses a humanoid model from Resources/Rider when there is one, posed into a
-    /// snowboard stance through Unity's rig-independent muscle space; otherwise a
-    /// figure made from simple shapes.
+    /// The person is the hero (RiderBodyHero: Resources/Rider/Hero and the others, posed by HeroRig over RiderRig).
     /// </summary>
     [DefaultExecutionOrder(100)]
     public partial class RiderBody : MonoBehaviour
@@ -50,12 +48,7 @@ namespace Summit
         public bool RagdollMoving { get; private set; }
         Vector3 crashAxis;
 
-        // humanoid
-        Animator anim;
-        HumanPoseHandler poser;
-        HumanPose pose;
-        Transform model, footL, footR, thighL, shinL, thighR, shinR;
-        int mKneeL = -1, mKneeR, mHipL, mHipR, mSpreadL, mSpreadR, mSpine, mChest, mArmL, mArmR, mArmFL, mArmFR, mElbowL, mElbowR, mHead, mNeck, mTwist;
+        Transform model;
         const float BoardTop = 0.05f;
         SnowMarks marks;
         Transform shield;
@@ -92,12 +85,9 @@ namespace Summit
 
             upper = new GameObject("Body").transform;
             upper.SetParent(roll, false);
-            var prefab = Resources.Load<GameObject>("Rider/Character");
             jacketShader = jacket != null ? jacket.shader : null;
             boardPaint = board;   // the hero's own deck wears the game's board material (RiderBodyHero)
-            if (SetUpHero()) { }   // the new hero first; the previous rider when it's switched off (RiderBodyHero)
-            else if (prefab != null && (SetUpHumanoid(prefab) || SetUpRig(prefab))) { }
-            else ShapesFigure(jacket, pants, skin, dark);
+            if (!SetUpHero()) Debug.LogError("RiderBody: the hero could not be built (Resources/Rider/Hero, HeroAnim)");   // (RiderBodyHero)
             // what the outfit colours paint (see RiderBodyWalk)
             FindJacket(upper.gameObject); boardMat = board; if (jacket != null) { jacketMats.Add(jacket); jacketShade.Add(1f); }
 
@@ -237,131 +227,7 @@ namespace Summit
 
         // ---------------------------------------------------------------- the person
 
-        bool SetUpHumanoid(GameObject prefab)
-        {
-            var go = Instantiate(prefab, upper, false);
-            go.name = "Character";
-            anim = go.GetComponentInChildren<Animator>();
-            if (anim == null || anim.avatar == null || !anim.avatar.isHuman) { DestroyImmediate(go); anim = null; return false; }
-            anim.enabled = false;   // we pose it ourselves
-            foreach (var c in go.GetComponentsInChildren<Collider>()) DestroyImmediate(c);
-            model = go.transform;
-            var tex = Resources.Load<Texture2D>("Rider/Outfit") ?? Resources.Load<Texture2D>("Rider/ClothedLightSkin");
-            foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>())
-            {
-                if (tex != null)
-                {
-                    var mats = smr.sharedMaterials;
-                    for (int i = 0; i < mats.Length; i++)
-                    {
-                        var mm = new Material(jacketShader != null ? jacketShader : mats[i].shader);
-                        mm.SetTexture("_BaseMap", tex);
-                        mm.SetColor("_BaseColor", Color.white);
-                        mm.SetFloat("_Smoothness", 0.2f);
-                        mats[i] = mm;
-                    }
-                    smr.sharedMaterials = mats;
-                }
-                smr.updateWhenOffscreen = true;
-                smr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
-            }
-
-            // stand side-on across the board, left foot forward: turn the model until its
-            // left hip points at the nose (+Z), whichever way the file was authored
-            var hipL = anim.GetBoneTransform(HumanBodyBones.LeftUpperLeg);
-            var hipR = anim.GetBoneTransform(HumanBodyBones.RightUpperLeg);
-            if (hipL != null && hipR != null)
-            {
-                Vector3 left = upper.InverseTransformDirection(hipL.position - hipR.position);
-                left.y = 0f;
-                if (left.sqrMagnitude > 1e-6f)
-                    model.localRotation = Quaternion.Euler(0f, Vector3.SignedAngle(left, Vector3.forward, Vector3.up), 0f) * model.localRotation;
-            }
-            // scale to about 1.75 m tall
-            float h = HeightOf(go);
-            if (h > 0.01f) model.localScale *= 1.75f / h;
-
-            Gear(anim.GetBoneTransform(HumanBodyBones.Head), anim.GetBoneTransform(HumanBodyBones.LeftHand), anim.GetBoneTransform(HumanBodyBones.RightHand),
-                 anim.GetBoneTransform(HumanBodyBones.LeftUpperArm), anim.GetBoneTransform(HumanBodyBones.LeftLowerArm),
-                 anim.GetBoneTransform(HumanBodyBones.RightUpperArm), anim.GetBoneTransform(HumanBodyBones.RightLowerArm), true);
-            poser = new HumanPoseHandler(anim.avatar, anim.transform);
-            poser.GetHumanPose(ref pose);
-            footL = anim.GetBoneTransform(HumanBodyBones.LeftFoot);
-            footR = anim.GetBoneTransform(HumanBodyBones.RightFoot);
-            thighL = anim.GetBoneTransform(HumanBodyBones.LeftUpperLeg); shinL = anim.GetBoneTransform(HumanBodyBones.LeftLowerLeg);
-            thighR = anim.GetBoneTransform(HumanBodyBones.RightUpperLeg); shinR = anim.GetBoneTransform(HumanBodyBones.RightLowerLeg);
-
-            string[] names = HumanTrait.MuscleName;
-            int Find(string n) => System.Array.IndexOf(names, n);
-            mKneeL = Find("Left Lower Leg Stretch"); mKneeR = Find("Right Lower Leg Stretch");
-            mHipL = Find("Left Upper Leg Front-Back"); mHipR = Find("Right Upper Leg Front-Back");
-            mSpreadL = Find("Left Upper Leg In-Out"); mSpreadR = Find("Right Upper Leg In-Out");
-            mSpine = Find("Spine Front-Back"); mChest = Find("Chest Front-Back");
-            mArmL = Find("Left Arm Down-Up"); mArmR = Find("Right Arm Down-Up");
-            mArmFL = Find("Left Arm Front-Back"); mArmFR = Find("Right Arm Front-Back");
-            mElbowL = Find("Left Forearm Stretch"); mElbowR = Find("Right Forearm Stretch");
-            mHead = Find("Head Left-Right"); mNeck = Find("Neck Left-Right");
-            mTwist = Find("Spine Twist Left-Right");
-            return true;
-        }
-
         RiderRig rig;
-
-        /// <summary>A Quaternius-style model whose feet are separate from its legs: posed by RiderRig.</summary>
-        bool SetUpRig(GameObject prefab)
-        {
-            var go = Instantiate(prefab, upper, false);
-            go.name = "Character";
-            var r = new RiderRig(go.transform);
-            if (!r.Ok) { DestroyImmediate(go); return false; }
-            foreach (var a in go.GetComponentsInChildren<Animator>()) a.enabled = false;
-            foreach (var c in go.GetComponentsInChildren<Collider>()) DestroyImmediate(c);
-            model = go.transform;
-            // winter colours: a red shell jacket, charcoal snow pants, dark pack
-            Shader sh = jacketShader != null ? jacketShader : Shader.Find("Universal Render Pipeline/Lit");
-            snowy = new SnowyClothes();
-            if (!snowy.Ok) snowy = null;
-            foreach (var smr in go.GetComponentsInChildren<Renderer>())
-            {
-                var mats = smr.sharedMaterials;
-                bool pack = smr.name.Contains("Backpack");
-                bool clothes = smr is SkinnedMeshRenderer && (smr.name.Contains("Body") || smr.name.Contains("Legs"));
-                for (int i = 0; i < mats.Length; i++)
-                {
-                    if (mats[i] == null) continue;
-                    var m = new Material(sh);
-                    Color c = mats[i].color;
-                    string n = mats[i].name;
-                    if (pack) c = n.StartsWith("Gold") ? c : n.Contains("Green") ? new Color(0.15f, 0.17f, 0.2f) : new Color(0.08f, 0.08f, 0.1f);
-                    else if (n.StartsWith("Green")) c = new Color(0.82f, 0.18f, 0.10f);
-                    else if (n.StartsWith("LightGreen")) c = new Color(0.95f, 0.30f, 0.16f);
-                    else if (n.StartsWith("Brown2")) c = new Color(0.12f, 0.13f, 0.17f);
-                    else if (n.StartsWith("Brown")) c = new Color(0.17f, 0.19f, 0.24f);
-                    m.SetColor("_BaseColor", c);
-                    m.SetFloat("_Smoothness", n.StartsWith("Skin") || n.StartsWith("Hair") ? 0.25f : 0.35f);
-                    // the jacket and trousers can be caked in snow (the skin, hair and pack stay as they are)
-                    if (clothes && snowy != null && !pack && (n.StartsWith("Green") || n.StartsWith("LightGreen") || n.StartsWith("Brown")))
-                    { if (Application.isPlaying) Destroy(m); else DestroyImmediate(m); m = snowy.Make(c, 0.35f); }
-                    mats[i] = m;
-                }
-                smr.sharedMaterials = mats;
-                if (smr is SkinnedMeshRenderer sk) sk.updateWhenOffscreen = true;
-                smr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
-            }
-            // side-on, left foot forward, about 1.75 m tall
-            Vector3 left = upper.InverseTransformDirection(r.ThighL.position - r.ThighR.position); left.y = 0f;
-            if (left.sqrMagnitude > 1e-8f)
-                model.localRotation = Quaternion.Euler(0f, Vector3.SignedAngle(left, Vector3.forward, Vector3.up), 0f) * model.localRotation;
-            float h = HeightOf(go);
-            if (h > 0.01f) model.localScale *= 1.75f / h;
-            r.CaptureBind();
-            snowy?.SetFrame(model, r.BodyBone != null ? r.BodyBone : r.Hips);
-            Gear(r.Head, r.HandL, r.HandR, r.UpperL, r.LowerL, r.UpperR, r.LowerR, false);
-            snowy?.BakeRigid(go.transform);
-            Loosen(go, r.Hips);
-            rig = r;
-            return true;
-        }
 
         // ---- baggy clothes: the jacket and trousers are loosened, and given shapes the air can blow into (ClothWind)
 
@@ -520,271 +386,11 @@ namespace Summit
         /// <summary>A bounce off something: the tube spins away from it.</summary>
         public void TubeKick(float into) { tubeSpinRate += (Random.value < 0.5f ? -1f : 1f) * Mathf.Clamp(into * 0.5f, 2f, 7f); }
 
-        void PoseTube(float dt)
-        {
-            Flutter(dt);
-            float t = Time.time;
-            // feet out over the front of the ring, hands on the handles, hips down in the hole
-            Vector3 fl = roll.TransformPoint(new Vector3(0.78f, 0.36f, 0.14f)), fr = roll.TransformPoint(new Vector3(0.78f, 0.36f, -0.14f));
-            Vector3 hl = roll.TransformPoint(new Vector3(-0.05f, 0.5f, 0.6f)), hr = roll.TransformPoint(new Vector3(-0.05f, 0.5f, -0.6f));
-            float seat = Mathf.Max(0f, rig.HipHeight + BoardTop - 0.32f);
-            rig.PoseSit(roll, seat, fl, fr, hl, hr, Mathf.Clamp(rider.Steer, -1f, 1f), dt, rider.Crashed, t);
-        }
-
-        void PoseRig(float dt)
-        {
-            if (hero != null) { PoseHero(dt); return; }   // the hero: clips and its procedural layer (RiderBodyHero)
-            if (Tube) { PoseTube(dt); return; }
-            if (Walking) { Flutter(dt); rig.PoseWalk(roll, walkPhase, walkAmp, Time.time, runAmp); return; }   // on foot in the camp (the weather's wind in the clothes)
-            Flutter(dt);
-            float t = Time.time;
-            compV += (-comp * 140f - compV * 16f) * dt;
-            comp = Mathf.Clamp(comp + compV * dt, -0.15f, 0.6f);
-            bool idle = !rider.Running, crashed = rider.Crashed, air = rider.Airborne;
-            bool grab = air && rider.GrabPose > 0.5f;
-            bool flip = air && Mathf.Abs(rider.TrickFlip) > 0f && rider.TrickProgress < 0.97f;
-            float toe = Mathf.Clamp(rider.Lean / Rider.MaxLean * StanceSign, -1f, 1f);
-            float chatterV = idle || air ? 0f : (Mathf.PerlinNoise(t * 9f, 1.3f) - 0.5f) * 0.1f * Mathf.Clamp01(rider.Speed / 30f);
-            float crouch = idle ? 0.15f + 0.04f * Mathf.Sin(t * 2.1f) : 0.45f + 0.35f * rider.Tuck + comp + Mathf.Abs(toe) * 0.2f + 0.35f * rider.Crouch + chatterV;   // (the knees bend into a hard push: Rider.Crouch)
-            if (grab || flip) crouch = 1f;
-            Vector3 bl = roll.TransformPoint(new Vector3(0f, BoardTop + 0.09f, 0.27f));
-            Vector3 br = roll.TransformPoint(new Vector3(0f, BoardTop + 0.09f, -0.27f));
-            rig.Pose(roll, bl, br, dt, crouch, toe, rider.Tuck, grab, flip, idle, crashed, t);
-        }
-
-        static float HeightOf(GameObject go)
-        {
-            var rs = go.GetComponentsInChildren<Renderer>();
-            if (rs.Length == 0) return 0f;
-            var b = rs[0].bounds;
-            foreach (var r in rs) b.Encapsulate(r.bounds);
-            return b.size.y / Mathf.Max(1e-4f, go.transform.lossyScale.y) * go.transform.localScale.y;
-        }
-
-        // ---- gear: a helmet, goggles, jacket sleeves and gloves, fixed to the bones so they move with them
-
-        void Gear(Transform headBone, Transform handL, Transform handR, Transform uL, Transform lL, Transform uR, Transform lR, bool sleeves)
-        {
-            Shader sh = jacketShader != null ? jacketShader : Shader.Find("Universal Render Pipeline/Lit");
-            Material M(Color c, float smooth, Color emit = default)
-            {
-                var m = new Material(sh);
-                m.SetColor("_BaseColor", c);
-                m.SetFloat("_Smoothness", smooth);
-                if (emit.maxColorComponent > 0f) { m.EnableKeyword("_EMISSION"); m.SetColor("_EmissionColor", emit); }
-                return m;
-            }
-            var jacketM = snowy != null ? snowy.Make(new Color(0.93f, 0.31f, 0.14f), 0.35f) : M(new Color(0.93f, 0.31f, 0.14f), 0.35f);   // the cuffs get snowy too
-            gearJacket = jacketM;
-            var gloveM = M(new Color(0.09f, 0.10f, 0.12f), 0.3f);
-            var lensM = M(new Color(1f, 0.55f, 0.1f), 0.95f, new Color(0.35f, 0.15f, 0f));
-            var strapM = M(new Color(0.1f, 0.1f, 0.12f), 0.2f);
-
-            if (sleeves)
-            {
-                Limb(uL, lL, 0.075f, jacketM); Limb(lL, handL, 0.065f, jacketM);
-                Limb(uR, lR, 0.075f, jacketM); Limb(lR, handR, 0.065f, jacketM);
-            }
-            else
-            {
-                // jacket cuffs over the forearms
-                Limb(lL, handL, 0.06f, jacketM); Limb(lR, handR, 0.06f, jacketM);
-            }
-            Blob(handL, Vector3.zero, new Vector3(0.10f, 0.10f, 0.10f), gloveM, PrimitiveType.Sphere);
-            Blob(handR, Vector3.zero, new Vector3(0.10f, 0.10f, 0.10f), gloveM, PrimitiveType.Sphere);
-
-            var frameM = M(new Color(0.06f, 0.06f, 0.07f), 0.4f);
-            var head = headBone;
-            if (head != null)
-            {
-                Vector3 fwd = upper.TransformDirection(Vector3.right);   // the rider faces the toe edge
-                Vector3 up = upper.up;
-                // big ski goggles over the eyes: a mirrored lens in a black frame, strap round the back
-                Blob(head, up * 0.075f + fwd * 0.118f, new Vector3(0.06f, 0.095f, 0.235f), frameM, PrimitiveType.Cube, fwd);
-                Blob(head, up * 0.075f + fwd * 0.135f, new Vector3(0.035f, 0.075f, 0.215f), lensM, PrimitiveType.Cube, fwd);
-                Blob(head, up * 0.075f, new Vector3(0.235f, 0.025f, 0.24f), strapM, PrimitiveType.Cylinder);
-            }
-        }
-
-        /// <summary>A capsule along a bone, sized in metres, that moves with the bone.</summary>
-        void Limb(Transform from, Transform to, float radius, Material m)
-        {
-            if (from == null || to == null) return;
-            var go = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            Object.DestroyImmediate(go.GetComponent<Collider>());
-            go.GetComponent<MeshRenderer>().sharedMaterial = m;
-            Vector3 a = from.position, b = to.position;
-            float len = Vector3.Distance(a, b);
-            go.transform.SetPositionAndRotation((a + b) * 0.5f, Quaternion.FromToRotation(Vector3.up, (b - a).normalized));
-            go.transform.localScale = new Vector3(radius * 2f, len * 0.5f + radius, radius * 2f);
-            go.transform.SetParent(from, true);
-        }
-
-        void Blob(Transform bone, Vector3 offset, Vector3 size, Material m, PrimitiveType type, Vector3 face = default)
-        {
-            if (bone == null) return;
-            var go = GameObject.CreatePrimitive(type);
-            Object.DestroyImmediate(go.GetComponent<Collider>());
-            go.GetComponent<MeshRenderer>().sharedMaterial = m;
-            Quaternion rot = face.sqrMagnitude > 0f ? Quaternion.LookRotation(Vector3.ProjectOnPlane(upper.forward, upper.up), upper.up) : upper.rotation;
-            go.transform.SetPositionAndRotation(bone.position + offset, rot);
-            go.transform.localScale = size;
-            go.transform.SetParent(bone, true);
-        }
-
-        // ---- animation: a live pose built every frame from what the rider is doing
-
-        float[] want, rest;
-        float chatter;
-
-        void Pose(float dt)
-        {
-            if (poser == null) return;
-            float[] m = pose.muscles;
-            if (want == null) { want = new float[m.Length]; rest = (float[])m.Clone(); }
-            System.Array.Copy(rest, want, m.Length);
-            float t = Time.time;
-            // landings squash the legs, which spring back
-            compV += (-comp * 140f - compV * 16f) * dt;
-            comp = Mathf.Clamp(comp + compV * dt, -0.15f, 0.6f);
-
-            float tuck = rider.Tuck, carve = rider.Carve, steer = rider.Steer, speed01 = Mathf.Clamp01(rider.Speed / 30f);
-            bool idle = !rider.Running, crashed = rider.Crashed, air = rider.Airborne;
-            bool grab = air && rider.GrabPose > 0.5f;
-            bool flip = air && Mathf.Abs(rider.TrickFlip) > 0f && rider.TrickProgress < 0.97f;
-            // the board chatters a little at speed: tiny fast flex in the knees
-            chatter = idle || air ? 0f : (Mathf.PerlinNoise(t * 9f, 1.3f) - 0.5f) * 0.08f * speed01;
-            float toe = Mathf.Clamp(steer * StanceSign, -1f, 1f);   // + = toe-side (right) turn, - = heel-side (switch: the other way about)
-            float crouch = idle ? 0.25f + 0.03f * Mathf.Sin(t * 2.1f)
-                         : Mathf.Lerp(0.5f, 0.9f, tuck) + comp + Mathf.Abs(toe) * 0.18f + chatter;
-            if (grab || flip) crouch = 1f;
-
-            // legs: bent and loaded; toe-side drives the knees forward, heel-side sits the hips back
-            W(mKneeL, Mathf.Lerp(1f, -0.95f, crouch)); W(mKneeR, Mathf.Lerp(1f, -0.95f, crouch));
-            W(mHipL, Mathf.Lerp(0.05f, 0.9f, crouch) - toe * 0.15f); W(mHipR, Mathf.Lerp(0.05f, 0.9f, crouch) - toe * 0.15f);
-            W(mSpreadL, 0.12f); W(mSpreadR, 0.12f);
-            // body: upright and open to the hill when cruising, folded when tucked, leaning into toe turns
-            W(mSpine, Mathf.Lerp(0.05f, 0.5f, tuck) + Mathf.Max(0f, toe) * 0.35f - Mathf.Max(0f, -toe) * 0.1f + comp * 0.4f);
-            W(mChest, Mathf.Lerp(0.0f, 0.3f, tuck) + toe * 0.12f);
-            // shoulders turn into the next turn before the board does
-            W(mTwist, 0.3f + toe * 0.25f);
-            // arms: lead arm out over the nose, rear arm low and relaxed; both drop in a tuck
-            float sway = Mathf.Sin(t * 1.4f) * 0.04f;
-            W(mArmL, Mathf.Lerp(0.15f, -0.55f, tuck) + carve * 0.2f + sway);
-            W(mArmFL, Mathf.Lerp(0.55f, 0.5f, tuck) - toe * 0.25f);
-            W(mElbowL, 0.6f);
-            W(mArmR, Mathf.Lerp(-0.35f, -0.6f, tuck) + Mathf.Max(0f, toe) * 0.5f - sway);
-            W(mArmFR, Mathf.Lerp(-0.1f, 0.45f, tuck) + toe * 0.3f);
-            W(mElbowR, 0.4f);
-            // head: eyes down the hill over the front shoulder; looking around while waiting
-            W(mNeck, 0.55f);
-            W(mHead, idle ? 0.35f + 0.35f * Mathf.Sin(t * 0.5f) : 0.65f + toe * 0.1f);
-            if (air)
-            {
-                // arms out wide for balance; a grab on longer air
-                W(mArmL, 0.45f); W(mArmR, 0.3f); W(mArmFL, 0.2f); W(mArmFR, -0.2f);
-                if (Mathf.Abs(rider.TrickSpin) > 0.3f && rider.TrickProgress < 0.15f) { W(mTwist, 0.3f - Mathf.Sign(rider.TrickSpin) * 0.6f); }   // wind up against the spin
-                if (flip) { W(mKneeL, -1f); W(mKneeR, -1f); W(mHipL, 1f); W(mHipR, 1f); }
-                if (grab) { W(mArmR, -0.95f); W(mArmFR, 0.75f); W(mElbowR, 0.9f); }
-            }
-            if (crashed)
-            {
-                W(mArmL, Mathf.Sin(t * 9f) * 0.9f); W(mArmR, Mathf.Sin(t * 8f + 1f) * 0.9f);
-                W(mArmFL, Mathf.Sin(t * 7f) * 0.8f); W(mArmFR, Mathf.Sin(t * 6f + 2f) * 0.8f);
-                W(mKneeL, Mathf.Sin(t * 5f) * 0.6f); W(mKneeR, Mathf.Sin(t * 6f + 1f) * 0.6f);
-            }
-            if (!crashed) FlinchMuscles(dt);
-            if (Walking) WalkMuscles(t);
-            // ease every muscle toward its target, so nothing snaps
-            float k = dt <= 0f ? 1f : 1f - Mathf.Exp(-dt * (crashed ? 20f : 11f));
-            for (int i = 0; i < m.Length; i++) m[i] = Mathf.Lerp(m[i], want[i], k);
-            poser.SetHumanPose(ref pose);
-            PlantFeet();
-            if (!crashed && !Walking)
-            {
-                // lock each foot onto its binding (left foot forward, at the nose end)
-                Vector3 tl = roll.TransformPoint(new Vector3(0f, BoardTop + 0.09f, 0.27f));
-                Vector3 tr = roll.TransformPoint(new Vector3(0f, BoardTop + 0.09f, -0.27f));
-                // if a binding is out of reach, sink the hips until both feet can get there
-                float shortL = Reach(thighL, shinL, footL, tl), shortR = Reach(thighR, shinR, footR, tr);
-                float sink = Mathf.Max(0f, Mathf.Max(shortL, shortR) + 0.02f);
-                if (sink > 0f) model.position -= roll.up * sink;
-                LegIK(thighL, shinL, footL, tl);
-                LegIK(thighR, shinR, footR, tr);
-            }
-        }
-
-        void W(int i, float v) { if (i >= 0 && i < want.Length) want[i] = Mathf.Clamp(v, -1f, 1f); }
-
         /// <summary>Riding switch, as drawn (Rider.Switch: snowboard and skis only).</summary>
         bool SwitchNow => rider != null && rider.Switch && !Tube;
         /// <summary>+1 riding the normal way, -1 switch: the board's toe and heel edges (a skier's left and right) are
         /// the other way about in the world.</summary>
         float StanceSign => SwitchNow ? -1f : 1f;
-
-        // ---- a flinch: branches whipping past, an arm thrown up on that side, the head turned away
-        float flinchT, flinchK; bool flinchLeft;
-
-        /// <summary>Something whipped past at `from` (branches ridden through): the arm on that side comes up over the
-        /// face and the head turns away, for a moment, `amount` 0..1 how hard.</summary>
-        public void Flinch(Vector3 from, float amount)
-        {
-            if (anim == null || rider == null || rider.Crashed) return;
-            var l = anim.GetBoneTransform(HumanBodyBones.LeftUpperArm); var r = anim.GetBoneTransform(HumanBodyBones.RightUpperArm);
-            if (l == null || r == null) return;
-            flinchLeft = (from - l.position).sqrMagnitude < (from - r.position).sqrMagnitude;
-            flinchK = Mathf.Max(flinchT > 0f ? flinchK : 0f, Mathf.Clamp01(0.45f + 0.55f * amount));
-            flinchT = 0.25f + 0.3f * amount;
-        }
-
-        void FlinchMuscles(float dt)
-        {
-            if (flinchT <= 0f) return;
-            flinchT -= dt;
-            float k = flinchK * Mathf.Clamp01(flinchT / 0.15f);
-            int arm = flinchLeft ? mArmL : mArmR, front = flinchLeft ? mArmFL : mArmFR, elbow = flinchLeft ? mElbowL : mElbowR;
-            float side = flinchLeft ? 1f : -1f;
-            float G(int i) => i >= 0 && i < want.Length ? want[i] : 0f;
-            W(arm, Mathf.Lerp(G(arm), 1f, k)); W(front, Mathf.Lerp(G(front), 1f, k)); W(elbow, Mathf.Lerp(G(elbow), -0.9f, k));
-            W(mHead, Mathf.Lerp(G(mHead), 0.65f - side * 0.6f, k)); W(mNeck, Mathf.Lerp(G(mNeck), 0.55f - side * 0.3f, k));
-            W(mChest, G(mChest) + 0.25f * k);   // ducking in
-        }
-
-        /// <summary>How far the target is beyond the leg's full stretch (negative when reachable).</summary>
-        static float Reach(Transform hip, Transform knee, Transform foot, Vector3 target)
-        {
-            if (hip == null || knee == null || foot == null) return 0f;
-            float len = Vector3.Distance(hip.position, knee.position) + Vector3.Distance(knee.position, foot.position);
-            return Vector3.Distance(hip.position, target) - len * 0.97f;
-        }
-
-        /// <summary>Two-bone IK: bend the knee to the right reach, then swing the thigh so the foot lands on the target.</summary>
-        static void LegIK(Transform hip, Transform knee, Transform foot, Vector3 target)
-        {
-            if (hip == null || knee == null || foot == null) return;
-            Vector3 h = hip.position, k = knee.position, f = foot.position;
-            float a = Vector3.Distance(h, k), b = Vector3.Distance(k, f);
-            float c = Mathf.Clamp(Vector3.Distance(h, target), Mathf.Abs(a - b) + 1e-3f, a + b - 1e-3f);
-            Vector3 kh = h - k, kf = f - k;
-            float cur = Vector3.Angle(kh, kf);
-            float want = Mathf.Acos(Mathf.Clamp((a * a + b * b - c * c) / (2f * a * b), -1f, 1f)) * Mathf.Rad2Deg;
-            Vector3 axis = Vector3.Cross(kf, kh);
-            if (axis.sqrMagnitude > 1e-8f)
-                knee.rotation = Quaternion.AngleAxis(cur - want, axis.normalized) * knee.rotation;
-            hip.rotation = Quaternion.FromToRotation(foot.position - h, target - h) * hip.rotation;
-        }
-
-        /// <summary>Move the model so its feet stand on the bindings, centred on the board.</summary>
-        void PlantFeet()
-        {
-            if (footL == null || footR == null) return;
-            Vector3 l = roll.InverseTransformPoint(footL.position), r = roll.InverseTransformPoint(footR.position);
-            Vector3 mid = (l + r) * 0.5f;
-            Vector3 want = new Vector3(0f, BoardTop + 0.07f + (mid.y - Mathf.Min(l.y, r.y)), 0f);
-            model.position += roll.TransformVector(want - mid);
-        }
-
-        static void Set(float[] m, int i, float v) { if (i >= 0 && i < m.Length) m[i] = Mathf.Clamp(v, -1f, 1f); }
 
         /// <summary>A lit, see-through copy of a particle material with the given texture.</summary>
         static Material Imprint(Material basis, Texture2D tex)
@@ -857,18 +463,6 @@ namespace Summit
             r.sharedMaterial = shieldMat;
             r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             go.SetActive(false);
-        }
-
-        void ShapesFigure(Material jacket, Material pants, Material skin, Material dark)
-        {
-            Part(PrimitiveType.Capsule, upper, new Vector3(0f, 0.42f, 0.24f), new Vector3(0.17f, 0.38f, 0.17f), Vector3.zero, pants);
-            Part(PrimitiveType.Capsule, upper, new Vector3(0f, 0.42f, -0.24f), new Vector3(0.17f, 0.38f, 0.17f), Vector3.zero, pants);
-            Part(PrimitiveType.Capsule, upper, new Vector3(0f, 1.02f, 0f), new Vector3(0.28f, 0.36f, 0.40f), Vector3.zero, jacket);
-            Part(PrimitiveType.Capsule, upper, new Vector3(0.04f, 1.12f, 0.40f), new Vector3(0.12f, 0.24f, 0.12f), new Vector3(70f, 0f, 0f), jacket);
-            Part(PrimitiveType.Capsule, upper, new Vector3(0.04f, 1.12f, -0.40f), new Vector3(0.12f, 0.24f, 0.12f), new Vector3(-70f, 0f, 0f), jacket);
-            Part(PrimitiveType.Sphere, upper, new Vector3(0f, 1.54f, 0f), new Vector3(0.27f, 0.29f, 0.27f), Vector3.zero, skin);
-            Part(PrimitiveType.Sphere, upper, new Vector3(-0.01f, 1.60f, 0f), new Vector3(0.29f, 0.24f, 0.29f), Vector3.zero, jacket);
-            Part(PrimitiveType.Cube, upper, new Vector3(0.12f, 1.55f, 0f), new Vector3(0.07f, 0.08f, 0.22f), Vector3.zero, dark);
         }
 
         static void Part(PrimitiveType type, Transform parent, Vector3 pos, Vector3 scale, Vector3 euler, Material m)
@@ -1060,8 +654,7 @@ namespace Summit
             {
                 crashSpin += dt;
                 pivot.Rotate(crashAxis, 520f * dt * Mathf.Clamp01(1.2f - crashSpin), Space.World);
-                if (poser != null) Pose(dt);
-                else if (rig != null) PoseRig(dt);
+                if (hero != null) PoseHero(dt);
             }
             else
             {
@@ -1130,9 +723,7 @@ namespace Summit
                     upper.localRotation = Quaternion.Euler(0f, 0f, -leanDeg * 0.3f);
                 }
                 if (Walking) WalkFrame(dt);   // on foot in the camp
-                if (poser != null) Pose(dt);
-                else if (rig != null) PoseRig(dt);
-                else upper.localScale = new Vector3(1f, 1f - 0.24f * rider.Tuck, 1f);
+                if (hero != null) PoseHero(dt);
             }
 
             // the track: a groove pressed into the snow under the board (none in snow the avalanche is churning)
