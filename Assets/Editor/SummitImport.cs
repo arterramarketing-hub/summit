@@ -527,7 +527,7 @@ public class SummitImport : AssetPostprocessor
 
     // the long, continuously playing layers: compressed; everything short stays sharp (ADPCM)
     static readonly string[] LoopClips = { "wind_low", "wind_high", "glide", "carve", "skid", "powder", "grind_rail", "grind_box",
-                                           "avalanche", "boost", "ambience", "bear_growl", "bear_steps", "avalanche_near" };
+                                           "avalanche", "boost", "ambience", "bear_growl", "bear_steps", "avalanche_near", "snow_gun" };
 
     void OnPreprocessAudio()
     {

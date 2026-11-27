@@ -117,6 +117,7 @@ Ice sounds added on 2026-11-26 (Freesound HQ previews; cut, filtered and looped 
 ice_scrape.wav, ice_hiss.wav, ice_skid.wav: skate fx.mp3 (by splodge123, id 249833) - Freesound - Creative Commons 0 - https://freesound.org/people/splodge123/sounds/249833/
 ice_squeal.wav: Ice_BreakScrapeIce.wav (by Pipppo89, id 665109) - Freesound - Creative Commons 0 - https://freesound.org/people/Pipppo89/sounds/665109/
 ice_chatter.wav: ski_04.wav (by blaukreuz, id 52151) - Freesound - Creative Commons 0 - https://freesound.org/people/blaukreuz/sounds/52151/
+snow_gun.wav: LUMEKAHUR (by inspire153, id 842656; a snow cannon at the Tallinn Song Festival Grounds) - Freesound - Creative Commons 0 - https://freesound.org/people/inspire153/sounds/842656/ (16 s of it from 40 s, high-passed, brightened and looped: Tools/audio-sources/snowgun/README.md)
 music_hub.wav: Chill Out Theme (Komiku, "It's time for adventure ! vol 2") - Free Music Archive - CC0 1.0 Universal License - https://freemusicarchive.org/music/Komiku/Its_time_for_adventure__vol_2/Komiku_-_Its_time_for_adventure_vol_2_-_02_Chill_Out_Theme/
 music_run.wav: Fight, run, breath deeply (Komiku, "It's time for adventure ! vol 2") - Free Music Archive - CC0 1.0 Universal License - https://freemusicarchive.org/music/Komiku/Its_time_for_adventure__vol_2/Komiku_-_Its_time_for_adventure_vol_2_-_13_Fight_run_breath_deeply/
 Lodge surfaces (Camp/LodgeTex: colour, normal and roughness/occlusion maps; graded, resized and packed for the phone by

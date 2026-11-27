@@ -445,6 +445,7 @@ namespace Summit
             var pk = go.AddComponent<PisteKit>();
             pk.rider = r;
             pk.Setup();
+            SnowGuns.Build(go.transform);   // the guns making snow in the morning (SnowGuns.cs)
             Instance = pk;
             return pk;
         }
@@ -911,6 +912,13 @@ namespace Summit
             }
         }
 
+        /// <summary>A snow gun's nozzle (the front of its drum) and the way it blows (SnowGuns).</summary>
+        public static void Nozzle(in Item it, out Vector3 at, out Vector3 axis)
+        {
+            GunFrame(it, out var mid, out axis);
+            at = mid + axis * (GunLen * 0.5f + 0.08f);
+        }
+
         static void GunFrame(in Item it, out Vector3 mid, out Vector3 axis)
         {
             axis = (it.aim + Vector3.up * 0.42f).normalized;   // about 23 degrees up
@@ -930,12 +938,14 @@ namespace Summit
             Vector3 back = mid - axis * GunLen * 0.5f, front = mid + axis * GunLen * 0.5f;
             var drum = P(Drum, 0.6f);
             d.Tube(back, front, GunR, 16, drum, drum, false);
-            // a yellow band round the drum, the dark fan grille behind, and the nozzle ring in front
+            // which way it blows, at a glance: a yellow band round the drum, the fan's grey grille behind (with its dark
+            // hub), and in front the nozzle ring standing out of the drum in yellow round the dark outlet (SnowGuns' jet
+            // leaves from there, along the same axis)
             d.Tube(back + axis * 0.32f, back + axis * 0.46f, GunR + 0.008f, 16, P(Yellow, 0.5f), P(Yellow, 0.5f), false);
-            d.Disc(back, -axis, GunR, P(Grille, 0.2f), 16, false);
-            d.Tube(front, front + axis * 0.06f, GunR * 0.92f, 16, P(Grille, 0.4f), P(Grille, 0.4f), false);
-            d.Disc(front + axis * 0.06f, axis, GunR * 0.92f, P(Black, 0.3f), 16, false);
-            d.Disc(front - axis * 0.02f, axis, GunR * 0.75f, P(Grille, 0.2f), 16, false);
+            d.Disc(back, -axis, GunR, P(Steel, 0.35f), 16, false);
+            d.Disc(back - axis * 0.01f, -axis, GunR * 0.3f, P(Grille, 0.3f), 12, false);
+            d.Disc(front, axis, GunR, P(Black, 0.3f), 16, false);
+            d.Tube(front, front + axis * 0.12f, GunR * 0.9f, 16, P(Yellow, 0.55f), P(Yellow, 0.55f), false);
         }
 
         static void Hydrant(MeshData d, in Item it)
