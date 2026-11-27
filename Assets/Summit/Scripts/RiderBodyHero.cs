@@ -431,6 +431,7 @@ namespace Summit
                 d.handL = d.handR = down ? 0f : 1f - free;
                 d.holdL = sitL; d.holdR = sitR;
                 d.side = Mathf.Clamp(rider.Steer, -1f, 1f) * 14f;   // a weight shift to steer
+                if (!down) TubeJolt(ref d);   // (thrown in the seat by a bounce: RiderBodyTube)
             }
             else if (Walking)
             {

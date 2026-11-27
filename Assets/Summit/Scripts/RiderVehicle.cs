@@ -63,14 +63,25 @@ namespace Summit
         public int CarDents { get; private set; }
         /// <summary>The car dented and bounced off: how many trees so far (0: not a tree, a bump), and where.</summary>
         public System.Action<int, Vector3> CarDented;
-        /// <summary>The car and the bear run down the people and the animals in their way: knocked flying, and on they go.</summary>
-        public bool RunsOver => Ride == RideKind.Car || Ride == RideKind.Bear;
+        /// <summary>The car, the bear and the bike run down the people and the animals in their way: knocked flying, and on they go.</summary>
+        public bool RunsOver => Ride == RideKind.Car || Ride == RideKind.Bear || Ride == RideKind.Bike;
         /// <summary>Someone run down (or an animal: false): where, how fast into them.</summary>
         public System.Action<Vector3, float, bool> RanOver;
         /// <summary>Run down this run (the tests).</summary>
         public int RunOverCount;
         /// <summary>The share of the speed kept running someone down.</summary>
         public static float RunOverKeep = 0.9f;
+
+        // ---- the mountain bike (mtb)
+        /// <summary>Pedalled on below BikeCruise (m/s); the tuck pedals it hard on up to BikeSprintTop. Turned harder
+        /// than BikeSkidSteer faster than BikeSkidSpeed, the back wheel is braked round in a skid (BikeSkidBrake m/s^2).</summary>
+        public static float BikeCruise = 9f, BikePedalPull = 3.5f, BikeSprintTop = 15f, BikeSprintPull = 2.2f, BikeCadence = 1.1f;
+        public static float BikeSkidSteer = 0.8f, BikeSkidSpeed = 9f, BikeSkidBrake = 3f;
+        /// <summary>Pedalling now (not coasting: the freewheel quiet), and how far round the cranks are in the stroke (0..1).</summary>
+        public bool Pedalling { get; private set; }
+        public float PedalT { get; private set; }
+        /// <summary>How far the back wheel has stepped out under braking (0..1): the look, the spray, the sound.</summary>
+        public float BikeSkid { get; private set; }
 
         // ---- the bear
         public static float BearRun = 11f, BearRunPull = 6f, BearStride = 4.2f;
@@ -83,6 +94,7 @@ namespace Summit
         {
             PaddleSide = 0; PaddleT = 0f; strokeClock = 0f; lastStrokeSide = -1; SpinOut = 0f; spinRate = 0f;
             Rpm = 0f; Gear = 0; Throttle = 0f; Tip = 0f; Gait = 0f; GaitRate = 0f; CarDents = 0; RunOverCount = 0;
+            Pedalling = false; PedalT = 0f; BikeSkid = 0f;
         }
 
         /// <summary>The sideways pull a paddle stroke adds (m/s^2 across the fall line, + right): GroundStep's.</summary>
@@ -141,6 +153,21 @@ namespace Summit
                 {
                     if (sp < BearRun) sp += BearRunPull * (1f - sp / BearRun) * dt;
                     GallopStep(sp, dt);
+                    break;
+                }
+                case RideKind.Bike:
+                {
+                    // pedalled on where the hill gives up; the tuck stands up and sprints. The cranks go round with it
+                    // (a turn a stride, quicker the faster): the body reads them off its feet in the Pedal clip
+                    bool hard = Tuck > 0.5f;
+                    Pedalling = sp < BikeCruise || (hard && sp < BikeSprintTop);
+                    if (sp < BikeCruise) sp += BikePedalPull * (1f - sp / BikeCruise) * dt;
+                    if (hard && sp < BikeSprintTop) sp += BikeSprintPull * (1f - sp / BikeSprintTop) * dt;
+                    if (Pedalling) PedalT = Mathf.Repeat(PedalT + BikeCadence * (0.7f + 0.8f * Mathf.Clamp01(sp / BikeSprintTop)) * dt, 1f);
+                    // turned hard at speed: the back brake grabs and the back wheel steps out, slowing it
+                    bool brake = Mathf.Abs(Steer) > BikeSkidSteer && sp > BikeSkidSpeed;
+                    BikeSkid = Mathf.MoveTowards(BikeSkid, brake ? 1f : 0f, dt * (brake ? 4f : 2.5f));
+                    if (BikeSkid > 0.05f) sp -= Mathf.Min(sp, BikeSkidBrake * BikeSkid * dt);
                     break;
                 }
             }
@@ -206,6 +233,7 @@ namespace Summit
                 Tip = Mathf.Lerp(Tip, tip, 1f - Mathf.Exp(-dt * 10f));
             }
             else if (Ride == RideKind.Bear && Airborne) GaitRate = Mathf.Lerp(GaitRate, 0.9f, 1f - Mathf.Exp(-dt * 2f));
+            else if (Ride == RideKind.Bike && Airborne) { Pedalling = false; BikeSkid = Mathf.MoveTowards(BikeSkid, 0f, dt * 4f); }   // (in the air the cranks stop: the freewheel ticks)
             else if (Ride == RideKind.Kayak && Airborne) SpinStep(dt);   // (a spin-out goes on round through the air)
         }
 

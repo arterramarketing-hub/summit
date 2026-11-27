@@ -547,6 +547,7 @@ def _(t):
 # ----------------------------------------------------------------------------------------------- the fun rides
 # The kayak, the rally car and the bear (rides): Tools/MakeRidesVehicles.py, with everything above to hand
 exec(compile(open(os.path.join(HERE, "MakeRidesVehicles.py")).read(), os.path.join(HERE, "MakeRidesVehicles.py"), "exec"))
+exec(compile(open(os.path.join(HERE, "MakeRidesBike.py")).read(), os.path.join(HERE, "MakeRidesBike.py"), "exec"))   # (mtb)
 
 print("RIDES clips:", ", ".join(c[0] for c in CLIPS[HERO_CLIPS:]))
 
@@ -639,7 +640,7 @@ def export_rides():
     common = dict(apply_unit_scale=True, add_leaf_bones=False, use_armature_deform_only=True, primary_bone_axis='Y',
                   secondary_bone_axis='X', armature_nodetype='NULL', path_mode='AUTO', embed_textures=False, mesh_smooth_type='OFF')
     bpy.ops.object.select_all(action='DESELECT')
-    for o in [SKI_OB, POLE_OB, SLED_OB] + KAYAK_OBS + CAR_OBS: o.hide_render = False; o.select_set(True)
+    for o in [SKI_OB, POLE_OB, SLED_OB] + KAYAK_OBS + CAR_OBS + BIKE_OBS: o.hide_render = False; o.select_set(True)
     bpy.context.view_layer.objects.active = SKI_OB
     bpy.ops.export_scene.fbx(filepath=rides, use_selection=True, object_types={'MESH'}, bake_anim=False, **common)
     for o in bpy.context.selected_objects: o.hide_render = True          # (the previews show copies of them)

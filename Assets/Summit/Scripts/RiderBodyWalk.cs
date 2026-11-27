@@ -199,7 +199,7 @@ namespace Summit
                 if (boardMat.HasProperty("_Metallic")) boardMat.SetFloat("_Metallic", b.metal);
             }
             ShownGraphic = art != null && art.art != null ? o[(int)Wardrobe.Cat.Graphic] : 0;
-            BoardArt.Put(tubeBand, art, TubeBandWhite);   // (the tube's stripe: no uvs, so the design's rail colour)
+            BoardArt.Put(tubeBand, art, TubeBandPlain);   // (the tube's piping: no uvs, so the design's rail colour; gold with none)
             if (gearPalette != null)
             {
                 System.Array.Copy(palBase, palNow, palBase.Length);

@@ -15,11 +15,17 @@ using Progress = Summit.Progress;
 ///    throws the driver out. A rock throws the driver out at once. Anything else built (a cabin) is a bump. An animal
 ///    is run down. A landing however hard (one that would slam a board rider) is ridden out on its springs.
 ///  - The board, for comparison: a tree head on and fast, and a slam, still knock you down.
-///  - Run-overs: the car and the bear run down the mountain's riders and the people at a lift's station, every time,
+///  - The mountain bike (mtb): a rock or a tree hit square on and hard sends the rider over the bars; a glance does not;
+///    hard turning never does (above).
+///  - Run-overs: the car, the bear and the bike run down the mountain's riders and the people at a lift's station, every time,
 ///    and never go down for it: the person is thrown (their ragdoll) and bleeds (Blood: marks laid). On the board the
 ///    first rider hit is still the warning (the free hit).
 ///  - The bear is drawn its own size (about 1.5 m at the back: a skin with no bones is drawn with its root's x100).
-/// Lines start RIDECRASH; exits 1 on any failure.
+///  - (tube) The snow tube bounces off a tree, a rock, a person and a fence, and stays on: each bounce is told to the
+///    game (Rider.TubeHit: the ring's look and its sound go by it), the ring flattens against it and springs back, spins,
+///    tips, hops and the rider is thrown in the seat, all of it bigger for a harder hit, and all of it settles again.
+/// Lines start RIDECRASH; exits 1 on any failure. With $RIDECRASH_SHOTS (and graphics) it also writes frames of the
+/// tube's hard bounce off a tree there.
 /// Batch: -batchmode -nographics -quit -projectPath . -executeMethod RideCrashTest.Run
 /// </summary>
 public static class RideCrashTest
@@ -30,9 +36,11 @@ public static class RideCrashTest
     static SummitGame game; static Summit.Rider rider; static RiderBody body; static MountainRiders mr; static SlopeStreamer terrain; static Forest props; static Camera cam; static Blood blood;
     static readonly List<string> crashes = new List<string>();
     static readonly List<GameObject> made = new List<GameObject>();
-    static int dents, ranOver;
+    static int dents, ranOver, tubeHits;
+    static float tubeHitInto;
     static float hardest;
     static bool contacts;   // (asked for once, the look ahead stays on: the hard turning is ridden before)
+    const int Mountain = 1000;
 
     static void Check(string what, bool ok, string got = "")
     {
@@ -51,6 +59,9 @@ public static class RideCrashTest
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
         rider = Get<Summit.Rider>("rider"); body = Get<RiderBody>("body"); terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
         blood = Get<Blood>("blood");
+        // (one mountain, always: the boot's is whatever Unity's random numbers pick, and a steeper pitch or a tree in the
+        // line changes what every hit here meets)
+        TestBoot.NewMountain(game, Mountain, terrain, props);
         mr = MountainRiders.Current; cam = Camera.main;
         RiderInput.TestDrive = true; RiderInput.TestFingers = 0;
         MountainRiders.TestWant = 0;
@@ -59,11 +70,12 @@ public static class RideCrashTest
         rider.Crash += why => crashes.Add($"{why} ({rider.Ride}{(rider.Tube ? " tube" : "")}, {rider.Speed:0.0} m/s, tip {rider.Tip:0.00}, skid {rider.Skid:0.00}, air {rider.Airborne})");
         rider.CarDented += (n, at) => dents++;
         rider.RanOver += (at, into, person) => ranOver++;
+        rider.TubeHit += (n, into) => { tubeHits++; tubeHitInto = Mathf.Max(tubeHitInto, into); };
         rider.Landed += impact => hardest = Mathf.Max(hardest, impact);
         try
         {
             // ---- hard turning on open snow (nothing met: the look ahead not asked for yet)
-            foreach (var k in new[] { RideKind.Snowboard, RideKind.Skis, RideKind.Toboggan, RideKind.Kayak, RideKind.Car, RideKind.Bear }) Turning(k, false);
+            foreach (var k in new[] { RideKind.Snowboard, RideKind.Skis, RideKind.Toboggan, RideKind.Kayak, RideKind.Car, RideKind.Bear, RideKind.Bike }) Turning(k, false);
             Turning(RideKind.Snowboard, true);
             // ---- the bear, its own size
             NewRun(RideKind.Bear);
@@ -78,6 +90,7 @@ public static class RideCrashTest
             CarHits();
             Landings();
             RunOvers();
+            TubeBounces();
         }
         catch (System.Exception e) { Debug.LogError("RIDECRASH exception " + e); fails++; }
         foreach (var g in made) if (g != null) Object.DestroyImmediate(g);
@@ -141,7 +154,7 @@ public static class RideCrashTest
     static void Turning(RideKind k, bool tube)
     {
         string n = Name(k, tube);
-        var all = new List<string>();
+        var all = new List<string>(); var landed = new List<string>();
         float fastest = 0f;
         // full lock from one way to the other, held full lock each way, quick flicks: each from a fresh run at speed
         for (int phase = 0; phase < 4; phase++)
@@ -157,10 +170,13 @@ public static class RideCrashTest
                         : (Mathf.Repeat(t, 1.6f) < 0.8f ? 1f : -1f);
                 Step(s);
             }
-            all.AddRange(crashes);
+            foreach (var c in crashes) (Landing(c) ? landed : all).Add(c);
         }
-        Check($"{n}: hard turning at speed never throws the rider off", all.Count == 0, all.Count == 0 ? $"(up to {fastest * 3.6f:0} km/h)" : string.Join("; ", all));
+        Check($"{n}: hard turning at speed never throws the rider off", all.Count == 0, (all.Count == 0 ? $"(up to {fastest * 3.6f:0} km/h)" : string.Join("; ", all)) + (landed.Count > 0 ? $"; besides, off the mountain's own drops: {string.Join("; ", landed)}" : ""));
     }
+
+    /// <summary>A fall that is the mountain's (a landing off its drops and kickers, a cliff, a crevasse), not the turning's.</summary>
+    static bool Landing(string c) => c.StartsWith("Slammed") || c.StartsWith("Landed") || c.StartsWith("Cliffed") || c.StartsWith("Crevasse");
 
     // ---------------------------------------------------------------- the car and what it hits
 
@@ -182,6 +198,14 @@ public static class RideCrashTest
             default: { var c = g.AddComponent<CapsuleCollider>(); c.radius = 0.5f; c.height = 1.6f; c.center = Vector3.up * 0.8f; break; }
         }
         var ob = g.AddComponent<Obstacle>(); ob.label = label; ob.always = always;
+        // (something to see in the pictures: no collider of its own)
+        var col = g.GetComponent<Collider>();
+        var look = GameObject.CreatePrimitive(col is SphereCollider ? PrimitiveType.Sphere : col is BoxCollider ? PrimitiveType.Cube : PrimitiveType.Cylinder);
+        Object.DestroyImmediate(look.GetComponent<Collider>());
+        look.transform.SetParent(g.transform, false);
+        if (col is SphereCollider sc) { look.transform.localPosition = sc.center; look.transform.localScale = Vector3.one * sc.radius * 2f; }
+        else if (col is BoxCollider bc) { look.transform.localPosition = bc.center; look.transform.localScale = bc.size; }
+        else if (col is CapsuleCollider cc) { look.transform.localPosition = cc.center; look.transform.localScale = new Vector3(cc.radius * 2f, cc.height * 0.5f, cc.radius * 2f); }
         made.Add(g);
         Physics.SyncTransforms();
         return g;
@@ -189,10 +213,21 @@ public static class RideCrashTest
 
     static void Gone(GameObject g) { if (g != null) { made.Remove(g); Object.DestroyImmediate(g); Physics.SyncTransforms(); } }
 
-    /// <summary>Straight on into what was put ahead, for up to `most` s (or until down); the speed going in.</summary>
-    static float Into(float most = 2f)
+    /// <summary>Into what was put ahead, for up to `most` s (or until down); the speed going in. Aimed at it (steered at its
+    /// middle all the way, as a rider means to hit it square on), or with aim false straight on as it was put.</summary>
+    static float Into(float most = 2f, GameObject at = null)
     {
         float before = rider.Speed;
+        if (at != null)
+        {
+            for (float t = 0f; t < most && !rider.Crashed; t += Dt)
+            {
+                var d = at.transform.position - rider.transform.position;
+                Step(Mathf.Clamp(Mathf.DeltaAngle(rider.TravelHeading * Mathf.Rad2Deg, Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg) * Mathf.Deg2Rad * 3f, -1f, 1f));
+            }
+            return before;
+        }
+
         for (float t = 0f; t < most && !rider.Crashed; t += Dt) Step(0f);
         return before;
     }
@@ -204,19 +239,19 @@ public static class RideCrashTest
         UpTo(20f);
         dents = 0;
         float s1 = rider.Speed;
-        var t1 = Put("Tree", 12f); Into(1.5f);
+        var t1 = Put("Tree", 12f); Into(1.5f, t1);
         Check("CAR: the first tree hit head on dents it, the driver stays in", !rider.Crashed && rider.CarDents == 1 && dents == 1, $"{s1:0.0} m/s in, {rider.Speed:0.0} after, dents {rider.CarDents}, crashed {rider.Crashed} {string.Join("; ", crashes)}");
         Gone(t1);
         for (int i = 0; i < 60; i++) Step(Pilot());
         UpTo(20f);
         float s2 = rider.Speed;
-        var t2 = Put("Tree", 12f); Into(1.5f);
+        var t2 = Put("Tree", 12f); Into(1.5f, t2);
         Check("CAR: the second tree dents it too, still in", !rider.Crashed && rider.CarDents == 2, $"{s2:0.0} m/s in, dents {rider.CarDents}, crashed {rider.Crashed} {string.Join("; ", crashes)}");
         Gone(t2);
         for (int i = 0; i < 60; i++) Step(Pilot());
         UpTo(20f);
         float s3 = rider.Speed;
-        var t3 = Put("Tree", 12f); Into(1.5f);
+        var t3 = Put("Tree", 12f); Into(1.5f, t3);
         Check("CAR: the third tree throws the driver out (through the windscreen)", rider.Crashed && crashes.Count > 0 && crashes[0].StartsWith("Tree"), $"{s3:0.0} m/s in, {string.Join("; ", crashes)}");
         Check("CAR: and the count starts again", rider.CarDents == 0, $"dents {rider.CarDents}");
         Gone(t3);
@@ -227,24 +262,37 @@ public static class RideCrashTest
         Gone(tg);
         // a rock: out at once
         NewRun(RideKind.Car); UpTo(18f);
-        var r = Put("Rock", 12f); float sr = Into(1.5f);
+        var r = Put("Rock", 12f); float sr = Into(1.5f, r);
         Check("CAR: a rock hit head on throws the driver out", rider.Crashed && crashes.Count > 0 && crashes[0].StartsWith("Rock"), $"{sr:0.0} m/s in, {string.Join("; ", crashes)}");
         Gone(r);
         // anything else built: a bump
         NewRun(RideKind.Car); UpTo(18f);
         dents = 0;
-        var cab = Put("Cabin!", 12f); Into(1.5f);
+        var cab = Put("Cabin!", 12f); Into(1.5f, cab);
         Check("CAR: a cabin is a bump, not out through the windscreen (and no tree's dent)", !rider.Crashed && dents == 1 && rider.CarDents == 0, $"bumps {dents}, dents {rider.CarDents}, {string.Join("; ", crashes)}");
         Gone(cab);
         // an animal: run down
         NewRun(RideKind.Car); UpTo(18f);
         int ro = ranOver;
-        var deer = Put("Deer!", 12f, 0f, true); Into(1.5f);
+        var deer = Put("Deer!", 12f, 0f, true); Into(1.5f, deer);
         Check("CAR: an animal is run down, the car goes on", !rider.Crashed && ranOver == ro + 1, $"run down {ranOver - ro}, {string.Join("; ", crashes)}");
         Gone(deer);
+        // (mtb) the mountain bike: over the bars into a rock, or a tree hit square on and hard; a glance is a glance
+        NewRun(RideKind.Bike); UpTo(16f);
+        var br = Put("Rock", 12f); float sbr = Into(1.5f, br);
+        Check("BIKE: a rock hit head on sends the rider over the bars", rider.Crashed && crashes.Count > 0 && crashes[0].StartsWith("Rock"), $"{sbr:0.0} m/s in, {string.Join("; ", crashes)}");
+        Gone(br);
+        NewRun(RideKind.Bike); UpTo(16f);
+        var bt = Put("Tree", 12f); float sbt = Into(1.5f, bt);
+        Check("BIKE: a tree hit square on and hard does too", rider.Crashed && crashes.Count > 0 && crashes[0].StartsWith("Tree"), $"{sbt:0.0} m/s in, {string.Join("; ", crashes)}");
+        Gone(bt);
+        NewRun(RideKind.Bike); UpTo(16f);
+        var bg = Put("Tree", 12f, 0.55f); Into(1.5f);
+        Check("BIKE: a tree clipped off-centre is a glance, still riding", !rider.Crashed, string.Join("; ", crashes));
+        Gone(bg);
         // the board, for comparison: a tree head on and fast still knocks you down
         NewRun(RideKind.Snowboard); UpTo(18f);
-        var tb = Put("Tree", 12f); float sb = Into(1.5f);
+        var tb = Put("Tree", 12f); float sb = Into(1.5f, tb);
         Check("SNOWBOARD: a tree head on and fast still knocks you down", rider.Crashed && crashes.Count > 0 && crashes[0].StartsWith("Tree"), $"{sb:0.0} m/s in, {string.Join("; ", crashes)}");
         Gone(tb);
     }
@@ -301,7 +349,7 @@ public static class RideCrashTest
     static void RunOvers()
     {
         if (mr == null) { Check("the mountain's riders are there", false); return; }
-        foreach (var k in new[] { RideKind.Car, RideKind.Bear })
+        foreach (var k in new[] { RideKind.Car, RideKind.Bear, RideKind.Bike })
         {
             string n = Rides.Of(k).Name;
             if (blood != null) blood.Clear();
@@ -341,6 +389,138 @@ public static class RideCrashTest
 
         // the people at a lift's station: run down by the car as well
         LiftStation();
+    }
+
+    // ---------------------------------------------------------------- the snow tube's bounce
+
+    struct Bounce { public int hits; public float into, squash, hop, tip, jolt, spin; public bool down; public string crash; }
+
+    /// <summary>The tube into what was put ahead: how it was met and how it showed it (the most of each over 1.5 s).</summary>
+    static Bounce TubeInto(GameObject what, float most = 2f, string shots = null)
+    {
+        var b = new Bounce();
+        int shot = 0; Vector3 eye = default, look = default;
+        int h0 = tubeHits; tubeHitInto = 0f;
+        float spin0 = TubeSpin();
+        for (float t = 0f, after = -1f; t < most && !rider.Crashed; t += Dt)
+        {
+            Step(0f);
+            if (tubeHits > h0 && after < 0f)
+            {
+                after = t;
+                // (the camera stood off to the side of the hit, where it stays)
+                var p = rider.transform.position; var fwd = rider.Body.linearVelocity; fwd.y = 0f; fwd.Normalize();
+                var side = Vector3.Cross(Vector3.up, fwd);
+                look = p + fwd * 1.2f + Vector3.up * 0.4f; eye = p - fwd * 4.2f + side * 2.6f + Vector3.up * 2.4f;
+            }
+            if (shots != null && after < 0f && shot == 0 && (what == null || Vector3.Distance(rider.transform.position, what.transform.position) < 4f))
+            {
+                // (the warm-up renders, and one just before the hit, from the same place)
+                var p = rider.transform.position; var fwd = rider.Body.linearVelocity; fwd.y = 0f; fwd.Normalize();
+                var side = Vector3.Cross(Vector3.up, fwd);
+                look = p + fwd * 3f + Vector3.up * 0.4f; eye = p - fwd * 2.5f + side * 2.6f + Vector3.up * 2.4f;
+                for (int w = 0; w < 3; w++) Shoot(shots, "tube_bounce_before.png", eye, look);
+                shot = -1;
+            }
+            if (shots != null && after >= 0f && shot >= -1 && shot < 8 && t >= after + Mathf.Max(0, shot) * 0.07f) { if (shot < 0) shot = 0; Shoot(shots, $"tube_bounce_{shot}.png", eye, look); shot++; }
+            if (after >= 0f)
+            {
+                b.squash = Mathf.Max(b.squash, -body.TubeSquashNow);
+                b.hop = Mathf.Max(b.hop, body.TubeHopNow);
+                b.tip = Mathf.Max(b.tip, Mathf.Abs(body.TubeTipNow));
+                b.jolt = Mathf.Max(b.jolt, body.TubeJoltNow.magnitude);
+                b.spin = Mathf.Max(b.spin, Mathf.Abs(TubeSpin() - spin0));
+                if (t > after + 1.5f) break;
+            }
+        }
+        b.hits = tubeHits - h0; b.into = tubeHitInto; b.down = rider.Crashed; b.crash = string.Join("; ", crashes);
+        if (what != null) Gone(what);
+        return b;
+    }
+
+    static float TubeSpin() => (float)typeof(RiderBody).GetField("tubeSpin", NP).GetValue(body);
+    static string Show(Bounce b) => $"{b.hits} bounce(s) at {b.into:0.0} m/s: flattened {b.squash * 100f:0}%, hopped {b.hop * 100f:0} cm, tipped {b.tip:0} deg, rider thrown {b.jolt * 100f:0} cm, spun {b.spin * Mathf.Rad2Deg:0} deg{(b.down ? ", DOWN " + b.crash : "")}";
+
+    static void TubeBounces()
+    {
+        // its sound: the rubber ball's bounces, loaded
+        var fx = typeof(SummitGame).GetField("audioFx", NP)?.GetValue(game);
+        var clips = fx != null ? fx.GetType().GetField("tubeBounces", NP)?.GetValue(fx) as AudioClip[] : null;
+        Check("TUBE: its bounce has its own recordings (tube_bounce_1..5)", clips != null && clips.Length == 5, $"{(clips != null ? clips.Length : -1)} clips");
+        // into a tree, hard (but slower than throws you)
+        NewRun(RideKind.Snowboard, true); UpTo(12f);
+        var shots = System.Environment.GetEnvironmentVariable("RIDECRASH_SHOTS");
+        if (!string.IsNullOrEmpty(shots)) System.IO.Directory.CreateDirectory(shots); else shots = null;
+        var hard = TubeInto(Put("Tree", 12f), 2f, shots);
+        Check("TUBE: bounces off a tree, and stays on", hard.hits >= 1 && !hard.down, Show(hard));
+        Check("TUBE: and shows it: the ring flattens, hops, tips, spins away, the rider is thrown in the seat",
+              hard.squash > 0.15f && hard.hop > 0.15f && hard.tip > 10f && hard.spin > 0.5f && hard.jolt > 0.05f, Show(hard));
+        // settled again a moment later
+        for (int i = 0; i < 150 && !rider.Crashed; i++) Step(Pilot());
+        Check("TUBE: and settles again (the ring round, on the snow, upright, the rider in the seat)",
+              Mathf.Abs(body.TubeSquashNow) < 0.02f && body.TubeHopNow < 0.005f && Mathf.Abs(body.TubeTipNow) < 1f && body.TubeJoltNow.magnitude < 0.01f,
+              $"give {body.TubeSquashNow:0.000}, hop {body.TubeHopNow:0.000} m, tip {body.TubeTipNow:0.0} deg, jolt {body.TubeJoltNow.magnitude:0.000} m");
+        float hardK = body.TubeBounceK;
+        // a gentle bump: square on, slow
+        NewRun(RideKind.Snowboard, true, 320f, 3f);
+        var soft = TubeInto(Put("Rock", 1.6f));
+        Check("TUBE: a slow bump is a small bounce (less of everything than a hard one)",
+              soft.hits >= 1 && !soft.down && soft.squash < hard.squash && soft.tip < hard.tip && body.TubeBounceK < hardK, $"slow: {Show(soft)}; hard k {hardK:0.00}, slow k {body.TubeBounceK:0.00}");
+        // a rock at speed
+        NewRun(RideKind.Snowboard, true); UpTo(8f);
+        var rock = TubeInto(Put("Rock", 7f));
+        Check("TUBE: bounces off a rock, and stays on", rock.hits >= 1 && !rock.down && rock.squash > 0.05f, Show(rock));
+        // a person: they go down, the tube bounces off them (no warning used, no fall)
+        if (mr != null)
+        {
+            // (slow enough that a rubber ring takes it: TestOnly leaves them the only one on the mountain)
+            NewRun(RideKind.Snowboard, true, 320f, 4f); UpTo(9f);
+            for (int i = 0; i < 30 && rider.Airborne; i++) Step(Pilot());   // (on the snow: a tube in the air rides over anyone)
+            int k0 = MountainRiders.Knocked;
+            float sp = rider.Speed;
+            Person(5f, false);
+            var person = TubeInto(null);
+            Check("TUBE: bounces off a person (they go down), and stays on", person.hits >= 1 && !person.down && MountainRiders.Knocked == k0 + 1 && !rider.FreeHitUsed && person.squash > 0.05f, $"{Show(person)}, {sp:0.0} m/s going in, knocked {MountainRiders.Knocked - k0}, free hit used {rider.FreeHitUsed}");
+        }
+        // a fence (a breakable: ridden through, a bump)
+        NewRun(RideKind.Snowboard, true); UpTo(9f);
+        int f0 = tubeHits;
+        bool fell = rider.Breakthrough(0.85f, 0.3f, 7f, 99f, "Fence");
+        for (int i = 0; i < 20; i++) Step(0f);
+        Check("TUBE: bumps through a fence, and shows it", tubeHits > f0 && !fell && !rider.Crashed && Mathf.Abs(body.TubeTipNow) + body.TubeHopNow > 0f, $"bounces {tubeHits - f0}, give {body.TubeSquashNow:0.000}");
+    }
+
+    static void Shoot(string dir, string file, Vector3 eye, Vector3 look)
+    {
+        terrain.Prewarm(); props.Prewarm();
+        int w = 900, h = 700;
+        var rt = new RenderTexture(w, h, 24);
+        var keep = cam.transform.position; var keepR = cam.transform.rotation;
+        cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(look - eye));
+        cam.targetTexture = rt; cam.aspect = w / (float)h;
+        var baked = new List<GameObject>(); var off = new List<SkinnedMeshRenderer>();
+        foreach (var sk in Object.FindObjectsByType<SkinnedMeshRenderer>(FindObjectsSortMode.None))
+        {
+            if (!sk.enabled || !sk.gameObject.activeInHierarchy) continue;
+            var m = new Mesh(); sk.BakeMesh(m);
+            var g = new GameObject("b", typeof(MeshFilter), typeof(MeshRenderer)); g.layer = sk.gameObject.layer;
+            g.GetComponent<MeshFilter>().sharedMesh = m;
+            var mr2 = g.GetComponent<MeshRenderer>(); mr2.sharedMaterials = sk.sharedMaterials;
+            var mpb = new MaterialPropertyBlock(); sk.GetPropertyBlock(mpb); mr2.SetPropertyBlock(mpb);
+            g.transform.SetPositionAndRotation(sk.transform.position, sk.transform.rotation);
+            if (sk.bones.Length == 0) g.transform.localScale = sk.transform.lossyScale;
+            sk.enabled = false; off.Add(sk); baked.Add(g);
+        }
+        cam.Render();
+        foreach (var g in baked) { Object.DestroyImmediate(g.GetComponent<MeshFilter>().sharedMesh); Object.DestroyImmediate(g); }
+        foreach (var sk in off) sk.enabled = true;
+        RenderTexture.active = rt;
+        var tex = new Texture2D(w, h, TextureFormat.RGB24, false);
+        tex.ReadPixels(new Rect(0, 0, w, h), 0, 0); tex.Apply();
+        System.IO.File.WriteAllBytes(System.IO.Path.Combine(dir, file), tex.EncodeToPNG());
+        cam.targetTexture = null; RenderTexture.active = null;
+        Object.DestroyImmediate(rt); Object.DestroyImmediate(tex);
+        cam.transform.SetPositionAndRotation(keep, keepR);
     }
 
     static void LiftStation()

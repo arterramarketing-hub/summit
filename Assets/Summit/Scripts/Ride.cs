@@ -3,11 +3,12 @@ using UnityEngine;
 namespace Summit
 {
     /// <summary>
-    /// What the rider rides: a snowboard, skis or a wooden toboggan; or, for fun (rides), a kayak, a rally car or a bear.
+    /// What the rider rides: a snowboard, skis or a wooden toboggan; or, for fun (rides), a kayak, a rally car, a bear or a
+    /// mountain bike (mtb).
     /// Picked in the closet's RIDE list or the pause menu's RIDE row (Progress.Ride); the rider's own copy is Rider.Ride.
     /// (Saved by number: new ones go on the end.)
     /// </summary>
-    public enum RideKind { Snowboard, Skis, Toboggan, Kayak, Car, Bear }
+    public enum RideKind { Snowboard, Skis, Toboggan, Kayak, Car, Bear, Bike }
 
     /// <summary>
     /// How one ride feels: a handful of multipliers on the rider's carving model (RiderMove.cs), so every ride goes
@@ -58,7 +59,7 @@ namespace Summit
         public float Drag => 1f / (TopSpeed * TopSpeed);
 
         /// <summary>The fun rides (rides): one that is not a board, skis or a toboggan, with its own extra physics
-        /// (RiderVehicle.cs), body and clips (RiderBodyVehicle.cs) and sounds (VehicleSound.cs).</summary>
+        /// (RiderVehicle.cs), body and clips (RiderBodyVehicle.cs, RiderBodyBike.cs) and sounds (SoundMixVehicles.cs).</summary>
         public bool Vehicle;
     }
 
@@ -145,6 +146,25 @@ namespace Summit
                 GrabBonus = new[] { 150 },
                 GrabCountsAs = new[] { "Indy Melon Mute Method Stalefish Tail Grab" },
                 BoxTrick = "Bear Slide", RailTrick = "Rail Bonk", Spin = 0.6f, Flip = 0.5f, Tweak = "Wild", SwitchStep = 2, Presses = false, GroundSpin = null,
+            },
+            // The mountain bike (mtb): a fat bike, its big soft tyres biting in snow nearly as an edge does. It answers
+            // the finger at once and holds a line, the rider pedals it on where the hill gives up (the tuck pedals hard),
+            // and turned hard at speed the back wheel is braked round in a skid (RiderVehicle). A bunny hop off the lip
+            // goes a fair way; in the air it whips, tables, supermans, lets go of the bar, spins the bar, goes round
+            // and over (360s and backflips, as everything does). It manuals along a box; a rail knocks it aside. A rock,
+            // or anything hit square on and hard, sends the rider over the bars; carving never does. It runs people
+            // down, as the car does.
+            new RideFeel
+            {
+                Name = "MOUNTAIN BIKE", Vehicle = true,
+                TurnResponse = 1.1f, TurnRate = 0.95f, Grip = 0.95f, TopSpeed = 0.97f, Pop = 1.05f, AirControl = 0.85f,
+                Rails = false,
+                Grabs = new[] { "Tabletop", "Whip", "Superman", "No-Hander", "Barspin" },
+                GrabCountsAs = new[] { "Indy Melon Mute Method Stalefish Tail Grab", "Indy Melon Mute Method Stalefish Tail Grab", "Indy Melon Mute Method Stalefish Tail Grab",
+                                       "Indy Melon Mute Method Stalefish Tail Grab", "Indy Melon Mute Method Stalefish Tail Grab" },
+                GrabBonus = new[] { 50, 75, 150, 100, 125 },
+                BoxTrick = "Manual", RailTrick = "Rail Bonk", Spin = 0.75f, Flip = 0.7f, Tweak = "Big", SwitchStep = 2, Presses = false,
+                GroundSpin = null,   // (no flat spin on the snow on two wheels: its braking skid is its own: groundspin)
             },
         };
 

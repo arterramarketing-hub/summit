@@ -29,7 +29,7 @@ namespace Summit
         RiderBody body;
         Camera cam;
         Transform stage, spin, holder, copy;
-        readonly Transform[] gear = new Transform[6];   // copies of the board, the skis, the toboggan, the kayak, the car, the bear (as RideKind)
+        readonly Transform[] gear = new Transform[7];   // copies of the board, the skis, the toboggan, the kayak, the car, the bear, the bike (as RideKind)
         RideKind showRide;
         HeroRig rig;
         int idStand = -1;
@@ -260,10 +260,10 @@ namespace Summit
             }
 
             // the fun rides (rides) as they are ridden, upright on the floor behind the hero, turned three quarters on:
-            // the kayak with its paddle across the deck, the car parked, the bear stood waiting
-            Transform[] vsrc = { body.KayakGear, body.CarGear, body.BearGear };
-            Vector3[] vspot = { new Vector3(0.35f, 0f, -0.9f), new Vector3(0.75f, 0f, -2.2f), new Vector3(1.15f, 0f, -2.1f) };
-            float[] vyaw = { 62f, 38f, 145f };
+            // the kayak with its paddle across the deck, the car parked, the bear stood waiting, the bike on its wheels
+            Transform[] vsrc = { body.KayakGear, body.CarGear, body.BearGear, body.BikeGear };
+            Vector3[] vspot = { new Vector3(0.35f, 0f, -0.9f), new Vector3(0.75f, 0f, -2.2f), new Vector3(1.15f, 0f, -2.1f), new Vector3(0.55f, 0f, -1.2f) };
+            float[] vyaw = { 62f, 38f, 145f, 70f };
             for (int k = 0; k < vsrc.Length; k++)
             {
                 if (vsrc[k] == null) continue;

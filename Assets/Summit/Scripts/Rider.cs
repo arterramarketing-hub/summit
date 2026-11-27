@@ -127,7 +127,10 @@ namespace Summit
         /// and where the board met it.</summary>
         public Collider HitCollider { get; private set; }
         public Vector3 HitPoint { get; private set; }
-        public System.Action<float> Bounced;                          // the tube bounced off something
+        public System.Action<float> Bounced;                          // came down flat and skipped (a toboggan, a kayak), or clattered off a rail
+        /// <summary>(tube) The snow tube bounced off something: the way out from it (toward the tube), and how fast it
+        /// was met (m/s). The tube's give, spin, tip and hop (RiderBodyTube) and its sound go by it.</summary>
+        public System.Action<Vector3, float> TubeHit;
         public System.Action<Obstacle, Vector3, Vector3> Smashed;     // invincible: what you went through, where, your velocity
         Vector3 grindOff;
         bool faceSlide; // in the air but against a face too steep to stand on, sliding down it (AirStep)
@@ -170,6 +173,7 @@ namespace Summit
         public bool Breakthrough(float keep, float wobbleFor, float into, float crashAbove, string why)
         {
             if (!Running || Crashed) return false;
+            if (Tube && into > 1f && rb != null) { var back = -rb.linearVelocity; back.y = 0f; TubeHit?.Invoke(back, into); }   // (the tube bumps through it: RiderBodyTube)
             if (InvincibleTime > 0f) { keep = Mathf.Max(keep, SmashKeep); wobbleFor = 0f; }
             else if (Ride == RideKind.Car) wobbleFor = Mathf.Min(wobbleFor, 0.3f);   // (a sign or a flag is nothing to a car: rides2)
             else if (into > crashAbove && invulnerable <= 0f)

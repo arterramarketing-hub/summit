@@ -8,7 +8,7 @@ using Summit;
 /// (groundspin) The flat spin on the snow, by real fingers (RiderInput.TestDrive, through FingerGesture):
 ///
 /// - each ride: a swipe spins it the swipe's way and pays the ride's own name ("Butter 360", "Flat 360", "Spin 360",
-///   "Kayak Flatspin 360", the tube's "Spin 360"); the car and the bear do not spin. The board goes on where it was
+///   "Kayak Flatspin 360", the tube's "Spin 360"); the car, the bear and the mountain bike do not spin. The board goes on where it was
 ///   going, as fast: against the same ride hands off, the way it goes and its speed once the spin is done.
 /// - by length and by repeats: a short swipe is a 180 (a board and skis ride out switch; a second is a "Switch ... 180"
 ///   that brings them back), a long one a 540 (a 720 on the toboggan), a second swipe the same way mid-spin half a
@@ -140,7 +140,7 @@ public static class GroundSpinTest
         var rides = new (RideKind k, bool tube, string name)[]
         {
             (RideKind.Snowboard, false, "Butter 360"), (RideKind.Skis, false, "Flat 360"), (RideKind.Toboggan, false, "Spin 360"),
-            (RideKind.Kayak, false, "Kayak Flatspin 360"), (RideKind.Snowboard, true, "Spin 360"), (RideKind.Car, false, null), (RideKind.Bear, false, null),
+            (RideKind.Kayak, false, "Kayak Flatspin 360"), (RideKind.Snowboard, true, "Spin 360"), (RideKind.Car, false, null), (RideKind.Bear, false, null), (RideKind.Bike, false, null),
         };
 
         // ---- each ride: a swipe right, a swipe left; against the same ride hands off

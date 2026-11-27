@@ -8,7 +8,7 @@ using Summit;
 using Progress = Summit.Progress;
 
 /// <summary>
-/// (rides) The fun rides, each as the game plays it: the kayak, the rally car, the bear.
+/// (rides) The fun rides, each as the game plays it: the kayak, the rally car, the bear, the mountain bike (mtb).
 /// - Picked as the closet picks it (Progress.PickRide): the rider's physics and body both on it, its gear showing,
 ///   the board not.
 /// - A whole run from the start gate to the finish with a simple autopilot (aiming down the run's middle, weaving):
@@ -18,7 +18,9 @@ using Progress = Summit.Progress;
 ///   running on by itself), then up again within a few frames with everything back under the rider, riding on.
 /// - Each one's own: the kayak strokes (more on the outside of a turn) and spins out thrown from one way to the
 ///   other at speed; the car keeps itself going on the flat (its engine), and thrown hard across at speed leans on
-///   its springs but stays on its wheels (rides2: it used to roll over); the bear gallops (its paws) and jumps big.
+///   its springs but stays on its wheels (rides2: it used to roll over); the bear gallops (its paws) and jumps big;
+///   the bike pedals itself on where it is slow (the cranks go round with the feet on them), coasts at speed (the
+///   freewheel), skids braked into a hard turn, hops, and keeps the hands on its grips as the bar steers.
 /// Lines start RIDES; exits 1 on any failure. With $RIDES_SHOTS (and graphics) it writes pictures of each in action.
 /// Run: Unity -batchmode -nographics -quit -projectPath . -executeMethod RideModeTest.Run -logFile rides.log
 /// </summary>
@@ -59,12 +61,12 @@ public static class RideModeTest
         rider.Crash += why => { lastCrash = why; crashCount++; };
         try
         {
-            var only = System.Environment.GetEnvironmentVariable("RIDES_ONLY");   // (one of them: Kayak, Car or Bear)
-            foreach (var k in new[] { RideKind.Kayak, RideKind.Car, RideKind.Bear }) if (string.IsNullOrEmpty(only) || only == k.ToString()) OneRide(k);
+            var only = System.Environment.GetEnvironmentVariable("RIDES_ONLY");   // (one of them: Kayak, Car, Bear or Bike)
+            foreach (var k in new[] { RideKind.Kayak, RideKind.Car, RideKind.Bear, RideKind.Bike }) if (string.IsNullOrEmpty(only) || only == k.ToString()) OneRide(k);
             // and back on a board: nothing of the fun rides left showing
             Progress.PickRide(RideKind.Snowboard);
             ToStart();
-            Check("back on the board: no kayak, car or bear showing", !Shown(body.KayakGear) && !Shown(body.CarGear) && !Shown(body.BearGear) && Shown(body.BoardGear) && rider.Ride == RideKind.Snowboard);
+            Check("back on the board: no kayak, car, bear or bike showing", !Shown(body.KayakGear) && !Shown(body.CarGear) && !Shown(body.BearGear) && !Shown(body.BikeGear) && Shown(body.BoardGear) && rider.Ride == RideKind.Snowboard);
         }
         catch (System.Exception e) { Debug.LogError("RIDES exception " + e); fails++; }
         RiderInput.TestDrive = false; RiderInput.TestFingers = 0;
@@ -76,7 +78,8 @@ public static class RideModeTest
     }
 
     static bool Shown(Transform t) => t != null && t.gameObject.activeInHierarchy;
-    static Transform Gear(RideKind k) => k == RideKind.Kayak ? body.KayakGear : k == RideKind.Car ? body.CarGear : body.BearGear;
+    static Transform Gear(RideKind k) => k == RideKind.Kayak ? body.KayakGear : k == RideKind.Car ? body.CarGear : k == RideKind.Bike ? body.BikeGear : body.BearGear;
+    static string GearPart(RideKind k) => k == RideKind.Kayak ? "Hull" : k == RideKind.Bike ? "Frame" : "Body";
     static string State() => typeof(SummitGame).GetField("state", NP).GetValue(game).ToString();
 
     /// <summary>Onto the start pad and away, as PLAY does: a new run from the gate.</summary>
@@ -207,7 +210,7 @@ public static class RideModeTest
         for (int i = 0; i < 12; i++) Frame(0f);
         var g0 = Gear(k);
         bool thrown = body.RagdollForTest != null && body.RagdollForTest.Active;
-        bool gearOff = k == RideKind.Bear ? body.BearLoose : (k == RideKind.Kayak ? FindChild(g0, "Hull") == null : FindChild(g0, "Body") == null);
+        bool gearOff = k == RideKind.Bear ? body.BearLoose : FindChild(g0, GearPart(k)) == null;
         Check($"{n}: thrown in a crash (the ragdoll)", rider.Crashed && thrown, $"crashed {rider.Crashed} ragdoll {thrown}");
         Check($"{n}: its gear comes off (the bear runs on by itself)", gearOff);
         if (k == RideKind.Kayak) Check("KAYAK: thrown out of it, the legs are drawn again", !body.LegsHidden);
@@ -222,7 +225,7 @@ public static class RideModeTest
         for (int i = 0; i < 60; i++) Frame(0f);
         int took = TapUp();
         for (int i = 0; i < 3; i++) Frame(0f);
-        bool home = k == RideKind.Bear ? !body.BearLoose && body.BearGear.parent == body.RollFrame : FindChild(Gear(k), k == RideKind.Kayak ? "Hull" : "Body") != null;
+        bool home = k == RideKind.Bear ? !body.BearLoose && body.BearGear.parent == body.RollFrame : FindChild(Gear(k), GearPart(k)) != null;
         Check($"{n}: a tap, and up within a few frames", !rider.Crashed && took < 12, $"{took} frames");
         Check($"{n}: everything back under the rider", home && Shown(Gear(k)));
         float z0 = rider.Z;
@@ -232,6 +235,7 @@ public static class RideModeTest
         // ---- each one's own
         if (k == RideKind.Kayak) Kayak();
         else if (k == RideKind.Car) Car();
+        else if (k == RideKind.Bike) Bike();
         else Bear();
     }
 
@@ -329,6 +333,67 @@ public static class RideModeTest
         Check("BEAR: it jumps big", up && peak > 0.9f, $"peak {peak:0.00} m");
         Check("BEAR: and lands running", !rider.Crashed, lastCrash);
     }
+
+    static void Bike()
+    {
+        // slow on the start's flat: pedalled on, the cranks going round with the feet on the pedals
+        ToStart();
+        float turned = 0f, last = body.BikeCrank; int pedalled = 0;
+        for (int i = 0; i < 120; i++)
+        {
+            Frame(0f);
+            if (rider.Pedalling) pedalled++;
+            turned += Mathf.Abs(Mathf.DeltaAngle(last, body.BikeCrank)); last = body.BikeCrank;
+        }
+        Check("BIKE: slow, it is pedalled on (the cranks go round)", pedalled > 60 && turned > 180f, $"{pedalled} frames pedalled, cranks {turned:0} deg");
+        if (shots != null) Shoot("Bike_5_pedalling.png", Side(3.2f));
+        // the feet on the pedals as they go round
+        float worst = 0f;
+        var pl = FindDeep(body.BikeGear, "BikePedalL"); var pr = FindDeep(body.BikeGear, "BikePedalR");
+        for (int i = 0; i < 30; i++)
+        {
+            Frame(0f);
+            if (pl != null && pr != null && body.Hero != null)
+            {
+                worst = Mathf.Max(worst, Vector3.Distance(Mid(pl), body.Hero.Foot[0].position));
+                worst = Mathf.Max(worst, Vector3.Distance(Mid(pr), body.Hero.Foot[1].position));
+            }
+        }
+        Check("BIKE: the feet stay on the pedals as they go round", pl != null && pr != null && worst < 0.2f, $"farthest ankle {worst:0.00} m from its pedal");
+        // fast: it coasts (the freewheel)
+        UpTo(17f, 30f);
+        int coast = 0;
+        for (int i = 0; i < 60; i++) { Frame(Pilot(i * Dt)); if (!rider.Pedalling && !rider.Crashed) coast++; }
+        Check("BIKE: fast, it coasts (the freewheel)", coast > 40, $"{coast} of 60 frames coasting at {rider.Speed:0.0} m/s");
+        // turned hard at speed: the back wheel skids, it slows, and it stays up
+        UpTo(14f, 20f);
+        float skid = 0f, v0 = rider.Speed; int c1 = crashCount;
+        for (int i = 0; i < 50; i++) { Frame(1f); skid = Mathf.Max(skid, rider.BikeSkid); if (shots != null && i == 30) Shoot("Bike_6_skid.png", Chase()); }
+        Check("BIKE: braked into a hard turn the back wheel skids, and it stays up", skid > 0.6f && crashCount == c1, $"skid {skid:0.00}, {v0:0.0} -> {rider.Speed:0.0} m/s");
+        // a hop off the snow
+        for (int i = 0; i < 40; i++) Frame(Pilot(i * Dt));
+        rider.QueuePop(Summit.Rider.TapPop);
+        float peak = 0f; bool up = false;
+        for (int i = 0; i < 240; i++) { Frame(0f); if (rider.Airborne) { up = true; peak = Mathf.Max(peak, rider.Peak); } else if (up) break; }
+        Check("BIKE: it hops", up && peak > 0.3f, $"peak {peak:0.00} m");
+        Check("BIKE: and lands riding", !rider.Crashed, lastCrash);
+        // the hands on the grips, straight and with the bar steered
+        var gl = FindDeep(body.BikeGear, "GripL");
+        for (int i = 0; i < 20; i++) Frame(0f);
+        float hand = gl != null && body.Hero != null ? Vector3.Distance(gl.position + gl.up * 0.065f, body.Hero.Hand[0].position) : 9f;
+        for (int i = 0; i < 20; i++) Frame(0.7f);
+        float handSteered = gl != null && body.Hero != null ? Vector3.Distance(gl.position + gl.up * 0.065f, body.Hero.Hand[0].position) : 9f;
+        Check("BIKE: the hands stay on the grips, the bar steered too", hand < 0.08f && handSteered < 0.08f, $"{hand:0.000} m, steered {handSteered:0.000} m");
+        if (shots != null) Shoot("Bike_7_riding.png", Side(4.2f));
+    }
+
+    static Transform FindDeep(Transform t, string name)
+    {
+        if (t == null) return null;
+        foreach (var c in t.GetComponentsInChildren<Transform>(true)) if (c.name == name) return c;
+        return null;
+    }
+    static Vector3 Mid(Transform t) { var r = t.GetComponentInChildren<Renderer>(); return r != null ? r.bounds.center : t.position; }
 
     // ---------------------------------------------------------------- pictures
 

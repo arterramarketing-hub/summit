@@ -771,7 +771,7 @@ namespace Summit
                 camp = state == State.Hub || state == State.Title, ended = state == State.Buried,
                 boost = riding && rider.BoostTime > 0f,
                 grind = riding && rider.Grinding ? (rider.GrindFeature.kind == Course.Kind.Rail ? 1 : 2) : 0,
-                vehicle = body.OnVehicleNow && !rider.Crashed ? (int)body.Ride : -1, rpm = rider.Rpm, throttle = rider.Throttle, gait = rider.GaitRate,
+                vehicle = body.OnVehicleNow && !rider.Crashed ? (int)body.Ride : -1, rpm = rider.Rpm, throttle = rider.Throttle, gait = rider.GaitRate, pedalling = rider.Pedalling,
             });
             AirSounds(riding);
         }

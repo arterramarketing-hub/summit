@@ -6,11 +6,13 @@ namespace Summit
     /// The fun rides' sounds (rides): the rally car's engine, the kayak's hull hissing over the snow and its paddle
     /// strokes, the ridden bear's gallop, grunts and roar. The engine and the hull are made here (no recordings: like
     /// the branches' swish, BranchClips); the bear's are the wildlife bear's own clips (bear_steps, bear_growl,
-    /// bear_roar). Fed each frame from RideSound (vehicle, rpm, throttle) by SoundMix.Set.
+    /// bear_roar). The mountain bike's freewheel ticking as it coasts is a recording (bike_freewheel: a back wheel
+    /// spinning free, SpliceSound, CC0), its tick quicker the faster it goes, quiet while it is pedalled; its tyres are the
+    /// board's own snow layers. Fed each frame from RideSound (vehicle, rpm, throttle, pedalling) by SoundMix.Set.
     /// </summary>
     public partial class SoundMix
     {
-        Layer engine, hull, bearRun;
+        Layer engine, hull, bearRun, freewheel;
         AudioSource bearVoice;
         float bearVoiceT = 9f, bearVoiceFor;
         AudioClip strokeSwish;
@@ -20,6 +22,7 @@ namespace Summit
             engine = Made(EngineClip(), 0f);
             hull = Made(HullClip(), 0f);
             bearRun = Loop("bear_steps");
+            freewheel = Loop("bike_freewheel");
             bearVoice = gameObject.AddComponent<AudioSource>();
             bearVoice.playOnAwake = false; bearVoice.spatialBlend = 0f; bearVoice.loop = false;
             bearVoice.clip = C("bear_growl");
@@ -112,7 +115,7 @@ namespace Summit
         {
             if (engine == null) return;
             float s = Mathf.Clamp01(r.speed);
-            bool car = r.vehicle == (int)RideKind.Car, kayak = r.vehicle == (int)RideKind.Kayak, bear = r.vehicle == (int)RideKind.Bear;
+            bool car = r.vehicle == (int)RideKind.Car, kayak = r.vehicle == (int)RideKind.Kayak, bear = r.vehicle == (int)RideKind.Bear, bike = r.vehicle == (int)RideKind.Bike;
             // the engine: idling at the gate, pitched by the revs through the gears, louder pulling (the throttle), and
             // a little quieter off the throttle; up in the air it revs on
             float rpm = r.riding ? r.rpm : 0.22f;
@@ -121,6 +124,8 @@ namespace Summit
             Mix(hull, kayak && r.onSnow ? 0.15f + 0.45f * s : 0f, 0.75f + 0.5f * s, 20f, 15f, dt);
             // the bear's paws (the wildlife bear's gallop), quicker with the gait
             Mix(bearRun, bear && r.onSnow && r.riding ? 0.35f + 0.35f * s : 0f, Mathf.Clamp(0.75f + 0.25f * r.gait, 0.75f, 1.45f), 12f, 6f, dt);
+            // the bike's freewheel: ticking as it coasts (on the snow or in the air), quicker the faster; quiet pedalled
+            if (freewheel != null) Mix(freewheel, bike && r.riding && !r.pedalling ? 0.12f + 0.38f * s : 0f, 0.55f + 1.05f * s, 10f, 8f, dt);
             // a grunt playing out: faded away after its moment
             if (bearVoice != null && bearVoice.isPlaying)
             {

@@ -192,6 +192,11 @@ public static class ScoreTest
         Ride(RideKind.Toboggan, false); Air("toboggan", Jump.Kicker, same);
         Ride(RideKind.Snowboard, true); Air("snow tube", Jump.Kicker, same);
         Air("snow tube, 3 flicks (any angle lands)", Jump.Kicker, (t, t0) => new In { x = (t > 0.05f && t < 0.12f) || (t > 0.2f && t < 0.27f) || (t > 0.35f && t < 0.42f) ? -1f : 0f });
+        // (mtb) the mountain bike: the same, a 360 with a grab, a backflip, and a grab held through its tricks
+        Ride(RideKind.Bike, false); Air("mountain bike", Jump.Kicker, same);
+        Air("mountain bike, 360 + tap", Jump.Kicker, (t, t0) => new In { x = t > 0.08f && t < 0.9f ? 1f : 0f, tap = At(t, t0, 0.2f) });
+        Air("mountain bike, backflip", Jump.Kicker, (t, t0) => new In { y = t > 0.05f && t < 0.2f ? -1f : 0f });
+        Air("mountain bike, 4 taps (its tricks in turn)", Jump.Kicker, (t, t0) => new In { tap = At(t, t0, 0.15f) || At(t, t0, 0.35f) || At(t, t0, 0.55f) || At(t, t0, 0.75f) });
         Ride(RideKind.Snowboard, false);
     }
 

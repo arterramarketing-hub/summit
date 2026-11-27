@@ -62,7 +62,7 @@ namespace Summit
         /// <summary>Is this ride's gear there (built: its meshes, its clips)?</summary>
         public bool HasRide(RideKind k) => k switch
         {
-            RideKind.Skis => rideGear, RideKind.Toboggan => sledGear, RideKind.Kayak => kayakGear, RideKind.Car => carGear, RideKind.Bear => bearGear, _ => true,
+            RideKind.Skis => rideGear, RideKind.Toboggan => sledGear, RideKind.Kayak => kayakGear, RideKind.Car => carGear, RideKind.Bear => bearGear, RideKind.Bike => bikeGear, _ => true,
         };
         bool OnVehicle => RidingGear && Rides.Of(Ride).Vehicle;
         /// <summary>On a kayak, a car or a bear now (not on foot, not in the tube): for the sound.</summary>
@@ -137,13 +137,16 @@ namespace Summit
             if (idBIdle >= 0 && idBRide >= 0 && idBLeanL >= 0 && idBLeanR >= 0 && idBAir >= 0) BuildBear();
             else Debug.LogWarning("Rides: the bear's clips are not in HeroAnim.bytes (run Tools/MakeRides.py)");
 
+            // ---- the mountain bike (mtb: RiderBodyBike)
+            SetUpBike(h, go, origin, square, deck);
+
             if (!vehHooked)
             {
                 vehHooked = true;   // (once: these act on whichever body is built now)
                 rider.Landed += impact =>
                 {
                     if (hero == null || !OnVehicle || impact <= 1.5f) return;
-                    hero.Restart(Ride == RideKind.Car ? idCBump : Ride == RideKind.Bear ? idBBump : -1);
+                    hero.Restart(Ride == RideKind.Car ? idCBump : Ride == RideKind.Bear ? idBBump : Ride == RideKind.Bike ? idBkBump : -1);
                     if (Ride == RideKind.Car) carBounceV -= Mathf.Clamp(impact * 0.09f, 0.3f, 1.6f);   // onto its springs
                 };
             }
@@ -262,6 +265,7 @@ namespace Summit
             for (int i = 0; i < 4; i++) wheel[i] = null;
             bearAnim = null; bearState = null; bearLift = bearRun = null; bearLoose = false;
             kayakGear = carGear = bearGear = false;
+            DropBike();
             if (legsHidden) HideLegs(false);
             legSkins = null; legsHidden = false;
         }
@@ -273,11 +277,13 @@ namespace Summit
             if (!(on && Ride == RideKind.Kayak)) HideLegs(false);
             if (carRoot != null) carRoot.gameObject.SetActive(on && Ride == RideKind.Car);
             if (bearRoot != null) bearRoot.gameObject.SetActive((on || bearLoose) && Ride == RideKind.Bear);
+            if (bikeRoot != null) bikeRoot.gameObject.SetActive(on && Ride == RideKind.Bike);
         }
 
         /// <summary>RideRagdoll's part: what flies off in a crash. True if it was one of these.</summary>
         bool VehicleRagdoll()
         {
+            if (BikeRagdoll()) return true;   // (the whole bike flies off: RiderBodyBike)
             if (Ride == RideKind.Kayak && kayakGear)
             {
                 ragdoll.SetBoard(kayakHull, KayakBox, KayakBoxAt);
@@ -328,6 +334,9 @@ namespace Summit
                     roll.localRotation = Quaternion.Euler(0f, 0f, -leanDeg * 0.35f);
                     roll.localPosition = Vector3.zero;
                     break;
+                case RideKind.Bike:
+                    BikeRoll(leanDeg, dt);   // (leant under the rider; its back out in a skid: RiderBodyBike)
+                    break;
             }
         }
 
@@ -336,7 +345,7 @@ namespace Summit
         {
             var h = hero;
             model.localRotation = RideTurn * heroBaseRot;
-            Transform root = Ride == RideKind.Kayak ? kayakRoot : Ride == RideKind.Car ? carRoot : bearRoot;
+            Transform root = Ride == RideKind.Kayak ? kayakRoot : Ride == RideKind.Car ? carRoot : Ride == RideKind.Bike ? bikeRoot : bearRoot;
             // on the bear: carried up and down with its back
             float bob = 0f, surge = 0f;
             if (Ride == RideKind.Bear)
@@ -367,6 +376,7 @@ namespace Summit
             {
                 case RideKind.Kayak: iIdle = idKIdle; iRide = idKRide; iL = idKLeanL; iR = idKLeanR; iTuck = idKTuck; iAir = idKAir; iTrick = idKUp; iBump = -1; break;
                 case RideKind.Car: iIdle = idCIdle; iRide = idCDrive; iL = idCSteerL; iR = idCSteerR; iTuck = idCDrive; iAir = idCAir; iTrick = idCWave; iBump = idCBump; break;
+                case RideKind.Bike: BikeClips(out iIdle, out iRide, out iL, out iR, out iTuck, out iAir, out iTrick, out iBump); break;
                 default: iIdle = idBIdle; iRide = idBRide; iL = idBLeanL; iR = idBLeanR; iTuck = idBTuck; iAir = idBAir; iTrick = idBRodeo; iBump = idBBump; break;
             }
             if (down) h.Want(idFlail, 1f);
@@ -381,8 +391,11 @@ namespace Summit
             else
             {
                 float tuck = rider.Tuck, tw = Mathf.Abs(turn);
-                h.Want(iRide, (1f - tw) * (1f - tuck));
-                h.Want(iTuck, (1f - tw) * tuck);
+                // (the bike pedalled: its pedal clip in step with the stroke, in place of the ride and the tuck)
+                float pedal = Ride == RideKind.Bike && rider.Pedalling ? 1f : 0f;
+                h.Want(iRide, (1f - tw) * (1f - tuck) * (1f - pedal));
+                h.Want(iTuck, (1f - tw) * tuck * (1f - pedal));
+                if (pedal > 0f) BikePedalling(h, 1f - tw * 0.6f);
                 h.Want(turn > 0f ? iR : iL, tw);
                 // a paddle stroke, in step with the physics' own (Rider.PaddleSide, PaddleT)
                 if (Ride == RideKind.Kayak && rider.PaddleSide != 0)
@@ -403,9 +416,11 @@ namespace Summit
             heroLift = 0f;
             if (dt <= 0f) h.Snap();
             h.Evaluate(dt, blend);
+            if (Ride == RideKind.Bike) BikeHold(ref d, down, dt);   // (the bike thrown about in a trick, the hands on its grips: RiderBodyBike)
             h.Layer(d, dt);
             if (Ride == RideKind.Kayak) PaddleFrame();
             else if (Ride == RideKind.Car) CarFrame(dt, turn);
+            else if (Ride == RideKind.Bike) BikeFrame(dt);
             KeepOffSnow(dt, false);   // nothing through the snow (RiderBodyTouch)
         }
 

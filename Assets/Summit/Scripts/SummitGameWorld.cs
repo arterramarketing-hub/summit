@@ -325,7 +325,14 @@ namespace Summit
             ApplyLook();
             bool tube = PlayerPrefs.GetInt("summit_tube", 0) == 1;
             rider.Tube = tube; body.SetTube(tube); ShowRider();
-            rider.Bounced += into => { if (state != State.Riding) return; body.TubeKick(into); audioFx.Play(Sfx.Thump, Mathf.Clamp01(into / 12f)); };
+            rider.Bounced += into => { if (state != State.Riding) return; audioFx.Play(Sfx.Thump, Mathf.Clamp01(into / 12f)); };
+            // (tube) bounced off something: the ring gives, spins, tips and hops (RiderBodyTube), with its rubbery bounce
+            rider.TubeHit += (n, into) =>
+            {
+                if (state != State.Riding) return;
+                body.TubeBounce(n, into);
+                audioFx.Play(Sfx.TubeBounce, Mathf.Clamp01((into - 1f) / 13f));
+            };
             // the fun rides' (rides): a paddle stroke's swish; the ridden bear roars as it leaps and grunts as it lands
             rider.Stroke += side => { if (state == State.Riding) audioFx.Stroke(side); };
             rider.Jumped += () => { if (state == State.Riding && body.OnVehicleNow && body.Ride == RideKind.Bear) audioFx.BearRoar(); };

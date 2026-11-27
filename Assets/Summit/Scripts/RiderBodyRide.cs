@@ -111,6 +111,7 @@ namespace Summit
             Material Plain(Color col, float smooth) => Mats.Lit(col, smooth, lit);
             Material wood = Plain(new Color(0.66f, 0.47f, 0.26f), 0.3f), woodDark = Plain(new Color(0.38f, 0.24f, 0.12f), 0.3f), rope = Plain(new Color(0.84f, 0.78f, 0.60f), 0.1f);
             Material carPaint = Plain(new Color(1f, 0.42f, 0.05f), 0.7f);   // (the rally car's: RiderBodyVehicle)
+            Material bikePaint = Plain(new Color(0.79f, 0.64f, 0.29f), 0.62f);   // (the mountain bike's frame, in the brand's gold: RiderBodyBike)
             foreach (var mr in go.GetComponentsInChildren<MeshRenderer>(true))
             {
                 // the graphics' uvs: a ski's top sheet; a pole's shaft takes the design's rail colour (before the skis are copied)
@@ -120,7 +121,7 @@ namespace Summit
                 for (int i = 0; i < mats.Length; i++)
                 {
                     string mn = mats[i] != null ? mats[i].name : "";
-                    mats[i] = mn.StartsWith("Board") ? boardPaint : mn.StartsWith("WoodDark") ? woodDark : mn.StartsWith("Wood") ? wood : mn.StartsWith("Rope") ? rope : mn.StartsWith("CarPaint") ? carPaint : gearM;
+                    mats[i] = mn.StartsWith("Board") ? boardPaint : mn.StartsWith("WoodDark") ? woodDark : mn.StartsWith("Wood") ? wood : mn.StartsWith("Rope") ? rope : mn.StartsWith("CarPaint") ? carPaint : mn.StartsWith("BikePaint") ? bikePaint : gearM;
                 }
                 mr.sharedMaterials = mats;
                 mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;

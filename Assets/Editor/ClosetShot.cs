@@ -94,6 +94,7 @@ public static class ClosetShot
             meta.ClosetTry(Wardrobe.Cat.Ride, (int)RideKind.Kayak); Settle(10); Shoot("Closet10m_ride_kayak.png");
             meta.ClosetTry(Wardrobe.Cat.Ride, (int)RideKind.Car); Settle(10); Shoot("Closet10n_ride_car.png");
             meta.ClosetTry(Wardrobe.Cat.Ride, (int)RideKind.Bear); Settle(10); Shoot("Closet10o_ride_bear.png");
+            meta.ClosetTry(Wardrobe.Cat.Ride, (int)RideKind.Bike); Settle(10); Shoot("Closet10p_ride_bike.png");   // (mtb)
             meta.ClosetTry(Wardrobe.Cat.Ride, 1); Settle(10);
             Log("ride");
 

@@ -319,29 +319,18 @@ namespace Summit
         float tubeSpin, tubeSpinRate;
         public bool Tube { get; private set; }
         Material tubeBand;
-        static readonly Color TubeBandWhite = new Color(0.98f, 0.97f, 0.94f);
+        /// <summary>The tube's piping with no board design to take its colour from: the brand's gold.</summary>
+        static readonly Color TubeBandPlain = new Color(0.79f, 0.64f, 0.29f);
 
         void BuildTube(Material accent, Material dark)
         {
             tubeRoot = new GameObject("Tube").transform;
             tubeRoot.SetParent(roll, false);
+            var shape = TubeFrames(tubeRoot);   // (the ring gives along a hit: RiderBodyTube)
             var sh = accent != null ? accent.shader : Mats.LitShader;
-            var rubber = new Material(sh); rubber.SetColor("_BaseColor", new Color(0.95f, 0.22f, 0.12f)); rubber.SetFloat("_Smoothness", 0.55f);
-            var band = new Material(sh); band.SetColor("_BaseColor", new Color(0.98f, 0.97f, 0.94f)); band.SetFloat("_Smoothness", 0.4f);
-            var ring = new GameObject("Ring", typeof(MeshFilter), typeof(MeshRenderer));
-            ring.transform.SetParent(tubeRoot, false);
-            ring.transform.localPosition = new Vector3(0f, 0.22f, 0f);
-            ring.GetComponent<MeshFilter>().sharedMesh = Torus(0.62f, 0.22f, 40, 16);
-            ring.GetComponent<MeshRenderer>().sharedMaterial = rubber;
-            var stripe = new GameObject("Stripe", typeof(MeshFilter), typeof(MeshRenderer));
-            stripe.transform.SetParent(tubeRoot, false);
-            stripe.transform.localPosition = new Vector3(0f, 0.43f, 0f);
-            stripe.GetComponent<MeshFilter>().sharedMesh = Torus(0.62f, 0.035f, 40, 8);
-            stripe.GetComponent<MeshRenderer>().sharedMaterial = band;
-            tubeBand = band;   // (a board graphic paints it in the design's rail colour: RiderBodyWalk.Wear)
-            // handles either side of the rider (the rider faces +X here, so the sides are +-Z)
-            for (int s = -1; s <= 1; s += 2)
-                Part(PrimitiveType.Cylinder, tubeRoot, new Vector3(-0.05f, 0.47f, s * 0.6f), new Vector3(0.05f, 0.14f, 0.05f), new Vector3(0f, 0f, 90f), dark);
+            // a heavy-duty snow tube: the ring, its cover, piping, handles and tow rope (RiderBodyTubeLook). The piping is
+            // tubeBand: a board graphic paints it in the design's rail colour (RiderBodyWalk.Wear)
+            BuildTubeLook(shape, sh, dark);
             tubeRoot.gameObject.SetActive(false);
         }
 
@@ -380,11 +369,8 @@ namespace Summit
             if (ragdoll == null) return;
             if (on) { ragdoll.SetBoard(tubeRoot, new Vector3(1.6f, 0.44f, 1.6f), new Vector3(0f, 0.22f, 0f)); ragdoll.SetExtras(null); }
             else RideRagdoll();   // the board, or the skis and poles
-            tubeSpin = 0f; tubeSpinRate = 0f;
+            tubeSpin = 0f; tubeSpinRate = 0f; TubeBounceClear();
         }
-
-        /// <summary>A bounce off something: the tube spins away from it.</summary>
-        public void TubeKick(float into) { tubeSpinRate += (Random.value < 0.5f ? -1f : 1f) * Mathf.Clamp(into * 0.5f, 2f, 7f); }
 
         /// <summary>Riding switch, as drawn (Rider.Switch: snowboard and skis only).</summary>
         bool SwitchNow => rider != null && rider.Switch && !Tube;
@@ -480,7 +466,7 @@ namespace Summit
 
         public void ResetVisual()
         {
-            tubeSpin = 0f; tubeSpinRate = 0f;
+            tubeSpin = 0f; tubeSpinRate = 0f; TubeBounceClear();
             normal = Slope.Normal(rider.transform.position.x, rider.transform.position.z);
             lean = 0f; yawRate = 0f; lastTravel = rider.Heading;
             pivot.localRotation = Quaternion.identity;
@@ -717,6 +703,7 @@ namespace Summit
                 float leanDeg = rider.Lean * Mathf.Rad2Deg * StanceSign;
                 roll.localRotation = Tube ? Quaternion.Euler(leanDeg * 0.5f, 0f, 0f) : Quaternion.Euler(0f, 0f, -leanDeg * 0.75f);
                 roll.localPosition = Tube || RidingGear ? Vector3.zero : Vector3.up * EdgeLift(leanDeg * 0.75f);   // (onto its edge, not about its middle: RiderBodyTouch)
+                if (Tube) { TubeBounceStep(dt); TubeBounceRoll(); }   // (bounced off something: the ring gives, tips, hops: RiderBodyTube)
                 upper.localRotation = Quaternion.Euler(0f, 0f, -leanDeg * 0.25f - rider.BodyLean * StanceSign);   // (and the body into the slide: Rider.BodyLean)
                 if (RidingGear) upper.localRotation = Quaternion.identity;   // a skier's upper body angles back out of the turn (in the clips)
                 if (RidingGear && Rides.Of(Ride).Vehicle) VehicleRoll(leanDeg, dt);   // a kayak, a car, a bear (RiderBodyVehicle)

@@ -41,6 +41,9 @@ public static class RiderCrashTest
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
         rider = Get<Summit.Rider>("rider"); body = Get<RiderBody>("body"); hud = Get<Hud>("hud");
         terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
+        // (one mountain, always: the boot's is whatever Unity's random numbers pick, and the run's pitch decides how fast
+        // the hero closes on the riders put in the way: tube/mtb)
+        TestBoot.NewMountain(game, 1000, terrain, props);
         mr = MountainRiders.Current; cam = Camera.main;
         shots = System.Environment.GetEnvironmentVariable("SUMMIT_RIDERCRASH_OUT");
         if (!string.IsNullOrEmpty(shots)) Directory.CreateDirectory(shots);

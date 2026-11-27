@@ -8,6 +8,7 @@ namespace Summit
         Trick, TrickBig, CloseCall, Soda, ShieldGet, ShieldHit, ShieldFull, Click, Play, Buried,
         Scrape, GrindRail, GrindBox, BearRoar, Bone, Scream, Grunt, Yelp, Groan,
         SmashWood, SmashRock, PowerJump, PowerStar, SlideHit,
+        TubeBounce,   // the snow tube's rubber bouncing off something (tube)
         Nooo, Ledge,  // the player's own clips (Resources/Audio/user_*.mp3)
         BigScream,    // one of the player's screams (Resources/Audio/UserScreams), shuffled
         SlideCrack,   // the slope letting go behind you: a crack, and the rumble building
@@ -35,6 +36,7 @@ namespace Summit
         public int grind;   // 0 none, 1 rail, 2 box
         public int vehicle;   // the fun ride under the rider (RideKind as a number: Kayak, Car, Bear), or -1 (SoundMixVehicles)
         public float rpm, throttle, gait;   // the car's engine (Rider.Rpm, Throttle, 0..1), the bear's gallop (cycles a second)
+        public bool pedalling;              // the bike pedalled (its freewheel quiet), not coasting (mtb)
     }
 
     /// <summary>
@@ -60,7 +62,7 @@ namespace Summit
 
         AudioClip powerShort, pop, whoosh, spin, landHard, crash, hitTree, hitRock, crevasse, clack, clank, chime, trickBig,
                   closeCall, soda, shieldGet, shieldHit, click, play, buried, bearRoar, flap;
-        AudioClip[] lands, thumps, crows, chirps, bones, screams, grunts, yelps, bonesLeg, bonesBack, bonesNeck;
+        AudioClip[] lands, thumps, crows, chirps, bones, screams, grunts, yelps, bonesLeg, bonesBack, bonesNeck, tubeBounces;
         AudioClip groan;
         AudioClip smashWood, smashRock, powerJump, powerStar;
         // the avalanche up close: the hiss and crackle of the churning front, and the blow that takes you off
@@ -265,6 +267,10 @@ namespace Summit
             smashWood = C("smash_wood"); smashRock = C("smash_rock"); powerJump = C("power_jump"); powerStar = C("power_star");
             lands = new[] { C("land_1"), C("land_2"), C("land_3") };
             thumps = new[] { C("thump_1"), C("thump_2"), C("thump_3") };
+            // (tube) the tube's rubber bounce: a big exercise ball's bounces (tube_bounce_1 the hardest .. 5 the softest)
+            var tb = new System.Collections.Generic.List<AudioClip>();
+            for (int i = 1; i <= 6; i++) { var c = C("tube_bounce_" + i); if (c != null) tb.Add(c); }
+            tubeBounces = tb.ToArray();
             crows = new[] { C("crow_1"), C("crow_2") };
             chirps = new[] { C("chirp_1"), C("chirp_2"), C("chirp_3") };
             bones = new[] { C("bone_1"), C("bone_2"), C("bone_3") };
@@ -640,6 +646,18 @@ namespace Summit
                 case Sfx.HitRock: c = hitRock; vol = 1f; break;
                 case Sfx.Crevasse: c = crevasse; vol = 0.9f; pitch = 1f; break;
                 case Sfx.Thump: c = thumps[Random.Range(0, thumps.Length)]; vol = Mathf.Clamp01(amount) * 0.7f; pitch = Random.Range(0.85f, 1.15f); break;
+                case Sfx.TubeBounce:
+                {
+                    // by how hard it was met (0..1): a soft nudge high and quiet, a big hit full and a little lower
+                    float k = Mathf.Clamp01(amount);
+                    bool own = tubeBounces != null && tubeBounces.Length > 0;
+                    // (a harder hit, a harder bounce of the ball: the first takes; a nudge, the last; one either side for variety)
+                    int n = own ? tubeBounces.Length : 0;
+                    c = own ? tubeBounces[Mathf.Clamp(Mathf.RoundToInt((1f - k) * (n - 1)) + Random.Range(-1, 2), 0, n - 1)] : thumps[Random.Range(0, thumps.Length)];
+                    vol = Mathf.Lerp(0.25f, own ? 0.95f : 0.8f, Mathf.Sqrt(k));
+                    pitch = Mathf.Lerp(1.12f, 0.9f, k) * Random.Range(0.96f, 1.04f) * (own ? 1f : 1.25f);
+                    break;
+                }
                 case Sfx.Scrape: c = thumps[Random.Range(0, thumps.Length)]; vol = 0.25f + 0.04f * amount; pitch = 1.3f; break;
                 case Sfx.Clack: c = clack; vol = Mathf.Clamp01(amount) * 0.6f; pitch = Random.Range(0.85f, 1.2f); break;
                 case Sfx.GrindRail: c = clank; vol = 0.6f; break;

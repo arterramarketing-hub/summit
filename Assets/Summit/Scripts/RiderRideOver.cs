@@ -28,6 +28,8 @@ namespace Summit
         public const float CrashInto = 6f;
         /// <summary>A glancing blow: this share of the speed kept, the part into the face taken away.</summary>
         public const float GlanceKeep = 0.88f;
+        /// <summary>The snow tube bounces off anything (and anyone) met slower than this (m/s); harder, it throws you.</summary>
+        public const float TubeBounceTop = 16f;
 
         /// <summary>The last solid met: how far off square on the board's travel was to its face (degrees, 0 dead on).</summary>
         public float LastHitAngle { get; private set; }
@@ -338,6 +340,7 @@ namespace Summit
                     v = new Vector3(v.x * GlanceKeep, v.y, v.z * GlanceKeep);
                     Scraped?.Invoke(Mathf.Max(into, 1f));
                     Glanced?.Invoke(into);
+                    if (Tube) TubeHit?.Invoke(normal, into);   // (the ring bumps off it: RiderBodyTube)
                 }
                 return v;
             }
@@ -349,7 +352,7 @@ namespace Summit
                 bool tree = ob.label == "Tree";
                 if (!tree || CarDents + 1 < CarTreesToWreck) return CarDent(normal, at, v, into, tree);
             }
-            if (Tube && into > 6f && into < 16f && !ob.always && !spunInto)
+            if (Tube && into > 6f && into < TubeBounceTop && !ob.always && !spunInto)
             {
                 // the tube is a big rubber ring: it bounces off, spinning, and you keep going
                 invulnerable = 0.5f;
@@ -357,7 +360,7 @@ namespace Summit
                 if (Vector3.Dot(v, nb) < 0f) v -= nb * Vector3.Dot(v, nb) * 1.7f;
                 v *= 0.75f;
                 Heading = Mathf.Clamp(Mathf.Atan2(v.x, v.z), -MaxHeading, MaxHeading);
-                Bounced?.Invoke(into);
+                TubeHit?.Invoke(nb, into);
                 return v;
             }
             if (into > CrashInto && Shields > 0)
@@ -370,6 +373,15 @@ namespace Summit
                 return v * 0.8f;
             }
             if (into > CrashInto) { if (Ride == RideKind.Car) CarDents = 0; DoCrash(ob.label); return v; }
+            if (Tube && into > 1f)
+            {
+                // (tube) slow but square on: the ring bounces gently back off it, rather than scraping along it
+                Vector3 nb = new Vector3(normal.x, 0f, normal.z);
+                if (nb.sqrMagnitude > 1e-4f) { nb.Normalize(); float vn = Vector3.Dot(v, nb); if (vn < 0f) v -= nb * vn * 1.5f; }
+                invulnerable = Mathf.Max(invulnerable, 0.3f);
+                TubeHit?.Invoke(normal, into);
+                return v * 0.85f;
+            }
             Scraped?.Invoke(into);
             return Slide(v, normal) * 0.85f;
         }
@@ -426,6 +438,7 @@ namespace Summit
             if (v.magnitude > was * keep) v *= was * keep / v.magnitude;
             wobble = Mathf.Max(wobble, Mathf.Lerp(0.35f, 0.8f, square));
             invulnerable = Mathf.Max(invulnerable, 0.25f);
+            if (Tube) TubeHit?.Invoke(nh, Mathf.Max(into, 0.25f * sp));   // (the ring bumps off the trunk: RiderBodyTube)
             TreeGlances++;
             TreeGlanced?.Invoke(at, into, square);
             Glanced?.Invoke(into);
@@ -473,6 +486,18 @@ namespace Summit
                 RanOver?.Invoke(at, closing, true);
                 wobble = Mathf.Max(wobble, 0.3f);
                 return v * RunOverKeep;
+            }
+            if (Tube && closing < TubeBounceTop && InvincibleTime <= 0f)
+            {
+                // (tube) a rubber ring: it bounces off them as off anything else, spinning, and you keep going (they
+                // still go down); only met harder than it takes is it the warning, or a fall
+                Vector3 nb = new Vector3(normal.x, 0f, normal.z);
+                if (nb.sqrMagnitude > 1e-4f) { nb.Normalize(); float vn = Vector3.Dot(v, nb); if (vn < 0f) v -= nb * vn * 1.7f; }
+                v *= 0.75f;
+                invulnerable = Mathf.Max(invulnerable, 0.5f);
+                Heading = Mathf.Clamp(Mathf.Atan2(v.x, v.z), -MaxHeading, MaxHeading);
+                TubeHit?.Invoke(nb, closing);
+                return v;
             }
             if (InvincibleTime > 0f) return v * 0.9f;
             if (!FreeHitUsed)

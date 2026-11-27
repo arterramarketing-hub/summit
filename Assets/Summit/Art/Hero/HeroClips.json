@@ -460,6 +460,71 @@
    "name": "Bear_Bump",
    "frames": 14,
    "loop": false
+  },
+  {
+   "name": "Bike_Idle",
+   "frames": 120,
+   "loop": true
+  },
+  {
+   "name": "Bike_Ride",
+   "frames": 60,
+   "loop": true
+  },
+  {
+   "name": "Bike_Pedal",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Bike_LeanL",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Bike_LeanR",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Bike_Tuck",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Bike_Air",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Bike_Bump",
+   "frames": 14,
+   "loop": false
+  },
+  {
+   "name": "Bike_Tabletop",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Bike_Whip",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Bike_Superman",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Bike_NoHander",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Bike_Barspin",
+   "frames": 30,
+   "loop": true
   }
  ]
 }
