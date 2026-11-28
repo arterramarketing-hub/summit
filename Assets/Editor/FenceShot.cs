@@ -23,14 +23,12 @@ public static class FenceShot
     static string scene = "";
 
     static T F<T>(string name) => (T)typeof(SummitGame).GetField(name, NP).GetValue(game);
-    static int Falls => (int)typeof(SummitGame).GetField("falls", NP).GetValue(game);
+    static int Falls => game.falls;
 
     public static void Run()
     {
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
         rider = F<Rider>("rider"); body = F<RiderBody>("body"); terrain = F<SlopeStreamer>("terrain"); props = F<Forest>("props");
         smasher = F<Smasher>("smasher"); aura = F<PowerAura>("aura"); breaks = F<Breakables>("breaks");
@@ -180,7 +178,7 @@ public static class FenceShot
 
     static void Step()
     {
-        rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+        TestHarness.Step(rider, body, Dt);
         smasher.Step(Dt);
         Breakable.Step(Dt);
         if (step % 24 == 0) { terrain.Prewarm(); props.Prewarm(); dress?.Prewarm(); hamUpdate.Invoke(hamlets, null); }

@@ -30,16 +30,13 @@ public static class SlowShot
     static string scene = "";
 
     static T F<T>(string name) => (T)typeof(SummitGame).GetField(name, NP).GetValue(game);
-    static int Falls => (int)typeof(SummitGame).GetField("falls", NP).GetValue(game);
-    static float Medical => (float)typeof(SummitGame).GetField("medical", NP).GetValue(game);
+    static int Falls => game.falls;
+    static float Medical => game.medical;
 
     public static void Run()
     {
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
         rider = F<Rider>("rider"); body = F<RiderBody>("body"); terrain = F<SlopeStreamer>("terrain"); props = F<Forest>("props");
         smasher = F<Smasher>("smasher"); aura = F<PowerAura>("aura"); breaks = F<Breakables>("breaks"); dayNight = F<DayNight>("dayNight");
@@ -285,7 +282,7 @@ public static class SlowShot
 
     static void Step()
     {
-        rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+        TestHarness.Step(rider, body, Dt);
         smasher.Step(Dt);
         Breakable.Step(Dt);
         game.TestPoints(Dt);

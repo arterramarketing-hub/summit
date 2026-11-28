@@ -37,8 +37,8 @@ public static class CrashSnowShot
         game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        rider = Get<Rider>("rider"); body = Get<RiderBody>("body"); terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
-        dayNight = Get<DayNight>("dayNight"); weather = Get<Weather>("weather");
+        rider = game.rider; body = game.body; terrain = game.terrain; props = game.props;
+        dayNight = game.dayNight; weather = Get<Weather>("weather");
         cam = Camera.main; chase = cam.GetComponent<ChaseCamera>(); atmo = Object.FindFirstObjectByType<Atmosphere>();
         lights = NightLights.Instance;
         camStep = typeof(ChaseCamera).GetMethod("LateUpdate", NP); aLate = typeof(Atmosphere).GetMethod("LateUpdate", NP);

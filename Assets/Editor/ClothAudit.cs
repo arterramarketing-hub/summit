@@ -29,7 +29,7 @@ public static class ClothAudit
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
         var game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game, false);
-        var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
+        var body = game.body;
         var modelF = typeof(RiderBody).GetField("model", NP);
         string[] who = { "summit rider", "Val", "Breanna", "Paul" };
         int bad = 0;
@@ -89,12 +89,9 @@ public static class ClothAudit
     {
         var log = new StringBuilder();
         void Say(string l) { Debug.Log("CAMPWIND " + l); log.AppendLine(l); }
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
-        var camp = (Summit.Camp)typeof(SummitGame).GetField("camp", NP).GetValue(game);
-        var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
+        var game = TestHarness.Boot();
+        var camp = game.camp;
+        var body = game.body;
         Summit.Progress.Grant(0, Summit.Progress.Up.FirePit);   // (Alyssa comes with the fire)
         typeof(SummitGame).GetMethod("ToHub", NP).Invoke(game, new object[] { true });
         camp.Redress();

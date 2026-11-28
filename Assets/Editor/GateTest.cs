@@ -18,15 +18,12 @@ public static class GateTest
 
     public static void Run()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        var game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        var r = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        var terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        var props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        var r = game.rider;
+        var body = game.body;
+        var terrain = game.terrain;
+        var props = game.props;
         var slide = (Avalanche)typeof(SummitGame).GetField("slide", NP).GetValue(game);
         string crash = null;
         r.Crash += why => crash = why;
@@ -55,7 +52,7 @@ public static class GateTest
                         float want = Mathf.Atan2(aimX - p.x, 14f);
                         r.Steer = Mathf.Clamp((want - r.Heading) * 2.2f, -1f, 1f);
                     }
-                    r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+                    TestHarness.Step(r, body, Dt);
                     slide.Step(Dt, r, body);
                     if (slide.JustReleased) { releaseGap = slide.Gap(r); releaseT = t; }
                     bool air = r.Airborne;

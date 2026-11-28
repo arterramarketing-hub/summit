@@ -25,15 +25,12 @@ public static class TreeCamShots
 
     public static void Run()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        r = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        r = game.rider;
+        body = game.body;
+        terrain = game.terrain;
+        props = game.props;
         chase = Object.FindFirstObjectByType<ChaseCamera>();
         camStep = typeof(ChaseCamera).GetMethod("LateUpdate", NP);
         string outDir = System.Environment.GetEnvironmentVariable("TREECAM_OUT") ?? "treecam-shots";
@@ -127,7 +124,7 @@ public static class TreeCamShots
             r.Steer = r.Crashed ? 0f : CarveBot.Onto(r, zz => Slope.Centre(zz) + Slope.Half(zz) + 0.5f + 1.5f * Mathf.Sin(zz / 17f), 1.2f, 8f, 4f);
             if (r.Speed > 20f && !r.Airborne) r.Body.linearVelocity *= 0.995f;
             r.TestContacts(Dt);
-            r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+            TestHarness.Step(r, body, Dt);
             if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
             if (r.Crashed && r.CanGetUp) r.RequestUp = true;
             if (n % 2 != 1) continue;

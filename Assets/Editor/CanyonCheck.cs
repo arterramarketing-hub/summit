@@ -172,15 +172,12 @@ public static class CanyonCheck
     {
         const BindingFlags NP = BindingFlags.NonPublic | BindingFlags.Instance;
         const float Dt = 1f / 120f;
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        var game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        var r = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        var terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        var props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        var r = game.rider;
+        var body = game.body;
+        var terrain = game.terrain;
+        var props = game.props;
         r.input = null;
         var bot = typeof(MountainAudit).GetNestedType("ScoreBot", BindingFlags.NonPublic).GetMethod("Steer", BindingFlags.Public | BindingFlags.Static);
         TestBoot.NewMountain(game, 1000, terrain, props);
@@ -197,7 +194,7 @@ public static class CanyonCheck
                 {
                     r.Steer = toRun ? (float)bot.Invoke(null, new object[] { r, Slope.Centre(r.Z + 12f * Slope.Squash(r.Z)), t }) : 0f;   // (the audit's own bot)
                     r.TestContacts(Dt);
-                    r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+                    TestHarness.Step(r, body, Dt);
                     if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
                     if (n % 4 == 0) body.Apply(4 * Dt);
                 }

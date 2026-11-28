@@ -39,8 +39,8 @@ public static class WeatherShot
         game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        rider = Get<Rider>("rider"); body = Get<RiderBody>("body"); terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
-        dayNight = Get<DayNight>("dayNight"); camp = Get<Camp>("camp"); fx = Get<SnowFX>("fx"); weather = Get<Weather>("weather");
+        rider = game.rider; body = game.body; terrain = game.terrain; props = game.props;
+        dayNight = game.dayNight; camp = game.camp; fx = Get<SnowFX>("fx"); weather = Get<Weather>("weather");
         cam = Camera.main; chase = cam.GetComponent<ChaseCamera>(); atmo = Object.FindFirstObjectByType<Atmosphere>();
         Debug.Log($"WEATHERSHOT built: weather {(weather != null ? weather.Base.ToString() : "NONE")}, seed {Slope.Seed}");
         if (weather == null) { TestHarness.Exit(1); return; }

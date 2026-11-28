@@ -32,11 +32,8 @@ public static partial class PeopleTest
     /// </summary>
     public static void LodLooks()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
-        var camp = (Summit.Camp)typeof(SummitGame).GetField("camp", NP).GetValue(game);
+        var game = TestHarness.Boot();
+        var camp = game.camp;
         typeof(SummitGame).GetMethod("ToHub", NP).Invoke(game, new object[] { true });
         var life = camp.GetComponent<CampLife>();
         if (life == null || life.Agents.Count == 0) { Debug.LogError("LODLOOKS no camp life"); TestHarness.Exit(1); return; }

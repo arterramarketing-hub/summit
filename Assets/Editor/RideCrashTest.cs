@@ -56,9 +56,8 @@ public static class RideCrashTest
         int rideWas = (int)Progress.Ride;
         TestBoot.Boot(game);
         Physics.simulationMode = SimulationMode.Script;
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        rider = Get<Summit.Rider>("rider"); body = Get<RiderBody>("body"); terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
-        blood = Get<Blood>("blood");
+        rider = game.rider; body = game.body; terrain = game.terrain; props = game.props;
+        blood = game.blood;
         // (one mountain, always: the boot's is whatever Unity's random numbers pick, and a steeper pitch or a tree in the
         // line changes what every hit here meets)
         TestBoot.NewMountain(game, Mountain, terrain, props);

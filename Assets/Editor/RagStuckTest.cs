@@ -54,10 +54,7 @@ public static class RagStuckTest
 
     public static void Run()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
         r = F<Rider>("rider"); body = F<RiderBody>("body"); terrain = F<SlopeStreamer>("terrain"); props = F<Forest>("props");
         typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
@@ -319,7 +316,7 @@ public static class RagStuckTest
         Vector3 vel = Vector3.ProjectOnPlane(d, Slope.Normal(s.x, s.z)).normalized * v;
         r.Body.linearVelocity = vel;
         if (contact) { r.Body.position = s; r.transform.position = s; }
-        else for (int i = 0; i < 3; i++) { r.Body.linearVelocity = vel; r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt); }
+        else for (int i = 0; i < 3; i++) { r.Body.linearVelocity = vel; TestHarness.Step(r, body, Dt); body.Apply(Dt); }
         r.Body.linearVelocity = vel;
         body.Apply(Dt);   // (the body takes the board's speed into the throw)
         r.DoCrash("test");
@@ -337,7 +334,7 @@ public static class RagStuckTest
         float t = 0f;
         for (int n = 0; t < MaxT; n++, t += Dt)
         {
-            r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt);
+            TestHarness.Step(r, body, Dt); body.Apply(Dt);
             if (n % 24 == 0) Stream(1);
             stepHook?.Invoke(t);
             // the thrown body's own parts and its board only (lift chairs and the like move too)
@@ -425,7 +422,7 @@ public static class RagStuckTest
         // put the body away before the next throw
         lastRest = body.RagdollCentre;
         r.RequestUp = true; r.StayDown = false; r.HoldCrash = false;
-        for (int i = 0; i < 400 && r.Crashed; i++) { r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt); r.RequestUp = true; r.HoldCrash = false; }
+        for (int i = 0; i < 400 && r.Crashed; i++) { TestHarness.Step(r, body, Dt); body.Apply(Dt); r.RequestUp = true; r.HoldCrash = false; }
         if (getUpMode) GetUpCheck(kind, way, seed);
     }
 
@@ -446,7 +443,7 @@ public static class RagStuckTest
         for (; t < 5f; t += Dt, n++)
         {
             r.Steer = 0f;
-            r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+            TestHarness.Step(r, body, Dt);
             if (n % 4 == 0) body.Apply(4 * Dt);
             if (n % 24 == 0) Stream(1);
             rideHook?.Invoke(t);
@@ -459,7 +456,7 @@ public static class RagStuckTest
         ups.Add(u);
         bool bad = u.clear < Margin || u.stuck > 1f || (u.moved < 6f && !u.crashed);
         Debug.Log($"RAGUP {kind} | {way}: up {u.shift:0.0} m from the body, clear {u.clear:0.00} m of {u.near}, then {u.moved:0.0} m in {t:0.0} s, stuck {u.stuck:0.0} s, eased free {u.unpinned}x{(u.crashed ? " crashed (" + lastWhy + ")" : "")}{(bad ? "  BAD" : "")}  {u.where}");
-        if (r.Crashed) { r.RequestUp = true; for (int i = 0; i < 2400 && r.Crashed; i++) { r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt); r.RequestUp = true; r.HoldCrash = false; } }
+        if (r.Crashed) { r.RequestUp = true; for (int i = 0; i < 2400 && r.Crashed; i++) { TestHarness.Step(r, body, Dt); body.Apply(Dt); r.RequestUp = true; r.HoldCrash = false; } }
     }
 
     /// <summary>How close the standing rider (snow to head height) is to anything solid, and what that is.</summary>
@@ -489,10 +486,7 @@ public static class RagStuckTest
     public static void Shot()
     {
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
         r = F<Rider>("rider"); body = F<RiderBody>("body"); terrain = F<SlopeStreamer>("terrain"); props = F<Forest>("props");
         typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
@@ -567,10 +561,7 @@ public static class RagStuckTest
     public static void GetUpShot()
     {
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
         r = F<Rider>("rider"); body = F<RiderBody>("body"); terrain = F<SlopeStreamer>("terrain"); props = F<Forest>("props");
         typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);

@@ -44,6 +44,9 @@ public static class TestPrefs
     }
 
     /// <summary>Remember the player's settings, then run as a fresh player (plus any SUMMIT_PREFS overrides).</summary>
+    /// <summary>Pin, unless this run has already pinned (a test's own settings, made since, are kept).</summary>
+    public static void PinOnce() { if (saved == null) Pin(); }
+
     public static void Pin()
     {
         Keys();

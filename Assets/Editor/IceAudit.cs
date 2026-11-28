@@ -37,8 +37,8 @@ public static class IceAudit
         game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        r = Get<Rider>("rider"); body = Get<RiderBody>("body"); terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
-        dayNight = Get<DayNight>("dayNight"); weather = Get<Weather>("weather");
+        r = game.rider; body = game.body; terrain = game.terrain; props = game.props;
+        dayNight = game.dayNight; weather = Get<Weather>("weather");
         atmo = Object.FindFirstObjectByType<Atmosphere>();
         camStep = typeof(ChaseCamera).GetMethod("LateUpdate", NP); aLate = typeof(Atmosphere).GetMethod("LateUpdate", NP);
         Physics.simulationMode = SimulationMode.Script;
@@ -72,7 +72,7 @@ public static class IceAudit
             r.Steer = r.Crashed ? 0f : carving ? 0.5f * Mathf.Sin((r.Z - s.z0) / 9f) + Mathf.Clamp((Slope.Centre(r.Z + 10f) - r.X) * 0.05f, -0.3f, 0.3f)
                                                : Mathf.Clamp((Slope.Centre(r.Z + 10f) - r.X) * 0.08f, -0.4f, 0.4f);
             if (r.Speed > v0 && !r.Airborne && !r.Crashed) r.Body.linearVelocity *= v0 / r.Speed;
-            r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+            TestHarness.Step(r, body, Dt);
             if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
             if (n % 2 == 0)
             {

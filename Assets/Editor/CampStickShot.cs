@@ -34,10 +34,9 @@ public static class CampStickShot
             TestPrefs.Pin();
             game = Object.FindFirstObjectByType<SummitGame>();
             typeof(SummitGame).GetMethod("Awake", NP).Invoke(game, null);
-            T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-            camp = Get<Camp>("camp"); meta = Get<MetaUi>("meta"); body = Get<RiderBody>("body");
-            terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
-            var hud = Get<Hud>("hud");
+            camp = game.camp; meta = game.meta; body = game.body;
+            terrain = game.terrain; props = game.props;
+            var hud = game.hud;
             cam = Camera.main; atmo = Object.FindFirstObjectByType<Atmosphere>();
             tUpd = typeof(SlopeStreamer).GetMethod("Update", NP); fUpd = typeof(Forest).GetMethod("Update", NP); aLate = typeof(Atmosphere).GetMethod("LateUpdate", NP);
             meta.Refresh();

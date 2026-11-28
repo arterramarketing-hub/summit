@@ -32,10 +32,10 @@ public static class RagdollShot
         var game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
         Physics.simulationMode = SimulationMode.Script;
-        var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        var terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        var props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        var rider = game.rider;
+        var body = game.body;
+        var terrain = game.terrain;
+        var props = game.props;
         var cam = Camera.main; var chase = cam.GetComponent<ChaseCamera>();
         rider.input = null;
         var dressing = Object.FindFirstObjectByType<CourseDressing>();
@@ -54,13 +54,13 @@ public static class RagdollShot
                 rider.ResetAt(Slope.Centre(z), z); body.ResetVisual(); rider.Begin();
                 rider.Body.linearVelocity = Vector3.forward * v0;
                 terrain.Prewarm(); props.Prewarm();
-                for (int i = 0; i < 30; i++) { rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt); }
+                for (int i = 0; i < 30; i++) { TestHarness.Step(rider, body, Dt); body.Apply(Dt); }
                 rider.DoCrash("shot");
                 var pelvis = new List<Rigidbody>(body.RagdollForTest.Bodies)[0];
                 int k = 0; float t = 0f;
                 for (; k < At.Length; t += Dt)
                 {
-                    rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt);
+                    TestHarness.Step(rider, body, Dt); body.Apply(Dt);
                     if (t + Dt * 0.5f < At[k]) continue;
                     Vector3 c = pelvis.position;
                     Vector3 from = c + new Vector3(5.5f, 1.4f, 0.6f);
@@ -70,7 +70,7 @@ public static class RagdollShot
                     strip.SetPixels(k * Cell, (speeds.Length - 1 - row) * Cell, Cell, Cell, px);
                     k++;
                 }
-                if (rider.Crashed) { rider.RequestUp = true; for (int i = 0; i < 600 && rider.Crashed; i++) { rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt); if (rider.CanGetUp) rider.RequestUp = true; } }
+                if (rider.Crashed) { rider.RequestUp = true; for (int i = 0; i < 600 && rider.Crashed; i++) { TestHarness.Step(rider, body, Dt); body.Apply(Dt); if (rider.CanGetUp) rider.RequestUp = true; } }
             }
             strip.Apply();
             File.WriteAllBytes(file, strip.EncodeToPNG());

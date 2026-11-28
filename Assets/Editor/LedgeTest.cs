@@ -29,15 +29,12 @@ public static class LedgeTest
 
     static void Setup()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        r = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        r = game.rider;
+        body = game.body;
+        terrain = game.terrain;
+        props = game.props;
         r.input = null;
         r.Crash += why => lastCrash = why;
     }
@@ -159,7 +156,7 @@ public static class LedgeTest
                 var ledge = L;
                 r.Steer = CarveBot.Onto(r, zz => LineX(ledge, zz), 1.5f, 10f, 8f);   // (carving for the ledge's line 8 m ahead)
                 r.TestContacts(Dt);
-                r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+                TestHarness.Step(r, body, Dt);
                 if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
                 if (frame != null) { body.Apply(Dt); frame(n); }
                 else if (n % 4 == 0 || r.Crashed) body.Apply(r.Crashed ? Dt : 4 * Dt);

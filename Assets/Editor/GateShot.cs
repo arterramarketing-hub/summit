@@ -27,10 +27,9 @@ public static class GateShot
         var game = Object.FindFirstObjectByType<SummitGame>();
         TestPrefs.Pin();
         TestBoot.Boot(game);
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        var rider = Get<Rider>("rider"); var body = Get<RiderBody>("body");
-        var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props");
-        dayNight = Get<DayNight>("dayNight"); var camp = Get<Camp>("camp");
+        var rider = game.rider; var body = game.body;
+        var terrain = game.terrain; var props = game.props;
+        dayNight = game.dayNight; var camp = game.camp;
         cam = Camera.main; var chase = cam.GetComponent<ChaseCamera>();
         var late = typeof(ChaseCamera).GetMethod("LateUpdate", NP);
         var atmo = Object.FindFirstObjectByType<Atmosphere>();

@@ -32,16 +32,13 @@ public static class InputTest
 
     public static void Run()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        r = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        input = (RiderInput)typeof(SummitGame).GetField("input", NP).GetValue(game);
-        terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        r = game.rider;
+        body = game.body;
+        input = game.input;
+        terrain = game.terrain;
+        props = game.props;
         riderUpdate = typeof(Rider).GetMethod("Update", NP);
         grabField = typeof(Rider).GetField("grabLevel", NP);
         r.Jumped += () => { if (wasGrinding) pops++; else jumps++; };
@@ -83,7 +80,7 @@ public static class InputTest
         wasGrinding = r.Grinding;
         input.TestStep(Dt);
         riderUpdate.Invoke(r, null);
-        r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+        TestHarness.Step(r, body, Dt);
         game.TestPoints(Dt);
         // a switch-up or a press: the stance on the rail changed while still on it
         if (r.Grinding)

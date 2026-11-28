@@ -22,13 +22,9 @@ public static class TubeShot
         string dir = System.Environment.GetEnvironmentVariable("TUBE_SHOTS");
         if (string.IsNullOrEmpty(dir)) dir = "TubeShots";
         Directory.CreateDirectory(dir);
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        rider = Get<Summit.Rider>("rider"); body = Get<RiderBody>("body"); terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
+        rider = game.rider; body = game.body; terrain = game.terrain; props = game.props;
         cam = Camera.main;
         try
         {

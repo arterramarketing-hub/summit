@@ -179,12 +179,11 @@ public static class ClosetShot
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
         var game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game, false);
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        body = Get<RiderBody>("body"); camp = Get<Camp>("camp"); meta = Get<MetaUi>("meta");
+        body = game.body; camp = game.camp; meta = game.meta;
         stage = meta.Stage;
         cam = Camera.main;
         ChaseCamera.TestDt = dt;
-        TimeOfDay.TestClock = 1.4f; Get<DayNight>("dayNight").ApplyNow();
+        TimeOfDay.TestClock = 1.4f; game.dayNight.ApplyNow();
         // the canvas and the camera at the phone's shape from the start (the closet lays itself out as it opens)
         if (rt == null) rt = new RenderTexture(W, H, 24);
         cam.targetTexture = rt; cam.aspect = W / (float)H;

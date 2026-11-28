@@ -33,14 +33,10 @@ public static class TreeLineTest
 
     public static void Run()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        rider = Get<Summit.Rider>("rider"); body = Get<RiderBody>("body");
-        terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
+        rider = game.rider; body = game.body;
+        terrain = game.terrain; props = game.props;
         int treeHits = 0; string why = null;
         rider.HitObstacle += (ob, at, into) =>
         {
@@ -207,7 +203,7 @@ public static class TreeLineTest
             var v = rider.Body.linearVelocity;
             if (v.magnitude > RideSpeed) rider.Body.linearVelocity = v * (RideSpeed / v.magnitude);
             rider.TestContacts(Dt);
-            rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+            TestHarness.Step(rider, body, Dt);
             if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
             if (n % 2 == 0 || rider.Crashed) body.Apply(rider.Crashed ? Dt : 2f * Dt);
             if (rider.Crashed) break;

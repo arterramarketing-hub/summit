@@ -30,14 +30,12 @@ public static class BloodShot
     public static void Run()
     {
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
-        rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
-        blood = (Blood)typeof(SummitGame).GetField("blood", NP).GetValue(game);
+        game = TestHarness.Boot();
+        rider = game.rider;
+        body = game.body;
+        terrain = game.terrain;
+        props = game.props;
+        blood = game.blood;
         cam = Camera.main; chase = cam.GetComponent<ChaseCamera>();
         late = typeof(ChaseCamera).GetMethod("LateUpdate", NP);
         atmo = Object.FindFirstObjectByType<Atmosphere>();

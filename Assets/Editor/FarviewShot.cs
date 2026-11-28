@@ -69,8 +69,7 @@ public static class FarviewShot
         Farview.TestOn = !off; Farview.Disabled = off; Farview.TestClock = 0.0;
         game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        rider = Get<Rider>("rider"); terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props"); dayNight = Get<DayNight>("dayNight");
+        rider = game.rider; terrain = game.terrain; props = game.props; dayNight = game.dayNight;
         dress = Object.FindFirstObjectByType<CourseDressing>(); hamlets = Object.FindFirstObjectByType<Hamlets>();
         lift = Object.FindFirstObjectByType<SkiLift>(); atmo = Object.FindFirstObjectByType<Atmosphere>();
         farview = Farview.Instance;

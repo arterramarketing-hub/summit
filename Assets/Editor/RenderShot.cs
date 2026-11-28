@@ -21,14 +21,12 @@ public static class RenderShot
         SummitImport.EnsureSky();
         SummitImport.EnsureBackdrop();
         SummitImport.EnsureRealTrees();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
+        var game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        var terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        var props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        var rider = game.rider;
+        var body = game.body;
+        var terrain = game.terrain;
+        var props = game.props;
         rider.input = null;
         var cam = Camera.main;
         var chase = cam.GetComponent<ChaseCamera>();
@@ -55,9 +53,7 @@ public static class RenderShot
                 rider.Steer = sp.name == "Run" ? Mathf.Clamp(0.6f * Mathf.Sin(t * 1.2f) + (Slope.Centre(rider.Z + 12f) - rider.transform.position.x) * 0.06f - rider.Heading * 0.8f, -1f, 1f)
                             : sp.name == "Carve" ? Mathf.Sin(t * 1.9f) * 0.9f : 0f;
                 if (sp.name.StartsWith("Crash") && !rider.Crashed && t >= 0.8f) rider.DoCrash("test");
-                rider.Tick(Dt);
-                body.PhysicsStep();
-                Physics.Simulate(Dt);
+                TestHarness.Step(rider, body, Dt);
                 if (i % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
                 if (i % 4 == 0) body.Apply(4 * Dt);
             }
@@ -124,7 +120,7 @@ public static class RenderShot
             rider.Tube = true; body.SetTube(true);
             rider.ResetAt(Slope.Centre(400f), 400f); body.ResetVisual(); rider.Begin(); rider.Body.linearVelocity = Vector3.forward * 14f;
             terrain.Prewarm(); props.Prewarm(); dress.Prewarm();
-            for (int i = 0; i < 120 * 2; i++) { rider.Steer = 0.4f * Mathf.Sin(i * Dt); rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); if (i % 4 == 0) body.Apply(4 * Dt); }
+            for (int i = 0; i < 120 * 2; i++) { rider.Steer = 0.4f * Mathf.Sin(i * Dt); TestHarness.Step(rider, body, Dt); if (i % 4 == 0) body.Apply(4 * Dt); }
             body.Apply(Dt);
             var skins = Object.FindObjectsByType<SkinnedMeshRenderer>(FindObjectsSortMode.None);
             var baked = new System.Collections.Generic.List<GameObject>();
@@ -148,7 +144,7 @@ public static class RenderShot
             Debug.Log($"SHOT crevstart {cv.kind} #{cv.id} half={cv.half:0.0} at={rider.transform.position}");
             for (int i = 0; i < 120 * 2.5f && body.RagdollBelowSnow < 9f; i++)
             {
-                rider.Steer = 0f; rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); if (i % 4 == 0) body.Apply(4 * Dt);
+                rider.Steer = 0f; TestHarness.Step(rider, body, Dt); if (i % 4 == 0) body.Apply(4 * Dt);
                 if (i % 30 == 0) Debug.Log($"SHOT crevstep t={i * Dt:0.00} crashed={rider.Crashed} below={body.RagdollBelowSnow:0.0} pos={rider.transform.position} rag={body.RagdollCentre}");
             }
             Debug.Log($"SHOT crevfall crashed={rider.Crashed} below={body.RagdollBelowSnow:0.0} centre={body.RagdollCentre}");
@@ -198,9 +194,7 @@ public static class RenderShot
     /// <summary>Probe the bear: log its clip bindings and render a few frames of its run from the side.</summary>
     public static void Bear()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
+        var game = TestHarness.Boot();
         var wild = Object.FindFirstObjectByType<Wildlife>();
         var bear = (GameObject)typeof(Wildlife).GetField("bear", NP).GetValue(wild);
         var anim = (Animation)typeof(Wildlife).GetField("bearAnim", NP).GetValue(wild);

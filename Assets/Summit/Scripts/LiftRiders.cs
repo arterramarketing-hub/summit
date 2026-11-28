@@ -258,21 +258,9 @@ namespace Summit
                 if (tier == 0) MidShown++; else if (tier == 1) FarShown++; else DistantShown++;
             }
             PeopleKit.Flush();
-            var mat = PeopleKit.LodMaterial;
-            for (int t = 0; t < Tiers; t++)
-                for (int v = 0; v < Poses * Heads; v++)
-                {
-                    var list = mats[t][v];
-                    if (list.Count == 0) continue;
-                    var mesh = Baked(t, v);
-                    if (mesh == null || TestPhoneBefore) continue;
-                    var mpb = mpbs[t][v];
-                    mpb.SetFloatArray("_Row", rowArr[t][v]);
-                    var rp = new RenderParams(mat) { matProps = mpb, shadowCastingMode = ShadowCastingMode.Off, receiveShadows = true };
-                    Graphics.RenderMeshInstanced(rp, mesh, 0, list);
-                    DrawCalls++;
-                    Triangles += (long)(mesh.GetIndexCount(0) / 3) * list.Count;
-                }
+            int calls = DrawCalls; long tris = Triangles;
+            CrowdBake.Draw(mats, rowArr, mpbs, BakedOf, null, ref calls, ref tris);
+            DrawCalls = calls; Triangles = tris;
             // forget riders not seen for a while (their palette rows are recycled as new ones come)
             if (riders.Count > 600)
             {
@@ -459,6 +447,8 @@ namespace Summit
         // ---------------------------------------------------------------- the bakes
 
         static Person bakePerson;
+        // (made once: the bake, made the first time it's wanted; none drawn for the phone-before check)
+        static readonly System.Func<int, int, Mesh> BakedOf = (t, v) => { var mesh = Baked(t, v); return TestPhoneBefore ? null : mesh; };
 
         /// <summary>A pose frozen into one simplified mesh, in the seat's frame (made the first time it's wanted).</summary>
         static Mesh Baked(int tier, int v)
@@ -466,15 +456,9 @@ namespace Summit
             var m = baked[tier][v];
             if (m != null) return m;
             int pose = v / Heads, head = v % Heads;
-            var look = PersonLook.Random(4242 + v);
-            look.height = BakeHeight; look.build = 1f; look.shoulders = 1f;
-            look.head = head == 1 ? PersonHead.Beanie : PersonHead.Helmet;
-            look.hasPompom = head == 1;
-            look.hairStyle = PersonHair.None; look.pack = null; look.faceShows = false;
-            look.gear = pose < 2 ? PersonGear.Skis : PersonGear.Snowboard;
-            if (bakePerson == null) { bakePerson = Person.Make(look, PeopleKit.Root, "LiftBake"); if (bakePerson == null) return null; bakePerson.Shadows(false); bakePerson.Windless = true; }
-            else { bakePerson.gameObject.SetActive(true); bakePerson.Dress(look); }
-            var p = bakePerson;
+            var look = CrowdBake.Look(4242 + v, BakeHeight, head == 1, pose < 2 ? PersonGear.Skis : PersonGear.Snowboard);
+            var p = CrowdBake.Sitter(ref bakePerson, look, "LiftBake");
+            if (p == null) return null;
             // on a chair standing still, out of sight
             var chairM = Matrix4x4.TRS(new Vector3(0f, -3000f, 0f), Quaternion.identity, Vector3.one);
             Place(p, look, pose);
@@ -483,11 +467,9 @@ namespace Summit
             Hands(p, pose, chairM, 1);
             p.polesDir = PolesDir(pose == (int)Pose.SkiBar);
             for (int i = 0; i < 3; i++) p.Apply(0f);
-            m = PeopleLod.Bake(p, seatM.inverse, bakeCell[tier], $"LiftRider{(tier == 0 ? "Mid" : tier == 1 ? "Far" : "Distant")}{v}");
+            m = CrowdBake.Bake(p, seatM.inverse, bakeCell[tier], $"LiftRider{(tier == 0 ? "Mid" : tier == 1 ? "Far" : "Distant")}{v}",
+                               $"LiftRiders: {(tier == 0 ? "mid" : tier == 1 ? "far" : "distant")} bake {(Pose)pose}/{(head == 1 ? "beanie" : "helmet")}");
             baked[tier][v] = m;
-            if (System.Environment.GetEnvironmentVariable("SUMMIT_PEOPLE_LOG") == "1") Debug.Log($"LiftRiders: {(tier == 0 ? "mid" : tier == 1 ? "far" : "distant")} bake {(Pose)pose}/{(head == 1 ? "beanie" : "helmet")}: {m.vertexCount} vertices, {m.GetIndexCount(0) / 3} triangles");
-            p.SetLod(2);
-            p.gameObject.SetActive(false);
             return m;
         }
 

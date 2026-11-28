@@ -22,6 +22,7 @@
 
 import bpy, bmesh, math, sys, os, subprocess
 from mathutils import Vector, Matrix, Quaternion, Euler
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # (Tools/blendkit.py)
 
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 def arg(name, default=None):
@@ -1526,12 +1527,9 @@ def material(name, rgb, smooth=0.3, tex=None):
 
 def write_png(path, w, h, rgba_rows):
     """A tiny RGBA PNG, written by hand so the alpha (smoothness) is stored exactly as given."""
-    import zlib, struct
+    import blendkit
     raw = b"".join(b"\x00" + bytes(int(max(0, min(1, c)) * 255 + 0.5) for px_ in row for c in px_) for row in rgba_rows)
-    def chunk(t, d): return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff)
-    png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b"")
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    open(path, "wb").write(png)
+    blendkit.write(path, blendkit.png(w, h, raw, True))
 
 def srgb(c): return c * 12.92 if c <= 0.0031308 else 1.055 * c ** (1 / 2.4) - 0.055
 PAL_PATH = os.path.join(PROJECT, "Assets/Summit/Resources/Rider/HeroPalette.png") if PROJECT else os.path.join(bpy.app.tempdir or "/tmp", "HeroPalette.png")

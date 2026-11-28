@@ -37,8 +37,7 @@ public static class LiftTopShot
         TestPrefs.Pin();
         game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game, false);
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        camp = Get<Camp>("camp"); terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props"); dayNight = Get<DayNight>("dayNight");
+        camp = game.camp; terrain = game.terrain; props = game.props; dayNight = game.dayNight;
         cam = Camera.main; atmo = Object.FindFirstObjectByType<Atmosphere>();
         tUpd = typeof(SlopeStreamer).GetMethod("Update", NP); fUpd = typeof(Forest).GetMethod("Update", NP); aLate = typeof(Atmosphere).GetMethod("LateUpdate", NP);
         lift = Object.FindFirstObjectByType<SkiLift>(); lUpd = typeof(SkiLift).GetMethod("Update", NP);
@@ -301,7 +300,7 @@ public static class LiftTopShot
             steps.Add(() =>
             {
                 if (top == null) return;
-                var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
+                var body = game.body;
                 var arrive = (LiftArrive)typeof(SummitGame).GetField("arrive", NP).GetValue(game);
                 if (arrive.Active()) arrive.End();
                 if (rideWas < 0) rideWas = (int)body.Ride;
@@ -321,7 +320,7 @@ public static class LiftTopShot
                     if (top == null) return;
                     var arrive = (LiftArrive)typeof(SummitGame).GetField("arrive", NP).GetValue(game);
                     var step = typeof(SummitGame).GetMethod("ArriveStep", NP);
-                    var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
+                    var body = game.body;
                     while (arriveT < ts[k])
                     {
                         arriveT += 1f / 30f; lapClock += 1f / 30f; SkiLift.TestClock = lapClock;
@@ -350,7 +349,7 @@ public static class LiftTopShot
         }
         steps.Add(() =>
         {
-            var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
+            var body = game.body;
             var arrive = (LiftArrive)typeof(SummitGame).GetField("arrive", NP).GetValue(game);
             if (arrive.Active()) arrive.End();
             if (rideWas >= 0) body.SetRide((RideKind)rideWas);

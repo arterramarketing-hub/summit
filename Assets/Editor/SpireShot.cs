@@ -23,14 +23,12 @@ public static class SpireShot
         SummitImport.EnsureSnowTextures();
         SummitImport.EnsureSky();
         SummitImport.EnsureBackdrop();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
+        var game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        var terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        var props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        var rider = game.rider;
+        var body = game.body;
+        var terrain = game.terrain;
+        var props = game.props;
         var dress = Object.FindFirstObjectByType<CourseDressing>();
         var fx = Object.FindFirstObjectByType<SnowFX>();
         rider.input = null;
@@ -139,7 +137,7 @@ public static class SpireShot
             for (int i = 0; i < 120 * 12; i++)
             {
                 rider.Steer = rider.Crashed ? 0f : side * 0.9f;
-                rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+                TestHarness.Step(rider, body, Dt);
                 if (i % 4 == 0) body.Apply(4 * Dt);
                 if (i % 60 == 0) { terrain.Prewarm(); props.Prewarm(); }
                 if (rider.Crashed && body.Dead && !body.RagdollMoving && i > 600) break;
@@ -167,13 +165,10 @@ public static class SpireShot
     public static void Crags()
     {
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
+        var game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        var rider = Get<Rider>("rider"); var body = Get<RiderBody>("body");
-        var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props"); var dayNight = Get<DayNight>("dayNight");
+        var rider = game.rider; var body = game.body;
+        var terrain = game.terrain; var props = game.props; var dayNight = game.dayNight;
         var dress = Object.FindFirstObjectByType<CourseDressing>();
         var atmo = Object.FindFirstObjectByType<Atmosphere>();
         var draw = typeof(Forest).GetMethod("Draw", NP);
@@ -243,13 +238,10 @@ public static class SpireShot
     public static void Detail()
     {
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
+        var game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        var rider = Get<Rider>("rider"); var body = Get<RiderBody>("body");
-        var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props"); var dayNight = Get<DayNight>("dayNight");
+        var rider = game.rider; var body = game.body;
+        var terrain = game.terrain; var props = game.props; var dayNight = game.dayNight;
         var dress = Object.FindFirstObjectByType<CourseDressing>();
         var atmo = Object.FindFirstObjectByType<Atmosphere>();
         var draw = typeof(Forest).GetMethod("Draw", NP);
@@ -337,14 +329,12 @@ public static class SpireShot
     /// </summary>
     public static void Hit()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
+        var game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        var terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        var props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        var rider = game.rider;
+        var body = game.body;
+        var terrain = game.terrain;
+        var props = game.props;
         var dress = Object.FindFirstObjectByType<CourseDressing>();
         rider.input = null;
         const float Dt = 1f / 120f;
@@ -383,7 +373,7 @@ public static class SpireShot
             for (; i < 120 * 12; i++)
             {
                 rider.Steer = rider.Crashed ? 0f : side * 0.9f;
-                rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+                TestHarness.Step(rider, body, Dt);
                 if (i % 4 == 0) body.Apply(4 * Dt);
                 if (i % 60 == 0) { terrain.Prewarm(); props.Prewarm(); }
                 if (!rider.Crashed) continue;

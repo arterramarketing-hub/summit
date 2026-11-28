@@ -39,10 +39,7 @@ public static class PointsShot
     public static void Run()
     {
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
         r = F<Rider>("rider"); body = F<RiderBody>("body"); terrain = F<SlopeStreamer>("terrain"); props = F<Forest>("props");
         hud = F<Hud>("hud"); meta = F<MetaUi>("meta"); dayNight = F<DayNight>("dayNight");
@@ -101,7 +98,7 @@ public static class PointsShot
 
     static void Step()
     {
-        r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+        TestHarness.Step(r, body, Dt);
         HudFrame();
         game.TestPoints(Dt);
         if (step % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }

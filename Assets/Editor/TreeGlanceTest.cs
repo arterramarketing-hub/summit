@@ -30,14 +30,10 @@ public static class TreeGlanceTest
 
     public static void Run()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        rider = Get<Summit.Rider>("rider"); body = Get<RiderBody>("body");
-        terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
+        rider = game.rider; body = game.body;
+        terrain = game.terrain; props = game.props;
         string why = null; rider.Crash += w => why = w;
         try
         {
@@ -197,7 +193,7 @@ public static class TreeGlanceTest
             if (tcol != null && vb.sqrMagnitude > 0.01f)
                 foreach (var h in Physics.SphereCastAll(rider.Body.position, Summit.Rider.R, vb.normalized, vb.magnitude * Dt + 0.04f, ~0, QueryTriggerInteraction.Ignore))
                     if (h.collider == tcol) { would = true; wd = h.distance; wn = h.normal; }
-            rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+            TestHarness.Step(rider, body, Dt);
             if (would && hit < 0f && rider.TreeGlances == g0 && !rider.Crashed && dbg++ < 3)
                 Debug.Log($"TREEGLANCE debug: the cast meets it (d {wd:0.000}, normal {wn}) but nothing happened: layer {tcol.gameObject.layer} ignore {Physics.GetIgnoreLayerCollision(rider.gameObject.layer, tcol.gameObject.layer)}, enabled {tcol.enabled}, ob {(tcol.GetComponentInParent<Obstacle>() != null)}, rides over {rider.RidesOver(tcol)}, crashed {rider.Crashed}, running {rider.Running}, air {rider.Airborne}, grinding {rider.Grinding}");
             if (hit < 0f && (rider.TreeGlances > g0 || rider.Crashed))

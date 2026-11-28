@@ -31,15 +31,12 @@ public static class AirControlTest
 
     public static void Run()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        var game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        r = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        r = game.rider;
+        body = game.body;
+        terrain = game.terrain;
+        props = game.props;
         r.input = null;
         r.Crash += why => lastCrash = why;
         var dressing = Object.FindFirstObjectByType<CourseDressing>();
@@ -114,7 +111,7 @@ public static class AirControlTest
 
     static void Step(int n)
     {
-        r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+        TestHarness.Step(r, body, Dt);
         if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
         if (n % 4 == 0 || r.Crashed) body.Apply(r.Crashed ? Dt : 4 * Dt);
     }

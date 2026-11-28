@@ -20,12 +20,8 @@ public static class HudWashShot
     public static void Run()
     {
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        var hud = Get<Hud>("hud");
+        var game = TestHarness.Boot();
+        var hud = game.hud;
         var cam = Camera.main;
         typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
         var hc = hud.GetComponent<Canvas>(); hc.renderMode = RenderMode.ScreenSpaceCamera; hc.worldCamera = cam; hc.planeDistance = 0.6f;

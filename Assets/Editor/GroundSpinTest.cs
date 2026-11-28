@@ -38,16 +38,13 @@ public static class GroundSpinTest
 
     public static void Run()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        r = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        input = (RiderInput)typeof(SummitGame).GetField("input", NP).GetValue(game);
-        terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        r = game.rider;
+        body = game.body;
+        input = game.input;
+        terrain = game.terrain;
+        props = game.props;
         riderUpdate = typeof(Rider).GetMethod("Update", NP);
         r.Link += l => { if (l.kind == LinkKind.Trick) links.Add(l.name); };
         r.Crash += why => crash = why;
@@ -81,7 +78,7 @@ public static class GroundSpinTest
         input.TestStep(Dt);
         riderUpdate.Invoke(r, null);
         r.TestContacts(Dt);   // (the board's own look ahead: batchmode reports no collisions)
-        r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+        TestHarness.Step(r, body, Dt);
         game.TestPoints(Dt);
     }
     static void Frames(float secs, int fingers, Vector2 pos) { for (float t = 0f; t < secs - 1e-4f; t += Dt) Step(fingers, pos); }

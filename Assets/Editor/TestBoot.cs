@@ -25,6 +25,10 @@ public static class TestBoot
 
     public static void Boot(SummitGame game, bool toStart = true)
     {
+        // every test rides a fresh player's settings, the ride included (TestPrefs; once a run, so a test's own
+        // choices made after its first boot stand). One that read whatever another run had left saved rode a car
+        // that takes no cable: LiftHillCheck, round 56
+        TestPrefs.PinOnce();
         // a fresh player: no camp upgrades (the editor keeps PlayerPrefs between runs, so HubShot's purchases
         // would otherwise give every later test better grip, a fourth fall and a longer avalanche head start)
         foreach (Progress.Up u in System.Enum.GetValues(typeof(Progress.Up))) PlayerPrefs.DeleteKey("summit_up_" + u);

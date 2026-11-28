@@ -34,15 +34,12 @@ public static class BandTest
 
     static void Setup()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        r = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        r = game.rider;
+        body = game.body;
+        terrain = game.terrain;
+        props = game.props;
         r.input = null;
         r.Crash += why => lastCrash = why;
     }
@@ -228,7 +225,7 @@ public static class BandTest
             // the rock and the trees at the band's foot
             else if (dropped) r.Steer = 0f;
             r.TestContacts(Dt);
-            r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+            TestHarness.Step(r, body, Dt);
             if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
             if (frame != null) { body.Apply(Dt); frame(n); } else if (n % 4 == 0 || r.Crashed) body.Apply(r.Crashed ? Dt : 4 * Dt);
             if (r.Z > b.z0 && tIn < 0f) tIn = t;   // (the way in: where the run begins to swing)
@@ -297,7 +294,7 @@ public static class BandTest
             r.Steer = Rider.Unshape(Mathf.Clamp((lead - r.TravelHeading) * 1.5f + (want - r.X) * 0.02f, -1f, 1f));   // (feel: the input's curve undone, so the bot asks for what it always did)
             if (r.Z > zGo) { if (float.IsNaN(start)) start = Slope.Across(r.X, r.Z); r.Steer = dir; held += Dt; }
             r.TestContacts(Dt);
-            r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+            TestHarness.Step(r, body, Dt);
             if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
             if (n % 4 == 0 || r.Crashed) body.Apply(r.Crashed ? Dt : 4 * Dt);
             if (!float.IsNaN(start)) most = Mathf.Max(most, Mathf.Abs(Slope.Across(r.X, r.Z) - start));

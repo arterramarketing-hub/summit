@@ -21,10 +21,9 @@ public static class HaloShot
         var game = Object.FindFirstObjectByType<SummitGame>();
         Random.InitState(7);
         TestBoot.Boot(game);
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        var rider = Get<Rider>("rider"); var body = Get<RiderBody>("body");
-        var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props");
-        var dayNight = Get<DayNight>("dayNight"); var hud = Get<Hud>("hud");
+        var rider = game.rider; var body = game.body;
+        var terrain = game.terrain; var props = game.props;
+        var dayNight = game.dayNight; var hud = game.hud;
         var cam = Camera.main; var chase = cam.GetComponent<ChaseCamera>();
         var late = typeof(ChaseCamera).GetMethod("LateUpdate", NP);
         var atmo = Object.FindFirstObjectByType<Atmosphere>();

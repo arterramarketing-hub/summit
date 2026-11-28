@@ -34,8 +34,7 @@ public static class LiftArriveTest
         TestPrefs.Pin();
         game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        camp = Get<Camp>("camp"); rider = Get<Rider>("rider"); body = Get<RiderBody>("body");
+        camp = game.camp; rider = game.rider; body = game.body;
         lift = Object.FindFirstObjectByType<SkiLift>();
         toHub = typeof(SummitGame).GetMethod("ToHub", NP);
         arriveStep = typeof(SummitGame).GetMethod("ArriveStep", NP);

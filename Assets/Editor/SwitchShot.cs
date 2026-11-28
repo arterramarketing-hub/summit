@@ -31,9 +31,7 @@ public static class SwitchShot
         int quality = QualitySettings.GetQualityLevel();
         QualitySettings.SetQualityLevel(0, true);
         TestPrefs.Pin();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
         r = F<Rider>("rider"); body = F<RiderBody>("body"); terrain = F<SlopeStreamer>("terrain"); props = F<Forest>("props");
         dayNight = F<DayNight>("dayNight"); atmo = Object.FindFirstObjectByType<Atmosphere>();
@@ -109,7 +107,7 @@ public static class SwitchShot
             r.Steer = steer;
             if (r.Airborne && !set && r.Z > jump.Start) { set = true; r.ForceTrick(1, 0); }
             if (set && landedAt < 0 && !r.Airborne) landedAt = i;
-            r.Tick(Time.fixedDeltaTime); body.PhysicsStep(); Physics.Simulate(Time.fixedDeltaTime);
+            TestHarness.Step(r, body, Time.fixedDeltaTime);
             body.Apply(Time.fixedDeltaTime);
             if (i % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
             if (stop != null && stop(i)) break;

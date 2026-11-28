@@ -33,15 +33,12 @@ public static class TreeContactTest
 
     public static void Run()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        r = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        r = game.rider;
+        body = game.body;
+        terrain = game.terrain;
+        props = game.props;
         r.input = null;
         try
         {
@@ -220,7 +217,7 @@ public static class TreeContactTest
         Vector3 p = r.Body.position, v = r.Body.linearVelocity;
         stepFrom = p; stepTo = p + v * Dt;
         r.TestContacts(Dt);
-        r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+        TestHarness.Step(r, body, Dt);
     }
 
     static float FirstLowZ()
@@ -287,7 +284,7 @@ public static class TreeContactTest
                     if (r.Speed > 18f && !r.Airborne) r.Body.linearVelocity *= 0.99f;
                     Step();
                 }
-                if (r.Crashed) { r.RequestUp = true; for (int i = 0; i < 400 && r.Crashed; i++) { r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); if (r.CanGetUp) r.RequestUp = true; } }
+                if (r.Crashed) { r.RequestUp = true; for (int i = 0; i < 400 && r.Crashed; i++) { TestHarness.Step(r, body, Dt); if (r.CanGetUp) r.RequestUp = true; } }
             }
     }
 }

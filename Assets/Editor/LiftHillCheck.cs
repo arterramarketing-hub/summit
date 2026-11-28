@@ -53,9 +53,8 @@ public static class LiftHillCheck
         // toboggan, kayak, car or bear (none of them take a cable) grinds nothing at all
         TestPrefs.Pin();
         TestBoot.Boot(game);
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        var rider = Get<Rider>("rider"); var body = Get<RiderBody>("body");
-        var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props");
+        var rider = game.rider; var body = game.body;
+        var terrain = game.terrain; var props = game.props;
         Physics.simulationMode = SimulationMode.Script;
         typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
         rider.input = null;
@@ -185,12 +184,9 @@ public static class LiftHillCheck
     public static void Shots()
     {
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        var rider = Get<Rider>("rider"); var body = Get<RiderBody>("body");
-        var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props"); var dayNight = Get<DayNight>("dayNight");
+        var game = TestHarness.Boot();
+        var rider = game.rider; var body = game.body;
+        var terrain = game.terrain; var props = game.props; var dayNight = game.dayNight;
         var dress = Object.FindFirstObjectByType<CourseDressing>();
         var lifts = Object.FindFirstObjectByType<SkiLift>();
         var hamlets = Object.FindFirstObjectByType<Hamlets>();

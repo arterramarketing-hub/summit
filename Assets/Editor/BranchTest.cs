@@ -42,9 +42,7 @@ public static class BranchTest
     {
         TestPrefs.Pin();
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
         r = F<Rider>("rider"); body = F<RiderBody>("body"); terrain = F<SlopeStreamer>("terrain"); props = F<Forest>("props");
         breaker = F<TreeBreak>("treeBreak"); smasher = F<Smasher>("smasher"); dayNight = F<DayNight>("dayNight");

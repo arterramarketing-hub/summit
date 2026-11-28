@@ -59,9 +59,8 @@ public static class LodgeShot
         game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
         Progress.Grant(1840, Progress.Up.FirePit, Progress.Up.Flags, Progress.Up.Lights, Progress.Up.Snowman);
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        camp = Get<Camp>("camp"); meta = Get<MetaUi>("meta"); body = Get<RiderBody>("body"); rider = Get<Rider>("rider");
-        terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props"); dayNight = Get<DayNight>("dayNight");
+        camp = game.camp; meta = game.meta; body = game.body; rider = game.rider;
+        terrain = game.terrain; props = game.props; dayNight = game.dayNight;
         cam = Camera.main; atmo = Object.FindFirstObjectByType<Atmosphere>();
         tUpd = typeof(SlopeStreamer).GetMethod("Update", NP); fUpd = typeof(Forest).GetMethod("Update", NP); aLate = typeof(Atmosphere).GetMethod("LateUpdate", NP);
         typeof(SummitGame).GetMethod("ToHub", NP).Invoke(game, new object[] { true });

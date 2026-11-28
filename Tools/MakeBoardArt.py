@@ -22,6 +22,8 @@ row next door. Needs only numpy.
 """
 import math, os, sys, zlib, struct, argparse
 import numpy as np
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # (Tools/blendkit.py)
+import blendkit
 
 W_TEX, H_TEX = 512, 256
 TOP, BASE, SKI = (128, 128), (48, 76), (8, 32)          # (first row from the bottom, rows)
@@ -147,10 +149,7 @@ def write_png(path, arr):
     h, w, ch = arr.shape
     a = (np.clip(arr, 0, 1) * 255 + 0.5).astype(np.uint8)
     raw = b"".join(b"\x00" + a[r].tobytes() for r in range(h))
-    def chunk(t, d): return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff)
-    png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6 if ch == 4 else 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b"")
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    open(path, "wb").write(png)
+    blendkit.write(path, blendkit.png(w, h, raw, ch == 4))
 
 # ----------------------------------------------------------------------------------------------- the bases
 # A base is pressed from a few sheets of coloured polyethylene: big, flat shapes in two or three colours.

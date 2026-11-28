@@ -23,15 +23,12 @@ public static class LineSurvey
 
     public static void Run()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        var game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        r = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        r = game.rider;
+        body = game.body;
+        terrain = game.terrain;
+        props = game.props;
         r.input = null;
         try
         {
@@ -54,7 +51,7 @@ public static class LineSurvey
                         float wobble = style == "cruise" ? 9f * Mathf.Sin(r.Z * 0.045f) : 0f;
                         r.Steer = CarveBot.Onto(r, z => Slope.Centre(z) + wobble, 1.2f, 8f, 10f);
                         bool wasAir = r.Airborne;
-                        r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+                        TestHarness.Step(r, body, Dt);
                         if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
                         if (n % 4 == 0) body.Apply(4 * Dt);
                         if (r.Crashed)

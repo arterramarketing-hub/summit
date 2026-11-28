@@ -19,6 +19,7 @@ public static class TreeSnowShot
     {
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop(); SummitImport.EnsureRealTrees();
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
+        TestPrefs.Pin();   // (before the tree look is set: the boot pins only once)
         PlayerPrefs.SetInt(Forest.TreesPref, 1);
         var game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);

@@ -26,9 +26,7 @@ public static class PowerShot
     public static void Run()
     {
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
         rider = F<Rider>("rider"); body = F<RiderBody>("body"); terrain = F<SlopeStreamer>("terrain"); props = F<Forest>("props");
         smasher = F<Smasher>("smasher"); aura = F<PowerAura>("aura"); hud = F<Hud>("hud"); power = F<PowerUps>("power");
@@ -211,7 +209,7 @@ public static class PowerShot
 
     static void Step()
     {
-        rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+        TestHarness.Step(rider, body, Dt);
         smasher.Step(Dt);
         if (step % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
         if (step % 4 == 0)

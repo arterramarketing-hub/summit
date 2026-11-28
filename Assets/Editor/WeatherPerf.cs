@@ -29,9 +29,9 @@ public static class WeatherPerf
         var game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        var rider = Get<Rider>("rider"); var body = Get<RiderBody>("body");
-        var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props");
-        var dayNight = Get<DayNight>("dayNight"); var weather = Get<Weather>("weather");
+        var rider = game.rider; var body = game.body;
+        var terrain = game.terrain; var props = game.props;
+        var dayNight = game.dayNight; var weather = Get<Weather>("weather");
         var dressing = Get<CourseDressing>("dressing");
         var cam = Camera.main; var chase = cam.GetComponent<ChaseCamera>(); var atmo = Object.FindFirstObjectByType<Atmosphere>();
         var tUpd = typeof(SlopeStreamer).GetMethod("Update", NP); var fUpd = typeof(Forest).GetMethod("Update", NP);

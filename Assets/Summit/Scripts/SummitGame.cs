@@ -24,24 +24,24 @@ namespace Summit
         readonly LiftArrive arrive = new LiftArrive();
         bool arriveNext;
         State state;
-        Camp camp;
-        MetaUi meta;
+        internal Camp camp;
+        internal MetaUi meta;
         StartPage start;   // the first screen (StartPage.cs): made when it is first shown
 
-        Rider rider;
-        RiderInput input;
-        SlopeStreamer terrain;
-        Forest props;
-        RiderBody body;
+        internal Rider rider;
+        internal RiderInput input;
+        internal SlopeStreamer terrain;
+        internal Forest props;
+        internal RiderBody body;
         ChaseCamera chase;
-        Hud hud;
+        internal Hud hud;
         SoundMix audioFx;
         SnowFX fx;
-        Blood blood;
+        internal Blood blood;
         Atmosphere atmo;
         // three falls a run; the third one ends it
         public const int MaxFalls = 3;
-        int falls;
+        internal int falls;
         float wipeoutTimer, hurtShake;
         string endTitle = "WIPED OUT";
         bool crevasseWatch;   // went over a crevasse: lost only if the body actually drops in
@@ -49,7 +49,7 @@ namespace Summit
         // the medical bill: what this run's falls are costing you, as a receipt (Receipt). Every line comes from
         // something that happened in the fall (RiderBody.Injured, LimbLost, Killed, a crevasse, the avalanche) and
         // what followed it once the body stopped; each prints on the fall's slip the moment it is billed (HudReceipt)
-        float medical;
+        internal float medical;
         bool downBefore;
         float downT;
         readonly Receipt receipt = new Receipt();

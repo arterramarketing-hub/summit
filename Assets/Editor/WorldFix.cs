@@ -94,8 +94,8 @@ public static class WorldFix
         var game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props"); var dressing = Get<CourseDressing>("dressing");
-        var rider = Get<Rider>("rider"); var body = Get<RiderBody>("body");
+        var terrain = game.terrain; var props = game.props; var dressing = Get<CourseDressing>("dressing");
+        var rider = game.rider; var body = game.body;
         var cam = Camera.main; var atmo = Object.FindFirstObjectByType<Atmosphere>();
         if (cam.TryGetComponent<ChaseCamera>(out var chase)) chase.enabled = false;
         var hamlets = Object.FindFirstObjectByType<Summit.Hamlets>();
@@ -145,12 +145,10 @@ public static class WorldFix
     public static void Probe()
     {
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
+        var game = TestHarness.Boot();
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        var rider = Get<Rider>("rider"); var body = Get<RiderBody>("body");
-        var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props"); var dayNight = Get<DayNight>("dayNight");
+        var rider = game.rider; var body = game.body;
+        var terrain = game.terrain; var props = game.props; var dayNight = game.dayNight;
         var dress = Object.FindFirstObjectByType<CourseDressing>();
         var atmo = Object.FindFirstObjectByType<Atmosphere>();
         var cam = Camera.main; cam.GetComponent<ChaseCamera>().enabled = false;

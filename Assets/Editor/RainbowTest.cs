@@ -41,10 +41,7 @@ public static class RainbowTest
 
     static void Open()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         rider = F<Rider>("rider"); body = F<RiderBody>("body"); aura = F<PowerAura>("aura");
         terrain = F<SlopeStreamer>("terrain"); props = F<Forest>("props");
         invProp = typeof(Rider).GetProperty("InvincibleTime");
@@ -405,7 +402,7 @@ public static class RainbowTest
 
     static void Tick()
     {
-        rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+        TestHarness.Step(rider, body, Dt);
         if (step % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
         if (step % 4 == 0) { body.Apply(4 * Dt); late.Invoke(chase, null); }
         step++;

@@ -1050,21 +1050,14 @@ namespace Summit
                 list.Add(Matrix4x4.TRS(r.pos, Rot(r), new Vector3(k * Mathf.Clamp(r.look.build, 0.95f, 1.06f), k, k)));
             }
             PeopleKit.Flush();
-            var mat = PeopleKit.LodMaterial;
-            for (int t = 0; t < Tiers; t++)
-                for (int v = 0; v < Poses * Heads; v++)
-                {
-                    var list = mats[t][v];
-                    if (list.Count == 0) continue;
-                    var mesh = baked[t][v];
-                    var mpb = mpbs[t][v];
-                    mpb.SetFloatArray("_Row", rowArr[t][v]);
-                    var rp = new RenderParams(mat) { matProps = mpb, shadowCastingMode = ShadowCastingMode.Off, receiveShadows = true, worldBounds = Bounds(list) };
-                    Graphics.RenderMeshInstanced(rp, mesh, 0, list);
-                    DrawCalls++;
-                    Triangles += (long)(mesh.GetIndexCount(0) / 3) * list.Count;
-                }
+            int calls = DrawCalls; long tris = Triangles;
+            CrowdBake.Draw(mats, rowArr, mpbs, BakedOf, BoundsOf, ref calls, ref tris);
+            DrawCalls = calls; Triangles = tris;
         }
+
+        // (made once: a delegate made each frame is garbage each frame)
+        static readonly System.Func<int, int, Mesh> BakedOf = (t, v) => baked[t][v];
+        static readonly System.Func<List<Matrix4x4>, Bounds> BoundsOf = Bounds;
 
         static Bounds Bounds(List<Matrix4x4> list)
         {
@@ -1326,15 +1319,9 @@ namespace Summit
             if (!PeopleKit.Load()) return null;
             int pose = v / Heads, head = v % Heads;
             bool ski = pose >= (int)Pose.SkiRide;
-            var look = PersonLook.Random(5151 + v);
-            look.height = BakeHeight; look.build = 1f; look.shoulders = 1f;
-            look.head = head == 1 ? PersonHead.Beanie : PersonHead.Helmet;
-            look.hasPompom = head == 1;
-            look.hairStyle = PersonHair.None; look.pack = null; look.faceShows = false;
-            look.gear = ski ? PersonGear.Skis : PersonGear.Snowboard;
-            if (bakePerson == null) { bakePerson = Person.Make(look, PeopleKit.Root, "MountainBake"); if (bakePerson == null) return null; bakePerson.Shadows(false); bakePerson.Windless = true; }
-            else { bakePerson.gameObject.SetActive(true); bakePerson.Dress(look); }
-            var p = bakePerson;
+            var look = CrowdBake.Look(5151 + v, BakeHeight, head == 1, ski ? PersonGear.Skis : PersonGear.Snowboard);
+            var p = CrowdBake.Sitter(ref bakePerson, look, "MountainBake");
+            if (p == null) return null;
             var at = new Vector3(0f, -3200f, 0f);
             var r = new Rider { look = look, ski = ski, pos = at, ground = at.y, normal = Vector3.up, up = Vector3.up };
             switch ((Pose)pose)
@@ -1350,11 +1337,9 @@ namespace Summit
             r.near = p;
             for (int i = 0; i < 4; i++) PoseFor(r, i == 0 ? 0f : 0.5f);
             var frame = Matrix4x4.TRS(at, RotFor(r), Vector3.one);
-            m = PeopleLod.Bake(p, frame.inverse, bakeCell[tier], $"MountainRider{(tier == 0 ? "Mid" : "Far")}{(Pose)pose}{head}");
+            m = CrowdBake.Bake(p, frame.inverse, bakeCell[tier], $"MountainRider{(tier == 0 ? "Mid" : "Far")}{(Pose)pose}{head}",
+                               $"MountainRiders: {(tier == 0 ? "mid" : "far")} bake {(Pose)pose}/{(head == 1 ? "beanie" : "helmet")}");
             baked[tier][v] = m;
-            if (System.Environment.GetEnvironmentVariable("SUMMIT_PEOPLE_LOG") == "1") Debug.Log($"MountainRiders: {(tier == 0 ? "mid" : "far")} bake {(Pose)pose}/{(head == 1 ? "beanie" : "helmet")}: {m.vertexCount} vertices, {m.GetIndexCount(0) / 3} triangles");
-            p.SetLod(2);
-            p.gameObject.SetActive(false);
             return m;
         }
 

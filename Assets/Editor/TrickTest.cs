@@ -93,15 +93,12 @@ public static class TrickTest
 
     static void Boot()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        r = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        r = game.rider;
+        body = game.body;
+        terrain = game.terrain;
+        props = game.props;
         cam = Camera.main;
         r.Link += l => { if (l.kind == LinkKind.Trick) tricks.Add(l); };
         r.Crash += why => crash = why;
@@ -124,7 +121,7 @@ public static class TrickTest
 
     static void Step(int n)
     {
-        r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+        TestHarness.Step(r, body, Dt);
         game.TestPoints(Dt);
         if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
         if (n % 2 == 0 || r.Crashed) body.Apply(r.Crashed ? Dt : 2f * Dt);

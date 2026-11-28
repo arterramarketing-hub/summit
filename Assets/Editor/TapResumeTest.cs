@@ -33,15 +33,12 @@ public static class TapResumeTest
 
     public static void Run()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        rider = game.rider;
+        body = game.body;
+        terrain = game.terrain;
+        props = game.props;
         RiderInput.TestDrive = true; RiderInput.TestFingers = 0;
         try { Mountain(); Camp(); }
         catch (System.Exception e) { Debug.LogError("TAPRESUME exception " + e); fails++; }
@@ -77,7 +74,7 @@ public static class TapResumeTest
         rider.ResetAt(Slope.Centre(z), z); body.ResetVisual(); rider.Begin();
         rider.Body.linearVelocity = Vector3.forward * v0;
         terrain.Prewarm(); props.Prewarm();
-        for (int i = 0; i < 20; i++) { rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt); }
+        for (int i = 0; i < 20; i++) { TestHarness.Step(rider, body, Dt); body.Apply(Dt); }
         if (lastFall)
         {
             int max = (int)typeof(SummitGame).GetField("MaxFalls", BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Public).GetValue(null);
@@ -158,8 +155,8 @@ public static class TapResumeTest
     static void Camp()
     {
         typeof(SummitGame).GetMethod("ToHub", NP).Invoke(game, new object[] { true });
-        var camp = (Summit.Camp)typeof(SummitGame).GetField("camp", NP).GetValue(game);
-        var meta = (MetaUi)typeof(SummitGame).GetField("meta", NP).GetValue(game);
+        var camp = game.camp;
+        var meta = game.meta;
         var list = new List<CampInput.Touch>();
         ChaseCamera.TestDt = Dt;
         void Step(int fingers)

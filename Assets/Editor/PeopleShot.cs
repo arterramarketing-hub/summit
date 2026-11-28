@@ -42,9 +42,8 @@ public static partial class PeopleShot
         game = Object.FindFirstObjectByType<SummitGame>();
         bool liftSet = set == "lift" || set == "pop" || set == "chairs" || set == "riders";
         TestBoot.Boot(game, liftSet);
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        camp = Get<Camp>("camp"); body = Get<RiderBody>("body"); rider = Get<Rider>("rider"); meta = Get<MetaUi>("meta");
-        terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props"); dayNight = Get<DayNight>("dayNight");
+        camp = game.camp; body = game.body; rider = game.rider; meta = game.meta;
+        terrain = game.terrain; props = game.props; dayNight = game.dayNight;
         cam = Camera.main; atmo = Object.FindFirstObjectByType<Atmosphere>();
         tUpd = typeof(SlopeStreamer).GetMethod("Update", NP); fUpd = typeof(Forest).GetMethod("Update", NP); aLate = typeof(Atmosphere).GetMethod("LateUpdate", NP);
         if (!liftSet) typeof(SummitGame).GetMethod("ToHub", NP).Invoke(game, new object[] { true });

@@ -31,9 +31,7 @@ public static class UphillTest
     public static void Run()
     {
         TestPrefs.Pin();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
         r = F<Rider>("rider"); body = F<RiderBody>("body"); terrain = F<SlopeStreamer>("terrain"); props = F<Forest>("props");
         typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
@@ -241,7 +239,7 @@ public static class UphillTest
         float realDt = Time.fixedDeltaTime / Mathf.Max(Time.timeScale, 1e-4f);
         game.TestTickHitStop(realDt);
         float dt = Time.fixedDeltaTime;
-        r.Tick(dt); body.PhysicsStep(); Physics.Simulate(dt);
+        TestHarness.Step(r, body, dt);
         if (n % 2 == 0 || r.Crashed) body.Apply(r.Crashed ? dt : 2f * dt);
         n++;
     }

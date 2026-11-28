@@ -21,11 +21,8 @@ public static partial class PeopleTest
     /// </summary>
     public static void Outfits()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
-        var camp = (Summit.Camp)typeof(SummitGame).GetField("camp", NP).GetValue(game);
+        var game = TestHarness.Boot();
+        var camp = game.camp;
         typeof(SummitGame).GetMethod("ToHub", NP).Invoke(game, new object[] { true });
         ChaseCamera.TestDt = 1f / 30f;
         var life = camp.GetComponent<CampLife>();

@@ -14,12 +14,9 @@ public static class StartTest
     const BindingFlags NP = BindingFlags.NonPublic | BindingFlags.Instance;
     public static void Run()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
-        var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
+        var game = TestHarness.Boot();
+        var rider = game.rider;
+        var body = game.body;
         Physics.simulationMode = SimulationMode.Script;
         int fails = 0;
         void Fail(string what) { fails++; Debug.Log("START-FAIL " + what); }

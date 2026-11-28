@@ -39,8 +39,8 @@ public static class CorniceShots
         game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        r = Get<Rider>("rider"); body = Get<RiderBody>("body"); terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
-        dayNight = Get<DayNight>("dayNight"); weather = Get<Weather>("weather");
+        r = game.rider; body = game.body; terrain = game.terrain; props = game.props;
+        dayNight = game.dayNight; weather = Get<Weather>("weather");
         atmo = Object.FindFirstObjectByType<Atmosphere>();
         camStep = typeof(ChaseCamera).GetMethod("LateUpdate", NP); aLate = typeof(Atmosphere).GetMethod("LateUpdate", NP);
         Physics.simulationMode = SimulationMode.Script;
@@ -103,7 +103,7 @@ public static class CorniceShots
         var g = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(g);
         int seed = int.TryParse(System.Environment.GetEnvironmentVariable("CORN_SEED"), out int ss) ? ss : 1000;
-        TestBoot.NewMountain(g, seed, (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(g), (Forest)typeof(SummitGame).GetField("props", NP).GetValue(g));
+        TestBoot.NewMountain(g, seed, g.terrain, g.props);
         Surfaces.Day = default;
         for (int c = 1; c < 6; c++)
             for (int k = 0; k < 2; k++)
@@ -139,7 +139,7 @@ public static class CorniceShots
         {
             r.Steer = r.Crashed ? 0f : Mathf.Clamp((Slope.Centre(r.Z + 10f) - r.X) * 0.08f, -0.4f, 0.4f);
             if (r.Z < lip - 30f && r.Speed > v0 && !r.Airborne) r.Body.linearVelocity *= v0 / r.Speed;
-            r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+            TestHarness.Step(r, body, Dt);
             if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
             if (n % 2 == 0)
             {

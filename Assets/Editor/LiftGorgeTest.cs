@@ -27,13 +27,9 @@ public static class LiftGorgeTest
 
     public static void Run()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        var game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        r = Get<Rider>("rider"); body = Get<RiderBody>("body"); terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
+        r = game.rider; body = game.body; terrain = game.terrain; props = game.props;
         lift = Object.FindFirstObjectByType<SkiLift>();
         liftUpdate = typeof(SkiLift).GetMethod("Update", NP);
         r.input = null;
@@ -68,7 +64,7 @@ public static class LiftGorgeTest
 
     static void Step(int n)
     {
-        r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+        TestHarness.Step(r, body, Dt);
         clock += Dt;
         if (n % 12 == 0) { terrain.Prewarm(); props.Prewarm(); SkiLift.TestClock = clock; liftUpdate.Invoke(lift, null); Physics.SyncTransforms(); }
         if (n % 4 == 0 || r.Crashed) body.Apply(r.Crashed ? Dt : 4 * Dt);

@@ -55,15 +55,12 @@ public static class NudgeTest
 
     static void Setup()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        r = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        r = game.rider;
+        body = game.body;
+        terrain = game.terrain;
+        props = game.props;
         chase = Object.FindFirstObjectByType<ChaseCamera>();
         camStep = typeof(ChaseCamera).GetMethod("LateUpdate", NP);
         fWobble = typeof(Rider).GetField("wobble", NP); fSlow = typeof(Rider).GetField("slowFor", NP); fKnock = typeof(Rider).GetField("knockFor", NP);
@@ -170,8 +167,7 @@ public static class NudgeTest
             r.Steer = r.Crashed ? 0f : steer;
             if (hold && r.Speed > v0 && !r.Airborne && !r.Crashed) r.Body.linearVelocity *= v0 / r.Speed;
             r.TestContacts(Dt);
-            if (!r.Crashed) r.Tick(Dt); else r.Tick(Dt);
-            body.PhysicsStep(); Physics.Simulate(Dt);
+            if (!r.Crashed) r.Tick(Dt); else TestHarness.Step(r, body, Dt);
             if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
             if (n % 2 == 0) body.Apply(2 * Dt);
             Vector3 p = r.Body.position, v = r.Body.linearVelocity;
@@ -275,7 +271,7 @@ public static class NudgeTest
         Close(); CloseDrift();
         ChaseCamera.TestDt = 0f;
         if (finger == null) Debug.Log($"NUDGE-HANDSOFF {name}: carried {drift:0.00} m off its line in {secs:0} s, hands off, from {v0 * 3.6f:0} km/h (now {r.Speed * 3.6f:0} km/h at z={r.Z:0}, crashed={r.Crashed})");
-        if (r.Crashed) { r.RequestUp = true; for (int i = 0; i < 400 && r.Crashed; i++) { r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt); if (r.CanGetUp) r.RequestUp = true; } }
+        if (r.Crashed) { r.RequestUp = true; for (int i = 0; i < 400 && r.Crashed; i++) { TestHarness.Step(r, body, Dt); body.Apply(Dt); if (r.CanGetUp) r.RequestUp = true; } }
     }
 
     static void Print(string title, Tally T)
@@ -386,7 +382,7 @@ public static class NudgeTest
         for (float t = 0f; t < F(7); t += Dt, n++)
         {
             r.Steer = F(4) >= 9f ? (t < 1.5f ? 0f : Mathf.Clamp((0.75f - r.Heading) * 2f, -1f, 1f)) : F(4) * Mathf.Sin(t * F(5));   // (9: GlitchTest's ride off a ridge's snow side)
-            r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+            TestHarness.Step(r, body, Dt);
             if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
             if (n % 4 == 0) body.Apply(4 * Dt);
             Vector3 p = r.Body.position, v = r.Body.linearVelocity;

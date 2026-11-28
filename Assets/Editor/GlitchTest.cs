@@ -22,15 +22,12 @@ public static class GlitchTest
 
     public static void Run()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        var game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        var terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        var props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        var rider = game.rider;
+        var body = game.body;
+        var terrain = game.terrain;
+        var props = game.props;
         rider.input = null;
         rider.Crash += why => lastCrash = why;
         // every death must be a fall of Rider.DeathFall or more (one rule, wherever it happens)
@@ -125,15 +122,12 @@ public static class GlitchTest
     /// <summary>One jump-cliff ride traced step by step ($TRACE_SEED, cycle $TRACE_C, jump $TRACE_K, speed $TRACE_V).</summary>
     public static void Trace()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        var game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        var terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        var props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        var rider = game.rider;
+        var body = game.body;
+        var terrain = game.terrain;
+        var props = game.props;
         rider.input = null;
         string E(string k, string d) => System.Environment.GetEnvironmentVariable(k) ?? d;
         TestBoot.NewMountain(game, int.Parse(E("TRACE_SEED", "1154")), terrain, props);
@@ -240,7 +234,7 @@ public static class GlitchTest
     /// <summary>One physics step of everything a fall needs.</summary>
     static void Step(Rider r, RiderBody body, SlopeStreamer terrain, Forest props, int n)
     {
-        r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+        TestHarness.Step(r, body, Dt);
         if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
         if (n % 4 == 0 || r.Crashed) body.Apply(r.Crashed ? Dt : 4 * Dt);
     }
@@ -356,7 +350,7 @@ public static class GlitchTest
         for (float t = 0f; t < secs; t += Dt, n++)
         {
             r.Steer = steer(t, r);
-            r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+            TestHarness.Step(r, body, Dt);
             if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
             if (n % 4 == 0) body.Apply(4 * Dt);
             Vector3 p = r.Body.position, v = r.Body.linearVelocity;
@@ -583,7 +577,7 @@ public static class GlitchTest
         r.ResetAt(Slope.Centre(z), z); body.ResetVisual(); r.Begin();
         r.Body.linearVelocity = Vector3.forward * v0;
         terrain.Prewarm(); props.Prewarm();
-        for (int i = 0; i < 30; i++) { r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt); }
+        for (int i = 0; i < 30; i++) { TestHarness.Step(r, body, Dt); body.Apply(Dt); }
         r.DoCrash("test");
         var rbs = new System.Collections.Generic.List<Rigidbody>();
         float maxV = 0f, maxW = 0f, maxSpread = 0f, maxBelow = 0f, stopT = -1f; string spinner = ""; int jitterFrames = 0, frames = 0;
@@ -592,7 +586,7 @@ public static class GlitchTest
         {
             r.Steer = steer != null ? steer(t) : 0f;
             if (r.CanGetUp && !body.RagdollMoving) r.RequestUp = true;   // tap to get up once the body has come to rest (a tap allowed mid-tumble would cut the fall short: the whole tumble is what's measured here)
-            r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt);
+            TestHarness.Step(r, body, Dt); body.Apply(Dt);
             if (rbs.Count == 0) foreach (var rb in Object.FindObjectsByType<Rigidbody>(FindObjectsSortMode.None)) if (!rb.isKinematic && rb != r.Body) rbs.Add(rb);
             Vector3 c = body.RagdollCentre;
             foreach (var rb in rbs)

@@ -25,9 +25,8 @@ public static class CampShadowShot
         int quality = QualitySettings.GetQualityLevel();
         QualitySettings.SetQualityLevel(0, true);   // the phone's: Mobile, two shadow cascades
         TestBoot.Boot(game, false);   // the game opens in the camp
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        var body = Get<RiderBody>("body"); var dayNight = Get<DayNight>("dayNight"); var camp = Get<Camp>("camp");
-        var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props");
+        var body = game.body; var dayNight = game.dayNight; var camp = game.camp;
+        var terrain = game.terrain; var props = game.props;
         cam = Camera.main;
         var tUpd = typeof(SlopeStreamer).GetMethod("Update", NP); var fUpd = typeof(Forest).GetMethod("Update", NP);
         const float dt = 1f / 60f;

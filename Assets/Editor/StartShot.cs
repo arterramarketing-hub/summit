@@ -12,13 +12,11 @@ public static class StartShot
     public static void Run()
     {
         SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
-        var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        var terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        var props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        var game = TestHarness.Boot();
+        var rider = game.rider;
+        var body = game.body;
+        var terrain = game.terrain;
+        var props = game.props;
         var cam = Camera.main; var chase = cam.GetComponent<ChaseCamera>();
         var late = typeof(ChaseCamera).GetMethod("LateUpdate", NP);
         var atmo = Object.FindFirstObjectByType<Atmosphere>();

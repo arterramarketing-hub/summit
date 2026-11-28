@@ -131,9 +131,7 @@ public static class InvisibleAudit
     /// collider in see-through red (needs the GPU: no -nographics). Writes AuditLift*.png.</summary>
     public static void Shot()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         r = F<Rider>("rider"); terrain = F<SlopeStreamer>("terrain"); props = F<Forest>("props"); body = F<RiderBody>("body");
         typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
         cam = Camera.main; cam.GetComponent<ChaseCamera>().enabled = false;
@@ -180,10 +178,7 @@ public static class InvisibleAudit
     /// </summary>
     public static void CragShot()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         r = F<Rider>("rider"); terrain = F<SlopeStreamer>("terrain"); props = F<Forest>("props"); body = F<RiderBody>("body");
         typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
         cam = Camera.main; cam.GetComponent<ChaseCamera>().enabled = false;
@@ -340,10 +335,7 @@ public static class InvisibleAudit
     /// </summary>
     public static void ColliderShot()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         r = F<Rider>("rider"); terrain = F<SlopeStreamer>("terrain"); props = F<Forest>("props"); body = F<RiderBody>("body");
         typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
         cam = Camera.main; cam.GetComponent<ChaseCamera>().enabled = false;

@@ -37,8 +37,8 @@ public static class GroovesShot
         game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        rider = Get<Rider>("rider"); body = Get<RiderBody>("body"); terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
-        dayNight = Get<DayNight>("dayNight"); weather = Get<Weather>("weather");
+        rider = game.rider; body = game.body; terrain = game.terrain; props = game.props;
+        dayNight = game.dayNight; weather = Get<Weather>("weather");
         cam = Camera.main; chase = cam.GetComponent<ChaseCamera>(); atmo = Object.FindFirstObjectByType<Atmosphere>();
         lights = NightLights.Instance;
         camStep = typeof(ChaseCamera).GetMethod("LateUpdate", NP); aLate = typeof(Atmosphere).GetMethod("LateUpdate", NP);
@@ -119,7 +119,7 @@ public static class GroovesShot
         {
             rider.Steer = rider.Crashed ? 0f : Mathf.Clamp((Slope.Centre(rider.Z + 12f) - rider.X) * 0.05f, -0.3f, 0.3f);
             if (rider.Speed > V && !rider.Airborne) rider.Body.linearVelocity *= V / rider.Speed;
-            rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+            TestHarness.Step(rider, body, Dt);
             if (n % 30 == 0) { terrain.Prewarm(); props.Prewarm(); lights?.Prewarm(); }
             if (n % 2 == 0)
             {

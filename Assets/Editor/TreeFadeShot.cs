@@ -24,12 +24,13 @@ public static class TreeFadeShot
     {
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop(); SummitImport.EnsureRealTrees();
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
+        TestPrefs.Pin();   // (before the tree look is set: the boot pins only once)
         PlayerPrefs.SetInt(Forest.TreesPref, 1);
         var game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        var rider = Get<Rider>("rider"); var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props");
-        var dayNight = Get<DayNight>("dayNight"); var fx = Get<SnowFX>("fx");
+        var rider = game.rider; var terrain = game.terrain; var props = game.props;
+        var dayNight = game.dayNight; var fx = Get<SnowFX>("fx");
         var dress = Object.FindFirstObjectByType<CourseDressing>();
         var atmo = Object.FindFirstObjectByType<Atmosphere>();
         var cam = Camera.main;

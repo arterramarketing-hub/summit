@@ -22,12 +22,9 @@ public static class StairsTest
 
     public static void Run()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
-        camp = (Camp)typeof(SummitGame).GetField("camp", NP).GetValue(game);
-        body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
+        var game = TestHarness.Boot();
+        camp = game.camp;
+        body = game.body;
         typeof(SummitGame).GetMethod("ToHub", NP).Invoke(game, new object[] { true });
         ChaseCamera.TestDt = dt;
         fPos = typeof(Camp).GetField("pos", NP); fCamYaw = typeof(Camp).GetField("camYaw", NP);

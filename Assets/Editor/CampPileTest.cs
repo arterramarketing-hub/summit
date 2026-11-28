@@ -33,8 +33,8 @@ public static class CampPileTest
         try
         {
             TestBoot.Boot(game);
-            camp = (Camp)typeof(SummitGame).GetField("camp", NP).GetValue(game);
-            body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
+            camp = game.camp;
+            body = game.body;
             typeof(SummitGame).GetMethod("ToHub", NP).Invoke(game, new object[] { true });
             ChaseCamera.TestDt = dt;
             fPos = typeof(Camp).GetField("pos", NP); fCamYaw = typeof(Camp).GetField("camYaw", NP);

@@ -38,9 +38,8 @@ public static class LiftRoutesShot
         QualitySettings.SetQualityLevel(0, true);   // the phone's
         game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        rider = Get<Rider>("rider"); body = Get<RiderBody>("body"); terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
-        dayNight = Get<DayNight>("dayNight");
+        rider = game.rider; body = game.body; terrain = game.terrain; props = game.props;
+        dayNight = game.dayNight;
         dress = Object.FindFirstObjectByType<CourseDressing>();
         cam = Camera.main; chase = cam.GetComponent<ChaseCamera>();
         atmo = Object.FindFirstObjectByType<Atmosphere>();
@@ -243,7 +242,7 @@ public static class LiftRoutesShot
         for (int n = 0; n < 60; n++)
         {
             rider.Steer = 0f;
-            rider.Tick(dt); body.PhysicsStep(); Physics.Simulate(dt);
+            TestHarness.Step(rider, body, dt);
             if (n % 4 == 0) body.Apply(4 * dt);
         }
         body.Apply(dt);

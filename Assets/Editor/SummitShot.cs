@@ -27,8 +27,8 @@ public static class SummitShot
         var game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game, false);   // the game opens in the camp
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        body = Get<RiderBody>("body"); camp = Get<Camp>("camp"); meta = Get<MetaUi>("meta"); terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
-        var dayNight = Get<DayNight>("dayNight");
+        body = game.body; camp = game.camp; meta = game.meta; terrain = game.terrain; props = game.props;
+        var dayNight = game.dayNight;
         var slideView = Get<AvalancheView>("slideView");
         cam = Camera.main;
         tUpd = typeof(SlopeStreamer).GetMethod("Update", NP); fUpd = typeof(Forest).GetMethod("Update", NP);

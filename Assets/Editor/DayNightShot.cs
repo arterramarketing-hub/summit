@@ -33,9 +33,9 @@ public static class DayNightShot
         var game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        var rider = Get<Rider>("rider"); var body = Get<RiderBody>("body");
-        var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props");
-        var dayNight = Get<DayNight>("dayNight"); var camp = Get<Camp>("camp"); var fx = Get<SnowFX>("fx");
+        var rider = game.rider; var body = game.body;
+        var terrain = game.terrain; var props = game.props;
+        var dayNight = game.dayNight; var camp = game.camp; var fx = Get<SnowFX>("fx");
         cam = Camera.main; var chase = cam.GetComponent<ChaseCamera>();
         var late = typeof(ChaseCamera).GetMethod("LateUpdate", NP);
         var atmo = Object.FindFirstObjectByType<Atmosphere>();
@@ -70,7 +70,7 @@ public static class DayNightShot
             if (next == 2)
             {
                 // the pause menu with its TIME row, at phone size (an overlay canvas doesn't reach a render texture)
-                var hud = Get<Hud>("hud"); var hc = hud.GetComponent<Canvas>();
+                var hud = game.hud; var hc = hud.GetComponent<Canvas>();
                 hc.renderMode = RenderMode.ScreenSpaceCamera; hc.worldCamera = cam; hc.planeDistance = 0.6f;
                 hud.ShowPause(true); hud.ShowTab(1);   // (LOOK: the TIME OF DAY row)
                 Canvas.ForceUpdateCanvases();

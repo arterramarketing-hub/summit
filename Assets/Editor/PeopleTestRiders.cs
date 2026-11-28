@@ -44,9 +44,9 @@ public static partial class PeopleTest
         TestBoot.Boot(game);
         var mr = MountainRiders.Current;
         if (mr == null) { Debug.LogError("RIDERS no MountainRiders"); TestHarness.Exit(1); return; }
-        var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        var props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        var rider = game.rider;
+        var body = game.body;
+        var props = game.props;
         var cam = Camera.main;
         var chase = cam.GetComponent<ChaseCamera>(); if (chase != null) chase.enabled = false;
         cam.fieldOfView = 62f;
@@ -58,7 +58,7 @@ public static partial class PeopleTest
 
         // the camp
         typeof(SummitGame).GetMethod("ToHub", NP).Invoke(game, new object[] { true });
-        var camp = (Summit.Camp)typeof(SummitGame).GetField("camp", NP).GetValue(game);
+        var camp = game.camp;
         var life = camp.GetComponent<CampLife>();
         Vector3 centre = life != null && life.P("door") != null ? life.P("door").at : new Vector3(Slope.Centre(-60f), Slope.DrawnHeight(Slope.Centre(-60f), -60f), -60f);
         cam.transform.SetPositionAndRotation(centre + Vector3.up * 1.7f, Quaternion.Euler(4f, 0f, 0f));

@@ -42,14 +42,12 @@ public static class LimbShot
         if (string.IsNullOrEmpty(outDir)) outDir = "LimbRenders";
         Directory.CreateDirectory(outDir);
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
-        rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
-        blood = (Blood)typeof(SummitGame).GetField("blood", NP).GetValue(game);
+        game = TestHarness.Boot();
+        rider = game.rider;
+        body = game.body;
+        terrain = game.terrain;
+        props = game.props;
+        blood = game.blood;
         fx = Object.FindFirstObjectByType<SnowFX>();
         rig = (RiderRig)typeof(RiderBody).GetField("rig", NP).GetValue(body);
         cam = Camera.main; chase = cam.GetComponent<ChaseCamera>();
@@ -238,7 +236,7 @@ public static class LimbShot
     static void PhantomCheck()
     {
         string tg = System.Environment.GetEnvironmentVariable("SUMMIT_TAG") ?? "";
-        var dayNight = (DayNight)typeof(SummitGame).GetField("dayNight", NP).GetValue(game);
+        var dayNight = game.dayNight;
         var brk = typeof(RiderBody).GetMethod("Break", NP);
         void SetTime(bool night) { TimeOfDay.TestClock = night ? 3.4f : 1.4f; dayNight.ApplyNow(); }
         foreach (string rn in new[] { "Snowboard", "Skis", "Toboggan", "Tube" })
@@ -633,7 +631,7 @@ public static class LimbShot
     static void EndScreen(string name)
     {
         string title = (string)typeof(SummitGame).GetField("endTitle", NP).GetValue(game);
-        float medical = (float)typeof(SummitGame).GetField("medical", NP).GetValue(game);
+        float medical = game.medical;
         Log($"{name}: end title {title}, medical ${medical:N0}, stay down {rider.StayDown}, can get up {rider.CanGetUp}");
         typeof(SummitGame).GetMethod("ToEnd", NP).Invoke(game, new object[] { title, false, false });
         var hud = Object.FindFirstObjectByType<Hud>();
@@ -658,7 +656,7 @@ public static class LimbShot
         int cutMeshes = 0;
         foreach (var smr in body.GetComponentsInChildren<SkinnedMeshRenderer>(true)) if (smr.sharedMesh != null && smr.sharedMesh.name.EndsWith("(cut)")) cutMeshes++;
         bool bonesHome = Vector3.Distance(rig.HandR.position, rig.LowerR.position) < 0.5f && Vector3.Distance(rig.FootL.position, rig.ThighL.position) < 1.2f;
-        Log($"RESET lost={body.LimbsLost} stumps={caps} limbSlabs={slabs} joints={joints} (want {CountParts() - 1}) live bodies={live} cut meshes={cutMeshes} bones home={bonesHome} medical={(float)typeof(SummitGame).GetField("medical", NP).GetValue(game):0}");
+        Log($"RESET lost={body.LimbsLost} stumps={caps} limbSlabs={slabs} joints={joints} (want {CountParts() - 1}) live bodies={live} cut meshes={cutMeshes} bones home={bonesHome} medical={game.medical:0}");
         ToRiding();
         float z = Course.First + 30f;
         rider.ResetAt(Slope.Centre(z), z); body.ResetVisual(); rider.Begin();

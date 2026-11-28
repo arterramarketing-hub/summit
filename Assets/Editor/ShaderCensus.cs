@@ -63,7 +63,7 @@ public static class ShaderCensus
         if (now >= nextPurple) { foreach (var l in PurpleWatch.Scan(out _, out _)) purple.Add(l); nextPurple = now + 2.0; }
         var game = Object.FindFirstObjectByType<SummitGame>();
         if (game == null) return;
-        var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
+        var rider = game.rider;
         void Call(string name, params object[] args)
         {
             var m = typeof(SummitGame).GetMethods(NP).FirstOrDefault(x => x.Name == name && x.GetParameters().Length == args.Length);

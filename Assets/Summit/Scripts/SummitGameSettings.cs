@@ -23,7 +23,7 @@ namespace Summit
         int filterLevel, filterStrength = 10;
         int halation;   // the film glow round highlights (LensFX): OFF, SUBTLE, STRONG
         LensFX lensFx;
-        DayNight dayNight;   // the time of day's light (TimeOfDay, DayNight.cs), and the pause menu's TIME row
+        internal DayNight dayNight;   // the time of day's light (TimeOfDay, DayNight.cs), and the pause menu's TIME row
         Weather weather;     // rolled for each new mountain (Weather.cs); null in the test tools unless they ask for one
         UnityEngine.Rendering.VolumeProfile post;
 

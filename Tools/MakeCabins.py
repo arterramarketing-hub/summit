@@ -30,6 +30,8 @@
 
 import bpy, bmesh, math, os, sys
 from mathutils import Vector, Matrix, Euler
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # (Tools/blendkit.py)
+from blendkit import mat4, cube, cone
 
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 OUT = argv[0] if argv and not argv[0].startswith("--") else "Assets/Summit/Resources/Cabins"
@@ -94,14 +96,10 @@ def add(src, mat, m, full_uv=False, turn=False, point=None):
     src.free()
 
 
-def mat4(pos, size=(1, 1, 1), rot=(0, 0, 0)):
-    return Matrix.Translation(Vector(pos)) @ Euler([math.radians(a) for a in rot], "XYZ").to_matrix().to_4x4() @ Matrix.Diagonal(Vector((*size, 1)))
 
 
 def box(mat, pos, size, rot=(0, 0, 0), turn=False, point=None):
-    b = bmesh.new()
-    bmesh.ops.create_cube(b, size=1.0)
-    add(b, mat, mat4(pos, size, rot), turn=turn, point=point)
+    add(cube(), mat, mat4(pos, size, rot), turn=turn, point=point)
 
 
 def lohi(mat, lo, hi, turn=False):
@@ -126,15 +124,12 @@ def span(mat, a, b_, t):
     a, b_ = Vector(a), Vector(b_)
     d = b_ - a
     rot = d.to_track_quat("Z", "Y").to_matrix().to_4x4()
-    b = bmesh.new()
-    bmesh.ops.create_cube(b, size=1.0)
-    add(b, mat, Matrix.Translation((a + b_) / 2) @ rot @ Matrix.Diagonal(Vector((t, t, d.length, 1))))
+    add(cube(), mat, Matrix.Translation((a + b_) / 2) @ rot @ Matrix.Diagonal(Vector((t, t, d.length, 1))))
 
 
 def cyl(mat, pos, r, h, seg=10, r2=None, along="y"):
     """A cylinder (or cone) standing on pos along the game's up axis, or lying along x or z from pos."""
-    b = bmesh.new()
-    bmesh.ops.create_cone(b, cap_ends=True, segments=seg, radius1=r, radius2=r if r2 is None else r2, depth=h)
+    b = cone(r, h, seg, r2)
     lay = {"y": Matrix.Rotation(math.radians(-90), 4, "X"), "x": Matrix.Rotation(math.radians(90), 4, "Y"), "z": Matrix.Identity(4)}[along]
     off = {"y": (0, h / 2, 0), "x": (h / 2, 0, 0), "z": (0, 0, h / 2)}[along]
     add(b, mat, Matrix.Translation(Vector(pos) + Vector(off)) @ lay)

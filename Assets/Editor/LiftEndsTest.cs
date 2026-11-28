@@ -32,15 +32,12 @@ public static class LiftEndsTest
 
     static void Setup()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        r = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        r = game.rider;
+        body = game.body;
+        terrain = game.terrain;
+        props = game.props;
         ends = LiftEnds.Instance;
         r.input = null;
     }
@@ -160,7 +157,7 @@ public static class LiftEndsTest
         int seed = int.TryParse(System.Environment.GetEnvironmentVariable("ENDS_SEED"), out int sd) ? sd : 1000;
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
         Setup();
-        dayNight = (DayNight)typeof(SummitGame).GetField("dayNight", NP).GetValue(game);
+        dayNight = game.dayNight;
         dress = Object.FindFirstObjectByType<CourseDressing>();
         cam = Camera.main; var chase = cam.GetComponent<ChaseCamera>(); if (chase != null) chase.enabled = false;
         atmo = Object.FindFirstObjectByType<Atmosphere>();

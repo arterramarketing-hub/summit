@@ -34,9 +34,7 @@ public static class DeckTest
     static void Setup()
     {
         TestPrefs.Pin();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
         r = F<Rider>("rider"); body = F<RiderBody>("body"); terrain = F<SlopeStreamer>("terrain"); props = F<Forest>("props");
         typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);

@@ -32,7 +32,7 @@ public static class StartPageShot
         TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt;
         typeof(SummitGame).GetMethod("Awake", NP).Invoke(game, null);
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        cam = Camera.main; atmo = Object.FindFirstObjectByType<Atmosphere>(); dayNight = Get<DayNight>("dayNight");
+        cam = Camera.main; atmo = Object.FindFirstObjectByType<Atmosphere>(); dayNight = game.dayNight;
         aLate = typeof(Atmosphere).GetMethod("LateUpdate", NP);
         cam.aspect = W / (float)H;
         // the default lens and no filter, whatever the editor's own save holds
@@ -412,8 +412,8 @@ public static class StartPageShot
         start.Hide();
         typeof(SummitGame).GetMethod("ToReady", NP, null, new[] { typeof(bool) }, null).Invoke(game, new object[] { false });
         var chase = cam.GetComponent<ChaseCamera>(); var late = typeof(ChaseCamera).GetMethod("LateUpdate", NP);
-        var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        var terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
+        var body = game.body;
+        var terrain = game.terrain;
         var tUpd = typeof(SlopeStreamer).GetMethod("Update", NP);
         ChaseCamera.TestDt = 1f / 60f;
         for (int i = 0; i < 200; i++) { tUpd.Invoke(terrain, null); body.Apply(1f / 60f); late.Invoke(chase, null); aLate.Invoke(atmo, null); }
@@ -462,7 +462,7 @@ public static class StartPageShot
         Debug.Log($"STARTFLOW at the gate: state={St()} showing={start.Showing} cloud={start.CoverAlpha:0.00} {Cam()} chase={cam.GetComponent<ChaseCamera>().enabled}");
         // back up to the camp, and from its peak chip to the start page, through cloud
         Call("ToHub", false);
-        var meta = (MetaUi)typeof(SummitGame).GetField("meta", NP).GetValue(game);
+        var meta = game.meta;
         meta.Act("title");
         Debug.Log($"STARTFLOW camp: state={St()} asked={meta.TitleAsked} {Cam()}");
         meta.TitleAsked = false;
@@ -525,8 +525,8 @@ public static class StartPageShot
     /// </summary>
     static void Leaks()
     {
-        var hud = (Hud)typeof(SummitGame).GetField("hud", NP).GetValue(game);
-        var meta = (MetaUi)typeof(SummitGame).GetField("meta", NP).GetValue(game);
+        var hud = game.hud;
+        var meta = game.meta;
         var update = typeof(SummitGame).GetMethod("Update", NP);
         var bar = hud.transform.Find("Safe/SlideBar");
         string St() => typeof(SummitGame).GetField("state", NP).GetValue(game).ToString();

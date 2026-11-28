@@ -23,14 +23,12 @@ public static class TreeShot
         SummitImport.EnsureSky();
         SummitImport.EnsureBackdrop();
         SummitImport.EnsureRealTrees();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
+        var game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        var terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        var props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        var rider = game.rider;
+        var body = game.body;
+        var terrain = game.terrain;
+        var props = game.props;
         var dress = Object.FindFirstObjectByType<CourseDressing>();
         var atmo = Object.FindFirstObjectByType<Atmosphere>();
         var fx = Object.FindFirstObjectByType<SnowFX>();
@@ -86,7 +84,7 @@ public static class TreeShot
                 {
                     typeof(SummitGame).GetMethod("SetPaused", NP).Invoke(game, new object[] { true });
                     // the HUD draws straight to the screen, which a render to a texture misses: draw it with the camera
-                    canvas = ((Hud)typeof(SummitGame).GetField("hud", NP).GetValue(game)).GetComponent<Canvas>();
+                    canvas = (game.hud).GetComponent<Canvas>();
                     canvas.renderMode = RenderMode.ScreenSpaceCamera; canvas.worldCamera = cam; canvas.planeDistance = 1f;
                 }
                 Shoot(cam, props, $"TreeShot_{look}_{v.name}.png");

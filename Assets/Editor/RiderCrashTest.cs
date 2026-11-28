@@ -33,14 +33,10 @@ public static class RiderCrashTest
 
     public static void Run()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        rider = Get<Summit.Rider>("rider"); body = Get<RiderBody>("body"); hud = Get<Hud>("hud");
-        terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
+        rider = game.rider; body = game.body; hud = game.hud;
+        terrain = game.terrain; props = game.props;
         // (one mountain, always: the boot's is whatever Unity's random numbers pick, and the run's pitch decides how fast
         // the hero closes on the riders put in the way: tube/mtb)
         TestBoot.NewMountain(game, 1000, terrain, props);

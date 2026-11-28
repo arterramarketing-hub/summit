@@ -25,12 +25,9 @@ public static class ForestListTest
 
     public static void Run()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
-        props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
-        var terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
+        var game = TestHarness.Boot();
+        props = game.props;
+        var terrain = game.terrain;
         // the shadow band as the desktop asset has it, so it compares with a build that had it fixed at 150 m
         var urp = UnityEngine.Rendering.Universal.UniversalRenderPipeline.asset;
         float keptShadow = urp != null ? urp.shadowDistance : -1f;

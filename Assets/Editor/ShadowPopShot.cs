@@ -36,8 +36,8 @@ public static class ShadowPopShot
         game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
-        dayNight = Get<DayNight>("dayNight"); weather = Get<Weather>("weather");
+        terrain = game.terrain; props = game.props;
+        dayNight = game.dayNight; weather = Get<Weather>("weather");
         int seed = int.TryParse(System.Environment.GetEnvironmentVariable("SHADOW_SEED"), out int ss) ? ss : 1000;
         TestBoot.NewMountain(game, seed, terrain, props);
         typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);

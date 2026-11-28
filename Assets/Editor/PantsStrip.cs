@@ -126,7 +126,7 @@ public static class PantsStrip
 
     static void Step()
     {
-        rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+        TestHarness.Step(rider, body, Dt);
         if (step % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
         if (step % 4 == 0) { body.Apply(4 * Dt); late.Invoke(chase, null); aLate.Invoke(atmo, null); }
         step++;

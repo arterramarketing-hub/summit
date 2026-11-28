@@ -51,8 +51,8 @@ public static class BloodSnowShot
         game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        rider = Get<Rider>("rider"); body = Get<RiderBody>("body"); terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
-        blood = Get<Blood>("blood"); dayNight = Get<DayNight>("dayNight"); weather = Get<Weather>("weather"); fx = Get<SnowFX>("fx");
+        rider = game.rider; body = game.body; terrain = game.terrain; props = game.props;
+        blood = game.blood; dayNight = game.dayNight; weather = Get<Weather>("weather"); fx = Get<SnowFX>("fx");
         lights = NightLights.Instance;
         cam = Camera.main; chase = cam.GetComponent<ChaseCamera>();
         late = typeof(ChaseCamera).GetMethod("LateUpdate", NP);

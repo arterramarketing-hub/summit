@@ -48,9 +48,8 @@ public static class RideModeTest
         int rideWas = (int)Progress.Ride;
         TestBoot.Boot(game);
         Physics.simulationMode = SimulationMode.Script;
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        rider = Get<Summit.Rider>("rider"); body = Get<RiderBody>("body");
-        terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
+        rider = game.rider; body = game.body;
+        terrain = game.terrain; props = game.props;
         cam = Camera.main;
         shots = System.Environment.GetEnvironmentVariable("RIDES_SHOTS");
         if (!string.IsNullOrEmpty(shots)) Directory.CreateDirectory(shots);

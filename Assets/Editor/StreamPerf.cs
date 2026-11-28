@@ -37,7 +37,7 @@ public static class StreamPerf
         var game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props"); var dressing = Get<CourseDressing>("dressing");
+        var terrain = game.terrain; var props = game.props; var dressing = Get<CourseDressing>("dressing");
         TestBoot.NewMountain(game, Seed, terrain, props);
         return (game, terrain, dressing, props);
     }

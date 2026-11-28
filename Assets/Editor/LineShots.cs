@@ -34,8 +34,8 @@ public static class LineShots
         game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        r = Get<Rider>("rider"); body = Get<RiderBody>("body"); terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
-        dayNight = Get<DayNight>("dayNight"); weather = Get<Weather>("weather");
+        r = game.rider; body = game.body; terrain = game.terrain; props = game.props;
+        dayNight = game.dayNight; weather = Get<Weather>("weather");
         atmo = Object.FindFirstObjectByType<Atmosphere>();
         camStep = typeof(ChaseCamera).GetMethod("LateUpdate", NP); aLate = typeof(Atmosphere).GetMethod("LateUpdate", NP);
         Physics.simulationMode = SimulationMode.Script;
@@ -119,7 +119,7 @@ public static class LineShots
         {
             r.Steer = CarveBot.Onto(r, z => LineTest.LaneX(L, jibs, z), 2.4f, 12f, 1.5f);
             if (!r.Airborne && !r.Grinding) { var vel = r.Body.linearVelocity; if (vel.magnitude > 1f) r.Body.linearVelocity = vel.normalized * v; }
-            r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+            TestHarness.Step(r, body, Dt);
             if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); if (dress != null) dress.Prewarm(); }
             if (n % 2 == 0)
             {

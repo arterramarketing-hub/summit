@@ -21,6 +21,9 @@
 
 import bpy, bmesh, math, os, struct, sys, zlib
 from mathutils import Vector, Matrix, Euler
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # (Tools/blendkit.py)
+from blendkit import mat4, cube, cone
+import blendkit
 
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 OUT = argv[0] if argv and not argv[0].startswith("--") else "."
@@ -82,10 +85,7 @@ def cell_uv(name):
 def write_png(path, pixels, w, h):
     """pixels: rows from the top, each a list of (r, g, b) 0..255."""
     raw = b"".join(b"\x00" + bytes(v for px in row for v in px) for row in pixels)
-    def chunk(tag, data):
-        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
-    with open(path, "wb") as f:
-        f.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b""))
+    blendkit.write(path, blendkit.png(w, h, raw, False), makedirs=False)
 
 
 def srgb(c):
@@ -149,22 +149,17 @@ def add(src, paint, m, smooth=False):
     src.free()
 
 
-def mat4(pos, size=(1, 1, 1), rot=(0, 0, 0)):
-    return Matrix.Translation(Vector(pos)) @ Euler([math.radians(a) for a in rot], "XYZ").to_matrix().to_4x4() @ Matrix.Diagonal(Vector((*size, 1)))
 
 
 def box(paint, pos, size, rot=(0, 0, 0)):
-    b = bmesh.new()
-    bmesh.ops.create_cube(b, size=1.0)
-    add(b, paint, mat4(pos, size, rot))
+    add(cube(), paint, mat4(pos, size, rot))
 
 
 def tube(paint, a, b_, r, seg=6, r2=None, caps=True):
     """A round bar from a to b (game space)."""
     a, b_ = Vector(a), Vector(b_)
     d = b_ - a
-    b = bmesh.new()
-    bmesh.ops.create_cone(b, cap_ends=caps, segments=seg, radius1=r, radius2=r if r2 is None else r2, depth=d.length)
+    b = cone(r, d.length, seg, r2, caps=caps)
     for f in b.faces:
         f.smooth = len(f.verts) == 4
     rot = d.to_track_quat("Z", "Y").to_matrix().to_4x4()
@@ -176,9 +171,7 @@ def beam(paint, a, b_, w, t):
     a, b_ = Vector(a), Vector(b_)
     d = b_ - a
     rot = d.to_track_quat("Z", "Y").to_matrix().to_4x4()
-    b = bmesh.new()
-    bmesh.ops.create_cube(b, size=1.0)
-    add(b, paint, Matrix.Translation((a + b_) / 2) @ rot @ Matrix.Diagonal(Vector((w, t, d.length, 1))))
+    add(cube(), paint, Matrix.Translation((a + b_) / 2) @ rot @ Matrix.Diagonal(Vector((w, t, d.length, 1))))
 
 
 def strip(paint, pts, across, w):

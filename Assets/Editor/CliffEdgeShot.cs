@@ -38,8 +38,8 @@ public static class CliffEdgeShot
         {
             TestBoot.Boot(game);
             T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-            rider = Get<Rider>("rider"); terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
-            dayNight = Get<DayNight>("dayNight"); weather = Get<Weather>("weather"); dress = Get<CourseDressing>("dressing");
+            rider = game.rider; terrain = game.terrain; props = game.props;
+            dayNight = game.dayNight; weather = Get<Weather>("weather"); dress = Get<CourseDressing>("dressing");
             cam = Camera.main; atmo = Object.FindFirstObjectByType<Atmosphere>(); kit = PisteKit.Instance;
             aLate = typeof(Atmosphere).GetMethod("LateUpdate", NP);
             Physics.simulationMode = SimulationMode.Script;

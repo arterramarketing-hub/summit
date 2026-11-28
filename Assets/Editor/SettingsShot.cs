@@ -29,10 +29,10 @@ public static class SettingsShot
         TestPrefs.Pin();
         PlayerPrefs.SetInt("summit_lenstype", 1);   // an old save: ANAMORPHIC
         TestBoot.Boot(game);
-        var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        var terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        var props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        var rider = game.rider;
+        var body = game.body;
+        var terrain = game.terrain;
+        var props = game.props;
         var cam = Camera.main;
         Physics.simulationMode = SimulationMode.Script;
         int bad = 0;
@@ -67,7 +67,7 @@ public static class SettingsShot
             typeof(SummitGame).GetMethod("BuildStart", NP).Invoke(game, null);
             var start = (StartPage)typeof(SummitGame).GetField("start", NP).GetValue(game);
             var sheet = hud.PauseSettings;
-            var meta = (MetaUi)typeof(SummitGame).GetField("meta", NP).GetValue(game);
+            var meta = game.meta;
             Debug.Log("SETTINGSSHOT pause rows: " + sheet.Labels());
             Check(typeof(StartPage).GetProperty("Settings") == null, "no settings on the start page");
             Check(sheet.RowIndex("LOOK", "WEATHER") >= 0, "WEATHER is in the pause menu");

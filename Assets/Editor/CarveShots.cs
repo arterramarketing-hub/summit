@@ -26,15 +26,12 @@ public static class CarveShots
 
     public static void Run()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        r = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        r = game.rider;
+        body = game.body;
+        terrain = game.terrain;
+        props = game.props;
         chase = Object.FindFirstObjectByType<ChaseCamera>();
         camStep = typeof(ChaseCamera).GetMethod("LateUpdate", NP);
         outDir = System.Environment.GetEnvironmentVariable("CARVE_OUT") ?? "carve-renders";
@@ -189,6 +186,6 @@ public static class CarveShots
         System.IO.File.WriteAllBytes(file, strip.EncodeToPNG());
         Debug.Log($"CARVE-STRIP {file}: {taken} frames{(note != null ? " (" + note + ")" : "")}; thrown across {skids} time(s), skid {skidMost:0.00} at most{(r.Crashed ? "; CRASHED" : "")}");
         Object.DestroyImmediate(strip); Object.DestroyImmediate(tex); rt.Release(); Object.DestroyImmediate(rt);
-        if (r.Crashed) { r.RequestUp = true; for (int i = 0; i < 400 && r.Crashed; i++) { r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt); if (r.CanGetUp) r.RequestUp = true; } }
+        if (r.Crashed) { r.RequestUp = true; for (int i = 0; i < 400 && r.Crashed; i++) { TestHarness.Step(r, body, Dt); body.Apply(Dt); if (r.CanGetUp) r.RequestUp = true; } }
     }
 }

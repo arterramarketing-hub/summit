@@ -40,8 +40,8 @@ public static class SnowFxShot
         game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        rider = Get<Rider>("rider"); body = Get<RiderBody>("body"); terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
-        dayNight = Get<DayNight>("dayNight"); weather = Get<Weather>("weather");
+        rider = game.rider; body = game.body; terrain = game.terrain; props = game.props;
+        dayNight = game.dayNight; weather = Get<Weather>("weather");
         cam = Camera.main; chase = cam.GetComponent<ChaseCamera>(); atmo = Object.FindFirstObjectByType<Atmosphere>();
         lights = NightLights.Instance;
         camStep = typeof(ChaseCamera).GetMethod("LateUpdate", NP); aLate = typeof(Atmosphere).GetMethod("LateUpdate", NP);
@@ -156,7 +156,7 @@ public static class SnowFxShot
             steer = Mathf.Clamp(steer + (Slope.Centre(rider.Z + 15f) - rider.X) * 0.03f, -1f, 1f);
             rider.Steer = rider.Crashed ? 0f : steer;
             if (rider.Speed > V * 1.15f && !rider.Airborne) rider.Body.linearVelocity *= V * 1.15f / rider.Speed;
-            rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+            TestHarness.Step(rider, body, Dt);
             if (n % 30 == 0) { terrain.Prewarm(); props.Prewarm(); lights?.Prewarm(); }
             if (n % 2 == 0)
             {

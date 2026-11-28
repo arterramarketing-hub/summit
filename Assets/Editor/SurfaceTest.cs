@@ -416,15 +416,12 @@ public static class SurfaceTest
 
     public static void Shots()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        rider = game.rider;
+        body = game.body;
+        terrain = game.terrain;
+        props = game.props;
         chase = Object.FindFirstObjectByType<ChaseCamera>();
         camStep = typeof(ChaseCamera).GetMethod("LateUpdate", NP);
         System.IO.Directory.CreateDirectory(OutDir);
@@ -475,7 +472,7 @@ public static class SurfaceTest
             {
                 rider.Steer = rider.Crashed ? 0f : 0.45f * Mathf.Sin(n * Dt * 2.6f) + Mathf.Clamp((Slope.Centre(rider.Z + 10f) + bestA - rider.X) * 0.05f, -0.3f, 0.3f);
                 if (rider.Speed > v0 && !rider.Airborne && !rider.Crashed) rider.Body.linearVelocity *= v0 / rider.Speed;
-                rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+                TestHarness.Step(rider, body, Dt);
                 if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
                 if (n % 2 == 0)
                 {
@@ -519,7 +516,7 @@ public static class SurfaceTest
             {
                 rider.Steer = rider.Crashed ? 0f : 0.45f * Mathf.Sin(n * Dt * 2.6f) + Mathf.Clamp((Slope.Centre(rider.Z + 10f) - rider.X) * 0.05f, -0.3f, 0.3f);
                 if (rider.Speed > 15f && !rider.Airborne && !rider.Crashed) rider.Body.linearVelocity *= 15f / rider.Speed;
-                rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+                TestHarness.Step(rider, body, Dt);
                 if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
                 if (n % 2 == 0) { body.Apply(2 * Dt); ChaseCamera.TestDt = 2 * Dt; camStep.Invoke(chase, null); Surfaces.Step(rider.Body.position, rider.RunNow, 2 * Dt, true); }
             }

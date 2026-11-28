@@ -32,10 +32,9 @@ public static class HubShot
         var trees = System.Environment.GetEnvironmentVariable("SUMMIT_TREES");   // classic|real, as TestBoot
         if (!string.IsNullOrEmpty(trees)) PlayerPrefs.SetInt(Forest.TreesPref, trees == "classic" ? 0 : 1);
         typeof(SummitGame).GetMethod("Awake", NP).Invoke(game, null);
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        camp = Get<Camp>("camp"); meta = Get<MetaUi>("meta"); body = Get<RiderBody>("body"); rider = Get<Rider>("rider");
-        terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
-        var hud = Get<Hud>("hud");
+        camp = game.camp; meta = game.meta; body = game.body; rider = game.rider;
+        terrain = game.terrain; props = game.props;
+        var hud = game.hud;
         cam = Camera.main; atmo = Object.FindFirstObjectByType<Atmosphere>();
         tUpd = typeof(SlopeStreamer).GetMethod("Update", NP); fUpd = typeof(Forest).GetMethod("Update", NP); aLate = typeof(Atmosphere).GetMethod("LateUpdate", NP);
         Missions.SetProgress(0, Missions.Today[0].target * 0.5f);

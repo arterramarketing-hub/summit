@@ -442,7 +442,7 @@ public static class BoardArtShot
         for (float t = 0f; t < 1.2f; t += Dt)
         {
             rider.Steer = Mathf.Clamp((Slope.Centre(rider.Z + 12f) - rider.transform.position.x) * 0.06f - rider.Heading * 0.8f, -1f, 1f);
-            rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+            TestHarness.Step(rider, body, Dt);
             if (step % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
             if (step % 4 == 0) { body.Apply(4 * Dt); late.Invoke(chase, null); }
             step++;
@@ -462,7 +462,7 @@ public static class BoardArtShot
         for (float t = 0f; t < 0.55f; t += Dt)
         {
             rider.Steer = steer;
-            rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+            TestHarness.Step(rider, body, Dt);
             if (step % 4 == 0) { body.Apply(4 * Dt); late.Invoke(chase, null); }
             step++;
         }

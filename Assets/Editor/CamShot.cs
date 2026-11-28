@@ -35,9 +35,9 @@ public static class CamShot
         TestBoot.Boot(game);
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
         void Set(string f, object v) => typeof(SummitGame).GetField(f, NP).SetValue(game, v);
-        var rider = Get<Rider>("rider"); var body = Get<RiderBody>("body");
-        var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props");
-        var dayNight = Get<DayNight>("dayNight"); var lensFx = Get<LensFX>("lensFx");
+        var rider = game.rider; var body = game.body;
+        var terrain = game.terrain; var props = game.props;
+        var dayNight = game.dayNight; var lensFx = Get<LensFX>("lensFx");
         var lens = Get<UnityEngine.Rendering.Universal.LensDistortion>("lens");
         cam = Camera.main; var chase = cam.GetComponent<ChaseCamera>();
         var late = typeof(ChaseCamera).GetMethod("LateUpdate", NP);
@@ -69,7 +69,7 @@ public static class CamShot
         {
             float steer = t >= 2.0f && t < 2.5f ? 1f : Mathf.Clamp((Slope.Centre(rider.Z + 15f) - rider.transform.position.x) * 0.06f - rider.Heading * 0.6f, -1f, 1f);
             rider.Steer = steer;
-            rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+            TestHarness.Step(rider, body, Dt);
             if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
             if (n % 2 == 0) { body.Apply(2 * Dt); late.Invoke(chase, null); aLate.Invoke(atmo, null); }
             if (t < moments[m].at) continue;

@@ -22,12 +22,13 @@ public static class WindShot
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop(); SummitImport.EnsureRealTrees();
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
         string look = System.Environment.GetEnvironmentVariable("WINDSHOT") ?? "Real";
+        TestPrefs.Pin();   // (before the tree look is set: the boot pins only once)
         PlayerPrefs.SetInt(Forest.TreesPref, look == "Classic" ? 0 : 1);
         var game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        var rider = Get<Rider>("rider"); var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props");
-        var dayNight = Get<DayNight>("dayNight"); var fx = Get<SnowFX>("fx");
+        var rider = game.rider; var terrain = game.terrain; var props = game.props;
+        var dayNight = game.dayNight; var fx = Get<SnowFX>("fx");
         var dress = Object.FindFirstObjectByType<CourseDressing>();
         var atmo = Object.FindFirstObjectByType<Atmosphere>();
         var cam = Camera.main; var chase = cam.GetComponent<ChaseCamera>(); if (chase != null) chase.enabled = false;

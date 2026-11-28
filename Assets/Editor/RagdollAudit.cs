@@ -27,15 +27,12 @@ public static class RagdollAudit
 
     public static void Run()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        var game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        var terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        var props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        var rider = game.rider;
+        var body = game.body;
+        var terrain = game.terrain;
+        var props = game.props;
         var rig = (RiderRig)typeof(RiderBody).GetField("rig", NP).GetValue(body);
         rider.input = null;
         var dressing = Object.FindFirstObjectByType<CourseDressing>();
@@ -67,15 +64,12 @@ public static class RagdollAudit
     /// <summary>One crash traced (GlitchTest's seed 3, 30 m/s, wagged, getting up once at rest): where the body is every quarter second.</summary>
     public static void Trace()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        var game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        var r = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        var terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        var props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        var r = game.rider;
+        var body = game.body;
+        var terrain = game.terrain;
+        var props = game.props;
         r.input = null;
         var dressing = Object.FindFirstObjectByType<CourseDressing>();
         if (dressing != null) { var tgt = dressing.target; dressing.target = null; dressing.Rebuild(); dressing.target = tgt; }
@@ -85,14 +79,14 @@ public static class RagdollAudit
         r.ResetAt(Slope.Centre(z), z); body.ResetVisual(); r.Begin();
         r.Body.linearVelocity = Vector3.forward * v0;
         terrain.Prewarm(); props.Prewarm();
-        for (int i = 0; i < 30; i++) { r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt); }
+        for (int i = 0; i < 30; i++) { TestHarness.Step(r, body, Dt); body.Apply(Dt); }
         r.DoCrash("test");
         int n = 0;
         for (float t = 0f; t < 8f; t += Dt, n++)
         {
             r.Steer = Mathf.Sign(Mathf.Sin(t * 4f));
             if (r.CanGetUp && !body.RagdollMoving) r.RequestUp = true;
-            r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt);
+            TestHarness.Step(r, body, Dt); body.Apply(Dt);
             Vector3 c = body.RagdollCentre;
             if (n % 30 == 0 || (c.y < Slope.DrawnHeight(c.x, c.z) - 1f && n % 6 == 0))
                 Debug.Log($"RAGTRACE t={t:0.00} c={c} snow={Slope.DrawnHeight(c.x, c.z):0.00} x-c={c.x - Slope.Centre(c.z):0.0} crevasse={Course.CrevasseNear(c.x, c.z, 4f)} cut={Course.CrevasseCut(c.x, c.z):0.0} v={body.RagdollSpeed:0.0} crashed={r.Crashed} moving={body.RagdollMoving} hold={r.HoldCrash} pending={body.FallPending}");
@@ -130,7 +124,7 @@ public static class RagdollAudit
         r.ResetAt(Slope.Centre(z), z); body.ResetVisual(); r.Begin();
         r.Body.linearVelocity = Vector3.forward * v0;
         terrain.Prewarm(); props.Prewarm();
-        for (int i = 0; i < 30; i++) { r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt); }
+        for (int i = 0; i < 30; i++) { TestHarness.Step(r, body, Dt); body.Apply(Dt); }
         // the body's frame and each hinge, from the pose it is thrown in
         Vector3 right = (rig.ThighR.position - rig.ThighL.position).normalized;
         Vector3 up = Vector3.ProjectOnPlane(rig.Chest.position - rig.Hips.position, right).normalized;
@@ -153,7 +147,7 @@ public static class RagdollAudit
         for (float t = 0f; t < 6f && r.Crashed; t += Dt)
         {
             r.Steer = steer != null ? steer(t) : 0f;
-            r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt);
+            TestHarness.Step(r, body, Dt); body.Apply(Dt);
             if (!rd.Active) break;
             if (board == null) { foreach (var rb in Object.FindObjectsByType<Rigidbody>(FindObjectsSortMode.None)) if (rb.name == "Board" && !rb.isKinematic) board = rb; }
             Vector3 pv = rbs[0].linearVelocity;
@@ -184,7 +178,7 @@ public static class RagdollAudit
                 st.boardFar = Mathf.Max(st.boardFar, (board.worldCenterOfMass - (rig.EndL.position + rig.EndR.position) * 0.5f).magnitude);
         }
         r.Steer = 0f;
-        if (r.Crashed) { r.RequestUp = true; for (int i = 0; i < 240 && r.Crashed; i++) { r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt); if (r.CanGetUp) r.RequestUp = true; } }
+        if (r.Crashed) { r.RequestUp = true; for (int i = 0; i < 240 && r.Crashed; i++) { TestHarness.Step(r, body, Dt); body.Apply(Dt); if (r.CanGetUp) r.RequestUp = true; } }
         return st;
     }
 

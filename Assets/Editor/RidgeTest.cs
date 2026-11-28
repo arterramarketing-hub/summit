@@ -109,14 +109,12 @@ public static class RidgeTest
         SummitImport.EnsureSnowTextures();
         SummitImport.EnsureSky();
         SummitImport.EnsureBackdrop();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
+        var game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        var terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        var props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        var rider = game.rider;
+        var body = game.body;
+        var terrain = game.terrain;
+        var props = game.props;
         var dress = Object.FindFirstObjectByType<CourseDressing>();
         var fx = Object.FindFirstObjectByType<SnowFX>();
         rider.input = null;
@@ -169,7 +167,7 @@ public static class RidgeTest
                 for (float t = 0f; t < secs; t += Dt, i++)
                 {
                     rider.Steer = steer(t);
-                    rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+                    TestHarness.Step(rider, body, Dt);
                     if (i % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
                     if (i % 4 == 0) body.Apply(4 * Dt);
                     if (i % 2 == 0) late.Invoke(chase, null);
@@ -181,7 +179,7 @@ public static class RidgeTest
                 float rest = 0f;
                 for (int i = 0; i < 120 * 30 && rest < 2f; i++)
                 {
-                    rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt);
+                    TestHarness.Step(rider, body, Dt); body.Apply(Dt);
                     if (i % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
                     if (i % 2 == 0) late.Invoke(chase, null);
                     if (rider.Crashed && !body.RagdollMoving) rest += Dt; else rest = 0f;
@@ -283,14 +281,14 @@ public static class RidgeTest
                 for (int i = 0; i < 600 && !rider.Crashed; i++, tOff += Dt)
                 {
                     rider.Steer = side * 0.8f;
-                    rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+                    TestHarness.Step(rider, body, Dt);
                     if (i % 4 == 0) body.Apply(4 * Dt);
                     if (i % 2 == 0) late.Invoke(chase, null);
                 }
                 Debug.Log($"RIDGESHOT went over after {tOff:0.00}s at off={rider.transform.position.x - Slope.Centre(rider.Z):0.0}, crashed={rider.Crashed} ({lastWhy})");
                 // the moment it meets the rock: still on the board until then
                 {
-                    for (int i = 0; i < 3; i++) { rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt); }
+                    for (int i = 0; i < 3; i++) { TestHarness.Step(rider, body, Dt); body.Apply(Dt); }
                     Settle();
                     Vector3 rp = body.RagdollCentre;
                     var eye = rp + new Vector3(-side * 7f, 5f, -9f);
@@ -300,7 +298,7 @@ public static class RidgeTest
                 }
                 for (int i = 0; i < 100; i++)
                 {
-                    rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt);
+                    TestHarness.Step(rider, body, Dt); body.Apply(Dt);
                     if (i % 2 == 0) late.Invoke(chase, null);
                 }
                 Settle(); late.Invoke(chase, null);
@@ -308,7 +306,7 @@ public static class RidgeTest
                 Debug.Log($"RIDGESHOT fall: body at off={body.RagdollCentre.x - Slope.Centre(body.RagdollCentre.z):0.0}, {Ridge.Top(body.RagdollCentre.z) - body.RagdollCentre.y:0.0} m below the crest, cam={cam.transform.position}");
                 for (int i = 0; i < 360; i++)
                 {
-                    rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt);
+                    TestHarness.Step(rider, body, Dt); body.Apply(Dt);
                     if (i % 2 == 0) late.Invoke(chase, null);
                 }
                 Settle(); late.Invoke(chase, null);
@@ -351,7 +349,7 @@ public static class RidgeTest
                 for (int i = 0; i < 1200 && !(rider.Airborne && rider.AirTime > 0.45f && rider.Z > jc.z); i++)
                 {
                     rider.Steer = Follow(0f);
-                    rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+                    TestHarness.Step(rider, body, Dt);
                     if (i % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
                     if (i % 4 == 0) body.Apply(4 * Dt);
                     if (i % 2 == 0) late.Invoke(chase, null);
@@ -392,7 +390,7 @@ public static class RidgeTest
                 for (int i = 0; i < 1200 && !rider.Crashed; i++)
                 {
                     rider.Steer = Mathf.Clamp(wl.side * 0.9f - rider.Heading * 0.3f, -1f, 1f);
-                    rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+                    TestHarness.Step(rider, body, Dt);
                     if (i % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
                     if (i % 4 == 0) body.Apply(4 * Dt);
                     if (i % 2 == 0) late.Invoke(chase, null);
@@ -426,14 +424,11 @@ public static class RidgeTest
             Debug.Log($"ROCKSHOT RockLit supported {rockSh.isSupported} errors {ShaderUtil.ShaderHasError(rockSh)}");
             foreach (var m in ShaderUtil.GetShaderMessages(rockSh)) Debug.Log($"ROCKSHOT RockLit: {m.severity} {m.message} line {m.line}");
         }
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
+        var game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
         Debug.Log($"ROCKSHOT rock material shader: {RockFace.Material(Mats.LitShader).shader.name}");
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        var rider = Get<Rider>("rider"); var body = Get<RiderBody>("body");
-        var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props"); var dayNight = Get<DayNight>("dayNight");
+        var rider = game.rider; var body = game.body;
+        var terrain = game.terrain; var props = game.props; var dayNight = game.dayNight;
         var dress = Object.FindFirstObjectByType<CourseDressing>();
         var atmo = Object.FindFirstObjectByType<Atmosphere>();
         var draw = typeof(Forest).GetMethod("Draw", NP);
@@ -499,13 +494,10 @@ public static class RidgeTest
     public static void SnowLineShots()
     {
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
+        var game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        var rider = Get<Rider>("rider"); var body = Get<RiderBody>("body");
-        var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props"); var dayNight = Get<DayNight>("dayNight");
+        var rider = game.rider; var body = game.body;
+        var terrain = game.terrain; var props = game.props; var dayNight = game.dayNight;
         var dress = Object.FindFirstObjectByType<CourseDressing>();
         var atmo = Object.FindFirstObjectByType<Atmosphere>();
         var draw = typeof(Forest).GetMethod("Draw", NP);
@@ -680,13 +672,11 @@ public static class RidgeTest
 
     public static void Fit()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
+        var game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        var terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        var props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        var rider = game.rider;
+        var terrain = game.terrain;
+        var props = game.props;
         var dress = Object.FindFirstObjectByType<CourseDressing>();
         rider.input = null;
         const int RockLayer = 31, GroundLayer = 30;

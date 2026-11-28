@@ -62,11 +62,8 @@ public static class ControlsShot
     static void Grind()
     {
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        var rider = Get<Rider>("rider"); var body = Get<RiderBody>("body"); var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props");
+        var game = TestHarness.Boot();
+        var rider = game.rider; var body = game.body; var terrain = game.terrain; var props = game.props;
         var dress = Object.FindFirstObjectByType<CourseDressing>();
         var cam = Camera.main; var chase = cam.GetComponent<ChaseCamera>();
         var late = typeof(ChaseCamera).GetMethod("LateUpdate", NP);

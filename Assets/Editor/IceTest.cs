@@ -34,15 +34,12 @@ public static class IceTest
 
     static void Setup()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        r = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        r = game.rider;
+        body = game.body;
+        terrain = game.terrain;
+        props = game.props;
         r.input = null;
         r.Crash += why => lastCrash = why;
         // (a calm, cold, clear day: no fresh snow over the ice)
@@ -195,7 +192,7 @@ public static class IceTest
             r.Steer = CarveBot.Onto(r, line, 1.5f, 10f, 6f);
             if (r.Speed > v0 * 1.25f) r.Body.linearVelocity *= 0.995f;
             r.TestContacts(Dt);
-            r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+            TestHarness.Step(r, body, Dt);
             if (k % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
             if (frame != null) { body.Apply(Dt); frame(k); }
             else if (k % 4 == 0 || r.Crashed) body.Apply(r.Crashed ? Dt : 4 * Dt);
@@ -262,7 +259,7 @@ public static class IceTest
             r.Steer = r.Crashed ? 0f : carving ? 0.5f * Mathf.Sin((r.Z - s.z0) / 9f) + Mathf.Clamp((Slope.Centre(r.Z + 10f) - r.X) * 0.05f, -0.3f, 0.3f)
                                                : Mathf.Clamp((Slope.Centre(r.Z + 10f) - r.X) * 0.08f, -0.4f, 0.4f);
             if (r.Speed > v0 && !r.Airborne && !r.Crashed) r.Body.linearVelocity *= v0 / r.Speed;
-            r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+            TestHarness.Step(r, body, Dt);
             if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
             if (n % 2 == 0)
             {

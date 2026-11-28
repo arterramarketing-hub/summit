@@ -18,12 +18,9 @@ public static class CampWalkTest
 
     public static void Run()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
-        var camp = (Camp)typeof(SummitGame).GetField("camp", NP).GetValue(game);
-        var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
+        var game = TestHarness.Boot();
+        var camp = game.camp;
+        var body = game.body;
         typeof(SummitGame).GetMethod("ToHub", NP).Invoke(game, new object[] { true });
         ChaseCamera.TestDt = 1f / 60f;
         const float dt = 1f / 60f;
@@ -74,7 +71,7 @@ public static class CampWalkTest
         }
         // the fixed walk stick, through the camp's own frame
         {
-            var meta = (MetaUi)typeof(SummitGame).GetField("meta", NP).GetValue(game);
+            var meta = game.meta;
             var fingers = new System.Collections.Generic.List<CampInput.Touch>();
             Camp.TestTouches = fingers;
             void Frame() { camp.Step(dt, meta); body.Apply(dt); camp.CameraStep(dt); }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 
 /// <summary>
@@ -114,6 +115,26 @@ public static class TestHarness
         WaitForBurst(30f);
         Debug.Log($"TESTHARNESS exit {code}");
         EditorApplication.Exit(code);
+    }
+
+    /// <summary>
+    /// The game as a test wants it: the scene opened, the player's saved settings pinned to a fresh player's
+    /// (TestPrefs: the ride a snowboard, no upgrades, the default camera), the game booted (TestBoot), and, unless
+    /// toStart is false, on the start pad in daylight. Its parts are SummitGame's internal fields (game.rider,
+    /// game.body, game.terrain, game.props...).
+    /// </summary>
+    public static Summit.SummitGame Boot(bool toStart = true)
+    {
+        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
+        var game = UnityEngine.Object.FindFirstObjectByType<Summit.SummitGame>();
+        TestBoot.Boot(game, toStart);
+        return game;
+    }
+
+    /// <summary>One fixed step of the world as the game takes it: the rider, then the body, then physics.</summary>
+    public static void Step(Summit.Rider r, Summit.RiderBody body, float dt)
+    {
+        r.Tick(dt); body.PhysicsStep(); Physics.Simulate(dt);
     }
 
     /// <summary>Pass (0) when there were no failures, fail (1) otherwise.</summary>

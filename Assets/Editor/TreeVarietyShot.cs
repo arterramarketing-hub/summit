@@ -21,13 +21,14 @@ public static class TreeVarietyShot
     {
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop(); SummitImport.EnsureRealTrees();
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
+        TestPrefs.Pin();   // (before the tree look is set: the boot pins only once)
         PlayerPrefs.SetInt(Forest.TreesPref, 1);
         var game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
         Physics.simulationMode = SimulationMode.Script;
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        var rider = Get<Rider>("rider"); var body = Get<RiderBody>("body");
-        var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props"); var fx = Get<SnowFX>("fx");
+        var rider = game.rider; var body = game.body;
+        var terrain = game.terrain; var props = game.props; var fx = Get<SnowFX>("fx");
         var dress = Object.FindFirstObjectByType<CourseDressing>();
         var atmo = Object.FindFirstObjectByType<Atmosphere>();
         var cam = Camera.main; var chase = cam.GetComponent<ChaseCamera>();

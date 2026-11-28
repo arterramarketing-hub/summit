@@ -41,8 +41,7 @@ public static class ArcadeTreeShot
         Farview.TestOn = true; Farview.TestClock = 0.0;
         game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        rider = Get<Summit.Rider>("rider"); body = Get<RiderBody>("body"); terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props"); dayNight = Get<DayNight>("dayNight");
+        rider = game.rider; body = game.body; terrain = game.terrain; props = game.props; dayNight = game.dayNight;
         cam = Camera.main; chase = cam.GetComponent<ChaseCamera>(); farview = Farview.Instance; atmo = Object.FindFirstObjectByType<Atmosphere>();
         tUpd = typeof(SlopeStreamer).GetMethod("Update", NP); fUpd = typeof(Forest).GetMethod("Update", NP);
         cLate = typeof(ChaseCamera).GetMethod("LateUpdate", NP); aLate = typeof(Atmosphere).GetMethod("LateUpdate", NP);
@@ -137,7 +136,7 @@ public static class ArcadeTreeShot
             rider.Steer = Mathf.Clamp((want - rider.Heading) * 2.2f, -1f, 1f);
             var v = rider.Body.linearVelocity; if (v.magnitude > Speed) rider.Body.linearVelocity = v * (Speed / v.magnitude);
             rider.TestContacts(Dt);
-            rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+            TestHarness.Step(rider, body, Dt);
             if (n % 2 == 1) body.Apply(2f * Dt);
             if (n % 4 == 3 && chase != null) cLate.Invoke(chase, null);
             if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }

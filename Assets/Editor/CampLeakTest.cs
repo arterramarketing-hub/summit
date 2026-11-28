@@ -25,9 +25,9 @@ public static class CampLeakTest
         try
         {
             TestBoot.Boot(game);
-            var camp = (Camp)typeof(SummitGame).GetField("camp", NP).GetValue(game);
+            var camp = game.camp;
             typeof(SummitGame).GetMethod("ToHub", NP).Invoke(game, new object[] { true });
-            var props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+            var props = game.props;
             foreach (bool realistic in new[] { true, false })
             {
                 // the trees' look: the camp's firs follow it (TREES: REALISTIC or ORIGINAL)

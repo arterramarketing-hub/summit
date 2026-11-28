@@ -28,15 +28,12 @@ public static class ReceiptTest
 
     public static void Run()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestPrefs.Pin();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        r = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        r = game.rider;
+        body = game.body;
+        terrain = game.terrain;
+        props = game.props;
         try
         {
             TestBoot.NewMountain(game, 1000, terrain, props);
@@ -244,7 +241,7 @@ public static class ReceiptTest
 
     static void Step()
     {
-        r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+        TestHarness.Step(r, body, Dt);
         game.TestPoints(Dt);
     }
 
@@ -309,7 +306,7 @@ public static class ReceiptTest
     /// <summary>The game's figure is the receipt's: every dollar on screen is a line on it.</summary>
     static void Check()
     {
-        float medical = (float)typeof(SummitGame).GetField("medical", NP).GetValue(game);
+        float medical = game.medical;
         if (Mathf.RoundToInt(medical) != game.Bill.RunTotal) { fails++; Say($"   !! medical ${medical:N0} but the receipt's run total is ${game.Bill.RunTotal:N0}"); }
     }
 

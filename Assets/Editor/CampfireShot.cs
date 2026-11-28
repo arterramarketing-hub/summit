@@ -34,10 +34,9 @@ public static class CampfireShot
         game = Object.FindFirstObjectByType<SummitGame>();
         TestPrefs.Pin();
         TestBoot.Boot(game, false);
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        camp = Get<Camp>("camp"); meta = Get<MetaUi>("meta"); body = Get<RiderBody>("body"); rider = Get<Rider>("rider");
-        terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props"); dayNight = Get<DayNight>("dayNight");
-        var hud = Get<Hud>("hud");
+        camp = game.camp; meta = game.meta; body = game.body; rider = game.rider;
+        terrain = game.terrain; props = game.props; dayNight = game.dayNight;
+        var hud = game.hud;
         cam = Camera.main; atmo = Object.FindFirstObjectByType<Atmosphere>();
         tUpd = typeof(SlopeStreamer).GetMethod("Update", NP); fUpd = typeof(Forest).GetMethod("Update", NP); aLate = typeof(Atmosphere).GetMethod("LateUpdate", NP);
         fMove = typeof(Camp).GetField("moveKind", NP);
@@ -317,7 +316,7 @@ public static class CampfireShot
         typeof(SummitGame).GetMethod("ToRiding", NP).Invoke(game, null);
         int steps0 = Alyssa.Steps;
         Physics.simulationMode = SimulationMode.Script;
-        for (int i = 0; i < 240; i++) { rider.Tick(dt); body.PhysicsStep(); Physics.Simulate(dt); }
+        for (int i = 0; i < 240; i++) { TestHarness.Step(rider, body, dt); }
         Physics.simulationMode = SimulationMode.FixedUpdate;
         Check(Alyssa.Steps == steps0, $"four seconds of the run: she was moved on {Alyssa.Steps - steps0} times");
         Log($"riding at z={rider.Z:0} after the restart");
