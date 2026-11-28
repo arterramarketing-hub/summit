@@ -127,24 +127,45 @@ def mesh_for(part):
 PART = "Chair"   # the part being built
 
 
+# (liftlook) parts drawn with a texture of their own instead of the palette (SkiLift gives each its material): their
+# UVs are the game-space metres across each face (box-projected: a level face by x and z, an upright one by its
+# width and y, so streaks run down), over this many metres a tile
+TEXPARTS = {}
+
+
 def add(src, paint, m, smooth=False):
-    """Copy a temp bmesh into the current part through matrix m (game space), painted one palette colour."""
+    """Copy a temp bmesh into the current part through matrix m (game space), painted one palette colour (or, in a
+    textured part, mapped in metres: TEXPARTS)."""
     dst = mesh_for(PART)
     uv = dst.loops.layers.uv.active
     u, v = cell_uv(paint)
-    vmap = {}
+    tile = TEXPARTS.get(PART)
+    vmap, gco = {}, {}
     for vert in src.verts:
         p = m @ vert.co
         for i in range(3):
             lo[PART][i] = min(lo[PART][i], p[i]); hi[PART][i] = max(hi[PART][i], p[i])
-        vmap[vert] = dst.verts.new(TOB @ p)
+        nv = dst.verts.new(TOB @ p)
+        vmap[vert] = nv; gco[nv] = p
     flip = m.to_3x3().determinant() > 0   # the mirror above turns faces round; a mirrored m turns them back
     for f in src.faces:
         vs = [vmap[x] for x in f.verts]
         nf = dst.faces.new(list(reversed(vs)) if flip else vs)
         nf.smooth = smooth and f.smooth
-        for l in nf.loops:
-            l[uv].uv = (u, v)
+        if tile is None:
+            for l in nf.loops:
+                l[uv].uv = (u, v)
+        else:
+            pts = [gco[x] for x in vs]
+            nrm = Vector((0.0, 0.0, 0.0))
+            for i in range(len(pts)):   # (Newell's normal: any polygon)
+                a, b = pts[i], pts[(i + 1) % len(pts)]
+                nrm += Vector(((a.y - b.y) * (a.z + b.z), (a.z - b.z) * (a.x + b.x), (a.x - b.x) * (a.y + b.y)))
+            ax = max(range(3), key=lambda i: abs(nrm[i]))
+            ia, ib = {0: (2, 1), 1: (0, 2), 2: (0, 1)}[ax]
+            for l in nf.loops:
+                q = gco[l.vert]
+                l[uv].uv = (q[ia] / tile, q[ib] / tile)
         tris[PART] += len(f.verts) - 2
     src.free()
 
@@ -449,10 +470,23 @@ for name, people in RIDERS.items():
         rider_lod(p[0], p[1], p[2], p[3])
 
 # ---------------------------------------------------------------- station
+# (liftlook) Most of a station is drawn with textures of its own (TEXPARTS, SkiLift's materials): the galvanised steel,
+# weathered (the deck's slab and frame, the legs and their bracing, the column, the guide rails); the deck's planks;
+# the housing's bolted panels, white, with its stripe and the sign over the mouth in red; a dark bolted skirt along the
+# housing's sides over the bullwheel; black rubber matting in each lane where riders load and unload; the painted lines
+# (a load or unload line across each lane, the deck's ends striped). The palette keeps the glass, the lamps, the
+# bullwheel, the snow on the roof. The railings and the operator's hut are parts of their own, one for each side:
+# a top station's unload wing (LiftLine.UnloadWing) opens one side, and SkiLift draws neither railing nor hut there.
 
-PART = "Station"
+TEXPARTS.update({"StationGalv": 2.0, "StationDeck": 1.0, "StationShell": 2.0, "StationAccent": 2.0, "StationCowl": 2.0,
+                 "StationMat": 1.0, "StationLine": 1.0, "RailR": 2.0, "RailL": 2.0})
 W, L = STATION_HALF_WID, STATION_HALF_LEN
-box("deck", (0, -0.18, 0), (2 * W, 0.36, 2 * L))                                   # the deck
+
+PART = "StationDeck"
+box("deck", (0, -0.02, 0), (2 * W, 0.04, 2 * L))                                   # the planks on top
+
+PART = "StationGalv"
+box("deck", (0, -0.21, 0), (2 * W, 0.34, 2 * L))                                   # the deck's slab under them
 box("steel", (0, -0.5, 0), (2 * W - 0.6, 0.3, 2 * L - 0.6))                        # its frame
 for sx in (-1, 1):
     for z in (-L + 0.5, 0, L - 0.5):
@@ -462,29 +496,92 @@ for sx in (-1, 1):
             beam("steel", (sx * (W - 0.5), ya, z0), (sx * (W - 0.5), yb, z1), 0.14, 0.14)   # bracing
     for y in (-5.2, -9.8):
         beam("steel", (sx * (W - 0.5), y, -L + 0.5), (sx * (W - 0.5), y, L - 0.5), 0.2, 0.2)
-    # the railing along each side (the ends are open: the chairs come and go at the front, riders leave at the back)
-    for z in (-L + 0.1, -L / 2, 0, L / 2, L - 0.1):
-        tube("steel", (sx * (W - 0.1), 0, z), (sx * (W - 0.1), 1.1, z), 0.035, seg=4)
-    for y in (0.55, 1.1):
-        tube("steel", (sx * (W - 0.1), y, -L + 0.1), (sx * (W - 0.1), y, L - 0.1), 0.035, seg=4)
 for y in (-5.2, -9.8):
     for z in (-L + 0.5, 0, L - 0.5):
         beam("steel", (-(W - 0.5), y, z), (W - 0.5, y, z), 0.2, 0.2)
 # the column that carries the terminal, inside the chairs' loop
 box("steel", (0, 2.5, -0.2), (0.9, 5.0, 1.1))
 box("steel", (0, 0.15, -0.2), (1.5, 0.3, 1.7))
-# the terminal's housing over the cable, its stripe, its windows, and the snow on its roof
+# guide rails the chairs run along through the terminal, either side
+for sx in (-1, 1):
+    box("steel", (sx * HALF, STATION_CABLE + 0.2, (WHEEL_Z + L) / 2), (0.16, 0.12, L - WHEEL_Z))
+
+# the railing along each side (the ends are open: the chairs come and go at the front, riders leave at the back)
+for part, sx in (("RailR", 1), ("RailL", -1)):
+    PART = part
+    for z in (-L + 0.1, -L / 2, 0, L / 2, L - 0.1):
+        box("steel", (sx * (W - 0.1), 0.55, z), (0.07, 1.1, 0.07))
+    for y in (0.55, 1.1):
+        box("steel", (sx * (W - 0.1), y, 0), (0.06, 0.06, 2 * L - 0.2))
+    box("steel", (sx * (W - 0.1), 0.08, 0), (0.04, 0.16, 2 * L - 0.2))             # a kick plate along the foot
+
+# the terminal's housing over the cable: bolted panels between dark ribs, its red stripe, framed windows down each
+# side, a service door at the back on a small landing, a roof that overhangs the walls under a cap of snow, the sign
+# over the mouth
 HY0, HY1 = STATION_CABLE + 0.35, STATION_CABLE + 2.75
 HZ0, HZ1 = -L + 0.1, L - 0.4
 HW = HALF + 1.15
-box("shell", (0, (HY0 + HY1) / 2, (HZ0 + HZ1) / 2), (2 * HW, HY1 - HY0, HZ1 - HZ0))
-box("accent", (0, HY0 + 0.45, (HZ0 + HZ1) / 2), (2 * HW + 0.06, 0.34, HZ1 - HZ0 + 0.06))
-box("glass", (0, HY0 + 1.35, (HZ0 + HZ1) / 2 - 0.3), (2 * HW + 0.05, 0.75, HZ1 - HZ0 - 2.4))
-box("dark", (0, HY0 + 0.9, HZ1 + 0.02), (2 * HW - 1.0, 1.3, 0.05))                 # the dark mouth at the front
-box("shell", (0, HY1 + 0.22, (HZ0 + HZ1) / 2), (2 * HW - 0.9, 0.45, HZ1 - HZ0 - 0.9))
-box("snow", (0, HY1 + 0.56, (HZ0 + HZ1) / 2), (2 * HW - 1.1, 0.26, HZ1 - HZ0 - 1.1))
-box("snow", (0, HY1 + 0.08, (HZ0 + HZ1) / 2), (2 * HW + 0.1, 0.16, HZ1 - HZ0 + 0.1))
+HZM = (HZ0 + HZ1) / 2
+PART = "StationShell"
+box("shell", (0, (HY0 + HY1) / 2, HZM), (2 * HW, HY1 - HY0, HZ1 - HZ0))
+PART = "StationAccent"
+box("accent", (0, HY0 + 0.45, HZM), (2 * HW + 0.06, 0.34, HZ1 - HZ0 + 0.06))
 box("accent", (0, HY1 - 0.5, HZ1 + 0.05), (2.6, 0.6, 0.06))                        # the sign over the mouth
+PART = "StationCowl"
+# a dark bolted skirt along the housing's sides, down over the bullwheel (outside the chairs' way through)
+for sx in (-1, 1):
+    box("dark", (sx * (HW + 0.03), HY0 - 0.12, HZM), (0.06, 0.5, HZ1 - HZ0))
+box("dark", (0, HY0 - 0.03, WHEEL_Z - HALF - 0.35), (2 * HW, 0.32, 0.06))          # and round its back, behind the wheel
+# the ribs between its panels: down each side every 1.45 m, across each end every 1.5 m, its corners, a trim along
+# its foot and under its eaves
+BAYS = [HZ0 + 0.15 + i * (HZ1 - HZ0 - 0.3) / 8 for i in range(9)]
+for sx in (-1, 1):
+    for z in BAYS:
+        box("dark", (sx * (HW + 0.035), (HY0 + HY1) / 2, z), (0.07, HY1 - HY0, 0.09))
+    for y in (HY0 + 0.06, HY1 - 0.07):
+        box("dark", (sx * (HW + 0.04), y, HZM), (0.08, 0.12, HZ1 - HZ0 + 0.08))
+for sz, zf in ((1, HZ1), (-1, HZ0)):
+    for x in (-HW + 0.75, -HW + 2.25, HW - 2.25, HW - 0.75):
+        box("dark", (x, (HY0 + HY1) / 2, zf + sz * 0.035), (0.09, HY1 - HY0, 0.07))
+    for y in (HY0 + 0.06, HY1 - 0.07):
+        box("dark", (0, y, zf + sz * 0.04), (2 * HW + 0.08, 0.12, 0.08))
+# its roof: a slab out past the walls all round, its edge dark and bolted
+box("dark", (0, HY1 + 0.15, HZM), (2 * HW + 0.9, 0.3, HZ1 - HZ0 + 0.9))
+# the service door at the back, its landing (grating on brackets, a rail round it)
+DX = -(HW - 0.75)
+box("dark", (DX, HY0 + 1.0, HZ0 - 0.03), (0.92, 1.95, 0.05))
+box("dark", (DX + 0.32, HY0 + 1.0, HZ0 - 0.07), (0.06, 0.06, 0.05))                # its handle
+PART = "StationGalv"
+box("deck", (DX, HY0 - 0.04, HZ0 - 0.45), (1.5, 0.08, 0.9))
+for x in (DX - 0.72, DX + 0.72):
+    beam("steel", (x, HY0 - 0.08, HZ0 - 0.85), (x, HY0 - 0.7, HZ0 - 0.02), 0.08, 0.08)
+    box("steel", (x, HY0 + 0.5, HZ0 - 0.86), (0.05, 1.0, 0.05))
+box("steel", (DX, HY0 + 1.0, HZ0 - 0.86), (1.5, 0.05, 0.05))
+box("steel", (DX, HY0 + 0.5, HZ0 - 0.86), (1.5, 0.04, 0.04))
+
+PART = "Station"
+# its windows, each in its bay between the ribs: glass in a dark frame with a bar down the middle
+for sx in (-1, 1):
+    for i in range(1, 7):
+        z0, z1 = BAYS[i], BAYS[i + 1]
+        zc, wz = (z0 + z1) / 2, (z1 - z0) - 0.36
+        yc = HY0 + 1.42
+        box("glass", (sx * (HW + 0.01), yc, zc), (0.04, 0.8, wz))
+        for dy in (-0.43, 0.43):
+            box("dark", (sx * (HW + 0.05), yc + dy, zc), (0.07, 0.07, wz + 0.14))
+        for dz in (-(wz / 2 + 0.035), wz / 2 + 0.035, 0.0):
+            box("dark", (sx * (HW + 0.05), yc, zc + dz), (0.07, 0.86, 0.06))
+# the dark mouth at the front, and the snow on its roof: a cap out to the eaves, drooping over them front and back
+box("dark", (0, HY0 + 0.9, HZ1 + 0.02), (2 * HW - 1.0, 1.3, 0.05))
+box("snow", (0, HY1 + 0.48, HZM), (2 * HW + 0.75, 0.36, HZ1 - HZ0 + 0.75))
+box("snow", (0, HY1 + 0.74, HZM), (2 * HW + 0.2, 0.2, HZ1 - HZ0 + 0.2))
+for sz in (-1, 1):
+    box("snow", (0, HY1 + 0.36, HZM + sz * ((HZ1 - HZ0) / 2 + 0.47)), (2 * HW + 0.6, 0.3, 0.18))
+for sx in (-1, 1):
+    box("snow", (sx * (HW + 0.47), HY1 + 0.36, HZM), (0.18, 0.3, HZ1 - HZ0 + 0.6))
+# snow drifted round the column's foot
+box("snow", (0, 0.08, -0.2), (2.1, 0.16, 2.3))
+box("snow", (0, 0.2, -0.2), (1.7, 0.12, 1.9))
 # the bullwheel under it, on its shaft
 b = bmesh.new()
 bmesh.ops.create_cone(b, cap_ends=True, segments=24, radius1=HALF, radius2=HALF, depth=0.2)
@@ -493,21 +590,57 @@ for f in b.faces:
 add(b, "liner", mat4((0, STATION_CABLE - 0.03, WHEEL_Z), rot=(-90, 0, 0)), smooth=True)
 tube("pad", (0, STATION_CABLE - 0.2, WHEEL_Z), (0, STATION_CABLE + 0.12, WHEEL_Z), 0.45, seg=10)
 tube("steel", (0, STATION_CABLE, WHEEL_Z), (0, HY0, WHEEL_Z), 0.22, seg=8)
-# guide rails the chairs run along through the terminal, either side
-for sx in (-1, 1):
-    box("steel", (sx * HALF, STATION_CABLE + 0.2, (WHEEL_Z + L) / 2), (0.16, 0.12, L - WHEEL_Z))
 # floodlights under the front edge and along the sides
 for sx in (-1, 1):
     box("dark", (sx * (HW - 0.5), HY0 - 0.08, HZ1 - 0.3), (0.5, 0.14, 0.3))
     box("lamp", (sx * (HW - 0.5), HY0 - 0.16, HZ1 - 0.3), (0.42, 0.04, 0.24))
-    box("lamp", (sx * (HW + 0.04), HY0 + 0.1, 0), (0.04, 0.1, 1.6))
-# the operator's hut on the deck, outside the chairs' path
+    box("lamp", (sx * (HW + 0.1), HY0 + 0.1, 0), (0.04, 0.1, 1.6))
+# (over the door, a lamp)
+box("lamp", (DX, HY0 + 2.12, HZ0 - 0.12), (0.3, 0.06, 0.2))
+
+# rubber matting in each lane, where the chairs come in at the top and riders sit down at the bottom; the painted
+# lines: a load or unload line across each lane, the deck's ends striped wide, a stripe along each side's edge
+PART = "StationMat"
+for sx in (-1, 1):
+    box("dark", (sx * HALF, 0.012, 1.9), (2.5, 0.024, 6.0))
+PART = "StationLine"
+for sx in (-1, 1):
+    box("accent", (sx * HALF, 0.03, 4.75), (2.5, 0.012, 0.4))
+    box("accent", (sx * (W - 0.1), 0.006, 0), (0.18, 0.012, 2 * L - 1.0))
+for sz in (-1, 1):
+    box("accent", (0, 0.008, sz * (L - 0.26)), (2 * W - 0.1, 0.016, 0.5))
+
+# snow drifted against each railing's foot at the deck's corners (drawn with the railing: none on the open side)
+def wedge(paint, x_wall, x_in, z0, z1, h):
+    """A drift: a wedge of snow h high against a wall at x_wall, thinning to nothing at x_in, from z0 to z1."""
+    bm = bmesh.new()
+    pts = [(x_wall, 0, z0), (x_wall, h, z0), (x_in, 0, z0), (x_wall, 0, z1), (x_wall, h, z1), (x_in, 0, z1)]
+    vs = [bm.verts.new(Vector(p)) for p in pts]
+    # (faced out whichever side the wall is on: add() turns them for the mirror)
+    flip = x_in > x_wall
+    for f in ((0, 1, 2), (3, 5, 4), (0, 3, 4, 1), (1, 4, 5, 2), (0, 2, 5, 3)):
+        q = [vs[i] for i in f]
+        bm.faces.new(list(reversed(q)) if flip else q)
+    add(bm, paint, Matrix.Identity(4))
+for part, sx in (("DriftR", 1), ("DriftL", -1)):
+    PART = part
+    for (z0, z1) in ((-L + 0.05, -L + 2.4), (L - 1.3, L - 0.05)):   # (the front one clear of the hut)
+        wedge("snow", sx * (W - 0.12), sx * (W - 0.8), z0, z1, 0.34)
+
+# the operator's hut on the deck, outside the chairs' path: windows all round, a door facing the deck's front, a lamp
+# over it (lit at night with the windows: the palette's glow)
 HX = W - 0.85
-box("shell", (HX, 1.2, 3.2), (1.5, 2.4, 2.4))
-box("glass", (HX - 0.02, 1.55, 3.2), (1.52, 0.8, 2.0))
-box("glass", (HX, 1.55, 3.2), (1.1, 0.8, 2.44))
-box("accent", (HX, 0.35, 3.2), (1.54, 0.3, 2.44))
-box("snow", (HX, 2.5, 3.2), (1.8, 0.22, 2.7))
+for part, sx in (("HutR", 1), ("HutL", -1)):
+    PART = part
+    x = sx * HX
+    box("shell", (x, 1.2, 3.2), (1.5, 2.4, 2.4))
+    box("glass", (x - sx * 0.02, 1.55, 3.2), (1.52, 0.8, 2.0))
+    box("glass", (x, 1.55, 3.2), (1.1, 0.8, 2.44))
+    box("accent", (x, 0.35, 3.2), (1.54, 0.3, 2.44))
+    box("snow", (x, 2.5, 3.2), (1.8, 0.22, 2.7))
+    box("dark", (x - sx * 0.1, 0.95, 4.42), (0.8, 1.9, 0.04))                          # the door
+    box("dark", (x - sx * 0.1, 2.12, 4.52), (0.3, 0.08, 0.22))                         # the lamp over it
+    box("lamp", (x - sx * 0.1, 2.07, 4.54), (0.22, 0.03, 0.16))
 
 # ---------------------------------------------------------------- write it out
 

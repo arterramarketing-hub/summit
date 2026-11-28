@@ -276,6 +276,8 @@ namespace Summit
         readonly Dictionary<Vector2Int, int> lookOf = new Dictionary<Vector2Int, int>();
         Material[] plainMats, edgeMats;
         Material[] PlainMats { get { if (plainMats == null) Mats(); return plainMats; } }
+        /// <summary>The snow the near terrain is drawn with (for a lift top's unload wing to match it: SkiLift, liftlook).</summary>
+        public Material NearSnow => snowMaterial != null ? PlainMats[0] : null;
         Material[] EdgeMats { get { if (edgeMats == null) Mats(); return edgeMats; } }
 
         void Mats()

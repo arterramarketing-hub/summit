@@ -201,6 +201,7 @@ make("LiftChair", w: 1024, h: 256, bg: liftBlue, fg: .white, text: "QUAD CHAIR",
 make("LiftSingles", w: 512, h: 256, bg: NSColor(calibratedRed: 0.98, green: 0.80, blue: 0.10, alpha: 1), fg: NSColor(calibratedWhite: 0.08, alpha: 1), text: "SINGLES", sub: "FILL EVERY CHAIR", hazard: false, stripe: .black)
 make("LiftCamp", w: 1024, h: 256, bg: NSColor(calibratedRed: 0.13, green: 0.30, blue: 0.16, alpha: 1), fg: .white, text: "CAMP  ›", sub: "LODGE  ·  LOOKOUT  ·  DROP IN", hazard: false, stripe: .white)
 make("LiftUnload", w: 1024, h: 256, bg: liftBlue, fg: .white, text: "UNLOAD  ›  RUNS", sub: "STRAP IN CLEAR OF THE RAMP", hazard: false, stripe: red)
+make("LiftRamp", w: 1024, h: 256, bg: liftBlue, fg: .white, text: "UNLOAD RAMP", sub: "WIDE OPEN  ·  CLEAR OF THE CHAIRS  ·  OFF THE LIP", hazard: false, stripe: red)   // (liftlook: at the back of a top's unload wing)
 
 // the trail map board: the mountain drawn as a print, its runs in their colours and the lifts in red
 func makeMap(_ name: String, w: Int, h: Int) {

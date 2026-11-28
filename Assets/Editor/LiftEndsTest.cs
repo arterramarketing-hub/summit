@@ -20,7 +20,10 @@ using Summit;
 /// -executeMethod LiftEndsTest.Run (ENDS_SEEDS=...). Log lines: ENDS, ENDS-FAIL, ENDS done.
 /// Shots (with the GPU, without -quit: one picture an editor frame): -executeMethod LiftEndsTest.Shots
 ///   (ENDS_OUT=dir, ENDS_SEED=one seed): the Summit lift arriving at the camp, its unload, a bottom station's maze from
-///   the chase camera and from above, a park lift, and the layout from high above. Log lines: ENDS-SHOT.
+///   the chase camera and from above, a park lift, and the layout from high above; and a rider's view down the hill at
+///   the first line's top and bottom, the park lift's top and the Summit lift's top (rider-*: far, near, from up the
+///   line), and at each top's unload wing (liftlook: coming down the lane at it, at its lip looking down the landing,
+///   and from beside it). Log lines: ENDS-SHOT.
 /// </summary>
 public static class LiftEndsTest
 {
@@ -172,9 +175,10 @@ public static class LiftEndsTest
         Debug.Log($"ENDS-SHOT seed {seed}: {LiftLine.Lifts.Length} lifts\n" + LiftLine.Report());
         // the views: from what each end is, a chase-camera view (behind and above a rider coming in) and one from above
         var views = new List<(string name, Vector3 eye, Vector3 look, Vector3 rider, float fov)>();
-        LiftEnds.End summitTop = null, bottom = null, park = null, parkTop = null;
+        LiftEnds.End summitTop = null, bottom = null, park = null, parkTop = null, firstTop = null;
         foreach (var e in ends.Ends)
         {
+            if (!e.lift.second && !e.lift.summit && e.top && firstTop == null) firstTop = e;
             if (e.lift.summit && e.top) summitTop = e;
             if (!e.lift.second && !e.lift.summit && !e.top && e.queue.Count >= 8 && bottom == null) bottom = e;
             if (e.lift.park && !e.top && park == null) park = e;
@@ -208,6 +212,33 @@ public static class LiftEndsTest
             views.Add(("park-bottom", park.P(16f, -LiftLine.StationHalfLen - 12f) + Vector3.up * 3f, park.st + Vector3.up * 2f, park.P(16f, -LiftLine.StationHalfLen - 12f), 60f));
         if (parkTop != null)
             views.Add(("park-top", parkTop.P(16f, -LiftLine.StationHalfLen - 14f) + Vector3.up * 2.5f, parkTop.P(8f, -LiftLine.StationHalfLen - 5f) + Vector3.up * 1f, parkTop.P(16f, -LiftLine.StationHalfLen - 14f), 60f));
+        // (liftlook) a rider's view down the hill at each kind of end: from the run's edge up the line from it, at a
+        // rider's height, far and near, looking down at its unload (or its load), and from straight up the line
+        foreach (var (e, tag) in new[] { (firstTop, "first-top"), (parkTop, "park-top"), (summitTop, "summit-top"), (bottom, "first-bottom") })
+        {
+            if (e == null) continue;
+            float u = e.lift.summit ? 6f : 16f;
+            foreach (var (v, near) in new[] { (-55f, "far"), (-28f, "near") })
+            {
+                var stand = e.P(u, v); stand.y = Slope.Height(stand.x, stand.z);
+                views.Add(($"rider-{tag}-{near}", stand + Vector3.up * 1.7f, e.P(u * 0.35f, LiftLine.StationHalfLen + 6f) + Vector3.up * 0.8f, stand, 64f));
+            }
+            var up = e.P(0f, -40f); up.y = Slope.Height(up.x, up.z);
+            views.Add(($"rider-{tag}-line", up + Vector3.up * 1.7f, e.P(0f, LiftLine.StationHalfLen + 10f) + Vector3.up * 0.6f, up, 60f));
+            // its unload wing: coming down the lane at it, on it before the lip looking down the landing, and from beside
+            var w = e.top ? LiftLine.UnloadWing(e.lift) : null;
+            if (w == null) continue;
+            var l = e.lift;
+            float mid = w.x0 + LiftLine.WingWidth * 0.5f;
+            var lane = w.P(l, mid, 0f, w.z0 - 26f); lane.y = Slope.Height(lane.x, lane.z);
+            // (the rider stood behind the eye, out of the picture)
+            var behindLane = lane - l.dir * 6f; behindLane.y = Slope.Height(behindLane.x, behindLane.z);
+            views.Add(($"rider-{tag}-ramp", lane + Vector3.up * 1.7f, w.P(l, mid, 0.6f, w.Lip), behindLane, 64f));
+            var onIt = w.P(l, mid, 0f, w.Lip - 1.5f);
+            views.Add(($"rider-{tag}-lip", onIt + Vector3.up * 2.2f, w.P(l, mid - 1.5f, -9f, w.Lip + 40f), behindLane, 74f));
+            var beside = w.P(l, w.x1 + 30f, 0f, 2f); beside.y = Mathf.Max(Slope.Height(beside.x, beside.z), l.top.y - 4f);
+            views.Add(($"wing-{tag}-side", beside + Vector3.up * 3f, w.P(l, mid - 2f, -2f, 3f), beside, 60f));
+        }
         // the layout: the camp, the start, the Summit lift and cycle 0's lines, from high above and off to the side
         views.Add(("layout-cycle0", new Vector3(cx - 260f, Slope.Height(cx, 300f) + 420f, 380f), new Vector3(cx, Slope.Height(cx, 250f), 250f), new Vector3(cx, 0f, 200f), 60f));
 
@@ -219,6 +250,14 @@ public static class LiftEndsTest
             // (in one editor frame: what SkiLift draws instanced is gone when the frame ends)
             steps.Add(() => { Stand(view.rider, view.eye, view.look, view.fov); Shoot(Path.Combine(outDir, $"LiftEnds_s{seed}_{view.name}.png")); });
         }
+        // (liftlook) riding at speed at each top's unload wing: down its lane, onto it and off its lip, from a chase
+        // camera's place: a frame on the approach, one on the wing, one in the air
+        foreach (var (e, tag) in new[] { (firstTop, "first-top"), (parkTop, "park-top") })
+        {
+            var w = e != null ? LiftLine.UnloadWing(e.lift) : null;
+            if (w == null) continue;
+            RideSteps(e, w, tag, seed);
+        }
         steps.Add(() =>
         {
             SkiLift.TestClock = -1.0;
@@ -229,6 +268,67 @@ public static class LiftEndsTest
             TestHarness.Exit(0);
         });
         EditorApplication.update += Tick;
+    }
+
+    /// <summary>A ride down a wing's lane at speed, a few editor frames a step (each frame's lift drawn for its shot).</summary>
+    static void RideSteps(LiftEnds.End e, LiftLine.Wing w, string tag, int seed)
+    {
+        var l = e.lift;
+        float mid = w.x0 + LiftLine.WingWidth * 0.5f;
+        int shot = 0; float t = 0f;
+        string[] names = { "approach", "on-wing", "off-lip" };
+        float[] marks = { w.z0 - 10f, (w.z0 + w.z1) * 0.5f, w.Lip + 5f };
+        steps.Add(() =>
+        {
+            var start = w.P(l, mid, 0f, w.z0 - 45f);
+            r.ResetAt(start.x, start.z);
+            r.Heading = Mathf.Atan2(l.dir.x, l.dir.z);
+            body.ResetVisual();
+            RiderInput.TestDrive = true; RiderInput.TestFingers = 0;
+            r.Begin();
+            Stand0(start + Vector3.up * 3f, start + l.dir * 10f);
+        });
+        for (int k = 0; k < 40; k++)
+            steps.Add(() =>
+            {
+                if (shot >= marks.Length) return;
+                const float dt = 1f / 60f;
+                for (int i = 0; i < 15 && shot < marks.Length; i++)
+                {
+                    // (held to the lane's middle: steered toward a point on it 12 m ahead)
+                    var p = r.transform.position;
+                    float along = Vector3.Dot(p - l.top, l.dir);
+                    var aim = w.P(l, mid, 0f, along + 12f);
+                    float want = Mathf.Atan2(aim.x - p.x, aim.z - p.z);
+                    r.Steer = r.Airborne ? 0f : Mathf.Clamp(Mathf.DeltaAngle(r.Heading * Mathf.Rad2Deg, want * Mathf.Rad2Deg) / 15f, -1f, 1f);
+                    for (int k2 = 0; k2 < 2; k2++) { r.Tick(dt / 2f); body.PhysicsStep(); Physics.Simulate(dt / 2f); }
+                    body.Apply(dt); t += dt;
+                    if (along >= marks[shot])
+                    {
+                        var v = r.Velocity; var flat = new Vector3(v.x, 0f, v.z); flat = flat.sqrMagnitude > 0.1f ? flat.normalized : l.dir;
+                        var side = Vector3.Cross(Vector3.up, flat) * w.s;
+                        Debug.Log($"ENDS-RIDE {tag} {names[shot]}: {v.magnitude:0.0} m/s, airborne {r.Airborne}, crashed {r.Crashed}, {along:0.0} m along, {Vector3.Dot(p - l.top, l.across) * w.s:0.0} m out");
+                        Stand0(p - flat * 7f - side * 1.5f + Vector3.up * 2.6f, p + flat * 10f + Vector3.up * 0.3f);
+                        Shoot(Path.Combine(outDir, $"LiftEnds_s{seed}_ride-{tag}-{shot + 1}-{names[shot]}.png"));
+                        shot++;
+                    }
+                }
+                if (shot < marks.Length) { tUpd.Invoke(terrain, null); typeof(SkiLift).GetField("refreshClock", NP).SetValue(lift, 0f); lUpd.Invoke(lift, null); }
+            });
+        steps.Add(() => { RiderInput.TestDrive = false; r.Stop(); });
+    }
+
+    /// <summary>The camera at eye looking at look, the world round it brought up to date for a shot (the rider left as it is).</summary>
+    static void Stand0(Vector3 eye, Vector3 look)
+    {
+        terrain.Prewarm(); props.Prewarm(); if (dress != null) dress.Prewarm();
+        cam.fieldOfView = 66f;
+        cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(look - eye));
+        tUpd.Invoke(terrain, null); fUpd.Invoke(props, null);
+        typeof(Forest).GetMethod("Draw", NP)?.Invoke(props, null);
+        typeof(SkiLift).GetField("refreshClock", NP).SetValue(lift, 0f);
+        for (int i = 0; i < 2; i++) lUpd.Invoke(lift, null);
+        ends.Prewarm(eye, 2f);
     }
 
     static void Tick()

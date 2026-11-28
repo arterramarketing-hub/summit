@@ -46,7 +46,7 @@ namespace Summit
     /// windows and floodlights glow (the palette's glow picture, brought up with DayNight.Darkness), and one real
     /// light sits at whichever lamp is nearest the rider.
     /// </summary>
-    public class SkiLift : MonoBehaviour
+    public partial class SkiLift : MonoBehaviour
     {
         public const float NearRange = 140f;       // full towers and shadows (the render asset's shadow distance)
         public const float ChairNear = 64f;        // full chairs and riders (there are two lines to a cycle now: twice the chairs)
@@ -227,6 +227,7 @@ namespace Summit
         class Part
         {
             public Mesh mesh; public Matrix4x4 local = Matrix4x4.identity; public bool shadows;
+            public Material mat;   // (liftlook: a station's textured parts; the rest are painted from the palette)
             // with the world's far band on (Farview), a part with a near and a far version hands over by distance:
             // both drawn through the hand-over, each pixel one or the other (Shaders/Farview.hlsl, _FarviewNearFar)
             public MaterialPropertyBlock props;
@@ -234,6 +235,9 @@ namespace Summit
             public int Tris => mesh != null ? (int)(mesh.GetIndexCount(0) / 3) : 0;
         }
         Part mast, mastLod, head, headLod, pad, sheaves, sheavesLod, chair, chairLod, station, chairBar;
+        // (liftlook) a station's textured parts, its railings and its hut, one of each for either side
+        Part stationDeck, stationGalv, stationShell, stationAccent, stationCowl, stationMat, stationLine, railR, railL, hutR, hutL, driftR, driftL;
+        Part[] stationBody, stationNear;
         readonly Part[] riders = new Part[4], ridersLod = new Part[4];
         readonly List<Part> parts = new List<Part>();
 
@@ -264,6 +268,12 @@ namespace Summit
             sheaves = P("Sheaves", false); sheavesLod = P("SheavesLod", false);
             chair = P("Chair", true); chairLod = P("ChairLod", false);
             station = P("Station", true);
+            stationDeck = P("StationDeck", false); stationGalv = P("StationGalv", true); stationShell = P("StationShell", true);
+            stationAccent = P("StationAccent", false); stationCowl = P("StationCowl", false); stationMat = P("StationMat", false);
+            stationLine = P("StationLine", false); railR = P("RailR", false); railL = P("RailL", false); hutR = P("HutR", true); hutL = P("HutL", true);
+            driftR = P("DriftR", false); driftL = P("DriftL", false);
+            stationBody = new[] { station, stationDeck, stationGalv, stationShell, stationAccent };
+            stationNear = new[] { stationCowl, stationMat, stationLine };
             for (int i = 0; i < 4; i++)
             {
                 riders[i] = P("Riders" + (char)('A' + i), false);
@@ -336,6 +346,21 @@ namespace Summit
             postMat.SetColor("_BaseColor", new Color(0.13f, 0.13f, 0.14f));
             postMat.SetFloat("_Smoothness", 0.5f); postMat.SetFloat("_Metallic", 0.6f);
             Farview.Adopt(postMat);
+            // (liftlook) the stations' textures: Tools/MakeLiftTex.py's (Resources/Lift/Tex), and the lodge's planks and
+            // concrete (CC0 sets: Resources/Camp/LodgeTex), all through the far band like the rest of the lift
+            galvMat = TexMat(lit, "LiftGalv", "LiftGalv", new Color(0.97f, 0.97f, 0.98f), 0.32f, 0.35f);
+            shellMat = TexMat(lit, "LiftShell", "LiftPanel", new Color(0.88f, 0.89f, 0.9f), 0.45f, 0.1f);
+            accentMat = TexMat(lit, "LiftAccent", "LiftPanel", new Color(0.82f, 0.12f, 0.09f), 0.45f, 0.1f);
+            cowlMat = TexMat(lit, "LiftCowl", "LiftPanel", new Color(0.26f, 0.27f, 0.29f), 0.4f, 0.4f);
+            rubberMat = TexMat(lit, "LiftRubber", "LiftRubber", Color.white, 0.15f);
+            hazardMat = TexMat(lit, "LiftHazard", "LiftHazard", Color.white, 0.3f);
+            netMat = TexMat(lit, "LiftNet", "LiftNet", Color.white, 0.2f);
+            snowMat = TexMat(lit, "LiftSnow", "LiftSnow", new Color(0.9f, 0.93f, 0.98f), 0.22f);   // (groomed: a shade under the powder round it)
+            deckMat = LodgeMat("Decking", new Color(0.78f, 0.74f, 0.70f), galvMat);
+            concreteMat = LodgeMat("Concrete", new Color(0.70f, 0.70f, 0.68f), galvMat);
+            timberMat = LodgeMat("Glulam", new Color(0.62f, 0.50f, 0.40f), deckMat);   // (the wing's deck and trestle: weathered glulam)
+            stationDeck.mat = TexMat(lit, "LiftDeck", "LiftDeck", Color.white, 0.2f); stationGalv.mat = galvMat; stationShell.mat = shellMat; stationAccent.mat = accentMat;
+            stationCowl.mat = cowlMat; stationMat.mat = rubberMat; stationLine.mat = hazardMat; railR.mat = railL.mat = galvMat;
             rampMat = new Material(paint) { name = "LiftRamp" };   // (the palette again, seen from both sides: no winding to get wrong)
             rampMat.SetFloat("_Cull", 0f);
             litShader = lit;
@@ -363,6 +388,7 @@ namespace Summit
             public GameObject[] span, tower;        // each span's cable; each tower's collider
             public GameObject stationTop, stationBottom;
             public Roofs.Roof deckTop, deckBottom;  // their decks, ridden (Roofs)
+            public Roofs.Roof wingTop, lipTop;      // the top's unload wing and its lip (liftlook)
             public Collider[] stationTopCols, stationBottomCols;
             public Collider[][] towerCols;          // (kept, so the look round for switched-off colliders allocates nothing)
             public bool signBuilt;
@@ -408,6 +434,7 @@ namespace Summit
         void Free(Live lv)
         {
             Roofs.Remove(lv.deckTop); Roofs.Remove(lv.deckBottom); lv.deckTop = lv.deckBottom = null;
+            Roofs.Remove(lv.wingTop); Roofs.Remove(lv.lipTop); lv.wingTop = lv.lipTop = null;
             if (lv.root == null) return;
             // the cables' meshes are ours (the sign's are Unity's); one still being baked is let go once that is done
             foreach (var mf in lv.root.GetComponentsInChildren<MeshFilter>(true)) if (mf.sharedMesh != null && mf.sharedMesh.name.StartsWith("Lift") && !Baking_(mf.sharedMesh)) Destroy(mf.sharedMesh);
@@ -490,13 +517,31 @@ namespace Summit
                 }
                 // the stations
                 bool topIn = InRange(l.top.z - 8f, l.top.z + 8f, p.z), bottomIn = InRange(l.bottom.z - 8f, l.bottom.z + 8f, p.z);
-                if (topIn) station.list.Add(Frame(l.top, l.across, Vector3.up, l.dir) * station.local);
-                if (bottomIn) station.list.Add(Frame(l.bottom, -l.across, Vector3.up, -l.dir) * station.local);
-                Stream(ref lv.stationTop, ref lv.deckTop, ref lv.stationTopCols, topIn && (l.top - p).sqrMagnitude < 240f * 240f, lv, l.top, l.dir);
-                Stream(ref lv.stationBottom, ref lv.deckBottom, ref lv.stationBottomCols, bottomIn && (l.bottom - p).sqrMagnitude < 240f * 240f, lv, l.bottom, -l.dir);
+                // (the top's unload wing opens one side, liftlook: no railing there, and the hut on the other side)
+                var wing = LiftLine.UnloadWing(l);
+                if (topIn) PutStation(Frame(l.top, l.across, Vector3.up, l.dir), Flat(l.top, p), wing == null ? 0 : wing.s > 0f ? 1 : -1);
+                if (bottomIn) PutStation(Frame(l.bottom, -l.across, Vector3.up, -l.dir), Flat(l.bottom, p), 0);
+                Stream(ref lv.stationTop, ref lv.deckTop, ref lv.stationTopCols, topIn && (l.top - p).sqrMagnitude < 240f * 240f, lv, l.top, l.dir, wing);
+                Stream(ref lv.stationBottom, ref lv.deckBottom, ref lv.stationBottomCols, bottomIn && (l.bottom - p).sqrMagnitude < 240f * 240f, lv, l.bottom, -l.dir, null);
             }
             // (pieces left to build: on with them next frame)
             if (buildMore) refreshClock = 0f;
+        }
+
+        /// <summary>
+        /// A station's parts (liftlook): its body out to FarRange; its matting, painted lines, skirt, railings and hut
+        /// only near (NearRange). open: the side its unload wing is on in the station's frame (+1 its +x, -1 its -x, 0
+        /// none): no railing there, and the hut on the other side.
+        /// </summary>
+        void PutStation(Matrix4x4 f, float d, int open)
+        {
+            foreach (var part in stationBody) if (part.mesh != null) part.list.Add(f * part.local);
+            if (d > NearRange + Slack) return;
+            foreach (var part in stationNear) if (part.mesh != null) part.list.Add(f * part.local);
+            if (open != 1 && railR.mesh != null) { railR.list.Add(f * railR.local); if (driftR.mesh != null) driftR.list.Add(f * driftR.local); }
+            if (open != -1 && railL.mesh != null) { railL.list.Add(f * railL.local); if (driftL.mesh != null) driftL.list.Add(f * driftL.local); }
+            var hut = open == 1 ? hutL : hutR;
+            if (hut.mesh != null) hut.list.Add(f * hut.local);
         }
 
         // ---------------------------------------------------------------- near and far versions
@@ -684,6 +729,28 @@ namespace Summit
             board.GetComponent<MeshRenderer>().sharedMaterial = signMat;
         }
         Material rampMat, signMat;
+        Material galvMat, shellMat, accentMat, cowlMat, rubberMat, hazardMat, netMat, snowMat, deckMat, concreteMat, timberMat;
+
+        /// <summary>A plain lit material with one of the lift's own textures (liftlook), through the far band.</summary>
+        static Material TexMat(Shader lit, string name, string tex, Color c, float smooth, float metal = 0f)
+        {
+            var m = new Material(lit) { name = name, enableInstancing = true };
+            m.SetColor("_BaseColor", c);
+            var t = Resources.Load<Texture2D>("Lift/Tex/" + tex);
+            if (t != null) m.SetTexture("_BaseMap", t); else Debug.LogWarning("SkiLift: no texture Lift/Tex/" + tex);
+            m.SetFloat("_Smoothness", smooth); m.SetFloat("_Metallic", metal);
+            return Farview.Adopt(m);
+        }
+
+        /// <summary>One of the lodge's PBR materials (its planks, its concrete), tinted for the lift (a copy: the lodge's own stays as it is).</summary>
+        static Material LodgeMat(string name, Color tint, Material fallback)
+        {
+            var a = Resources.Load<Material>("Camp/LodgeTex/Materials/" + name);
+            if (a == null) return fallback;
+            var m = new Material(a) { name = "Lift" + name, enableInstancing = true };
+            m.SetColor("_BaseColor", tint);
+            return Farview.Adopt(m);
+        }
         Shader litShader;
 
         // ---------------------------------------------------------------- meshes built here
@@ -752,7 +819,7 @@ namespace Summit
         /// overhead; the hut. Both ends are open: where an end meets the snow, a bank of snow eases the board up
         /// onto the deck; where the ground has fallen away under it, it is a launch.
         /// </summary>
-        void Stream(ref GameObject go, ref Roofs.Roof roof, ref Collider[] cols, bool want, Live lv, Vector3 deck, Vector3 outward)
+        void Stream(ref GameObject go, ref Roofs.Roof roof, ref Collider[] cols, bool want, Live lv, Vector3 deck, Vector3 outward, LiftLine.Wing wing)
         {
             if (want && go == null && buildBudget <= 0) { buildMore = true; return; }   // (next frame: SpreadBuild)
             if (want && go == null)
@@ -763,6 +830,7 @@ namespace Summit
                 go.transform.SetPositionAndRotation(deck, Quaternion.LookRotation(outward, Vector3.up));
                 const float legs = 14f, W = LiftLine.StationHalfWid, L = LiftLine.StationHalfLen;
                 var t = go.transform;
+                int open = wing == null ? 0 : wing.s > 0f ? 1 : -1;   // (the side its unload wing opens, in its frame: its +x is the lift's across)
                 System.Action<string, Vector3, Vector3, Quaternion, bool> Box = (name, at, size, rot, ground) =>
                 {
                     var g = new GameObject(name);
@@ -784,8 +852,8 @@ namespace Summit
                         foreach (var (ya, yb) in new[] { (-0.6f, -5.2f), (-5.2f, -0.6f), (-5.2f, -9.8f), (-9.8f, -5.2f) })
                             Beam(t, new Vector3(x, ya, z0), new Vector3(x, yb, z1), 0.14f);
                     foreach (float y in new[] { -5.2f, -9.8f }) Beam(t, new Vector3(x, y, -L + 0.5f), new Vector3(x, y, L - 0.5f), 0.2f);
-                    // the railing: posts and two rails, 1.1 m high (as one thin wall)
-                    Box("Railing", new Vector3(sx * (W - 0.1f), 0.58f, 0f), new Vector3(0.1f, 1.16f, 2f * L - 0.12f), Quaternion.identity, false);
+                    // the railing: posts and two rails, 1.1 m high (as one thin wall); none on the unload wing's side
+                    if (sx != open) Box("Railing", new Vector3(sx * (W - 0.1f), 0.58f, 0f), new Vector3(0.1f, 1.16f, 2f * L - 0.12f), Quaternion.identity, false);
                 }
                 foreach (float y in new[] { -5.2f, -9.8f })
                     foreach (float z in new[] { -L + 0.5f, 0f, L - 0.5f })
@@ -794,15 +862,19 @@ namespace Summit
                 Box("Terminal", new Vector3(0f, LiftLine.StationCable + 1.6f, -0.15f), new Vector3(LiftLine.Gauge + 2.3f, 3.1f, 11.6f), Quaternion.identity, false);
                 Box("Column", new Vector3(0f, 2.5f, -0.2f), new Vector3(0.9f, 5f, 1.1f), Quaternion.identity, false);
                 Box("ColumnFoot", new Vector3(0f, 0.15f, -0.2f), new Vector3(1.5f, 0.3f, 1.7f), Quaternion.identity, false);
-                Box("Hut", new Vector3(W - 0.85f, 1.3f, 3.2f), new Vector3(1.6f, 2.6f, 2.5f), Quaternion.identity, false);
+                Box("Hut", new Vector3((open == 1 ? -1f : 1f) * (W - 0.85f), 1.3f, 3.2f), new Vector3(1.6f, 2.6f, 2.5f), Quaternion.identity, false);
                 // its deck is ground, with the snow banked against whichever end meets the snow
                 roof = Roofs.Add(Roofs.Deck, t, "LiftDeck");
                 Drifts(lv, roof);
+                // (liftlook) the top's unload wing, ridden and solid; and what stands round it: footings, pads, fences
+                if (wing != null) Wing(lv, t, wing, open);
+                Dressing(t, wing, open);
                 cols = go.GetComponentsInChildren<Collider>();
             }
             else if (!want && go != null)
             {
                 Roofs.Remove(roof); roof = null;
+                if (wing != null) { Roofs.Remove(lv.wingTop); Roofs.Remove(lv.lipTop); lv.wingTop = lv.lipTop = null; }
                 foreach (var mf in go.GetComponentsInChildren<MeshFilter>(true)) if (mf.sharedMesh != null) Destroy(mf.sharedMesh);   // (its snow banks)
                 Destroy(go); go = null; cols = null;
             }
@@ -826,7 +898,7 @@ namespace Summit
         /// tripping on its lip. None where the snow is further down than RampMax of that slope reaches: that end is a
         /// launch. Drawn as one mesh of the lift's snow, and ridden (Roofs: the roof's rampFront, rampBack).
         /// </summary>
-        void Drifts(Live lv, Roofs.Roof roof)
+        void Drifts(Live lv, Roofs.Roof roof, bool drawn = true)
         {
             const int SnowCell = 19;
             var s = roof.s;
@@ -862,7 +934,7 @@ namespace Summit
                     draw.Quad(a1, b1, b1 + Vector3.down * 0.4f, a1 + Vector3.down * 0.4f, SnowCell, roof.WorldDir(new Vector3(0f, 0f, sign)));
                 }
             }
-            if (draw.v.Count == 0) return;
+            if (draw.v.Count == 0 || !drawn) return;   // (a wing's banks are drawn with its snow: SnowSkin)
             var g = new GameObject("LiftDeckDrift");
             g.transform.SetParent(roof.t, true);
             g.transform.SetPositionAndRotation(roof.o, Quaternion.identity);
@@ -942,7 +1014,7 @@ namespace Summit
             foreach (var part in parts)
             {
                 if (part.mesh == null || part.list.Count == 0) continue;
-                var rp = new RenderParams(paint) { shadowCastingMode = part.shadows ? ShadowCastingMode.On : ShadowCastingMode.Off, receiveShadows = true };
+                var rp = new RenderParams(part.mat != null ? part.mat : paint) { shadowCastingMode = part.shadows ? ShadowCastingMode.On : ShadowCastingMode.Off, receiveShadows = true };
                 if (part.props != null && Farview.On) rp.matProps = part.props;
                 for (int i = 0; i < part.list.Count; i += 1000)
                     Graphics.RenderMeshInstanced(rp, part.mesh, 0, part.list, Mathf.Min(1000, part.list.Count - i), i);

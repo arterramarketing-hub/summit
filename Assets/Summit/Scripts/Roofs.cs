@@ -51,6 +51,10 @@ namespace Summit
             public float reach = Reach;        // how far past the roof's edge a board's middle still comes down on it (Reach)
             public string label = "Rooftop";   // the combo link for getting up there (none if points is 0)
             public int points = -1;            // its points (-1: Rider.RoofPoints)
+            public bool banked;                // snow may be banked against its ends (a lift's unload wing, as its Deck: SkiLift.Drifts)
+            // (liftlook) a lift's unload wing: snow banked against its sides too, down to the snow at ApronSlope, how far
+            // out at each RampStep along it from z0 (null, or 0: none there; its edge is a drop)
+            public float[] apronOut, apronIn;
             public float Top(float x, float z) => gable ? a - gx * Mathf.Max(Mathf.Abs(x), flat) : a + gx * x + gz * z;
             public Vector3 Normal(float x)
             {
@@ -155,7 +159,7 @@ namespace Summit
         {
             float yaw = t.eulerAngles.y * Mathf.Deg2Rad;
             var r = new Roof { s = s, o = t.position, c = Mathf.Cos(yaw), sn = Mathf.Sin(yaw), name = name, t = t };
-            float ex = Mathf.Max(-s.px0, s.px1) + 1f, ez = Mathf.Max(-s.pz0, s.pz1) + 1f + (s == Deck ? RampMax : 0f);
+            float ex = Mathf.Max(-s.px0, s.px1) + 1f + (s.banked ? 4.5f : 0f), ez = Mathf.Max(-s.pz0, s.pz1) + 1f + (s == Deck || s.banked ? RampMax : 0f);
             r.r2 = ex * ex + ez * ez;
             if (s.gable)
             {
@@ -184,9 +188,18 @@ namespace Summit
                 if (dx * dx + dz * dz > r.r2) continue;
                 var l = r.Local(x, z);
                 var s = r.s;
-                if (l.x < s.px0 - s.reach || l.x > s.px1 + s.reach) continue;
                 float top; Vector3 ln;
-                if (l.y >= s.pz0 - s.reach && l.y <= s.pz1 + s.reach)
+                if (l.x < s.px0 - s.reach || l.x > s.px1 + s.reach)
+                {
+                    // (a wing's side banked down to the snow: liftlook)
+                    if (s.apronOut == null || l.y < s.z0 || l.y > s.z1) continue;
+                    bool outer = l.x > s.x1;
+                    float d = outer ? l.x - s.x1 : s.x0 - l.x, len = Apron(outer ? s.apronOut : s.apronIn, s, l.y);
+                    if (len <= 0f || d > len) continue;
+                    top = r.o.y + s.Top(outer ? s.x1 : s.x0, l.y) - ApronSlope * d;
+                    ln = new Vector3(outer ? ApronSlope : -ApronSlope, 1f, 0f).normalized;
+                }
+                else if (l.y >= s.pz0 - s.reach && l.y <= s.pz1 + s.reach)
                 {
                     top = r.o.y + s.Top(Mathf.Clamp(l.x, s.x0, s.x1), Mathf.Clamp(l.y, s.z0, s.z1));
                     ln = s.Normal(l.x);
@@ -201,6 +214,7 @@ namespace Summit
                     ln = new Vector3(0f, 1f, front ? RampSlope : -RampSlope).normalized;
                 }
                 if (refY - Rider.R < top - Tol) continue;
+                if (s.banked && Slope.DrawnHeight(x, z) >= top) continue;   // (a lift's unload wing where the snow comes up over it: the snow is the ground)
                 if (roof != null && top < y) continue;   // (two roofs: the higher one)
                 y = top; n = r.WorldDir(ln); roof = r;
             }
@@ -208,6 +222,17 @@ namespace Summit
         }
 
         public const float RampStep = 0.5f, RampSlope = 0.3f, RampMax = 4f;
+        /// <summary>A lift's unload wing's sides, banked down to the snow (35 degrees: snow as it lies piled).</summary>
+        public const float ApronSlope = 0.7f;
+
+        /// <summary>How far out a wing's side bank reaches at z (along it, from its z0, RampStep apart).</summary>
+        static float Apron(float[] a, Shape s, float z)
+        {
+            if (a == null || a.Length < 2) return 0f;
+            float f = Mathf.Clamp((z - s.z0) / RampStep, 0f, a.Length - 1.001f);
+            int i = (int)f;
+            return a[i] <= 0f || a[i + 1] <= 0f ? 0f : Mathf.Lerp(a[i], a[i + 1], f - i);
+        }
 
         /// <summary>A lift station's deck (SkiLift): level, its top at the transform, x across (railings along both
         /// sides), z along the line (both ends open). No points of its own: the air off it is what scores.</summary>

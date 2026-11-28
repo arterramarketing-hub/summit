@@ -67,6 +67,8 @@ namespace Summit
             public int seenAt = -1;   // (the chairs' count when it last ticked: LiftRiders.SeenCount)
             public readonly List<Agent> people = new List<Agent>();
             public Vector3 P(float u, float v) => Snow(st + side * u + dir * v);
+            public LiftLine.Wing wing;   // (a top's unload wing, liftlook: LiftLine.UnloadWing)
+            public float du;             // (a top: how far out its flat is moved, past a wing on the run's side)
         }
 
         public enum Job { Queue, Load, Liftie, Chat, ClickIn, Unload, Strap, Push, Goggles, Point, Sit, Walk, Doff, Camp }
@@ -128,6 +130,14 @@ namespace Summit
             return m;
         }
 
+        /// <summary>A picture on a material made by Mat (its base map: no keyword of its own).</summary>
+        static Material Tex(Material m, string path)
+        {
+            var t = Resources.Load<Texture2D>(path);
+            if (t != null) { if (m.HasProperty("_BaseMap")) m.SetTexture("_BaseMap", t); m.mainTexture = t; }
+            return m;
+        }
+
         Material Sign(string name)
         {
             if (signs.TryGetValue(name, out var m)) return m;
@@ -142,10 +152,11 @@ namespace Summit
         {
             if (white != null) return;
             white = Mat("White", new Color(0.93f, 0.94f, 0.95f));
-            wood = Mat("Wood", new Color(0.42f, 0.28f, 0.17f));
-            red = Mat("Red", new Color(0.72f, 0.12f, 0.10f), 0.35f);
-            metal = Mat("Metal", new Color(0.62f, 0.64f, 0.66f), 0.55f);
-            dark = Mat("Dark", new Color(0.12f, 0.13f, 0.15f), 0.4f);
+            // (liftlook: pictures on the timber, the hut's boards, the steel; the lodge's planks and the lift's own textures)
+            wood = Tex(Mat("Wood", new Color(0.62f, 0.44f, 0.30f)), "Camp/LodgeTex/Planks_Albedo");
+            red = Tex(Mat("Red", new Color(0.80f, 0.20f, 0.15f), 0.35f), "Camp/LodgeTex/Planks_Albedo");
+            metal = Tex(Mat("Metal", new Color(0.92f, 0.93f, 0.95f), 0.55f), "Lift/Tex/LiftGalv");
+            dark = Tex(Mat("Dark", new Color(0.22f, 0.23f, 0.25f), 0.4f), "Lift/Tex/LiftPanel");
             rope = Mat("Rope", new Color(0.10f, 0.32f, 0.78f), 0.2f);
             yellow = Mat("Yellow", new Color(0.98f, 0.78f, 0.10f), 0.4f);
             orange = Mat("Orange", new Color(1.0f, 0.45f, 0.05f), 0.4f);
@@ -187,6 +198,7 @@ namespace Summit
             Why = "run"; if (z > Slope.GateZ && Mathf.Abs(Slope.Across(x, z)) < Slope.Half(z) + 2.5f) return false;
             Why = "kept"; if (Course.Keep(x, z, 1f) || Deadly.Below(x, z) || Cliffs.WallCut(x, z) < -0.05f) return false;
             Why = "hill"; if (LiftLine.HillOrLane(x, z, 1.5f)) return false;                         // (the way to a cable grind stays open)
+            Why = "unload"; if (LiftLine.InUnload(x, z, 1f)) return false;                          // (nor the way onto a top's unload wing and off its lip: liftlook)
             Why = "hamlet"; if (Hamlets.Taken(x, z) || TrailSigns.Near(x, z, 2f)) return false;
             Why = "pad"; if (!camp && Slope.OnPad(x, z)) return false;
             // (not on a face or bare rock: the mountain's own pitch is 36 degrees, so a station's ground is seldom flat;
@@ -315,13 +327,18 @@ namespace Summit
             }
             else
             {
-                // off the deck at its uphill end, then clear of it onto the flat beside the station
+                // off the deck at its uphill end, then clear of it onto the flat beside the station; where the top's unload
+                // wing is on the run's side (liftlook), across the wing and out onto a flat past its outer edge (du)
+                e.wing = LiftLine.UnloadWing(e.lift);
+                e.du = e.wing != null && e.wing.runSide ? e.wing.x1 + LiftLine.FlatOut - U0 : 0f;
+                float du = e.du;
                 e.load = e.P(6.2f, -L - 0.6f);
+                if (du > 0f) { e.load = e.P(LiftLine.StationHalfWid + 1.5f, Mathf.Max(e.wing.z0, -L) + 1f); e.load.y = e.st.y; }
                 foreach (var (u, v) in new[] { (9f, -L - 4f), (11.5f, -L - 6f), (8.5f, -L - 8f), (11f, -L - 10.5f), (12.5f, -L - 3f) })
-                    if (Ok(e, u, v)) e.strap.Add(e.P(u, v));
-                e.goggles = Ok(e, U0 + 0.8f, -L - 11f) ? e.P(U0 + 0.8f, -L - 11f) : Vector3.zero;
-                e.point = Ok(e, U1 - 0.4f, -L - 8.5f) ? e.P(U1 - 0.4f, -L - 8.5f) : Vector3.zero;
-                e.sit = Ok(e, U1 - 1f, -L - 13f) ? e.P(U1 - 1f, -L - 13f) : Vector3.zero;
+                    if (Ok(e, u + du, v)) e.strap.Add(e.P(u + du, v));
+                e.goggles = Ok(e, U0 + 0.8f + du, -L - 11f) ? e.P(U0 + 0.8f + du, -L - 11f) : Vector3.zero;
+                e.point = Ok(e, U1 - 0.4f + du, -L - 8.5f) ? e.P(U1 - 0.4f + du, -L - 8.5f) : Vector3.zero;
+                e.sit = Ok(e, U1 - 1f + du, -L - 13f) ? e.P(U1 - 1f + du, -L - 13f) : Vector3.zero;
                 if (e.lift.summit)
                 {
                     // on along a path into the camp (CampPath), and the riders' way off down the shoulder on the station's
@@ -374,9 +391,9 @@ namespace Summit
                     {
                         if (!Ok(e, u, v)) { have = false; continue; }
                         var foot = e.P(u, v);
-                        Post(e.root.transform, foot, 0.95f, 0.04f, metal);
+                        Post(e.root.transform, foot, 1.0f, 0.05f, wood);
                         var top = foot + Vector3.up * 0.88f;
-                        if (have) Rope(e.root.transform, last, top);
+                        if (have) { Rope(e.root.transform, last, top); Rope(e.root.transform, last + Vector3.down * 0.42f, top + Vector3.down * 0.42f); }
                         last = top; have = true;
                     }
                 }
@@ -396,17 +413,31 @@ namespace Summit
                 if (Ok(e, U0, -L - 22f)) Board(e.root.transform, e.P(U0, -L - 22f), facingUp, liftSign, 2.6f, 0.65f, 1.9f);
                 if (Ok(e, 7.3f + 2f * 1.6f + 0.6f, -L - 19.5f)) Board(e.root.transform, e.P(7.3f + 2f * 1.6f + 0.6f, -L - 19.5f), facingUp, "LiftSingles", 0.9f, 0.45f, 1.3f);
                 if (Ok(e, U1, -L - 22.5f)) Board(e.root.transform, e.P(U1, -L - 22.5f), facingUp, "TrailMap", 2.4f, 1.5f, 1.1f);
+                // (liftlook) a bench and crates by the hut, a trail signpost by the gates, a wind fence behind the maze's head
+                WindFence(e, U0 - 0.5f, -L - 25f, U1 + 1f, -L - 25f);
+                if (Ok(e, U0 + 1.4f, 6.6f)) Bench(e.root.transform, e.P(U0 + 1.4f, 6.6f), facingRun);
+                if (Ok(e, U0 + 3.4f, 5.4f)) Crates(e.root.transform, e.P(U0 + 3.4f, 5.4f), along, e.lift.id);
+                if (Ok(e, U1 + 0.9f, -L - 20.5f)) SignPost(e.root.transform, e.P(U1 + 0.9f, -L - 20.5f), facingUp, e.lift.park ? "SignPark" : "SignFreeride", liftSign);
             }
             else
             {
-                // the unload: its sign facing the chairs coming in, the trail map, wands marking the flat's run side
-                if (Ok(e, U0 - 0.5f, -L - 1.5f)) Board(e.root.transform, e.P(U0 - 0.5f, -L - 1.5f), Quaternion.LookRotation(e.dir + e.side * 0.3f, Vector3.up), e.lift.summit ? "LiftCamp" : "LiftUnload", 2.2f, 0.55f, 1.8f);
-                if (Ok(e, U1, -L - 5f)) Board(e.root.transform, e.P(U1, -L - 5f), facingRun, "TrailMap", 2.4f, 1.5f, 1.1f);
-                if (Ok(e, U1 + 0.5f, -L + 2f)) Board(e.root.transform, e.P(U1 + 0.5f, -L + 2f), facingRun, liftSign, 2.2f, 0.55f, 1.8f);
+                // the unload: its sign facing the chairs coming in, the trail map, wands marking the flat's run side (all
+                // moved out past a run-side unload wing, du: liftlook)
+                float du = e.du;
+                if (Ok(e, U0 - 0.5f + du, -L - 1.5f)) Board(e.root.transform, e.P(U0 - 0.5f + du, -L - 1.5f), Quaternion.LookRotation(e.dir + e.side * 0.3f, Vector3.up), e.lift.summit ? "LiftCamp" : "LiftUnload", 2.2f, 0.55f, 1.8f);
+                if (Ok(e, U1 + du, -L - 5f)) Board(e.root.transform, e.P(U1 + du, -L - 5f), facingRun, "TrailMap", 2.4f, 1.5f, 1.1f);
+                if (Ok(e, U1 + 0.5f + du, -L + 2f)) Board(e.root.transform, e.P(U1 + 0.5f + du, -L + 2f), facingRun, liftSign, 2.2f, 0.55f, 1.8f);
                 // (not at the Summit top's pad, lifttop2: there the flat opens onto its two groomed ways on that side)
-                if (!LiftTop.AtBench(e.lift))
+                // (liftlook) a rope corral along the flat's outer side in place of the wands, round its back too
+                if (!LiftTop.AtBench(e.lift) && !e.lift.summit)
+                {
+                    Corral(e, U1 + 1.5f + du, -L - 2f, U1 + 1.5f + du, -L - 17f);
+                    Corral(e, U1 + 1.5f + du, -L - 17.5f, U0 + du, -L - 17.5f);
+                }
+                else if (!LiftTop.AtBench(e.lift))
                     for (float v = -L - 3f; v >= -L - 15f; v -= 3f)
-                        if (Ok(e, U1 + 1.5f, v)) Post(e.root.transform, e.P(U1 + 1.5f, v), 1.4f, 0.025f, orange);
+                        if (Ok(e, U1 + 1.5f + du, v)) Post(e.root.transform, e.P(U1 + 1.5f + du, v), 1.4f, 0.025f, orange);
+                TopDressing(e, du);
                 if (e.toCamp.Count > 1) PathToCamp(e);
             }
         }
@@ -556,6 +587,156 @@ namespace Summit
             Solid(t, "Back", PrimitiveType.Cube, mid - face * Vector3.forward * 0.03f, face, new Vector3(w + 0.08f, hgt + 0.08f, 0.05f), dark, "Sign");
             var q = Part(t, PrimitiveType.Quad, mid + face * Vector3.forward * 0.005f, face * Quaternion.Euler(0f, 180f, 0f), new Vector3(w, hgt, 1f), Sign(sign));
             q.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        }
+
+        /// <summary>
+        /// Round a top's flat (liftlook): a rack, a bench, crates, a trail signpost; and, facing a rider coming down the
+        /// hill, the jump sign at the back corner of the unload wing, just off its lane.
+        /// </summary>
+        void TopDressing(End e, float du)
+        {
+            if (e.lift.summit) return;
+            float L = LiftLine.StationHalfLen;
+            var t = e.root.transform;
+            Quaternion across = Quaternion.LookRotation(e.side, Vector3.up), up = Quaternion.LookRotation(-e.dir, Vector3.up);
+            if (Ok(e, U0 + 1.2f + du, -L - 15.5f)) Rack(t, e.P(U0 + 1.2f + du, -L - 15.5f), across, e.lift.id + 7);
+            if (Ok(e, U1 - 1.2f + du, -L - 16.5f)) Bench(t, e.P(U1 - 1.2f + du, -L - 16.5f), Quaternion.LookRotation(e.dir, Vector3.up));
+            if (Ok(e, U0 + 0.3f + du, -L - 6.5f)) Crates(t, e.P(U0 + 0.3f + du, -L - 6.5f), across, e.lift.id);
+            if (Ok(e, U1 + 0.3f + du, -L - 18.5f)) SignPost(t, e.P(U1 + 0.3f + du, -L - 18.5f), up, e.lift.park ? "SignPark" : "SignFreeride", e.lift.park ? "LiftPark" : "LiftChair");
+            // the liftie's hut beside the station, out past the corral, its window on the unload; a second rack by the
+            // station's corner; a wind fence across the back of the flat
+            if (Ok(e, U1 + 4f + du, -L + 1.5f) && Ok(e, U1 + 5.2f + du, -L + 0.3f)) Hut(t, e.P(U1 + 4f + du, -L + 1.5f), Quaternion.LookRotation(-e.side, Vector3.up), e.lift.park ? "LiftPark" : "LiftChair");
+            if (Ok(e, U1 - 1.2f + du, -L + 0.8f)) Rack(t, e.P(U1 - 1.2f + du, -L + 0.8f), Quaternion.LookRotation(e.dir, Vector3.up), e.lift.id + 3);
+            WindFence(e, U0 + du, -L - 21f, U1 + 2f + du, -L - 21f);
+            var w = e.wing;
+            if (w != null)
+            {
+                // facing a rider coming down the hill, at the back corner of the unload wing, just off its lane
+                var at = w.P(e.lift, w.x1 + LiftLine.LaneOut + 2f, 0f, w.z0 - 2f);
+                if (Clear(at.x, at.z)) Board(t, Snow(at), up, "LiftRamp", 1.8f, 0.45f, 1.4f);
+            }
+        }
+
+        /// <summary>A rope corral from (ua, va) to (ub, vb) on the end's ground: timber posts every 2.5 m, two ropes (not
+        /// solid, as the maze's).</summary>
+        void Corral(End e, float ua, float va, float ub, float vb)
+        {
+            float len = new Vector2(ub - ua, vb - va).magnitude;
+            int n = Mathf.Max(1, Mathf.RoundToInt(len / 2.5f));
+            Vector3 last = Vector3.zero; bool have = false;
+            for (int i = 0; i <= n; i++)
+            {
+                float u = Mathf.Lerp(ua, ub, i / (float)n), v = Mathf.Lerp(va, vb, i / (float)n);
+                if (!Ok(e, u, v)) { have = false; continue; }
+                var foot = e.P(u, v);
+                Post(e.root.transform, foot, 1.05f, 0.05f, wood);
+                var top = foot + Vector3.up * 0.95f;
+                if (have) { Rope(e.root.transform, last, top); Rope(e.root.transform, last + Vector3.down * 0.45f, top + Vector3.down * 0.45f); }
+                last = top; have = true;
+            }
+        }
+
+        /// <summary>A slatted wind fence from (ua, va) to (ub, vb): panels 2.4 m long of upright boards with gaps between,
+        /// on posts, each panel one mesh and solid as drawn.</summary>
+        void WindFence(End e, float ua, float va, float ub, float vb)
+        {
+            float len = new Vector2(ub - ua, vb - va).magnitude;
+            int n = Mathf.Max(1, Mathf.RoundToInt(len / 2.4f));
+            for (int i = 0; i < n; i++)
+            {
+                float u0 = Mathf.Lerp(ua, ub, i / (float)n), v0 = Mathf.Lerp(va, vb, i / (float)n);
+                float u1 = Mathf.Lerp(ua, ub, (i + 1f) / n), v1 = Mathf.Lerp(va, vb, (i + 1f) / n);
+                if (!Ok(e, u0, v0) || !Ok(e, u1, v1)) continue;
+                Vector3 a = e.P(u0, v0), b = e.P(u1, v1);
+                var g = new GameObject("WindFence");
+                g.transform.SetParent(e.root.transform, false);
+                var mid = (a + b) * 0.5f; float low = Mathf.Min(a.y, b.y);
+                var along = b - a; along.y = 0f;
+                g.transform.SetPositionAndRotation(new Vector3(mid.x, low, mid.z), Quaternion.LookRotation(along.normalized, Vector3.up));
+                var m = SlatPanel(along.magnitude, 1.6f, Mathf.Abs(a.y - b.y) + 0.3f);
+                meshes.Add(m);
+                g.AddComponent<MeshFilter>().sharedMesh = m;
+                g.AddComponent<MeshRenderer>().sharedMaterial = wood;
+                var bc = g.AddComponent<BoxCollider>(); bc.center = new Vector3(0f, 0.9f, 0f); bc.size = new Vector3(0.12f, 1.6f, along.magnitude);
+                g.AddComponent<Obstacle>().label = "Wind fence";
+            }
+        }
+
+        /// <summary>A wind fence panel's mesh (its own frame: z along it, centred; y up from its foot): upright boards
+        /// 0.14 m wide with 0.09 m gaps, a rail along their tops and middles, a post at each end down `sink` into the snow.</summary>
+        static Mesh SlatPanel(float len, float h, float sink)
+        {
+            var v = new List<Vector3>(); var t = new List<int>(); var uv = new List<Vector2>();
+            void Box(Vector3 c, Vector3 s)
+            {
+                Vector3 hs = s * 0.5f;
+                Vector3[] q = { new Vector3(-1, -1, -1), new Vector3(1, -1, -1), new Vector3(1, 1, -1), new Vector3(-1, 1, -1), new Vector3(-1, -1, 1), new Vector3(1, -1, 1), new Vector3(1, 1, 1), new Vector3(-1, 1, 1) };
+                int[][] f = { new[] { 0, 3, 2, 1 }, new[] { 4, 5, 6, 7 }, new[] { 0, 4, 7, 3 }, new[] { 1, 2, 6, 5 }, new[] { 3, 7, 6, 2 }, new[] { 0, 1, 5, 4 } };
+                foreach (var face in f)
+                {
+                    int o = v.Count;
+                    for (int k = 0; k < 4; k++) { var p = c + Vector3.Scale(q[face[k]], hs); v.Add(p); uv.Add(new Vector2(p.z * 0.5f + p.x, p.y * 0.5f)); }
+                    t.Add(o); t.Add(o + 1); t.Add(o + 2); t.Add(o); t.Add(o + 2); t.Add(o + 3);
+                }
+            }
+            int n = Mathf.Max(2, Mathf.FloorToInt(len / 0.23f));
+            for (int i = 0; i < n; i++)
+            {
+                float z = -len * 0.5f + (i + 0.5f) * len / n;
+                Box(new Vector3(0f, h * 0.5f - sink * 0.5f, z), new Vector3(0.03f, h + sink, 0.14f));
+            }
+            foreach (float y in new[] { h * 0.45f, h - 0.15f }) Box(new Vector3(0.06f, y, 0f), new Vector3(0.06f, 0.1f, len));
+            foreach (float z in new[] { -len * 0.5f, len * 0.5f }) Box(new Vector3(0.08f, (h - sink) * 0.5f, z), new Vector3(0.11f, h + sink + 0.1f, 0.11f));
+            var m = new Mesh { name = "LiftEndsWindFence" };
+            m.SetVertices(v); m.SetUVs(0, uv); m.SetTriangles(t, 0); m.RecalculateNormals(); m.RecalculateBounds();
+            return m;
+        }
+
+        /// <summary>A bench: a plank seat and back on two timber legs, solid.</summary>
+        void Bench(Transform parent, Vector3 foot, Quaternion face)
+        {
+            var t = new GameObject("Bench").transform;
+            t.SetParent(parent, false);
+            Vector3 right = face * Vector3.right, fwd = face * Vector3.forward;
+            for (int s = -1; s <= 1; s += 2)
+            {
+                var f = Snow(foot + right * s * 0.75f);
+                Part(t, PrimitiveType.Cube, f + Vector3.up * 0.2f, face, new Vector3(0.08f, 0.6f, 0.42f), wood);
+            }
+            var seat = Snow(foot) + Vector3.up * 0.46f;
+            Solid(t, "Seat", PrimitiveType.Cube, seat, face, new Vector3(1.8f, 0.06f, 0.42f), wood, "Bench");
+            Part(t, PrimitiveType.Cube, seat - fwd * 0.2f + Vector3.up * 0.32f, face * Quaternion.Euler(-12f, 0f, 0f), new Vector3(1.8f, 0.3f, 0.05f), wood);
+        }
+
+        /// <summary>A few timber crates on the snow, one on top, solid.</summary>
+        void Crates(Transform parent, Vector3 foot, Quaternion along, int seed)
+        {
+            var t = new GameObject("Crates").transform;
+            t.SetParent(parent, false);
+            Vector3 dirv = along * Vector3.forward;
+            for (int i = 0; i < 3; i++)
+            {
+                float k = 0.55f + 0.15f * Slope.Hash01(seed, i, 71);
+                var f = i < 2 ? Snow(foot + dirv * (i - 0.5f) * 0.8f) : Snow(foot) + Vector3.up * 0.62f;
+                var turn = along * Quaternion.Euler(0f, (Slope.Hash01(seed, i, 72) - 0.5f) * 24f, 0f);
+                Solid(t, "Crate", PrimitiveType.Cube, f + Vector3.up * (k * 0.5f - 0.04f), turn, new Vector3(k, k, k), wood, "Crates");
+            }
+        }
+
+        /// <summary>A trail signpost: a timber post, two signs on it pointing different ways.</summary>
+        void SignPost(Transform parent, Vector3 foot, Quaternion face, string sign, string liftSign)
+        {
+            var t = new GameObject("SignPost").transform;
+            t.SetParent(parent, false);
+            Solid(t, "SignPole", PrimitiveType.Cube, foot + Vector3.up * 1.1f, face, new Vector3(0.12f, 2.6f, 0.12f), wood, "Sign");
+            foreach (var (h, yaw, name, w, ht) in new[] { (2.0f, -25f, sign, 1.3f, 0.33f), (1.35f, 30f, liftSign, 1.3f, 0.33f) })
+            {
+                var f = face * Quaternion.Euler(0f, yaw, 0f);
+                var mid = foot + Vector3.up * h + f * Vector3.forward * 0.08f;
+                Part(t, PrimitiveType.Cube, mid - f * Vector3.forward * 0.03f, f, new Vector3(w + 0.05f, ht + 0.05f, 0.04f), dark);
+                var q = Part(t, PrimitiveType.Quad, mid, f * Quaternion.Euler(0f, 180f, 0f), new Vector3(w, ht, 1f), Sign(name));
+                q.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            }
         }
 
         /// <summary>The Summit lift's path into the camp: packed snow a little darker than the powder, wands along it.</summary>
@@ -1018,6 +1199,12 @@ namespace Summit
             var local = next - e.st;
             float v = Vector3.Dot(local, e.dir), u = Vector3.Dot(local, e.side);
             bool deck = Mathf.Abs(v) < LiftLine.StationHalfLen && Mathf.Abs(u) < LiftLine.StationHalfWid;
+            // (and over a top's unload wing, liftlook: level with the deck)
+            if (!deck && e.wing != null)
+            {
+                float w = Vector3.Dot(next - e.lift.top, e.lift.across) * e.wing.s;
+                deck = v > e.wing.z0 && v < e.wing.z1 && w > LiftLine.StationHalfWid - 0.1f && w < e.wing.x1;
+            }
             next.y = deck ? Mathf.Max(e.st.y, Slope.DrawnHeight(next.x, next.z)) : Slope.DrawnHeight(next.x, next.z);
             a.pos = next;
             a.yaw = Yaw(to, to);

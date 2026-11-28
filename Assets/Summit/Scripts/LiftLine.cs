@@ -123,6 +123,7 @@ namespace Summit
             public int tries;
             public Hill hill;                     // the hill under its cable, if a spot was found for one (LiftHill.cs)
             public int gorge = -1;                // the span that crosses a ridge's gorge, if it does (LiftGorge.cs)
+            public Wing wing; public bool wingDone; public string wingWhy = "";   // its top's unload wing (LiftUnload.cs)
             public float gorgeDrop;               // and the most its chairs are over the ground there
             // the chairs' loop: its pieces in the order the chairs travel them, from leaving the bottom bullwheel
             public float[] cum;                   // loop distance at the start of each piece (and the whole length last)
@@ -296,7 +297,7 @@ namespace Summit
         /// True under a lift's line or on one of its stations: its cleared swath, where no tree, rock or building
         /// may stand. The same shape as Course.Keep, so placement can ask both alike.
         /// </summary>
-        public static bool Taken(float x, float z, float margin) => TakenBy(Lifts, x, z, margin) || OnHill(x, z, margin);
+        public static bool Taken(float x, float z, float margin) => TakenBy(Lifts, x, z, margin) || OnHill(x, z, margin) || InUnload(x, z, margin);
 
         static bool TakenBy(IList<Lift> all, float x, float z, float margin)
         {

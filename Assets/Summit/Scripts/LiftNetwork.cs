@@ -20,7 +20,8 @@ namespace Summit
     ///   - Where it meets a line already laid it is carried over it: the lowest thing on its chairs clears the
     ///     other's cable by OverTop + OverClear (5 m: a tower's head with its catwalk and beacon stands 3 m over
     ///     its cable, and 2 m to spare), for which its towers may be taller (HMaxOver). It never passes over
-    ///     another line's station, nor crosses one within CrossFromStation of a portal, and none of its towers
+    ///     another line's station, nor crosses one within CrossFromStation of a portal (TopRoom of either line's top:
+    ///     the landing off its unload wing, LiftUnload.cs), and none of its towers
     ///     or stations stands in another line's swath or in the lane to another line's hill.
     ///   - Its own hill (LiftHill.cs) goes only on a span that crosses no other line, and is given up if
     ///     the lane to it would run into another line's tower.
@@ -35,6 +36,7 @@ namespace Summit
         public const float OverClear = 2f;            // and the room left between that and the chairs passing over
         public const float OverSide = 3.7f;           // either side of the lower line's cables: two chairs' half widths and their swing
         public const float CrossFromStation = 22f;    // no crossing nearer than this to the lower line's portals
+        public const float TopRoom = 60f;             // nor nearer either line's top than this (liftlook: the jump off its unload wing, LiftUnload.cs)
         // (short, and from well out on one side to well out on the other: so they cross at CrowdAngle or more)
         static readonly float[] SecondLengths = { 170f, 150f, 200f, 130f, 230f, 260f };
         static readonly Vector2[] SecondOffsets =
@@ -184,8 +186,9 @@ namespace Summit
                 float sAt = (dx * o.dir.z - dz * o.dir.x) / det, tAt = (dx * l.dir.z - dz * l.dir.x) / det;   // where they meet, along each
                 float reach = 2f * Swath / Mathf.Abs(det);            // how far either side of that their swaths overlap
                 if (sAt < -reach || sAt > l.plan + reach || tAt < -reach || tAt > o.plan + reach) continue;   // they do not meet
-                if (tAt < StationHalfLen + CrossFromStation || tAt > o.plan - StationHalfLen - CrossFromStation) return false;
-                if (sAt < StationHalfLen + 30f || sAt > l.plan - StationHalfLen - 30f) return false;         // (no room to climb over it)
+                // (and never within TopRoom of either line's top: a rider jumps off its unload wing down the line, liftlook)
+                if (tAt < StationHalfLen + TopRoom || tAt > o.plan - StationHalfLen - CrossFromStation) return false;
+                if (sAt < StationHalfLen + TopRoom || sAt > l.plan - StationHalfLen - 30f) return false;     // (no room to climb over it)
                 (over ?? (over = new List<Lift>())).Add(o);
             }
             l.under = over != null ? over.ToArray() : NoLifts;
