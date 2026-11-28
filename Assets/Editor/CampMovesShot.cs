@@ -7,10 +7,11 @@ using UnityEngine;
 using Summit;
 
 /// <summary>
-/// The camp's twin-stick controls, jump and roll. First the touch logic on its own (CampInput), fed made-up fingers:
-/// which zone each lands in, what counts as a tap, a flick, a stick, a button. Then the real thing: scripted fingers
-/// through Camp.Step while the game runs, walking with the left thumb, tapping to jump, holding the right thumb to
-/// swing the camera round, flicking to roll; rendered as the phone shows it (sticks and all) to CampMoves/seq_moves.
+/// The camp's controls: one stick anywhere walks (and the camera follows round behind), a second finger held turns
+/// the camera by hand, a tap jumps, a flick rolls. First the touch logic on its own (CampInput), fed made-up fingers:
+/// what each finger is taken as. Then the real thing: scripted fingers through Camp.Step while the game runs, walking
+/// with one thumb, tapping a second finger to jump, holding it to swing the camera round, flicking to roll; rendered
+/// as the phone shows it (sticks and all) to CampMoves/seq_moves.
 /// Run: Unity -batchmode -projectPath . -executeMethod CampMovesShot.Run -logFile moves.log   (lines start MOVES)
 /// </summary>
 public static class CampMovesShot
@@ -38,10 +39,9 @@ public static class CampMovesShot
             EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
             game = Object.FindFirstObjectByType<SummitGame>();
             TestBoot.Boot(game, false);
-            T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-            camp = Get<Camp>("camp"); meta = Get<MetaUi>("meta"); body = Get<RiderBody>("body"); rider = Get<Rider>("rider");
-            terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
-            var hud = Get<Hud>("hud");
+            camp = game.camp; meta = game.meta; body = game.body; rider = game.rider;
+            terrain = game.terrain; props = game.props;
+            var hud = game.hud;
             cam = Camera.main; atmo = Object.FindFirstObjectByType<Atmosphere>();
             tUpd = typeof(SlopeStreamer).GetMethod("Update", NP); fUpd = typeof(Forest).GetMethod("Update", NP); aLate = typeof(Atmosphere).GetMethod("LateUpdate", NP);
             ChaseCamera.TestDt = Dt;
@@ -59,7 +59,7 @@ public static class CampMovesShot
         Camp.TestTouches = null;
         ChaseCamera.TestDt = 0f;
         Log($"done: {fails} failure(s)");
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     // ---- the touch logic alone
@@ -88,9 +88,21 @@ public static class CampMovesShot
         // 1. left thumb dragged and held: the move stick, never a tap or a flick
         var r = Play(Fresh(), f => f < 50 ? One(1, new Vector2(300f, 700f) + new Vector2(0f, Mathf.Min(f, 15) * 14f)) : None(), 55);
         Check($"left drag and hold walks (moved={r.moved} tap={r.tap} swipe={r.swipe} last={r.last})", r.moved && !r.tap && !r.swipe && r.last == "move");
-        // 2. right thumb held and dragged: the look stick (after a moment), never walks
+        // 2. one thumb on the right, held and dragged: the move stick too (one stick, anywhere), never the camera
         r = Play(Fresh(), f => f < 50 ? One(2, new Vector2(880f, 1200f) + new Vector2(Mathf.Min(f, 25) * 8f, 0f)) : None(), 55);
-        Check($"right hold and drag turns the camera (look={r.looked} moved={r.moved} tap={r.tap} last={r.last})", r.looked && !r.moved && !r.tap && r.last == "look");
+        Check($"one thumb on the right walks, it is not a camera stick (moved={r.moved} look={r.looked} tap={r.tap} last={r.last})", r.moved && !r.looked && !r.tap && r.last == "move");
+        // 2b. a second finger pressed and held while the first walks: the camera stick, and the walk carries on
+        var ci2 = Fresh(); bool looked2 = false, walked2 = true, lookEarly = false;
+        for (int f = 0; f < 60; f++)
+        {
+            list.Clear(); list.Add(new CampInput.Touch(20, new Vector2(300f, 700f + Mathf.Min(f, 10) * 20f)));
+            if (f >= 20 && f < 55) list.Add(new CampInput.Touch(21, new Vector2(850f + Mathf.Clamp(f - 34, 0, 15) * 8f, 1500f)));   // held still a moment, then dragged
+            ci2.Step(list, Dt, w, h, Hit, false);
+            if (f > 12 && !(ci2.MoveShown && ci2.Move.y > 0.5f)) walked2 = false;
+            if (ci2.LookShown && f < 20 + 8) lookEarly = true;   // not before it has been held a moment
+            if (ci2.LookShown && ci2.Look.x > 0.3f) looked2 = true;
+        }
+        Check($"a second finger held turns the camera while the first walks (look={looked2}, walk held={walked2}, too early={lookEarly})", looked2 && walked2 && !lookEarly);
         // 3. a quick tap on the right: a tap (a jump), and the camera never moved
         r = Play(Fresh(), f => f < 6 ? One(3, new Vector2(800f, 1400f) + new Vector2(f * 1.5f, 0f)) : None(), 10);
         Check($"quick tap on the right is a tap (tap={r.tap} look={r.looked} last={r.last})", r.tap && !r.looked && !r.swipe);
@@ -103,9 +115,9 @@ public static class CampMovesShot
         // 6. a flick on the left (the move side) is a roll too
         r = Play(Fresh(), f => f < 8 ? One(6, new Vector2(300f, 900f) + new Vector2(f * 55f, 0f)) : None(), 11);
         Check($"flick right on the left side is a swipe right (swipe={r.swipe} dir={r.swipeDir})", r.swipe && r.swipeDir.x > 0.9f);
-        // 7. a slow drag on the right that lets go is a camera turn, not a roll
+        // 7. a slow drag on the right that lets go is a walk, not a roll
         r = Play(Fresh(), f => f < 30 ? One(7, new Vector2(820f, 900f) + new Vector2(0f, f * 9f)) : None(), 33);
-        Check($"slow drag on the right is not a swipe (swipe={r.swipe} look={r.looked} last={r.last})", !r.swipe && r.looked);
+        Check($"slow drag on the right is not a swipe (swipe={r.swipe} moved={r.moved} last={r.last})", !r.swipe && r.moved);
         // 8. walking with the left thumb while the right taps: both at once
         var ci8 = Fresh(); bool tapWhileMoving = false, movedThrough = true;
         for (int f = 0; f < 40; f++)
@@ -135,7 +147,7 @@ public static class CampMovesShot
     static void Scripted(RenderTexture rt)
     {
         camp.SetNight(0f);
-        camp.Teleport(-4f, -88f, 90f);
+        camp.Teleport(-4f, -58f, 90f);
         var fingers = new List<CampInput.Touch>();
         Camp.TestTouches = fingers;
         for (int i = 0; i < 30; i++) Frame(rt, null);   // settle (the first frames come out half lit)
@@ -143,7 +155,8 @@ public static class CampMovesShot
         int shot = 0; int jumps = 0, lands = 0, rolls = 0, furrows = 0; float camYaw0 = cam.transform.eulerAngles.y;
         camp.Jumped += _ => jumps++; camp.Landed += (a, b, c) => { lands++; Log($"landed {c:0.0} m/s at {a}"); };
         camp.Rolled += (a, b) => { rolls++; Log($"roll toward {b}"); }; camp.Furrowed += (a, b) => furrows++;
-        Vector2 L0 = new Vector2(W * 0.25f, H * 0.22f), R0 = new Vector2(W * 0.74f, H * 0.42f);
+        Camp.TestTouches = new List<CampInput.Touch>(); camp.Step(Dt, meta);   // (a frame first: where the walk stick sits)
+        Vector2 L0 = camp.Controls.Home ?? new Vector2(W * 0.25f, H * 0.22f), R0 = new Vector2(W * 0.74f, H * 0.42f);
         bool peakShot = false, rollShot = false; Vector3 landAt = Vector3.zero, rollFrom = Vector3.zero; float lastKind = 0;
         float yawLook0 = 0f;
         for (float t = 0f; t < 7.2f; t += Dt)
@@ -183,6 +196,34 @@ public static class CampMovesShot
         Check($"a tap while walking jumped and landed (jumps={jumps}, landings={lands})", jumps == 1 && lands == 1);
         Check($"a flick rolled (rolls={rolls}) and pressed a furrow (marks={furrows})", rolls == 1 && furrows >= 2);
         Check($"the footprints carried on ({camp.FootprintCount})", camp.FootprintCount > 4);
+        // one thumb walks and turns: pushed to the side, the hero turns that way and the camera comes round behind
+        // (no second finger anywhere near it)
+        camp.Teleport(-4f, -58f, 90f);
+        for (int i = 0; i < 20; i++) Frame(rt, null);
+        float yawA = cam.transform.eulerAngles.y;
+        for (float t = 0f; t < 3f; t += Dt)
+        {
+            fingers.Clear();
+            fingers.Add(new CampInput.Touch(30, L0 + new Vector2(Mathf.Min(1f, t / 0.3f) * 80f, 20f)));   // the thumb on the walk stick (fixed, bottom left)
+            Frame(rt, Mathf.Abs(t - 2.5f) < Dt * 0.5f ? Path.Combine(outDir, "OneStickTurn.png") : null);
+        }
+        fingers.Clear();
+        float swung = Mathf.DeltaAngle(yawA, cam.transform.eulerAngles.y);
+        Check($"one thumb pushed sideways turns the hero and the camera follows round behind (camera swung {swung:0} deg)", Mathf.Abs(swung) > 35f);
+        // turned by hand with a second finger, it stays put for a moment instead of swinging straight back
+        for (int i = 0; i < 20; i++) Frame(rt, null);
+        float yawB = cam.transform.eulerAngles.y, yawHeld = 0f;
+        for (float t = 0f; t < 2.2f; t += Dt)
+        {
+            fingers.Clear();
+            fingers.Add(new CampInput.Touch(31, L0 + new Vector2(0f, Mathf.Min(1f, t / 0.3f) * 95f)));
+            if (t > 0.4f && t < 1.3f) fingers.Add(new CampInput.Touch(32, R0 + new Vector2(Mathf.Clamp01((t - 0.6f) / 0.3f) * 90f, 0f)));
+            Frame(rt, null);
+            if (Mathf.Abs(t - 1.7f) < Dt * 0.5f) yawHeld = cam.transform.eulerAngles.y;   // once the camera has caught up with the turn
+        }
+        fingers.Clear();
+        float byHand = Mathf.DeltaAngle(yawB, yawHeld), drift = Mathf.DeltaAngle(yawHeld, cam.transform.eulerAngles.y);
+        Check($"a second finger held swings the camera by hand ({byHand:0} deg), and it holds there for a moment after (drifted {drift:0} deg in 0.5 s)", Mathf.Abs(byHand) > 25f && Mathf.Abs(drift) < 6f);
         // the marks, from above
         Look(landAt + new Vector3(0.6f, 3.2f, -1.6f), landAt, 45f); Frame(rt, Path.Combine(outDir, "JumpPrints.png"), false);
         Look(rollFrom + new Vector3(1.4f, 4.2f, -2.2f), rollFrom, 50f); Frame(rt, Path.Combine(outDir, "RollFurrow.png"), false);

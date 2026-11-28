@@ -1,0 +1,713 @@
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.UI;
+using static Summit.SettingsSheet;
+
+namespace Summit
+{
+    /// <summary>
+    /// The first screen: the game's name, two ways in (the camp, or straight to the start gate), and behind them one
+    /// of two views (HOME SCREEN in the settings): JUMP, your rider hitting a kicker on bright white snow like a still
+    /// from a ski film come to life (StartJump), or FLIGHT, a helicopter circling the whole of Mt. Vertigo from far off.
+    ///
+    /// The view is drawn live, not played from a file: the game's own camera flies the circle and sees only the far
+    /// view's layer (FarMountain: this mountain's real run on the whole mountain of the backdrop photograph, the
+    /// country round it and drifts of mist), so it shows the mountain you are about to ride, in the light of the
+    /// time of day, through your own lens and filter, and adds nothing to the app's size. The flight is a pilot's,
+    /// not a turntable's: the circle is wider where the mountain is, the height and distance wander, the aim floats
+    /// and the horizon rolls a little; a rotor and the wind sit quietly under the music.
+    ///
+    /// The page's parts come up after the view has had a moment alone. Choosing a way in pushes the lens in on the
+    /// summit and into cloud, and the game changes scene behind the white. The settings aren't here: they open from
+    /// the camp, the start pad and the pause menu (Hud).
+    /// Hit-tested by hand like the rest of the game's menus (no EventSystem).
+    /// </summary>
+    public class StartPage : MonoBehaviour
+    {
+        // ---- the flight
+        public const float Fov = 38f;              // degrees top to bottom: a long lens
+        public const float OrbitSeconds = 380f;    // once round
+        public const float StartAzimuth = 12f;     // degrees round from straight down the valley: the run's face, a little from its right
+        public const float Fill = 1.18f;           // how much of the frame's width the massif takes
+        public const float Altitude = 1150f;       // metres above the valley floor
+        public const float AimHeight = 1480f;      // the point looked at, above the floor
+        const float NearClip = 30f;
+
+        // ---- the page
+        const float ViewAlone = 2.6f, FadeIn = 1.5f;   // seconds the view has to itself, then how long the parts take to come up
+        const float LeaveSeconds = 1.5f, CoverOut = 0.9f;
+        /// <summary>The time of day the JUMP view holds (TimeOfDay's clock: the middle of the day).</summary>
+        public const float JumpClock = 1.35f;
+
+        public bool Showing { get; private set; }
+        public System.Action Clicked;
+
+        // ---- which view: 0 JUMP (the default), 1 FLIGHT. Read as the page comes up
+        public static int Home
+        {
+            get => PlayerPrefs.GetInt("summit_home", 0) == 1 ? 1 : 0;
+            set { PlayerPrefs.SetInt("summit_home", value == 1 ? 1 : 0); PlayerPrefs.Save(); }
+        }
+        public static string HomeName => Home == 1 ? "FLIGHT" : "JUMP";
+        public static void StepHome(int dir) => Home = 1 - Home;
+        /// <summary>The rider the JUMP view copies (SummitGame sets it).</summary>
+        public RiderBody Body;
+        StartJump jump;
+        bool jumping, postWas, postKept;
+        UnityEngine.Rendering.Universal.UniversalAdditionalCameraData camData;
+        /// <summary>The JUMP view is the one showing.</summary>
+        public bool Jumping => jumping;
+        public StartJump Jump => jump;
+        /// <summary>The flight's clock, seconds (the test tools set it to look from anywhere round the circle).</summary>
+        public float Clock;
+
+        Camera cam;
+        Atmosphere atmo;
+        FarMountain far;
+        Shader lit;
+        Material soft;
+        System.Func<float> darkness;
+        System.Func<float> lensFov;   // the player's LENS setting, as extra degrees (the view takes a share of it)
+
+        int keptMask; float keptFov, keptNear, keptFar; bool kept;
+        Transform band; bool bandWas;
+
+        public void Build(Camera camera, Atmosphere atmosphere, Shader litShader, Material softParticle, System.Func<float> dark, System.Func<float> lens)
+        {
+            cam = camera; atmo = atmosphere; lit = litShader; soft = softParticle; darkness = dark; lensFov = lens;
+            far = new GameObject("FarMountain").AddComponent<FarMountain>();
+            far.transform.SetParent(transform, false);
+            far.gameObject.SetActive(false);
+            jump = new GameObject("StartJump").AddComponent<StartJump>();
+            jump.transform.SetParent(transform, false);
+            jump.Setup(camera, softParticle);
+            BuildUi();
+            BuildSound();
+        }
+
+        // ---------------------------------------------------------------- showing and hiding
+
+        /// <summary>Take the camera up over the mountain. `first`: the game has just opened (the view gets longer alone).</summary>
+        public void Show(bool first)
+        {
+            if (!kept)
+            {
+                keptMask = cam.cullingMask; keptFov = cam.fieldOfView; keptNear = cam.nearClipPlane; keptFar = cam.farClipPlane;
+                kept = true;
+            }
+            // the jump: its own little world (and the day held, so the rider is in daylight like the snow)
+            jumping = Home == 0 && jump.Show(Body);
+            if (jumping)
+            {
+                cam.cullingMask = 1 << StartJump.Layer;
+                // drawn straight, as a still is: the game's grading (its tone mapping, vignette and filter) would take the
+                // white snow grey. Put back as it was on Hide
+                camData = cam.GetComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>();
+                if (camData != null && !postKept) { postWas = camData.renderPostProcessing; postKept = true; camData.renderPostProcessing = false; }
+                Showing = true;
+                lapsing = false; TimeOfDay.Shown = JumpClock; DayNight.SkyTurn = 0f;
+                TimeJumped?.Invoke();
+                age = first ? 0f : 1.4f;
+                leaving = 0; leaveT = 0f; pressed = null;
+                page.gameObject.SetActive(true);
+                Frame(0f);
+                return;
+            }
+            far.gameObject.SetActive(true);
+            far.Build(lit);
+            BuildClouds();
+            cam.cullingMask = 1 << FarMountain.Layer;
+            cam.nearClipPlane = NearClip;
+            cam.farClipPlane = far.Reach + 20000f;
+            // the photo of the range beyond stays out of this view: the mountain being circled is that mountain, and
+            // it would stand on the horizon as its own twin (it is on another layer and is not drawn here; hidden
+            // as well, so that stays true whatever else changes)
+            band = atmo != null ? atmo.PhotoBand : null;
+            if (band != null) { bandWas = band.gameObject.activeSelf; band.gameObject.SetActive(false); }
+            Showing = true;
+            // the time-lapse picks up from the time the game is showing, so nothing jumps
+            lapseT = LapseTimeOf(TimeOfDay.Own); lapsing = true;
+            TimeOfDay.Shown = LapseClock(lapseT);
+            age = first ? 0f : 1.4f;
+            leaving = 0; leaveT = 0f; pressed = null;
+            page.gameObject.SetActive(true);
+            far.Shade(SunDir(), 0f, -1f);
+            Frame(0f);
+        }
+
+        /// <summary>Hand the camera back as it was found.</summary>
+        public void Hide()
+        {
+            if (!Showing) return;
+            Showing = false; leaving = 0; leaveT = 0f;
+            if (kept)
+            {
+                cam.cullingMask = keptMask; cam.fieldOfView = keptFov; cam.nearClipPlane = keptNear; cam.farClipPlane = keptFar;
+                kept = false;
+            }
+            if (band != null) { band.gameObject.SetActive(bandWas); band = null; }
+            // back to the game's own time, at once (the cloud is closed over the screen as this happens)
+            TimeOfDay.Shown = -1f; DayNight.SkyTurn = 0f;
+            TimeJumped?.Invoke();
+            jump.Hide(); jumping = false;
+            if (postKept && camData != null) camData.renderPostProcessing = postWas;
+            postKept = false;
+            far.gameObject.SetActive(false);
+            if (cloudRoot != null) cloudRoot.gameObject.SetActive(false);
+            page.gameObject.SetActive(false);
+        }
+        void OnDestroy() { if (Showing) { TimeOfDay.Shown = -1f; DayNight.SkyTurn = 0f; } }
+
+        // ---------------------------------------------------------------- the time-lapse
+
+        /// <summary>Called when the time shown jumps back to the game's own (put the light on at once).</summary>
+        public System.Action TimeJumped;
+
+        // A day in 45 seconds, but not at one rate: TimeOfDay's clock holds each phase's look most of the phase and
+        // changes over the last fifth of it (DayNight), and the evening goes from gold to pink inside its own phase.
+        // So each stretch has its own seconds: long enough in the full day and the deep night to enjoy them, slower
+        // still through the sunset and the dawn, and quick across the stretches where nothing changes.
+        static readonly float[] LapseAt = { 0f, 0.8f, 1f, 1.8f, 2f, 2.8f, 3f, 3.8f, 4f };   // the clock: morning, day, evening, night
+        static readonly float[] LapseSec = { 4.5f, 4f, 6.5f, 4f, 9f, 4f, 7f, 6f };         // seconds over each stretch
+        /// <summary>Degrees a second the sky (and its sun or moon) turns while the time-lapse runs: the clouds race.</summary>
+        public const float SkyTurnRate = 4.5f;
+        public static float LapseSeconds { get { float t = 0f; foreach (float s in LapseSec) t += s; return t; } }
+
+        float lapseT;
+        bool lapsing;
+
+        /// <summary>The clock the time-lapse shows `t` seconds into it.</summary>
+        public static float LapseClock(float t)
+        {
+            t = Mathf.Repeat(t, LapseSeconds);
+            for (int k = 0; k < LapseSec.Length; k++)
+            {
+                if (t < LapseSec[k]) return Mathf.Lerp(LapseAt[k], LapseAt[k + 1], t / LapseSec[k]);
+                t -= LapseSec[k];
+            }
+            return 0f;
+        }
+
+        /// <summary>How far into the time-lapse it shows the clock `c`.</summary>
+        public static float LapseTimeOf(float c)
+        {
+            c = Mathf.Repeat(c, 4f);
+            float t = 0f;
+            for (int k = 0; k < LapseSec.Length; k++)
+            {
+                if (c < LapseAt[k + 1]) return t + LapseSec[k] * Mathf.InverseLerp(LapseAt[k], LapseAt[k + 1], c);
+                t += LapseSec[k];
+            }
+            return 0f;
+        }
+
+        /// <summary>The time-lapse's own clock, seconds (the test tools set it to show any moment of it).</summary>
+        public float LapseTime { get => lapseT; set { lapseT = value; if (lapsing) TimeOfDay.Shown = LapseClock(lapseT); } }
+
+        /// <summary>
+        /// One frame of the time-lapse.
+        /// </summary>
+        void StepLapse(float dt)
+        {
+            if (!lapsing) { lapsing = true; lapseT = LapseTimeOf(TimeOfDay.Own); }
+            lapseT += dt;
+            TimeOfDay.Shown = LapseClock(lapseT);
+            DayNight.SkyTurn = Mathf.Repeat(DayNight.SkyTurn + SkyTurnRate * dt, 360f);
+        }
+
+        static Vector3 SunDir() => RenderSettings.sun != null ? -RenderSettings.sun.transform.forward : new Vector3(-0.5f, 0.7f, -0.5f);
+
+        // ---------------------------------------------------------------- the flight
+
+        float age, leaveT;
+        int leaving;   // 0 staying, 1 to the camp, 2 to the start gate
+
+        static float Ease(float t) { t = Mathf.Clamp01(t); return t * t * (3f - 2f * t); }
+
+        /// <summary>Where the helicopter is and where its camera points, `t` seconds into the flight.</summary>
+        public void Pose(float t, out Vector3 pos, out Quaternion rot, out float fov)
+        {
+            Vector3 mid = FarMountain.Middle;
+            float floor = FarMountain.FloorY;
+            // round the mountain, never quite at one rate
+            float phi = (StartAzimuth + 360f * t / OrbitSeconds) * Mathf.Deg2Rad + 0.04f * Mathf.Sin(t * 0.071f + 1.3f);
+            // the lens: the page's own long one, a share of the player's LENS setting on top, and the distance moved to
+            // keep the mountain the same size in the frame, so a wider lens changes the perspective and not the framing
+            float lens = lensFov != null ? lensFov() : 0f;
+            fov = Fov + 0.45f * lens;
+            float aspect = cam != null ? cam.aspect : 0.46f;
+            float across = Mathf.Sqrt(Mathf.Pow(FarMountain.HalfAcross * Mathf.Cos(phi), 2f) + Mathf.Pow(FarMountain.HalfAlong * Mathf.Sin(phi), 2f));
+            float tanV = Mathf.Tan(fov * 0.5f * Mathf.Deg2Rad);
+            float r = across / (tanV * aspect * Fill);
+            float tall = (FarMountain.SummitPoint.y - floor) / (2f * tanV * 0.42f);   // (a wide screen: the height is what has to fit)
+            r = Mathf.Max(r, tall);
+            r *= 1f + 0.035f * Mathf.Sin(t * 0.047f + 0.6f) + 0.012f * Mathf.Sin(t * 0.19f);
+            float alt = floor + Altitude + 230f * Mathf.Sin(t * 0.037f + 2.1f) + 70f * Mathf.Sin(t * 0.113f);
+            pos = new Vector3(mid.x + Mathf.Sin(phi) * r, alt, mid.z + Mathf.Cos(phi) * r);
+            // never low over a ridge
+            float ground = FarMountain.Height(pos.x, pos.z) + 520f;
+            if (pos.y < ground + 300f) { float h = Mathf.Clamp01((ground + 300f - pos.y) / 600f); pos.y = Mathf.Lerp(pos.y, ground + 300f, h * h * (3f - 2f * h)); }
+            pos.y += 9f * Mathf.Sin(t * 0.83f) + 5f * Mathf.Sin(t * 1.37f + 1f);   // the airframe riding the air
+            Vector3 side = new Vector3(Mathf.Cos(phi), 0f, -Mathf.Sin(phi));
+            // the aim floats, as a hand-held long lens does
+            Vector3 aim = new Vector3(mid.x, floor + AimHeight, mid.z) + side * (150f * Mathf.Sin(t * 0.09f + 0.4f)) + Vector3.up * (90f * Mathf.Sin(t * 0.061f));
+            float roll = 1.5f * Mathf.Sin(t * 0.13f + 0.5f) + 0.7f * Mathf.Sin(t * 0.41f) + 0.1f * Mathf.Sin(t * 2.3f);
+            float pitch = 0f;
+            if (leaving != 0)
+            {
+                // going in: the lens pushes in on the summit
+                float k = Ease(leaveT);
+                aim = Vector3.Lerp(aim, FarMountain.SummitPoint, k);
+                fov = Mathf.Lerp(fov, 9f, k * k);
+                roll *= 1f - k; pitch *= 1f - k;
+            }
+            rot = Quaternion.LookRotation(aim - pos, Vector3.up) * Quaternion.Euler(pitch, 0f, roll);
+        }
+
+        /// <summary>One frame of the flight (the test tools call it; in the game LateUpdate does).</summary>
+        public void Frame(float dt)
+        {
+            if (!Showing || cam == null) return;
+            Clock += dt;
+            if (jumping) { jump.Frame(dt, leaving != 0 ? leaveT : 0f); return; }
+            Pose(Clock, out Vector3 pos, out Quaternion rot, out float fov);
+            cam.transform.SetPositionAndRotation(pos, rot);
+            cam.fieldOfView = fov;
+            StepLapse(dt);
+            far.SetNight(darkness != null ? darkness() : 0f);
+            far.Shade(SunDir(), dt);   // (at most a millisecond a frame: FarMountain.Shade)
+            StepClouds(dt);
+        }
+
+        void LateUpdate() { Tick(Mathf.Min(Time.unscaledDeltaTime, 0.1f)); }
+
+        /// <summary>Everything the page does by itself each frame: the flight, the cloud across the screen, the sound.</summary>
+        public void Tick(float dt)
+        {
+            if (Showing) Frame(dt);
+            StepCover(dt);
+            StepSound(dt);
+        }
+
+        // ---------------------------------------------------------------- cloud
+
+        Transform cloudRoot;
+        Transform[] clouds; Vector3[] cloudAt; Material cloudMat; Texture2D cloudTex; int cloudSeed = int.MinValue;
+
+        /// <summary>Banks of cloud standing off the mountain's flanks: they slide across it as the helicopter circles.</summary>
+        void BuildClouds()
+        {
+            if (soft == null) return;
+            if (cloudRoot == null)
+            {
+                cloudRoot = new GameObject("FarClouds").transform;
+                cloudRoot.SetParent(transform, false);
+                cloudTex = MakeCloud();
+                cloudMat = new Material(soft) { name = "FarCloud" };
+                cloudMat.SetTexture("_BaseMap", cloudTex); cloudMat.SetTexture("_MainTex", cloudTex);
+                cloudMat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 5;
+                clouds = new Transform[7]; cloudAt = new Vector3[7];
+                var quad = new Mesh { name = "FarCloudQuad" };
+                quad.vertices = new[] { new Vector3(-0.5f, -0.5f, 0f), new Vector3(0.5f, -0.5f, 0f), new Vector3(-0.5f, 0.5f, 0f), new Vector3(0.5f, 0.5f, 0f) };
+                quad.uv = new[] { new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, 1f), new Vector2(1f, 1f) };
+                quad.colors = new[] { Color.white, Color.white, Color.white, Color.white };
+                quad.triangles = new[] { 0, 2, 1, 1, 2, 3 };
+                for (int i = 0; i < clouds.Length; i++)
+                {
+                    var go = new GameObject("Cloud" + i) { layer = FarMountain.Layer };
+                    go.transform.SetParent(cloudRoot, false);
+                    go.AddComponent<MeshFilter>().sharedMesh = quad;
+                    var mr = go.AddComponent<MeshRenderer>();
+                    mr.sharedMaterial = cloudMat;
+                    mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; mr.receiveShadows = false;
+                    clouds[i] = go.transform;
+                }
+            }
+            cloudRoot.gameObject.SetActive(true);
+            if (cloudSeed == Slope.Seed) return;
+            cloudSeed = Slope.Seed;
+            Vector3 mid = FarMountain.Middle;
+            for (int i = 0; i < clouds.Length; i++)
+            {
+                float a = (i * 51f + 30f * Slope.Hash01(i, 3, 211)) * Mathf.Deg2Rad, d = 5000f + 5000f * Slope.Hash01(i, 4, 211);
+                cloudAt[i] = new Vector3(mid.x + Mathf.Sin(a) * d, FarMountain.FloorY + 800f + 1100f * Slope.Hash01(i, 5, 211), mid.z + Mathf.Cos(a) * d);
+                float w = 2600f + 2600f * Slope.Hash01(i, 6, 211);
+                clouds[i].localScale = new Vector3(w * (Slope.Hash01(i, 8, 211) < 0.5f ? -1f : 1f), w * (0.34f + 0.12f * Slope.Hash01(i, 7, 211)), 1f);
+            }
+        }
+
+        void StepClouds(float dt)
+        {
+            if (clouds == null || cloudRoot == null || !cloudRoot.gameObject.activeSelf) return;
+            for (int i = 0; i < clouds.Length; i++)
+            {
+                cloudAt[i] += new Vector3(7f, 0f, 3f) * (dt * (lapsing ? 14f : 1f));   // the wind (racing in the time-lapse)
+                clouds[i].SetPositionAndRotation(cloudAt[i], Quaternion.LookRotation(cloudAt[i] - cam.transform.position, Vector3.up));
+            }
+            // lit like the haze: the sky's light and a share of the sun's
+            Color c = RenderSettings.ambientSkyColor.linear * 0.9f;
+            if (RenderSettings.sun != null) c += RenderSettings.sun.color.linear * (RenderSettings.sun.intensity * 0.3f);
+            float m = Mathf.Max(c.r, Mathf.Max(c.g, c.b));
+            if (m > 1f) c /= m;
+            c.a = 0.5f;
+            cloudMat.SetColor("_BaseColor", c); cloudMat.SetColor("_Color", c);
+        }
+
+        /// <summary>A drift of mist: soft all the way out, thicker in places.</summary>
+        static Texture2D MakeCloud()
+        {
+            const int N = 128;
+            var t = new Texture2D(N, N, TextureFormat.RGBA32, true) { name = "FarCloud", wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear };
+            var px = new Color32[N * N];
+            for (int y = 0; y < N; y++)
+                for (int x = 0; x < N; x++)
+                {
+                    float u = (x + 0.5f) / N * 2f - 1f, v = (y + 0.5f) / N * 2f - 1f;
+                    float fall = Mathf.Clamp01(1f - (u * u + v * v));
+                    float n = 0.6f * Mathf.PerlinNoise(x * 0.045f + 3f, y * 0.09f + 9f) + 0.4f * Mathf.PerlinNoise(x * 0.11f, y * 0.2f + 5f);
+                    float a = Mathf.Clamp01(fall * fall * (0.25f + 1.3f * n));
+                    px[y * N + x] = new Color32(255, 255, 255, (byte)(255f * a));
+                }
+            t.SetPixels32(px); t.Apply(true, true);
+            return t;
+        }
+
+        // ---------------------------------------------------------------- the rotor and the wind
+
+        AudioSource rotor, wind;
+        float soundLevel;
+
+        void BuildSound()
+        {
+            rotor = gameObject.AddComponent<AudioSource>();
+            rotor.clip = MakeRotor(); rotor.loop = true; rotor.playOnAwake = false; rotor.spatialBlend = 0f; rotor.volume = 0f; rotor.priority = 200;
+            wind = gameObject.AddComponent<AudioSource>();
+            wind.clip = Resources.Load<AudioClip>("Audio/wind_low"); wind.loop = true; wind.playOnAwake = false; wind.spatialBlend = 0f; wind.volume = 0f; wind.priority = 200;
+            wind.pitch = 0.82f;
+        }
+
+        void StepSound(float dt)
+        {
+            if (rotor == null) return;
+            // up gently with the view; away as the cloud closes
+            soundLevel = Mathf.MoveTowards(soundLevel, Showing && leaving == 0 && !jumping ? 1f : 0f, dt / (Showing && leaving == 0 ? 2.5f : 0.9f));
+            bool on = soundLevel > 0.001f;
+            if (on != rotor.isPlaying) { if (on) { rotor.Play(); if (wind.clip != null) wind.Play(); } else { rotor.Stop(); wind.Stop(); } }
+            if (!on) return;
+            // faint, under the music: the blades' beat, a little louder as the machine banks
+            float sway = 0.5f + 0.5f * Mathf.Sin(Clock * 0.13f + 0.5f);
+            rotor.volume = soundLevel * (0.05f + 0.014f * sway);
+            rotor.pitch = 1f + 0.012f * Mathf.Sin(Clock * 0.21f);
+            wind.volume = soundLevel * (0.055f + 0.03f * Mathf.Sin(Clock * 0.17f + 2f) * Mathf.Sin(Clock * 0.053f));
+        }
+
+        /// <summary>
+        /// A helicopter heard from inside it, made here rather than shipped as a file: the blades' beat (a low thud
+        /// 17.5 times a second and its overtones), the turbine's drone, and the wash of air, which beats with the
+        /// blades. Every part is a whole number of cycles long, so the loop has no seam.
+        /// </summary>
+        static AudioClip MakeRotor()
+        {
+            const int rate = 22050; const float seconds = 2.4f, blade = 17.5f;
+            int n = Mathf.RoundToInt(rate * seconds);
+            var d = new float[n];
+            var rnd = new System.Random(7);
+            var wf = new float[40]; var wp = new float[40]; var wa = new float[40];
+            for (int k = 0; k < wf.Length; k++)
+            {
+                wf[k] = Mathf.Round((140f + 760f * (float)rnd.NextDouble()) * seconds) / seconds;
+                wp[k] = (float)rnd.NextDouble() * Mathf.PI * 2f; wa[k] = 0.5f + 0.5f * (float)rnd.NextDouble();
+            }
+            float peak = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)rate, w = 2f * Mathf.PI * t;
+                float beat = 0f;
+                for (int h = 1; h <= 6; h++) beat += Mathf.Sin(w * blade * h + h * 0.7f) / (h * (h < 3 ? 1f : 1.6f));
+                float pulse = 0.5f + 0.5f * Mathf.Sin(w * blade - 0.6f);
+                float drone = 0.22f * Mathf.Sin(w * blade * 5f) + 0.12f * Mathf.Sin(w * blade * 8f + 1f) + 0.05f * Mathf.Sin(w * blade * 24f);
+                float wash = 0f;
+                for (int k = 0; k < wf.Length; k++) wash += wa[k] * Mathf.Sin(w * wf[k] + wp[k]);
+                wash *= 0.035f * (0.35f + 0.65f * pulse * pulse);
+                d[i] = beat * 0.55f + drone + wash;
+                peak = Mathf.Max(peak, Mathf.Abs(d[i]));
+            }
+            for (int i = 0; i < n; i++) d[i] *= 0.7f / peak;
+            var clip = AudioClip.Create("Rotor", n, 1, rate, false);
+            clip.SetData(d, 0);
+            return clip;
+        }
+
+        // ---------------------------------------------------------------- the page
+
+        Canvas canvas;
+        RectTransform safe, page, titleRect, campBtn, runBtn;
+        CanvasGroup titleGroup, choiceGroup;
+        Image cover, topShade, bottomShade;
+        Text campText, runText;
+        Rect lastSafe;
+        RectTransform pressed; float pressT;
+
+        // ---------------------------------------------------------------- the title
+
+        // (the word alone: clear of the safe area either side even slanted, a little lower in the sky than it stood under
+        // MOUNT, and its reveal and sweep a touch quicker across one word)
+        const float TitleWidth = 880f, TitleY = 330f, TitleReveal = 2.1f, SweepAt = 1.7f, SweepTime = 1.3f;
+        RawImage titleImage;
+        Material titleMat;
+        Texture2D titleTex;
+        System.Threading.Tasks.Task<Color32[]> titleJob;
+        int titleStyle = -1, titleJobStyle;
+
+        /// <summary>Which of TitleArt.Styles the title is drawn in. `now`: build it at once (the test tools), else off the main thread.</summary>
+        public void SetTitleStyle(int style, bool now)
+        {
+            style = Mathf.Clamp(style, 0, TitleArt.Styles.Length - 1);
+            if (style == titleStyle && (titleTex != null || titleJob != null) && !now) return;
+            titleStyle = style;
+            var st = TitleArt.Styles[style];
+            if (titleMat != null)
+            {
+                titleMat.SetColor("_Top", st.top); titleMat.SetColor("_Bottom", st.bottom); titleMat.SetColor("_SnowCol", st.snowCol); titleMat.SetColor("_ShadowCol", st.shadowCol);
+                titleMat.SetFloat("_Spec", st.spec); titleMat.SetFloat("_Edge", st.edge); titleMat.SetFloat("_Frost", st.frost); titleMat.SetFloat("_ShadowA", st.shadow); titleMat.SetFloat("_Drift", st.drift);
+                titleMat.SetVector("_Word", new Vector4(TitleArt.WordV0, TitleArt.WordV1, 0, 0));
+                titleMat.SetFloat("_Spread", TitleArt.Spread); titleMat.SetVector("_TexSize", new Vector4(TitleArt.Width, TitleArt.Height, 0, 0));
+            }
+            if (now) { titleJob = null; UseTitle(TitleArt.Build(st)); return; }
+            titleJobStyle = style;
+            titleJob = System.Threading.Tasks.Task.Run(() => TitleArt.Build(st));
+        }
+
+        void UseTitle(Color32[] px)
+        {
+            if (titleTex != null) { if (Application.isPlaying) Destroy(titleTex); else DestroyImmediate(titleTex); }
+            titleTex = TitleArt.ToTexture(px, "Title");
+            titleImage.texture = titleTex;
+            titleImage.enabled = titleMat != null;
+        }
+
+        /// <summary>The title's reveal and its light, each frame the page is drawn.</summary>
+        void StepTitle()
+        {
+            if (titleJob != null && titleJob.IsCompleted)
+            {
+                var job = titleJob; titleJob = null;
+                if (job.Status == System.Threading.Tasks.TaskStatus.RanToCompletion && titleJobStyle == titleStyle) UseTitle(job.Result);
+            }
+            if (titleMat == null || titleTex == null) return;
+            // the reveal runs on the page's own clock from when the page comes up, so a preview of any moment shows that
+            // moment (the texture is ready long before: it takes a fraction of the view's time alone)
+            float ta = age - ViewAlone;
+            titleMat.SetFloat("_Reveal", Mathf.Clamp01(ta / TitleReveal));
+            titleMat.SetFloat("_Sweep", Mathf.Lerp(-0.4f, 1.4f, Mathf.Clamp01((ta - SweepAt) / SweepTime)));
+            // the light of the day, from where the sun or moon stands in the view
+            var sun = RenderSettings.sun;
+            Color lc = sun != null ? sun.color.linear * Mathf.Clamp(sun.intensity, 0.2f, 2f) : Color.white;
+            float lm = Mathf.Max(lc.r, Mathf.Max(lc.g, lc.b));
+            if (lm > 1.4f) lc *= 1.4f / lm;
+            Color amb = RenderSettings.ambientSkyColor.linear;
+            // (never so dark it can't be read: at night the moonlit ice keeps a floor)
+            float am = Mathf.Max(amb.r, Mathf.Max(amb.g, amb.b));
+            if (am < 0.4f) amb = Color.Lerp(amb, new Color(0.34f, 0.36f, 0.42f), 1f - am / 0.4f);   // (and greyer: moonlight shows little colour)
+            // by moonlight colour goes: the light and the sky's light both greyed (or the blue ice would go a saturated blue)
+            float dark = darkness != null ? Mathf.Clamp01(darkness()) : 0f;
+            Color Grey(Color c, float l) { float y = 0.3f * c.r + 0.59f * c.g + 0.11f * c.b; return Color.Lerp(c, new Color(y * 0.92f, y * 0.97f, y * 1.08f), l); }
+            amb = Grey(amb, dark * 0.75f);
+            lc = Grey(lc, dark * 0.75f) * (1f + 0.5f * dark);
+            titleMat.SetColor("_Light", new Color(lc.r, lc.g, lc.b, 0.85f));
+            titleMat.SetColor("_Ambient", amb * 0.8f);
+            Vector3 toSun = SunDir();
+            Vector2 ld = cam != null ? new Vector2(Vector3.Dot(toSun, cam.transform.right), Mathf.Max(0.25f, Vector3.Dot(toSun, cam.transform.up) + 0.35f)) : new Vector2(-0.5f, 0.8f);
+            titleMat.SetVector("_LightDir", ld.normalized);
+        }
+
+        void BuildUi()
+        {
+            var cg = new GameObject("StartCanvas", typeof(RectTransform));
+            cg.transform.SetParent(transform, false);
+            canvas = cg.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.sortingOrder = 12;   // over the HUD (10) and the camp's menus (11)
+            var scaler = cg.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1080f, 1920f);
+            scaler.matchWidthOrHeight = 0.5f;
+
+            page = Brand.New("Page", cg.transform); Brand.Stretch(page);
+            // the frame's top and bottom a little darker, so small type reads over cloud and snow (edge to edge, past the safe area)
+            topShade = Brand.Img("TopShade", page, Brand.A(Brand.Ink, 0.24f), FadeDown);
+            topShade.rectTransform.anchorMin = new Vector2(0f, 1f); topShade.rectTransform.anchorMax = Vector2.one;
+            topShade.rectTransform.pivot = new Vector2(0.5f, 1f); topShade.rectTransform.sizeDelta = new Vector2(0f, 760f);
+            bottomShade = Brand.Img("BottomShade", page, Brand.A(Brand.Ink, 0.4f), FadeUp);
+            bottomShade.rectTransform.anchorMin = Vector2.zero; bottomShade.rectTransform.anchorMax = new Vector2(1f, 0f);
+            bottomShade.rectTransform.pivot = new Vector2(0.5f, 0f); bottomShade.rectTransform.sizeDelta = new Vector2(0f, 820f);
+
+            safe = Brand.New("Safe", page);
+            ApplySafeArea();
+
+            // the title, high in the sky
+            titleRect = Brand.New("Title", safe);
+            Brand.Place(titleRect, new Vector2(0.5f, 1f), new Vector2(0f, -TitleY), new Vector2(TitleWidth, TitleWidth * TitleArt.Height / TitleArt.Width), new Vector2(0.5f, 0.5f));
+            titleGroup = titleRect.gameObject.AddComponent<CanvasGroup>();
+            // the mountain's name, drawn (TitleArt: our own letterforms, ice and snow, made at start-up off the main
+            // thread) and lit by the day (TitleLetters.shader). Until its texture is ready nothing shows
+            titleImage = Brand.New("Lettering", titleRect).gameObject.AddComponent<RawImage>();
+            titleImage.raycastTarget = false;
+            Brand.Place(titleImage.rectTransform, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(TitleWidth, TitleWidth * TitleArt.Height / TitleArt.Width), new Vector2(0.5f, 0.5f));
+            var tsh = Resources.Load<Shader>("TitleLetters");
+            if (tsh != null && tsh.isSupported) titleMat = new Material(tsh) { name = "TitleLetters" };
+            titleImage.material = titleMat;
+            titleImage.enabled = false;
+            SetTitleStyle(TitleArt.DefaultStyle, false);
+
+            // the two ways in: a run (the gold one: what the game is for) and, under it, the camp. (No settings here:
+            // they open from the camp, the start pad and the pause menu: Hud.)
+            var choices = Brand.New("Choices", safe); Brand.Stretch(choices);
+            choiceGroup = choices.gameObject.AddComponent<CanvasGroup>();
+            runBtn = Brand.Button("GoForARun", choices, "GO FOR A RUN", Brand.Kind.Primary, new Vector2(0.5f, 0f), new Vector2(0f, 300f), new Vector2(640f, Brand.Control), out runText);
+            campBtn = Brand.Button("VisitCamp", choices, "VISIT CAMP", Brand.Kind.Secondary, new Vector2(0.5f, 0f), new Vector2(0f, 300f - Brand.Control - 24f), new Vector2(640f, Brand.Control), out campText);
+
+            // cloud over everything: what the game changes scene behind (it outlives the page)
+            cover = Brand.Img("Cloud", cg.transform, new Color(1f, 1f, 1f, 0f));
+            Brand.Stretch(cover.rectTransform);
+            cover.gameObject.SetActive(false);
+            page.gameObject.SetActive(false);
+        }
+
+        void ApplySafeArea()
+        {
+            Rect a = Screen.safeArea;
+            lastSafe = a;
+            if (Screen.width <= 0 || Screen.height <= 0) { Brand.Stretch(safe); return; }
+            safe.anchorMin = new Vector2(a.xMin / Screen.width, a.yMin / Screen.height);
+            safe.anchorMax = new Vector2(a.xMax / Screen.width, a.yMax / Screen.height);
+            safe.offsetMin = safe.offsetMax = Vector2.zero;
+        }
+
+
+        Camera UiCam => canvas.renderMode == RenderMode.ScreenSpaceCamera ? canvas.worldCamera : null;
+        bool Inside(RectTransform r, Vector2 p) => r != null && r.gameObject.activeInHierarchy && RectTransformUtility.RectangleContainsScreenPoint(r, p, UiCam);
+
+        void Press(RectTransform r) { pressed = r; pressT = 0.22f; Clicked?.Invoke(); }
+
+        /// <summary>
+        /// One frame of the page. `press`: a finger came down this frame, `at` where (screen pixels).
+        /// Returns 1 (the camp) or 2 (the start gate) on the frame the cloud has closed and it is time to go;
+        /// otherwise 0.
+        /// </summary>
+        public int Step(float dt, bool press, Vector2 at)
+        {
+            if (!Showing) return 0;
+            if (safe != null && Screen.safeArea != lastSafe) ApplySafeArea();
+            age += dt;
+            if (leaving != 0)
+            {
+                leaveT = Mathf.MoveTowards(leaveT, 1f, dt / LeaveSeconds);
+                coverWant = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.5f, 1f, leaveT)); coverRate = 0f;
+                SetAlphas();
+                if (leaveT < 1f) return 0;
+                int go = leaving;
+                coverA = 1f; coverWant = 0f; coverRate = 1f / CoverOut;
+                return go;
+            }
+            if (press)
+            {
+                if (age < ViewAlone + FadeIn * 0.6f) age = ViewAlone + FadeIn * 0.6f;   // a tap while the view is alone: the page comes up now
+                else if (Inside(campBtn, at)) { Press(campBtn); leaving = 1; }
+                else if (Inside(runBtn, at)) { Press(runBtn); leaving = 2; }
+            }
+            SetAlphas();
+            return 0;
+        }
+
+        void SetAlphas()
+        {
+            float up = leaving != 0 ? 1f - Ease(leaveT * 3f) : 1f;
+            float page01 = up;
+            titleGroup.alpha = Mathf.Clamp01((age - ViewAlone) / 0.3f) * page01;   // (the lettering reveals itself: StepTitle)
+            choiceGroup.alpha = Ease((age - ViewAlone - 0.7f) / FadeIn) * page01;
+            titleRect.anchoredPosition = new Vector2(0f, -TitleY + 10f * (1f - Ease((age - ViewAlone) / (FadeIn * 1.6f))));
+            StepTitle();
+            // (over the jump's white snow, only a breath of shade: the buttons sit on their own plates, and the ice
+            // lettering has its own blue)
+            topShade.color = Brand.A(Brand.Ink, (jumping ? 0.08f : 0.24f) * titleGroup.alpha);
+            bottomShade.color = Brand.A(Brand.Ink, (jumping ? 0.1f : 0.4f) * choiceGroup.alpha);
+            // a touch answers: the thing touched dips and comes back
+            if (pressT > 0f && pressed != null)
+            {
+                pressT -= Time.unscaledDeltaTime;
+                float k = Mathf.Clamp01(pressT / 0.22f);
+                var g = pressed.GetComponent<CanvasGroup>();
+                if (g == null) g = pressed.gameObject.AddComponent<CanvasGroup>();
+                g.alpha = 1f - 0.55f * k;
+            }
+        }
+
+        // ---------------------------------------------------------------- cloud across the screen
+
+        float coverA, coverWant, coverRate;
+        System.Action coverThen;
+
+        /// <summary>The cloud is closing or open over the screen: taps wait.</summary>
+        public bool Busy => coverThen != null || leaving != 0;
+
+        /// <summary>Close cloud over the screen, do `then` behind it, and let it clear.</summary>
+        public void Through(System.Action then)
+        {
+            if (Busy) return;
+            coverThen = then; coverWant = 1f; coverRate = 1f / 0.45f;
+        }
+
+        void StepCover(float dt)
+        {
+            if (coverRate > 0f) coverA = Mathf.MoveTowards(coverA, coverWant, dt * coverRate);
+            else coverA = coverWant;
+            if (coverThen != null && coverA >= 1f)
+            {
+                var act = coverThen; coverThen = null;
+                act();
+                coverWant = 0f; coverRate = 1f / CoverOut;
+            }
+            bool on = coverA > 0.002f;
+            if (cover.gameObject.activeSelf != on) cover.gameObject.SetActive(on);
+            if (!on) return;
+            // the colour of the day's haze (white at noon, dark at night), so going through it never flashes
+            Color c = RenderSettings.fogColor; c.a = coverA;
+            cover.color = c;
+        }
+
+        // ---------------------------------------------------------------- for the test tools
+
+        /// <summary>Draw the page with a camera (overlay canvases don't draw into a render texture).</summary>
+        public void UseCamera(Camera uiCam, float plane)
+        {
+            canvas.renderMode = uiCam != null ? RenderMode.ScreenSpaceCamera : RenderMode.ScreenSpaceOverlay;
+            canvas.worldCamera = uiCam; canvas.planeDistance = plane;
+        }
+        public int UiLayer { set { foreach (var t in canvas.GetComponentsInChildren<Transform>(true)) t.gameObject.layer = value; } }
+
+        /// <summary>Show the page as it is `seconds` after it came up.</summary>
+        public void Preview(float seconds)
+        {
+            age = seconds; leaving = 0; leaveT = 0f;
+            coverThen = null; coverA = coverWant = 0f; coverRate = 0f; StepCover(0f);
+            ApplySafeArea();
+            SetAlphas();
+        }
+        /// <summary>Show a moment of the way in (0 the tap .. 1 the cloud closed), to `way` (1 the camp, 2 the start gate).</summary>
+        public void PreviewLeaving(float t, int way)
+        {
+            age = 30f; leaving = way; leaveT = Mathf.Clamp01(t);
+            coverWant = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.5f, 1f, leaveT)); coverRate = 0f;
+            SetAlphas(); StepCover(0f);
+        }
+        /// <summary>The middle of one of the page's controls on the screen: "camp" or "run".</summary>
+        public Vector2 ScreenPoint(string control)
+        {
+            var r = control == "camp" ? campBtn : runBtn;
+            return RectTransformUtility.WorldToScreenPoint(UiCam, r.TransformPoint(r.rect.center));
+        }
+        public float CoverAlpha => coverA;
+        public FarMountain Far => far;
+    }
+}

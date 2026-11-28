@@ -5,7 +5,21 @@ namespace Summit
     /// <summary>
     /// Sits behind and above the rider, looking down the line of travel.
     /// Position tracks the rider exactly in the horizontal plane (no lag that
-    /// grows with speed); only height and yaw are smoothed.
+    /// grows with speed); only height and yaw are smoothed. Everything of its own (its swing onto the line, its
+    /// height, its distance, where it looks) is eased on a damped spring, never stepped toward: its speed never
+    /// jumps, so the view never jolts when the snow under it, a tree behind the rider or the rider's line changes.
+    ///
+    /// It is also the first-person view (the pause menu's VIEW: FIRST PERSON, `pov`): a helmet camera at
+    /// the rider's eyes, wide, tipped down so the board and the leading arm sit in the bottom of the frame,
+    /// rolling a little with the lean. The chase view is always worked out first, exactly as before, and the
+    /// first-person view is blended over it, so the two hand over to each other with a short glide:
+    ///   - first person while riding, in the air, in spins and grabs, and through the avalanche's shake;
+    ///   - the chase view at the start gate and the finish (the rider is standing: you see who you are),
+    ///     during a flip (a head camera would whirl), from the moment of a crash until you are back up,
+    ///     for the look down a crevasse and the shot of the burial. The camp has its own camera.
+    /// The lens is stabilised like an action camera's: it follows a smoothed copy of where the head is over
+    /// the board, never the bones themselves, and takes its direction from the line of travel.
+    /// Every first-person number is in the block of Pov constants below.
     /// </summary>
     [RequireComponent(typeof(Camera))]
     public class ChaseCamera : MonoBehaviour
@@ -21,8 +35,166 @@ namespace Summit
         public float hold;            // ...this much (0..1)
         public System.Func<float, float, float> floor;   // anything standing over the snow to keep above (the avalanche's debris)
 
+        // ---- first person
+        public const string PovPref = "summit_pov";   // PlayerPrefs: 1 = first person (off by default)
+        public bool pov;                 // the player's choice (the pause menu); what is shown eases to it
+        public RiderBody body;           // whose head bone the lens rides at, and whose head is hidden from it
+        public LensFX lensFx;            // draws the streaking at the frame edges
+
+        // Tuning, all blind (set without the game running): change them here.
+        // Where the lens is.
+        public static float PovEyeUp = 0.17f;        // m above the head bone (the base of the skull): eye height, a touch over
+        public static float PovEyeForward = 0.13f;   // m ahead of it along the view: in front of the face and clear of the leading shoulder
+        public static float PovHeadHeight = 1.0f;    // m above the rider's centre, for a rider with no head bone to follow
+        public static float PovFollow = 9f;          // 1/s: how fast the lens follows the head over the board (lower: steadier, floatier)
+        public static float PovGround = 0.45f;       // m: never closer to the snow than this
+        public static float PovNear = 0.06f;         // m: near clip plane, so the arm and passing branches are not cut (0.2 in the chase view)
+        // Where it looks.
+        public static float PovPitch = 22f;          // deg down from the line of the slope ahead: more shows more board and knee, less shows more horizon
+        public static float PovSlopeFollow = 0.8f;   // share of the slope's own steepness the view tips with (1: locked to the snow, 0: to the horizon)
+        public static float PovAirPitch = 8f;        // deg further down when high in the air, toward the landing
+        public static float PovPitchRate = 4f;       // 1/s: how fast the pitch settles
+        public static float PovYawRate = 7f;         // 1/s: how fast the view swings onto the line of travel
+        public static float PovLead = 0.12f;         // s: looks this far ahead into a turn...
+        public static float PovLeadMax = 10f;        // ...by at most this many degrees
+        public static float PovRoll = 0f;            // deg of roll per degree of the rider's lean (full lean is about 41; 0.3 before feel2: no roll with the steering)
+        public static float PovRollMax = 14f;        // deg: the most the horizon tilts
+        public static float PovRollRate = 5f;        // 1/s: how fast the roll follows
+        public static float PovShake = 2f;           // deg the view trembles at full shake (the avalanche close behind, a hit)
+        // The lens. The field of view is top to bottom: on a tall phone 108 is about 64 degrees across.
+        public static float PovFov = 108f;           // deg at rest, with the LENS row on WIDE
+        public static float PovFovSpeed = 6f;        // deg wider at full speed
+        public static float PovFovBoost = 5f;        // deg wider on a Mountain Zoom
+        public static float PovLensScale = 0.6f;     // share of the LENS row's widening used here (STANDARD -8, WIDER +5, FISHEYE +11)
+        public static float PovFovMax = 124f;        // deg: never wider than this
+        // Streaking at the frame edges (Resources/LensEdge.shader): the one strength value, and the speeds it grows between.
+        public static float PovBlur = 0.07f;         // streak length at the frame edge at full speed, as a fraction of the screen (0: none)
+        public static float PovBlurFrom = 8f, PovBlurFull = 32f;   // m/s: nothing below, all of it above
+        // Handing over to the chase view and back.
+        public static float PovBlendIn = 0.6f;       // s: chase view to first person
+        public static float PovBlendOut = 0.35f;     // s: first person to chase view (a crash, a flip)
+        public static float PovHideHead = 0.5f;      // the head stops drawing once the hand-over is this far in (0..1)
+        public static bool PovFlipsInChase = true;   // watch flips from the chase view (false: stay in first person, level, while the body turns over)
+
+        float povBlend, povYaw, povPitch, povRoll, povFov, nearChase = 0.2f;
+        Vector3 povOff, povAhead = Vector3.forward, lastRider;
+        bool povOn, haveLast;
+        /// <summary>How much of the first-person view is on screen now: 0 the chase view, 1 first person.</summary>
+        public float Pov => Mathf.SmoothStep(0f, 1f, povBlend);
+        /// <summary>First person: the line of travel along the snow ahead (the lens itself is tipped down from it).</summary>
+        public Vector3 PovAhead => povAhead;
+
+        // The chase view's height (times the angle setting): over the rider, slow .. full speed; and the least it keeps
+        // over the snow directly under the lens, slow .. full speed (on steep pitches this is what holds it up).
+        public static float LiftSlow = 1.35f, LiftFast = 2.75f;
+        public static float ClearSlow = 2.0f, ClearFast = 3.2f;
+        public static float HeldUpAim = 0.25f, HeldUpAimMax = 1.8f;   // share of that hold-up the aim rises with, and its most (m)
+
         Camera cam;
         float speedCam = 5f, yaw, height, fov = 62f, focusVy, camDist = 6f, lookDrop, roll;
+        float yawVel, heightVel, distVel, dropVel;   // (the springs' own speeds)
+        // how soon each settles (s): the swing onto the rider's line, the height, sliding in front of a trunk and back
+        // out again, the look down the slope ahead
+        /// <summary>(steerB) How much of the turn the chase camera swings with (of the travel's heading off the run).</summary>
+        public static float TravelShare = 0.85f;
+        public static float YawEase = 0.12f, HeightEase = 0.13f, DistIn = 0.07f, DistOut = 0.3f, DropEase = 0.3f;
+        /// <summary>deg: how far the camera rolls with the edge biting hardest (Rider.Bite). 0 since feel2.</summary>
+        public static float BiteRoll = 0f;
+        /// <summary>How much of the old roll with a hard carve's lean is kept (1: up to 9 degrees). 0 since feel2.</summary>
+        public static float SteerRoll = 0f;
+        /// <summary>
+        /// treeline: in tight trees the view comes in (TightDist of the distance, never under TightNear m), down
+        /// (TightLift of the height, TightClear of what it keeps over the snow), looks further along the way the rider is
+        /// going (TightAhead m instead of 12, swung TightTurn of the way onto the line of travel) and opens the lens a
+        /// little (TightFov degrees). How tight it is (Tight, 0..1) is how near the trees' crowns come to the rider and
+        /// into the line from the lens to the rider, eased in over TightIn s and back out over TightOut s, so it never
+        /// snaps. No roll. TightOn: off for the test tools' before.
+        /// </summary>
+        public static float TightDist = 0.55f, TightNear = 3.4f, TightLift = 0.66f, TightClear = 0.62f, TightAhead = 17f, TightTurn = 0.6f, TightFov = 6f, TightIn = 0.35f, TightOut = 1.4f;
+        public static bool TightOn = true;
+        /// <summary>Never inside a crown: the lens stops short of the first crown in its line back from the rider
+        /// (CrownPad m off it, never nearer the rider than CrownMin m), eased in over CrownIn s and out over CrownOut s.
+        /// And in tight trees the lens's near plane is pushed out to TightNearClip m, so a frond brushing it is not drawn.</summary>
+        public static float CrownPad = 0.4f, CrownMin = 2.6f, CrownIn = 0.12f, CrownOut = 0.6f, TightNearClip = 0.8f;
+        /// <summary>The view through the trees: the firs' foliage nearer the lens than the rider, inside a cone from the lens
+        /// round the rider and the middle of the view, is thinned (Fir.hlsl FirSeeThrough: at most 70% of its pixels
+        /// dropped, by a fixed screen pattern), so the rider and the way ahead show through and the tree is still there.
+        /// The cone's half-angle is what the rider spans from the lens (SeeBody m across) plus SeeMargin radians. Off in
+        /// the first-person view, over a crevasse or a burial, and with SeeOn false (the test tools' before).</summary>
+        public static float SeeBody = 1.3f, SeeMargin = 0.12f;
+        public static bool SeeOn = true;
+        static readonly int SeeEyeId = Shader.PropertyToID("_FirSeeEye"), SeeAtId = Shader.PropertyToID("_FirSeeAt"), SeeAheadId = Shader.PropertyToID("_FirSeeAhead");
+        float crownDist = 99f, crownVel, nearBase = -1f;
+
+        /// <summary>How far back along the line from the rider (focus) to where the lens would be (`back`, the whole
+        /// offset) the lens can go before it enters a tree's crown (m, measured as `dist` is: level back from the rider).</summary>
+        float CrownClear(Vector3 eyeFrom, Vector3 back, float dist)
+        {
+            var forest = TreeBreak.Instance != null ? TreeBreak.Instance.Forest : null;
+            if (forest == null) return dist;
+            float clear = dist;
+            for (int pass = 0; pass < 2; pass++)
+            {
+                forest.TreesNear(eyeFrom + back * (pass == 0 ? 0.2f : 0.8f), tightTrees);
+                foreach (var t in tightTrees)
+                {
+                    // the line's first metre inside this crown: stepped along it, a tenth at a time
+                    for (int i = 2; i <= 10; i++)
+                    {
+                        float u = i / 10f;
+                        if (u * dist >= clear) break;
+                        Vector3 q = eyeFrom + back * u;
+                        float hq = Vector3.Dot(q - t.at, t.up);
+                        if (hq < 0f || hq > t.top) continue;
+                        Vector3 o = q - t.at - t.up * hq;
+                        if (new Vector2(o.x, o.z).magnitude > Forest.CrownAt(t, hq) + CrownPad) continue;
+                        clear = Mathf.Min(clear, Mathf.Max(CrownMin, (u - 0.1f) * dist));
+                        break;
+                    }
+                }
+                tightTrees.Clear();
+            }
+            return clear;
+        }
+        /// <summary>How tight the trees round the rider are now, as the view has eased onto it (0 open .. 1 tight).</summary>
+        public float Tight => tight;
+        float tight, tightVel;
+        readonly System.Collections.Generic.List<Forest.Tree> tightTrees = new System.Collections.Generic.List<Forest.Tree>();
+
+        /// <summary>
+        /// How tight the trees are round the rider now (0..1): the nearest any crown comes to the rider (within 3 m of its
+        /// edge is tight), and how far any crown reaches into the line from the lens back to the rider.
+        /// </summary>
+        float TightNow(Vector3 eye)
+        {
+            var forest = TreeBreak.Instance != null ? TreeBreak.Instance.Forest : null;
+            if (forest == null || rider.Crashed) return 0f;
+            Vector3 p = rider.transform.position;
+            forest.TreesNear(p, tightTrees);
+            float near = 0f, occl = 0f;
+            Vector2 a = new Vector2(p.x, p.z), b = new Vector2(eye.x, eye.z), ab = b - a;
+            float abl = Mathf.Max(1e-3f, ab.sqrMagnitude);
+            foreach (var t in tightTrees)
+            {
+                Vector2 c = new Vector2(t.at.x, t.at.z);
+                float hRider = Vector3.Dot(p - t.at, t.up) + 0.8f;
+                float edge = (c - a).magnitude - Forest.CrownAt(t, Mathf.Clamp(hRider, 0f, t.top));
+                near = Mathf.Max(near, Mathf.Clamp01((3f - edge) / 3f));
+                // into the line of sight: the crown at the height the line passes the tree
+                float k = Mathf.Clamp01(Vector2.Dot(c - a, ab) / abl);
+                Vector3 on = Vector3.Lerp(p + Vector3.up * 1.1f, eye, k);
+                float crown = Forest.CrownAt(t, Mathf.Clamp(Vector3.Dot(on - t.at, t.up), 0f, t.top));
+                float d = (a + ab * k - c).magnitude;
+                occl = Mathf.Max(occl, Mathf.Clamp01((crown + 0.3f - d) / 1.5f));
+            }
+            tightTrees.Clear();
+            return Mathf.Max(near, occl);
+        }
+
+        public static float HardFloor = 0.7f;   // m over the snow under the lens it is never below, eased or not
+        public static float FloorEase = 0.15f;  // s: how soon the height it keeps over the snow under it follows that snow (a lip passing under is not a step)
+        public static float TrunkSlow = 7f;     // m/s: slower than this it slides in front of a trunk in the way; not at all by twice it
+        float floorH, floorVel;
         Vector3 focus;
         bool first = true;
 
@@ -48,28 +220,72 @@ namespace Summit
             // look where the rider is going, not just where the board points
             // follow the line you are travelling, part way and a little behind: you see the rider carve
             // across the frame instead of the whole world swinging round with the board
-            float wantYaw = rider.Crashed ? yaw : Mathf.Clamp(rider.TravelHeading, -1.4f, 1.4f) * 0.7f;   // never round to face uphill
-            yaw = first ? wantYaw : Mathf.Lerp(yaw, wantYaw, 1f - Mathf.Exp(-dt * 4f));
+            // (where the run itself swings across the hill, along the run: the part way is measured off that)
+            float run = rider.RunNow;
+            float wantYaw = rider.Crashed ? yaw : Mathf.Clamp(run + (Mathf.Clamp(rider.TravelHeading, -1.4f, 1.4f) - run) * TravelShare, -1.4f, 1.4f);   // never round to face uphill
+            if (first) { yaw = wantYaw; yawVel = 0f; }
+            else yaw = Mathf.SmoothDamp(yaw, wantYaw, ref yawVel, YawEase, Mathf.Infinity, Mathf.Max(dt, 1e-4f));
             var f = new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw));
 
             // low and close when slow; the faster you go the further back it pulls, to show what is coming
             // (eased both ways, so slowing down or a crash glides it back in rather than snapping)
+            // (how tight the trees are, from where the lens was last frame: eased in quickly, out slowly)
+            float tightTo = TightOn && !first ? TightNow(transform.position) : 0f;
+            if (first) { tight = tightTo; tightVel = 0f; }
+            else tight = Mathf.SmoothDamp(tight, tightTo, ref tightVel, tightTo > tight ? TightIn : TightOut, Mathf.Infinity, Mathf.Max(dt, 1e-4f));
+            float tk = Mathf.SmoothStep(0f, 1f, tight);
+            // (and in tight trees a frond brushing the lens is not drawn: the near plane pushed out a little)
+            if (nearBase < 0f) nearBase = cam.nearClipPlane;
+            if (!povOn && povBlend <= 0f) cam.nearClipPlane = Mathf.Lerp(nearBase, Mathf.Max(nearBase, TightNearClip), TightOn ? tk : 0f);
             float speedDist = Mathf.Lerp(4.4f, 10.5f, Mathf.SmoothStep(0f, 1f, s01)) * distScale;
             speedCam = first ? speedDist : Mathf.Lerp(speedCam, speedDist, 1f - Mathf.Exp(-dt * 1.8f));
-            float dist = speedCam;
-            // never behind a tree trunk: slide in front of it (quickly), and ease back out after
-            if (Physics.SphereCast(focus, 0.35f, -f, out RaycastHit hit, dist, ~0, QueryTriggerInteraction.Ignore) &&
-                hit.collider.GetComponentInParent<Obstacle>() != null)
-                dist = Mathf.Max(2.5f, hit.distance);
-            camDist = first ? dist : Mathf.Lerp(camDist, dist, 1f - Mathf.Exp(-dt * (dist < camDist ? 20f : 3f)));
+            // (in tight trees, in closer: on top of the speed's own distance, eased by Tight itself)
+            float dist = Mathf.Min(speedCam, Mathf.Max(TightNear, speedCam * Mathf.Lerp(1f, TightDist, tk)));
+            // never left behind a tree trunk: slide in front of it, and ease back out after. Looked for along the line
+            // from the rider up to where the lens is (level back from the rider, on a steep pitch, it ran into the
+            // hill, and every rock and stump just passed pulled the view in), never for what the board rides over, and
+            // only at a crawl: at speed a trunk is behind the rider for a frame or two, and the view lurching in and
+            // out for it was worse than the trunk
+            float slow = 1f - Mathf.Clamp01((rider.Speed - TrunkSlow) / TrunkSlow);
+            if (slow > 0f && !first)
+            {
+                Vector3 back = -f * dist + Vector3.up * (height - focus.y);
+                float len = back.magnitude;
+                if (len > 0.5f && Physics.SphereCast(focus, 0.35f, back / len, out RaycastHit hit, len, ~0, QueryTriggerInteraction.Ignore) &&
+                    hit.collider.GetComponentInParent<Obstacle>() != null && !rider.RidesOver(hit.collider))
+                    dist = Mathf.Lerp(dist, Mathf.Max(2.5f, hit.distance * dist / len), slow);
+            }
+            if (first) { camDist = dist; distVel = 0f; }
+            else camDist = Mathf.SmoothDamp(camDist, dist, ref distVel, dist < camDist ? DistIn : DistOut, Mathf.Infinity, Mathf.Max(dt, 1e-4f));
             dist = camDist;
+            // (treeline) never inside a crown: short of the first one in the line back to the lens, eased
+            {
+                float clearTo = TightOn && !first ? CrownClear(focus, -f * dist + Vector3.up * (height - focus.y), dist) : 99f;
+                if (first) { crownDist = clearTo; crownVel = 0f; }
+                else crownDist = Mathf.SmoothDamp(crownDist, clearTo, ref crownVel, clearTo < crownDist ? CrownIn : CrownOut, Mathf.Infinity, Mathf.Max(dt, 1e-4f));
+                dist = Mathf.Min(dist, crownDist);
+            }
             Vector3 pos = focus - f * dist;
-            float wantH = focus.y + Mathf.Lerp(1.15f, 2.3f, Mathf.SmoothStep(0f, 1f, s01)) * heightScale * Mathf.Lerp(1f, distScale, 0.7f);
-            // never inside the hill behind you
-            wantH = Mathf.Max(wantH, Slope.Height(pos.x, pos.z) + 1.3f);
+            float hs = Mathf.SmoothStep(0f, 1f, s01);
+            float lift = Mathf.Lerp(LiftSlow, LiftFast, hs) * heightScale * Mathf.Lerp(1f, distScale, 0.7f) * Mathf.Lerp(1f, TightLift, tk);
+            float wantH = focus.y + lift;
+            // On a steep pitch at speed the camera is far enough back up the hill that the snow under it is higher than
+            // the rider-relative height above. It used to sit on a fixed floor there (1.3 m, or the 2.4 m debris floor),
+            // the same at every angle setting: pitched down with a wide lens, the bottom of the frame then looked almost
+            // straight down at snow three metres away, which perspective blew up and swung about (tracks and craters at
+            // the bottom bending away from the rest of the picture). Now it keeps a clear height over the snow under it,
+            // set by the angle setting and growing with speed, so the near snow stays well away from the lens.
+            float snowUnder = Slope.Height(pos.x, pos.z);
+            float floorWant = snowUnder + Mathf.Max(1.3f, Mathf.Lerp(ClearSlow, ClearFast, hs) * heightScale * Mathf.Lerp(1f, TightClear, tk));
+            if (first) { floorH = floorWant; floorVel = 0f; }
+            else floorH = Mathf.SmoothDamp(floorH, floorWant, ref floorVel, FloorEase, Mathf.Infinity, Mathf.Max(dt, 1e-4f));
+            wantH = Mathf.Max(wantH, floorH);
             // ...or inside the avalanche's debris: ride up over it
             if (floor != null) wantH = Mathf.Max(wantH, Slope.Height(pos.x, pos.z) + floor(pos.x, pos.z) + 2.4f);
-            height = first ? wantH : Mathf.Lerp(height, wantH, 1f - Mathf.Exp(-dt * 7f));
+            if (first) { height = wantH; heightVel = 0f; }
+            else height = Mathf.SmoothDamp(height, wantH, ref heightVel, HeightEase, Mathf.Infinity, Mathf.Max(dt, 1e-4f));
+            // (eased, it may lag snow rising under it: never into it)
+            if (height < snowUnder + HardFloor) { height = snowUnder + HardFloor; heightVel = Mathf.Max(heightVel, 0f); }
             pos.y = height;
 
             if (shake > 0f)
@@ -79,10 +295,18 @@ namespace Summit
             }
 
             // aim along the slope ahead, but only part way down it, so the horizon and the far ranges stay in view
-            Vector3 ahead = focus + f * 12f;
+            // (in tight trees, further ahead and more along the way the rider is going: the gap they are heading for)
+            Vector3 travel = new Vector3(Mathf.Sin(rider.TravelHeading), 0f, Mathf.Cos(rider.TravelHeading));
+            Vector3 aimDir = Vector3.Slerp(f, travel, TightTurn * tk).normalized;
+            Vector3 ahead = focus + aimDir * Mathf.Lerp(12f, TightAhead, tk);
             float drop = Slope.Height(ahead.x, ahead.z) - Slope.Height(focus.x, focus.z);
-            lookDrop = first ? drop : Mathf.Lerp(lookDrop, drop, 1f - Mathf.Exp(-dt * 3f));
-            Vector3 look = ahead + Vector3.up * (lookDrop * 0.55f - 0.6f);
+            if (first) { lookDrop = drop; dropVel = 0f; }
+            else lookDrop = Mathf.SmoothDamp(lookDrop, drop, ref dropVel, DropEase, Mathf.Infinity, Mathf.Max(dt, 1e-4f));
+            // held up by the snow behind, it aims up by part of that, so the horizon sits where the angle setting puts it
+            // instead of the view tipping down at the slope under the lens
+            // (capped: off a lift-station lip the rider drops far below a camera still over the lip, and must stay in frame)
+            float aimUp = Mathf.Min(Mathf.Max(0f, height - (focus.y + lift)) * HeldUpAim, HeldUpAimMax);
+            Vector3 look = ahead + Vector3.up * (lookDrop * 0.55f - 0.6f + aimUp);
             if (peek > 0.001f)
             {
                 // the rider went into a crevasse: lean out over the edge and look straight down after them
@@ -90,7 +314,11 @@ namespace Summit
                 // from over the crevasse's middle line, backed off up it (from over a lip, its white top looked like a
                 // pillar standing straight down the ice wall)
                 Vector3 over = peekAt, back = f;
-                if (Course.CrevasseNear(peekAt.x, peekAt.z, 4f, out var cv)) { over = Course.CrevasseMiddle(cv, peekAt); back = Vector3.forward; }
+                if (Course.CrevasseNear(peekAt.x, peekAt.z, 4f, out var cv))
+                {
+                    over = Course.CrevasseMiddle(cv, peekAt);
+                    back = new Vector3(cv.dx, 0f, cv.dz) * (cv.dz < 0f ? -1f : 1f);   // along it, from its uphill end
+                }
                 Vector3 rim = new Vector3(over.x, Mathf.Max(focus.y, Slope.Height(over.x, over.z) + 1f), over.z);
                 pos = Vector3.Lerp(pos, rim - back * 1.8f + Vector3.up * 3.2f, k);
                 look = Vector3.Lerp(look, peekAt, k);
@@ -107,14 +335,126 @@ namespace Summit
             }
             // bank with a hard carve: nothing on gentle turns, up to about 9 degrees on a full-edge turn at speed
             float hard = Mathf.Clamp01((Mathf.Abs(rider.Lean) - 0.3f) / 0.42f) * Mathf.Clamp01((rider.Speed - 8f) / 17f);
-            float wantRoll = rider.Crashed || rider.Airborne || peek > 0.001f || hold > 0.001f ? 0f : -Mathf.Sign(rider.Lean) * 9f * hard * hard;
+            // (feel2: no roll with the steering at all, neither with the lean nor with the edge's bite: the playtest found
+            // it bothersome. The horizon stays level; the bite is felt in the spray, the sound and the body)
+            float wantRoll = (rider.Crashed || rider.Airborne || peek > 0.001f || hold > 0.001f ? 0f : -Mathf.Sign(rider.Lean) * 9f * hard * hard) * SteerRoll;
+            if (!rider.Crashed && !rider.Airborne && peek <= 0.001f && hold <= 0.001f) wantRoll -= Mathf.Sign(rider.LateralAccel) * BiteRoll * rider.Bite * Mathf.Clamp01((rider.Speed - 6f) / 10f);
             roll = first ? wantRoll : Mathf.Lerp(roll, wantRoll, 1f - Mathf.Exp(-dt * 3f));
-            transform.SetPositionAndRotation(pos, Quaternion.LookRotation(look - pos, Vector3.up) * Quaternion.Euler(0f, 0f, roll));
+            Quaternion rot = Quaternion.LookRotation(look - pos, Vector3.up) * Quaternion.Euler(0f, 0f, roll);
 
-            float wantFov = Mathf.Lerp(80f, 94f, s01 * s01) + extraFov + (rider.BoostTime > 0f ? 8f : 0f);   // a wide-angle lens
+            float wantFov = Mathf.Lerp(80f, 94f, s01 * s01) + extraFov + (rider.BoostTime > 0f ? 8f : 0f) + TightFov * tk;   // a wide-angle lens (a little wider in tight trees)
             fov = first ? wantFov : Mathf.Lerp(fov, wantFov, 1f - Mathf.Exp(-dt * 2f));
-            cam.fieldOfView = fov;
+            float view = fov;
+            // first person, over the chase view worked out above (which keeps running underneath, so handing back is seamless)
+            if (pov || povBlend > 0f) StepPov(dt, s01, ref pos, ref rot, ref view);
+            transform.SetPositionAndRotation(pos, rot);
+            cam.fieldOfView = view;
+            // the view through the trees (SeeOn)
+            float see = SeeOn && peek <= 0.001f && hold <= 0.001f ? 1f - Pov : 0f;
+            float toRider = Vector3.Distance(pos, raw);
+            Shader.SetGlobalVector(SeeEyeId, new Vector4(pos.x, pos.y, pos.z, see));
+            Shader.SetGlobalVector(SeeAtId, new Vector4(raw.x, raw.y, raw.z, Mathf.Atan(SeeBody / Mathf.Max(toRider, 1f)) + SeeMargin));
+            Shader.SetGlobalVector(SeeAheadId, new Vector4(look.x, look.y, look.z, 0f));
+            lastRider = rider.transform.position; haveLast = true;
             first = false;
+        }
+
+        /// <summary>The first-person view for this frame, blended over the chase view's place, direction and lens.</summary>
+        void StepPov(float dt, float s01, ref Vector3 pos, ref Quaternion rot, ref float view)
+        {
+            bool flipping = PovFlipsInChase && rider.Airborne && rider.TrickName != null && Mathf.Abs(rider.TrickFlip) > 0.01f;
+            bool want = pov && rider.Running && !rider.Crashed && !flipping && peek <= 0.001f && hold <= 0.001f;
+            // the hand-over runs on the real clock: it still glides through a crash's slow motion, and a change made
+            // in the pause menu shows behind it
+            float rdt = TestDt > 0f ? TestDt : Mathf.Min(Time.unscaledDeltaTime, 0.05f);
+            bool begin = povBlend <= 0f;   // coming in from the chase view: nothing of the last time is carried over
+            povBlend = first ? (want ? 1f : 0f) : Mathf.MoveTowards(povBlend, want ? 1f : 0f, rdt / Mathf.Max(0.01f, want ? PovBlendIn : PovBlendOut));
+            if (povBlend > 0f != povOn)
+            {
+                povOn = povBlend > 0f;
+                if (povOn) { nearChase = cam.nearClipPlane; cam.nearClipPlane = PovNear; }
+                else cam.nearClipPlane = nearChase;
+            }
+            if (body != null) body.SetPovHead(povBlend > PovHideHead && !rider.Crashed);
+            if (!povOn) { if (lensFx != null) lensFx.Blur = 0f; return; }
+            float k = Mathf.SmoothStep(0f, 1f, povBlend);
+
+            // where the head is over the board: read from the body as it was drawn last frame (the body is posed
+            // after this camera), and followed on a spring, never copied: the bones jiggle and the snow under the
+            // board is made of facets. Held where it was through a fall or a flip, when the head goes its own way.
+            Vector3 rp = rider.transform.position;
+            Vector3 off = begin ? Vector3.up * PovHeadHeight : povOff;
+            Transform head = body != null ? body.PovHead : null;
+            if (head == null) off = Vector3.up * PovHeadHeight;
+            else if (haveLast && !rider.Crashed && !flipping)
+            {
+                Vector3 o = head.position - lastRider;
+                if (o.y > 0.1f && o.sqrMagnitude < 2.5f * 2.5f) off = o;   // (not a frame the rider was moved in)
+            }
+            povOff = begin ? off : Vector3.Lerp(povOff, off, 1f - Mathf.Exp(-dt * PovFollow));
+
+            // along the line of travel, a little into the turn; never round to face uphill
+            float lead = rider.Airborne ? 0f : Mathf.Clamp(rider.YawRate * PovLead, -PovLeadMax * Mathf.Deg2Rad, PovLeadMax * Mathf.Deg2Rad);
+            float wantYaw = rider.Crashed ? povYaw : Mathf.Clamp(rider.TravelHeading + lead, -1.5f, 1.5f);
+            povYaw = begin ? wantYaw : Mathf.Lerp(povYaw, wantYaw, 1f - Mathf.Exp(-dt * PovYawRate));
+            // tipped down from the slope ahead (the chase view's own eased reading of it, over the next 12 m)
+            float slope = Mathf.Clamp(Mathf.Atan2(-lookDrop, 12f) * Mathf.Rad2Deg, -10f, 45f);
+            float air = rider.Airborne ? Mathf.Clamp01(rider.AboveGround / 4f) : 0f;
+            float wantPitch = Mathf.Clamp(PovPitch + slope * PovSlopeFollow + PovAirPitch * air, 0f, 65f);
+            povPitch = begin ? wantPitch : Mathf.Lerp(povPitch, wantPitch, 1f - Mathf.Exp(-dt * PovPitchRate));
+            // rolling with the lean, as the head does (level in the air)
+            float wantRoll = rider.Airborne || rider.Crashed ? 0f
+                : Mathf.Clamp(-rider.Lean * Mathf.Rad2Deg * PovRoll, -PovRollMax, PovRollMax) * Mathf.Clamp01((rider.Speed - 3f) / 8f);
+            povRoll = begin ? wantRoll : Mathf.Lerp(povRoll, wantRoll, 1f - Mathf.Exp(-dt * PovRollRate));
+
+            float yawDeg = povYaw * Mathf.Rad2Deg;
+            Quaternion eyeRot = Quaternion.Euler(povPitch, yawDeg, povRoll);
+            povAhead = Quaternion.Euler(slope * PovSlopeFollow, yawDeg, 0f) * Vector3.forward;
+            if (shake > 0f)
+            {
+                // a tremble of the view rather than of its place: the body is a hand's width from the lens
+                float t = Time.time * 31f;
+                eyeRot *= Quaternion.Euler((Mathf.PerlinNoise(t, 0.3f) - 0.5f) * shake * PovShake, (Mathf.PerlinNoise(0.7f, t) - 0.5f) * shake * PovShake, 0f);
+            }
+            // on the rider's own place (its height sprung, as the chase view's is), at the eyes, a little ahead of the face
+            Vector3 flat = new Vector3(Mathf.Sin(povYaw), 0f, Mathf.Cos(povYaw));
+            Vector3 eye = new Vector3(rp.x, focus.y - 1.1f, rp.z) + povOff + Vector3.up * PovEyeUp + flat * PovEyeForward;
+            float ground = Slope.Height(eye.x, eye.z) + (floor != null ? Mathf.Max(0f, floor(eye.x, eye.z)) : 0f);
+            eye.y = Mathf.Max(eye.y, ground + PovGround);
+
+            float wantFov = Mathf.Min(PovFovMax, PovFov + PovFovSpeed * s01 * s01 + extraFov * PovLensScale + (rider.BoostTime > 0f ? PovFovBoost : 0f));
+            povFov = begin ? wantFov : Mathf.Lerp(povFov, wantFov, 1f - Mathf.Exp(-dt * 2f));
+
+            pos = Vector3.Lerp(pos, eye, k);
+            rot = Quaternion.Slerp(rot, eyeRot, k);
+            view = Mathf.Lerp(view, povFov, k);
+
+            // the streaks run out from the point on screen you are travelling toward
+            if (lensFx != null)
+            {
+                Vector2 centre = new Vector2(0.5f, 0.5f);
+                Vector3 v = rider.Velocity;
+                if (v.sqrMagnitude > 4f)
+                {
+                    Vector3 d = Quaternion.Inverse(rot) * v.normalized;
+                    float th = Mathf.Tan(view * 0.5f * Mathf.Deg2Rad);
+                    if (d.z > 0.2f)
+                        centre = new Vector2(Mathf.Clamp(0.5f + 0.5f * d.x / (d.z * th * Mathf.Max(0.1f, cam.aspect)), 0.2f, 0.8f),
+                                             Mathf.Clamp(0.5f + 0.5f * d.y / (d.z * th), 0.2f, 0.8f));
+                }
+                lensFx.BlurCentre = centre;
+                lensFx.Blur = PovBlur * k * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(PovBlurFrom, PovBlurFull, rider.Speed));
+            }
+        }
+
+        // switched off (the camp takes the camera over): the chase view's clip plane, the head and a clear lens back
+        void OnDisable()
+        {
+            if (povOn && cam != null) cam.nearClipPlane = nearChase;
+            povOn = false; povBlend = 0f;
+            if (body != null) body.SetPovHead(false);
+            if (lensFx != null) lensFx.Blur = 0f;
+            Shader.SetGlobalVector(SeeEyeId, Vector4.zero);   // (no thinning for whoever has the camera now)
         }
     }
 }

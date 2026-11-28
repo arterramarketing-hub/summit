@@ -126,11 +126,12 @@ namespace Summit
 
         /// <summary>Play a clip from its start (a one-shot: the pop, the landing).</summary>
         public void Restart(int id) { if (id >= 0) time[id] = 0f; }
+        /// <summary>Put a clip at this time (s): one played in step with something else (a paddle stroke: RiderBodyVehicle).</summary>
+        public void SetTime(int id, float t) { if (id >= 0) time[id] = Mathf.Clamp(t, 0f, Length(id)); }
 
         /// <summary>Hold a clip at this point of its cycle (0..1) instead of letting it run.</summary>
         public void At(int id, float t01) { if (id < 0) return; held[id] = true; time[id] = Mathf.Repeat(t01, 1f) * Length(id); }
 
-        public float TimeOf(int id) => id < 0 ? 0f : time[id];
 
         /// <summary>Snap straight to the wanted weights (the first frame, or after a teleport).</summary>
         public void Snap() { System.Array.Copy(target, weight, weight.Length); }
@@ -213,6 +214,7 @@ namespace Summit
             public float side;              // deg: the chest rolls (the tube's weight shift)
             public Vector3 look;            // world: where the head wants to look (zero: leave it to the clip)
             public float lookWeight;
+            public float lookReach;         // deg the neck and the head may each turn toward it (0: the usual glance, 55)
             public Vector3 up, toe, nose;   // the board's axes in the world
             public Hold holdL, holdR;       // where a locked hand holds on, from its own clip (not from the blend)
         }
@@ -280,12 +282,27 @@ namespace Summit
             if (d.lookWeight > 0f && d.look.sqrMagnitude > 1e-4f)
             {
                 Vector3 want = d.look.normalized;
+                // (a look far round, over the shoulder riding switch: turned about the up axis only, and the way a neck
+                // turns, past the chest's side rather than the back of the neck; a turn of nearly 180 degrees as one
+                // FromToRotation would tip the head any old way)
+                float tw = d.twist * Mathf.Deg2Rad;
+                Vector3 chest = d.toe * Mathf.Cos(tw) + d.nose * Mathf.Sin(tw);
                 for (int pass = 0; pass < 2; pass++)
                 {
                     var tr = pass == 0 ? Neck : Head;
                     Vector3 cur = Head.rotation * faceLocal;
+                    float k = d.lookWeight * (pass == 0 ? 0.35f : 0.75f);
+                    if (d.lookReach > 55f)
+                    {
+                        Vector3 cf = Vector3.ProjectOnPlane(cur, d.up), wf = Vector3.ProjectOnPlane(want, d.up);
+                        float ang = Vector3.SignedAngle(cf, wf, d.up);
+                        if (Mathf.Abs(ang) > 60f && Vector3.Dot(Quaternion.AngleAxis(ang * 0.5f, d.up) * cf, chest) < 0f) ang -= 360f * Mathf.Sign(ang);
+                        ang = Mathf.Clamp(ang, -d.lookReach, d.lookReach);
+                        tr.rotation = Quaternion.AngleAxis(ang * k, d.up) * tr.rotation;
+                        continue;
+                    }
                     var delta = Quaternion.RotateTowards(Quaternion.identity, Quaternion.FromToRotation(cur, want), 55f);
-                    tr.rotation = Quaternion.Slerp(Quaternion.identity, delta, d.lookWeight * (pass == 0 ? 0.35f : 0.75f)) * tr.rotation;
+                    tr.rotation = Quaternion.Slerp(Quaternion.identity, delta, k) * tr.rotation;
                 }
             }
 
@@ -375,6 +392,15 @@ namespace Summit
             Limb(UpperArm[s], LowerArm[s], Hand[s], target, elbowHint);
             Hand[s].rotation = Quaternion.Slerp(Hand[s].rotation, handRot, w);
         }
+
+        // ---- for poses made outside the clips (the camp's fire and its mugs: CampPose, Alyssa)
+
+        /// <summary>Put a hand's wrist (0 left, 1 right) at a point, the elbow bending toward the hint.</summary>
+        public void ArmTo(int s, Vector3 wrist, Vector3 elbowHint) { if (Ok) Limb(UpperArm[s], LowerArm[s], Hand[s], wrist, elbowHint); }
+        /// <summary>Put an ankle at a point, the knee bending toward the hint.</summary>
+        public void LegTo(int s, Vector3 ankle, Vector3 kneeHint) { if (Ok) Limb(UpperLeg[s], LowerLeg[s], Foot[s], ankle, kneeHint); }
+        /// <summary>The way the hips face, level (from the line through the hip joints).</summary>
+        public Vector3 HipsForward() { Vector3 l = UpperLeg[0].position - UpperLeg[1].position; l.y = 0f; return Vector3.Cross(Vector3.up, l).normalized; }
 
         /// <summary>Two-bone IK: the end reaches the target; the middle joint bends toward where the hint is.</summary>
         static void Limb(Transform upper, Transform lower, Transform end, Vector3 target, Vector3 hint)

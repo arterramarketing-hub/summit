@@ -13,8 +13,13 @@ Shader "Summit/SnowyCloth"
         _Snow ("Snow amount", Range(0, 1)) = 0
         _SnowScale ("How readily this garment holds snow", Range(0, 2)) = 1
         _Wet ("Damp", Range(0, 1)) = 0
+        _Fuzz ("Fleece pile (0 = plain cloth)", Range(0, 1)) = 0
         _SnowUp ("Up (rest frame)", Vector) = (0, 1, 0, 0)
         _SnowDir ("Impact side (rest frame), w = strength", Vector) = (0, 0, 1, 0)
+        _Color2 ("Second colour (the pattern's)", Color) = (1, 1, 1, 1)
+        _Pattern ("Pattern: 0 plain, 1 stripes, 2 camo, 3 colour block, 4 plaid, 5 Nordic knit", Float) = 0
+        _PatternScale ("Pattern repeats a metre", Float) = 7
+        _PatternAt ("Colour block: the height (rest frame, m) it changes at; negative: below that height", Float) = 1.3
     }
     SubShader
     {
@@ -28,19 +33,23 @@ Shader "Summit/SnowyCloth"
             half _Snow;
             half _SnowScale;
             half _Wet;
+            half _Fuzz;
             float4 _SnowUp;
             float4 _SnowDir;
+            half4 _Color2;
+            half _Pattern;
+            half _PatternScale;
+            half _PatternAt;
         CBUFFER_END
 
-        // value noise in 3D, 0..1
-        float Hash(float3 p) { p = frac(p * 0.3183099 + 0.1); p *= 17.0; return frac(p.x * p.y * p.z * (p.x + p.y + p.z)); }
-        float Noise(float3 x)
+        // the cloth's pattern (ClothPattern.hlsl, shared with the people far off: PeopleLit), and the value noise the
+        // snow's clumps are made of
+        #include "ClothPattern.hlsl"
+        half3 PatternColour(half3 a, float3 restPos, float3 restNormal)
         {
-            float3 i = floor(x), f = frac(x);
-            f = f * f * (3.0 - 2.0 * f);
-            return lerp(lerp(lerp(Hash(i), Hash(i + float3(1, 0, 0)), f.x), lerp(Hash(i + float3(0, 1, 0)), Hash(i + float3(1, 1, 0)), f.x), f.y),
-                        lerp(lerp(Hash(i + float3(0, 0, 1)), Hash(i + float3(1, 0, 1)), f.x), lerp(Hash(i + float3(0, 1, 1)), Hash(i + float3(1, 1, 1)), f.x), f.y), f.z);
+            return ClothPattern(a, _Color2.rgb, _Pattern, _PatternScale, _PatternAt, restPos, restNormal, _SnowUp.xyz);
         }
+
         // big clumps with a finer crust on them
         float Clumps(float3 restPos) { return Noise(restPos * 11.0) * 0.68 + Noise(restPos * 37.0 + 7.3) * 0.32; }
 
@@ -135,7 +144,13 @@ Shader "Summit/SnowyCloth"
 
                 // the cloth darkens where the snow is melting into it
                 half damp = saturate(_Wet * (0.5 + 0.5 * saturate(1.0 - abs(raw + 0.6))));
-                half3 cloth = _BaseColor.rgb * (1.0 - 0.35 * damp);
+                half3 cloth = PatternColour(_BaseColor.rgb, i.restPos, i.restNormal) * (1.0 - 0.35 * damp);
+                // fleece (_Fuzz): a soft pile. Its colour is faintly mottled, and it blooms paler where the cloth turns
+                // away from the eye, as the fibres catch the light there. Nothing changes for plain cloth (_Fuzz 0).
+                half3 toEye = GetWorldSpaceNormalizeViewDir(i.positionWS);
+                half bloom = pow(1.0 - saturate(dot(n, toEye)), 3.0);
+                cloth *= 1.0 + _Fuzz * 0.14 * (Noise(i.restPos * 90.0) - 0.5);
+                cloth = lerp(cloth, saturate(cloth * 1.5 + 0.07), _Fuzz * 0.75 * bloom);
                 half3 snow = half3(0.92, 0.93, 0.95) * (0.84 + 0.18 * clumps);
 
                 SurfaceData s = (SurfaceData)0;

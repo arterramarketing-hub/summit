@@ -21,10 +21,9 @@ public static class HaloShot
         var game = Object.FindFirstObjectByType<SummitGame>();
         Random.InitState(7);
         TestBoot.Boot(game);
-        T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        var rider = Get<Rider>("rider"); var body = Get<RiderBody>("body");
-        var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props");
-        var dayNight = Get<DayNight>("dayNight"); var hud = Get<Hud>("hud");
+        var rider = game.rider; var body = game.body;
+        var terrain = game.terrain; var props = game.props;
+        var dayNight = game.dayNight; var hud = game.hud;
         var cam = Camera.main; var chase = cam.GetComponent<ChaseCamera>();
         var late = typeof(ChaseCamera).GetMethod("LateUpdate", NP);
         var atmo = Object.FindFirstObjectByType<Atmosphere>();
@@ -56,7 +55,7 @@ public static class HaloShot
             if (next == 0) for (int i = 0; i < 3; i++) Shoot(cam, "HaloShots/warmup.png");   // placeholder materials, then the real ones
 
             // under NATURAL and the default lens, so only halation and the light change
-            Set("filterLevel", 0); Set("filterStrength", 10); Set("lensLevel", 1); Set("lensMode", 0);
+            Set("filterLevel", 0); Set("filterStrength", 10); Set("lensLevel", 1);
             applyCam.Invoke(game, null);
             foreach (var (name, clock) in Times)
             {
@@ -92,7 +91,7 @@ public static class HaloShot
         TimeOfDay.TestClock = -1f;
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Shoot(Camera cam, string file)

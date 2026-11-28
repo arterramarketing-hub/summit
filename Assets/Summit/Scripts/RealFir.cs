@@ -1,56 +1,108 @@
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 
 namespace Summit
 {
     /// <summary>
-    /// Realistic snowy firs, made of photo-scanned branch cards (Resources/RealTrees/FirCards.png, built by
-    /// Tools/MakeFirCards.swift from Poly Haven's CC0 "Fir Tree 01" twigs).
+    /// The realistic forest's trees: snowy firs and hemlocks, pines, dead snags, young trees, old giants and
+    /// saplings, all made of photo-scanned branch cards. The meshes are built ahead of time by Tools/MakeTrees.py
+    /// (so they can be looked at in Blender) and read here from Resources/RealTrees/Trees.bytes. Two atlases: the
+    /// firs' (FirCards.png, Tools/MakeFirCards.swift, Poly Haven's CC0 "Fir Tree 01") and the pines' and snags'
+    /// (PineCards.png, Tools/MakeTrees.py, Poly Haven's CC0 "Pine Tree 01").
     ///
-    /// Up close, each tree is a trunk and tiers of drooping branches; every branch is two cards - one upright
-    /// with a cap of snow along its top (what you see from beside the tree) and one lying flat, loaded with
-    /// snow (what you see from above, riding down towards it). About 300 triangles and one material a tree.
+    /// Every kind comes at three levels of detail (Forest.cs draws them and dissolves one into the next):
+    ///  - rich, right beside the rider: bent branches with side fronds and a full inner crown, a trunk with a root
+    ///    flare, a pine's pads of needles built up from several cards (1,000 to 3,000 triangles);
+    ///  - plain, in the middle distance: two cards a branch (250 to 550 triangles), and the tree's shadow;
+    ///  - far away an impostor: a picture of the plain tree, taken once at start-up, on two crossed quads. The
+    ///    picture keeps the tree's plain colour and its normals, and all three are lit by the same sums
+    ///    (Shaders/Fir.hlsl), so they match in every time of day.
+    /// Normals shade a crown (or a pine's pad) as one rounded mass, and the vertex colour darkens its inside.
     ///
-    /// Far away, each tree is an impostor: a picture of the same tree, taken once at start-up, on two crossed
-    /// quads (4 triangles). The picture keeps the tree's plain colour and its normals, and both are lit by the same
-    /// sums (Shaders/Fir.hlsl), so near and far match in every time of day; the forest dissolves one into the
-    /// other over a band of distance (Forest.cs).
+    /// Kinds 0-7 are the firs and hemlocks the forest has always had, with the same measurements for their hit
+    /// capsules (Kinds below: the numbers are also in Tools/MakeTrees.py - change both or neither). They are the only
+    /// kinds that grow on and beside the piste (Forest.cs), so the obstacles there are what they always were.
     /// </summary>
     public static class RealFir
     {
-        public const int Variants = 8;
-        public static Mesh[] Meshes, Impostors;
-        public static float[] Heights;
-        public static Material Cards;        // the forest's trees: hand over to their far pictures
-        public static Material Standalone;   // trees planted on their own (camp, start tape): always cards
+        /// <summary>How many kinds of tree there are (saplings included).</summary>
+        public static int Variants { get; private set; }
+        public static Mesh[] Meshes;         // rich: up close, and trees planted on their own
+        public static Mesh[] Plain;          // the middle distance
+        public static Mesh[] Impostors;      // far away (null for saplings: they just fade out)
+        public static float[] Heights;       // each kind's height as built, metres
         public static Material[] ImpostorMats;
+        static int[] atlas;                  // 0 the firs' atlas, 1 the pines'
+        static int[] flags;
+        static float[] size;                 // how tall it grows beside a full-grown tree of its stand
+        static float[][] trunkTable, crownTable;
+        static Material[] plainMats, richMats, decoMats, standaloneMats;
         static RenderTexture[] shots, normalShots;
 
-        public static bool Ready => Meshes != null && Cards != null;
+        const int FlagSnag = 1, FlagYoung = 2, FlagSapling = 4, FlagPine = 8, FlagGiant = 16;   // as Tools/MakeTrees.py writes them
+        const int Table = 17;                // measurements at 17 heights, foot to top
 
-        /// <summary>Builds the tree meshes and takes their impostor pictures (once).</summary>
+        public static bool Ready => Meshes != null && standaloneMats != null;
+
+        /// <summary>The firs' material for things drawn on their own (TreeBreak's stumps wear its bark).</summary>
+        public static Material Standalone => standaloneMats != null ? standaloneMats[0] : null;
+        /// <summary>The material a tree of this kind wears when it stands on its own (the camp, a felled tree): never fades.</summary>
+        public static Material StandaloneOf(int variant) => standaloneMats[atlas[variant]];
+        /// <summary>The forest's materials for this kind: up close (dissolves away past the near band) and in the
+        /// middle distance (dissolves in over the near band, and out into the far picture).</summary>
+        public static Material RichOf(int variant) => richMats[atlas[variant]];
+        /// <summary>Which atlas a kind is drawn from (0 the firs', 1 the pines' and snags').</summary>
+        public static int AtlasOf(int variant) => atlas[variant];
+        /// <summary>The never-fading material for an atlas (0 the firs', 1 the pines'): torn-off branches (TreeBreak).</summary>
+        public static Material StandaloneOfAtlas(int a) => standaloneMats != null ? standaloneMats[Mathf.Clamp(a, 0, 1)] : null;
+        public static Material PlainOf(int variant) => IsSapling(variant) ? decoMats[atlas[variant]] : plainMats[atlas[variant]];
+
+        /// <summary>How far an atlas's trees give in the wind (the shaders' _WindFlex): the firs', or the pines' and snags'.</summary>
+        public static float FlexOfAtlas(int a) => a == 1 ? TreeWind.FlexPine : TreeWind.FlexFir;
+        /// <summary>A dead snag: dry and brittle, it snaps easily (TreeBreak). Kind 6 is the fir whose top has gone.</summary>
+        public static bool IsSnag(int variant) => variant == Snag || (flags[variant] & FlagSnag) != 0;
+        public const int Snag = 6;
+        public static bool IsYoung(int variant) => (flags[variant] & FlagYoung) != 0;
+        public static bool IsPine(int variant) => (flags[variant] & FlagPine) != 0;
+        /// <summary>A sapling poking out of the snow: decoration, with nothing to hit.</summary>
+        public static bool IsSapling(int variant) => (flags[variant] & FlagSapling) != 0;
+        /// <summary>How tall this kind grows as a share of a full-grown tree of its stand (young 0.4, giants 1.4).</summary>
+        public static float SizeOf(int variant) => size[variant];
+
+        /// <summary>Reads the trees and takes their impostor pictures (once).</summary>
         public static bool Load()
         {
             if (Ready) return true;
-            var cards = Resources.Load<Material>("RealTrees/FirCards");
+            var data = Resources.Load<TextAsset>("RealTrees/Trees");
+            var fir = Resources.Load<Material>("RealTrees/FirCards");
+            var pine = Resources.Load<Material>("RealTrees/PineCards");
             var imp = Resources.Load<Material>("RealTrees/FirImpostor");
-            if (cards == null || imp == null) return false;
-            Cards = new Material(cards) { enableInstancing = true };
-            Cards.SetFloat("_FadeOn", 1f);
-            Standalone = new Material(cards) { enableInstancing = true };
-            Standalone.SetFloat("_FadeOn", 0f);
-            Meshes = new Mesh[Variants]; Heights = new float[Variants];
-            for (int i = 0; i < Variants; i++)
+            if (data == null || fir == null || pine == null || imp == null) return false;
+            if (!Read(data.bytes)) { Meshes = null; return false; }
+            Material Make(Material from, float fadeIn, float fadeOut)
             {
-                Meshes[i] = Build(i, 1000 + i * 77);
-                Heights[i] = Kinds[i].H;
+                var m = new Material(from) { enableInstancing = true };
+                m.SetFloat("_FadeIn", fadeIn); m.SetFloat("_FadeOut", fadeOut);
+                m.SetFloat("_WindFlex", from == pine ? TreeWind.FlexPine : TreeWind.FlexFir);   // (the one wind: TreeWind)
+                return m;
             }
+            var src = new[] { fir, pine };
+            plainMats = new Material[2]; richMats = new Material[2]; decoMats = new Material[2]; var alone = new Material[2];
+            for (int a = 0; a < 2; a++)
+            {
+                plainMats[a] = Make(src[a], 1f, 1f);   // appears over the near band, hands over to the far picture
+                richMats[a] = Make(src[a], 0f, 2f);    // dissolves away over the near band
+                decoMats[a] = Make(src[a], 0f, 1f);    // saplings: there from close up, gone by the far band's end
+                alone[a] = Make(src[a], 0f, 0f);
+            }
+            standaloneMats = alone;
             BakeImpostors(imp);
             return true;
         }
 
         /// <summary>
-        /// A realistic fir standing on its own, outside the forest (the camp, the trees the start tape is tied to):
+        /// A realistic tree standing on its own, outside the forest (the camp, the trees the start tape is tied to):
         /// `height` metres tall from `at`, turned by `yaw` degrees. Null if the trees could not be loaded.
         /// For one grown and buried like the forest's, see Forest.PlantLike.
         /// </summary>
@@ -64,86 +116,182 @@ namespace Summit
             g.transform.localScale = Vector3.one * (height / Heights[v]);
             g.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
             g.GetComponent<MeshFilter>().sharedMesh = Meshes[v];
-            g.GetComponent<MeshRenderer>().sharedMaterial = Standalone;
+            g.GetComponent<MeshRenderer>().sharedMaterial = StandaloneOf(v);
             return g;
         }
 
-        // ---- the atlas: 2 columns x 4 rows of 512x256 cells
+        // ---- reading Trees.bytes (Tools/MakeTrees.py: write_trees)
 
-        // row 0: upright with a snow cap; row 1: flat, a dusting; row 2: flat, heavy snow; row 3: bark (whole width)
-        static Rect Cell(int col, int row)
+        static bool Read(byte[] bytes)
         {
-            const float px = 1f / 1024f;
-            float u0 = col * 0.5f + px, u1 = col * 0.5f + 0.5f - px;
-            float vTop = 1f - row * 0.25f - px, vBot = 1f - (row + 1) * 0.25f + px;
-            return Rect.MinMaxRect(u0, vBot, u1, vTop);
-        }
-        const float StemUpright = 0.44f;   // where the stem runs across an upright card (0 bottom .. 1 top)
-        const float StemStart = 12f / 512f, StemEnd = 498f / 512f;   // where the frond's stem starts and ends along a card
-
-        // ---- building one tree
-
-        class Builder
-        {
-            public readonly List<Vector3> v = new List<Vector3>(), n = new List<Vector3>();
-            public readonly List<Vector2> uv = new List<Vector2>();
-            public readonly List<int> t = new List<int>();
-
-            /// <summary>A card: `along` runs from the trunk end of the cell to its tip, `across` from the cell's bottom edge to its top.</summary>
-            public void Card(Vector3 origin, Vector3 along, Vector3 across, Rect cell, float stemV)
+            try
             {
-                int s = v.Count;
-                for (int k = 0; k < 4; k++)
+                using (var r = new BinaryReader(new MemoryStream(bytes)))
                 {
-                    float a = (k & 1) == 0 ? 0f : 1f, b = (k & 2) == 0 ? 0f : 1f;
-                    var p = origin + along * a + across * (b - stemV);
-                    v.Add(p);
-                    // soft, rounded lighting: the normal leans out from the trunk and up, whatever way the card faces
-                    var radial = new Vector3(p.x, 0f, p.z);
-                    radial = radial.sqrMagnitude > 1e-4f ? radial.normalized : Vector3.Cross(across, along).normalized;
-                    n.Add((radial * 0.65f + Vector3.up * 0.6f).normalized);
-                    uv.Add(new Vector2(Mathf.Lerp(cell.xMin, cell.xMax, a), Mathf.Lerp(cell.yMin, cell.yMax, b)));
+                    if (r.ReadByte() != 'S' || r.ReadByte() != 'M' || r.ReadByte() != 'T' || r.ReadByte() != 'R') return false;
+                    if (r.ReadUInt32() != 1) return false;
+                    int n = (int)r.ReadUInt32();
+                    if (n < Legacy || n > 200) return false;
+                    Meshes = new Mesh[n]; Plain = new Mesh[n]; Heights = new float[n];
+                    atlas = new int[n]; flags = new int[n]; size = new float[n];
+                    trunkTable = new float[n][]; crownTable = new float[n][];
+                    for (int i = 0; i < n; i++)
+                    {
+                        string name = System.Text.Encoding.ASCII.GetString(r.ReadBytes(r.ReadByte()));
+                        Heights[i] = r.ReadSingle();
+                        atlas[i] = Mathf.Clamp(r.ReadByte(), 0, 1);
+                        flags[i] = r.ReadByte();
+                        size[i] = r.ReadSingle();
+                        trunkTable[i] = new float[Table]; crownTable[i] = new float[Table];
+                        for (int k = 0; k < Table; k++) trunkTable[i][k] = r.ReadSingle();
+                        for (int k = 0; k < Table; k++) crownTable[i][k] = r.ReadSingle();
+                        Meshes[i] = ReadMesh(r, name, out var mv, out var mt);
+                        BuildPolar(i, n, mv, mt);   // (what its branches really reach, all round: TreeBreak's contact)
+                        if (Application.isEditor) { if (TestVerts == null || TestVerts.Length != n) { TestVerts = new Vector3[n][]; TestTris = new int[n][]; } TestVerts[i] = mv; TestTris[i] = mt; }
+                        Plain[i] = ReadMesh(r, name + "Plain", out _, out _);
+                    }
+                    Variants = n;
+                    return true;
                 }
-                t.Add(s); t.Add(s + 2); t.Add(s + 1);
-                t.Add(s + 1); t.Add(s + 2); t.Add(s + 3);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning("RealFir: could not read RealTrees/Trees.bytes: " + e.Message);
+                return false;
             }
         }
 
-        // ---- the kinds of tree: Pacific Northwest subalpine firs and mountain hemlocks
+        static Mesh ReadMesh(BinaryReader r, string name, out Vector3[] verts, out int[] tris)
+        {
+            int vn = (int)r.ReadUInt32(), tn = (int)r.ReadUInt32();
+            var v = new Vector3[vn]; var nrm = new Vector3[vn]; var col = new Color32[vn]; var uv = new Vector2[vn];
+            for (int i = 0; i < vn; i++)
+            {
+                v[i] = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
+                float nx = r.ReadSByte() / 127f, ny = r.ReadSByte() / 127f, nz = r.ReadSByte() / 127f;
+                nrm[i] = new Vector3(nx, ny, nz);
+                byte shade = r.ReadByte();   // how much light reaches this part of the crown (FirCards multiplies it in)
+                col[i] = new Color32(shade, shade, shade, 255);
+                uv[i] = new Vector2(r.ReadUInt16() / 65535f, r.ReadUInt16() / 65535f);
+            }
+            var t = new int[tn];
+            for (int i = 0; i < tn; i++) t[i] = r.ReadUInt16();
+            var m = new Mesh { name = name };
+            m.SetVertices(v); m.SetNormals(nrm); m.SetColors(col); m.SetUVs(0, uv); m.SetTriangles(t, 0);
+            m.RecalculateBounds();
+            m.UploadMeshData(true);
+            verts = v; tris = t;
+            return m;
+        }
 
-        /// <summary>One kind of tree, built at its real height.</summary>
+        // ---- what the branches really reach (treeline): the rich mesh's own reach, all the way round
+        //      The crown tables above are each kind's envelope: the widest its branches reach at a height, whatever the
+        //      direction. A fir has five to eight branches to a whorl with gaps between, so a board passing through the
+        //      envelope often touches nothing. TreeBreak asks this instead: at a height and a direction from the trunk,
+        //      how far out the drawn tree (its cards and its wood) reaches there.
+        /// <summary>The editor's test tools: each kind's rich mesh as read (the game's own copy is on the GPU only).</summary>
+        public static Vector3[][] TestVerts; public static int[][] TestTris;
+        const int PolarRows = 96, PolarSectors = 120;
+        static float[][] polar;
+
+        /// <summary>Has this kind's all-round reach been measured.</summary>
+        public static bool HasPolar(int variant) => polar != null && variant >= 0 && polar[variant % Variants] != null;
+
+        /// <summary>
+        /// The drawn tree (its cards and its wood) at model height y, seen from a point `d` model metres out from its
+        /// trunk in direction `az` (radians round the trunk, from the model's x toward its z): how near any of it comes
+        /// to that point (`near`, model metres), and how far out it reaches along that direction (returned). Each
+        /// direction's branches run from the trunk out to their reach, so a point beside a branch is as near it as its
+        /// distance square to the branch, and one past its tip as near as the tip.
+        /// </summary>
+        public static float Reach(int variant, float y, float az, float d, out float near)
+        {
+            near = float.MaxValue;
+            float H = Heights[variant % Variants];
+            if (y < -0.3f || y > H * 1.02f) return 0f;
+            var tab = polar[variant % Variants];
+            int row = Mathf.Clamp(Mathf.FloorToInt(y / H * PolarRows), 0, PolarRows - 1);
+            const float W = 2f * Mathf.PI / PolarSectors;
+            float reach = 0f;
+            // (the directions within a right angle of the point: nothing behind the trunk comes nearer than it)
+            int c = Mathf.FloorToInt(az / W), span = PolarSectors / 4;
+            for (int k = -span; k <= span; k++)
+            {
+                int s = c + k;
+                float r = tab[row * PolarSectors + ((s % PolarSectors) + PolarSectors) % PolarSectors];
+                if (r <= 0f) continue;
+                // (the sector's middle: its branches are taken to lie along it, never nearer the point than they are)
+                float mid = (s + 0.5f) * W, delta = Mathf.Abs(Mathf.DeltaAngle(mid * Mathf.Rad2Deg, az * Mathf.Rad2Deg)) * Mathf.Deg2Rad;
+                float along = d * Mathf.Cos(delta), dist;
+                if (along <= 0f) dist = d;
+                else if (along <= r) dist = d * Mathf.Sin(delta);
+                else { float dx = d * Mathf.Cos(delta) - r, dy = d * Mathf.Sin(delta); dist = Mathf.Sqrt(dx * dx + dy * dy); }
+                if (dist < near) near = dist;
+                if (delta < 0.5f * Mathf.PI) reach = Mathf.Max(reach, r * Mathf.Cos(delta));
+            }
+            return reach;
+        }
+
+        static void BuildPolar(int i, int n, Vector3[] v, int[] t)
+        {
+            if (polar == null || polar.Length != n) polar = new float[n][];
+            float H = Mathf.Max(0.5f, Heights[i]);
+            var tab = new float[PolarRows * PolarSectors];
+            void Put(Vector3 p)
+            {
+                int row = Mathf.FloorToInt(p.y / H * PolarRows);
+                if (row < 0 || row >= PolarRows) return;
+                float az = Mathf.Atan2(p.z, p.x);
+                int s = ((Mathf.FloorToInt(az / (2f * Mathf.PI / PolarSectors)) % PolarSectors) + PolarSectors) % PolarSectors;
+                float r = Mathf.Sqrt(p.x * p.x + p.z * p.z);
+                int k = row * PolarSectors + s;
+                if (r > tab[k]) tab[k] = r;
+            }
+            // each triangle, sampled over its inside (drawn toward its middle a little: a card's corners are empty)
+            for (int k = 0; k + 2 < t.Length; k += 3)
+            {
+                Vector3 a = v[t[k]], b = v[t[k + 1]], c = v[t[k + 2]], m = (a + b + c) / 3f;
+                for (int u = 0; u <= 3; u++)
+                    for (int w = 0; w <= 3 - u; w++)
+                    {
+                        float fu = u / 3f, fw = w / 3f;
+                        Put(Vector3.Lerp(m, a + (b - a) * fu + (c - a) * fw, 0.8f));
+                    }
+            }
+            polar[i] = tab;
+        }
+
+        // ---- the firs and hemlocks the forest has always had (kinds 0-7): what their hit capsules are sized from
+
+        /// <summary>One of the original kinds, at its real height.</summary>
         struct Species
         {
             public float H;            // height, metres
             public float reach;        // longest branch (at the crown's foot) as a share of the height
             public float crownBase;    // where the branches start, share of the height
-            public float droopLo, droopHi;   // branch droop (degrees) at the foot and the top of the crown
-            public float flat, heavy;  // chance of a flat snow-loaded card under each branch, and of it being heavily loaded
-            public float ragged;       // branches missing and of uneven length
-            public float lopside;      // one side of the crown fuller than the other
-            public bool nod;           // the leader droops over (hemlocks)
             public float broken;       // 0: a whole crown; else where the top snapped off (share of the height), above it a bare spike
             public float shape;        // how the branches shorten up the crown: 1 a straight cone, less a rounder, stubbier crown
         }
 
+        const int Legacy = 8;
         static readonly Species[] Kinds =
         {
             // subalpine firs: tall, narrow spires, branches nearly level, snow along them
-            new Species { H = 24f, reach = 0.12f, crownBase = 0.12f, droopLo = 22f, droopHi = 8f, flat = 0.85f, heavy = 0.7f, ragged = 0.15f, lopside = 0.1f },
-            new Species { H = 27f, reach = 0.10f, crownBase = 0.16f, droopLo = 18f, droopHi = 6f, flat = 0.8f, heavy = 0.6f, ragged = 0.25f, lopside = 0.2f },
+            new Species { H = 24f, reach = 0.12f, crownBase = 0.12f },
+            new Species { H = 27f, reach = 0.10f, crownBase = 0.16f },
             // the same firs plastered: high up, where the storms load every branch
-            new Species { H = 20f, reach = 0.17f, crownBase = 0.08f, droopLo = 30f, droopHi = 14f, flat = 1f, heavy = 0.97f, ragged = 0.2f, lopside = 0.15f, shape = 0.55f },
-            new Species { H = 18f, reach = 0.19f, crownBase = 0.06f, droopLo = 34f, droopHi = 16f, flat = 1f, heavy = 0.95f, ragged = 0.3f, lopside = 0.25f, shape = 0.5f },
+            new Species { H = 20f, reach = 0.17f, crownBase = 0.08f, shape = 0.55f },
+            new Species { H = 18f, reach = 0.19f, crownBase = 0.06f, shape = 0.5f },
             // mountain hemlocks: drooping branches and a nodding top, ragged, lopsided
-            new Species { H = 24f, reach = 0.15f, crownBase = 0.14f, droopLo = 42f, droopHi = 24f, flat = 0.7f, heavy = 0.65f, ragged = 0.35f, lopside = 0.25f, nod = true },
-            new Species { H = 29f, reach = 0.13f, crownBase = 0.18f, droopLo = 46f, droopHi = 26f, flat = 0.65f, heavy = 0.6f, ragged = 0.45f, lopside = 0.35f, nod = true },
+            new Species { H = 24f, reach = 0.15f, crownBase = 0.14f },
+            new Species { H = 29f, reach = 0.13f, crownBase = 0.18f },
             // a fir whose top has snapped off: a bare spike above the last branches
-            new Species { H = 25f, reach = 0.12f, crownBase = 0.15f, droopLo = 24f, droopHi = 10f, flat = 0.8f, heavy = 0.7f, ragged = 0.35f, lopside = 0.2f, broken = 0.74f },
+            new Species { H = 25f, reach = 0.12f, crownBase = 0.15f, broken = 0.74f },
             // a thin, ragged hemlock with gaps in its crown
-            new Species { H = 22f, reach = 0.17f, crownBase = 0.2f, droopLo = 44f, droopHi = 22f, flat = 0.6f, heavy = 0.55f, ragged = 0.6f, lopside = 0.4f, nod = true },
+            new Species { H = 22f, reach = 0.17f, crownBase = 0.2f },
         };
 
-        /// <summary>Which kind of tree grows here: plastered firs high up; lower down the spires, hemlocks and the odd snag.</summary>
+        /// <summary>Which of the original kinds grows here: plastered firs high up; lower down the spires, hemlocks and the odd snag.</summary>
         /// <param name="low">0 at the summit .. 1 at the foot of the mountain</param>
         /// <param name="pick">0..1, the tree's own</param>
         public static int Pick(float low, float pick)
@@ -158,13 +306,56 @@ namespace Summit
             return 0;
         }
 
-        /// <summary>The kind that is a dead snag (its top long gone): dry and brittle, it snaps easily (TreeBreak).</summary>
-        public const int Snag = 6;
+        /// <summary>
+        /// Which kind grows at a spot away from the piste, where the forest stands in patches: `pines` is how much of
+        /// a pine stand this is (0 firs and hemlocks .. 1 pines), `young` and `old` the shares of young trees and old
+        /// giants here, `dead` the share of snags. r1..r4 (0..1) are the tree's own.
+        /// </summary>
+        public static int PickWild(float low, float pines, float young, float old, float dead, float r1, float r2, float r3, float r4)
+        {
+            bool pine = r2 < pines;
+            if (r3 < dead) { int snag = First(FlagSnag, 0, r1); if (snag >= 0) return snag; }
+            int age = r4 < young ? FlagYoung : r4 > 1f - old ? FlagGiant : 0;
+            if (!pine && age == 0) return Pick(low, r1);
+            if (pine && age == 0)
+            {
+                // the mature pines: the heavily snowed one more often high on the mountain
+                int a = First(FlagPine, FlagYoung | FlagGiant | FlagSapling, 0f), b = First(FlagPine, FlagYoung | FlagGiant | FlagSapling, 0.999f);
+                if (a < 0) return Pick(low, r1);
+                return r1 < Mathf.Lerp(0.7f, 0.25f, low) ? b : a;
+            }
+            int found = First(age | (pine ? FlagPine : 0), FlagSapling | (pine ? 0 : FlagPine), r1);
+            return found >= Legacy ? found : Pick(low, r1);
+        }
+
+        /// <summary>A sapling for a clearing: a pine's or a fir's.</summary>
+        public static int PickSapling(bool pine, float r) => First(FlagSapling | (pine ? FlagPine : 0), pine ? 0 : FlagPine, r);
+
+        /// <summary>One of the new kinds (8 on) that has all of `with` and none of `without`, chosen by r (0..1); -1 if there is none.</summary>
+        static int First(int with, int without, float r)
+        {
+            int count = 0;
+            for (int i = Legacy; i < Variants; i++) if ((flags[i] & with) == with && (flags[i] & without) == 0) count++;
+            if (count == 0) return -1;
+            int want = Mathf.Min(count - 1, (int)(Mathf.Clamp01(r) * count));
+            for (int i = Legacy; i < Variants; i++)
+                if ((flags[i] & with) == with && (flags[i] & without) == 0 && want-- == 0) return i;
+            return -1;
+        }
+
+        static float Lookup(float[] table, float at)
+        {
+            float f = Mathf.Clamp01(at) * (Table - 1);
+            int i = Mathf.Min(Table - 2, (int)f);
+            return Mathf.Lerp(table[i], table[i + 1], f - i);
+        }
 
         /// <summary>The trunk's radius at this height (metres, model space: the tree at its kind's own height).</summary>
         public static float TrunkRadius(int variant, float y)
         {
-            var sp = Kinds[variant % Variants];
+            int v = variant % Variants;
+            if (v >= Legacy) return Lookup(trunkTable[v], y / Heights[v]);
+            var sp = Kinds[v];
             float H = sp.H, y0 = -0.3f, y1 = H * (sp.broken > 0f ? sp.broken + 0.1f : 0.8f);
             float r0 = H * 0.02f, r1 = sp.broken > 0f ? H * 0.006f : H * 0.004f;
             return Mathf.Lerp(r0, r1, Mathf.InverseLerp(y0, y1, y));
@@ -173,119 +364,32 @@ namespace Summit
         /// <summary>A tree of this variant's crown radius at a share of its height (for hit capsules).</summary>
         public static float CrownRadius(int variant, float at)
         {
-            var k = Kinds[variant % Variants];
+            int v = variant % Variants;
+            if (v >= Legacy) return Lookup(crownTable[v], at);
+            var k = Kinds[v];
             if (at < k.crownBase || at > (k.broken > 0f ? k.broken : 0.95f)) return 0f;
             float f = Mathf.InverseLerp(k.crownBase, 0.92f, at);
             return k.reach * Mathf.Pow(1f - f, k.shape > 0f ? k.shape : 0.95f) + 0.35f / k.H;   // as a share of the height
         }
 
-        static Mesh Build(int variant, int seed)
+        /// <summary>
+        /// The radius of the hit capsule of a tree grown `full` metres tall with `sink` metres of it under the snow.
+        /// The original kinds: the trunk, or most of the crown where the snow line crosses it, as it always was.
+        /// The new kinds: the trunk where it leaves the snow, or what their branches reach within a rider's height
+        /// of the snow - most of a fir's crown, but only the inner third of a pine's open one (its limbs and the
+        /// middle of its pads: the outer twigs brush past).
+        /// </summary>
+        public static float HitRadius(int variant, float full, float sink)
         {
-            var rs = Random.state;
-            Random.InitState(seed);
-            var sp = Kinds[variant];
-            var b = new Builder();
-            float H = sp.H;
-            float top = sp.broken > 0f ? sp.broken : 1f;   // where the crown ends
-
-            // the trunk: six sides, tapering, bark from the bottom strip of the atlas (up through a snapped top)
-            {
-                var bark = Cell(0, 3); bark.xMax = 958f / 1024f;
-                const int sides = 6; float y0 = -0.3f, y1 = H * (sp.broken > 0f ? sp.broken + 0.1f : 0.8f), r0 = H * 0.02f;
-                float r1 = sp.broken > 0f ? H * 0.006f : H * 0.004f;
-                for (int i = 0; i < sides; i++)
-                {
-                    float a0 = i * Mathf.PI * 2f / sides, a1 = (i + 1) * Mathf.PI * 2f / sides;
-                    int s = b.v.Count;
-                    var d0 = new Vector3(Mathf.Cos(a0), 0f, Mathf.Sin(a0)); var d1 = new Vector3(Mathf.Cos(a1), 0f, Mathf.Sin(a1));
-                    b.v.Add(d0 * r0 + Vector3.up * y0); b.v.Add(d1 * r0 + Vector3.up * y0); b.v.Add(d0 * r1 + Vector3.up * y1); b.v.Add(d1 * r1 + Vector3.up * y1);
-                    b.n.Add(d0); b.n.Add(d1); b.n.Add(d0); b.n.Add(d1);
-                    float va = Mathf.Lerp(bark.yMin, bark.yMax, i / (float)sides), vb = Mathf.Lerp(bark.yMin, bark.yMax, (i + 1) / (float)sides);
-                    b.uv.Add(new Vector2(bark.xMin, va)); b.uv.Add(new Vector2(bark.xMin, vb)); b.uv.Add(new Vector2(bark.xMax, va)); b.uv.Add(new Vector2(bark.xMax, vb));
-                    b.t.Add(s); b.t.Add(s + 2); b.t.Add(s + 1); b.t.Add(s + 1); b.t.Add(s + 2); b.t.Add(s + 3);
-                }
-            }
-
-            // the core: a dark cone inside the crown, so you never see straight through the tree
-            {
-                var core = Rect.MinMaxRect(0.06f, 0.59f, 0.42f, 0.66f);   // the dense middle of a frond: needles up close
-                const int sides = 7; float y0 = H * (sp.crownBase + 0.04f), y1 = H * top * 0.86f, r0 = H * sp.reach * 0.58f;
-                for (int i = 0; i < sides; i++)
-                {
-                    float a0 = i * Mathf.PI * 2f / sides, a1 = (i + 1) * Mathf.PI * 2f / sides;
-                    int s = b.v.Count;
-                    var d0 = new Vector3(Mathf.Cos(a0), 0f, Mathf.Sin(a0)); var d1 = new Vector3(Mathf.Cos(a1), 0f, Mathf.Sin(a1));
-                    b.v.Add(d0 * r0 + Vector3.up * y0); b.v.Add(d1 * r0 + Vector3.up * y0); b.v.Add(Vector3.up * y1);
-                    b.n.Add((d0 + Vector3.up * 0.5f).normalized); b.n.Add((d1 + Vector3.up * 0.5f).normalized); b.n.Add(Vector3.up);
-                    b.uv.Add(new Vector2(core.xMin, core.yMin)); b.uv.Add(new Vector2(core.xMin, core.yMax)); b.uv.Add(new Vector2(core.xMax, core.center.y));
-                    b.t.Add(s); b.t.Add(s + 2); b.t.Add(s + 1);
-                }
-            }
-
-            // tiers of branches, broad at the foot of the crown and narrowing to a spire; about one a metre
-            int tiers = Mathf.RoundToInt(H * (0.92f - sp.crownBase) * 0.95f) + Random.Range(0, 3);
-            float spacing = H * (0.92f - sp.crownBase) / tiers;   // between tiers: the upright cards fill it, so the crown reads solid
-            float twist = Random.value * 360f, lopAz = Random.value * Mathf.PI * 2f;
-            for (int i = 0; i < tiers; i++)
-            {
-                float f = i / (tiers - 1f);
-                float y = H * (sp.crownBase + (0.92f - sp.crownBase) * Mathf.Pow(f, 0.92f)) + Random.Range(-0.2f, 0.2f);
-                if (y > H * top) break;   // a snapped top: nothing above the break
-                float reach = H * sp.reach * Mathf.Pow(1f - f, sp.shape > 0f ? sp.shape : 0.95f) + 0.35f;
-                int count = Mathf.RoundToInt(Mathf.Lerp(8f, 5f, f));
-                twist += 137.5f;
-                for (int j = 0; j < count; j++)
-                {
-                    if (Random.value < sp.ragged * 0.3f) continue;   // a missing branch: ragged gaps
-                    float az = (twist + j * 360f / count + Random.Range(-18f, 18f)) * Mathf.Deg2Rad;
-                    float by = y + Random.Range(-0.5f, 0.5f) * spacing;   // not quite level: no shelves
-                    var outH = new Vector3(Mathf.Cos(az), 0f, Mathf.Sin(az));
-                    float droop = Mathf.Lerp(sp.droopLo, sp.droopHi, f) + Random.Range(-10f, 10f);
-                    var dir = Quaternion.AngleAxis(droop, Vector3.Cross(outH, Vector3.up)) * outH;   // tip down
-                    float uneven = 1f + sp.ragged * Random.Range(-0.45f, 0.35f) + sp.lopside * Mathf.Cos(az - lopAz);
-                    float len = reach * Mathf.Max(0.35f, uneven) * Random.Range(0.85f, 1.12f) / Mathf.Cos(droop * Mathf.Deg2Rad);
-                    float cardLen = len / (StemEnd - StemStart);
-                    var origin = Vector3.up * by - dir * (cardLen * StemStart);
-                    var side = Vector3.Cross(Vector3.up, dir).normalized;
-                    var up = Vector3.Cross(dir, side).normalized;
-                    float wid = cardLen * 0.5f;
-                    int col = Random.Range(0, 2);
-                    // upright card, snow cap on top
-                    b.Card(origin, dir * cardLen, up * Mathf.Max(wid * 0.85f, spacing * 1.6f), Cell(col, 0), StemUpright);
-                    // flat card, rolled a little, loaded with snow
-                    if (Random.value < Mathf.Lerp(sp.flat, sp.flat * 0.55f, f))
-                    {
-                        var roll = Quaternion.AngleAxis(Random.Range(-15f, 15f), dir);
-                        int row = Random.value < Mathf.Lerp(sp.heavy, sp.heavy * 0.45f, f) ? 2 : 1;
-                        b.Card(origin, dir * cardLen, roll * side * wid * 1.15f, Cell(1 - col, row), 0.5f);
-                    }
-                    // plastered trees: a second load of snow on the branch, rolled the other way, so it shows from the side
-                    if (sp.heavy > 0.9f && Random.value < 0.7f)
-                    {
-                        var roll = Quaternion.AngleAxis(Random.Range(28f, 42f) * (Random.value < 0.5f ? -1f : 1f), dir);
-                        b.Card(origin + Vector3.up * 0.08f, dir * cardLen * 0.85f, roll * side * wid, Cell(col, 2), 0.5f);
-                    }
-                }
-            }
-            // the leader: two crossed fronds pointing up (a hemlock's nods over; a snapped tree has none)
-            if (sp.broken <= 0f)
-            {
-                float y = H * 0.86f, len = H * 0.15f;
-                var lead = sp.nod ? (Vector3.up + new Vector3(Mathf.Cos(lopAz), 0f, Mathf.Sin(lopAz)) * 0.55f).normalized : Vector3.up;
-                for (int k = 0; k < 2; k++)
-                {
-                    var side = Vector3.Cross(lead, k == 0 ? Vector3.right : Vector3.forward).normalized;
-                    if (side.sqrMagnitude < 0.5f) side = Vector3.right;
-                    b.Card(Vector3.up * y - lead * (len * StemStart / (StemEnd - StemStart)), lead * len / (StemEnd - StemStart), side * len * 0.45f, Cell(k, 1), 0.5f);
-                }
-            }
-
-            var m = new Mesh { name = "RealFir" + variant };
-            m.SetVertices(b.v); m.SetNormals(b.n); m.SetUVs(0, b.uv); m.SetTriangles(b.t, 0);
-            m.RecalculateBounds();
-            m.UploadMeshData(true);
-            Random.state = rs;
-            return m;
+            int v = variant % Variants;
+            float at = sink / full;
+            if (v < Legacy) return Mathf.Max(0.02f * full, 0.7f * CrownRadius(v, at) * full);
+            // (only what a board meets: the rider is hit at the feet. Within 2.5 m, a pine's first limbs high over
+            // its bare trunk made a capsule as wide as its crown down at the snow, round nothing but the trunk)
+            float crown = 0f, top = Mathf.Min(1f, at + 1.2f / full);
+            for (int i = 0; i <= 4; i++) crown = Mathf.Max(crown, CrownRadius(v, Mathf.Lerp(at, top, i / 4f)));
+            float trunk = TrunkRadius(v, at * Heights[v]) * full / Heights[v];
+            return Mathf.Max(Mathf.Max(0.25f, trunk), (IsPine(v) ? 0.3f : 0.7f) * crown * full);
         }
 
         // ---- impostors: a picture of each tree, side on, on two crossed quads
@@ -298,13 +402,20 @@ namespace Summit
             shots = new RenderTexture[Variants]; normalShots = new RenderTexture[Variants];
             // unlit: the plain colour, then the normals (FirCards' _Bake), lit later as they are drawn. Drawn straight
             // into the pictures with a command buffer (no camera, nothing queued that could show up in the next one)
-            var colour = new Material(Standalone); colour.SetFloat("_Bake", 1f);
-            var normal = new Material(Standalone); normal.SetFloat("_Bake", 2f);
-            int pass = Standalone.FindPass("ForwardLit"); if (pass < 0) pass = 0;
+            var colour = new Material[2]; var normal = new Material[2];
+            for (int a = 0; a < 2; a++)
+            {
+                colour[a] = new Material(standaloneMats[a]); colour[a].SetFloat("_Bake", 1f); colour[a].SetFloat("_Sway", 0f);
+                normal[a] = new Material(standaloneMats[a]); normal[a].SetFloat("_Bake", 2f); normal[a].SetFloat("_Sway", 0f);
+            }
+            int pass = standaloneMats[0].FindPass("ForwardLit"); if (pass < 0) pass = 0;
             var cmd = new UnityEngine.Rendering.CommandBuffer { name = "FirImpostorBake" };
             for (int i = 0; i < Variants; i++)
             {
-                var bnd = Meshes[i].bounds;
+                if (IsSapling(i)) continue;   // too small to see from where the pictures take over
+                // the small and the thin (young trees, snags) get by with a quarter of the picture
+                int sw = (flags[i] & (FlagYoung | FlagSnag)) != 0 ? ShotW / 2 : ShotW, sh = sw * ShotH / ShotW;
+                var bnd = Plain[i].bounds;
                 float half = Mathf.Max(bnd.extents.y, Mathf.Max(bnd.extents.x, bnd.extents.z) * 2f) * 1.02f;   // the cell is twice as tall as wide
                 float w = half * ShotW / ShotH;
                 // looking along +z at the tree from 60 m, centred on it
@@ -313,29 +424,38 @@ namespace Summit
                 var proj = Matrix4x4.Ortho(-w, w, -half, half, 1f, 200f);
                 RenderTexture Shot(Material m, Color clear, bool linear)
                 {
-                    var rt = new RenderTexture(ShotW, ShotH, 24, RenderTextureFormat.ARGB32, linear ? RenderTextureReadWrite.Linear : RenderTextureReadWrite.sRGB)
+                    var rt = new RenderTexture(sw, sh, 24, RenderTextureFormat.ARGB32, linear ? RenderTextureReadWrite.Linear : RenderTextureReadWrite.sRGB)
                         { useMipMap = true, autoGenerateMips = true, name = "FirImpostor" + i };
                     rt.Create();
                     cmd.Clear();
                     cmd.SetRenderTarget(rt);
                     cmd.ClearRenderTarget(true, true, clear);   // clear: what the edges fade into down the mips
                     cmd.SetViewProjectionMatrices(view, proj);
-                    cmd.DrawMesh(Meshes[i], Matrix4x4.identity, m, 0, pass);
+                    cmd.DrawMesh(Plain[i], Matrix4x4.identity, m, 0, pass);
                     Graphics.ExecuteCommandBuffer(cmd);
                     return rt;
                 }
-                shots[i] = Shot(colour, new Color(0.10f, 0.14f, 0.14f, 0f), false);   // needle green
-                normalShots[i] = Shot(normal, new Color(0.5f, 1f, 0.5f, 0f), true);    // straight up
+                bool wood = (flags[i] & FlagSnag) != 0;
+                shots[i] = Shot(colour[atlas[i]], wood ? new Color(0.36f, 0.35f, 0.33f, 0f) : new Color(0.10f, 0.14f, 0.14f, 0f), false);   // dead wood, or needle green
+                normalShots[i] = Shot(normal[atlas[i]], new Color(0.5f, 1f, 0.5f, 0f), true);    // straight up
                 var mat = new Material(impostorTemplate) { enableInstancing = true };
                 mat.SetTexture("_BaseMap", shots[i]); mat.mainTexture = shots[i];
                 mat.SetTexture("_NormalMap", normalShots[i]);
+                mat.SetFloat("_WindFlex", FlexOfAtlas(atlas[i]));   // leans as far as its card tree (TreeWind.hlsl)
                 ImpostorMats[i] = mat;
                 Impostors[i] = Cross(bnd.center.y, half);
             }
             cmd.Release();
-            if (Application.isPlaying) { Object.Destroy(colour); Object.Destroy(normal); }
-            else { Object.DestroyImmediate(colour); Object.DestroyImmediate(normal); }
+            for (int a = 0; a < 2; a++)
+            {
+                if (Application.isPlaying) { Object.Destroy(colour[a]); Object.Destroy(normal[a]); }
+                else { Object.DestroyImmediate(colour[a]); Object.DestroyImmediate(normal[a]); }
+            }
         }
+
+        // (in three rows up its height, so the picture curves in the wind as its card tree does: TreeWind.hlsl bends
+        // a tree by the height above its foot, more toward the top, and one tall quad could only lean straight)
+        const int CrossRows = 3;
 
         static Mesh Cross(float cy, float half)
         {
@@ -346,11 +466,19 @@ namespace Summit
             {
                 var side = k == 0 ? Vector3.right : Vector3.forward;
                 int s = v.Count;
-                v.Add(-side * w + Vector3.up * (cy - half)); v.Add(side * w + Vector3.up * (cy - half));
-                v.Add(-side * w + Vector3.up * (cy + half)); v.Add(side * w + Vector3.up * (cy + half));
-                uv.Add(new Vector2(0, 0)); uv.Add(new Vector2(1, 0)); uv.Add(new Vector2(0, 1)); uv.Add(new Vector2(1, 1));
-                for (int q = 0; q < 4; q++) { n.Add(Vector3.up); tan.Add(new Vector4(side.x, side.y, side.z, 1f)); }
-                t.Add(s); t.Add(s + 2); t.Add(s + 1); t.Add(s + 1); t.Add(s + 2); t.Add(s + 3);
+                for (int row = 0; row <= CrossRows; row++)
+                {
+                    float f = row / (float)CrossRows;
+                    v.Add(-side * w + Vector3.up * (cy - half + 2f * half * f)); v.Add(side * w + Vector3.up * (cy - half + 2f * half * f));
+                    uv.Add(new Vector2(0, f)); uv.Add(new Vector2(1, f));
+                    n.Add(Vector3.up); n.Add(Vector3.up);
+                    tan.Add(new Vector4(side.x, side.y, side.z, 1f)); tan.Add(new Vector4(side.x, side.y, side.z, 1f));
+                }
+                for (int row = 0; row < CrossRows; row++)
+                {
+                    int a = s + row * 2;
+                    t.Add(a); t.Add(a + 2); t.Add(a + 1); t.Add(a + 1); t.Add(a + 2); t.Add(a + 3);
+                }
             }
             var m = new Mesh { name = "FirImpostor" };
             m.SetVertices(v); m.SetUVs(0, uv); m.SetNormals(n); m.SetTangents(tan); m.SetTriangles(t, 0);

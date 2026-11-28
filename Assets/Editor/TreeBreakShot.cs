@@ -31,9 +31,7 @@ public static class TreeBreakShot
     public static void Run()
     {
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
         rider = F<Rider>("rider"); body = F<RiderBody>("body"); terrain = F<SlopeStreamer>("terrain"); props = F<Forest>("props");
         smasher = F<Smasher>("smasher"); breaker = F<TreeBreak>("treeBreak");
@@ -72,7 +70,7 @@ public static class TreeBreakShot
         catch (System.Exception e) { Debug.LogError("TREEBREAK exception " + e); }
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     // ---- which trees can snap, top to bottom of the mountain
@@ -229,7 +227,7 @@ public static class TreeBreakShot
 
     static void Step()
     {
-        rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+        TestHarness.Step(rider, body, Dt);
         smasher.Step(Dt); breaker.Step(Dt);
         if (snapT >= 0f) snapT += Dt;
         if (step % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }

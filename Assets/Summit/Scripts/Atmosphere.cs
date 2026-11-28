@@ -14,8 +14,11 @@ namespace Summit
     public class Atmosphere : MonoBehaviour
     {
         Camera cam;
+        ChaseCamera chase;
+        bool streaksAimed;
         Rider rider;
         ParticleSystem snow, streaks, mist, wind;
+        Vector2 lastDrift = new Vector2(-99f, -99f);
         ParticleSystem.EmissionModule windEm;
         ParticleSystem.EmissionModule snowEm, streakEm;
         Transform backdrop;
@@ -23,10 +26,35 @@ namespace Summit
         float baseVignette = 0.2f, speed01;
         /// <summary>The vignette at rest, set by the colour filter (LookGrade); speed widens it from here.</summary>
         public float BaseVignette { get => baseVignette; set => baseVignette = value; }
+        /// <summary>How much snow falls, against the light flurry the game always had (Weather sets it; 1 without it).</summary>
+        public float SnowAmount = 1f;
+        Vector4 snowLook = new Vector4(-1f, 0f, 0f, 0f);
+
+        /// <summary>
+        /// The weather's snowfall (Weather.cs): amount 0..1, flake 0 fine .. 1 big, fall speed (m/s), streak 0..1 (driven
+        /// snow drawn stretched along its flight). Big flakes come fewer; only changes are passed on to the particles.
+        /// </summary>
+        public void Weather(float amount, float flake, float fall, float streak)
+        {
+            if (snow == null) return;
+            SnowAmount = amount * Mathf.Lerp(1f, 0.5f, flake);
+            var want = new Vector4(flake, fall, streak, 0f);
+            if ((want - snowLook).sqrMagnitude < 0.0016f && !(want.x == 0f && snowLook.x != 0f)) return;   // (in steps: a front comes in over ~25 changes, not one a frame)
+            snowLook = want;
+            var main = snow.main;
+            main.startSize = new ParticleSystem.MinMaxCurve(Mathf.Lerp(0.04f, 0.13f, flake), Mathf.Lerp(0.11f, 0.3f, flake));
+            var vel = snow.velocityOverLifetime;
+            vel.y = new ParticleSystem.MinMaxCurve(-fall * 1.4f, -fall * 0.7f);
+            var pr = snow.GetComponent<ParticleSystemRenderer>();
+            var mode = streak > 0.4f ? ParticleSystemRenderMode.Stretch : ParticleSystemRenderMode.Billboard;
+            if (pr.renderMode != mode) pr.renderMode = mode;
+            pr.velocityScale = 0.03f * streak; pr.lengthScale = 1f; pr.cameraVelocityScale = 0.02f * streak;
+        }
 
         public void Build(Camera camera, Rider r, Material flake)
         {
             cam = camera;
+            chase = camera.GetComponent<ChaseCamera>();
             rider = r;
             snow = MakeSnow(flake);
             mist = MakeMist(flake);
@@ -53,16 +81,16 @@ namespace Summit
             var main = ps.main;
             main.loop = true;
             main.duration = 5f;
-            main.startLifetime = new ParticleSystem.MinMaxCurve(3.5f, 5.5f);
+            main.startLifetime = new ParticleSystem.MinMaxCurve(1.6f, 2.4f);   // (short: a flake the camera has passed is gone soon)
             main.startSpeed = 0f;
             main.startSize = new ParticleSystem.MinMaxCurve(0.06f, 0.17f);
             main.startColor = new Color(1f, 1f, 1f, 0.9f);
             main.simulationSpace = ParticleSystemSimulationSpace.World;   // flakes stay put in the world, so speed shows as rush
-            main.maxParticles = 14000;
+            main.maxParticles = 3500;   // (it was 14,000: at speed most of them were already behind the camera)
             main.playOnAwake = false;
             var shape = ps.shape;
             shape.shapeType = ParticleSystemShapeType.Box;
-            shape.scale = new Vector3(56f, 22f, 70f);
+            shape.scale = new Vector3(34f, 16f, 40f);   // a box round what the lens sees close by
             var vel = ps.velocityOverLifetime;
             vel.enabled = true;
             vel.space = ParticleSystemSimulationSpace.World;
@@ -71,6 +99,7 @@ namespace Summit
             vel.z = new ParticleSystem.MinMaxCurve(-0.3f, 0.3f);
             var noise = ps.noise;
             noise.enabled = true;
+            noise.quality = ParticleSystemNoiseQuality.Low;   // (the drift's wobble needs no more)
             noise.strength = 0.8f;
             noise.frequency = 0.35f;
             noise.scrollSpeed = 0.25f;
@@ -81,7 +110,7 @@ namespace Summit
                       new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(0.9f, 0.12f), new GradientAlphaKey(0.9f, 0.85f), new GradientAlphaKey(0f, 1f) });
             col.color = g;
             snowEm = ps.emission;
-            snowEm.rateOverTime = 2300f;
+            snowEm.rateOverTime = 1300f;
             var pr = go.GetComponent<ParticleSystemRenderer>();
             pr.material = mat;
             pr.shadowCastingMode = ShadowCastingMode.Off;
@@ -132,7 +161,7 @@ namespace Summit
             pr.shadowCastingMode = ShadowCastingMode.Off;
             pr.receiveShadows = false;
             pr.renderMode = ParticleSystemRenderMode.Billboard;
-            pr.maxParticleSize = 3f;
+            pr.maxParticleSize = 0.6f;   // (a billboard close to the lens no longer fills the screen with see-through layers)
             ps.Play();
             ps.Simulate(10f, true, false);
             ps.Play();
@@ -230,6 +259,10 @@ namespace Summit
 
         struct Band { public Transform t; public float lag, lagUp; }
         Band[] bands;
+        /// <summary>The photo of the range beyond (null with the painted bands), and how far from the camera it hangs.
+        /// The start page hides it: there the mountain being circled is the photo's own (StartPage.Show).</summary>
+        public Transform PhotoBand { get; private set; }
+        public const float PhotoRadius = 1500f;
         Vector3 bandAnchor;
         const float E0 = -0.07f, E1 = 0.33f;   // the elevations the band textures cover (Tools/MakeSky.swift)
 
@@ -244,7 +277,8 @@ namespace Summit
                 // the texture is the player's extended picture (Tools/art/rainier-extended.jpg: its top 664 rows, spanning
                 // -0.775..0.21 rad, the summit a few degrees above the horizon and real forest well below it), with a
                 // short fade into valley haze below that, down to -0.95 rad (Tools/MakePhotoBand.swift)
-                go.AddComponent<MeshFilter>().sharedMesh = Arc(1500f, 1.483f, -0.95f, 0.21f);
+                go.AddComponent<MeshFilter>().sharedMesh = Arc(PhotoRadius, 1.483f, -0.95f, 0.21f);
+                PhotoBand = go.transform;
                 var r = go.AddComponent<MeshRenderer>();
                 r.sharedMaterial = photo;
                 r.shadowCastingMode = ShadowCastingMode.Off; r.receiveShadows = false;
@@ -443,11 +477,24 @@ namespace Summit
             backdrop.position = cp;
             UpdateParallax(cp);
 
+            // the falling snow drifts with the wind, and a gust through the trees drives it sideways (TreeWind)
+            if (snow != null)
+            {
+                Vector2 w = TreeWind.Dir * ((0.9f + 3.2f * TreeWind.Here * TreeWind.Strength) * TreeWind.Strength);   // (Here: the gust the trees by the camera bend to)
+                if (Mathf.Abs(w.x - lastDrift.x) + Mathf.Abs(w.y - lastDrift.y) > 0.05f)
+                {
+                    lastDrift = w;
+                    var sv = snow.velocityOverLifetime;
+                    sv.x = new ParticleSystem.MinMaxCurve(w.x * 0.6f + 0.3f, w.x * 1.4f + 1.1f);
+                    sv.z = new ParticleSystem.MinMaxCurve(w.y * 0.6f - 0.3f, w.y * 1.4f + 0.3f);
+                }
+            }
+
             // keep the snow box ahead of the camera, where the rider is heading
             Vector3 fwd = cam.transform.forward; fwd.y = 0f;
             if (fwd.sqrMagnitude < 1e-4f) fwd = Vector3.forward;
             fwd.Normalize();
-            snow.transform.position = cp + fwd * 22f + Vector3.up * 6f;
+            snow.transform.position = cp + fwd * 16f + Vector3.up * 4f;
             // banks of mist sit low on the slope ahead and drift across it
             mist.transform.position = cp + fwd * 70f + Vector3.down * 18f;
 
@@ -458,9 +505,18 @@ namespace Summit
             speed01 = Mathf.Lerp(speed01, s, 1f - Mathf.Exp(-Time.deltaTime * (rider.Crashed ? 14f : 4f)));
             streakEm.rateOverTime = speed01 * speed01 * 220f;
             // the wind box sits just ahead of the lens and a little low, where the rider is heading
-            wind.transform.SetPositionAndRotation(cp + cam.transform.forward * 9f + Vector3.down * 0.5f, Quaternion.LookRotation(fwd));
+            // (in first person the lens is tipped down at the snow, where that box and the ring the speed lines start
+            // from would be buried: both go out along the line of travel over the snow instead)
+            bool pov = chase != null && chase.enabled && chase.Pov > 0.5f;
+            Vector3 along = pov ? chase.PovAhead : cam.transform.forward;
+            if (pov) streaks.transform.SetPositionAndRotation(cp + along * 17f, Quaternion.LookRotation(-along, Vector3.up));
+            else if (streaksAimed) { streaks.transform.localPosition = new Vector3(0f, 0f, 17f); streaks.transform.localRotation = Quaternion.Euler(0f, 180f, 0f); }
+            streaksAimed = pov;
+            wind.transform.SetPositionAndRotation(cp + along * 9f + Vector3.down * 0.5f, Quaternion.LookRotation(fwd));
             windEm.rateOverTime = speed01 * 650f;
-            snowEm.rateOverTime = 2300f + 900f * speed01;
+            // (the same density close to the lens as before, in a smaller box with shorter lives: more at speed, as more
+            // of the box is ridden through)
+            snowEm.rateOverTime = (1300f + 700f * speed01) * SnowAmount;
             if (vignette != null) vignette.intensity.value = baseVignette + 0.17f * speed01;
         }
     }

@@ -25,7 +25,7 @@ namespace Summit
 
         public void Build(Shader litShader)
         {
-            lit = litShader != null ? litShader : Shader.Find("Universal Render Pipeline/Lit");
+            lit = litShader != null ? litShader : Mats.LitShader;
             poleMat = new Material(lit); poleMat.SetColor("_BaseColor", new Color(0.16f, 0.17f, 0.2f)); poleMat.SetFloat("_Smoothness", 0.55f); poleMat.SetFloat("_Metallic", 0.6f);
             moundMat = new Material(lit); moundMat.SetColor("_BaseColor", new Color(0.93f, 0.95f, 0.99f)); moundMat.SetFloat("_Smoothness", 0.1f);
         }

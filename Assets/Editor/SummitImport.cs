@@ -43,7 +43,8 @@ public class SummitImport : AssetPostprocessor
             if (clips.Length > 0) m.clipAnimations = clips;
             return;
         }
-        if (assetPath.Contains("/Rider/"))
+        // Rides.fbx is the skis, poles and sled: gear with no skeleton, so not a Humanoid (it has no Hips to find)
+        if (assetPath.Contains("/Rider/") && !assetPath.EndsWith("/Rides.fbx"))
         {
             m.animationType = ModelImporterAnimationType.Human;
             m.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
@@ -88,10 +89,47 @@ public class SummitImport : AssetPostprocessor
             r.SetPlatformTextureSettings(ios);
             return;
         }
+        if (assetPath.Contains("Summit/Resources/BoardArt/"))
+        {
+            // the board graphics (Tools/MakeBoardArt.py): 512 x 256, mip levels and a little anisotropy so the top sheet
+            // still reads from the chase camera's low angle, ASTC 4x4 on the phone (about 170 KB each with its mips).
+            // The closet's thumbnails: one 512 x 512 sheet with clear edges, drawn flat on the screen (no mips).
+            var b = (TextureImporter)assetImporter;
+            bool sheet = assetPath.EndsWith("BoardArtThumbs.png");
+            b.textureType = TextureImporterType.Default;
+            b.sRGBTexture = true; b.npotScale = TextureImporterNPOTScale.None;
+            b.alphaSource = sheet ? TextureImporterAlphaSource.FromInput : TextureImporterAlphaSource.None;
+            b.alphaIsTransparency = sheet;
+            b.mipmapEnabled = !sheet; b.filterMode = sheet ? FilterMode.Bilinear : FilterMode.Trilinear; b.anisoLevel = sheet ? 1 : 4;
+            b.wrapMode = TextureWrapMode.Clamp;
+            b.textureCompression = TextureImporterCompression.CompressedHQ; b.maxTextureSize = 512;
+            var bios = b.GetPlatformTextureSettings("iPhone");
+            bios.overridden = true; bios.maxTextureSize = 512; bios.format = TextureImporterFormat.ASTC_4x4;
+            b.SetPlatformTextureSettings(bios);
+            return;
+        }
         if (!assetPath.Contains("Summit/Resources/Rider")) return;
         var t = (TextureImporter)assetImporter;
         t.filterMode = FilterMode.Point;    // a flat-colour palette: keep the colours crisp
         t.mipmapEnabled = false;
+        t.npotScale = TextureImporterNPOTScale.None; t.textureCompression = TextureImporterCompression.Uncompressed;   // (and never blended or squeezed)
+        if (assetPath.EndsWith("Face.png"))
+        {
+            // a painted face, laid on the head once: smooth, with mip levels, and its edge colour carried outward.
+            // 512 px, ASTC 4x4 on the phone (256 KB with its mips; uncompressed it was 1.3 MB a face)
+            t.filterMode = FilterMode.Bilinear; t.mipmapEnabled = true; t.wrapMode = TextureWrapMode.Clamp;
+            t.textureCompression = TextureImporterCompression.CompressedHQ; t.maxTextureSize = 512;
+            var fios = t.GetPlatformTextureSettings("iPhone");
+            fios.overridden = true; fios.maxTextureSize = 512; fios.format = TextureImporterFormat.ASTC_4x4;
+            t.SetPlatformTextureSettings(fios);
+            return;
+        }
+        if (assetPath.EndsWith("Pants.png"))
+        {
+            // a printed cloth, tiled over the legs: smooth, with mip levels so it doesn't sparkle at a distance
+            t.filterMode = FilterMode.Bilinear; t.mipmapEnabled = true; t.wrapMode = TextureWrapMode.Repeat;
+            return;
+        }
         if (assetPath.EndsWith("HeroPalette.png"))
         {
             // 8 x 2 swatches with the smoothness in the alpha: block compression would smear them into each other
@@ -170,6 +208,14 @@ public class SummitImport : AssetPostprocessor
     }
 
     /// <summary>
+    /// How deep the snow's wind grooves look (parallax: the height map shifts the texture lookup with the view angle).
+    /// The height map's full range, as a fraction of one 36 m tile: 0.0011 is about 4 cm from trough to crest,
+    /// what the normal map implies (at 0.0007, about 2.5 cm, it could hardly be seen). Not much deeper: the stock
+    /// shader cannot fade it with distance. 0 turns the relief off, on the terrain and in the snow layer alike.
+    /// </summary>
+    public const float SnowGrooveDepth = 0.0011f;
+
+    /// <summary>
     /// Gives the snow a surface without visible repeats: a large map (one tile spans ~36 m of slope)
     /// for broad drifts and wind-scoured patches, plus a fine detail layer (~2 m) for grain and sparkle,
     /// on separate tilings so neither pattern lines up with the other.
@@ -204,6 +250,12 @@ public class SummitImport : AssetPostprocessor
         mat.SetFloat("_Smoothness", 0.32f);
         mat.EnableKeyword("_NORMALMAP");
         mat.EnableKeyword("_DETAIL_MULX2");
+        // the grooves' height (Tools/MakeSnowHeight.py, the same height field as the two maps above): a little depth
+        // by parallax. The snow layer round the rider copies all of this from the material (SnowLayer.cs).
+        var relief = SnowGrooveDepth > 0f ? AssetDatabase.LoadAssetAtPath<Texture2D>(dir + "SnowGroovesHeight.png") : null;
+        mat.SetTexture("_ParallaxMap", relief);
+        mat.SetFloat("_Parallax", SnowGrooveDepth);
+        if (relief != null) mat.EnableKeyword("_PARALLAXMAP"); else mat.DisableKeyword("_PARALLAXMAP");
         EditorUtility.SetDirty(mat);
         AssetDatabase.SaveAssets();
     }
@@ -360,18 +412,52 @@ public class SummitImport : AssetPostprocessor
         return r * r * (3f - 2f * r);
     }
 
-    static float Grooves(float u, float v)
+    static float Grooves(float u, float v) => Grooves(u, v, out _, out _, out _);
+
+    static float Grooves(float u, float v, out float ripple, out float amount, out float pits)
     {
         // one groove field, its phase pushed around by big, slow warps: the grooves swing up to ~35 degrees
         // either way, bunch up and spread out, and bend, with no cross-hatching (integer frequencies keep
-        // the tile seamless)
+        // the tile seamless). They run down the fall line (lines of constant u: the terrain's uv is x, z), the
+        // way the groomer's corduroy does (SnowSurface.shader): two sets of lines crossing at right angles read
+        // as moire and as motion where there is none (grooves).
         float w = 26f * Tile(u, v, 2, 1.3f) + 9f * Tile(u, v, 5, 6.6f) + 2.2f * Tile(u, v, 13, 3.9f) + 0.4f * Tile(u, v, 41, 2.2f);
-        float ripple = Ridge(164f * v + w);
+        ripple = Ridge(164f * u + w);
         // the wind has scoured some places smooth and left deep grooves in others
-        float amount = Smooth(0.42f, 0.62f, Tile(u, v, 4, 4.8f) * 0.65f + Tile(u, v, 9, 8.1f) * 0.35f);
+        amount = Smooth(0.42f, 0.62f, Tile(u, v, 4, 4.8f) * 0.65f + Tile(u, v, 9, 8.1f) * 0.35f);
         amount = 0.05f + 0.95f * amount * (0.55f + 0.45f * Tile(u, v, 13, 5.2f));
         float drift = 0.6f * Tile(u, v, 5, 1.7f) + 0.3f * Tile(u, v, 11, 3.3f) + 0.1f * Tile(u, v, 23, 8.8f);
-        return drift * 0.55f + ripple * amount * 0.035f + Tile(u, v, 256, 5.5f) * 0.004f;
+        pits = Tile(u, v, 256, 5.5f);
+        return drift * 0.55f + ripple * amount * 0.035f + pits * 0.004f;
+    }
+
+    /// <summary>
+    /// The snow's groove maps made again (albedo, normal and the parallax height, all from Grooves), and the
+    /// snow material pointed at them: -executeMethod SummitImport.RegenerateGrooves. The height map is the
+    /// relief alone, as Tools/MakeSnowHeight.py describes it (the ripples where they show, and the pitting).
+    /// </summary>
+    public static void RegenerateGrooves()
+    {
+        const string dir = "Assets/Summit/Materials/";
+        MakePair(2048, dir + "SnowGroovesAlbedo.png", dir + "SnowGroovesNormal.png", Grooves, 0.9f, 0.035f, false);
+        const int N = 2048;
+        const float Pits = 0.004f / 0.035f;
+        var hm = new Texture2D(N, N, TextureFormat.RGB24, false);
+        var row = new Color32[N * N];
+        for (int y = 0; y < N; y++)
+            for (int x = 0; x < N; x++)
+            {
+                Grooves(x / (float)N, y / (float)N, out float ripple, out float amount, out float pits);
+                float relief = (ripple - 0.5f) * amount + (pits - 0.5f) * Pits;
+                byte g = (byte)Mathf.Clamp(Mathf.RoundToInt((0.5f + relief / (1f + Pits)) * 255f), 0, 255);
+                row[y * N + x] = new Color32(g, g, g, 255);
+            }
+        hm.SetPixels32(row); hm.Apply(false);
+        System.IO.File.WriteAllBytes(dir + "SnowGroovesHeight.png", hm.EncodeToPNG());
+        Object.DestroyImmediate(hm);
+        AssetDatabase.ImportAsset(dir + "SnowGroovesHeight.png");
+        EnsureSnowTextures();
+        Debug.Log("GROOVES regenerated: SnowGroovesAlbedo, SnowGroovesNormal, SnowGroovesHeight (ripples down the fall line)");
     }
 
     static void MakePair(int N, string albedoPath, string normalPath, System.Func<float, float, float> height, float bump, float contrast, bool detail)
@@ -395,7 +481,7 @@ public class SummitImport : AssetPostprocessor
                 // detail maps multiply around mid-grey (x2); the large map is the snow colour itself,
                 // a touch darker in the groove troughs and on lee faces
                 float g = detail ? 0.5f + (c - 0.5f) * contrast * 2f + (rng.NextDouble() < 0.003 ? 0.05f : 0f)
-                                 : 0.95f + (c - 0.5f) * contrast * 2f - Mathf.Max(0f, -n.y) * 0.05f;
+                                 : 0.95f + (c - 0.5f) * contrast * 2f - Mathf.Max(0f, -n.x) * 0.05f;
                 alb.SetPixel(x, y, new Color(g * 0.99f, g, Mathf.Min(1f, g * 1.015f)));
             }
         System.IO.File.WriteAllBytes(albedoPath, alb.EncodeToPNG());
@@ -441,7 +527,7 @@ public class SummitImport : AssetPostprocessor
 
     // the long, continuously playing layers: compressed; everything short stays sharp (ADPCM)
     static readonly string[] LoopClips = { "wind_low", "wind_high", "glide", "carve", "skid", "powder", "grind_rail", "grind_box",
-                                           "avalanche", "boost", "ambience", "bear_growl", "bear_steps", "avalanche_near" };
+                                           "avalanche", "boost", "ambience", "bear_growl", "bear_steps", "avalanche_near", "snow_gun" };
 
     void OnPreprocessAudio()
     {
@@ -481,6 +567,6 @@ public class SummitImport : AssetPostprocessor
         EnsureSky();
         EnsureBackdrop();
         EnsureAvalanche();
-        if (Application.isBatchMode) EditorApplication.Exit(0);
+        if (Application.isBatchMode) TestHarness.Exit(0);
     }
 }

@@ -1,4 +1,4 @@
-// The realistic firs far away: a picture of the tree on two crossed quads (RealFir.BakeImpostors), lit like
+// The realistic trees far away: a picture of the tree on two crossed quads (RealFir.BakeImpostors), lit like
 // the near card trees (Fir.hlsl). The picture holds the tree's plain colour and, in _NormalMap, the normals
 // the near tree has there, so sun, sky and moon fall on it the same way in every time of day. Near the hand-over
 // band it dissolves into the card tree (Forest.cs), by the same screen pattern the cards use the other way round.
@@ -12,6 +12,7 @@ Shader "Summit/FirImpostor"
         [MainColor] _BaseColor ("Colour", Color) = (1, 1, 1, 1)
         _Cutoff ("Alpha cutoff", Range(0, 1)) = 0.5
         _SunShade ("Sun let through (the near tree shades itself)", Range(0, 1)) = 0.85
+        _WindFlex ("Give in the wind (1 a fir; more: looser)", Float) = 1
     }
     SubShader
     {
@@ -27,6 +28,7 @@ Shader "Summit/FirImpostor"
             half4 _BaseColor;
             half _Cutoff;
             half _SunShade;
+            half _WindFlex;
         CBUFFER_END
         ENDHLSL
 
@@ -45,6 +47,8 @@ Shader "Summit/FirImpostor"
             #pragma multi_compile_fog
             #pragma multi_compile_instancing
             #include "Fir.hlsl"
+            #include "TreeWind.hlsl"
+            #include "Farview.hlsl"
 
             struct Attributes
             {
@@ -71,13 +75,16 @@ Shader "Summit/FirImpostor"
                 Varyings o = (Varyings)0;
                 UNITY_SETUP_INSTANCE_ID(i);
                 UNITY_TRANSFER_INSTANCE_ID(i, o);
-                o.positionWS = TransformObjectToWorld(i.positionOS.xyz);
+                // far off, the same lean as the near cards (TreeWind.hlsl: the same heights, the same air; only the boughs' bob is left out)
+                o.positionWS = TreeSway(TransformObjectToWorld(i.positionOS.xyz), TransformObjectToWorld(float3(0, 0, 0)), 0.0, _WindFlex);
                 o.positionCS = TransformWorldToHClip(o.positionWS);
                 o.sideWS = normalize(TransformObjectToWorldDir(i.tangentOS.xyz));
                 o.upWS = normalize(TransformObjectToWorldDir(i.normalOS));
                 o.uv = TRANSFORM_TEX(i.uv, _BaseMap);
                 float3 origin = TransformObjectToWorld(float3(0, 0, 0));
-                o.fadeFogLift = half4(FirFade(origin), ComputeFogFactor(o.positionCS.z), FirLiftShare(origin), 0);
+                // (and through the world's far band, as a whole: Farview.hlsl)
+                o.fadeFogLift = half4(min(FirFade(origin), FarviewShown(origin)), ComputeFogFactor(o.positionCS.z), FirLiftShare(origin), 0);
+                if (o.fadeFogLift.x <= 0.0h) o.positionCS = FirGone();   // still all cards
             #if defined(_ADDITIONAL_LIGHTS_VERTEX)
                 o.vertexLight = VertexLighting(o.positionWS, o.upWS);
             #endif
@@ -115,15 +122,19 @@ Shader "Summit/FirImpostor"
             #pragma fragment frag
             #pragma multi_compile_instancing
             #include "Fir.hlsl"
+            #include "TreeWind.hlsl"
+            #include "Farview.hlsl"
             struct Attributes { float4 positionOS : POSITION; float2 uv : TEXCOORD0; UNITY_VERTEX_INPUT_INSTANCE_ID };
             struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; half fade : TEXCOORD1; };
             Varyings vert(Attributes i)
             {
                 UNITY_SETUP_INSTANCE_ID(i);
                 Varyings o;
-                o.positionCS = TransformObjectToHClip(i.positionOS.xyz);
+                o.positionCS = TransformWorldToHClip(TreeSway(TransformObjectToWorld(i.positionOS.xyz), TransformObjectToWorld(float3(0, 0, 0)), 0.0, _WindFlex));
                 o.uv = TRANSFORM_TEX(i.uv, _BaseMap);
-                o.fade = FirFade(TransformObjectToWorld(float3(0, 0, 0)));
+                float3 origin = TransformObjectToWorld(float3(0, 0, 0));
+                o.fade = min(FirFade(origin), FarviewShown(origin));
+                if (o.fade <= 0.0h) o.positionCS = FirGone();
                 return o;
             }
             half frag(Varyings i) : SV_Target

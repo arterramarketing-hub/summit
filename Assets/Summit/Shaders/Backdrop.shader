@@ -38,6 +38,22 @@ Shader "Summit/Backdrop"
             half _BackdropSat;                // colour kept (1 day; less by moonlight, which shows little colour)
             half2 _BackdropGlow;              // the band of height (v) up which the snow comes into the low sun:
                                               // below it the snow is in the shade, as the lower slopes are at dusk
+            // set by Weather.cs; all zero (the weather off) changes nothing
+            half4 _BackdropVeil;              // x: the whole range in haze; y: how much of it is in cloud above v = z;
+                                              // w: how much of it is under a sea of cloud below v = _BackdropSea.x
+            half4 _BackdropSea;               // x: the sea's top (v); y: how much its top undulates
+            half4 _BackdropCap;               // xy: the summit (uv); z: a cap cloud sitting on it; w: a plume of spindrift off it
+            half4 _BackdropCloud;             // rgb: cloud lit by the sun (linear); a: the plume's clock
+            // set by Farview.cs; x: how much of the day's haze lies between the camera and the photo's foot (0: none)
+            float4 _FarviewHaze;
+            TEXTURE2D(_WeatherCloudTex); SAMPLER(sampler_WeatherCloudTex);   // the weather's cloud noise (r masses, g detail)
+            float4 _WeatherCloudScroll;
+            float Hash21(float2 p) { p = frac(p * float2(123.34, 456.21)); p += dot(p, p + 45.32); return frac(p.x * p.y); }
+            float Noise2(float2 p)
+            {
+                float2 i = floor(p), f = frac(p); f = f * f * (3.0 - 2.0 * f);
+                return lerp(lerp(Hash21(i), Hash21(i + float2(1, 0)), f.x), lerp(Hash21(i + float2(0, 1)), Hash21(i + float2(1, 1)), f.x), f.y);
+            }
             struct Attributes { float4 positionOS : POSITION; float2 uv : TEXCOORD0; };
             struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; };
             Varyings vert(Attributes i)
@@ -66,8 +82,67 @@ Shader "Summit/Backdrop"
                 half3 hz = half3(0.604, 0.708, 0.871);
                 hz = lerp(dot(hz, half3(0.3, 0.59, 0.11)).xxx, hz, _BackdropSat) * tint;
                 graded += haze * (unity_FogColor.rgb - hz);
+                // aerial perspective: as much air between the camera and the photo as between it and the far edge of the
+                // streamed world, and more down at the photo's foot (the valleys, looked down into through the most of
+                // it) than up at the summit, which stays clear; so the photo is never crisper than the world before it
+                // (its foot, v 0.28, is where the mountain's 36-degree fall line meets it: the far field lies there in
+                // the fog's own colour, and the photo is as hazy; the horizon, v 0.82, through a third as much)
+                graded = lerp(graded, unity_FogColor.rgb, (half)_FarviewHaze.x * lerp(0.8h, 0.1h, smoothstep(0.24h, 0.82h, (half)i.uv.y)));
                 c.rgb = graded;
                 c.a *= 1 - SAMPLE_TEXTURE2D(_SkyMask, sampler_SkyMask, i.uv).r * _BackdropKey;
+                if (dot(_BackdropVeil, 1) + _BackdropCap.z + _BackdropCap.w > 0.001)
+                {
+                    float2 uv = i.uv;
+                    // a sea of cloud filling the valleys: a flat top, gently heaving, sunlit, a little darker deeper in
+                    if (_BackdropVeil.w > 0.001)
+                    {
+                        half top = _BackdropSea.x + _BackdropSea.y * (sin(uv.x * 70.0 + _BackdropCloud.a * 0.05) * 0.5 + Noise2(float2(uv.x * 40.0, 3.1)) - 0.5);
+                        // the cloud tops, seen in perspective: the pixel's ray met with the sea's top, _BackdropSea.z
+                        // metres below the eye (the band spans azimuth +-1.483 and elevation -0.95..0.21 rad); lit on
+                        // their tops, blue shade in the hollows between them
+                        float below = max(top - uv.y, 0.0);
+                        float el = -0.95 + 1.16 * uv.y, az = (uv.x - 0.5) * 2.966;
+                        float dist = min(_BackdropSea.z / max(tan(-el), 0.02), 9000.0);
+                        float2 q = float2(sin(az), cos(az)) * dist * 0.0009 + _WeatherCloudScroll.xy * 0.5;
+                        half n = SAMPLE_TEXTURE2D(_WeatherCloudTex, sampler_WeatherCloudTex, q).r * 0.65
+                               + SAMPLE_TEXTURE2D(_WeatherCloudTex, sampler_WeatherCloudTex, q * 3.1 + 0.37).g * 0.35;
+                        half sea = _BackdropVeil.w * smoothstep(top + 0.005, top - 0.012, uv.y + (n - 0.5) * 0.008);
+                        half3 lit = _BackdropCloud.rgb, hollow = _BackdropCloud.rgb * half3(0.74, 0.79, 0.9);
+                        half3 seaCol = lerp(hollow, lit, smoothstep(0.25, 0.75, n)) * lerp(1.0, 0.88, saturate(below * 4.0));
+                        c.rgb = lerp(c.rgb, seaCol, sea);
+                    }
+                    // the upper mountain gone into the cloud deck, its edge ragged
+                    if (_BackdropVeil.y > 0.001)
+                    {
+                        half rag = Noise2(uv * float2(60.0, 30.0)) * 0.05;
+                        c.rgb = lerp(c.rgb, unity_FogColor.rgb, _BackdropVeil.y * smoothstep(_BackdropVeil.z - 0.08, _BackdropVeil.z + 0.03, uv.y + rag));
+                    }
+                    // on the summit: a smooth cap of cloud, and a plume of snow streaming off it downwind
+                    half cloudA = 0.0;
+                    float2 p = (uv - _BackdropCap.xy) / float2(0.034, 0.017);
+                    if (_BackdropCap.z > 0.001 && dot(p, p) < 4.0)
+                    {
+                        half lens = length(float2(p.x, (p.y - 0.25) * 1.25)) + (Noise2(uv * 220.0) - 0.5) * 0.3;
+                        cloudA = _BackdropCap.z * smoothstep(1.0, 0.55, lens) * 0.92;
+                    }
+                    float s = (uv.x - _BackdropCap.x) / 0.13;
+                    if (_BackdropCap.w > 0.001 && s > 0.0 && s < 1.0)
+                    {
+                        float y = uv.y - (_BackdropCap.y - 0.006 - s * 0.035);
+                        float wdt = 0.004 + 0.03 * s;
+                        half n = Noise2(float2(uv.x * 90.0 - _BackdropCloud.a * 0.6, uv.y * 140.0)) * 0.6 + Noise2(float2(uv.x * 30.0 - _BackdropCloud.a * 0.25, uv.y * 50.0)) * 0.6;
+                        half plume = exp(-(y * y) / (wdt * wdt)) * smoothstep(0.0, 0.06, s) * pow(1.0 - s, 1.5) * n;
+                        cloudA = max(cloudA, saturate(_BackdropCap.w * plume * 1.1));
+                    }
+                    if (cloudA > 0.001)
+                    {
+                        half3 cc = _BackdropCloud.rgb * lerp(0.82, 1.05, saturate(p.y * 0.5 + 0.5));
+                        c.rgb = lerp(c.rgb, cc, max(cloudA, 1.0 - c.a));
+                        c.a = max(c.a, cloudA);
+                    }
+                    // the whole range in the weather's haze
+                    c.rgb = lerp(c.rgb, unity_FogColor.rgb, _BackdropVeil.x);
+                }
                 return c;
             }
             ENDHLSL

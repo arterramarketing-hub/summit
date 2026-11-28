@@ -1,4 +1,5 @@
-// The lens's own faults, drawn after URP's post-processing (see LensFX.cs). Six texture reads at most.
+// The lens's own faults, drawn after URP's post-processing (see LensFX.cs). Six texture reads at most
+// (eleven where the first-person view's edges streak).
 //
 //  - Colour fringing (lateral chromatic aberration): red is read a little further out from the centre and
 //    blue a little further in, by an amount that grows with the square of the distance from the centre.
@@ -6,15 +7,18 @@
 //    fringes down both sides, where you look while riding, not only in the corners.
 //  - Edge softness: each colour is read twice, spread along the same direction, so the smear and the
 //    fringe share the six reads.
-//  - Spherical: both run outward from the centre. Anamorphic: both run sideways only, and the frame is
-//    warped like a desqueezed anamorphic picture: the middle stretched wide, the sides squeezed in (the
-//    "mumps"), verticals near the sides bowing, all pinned at the frame edge so nothing is read from
-//    outside the picture. A wide oval vignette and thin bars give the widescreen character.
+//  - Both run outward from the centre, through a spherical lens's barrel warp.
 //  - The middle of the frame takes an early exit with a single read.
 //  - Halation (film): a warm red-orange glow bleeding around bright highlights, from light scattering back
 //    through the film base. Passes 1-3 build it at a quarter of the screen size (bright parts kept, then a
 //    blur across and down); pass 0 reads it once more and screens it over the picture, so it shows most
 //    where a highlight meets something dark: snow against trees, lamps at night, the rider against the snow.
+//  - Edge streaks (first person, at speed): the edges of the frame are smeared along lines running out from
+//    the point you are heading for, longer the further from it and the nearer the edge; the middle stays
+//    sharp, and so does the bottom middle, where the rider's own legs and board are (they travel with the
+//    lens). Five more reads back along the streak, each pixel starting at a different point along it, so the
+//    steps between reads show as fine grain instead of ghost copies. Skipped wherever the streak is shorter
+//    than a pixel, and altogether when it is off.
 Shader "Hidden/Summit/LensEdge"
 {
     SubShader
@@ -31,10 +35,12 @@ Shader "Hidden/Summit/LensEdge"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
 
-            float4 _LensEdge;    // x: fringe, y: smear, z: bar height (0 = none), w: 1 = anamorphic
-            float4 _LensAna;     // x: squeeze of the sides, y: bow of the verticals, z: oval vignette
+            float4 _LensEdge;    // x: fringe, y: smear
+            float _LensBarrel;   // the barrel warp (0 = none)
             float _LensAspect;   // width / height: keeps spherical fringes the same length in x and y on screen
             float4 _Halo;        // rgb: tint times strength (0 = off)
+            float4 _LensBlur;    // x: streak length at the frame edge, as a fraction of the screen (0 = off);
+                                 // yz: the point the streaks run out from (uv); w: 1 if v runs up the screen, -1 if down
             TEXTURE2D(_HaloTex);
 
             half3 Read(float2 uv) { return SAMPLE_TEXTURE2D_X_LOD(_BlitTexture, sampler_LinearClamp, uv, 0).rgb; }
@@ -43,19 +49,18 @@ Shader "Hidden/Summit/LensEdge"
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
                 float2 p = input.texcoord * 2.0 - 1.0;   // -1..1 across the screen
-                bool ana = _LensEdge.w > 0.5;
 
                 float2 dir;   // the direction the faults run, in uv
                 float r2;     // 0 in the middle, 1 at the side edges
-                if (ana)
                 {
-                    // desqueeze: magnified middle, squeezed sides, bowed verticals; x stays inside -1..1
-                    p.x *= 1.0 - _LensAna.x * (1.0 - p.x * p.x) - _LensAna.y * (1.0 - p.y * p.y);
-                    r2 = p.x * p.x;
-                    dir = float2(p.x * 0.5, 0.0);
-                }
-                else
-                {
+                    // the barrel, round on the screen: the distance from the middle is measured in pixels, not in uv. (URP's
+                    // own LensDistortion works in uv, and on a tall phone the short width spans as much uv as the long
+                    // height, so horizontal lines near the top and bottom bowed about five times as hard as a round lens
+                    // bends them; with sky at the top, that showed as the bottom of the picture bending away on its own.)
+                    // Pinned at the corners, so nothing is read from outside the picture.
+                    float2 sc = float2(_LensAspect, 1.0) / max(_LensAspect, 1.0);
+                    float2 q = p * sc;
+                    p *= (1.0 + _LensBarrel * dot(q, q)) / (1.0 + _LensBarrel * dot(sc, sc));
                     r2 = dot(p, p) * 0.5 + 0.5 * max(p.x * p.x, p.y * p.y);
                     dir = float2(p.x, p.y * _LensAspect) * 0.5;
                 }
@@ -79,6 +84,24 @@ Shader "Hidden/Summit/LensEdge"
                     col.b = 0.5 * (Read(uv - o * (ca - s)).b + Read(uv - o * (ca + s)).b);
                 }
 
+                // edge streaks
+                UNITY_BRANCH
+                if (_LensBlur.x > 0.0)
+                {
+                    float up = p.y * _LensBlur.w;
+                    float w = smoothstep(0.25, 1.0, r2);
+                    w *= 1.0 - 0.8 * smoothstep(0.3, 0.8, -up) * (1.0 - smoothstep(0.45, 0.95, abs(p.x)));
+                    float2 streak = (uv - _LensBlur.yz) * (2.0 * _LensBlur.x * w);
+                    UNITY_BRANCH
+                    if (dot(streak, streak) > 2.5e-7)
+                    {
+                        float start = frac(52.9829189 * frac(dot(input.positionCS.xy, float2(0.06711056, 0.00583715))));
+                        half3 sum = col;
+                        for (int i = 0; i < 5; i++) sum += Read(uv - streak * ((i + start) * 0.2));
+                        col = sum / 6.0;
+                    }
+                }
+
                 // halation, screened on: it lifts the dark side of a bright edge and barely touches the bright side
                 UNITY_BRANCH
                 if (_Halo.r > 0.0)
@@ -88,15 +111,6 @@ Shader "Hidden/Summit/LensEdge"
                     col = 1.0 - (1.0 - col) * (1.0 - saturate(glow * _Halo.rgb));
                 }
 
-                if (ana)
-                {
-                    // a wide oval: the top and bottom fall off first, the sides stay open
-                    float e = length(float2(p.x * 0.55, p.y));
-                    col *= 1.0 - _LensAna.z * smoothstep(0.62, 1.2, e);
-                    // thin bars, with an anti-aliased edge
-                    float y = 1.0 - abs(p.y), bar = _LensEdge.z * 2.0;
-                    col *= smoothstep(bar - 0.003, bar, y);
-                }
                 return half4(col, 1);
             }
             ENDHLSL

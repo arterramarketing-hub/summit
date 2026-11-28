@@ -40,10 +40,10 @@ public static class SnowShot
         game = Object.FindFirstObjectByType<SummitGame>();
         Random.InitState(4242);   // the same mountain every run, so before and after can be compared
         TestBoot.Boot(game);
-        rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        rider = game.rider;
+        body = game.body;
+        terrain = game.terrain;
+        props = game.props;
         cam = Camera.main; chase = cam.GetComponent<ChaseCamera>();
         late = typeof(ChaseCamera).GetMethod("LateUpdate", NP);
         atmo = Object.FindFirstObjectByType<Atmosphere>();
@@ -59,7 +59,7 @@ public static class SnowShot
         catch (System.Exception e) { Debug.LogError("SNOWSHOT exception " + e); }
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static void Sequence()

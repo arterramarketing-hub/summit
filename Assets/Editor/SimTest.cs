@@ -15,6 +15,7 @@ public static class SimTest
     {
         UnityEditor.SceneManagement.EditorSceneManager.NewScene(UnityEditor.SceneManagement.NewSceneSetup.EmptyScene);
         Physics.simulationMode = SimulationMode.Script;
+        TestPrefs.Pin();   // (the forest's look is a saved setting)
         Slope.Init(1234);
         var rg = new GameObject("Rider");
         var r = rg.AddComponent<Rider>();
@@ -48,7 +49,7 @@ public static class SimTest
             r.Tick(Dt);
             Physics.Simulate(Dt);
             if (i % 12 == 0) forest.Prewarm();
-            if (r.Airborne) { airT += Dt; if (!wasAir) { takeoffs++; var bp = r.Body.position; Debug.Log($"SIMTAKEOFF z={bp.z:0} x-c={bp.x - Slope.Centre(bp.z):0.0} vel={r.Body.linearVelocity} ny={Slope.Normal(bp.x, bp.z).y:0.00} pipe={Course.InPipe(bp.x, bp.z)} head={r.Heading:0.00}"); } maxAir = Mathf.Max(maxAir, r.AboveGround); }
+            if (r.Airborne) { airT += Dt; if (!wasAir) { takeoffs++; var bp = r.Body.position; Debug.Log($"SIMTAKEOFF z={bp.z:0} x-c={bp.x - Slope.Centre(bp.z):0.0} vel={r.Body.linearVelocity} ny={Slope.Normal(bp.x, bp.z).y:0.00} head={r.Heading:0.00}"); } maxAir = Mathf.Max(maxAir, r.AboveGround); }
             if (r.Airborne && r.AboveGround > 20f && i % 12 == 0) { var bp = r.Body.position; Debug.Log($"SIMHIGH z={bp.z:0} x-c={bp.x - Slope.Centre(bp.z):0.0} y={bp.y:0.0} ground={Slope.Height(bp.x, bp.z):0.0} vel={r.Body.linearVelocity}"); }
             wasAir = r.Airborne;
             float y = r.Body.position.y;
@@ -85,7 +86,7 @@ public static class SimTest
         {
             r.ResetAt(Slope.Centre(Slope.PadLip), Slope.StartZ); r.Begin();
             for (int i = 0; i < 120 * 8; i++) { r.Steer = Mathf.Clamp((Slope.Centre(r.Z + 12f) - r.Body.position.x) * 0.06f - r.Heading, -1f, 1f); r.Tick(Dt); Physics.Simulate(Dt); }
-            float v0 = r.Speed, tr0 = r.TravelHeading, steer = 0f, target = RiderInput.Curve(thumb);
+            float v0 = r.Speed, tr0 = r.TravelHeading, steer = 0f, target = (thumb);
             float t50 = -1f, t90 = -1f, slip = 0f, travel25 = 0f, travel50 = 0f, yawSS = 0f;
             var yaws = new float[120];
             for (int i = 0; i < 120; i++)
@@ -128,6 +129,7 @@ public static class SimTest
             Debug.Log($"SIM style={(amp == 0f ? "straight" : "carving")} avg={sum / cnt:0} km/h max={mx:0} km/h");
         }
         Physics.simulationMode = SimulationMode.FixedUpdate;   // do not leave the project on manual physics
-        EditorApplication.Exit(0);
+        TestPrefs.Restore();
+        TestHarness.Exit(0);
     }
 }

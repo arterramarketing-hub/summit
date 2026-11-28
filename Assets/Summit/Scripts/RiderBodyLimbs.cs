@@ -15,10 +15,11 @@ namespace Summit
     /// dropped. So the sleeve and glove fly off with the forearm, deforming as before, and the body keeps the rest.
     /// Both open ends get a cap: a wet red stump with the end of a bone, bleeding for a few seconds (gore on), or
     /// a clean cap in the clothing's own colour, popped off like a toy's (gore off).
-    /// The game hears LimbLost (the bill). The rider still gets up and rides on without it: on getting up the
-    /// torn-off piece is baked where it lies and left on the snow (with its glove, boot, bandage and cap), its
-    /// triangles leave the rider's meshes, its ragdoll parts stay asleep in every later crash, and the hand IK lets go
-    /// of a hand that isn't there. The stump keeps its cap. Everything goes back together in ResetVisual (ToReady).
+    /// The game hears LimbLost (the bill). The rider still gets up and rides on: on getting up the torn-off piece is
+    /// baked where it lies and left on the snow (with a copy of its glove, boot, bandage and cap), and the rider rides
+    /// on with the limb patched back on and wrapped end to end in bandages soaked through with blood (clean white with
+    /// gore off), the hand in a bandaged mitten: nothing moves that isn't drawn, and nothing drawn floats. A limb lost
+    /// once stays on for the rest of the run (the next brutal hit takes another). Everything goes back in ResetVisual.
     /// Works on any skinned rider the ragdoll can throw (the hero and the previous one alike).
     /// </summary>
     public partial class RiderBody
@@ -65,7 +66,8 @@ namespace Summit
             public readonly Dictionary<Skin, bool[]> side = new Dictionary<Skin, bool[]>();   // which vertices went with it
             public GameObject piece;                                                 // once the rider is up: what lies on the snow
         }
-        readonly List<GameObject> hiddenOnLimb = new List<GameObject>();   // gear, bandages and caps that were on a lost limb
+        readonly HashSet<Transform> soaked = new HashSet<Transform>();     // limb segments torn off and patched back on: bandaged soaked through
+        bool mendPending;
 
         readonly List<Skin> skins = new List<Skin>();
         readonly List<Lost> severed = new List<Lost>();
@@ -78,7 +80,7 @@ namespace Summit
 
         void OnLimbObstacle(Obstacle ob, Vector3 centre, float into)
         {
-            riderHitCol = ob != null ? ob.GetComponentInChildren<Collider>() : null; riderHitInto = into; riderHitFrame = Time.frameCount;
+            riderHitCol = ob != null ? ob.HitBy(rider) : null; riderHitInto = into; riderHitFrame = Time.frameCount;
         }
 
         void OnLimbCrash(string why)
@@ -87,7 +89,7 @@ namespace Summit
             var col = riderHitCol; riderHitCol = null;   // one hit, one crash
             if (!Limbs || riderHitFrame != Time.frameCount || col == null || riderHitInto < SeverRider) return;
             Vector3 me = rider.transform.position + Vector3.up * 0.8f;
-            doomAt = col.ClosestPoint(me);
+            doomAt = Obstacle.Nearest(col, me);
             doomN = me - doomAt; doomN.y *= 0.3f;
             doomN = doomN.sqrMagnitude > 1e-4f ? doomN.normalized : -rider.Velocity.normalized;
             doomInto = riderHitInto; doomed = true;
@@ -102,6 +104,7 @@ namespace Summit
             Transform best = null; float bd = 1e9f;
             foreach (var b in new[] { rig.LowerL, rig.LowerR, rig.ShinL, rig.ShinR })
             {
+                if (AlreadyLost(b)) continue;
                 float d = (b.position - doomAt).sqrMagnitude;
                 if (d < bd) { bd = d; best = b; }
             }
@@ -157,8 +160,18 @@ namespace Summit
         void OnLimbFall(float fell)
         {
             if (!Limbs || rig == null || fell < SeverFall) return;
-            var pick = fell >= SeverFall * 2f ? new[] { rig.UpperL, rig.UpperR, rig.ThighL, rig.ThighR } : new[] { rig.LowerL, rig.LowerR, rig.ShinL, rig.ShinR };
-            Sever(pick[Random.Range(0, pick.Length)], fell >= SeverFall * 2f, Vector3.up);
+            var pick = new List<Transform>(fell >= SeverFall * 2f ? new[] { rig.UpperL, rig.UpperR, rig.ThighL, rig.ThighR } : new[] { rig.LowerL, rig.LowerR, rig.ShinL, rig.ShinR });
+            pick.RemoveAll(AlreadyLost);
+            if (pick.Count > 0) Sever(pick[Random.Range(0, pick.Count)], fell >= SeverFall * 2f, Vector3.up);
+        }
+
+        /// <summary>This arm or leg came off earlier in the run (it rides on bandaged, and doesn't come off again).</summary>
+        bool AlreadyLost(Transform bone)
+        {
+            string limb = LimbOf(bone);
+            if (limb == null) return false;
+            foreach (var l in severed) if (LimbOf(l.bone) == limb) return true;
+            return false;
         }
 
         bool WasBroken(Transform bone)
@@ -187,7 +200,7 @@ namespace Summit
         public bool Sever(Transform cut, bool whole, Vector3 normal)
         {
             int thisCrash = 0; foreach (var l in severed) if (l.piece == null) thisCrash++;
-            if (!Limbs || ragdoll == null || !ragdoll.Active || cut == null || thisCrash >= MaxSevers || !ragdoll.Attached(cut)) return false;
+            if (!Limbs || ragdoll == null || !ragdoll.Active || cut == null || thisCrash >= MaxSevers || !ragdoll.Attached(cut) || AlreadyLost(cut)) return false;
             var child = ChildOf(cut);
             if (child == null) return false;
             var rb = cut.GetComponent<Rigidbody>();
@@ -331,7 +344,7 @@ namespace Summit
             if (domeMesh == null) domeMesh = Dome();
             if (fleshMat == null)
             {
-                var sh = jacketShader != null ? jacketShader : Shader.Find("Universal Render Pipeline/Lit");
+                var sh = jacketShader != null ? jacketShader : Mats.LitShader;
                 fleshMat = new Material(sh) { name = "Stump" }; fleshMat.SetColor("_BaseColor", new Color(0.50f, 0.05f, 0.06f)); fleshMat.SetFloat("_Smoothness", 0.62f);
                 boneMat = new Material(sh) { name = "StumpBone" }; boneMat.SetColor("_BaseColor", new Color(0.93f, 0.90f, 0.80f)); boneMat.SetFloat("_Smoothness", 0.35f);
             }
@@ -369,7 +382,7 @@ namespace Summit
         Material Plain(Material cloth)
         {
             if (plain.TryGetValue(cloth, out var m)) return m;
-            var sh = jacketShader != null ? jacketShader : Shader.Find("Universal Render Pipeline/Lit");
+            var sh = jacketShader != null ? jacketShader : Mats.LitShader;
             Color c = cloth.HasProperty("_BaseColor") ? cloth.GetColor("_BaseColor") : cloth.HasProperty("_Color") ? cloth.GetColor("_Color") : Color.grey;
             m = new Material(sh) { name = "StumpCloth" };
             m.SetColor("_BaseColor", new Color(c.r * 0.8f, c.g * 0.8f, c.b * 0.8f, 1f));
@@ -448,16 +461,20 @@ namespace Summit
 
         /// <summary>
         /// Getting up (call before the ragdoll ends, with the pieces still where they fell): every limb torn off in
-        /// this crash is baked as it lies into a still object on the snow, with whatever was on it (glove, boot,
-        /// bandage, its cap), and its triangles leave the rider. Its bones go home with the rest, with nothing on them.
+        /// this crash is baked as it lies into a still object on the snow, with a copy of whatever was on it (glove,
+        /// boot, bandage, its cap). Then the rider is patched up: the meshes are whole again, the stump's cap goes,
+        /// and the old bandages on that limb come off to be wrapped afresh, soaked through (MendLimbs, once the
+        /// ragdoll has ended, puts its parts back on; the bandaging after it wraps them).
         /// </summary>
         void DetachLimbs()
         {
             if (rig == null) return;
             HashSet<Transform> bones = null;
+            bool mended = false;
             foreach (var l in severed)
             {
                 if (l.piece != null || l.bone == null) continue;
+                mended = true;
                 var piece = new GameObject("LostLimb");
                 l.piece = piece;
                 // the skin that went with it, as it lies now
@@ -512,11 +529,39 @@ namespace Summit
                         if (o.capLimb == t.gameObject) { o.capLimb = copy; cap = true; }
                         if (o.capBody == t.gameObject) { o.capBody = copy; cap = true; }
                     }
-                    t.gameObject.SetActive(false);
-                    if (cap) Kill(t.gameObject);              // a cap only ever belongs where it was cut
-                    else hiddenOnLimb.Add(t.gameObject);      // the rest come back when the limb does
+                    if (cap) Kill(t.gameObject);   // a cap only ever belongs where it was cut (the glove or boot stays on: the limb is patched back on)
                 }
+                // the stump is covered again
+                Kill(l.capBody); l.capBody = null;
+                // the limb's old bandages come off (the piece keeps a copy): it's wrapped afresh, soaked through
+                var top = UpperOf(l.bone); var low = ChildOf(top);
+                for (int i = bandages.Count - 1; i >= 0; i--)
+                {
+                    var g = bandages[i];
+                    if (g != null && g.transform.parent != top && g.transform.parent != low) continue;
+                    Kill(g); bandages.RemoveAt(i);
+                }
+                bandaged.Remove(top); bandaged.Remove(low);
+                soaked.Add(l.bone);
+                if (l.whole && low != null) soaked.Add(low);
+                if (!brokenThisCrash.Contains(l.bone)) brokenThisCrash.Add(l.bone);   // (wrapped after the get-up)
             }
+            if (!mended) return;
+            // the meshes whole again: every limb lost so far is back on, bandaged (a later cut starts from these)
+            foreach (var s in skins)
+            {
+                s.bpv = null; s.w = null; s.tris = null;
+                if (s.smr != null && s.smr.sharedMesh != s.original) s.smr.sharedMesh = s.original;
+            }
+            mendPending = true;
+        }
+
+        /// <summary>Once the ragdoll has ended on getting up: the limbs torn off are back on it, jointed at rest, and ride and crash like any other.</summary>
+        void MendLimbs()
+        {
+            if (!mendPending || ragdoll == null || ragdoll.Active) return;
+            mendPending = false;
+            ragdoll.Reattach();
         }
 
         /// <summary>Only the vertices its triangles use (a baked piece starts out with the whole rider's).</summary>
@@ -546,9 +591,7 @@ namespace Summit
         void RestoreLimbs()
         {
             foreach (var s in severed) { Kill(s.capBody); Kill(s.capLimb); Kill(s.piece); }
-            severed.Clear();
-            foreach (var g in hiddenOnLimb) if (g != null) g.SetActive(true);   // (the old rider's glove, say; caps and bandages are gone already)
-            hiddenOnLimb.Clear();
+            severed.Clear(); soaked.Clear(); mendPending = false;
             foreach (var s in skins)
             {
                 s.bpv = null; s.w = null; s.tris = null;

@@ -28,6 +28,12 @@ namespace Summit
         /// <summary>The test tools set this to render one moment without touching the saved clock (-1: off).</summary>
         public static float TestClock = -1f;
 
+        /// <summary>
+        /// A moment shown in place of the clock, which is left to run and is never saved from this (-1: off): the start
+        /// page's time-lapse. The test clock still wins over it.
+        /// </summary>
+        public static float Shown = -1f;
+
         static void Load()
         {
             if (loaded) return;
@@ -40,12 +46,24 @@ namespace Summit
                 TestClock = Mathf.Repeat(t, 4f) + HeldAt;
         }
 
+        /// <summary>The game's own clock, whatever is being shown in its place (Shown).</summary>
+        public static float Own
+        {
+            get
+            {
+                if (TestClock >= 0f) return TestClock;
+                Load();
+                return lockLevel > 0 ? lockLevel - 1 + HeldAt : clock;
+            }
+        }
+
         /// <summary>The clock now, 0..4 (a held phase sits a little way into its phase).</summary>
         public static float Clock
         {
             get
             {
                 if (TestClock >= 0f) return TestClock;
+                if (Shown >= 0f) return Shown;
                 Load();
                 return lockLevel > 0 ? lockLevel - 1 + HeldAt : clock;
             }

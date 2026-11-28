@@ -1,0 +1,9 @@
+35	invincible: jerk # m/s^#
+12	jumpcliff: # m up
+41	jumpcliff: jerk # m/s^#
+97	jumps: jerk # m/s^#
+6	lip: jerk # m/s^#
+24	pipe: jerk # m/s^#
+9	sign: jerk # m/s^#
+52	superjump: jerk # m/s^#
+1	wall: jerk # m/s^#

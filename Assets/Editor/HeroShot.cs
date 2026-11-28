@@ -12,7 +12,6 @@ using Summit;
 /// in the snow tube, crashing (the ragdoll), and walking and running in the camp. Frame sequences go to
 /// HeroShots/seq_*/ for ffmpeg. Also times the hero's posing per frame.
 /// Run: Unity -batchmode -projectPath . -executeMethod HeroShot.Run -logFile hero.log   (log lines start HEROSHOT)
-/// HERO_OLD=1 renders the previous rider instead (the "before" pictures, file names start Old).
 /// </summary>
 public static class HeroShot
 {
@@ -22,19 +21,24 @@ public static class HeroShot
     static Camp camp; static Camera cam; static ChaseCamera chase; static MethodInfo late, aLate, tUpd, fUpd; static Atmosphere atmo;
     static string outDir, pre;
     static int step;
-    static bool old;
 
     static T F<T>(string name) => (T)typeof(SummitGame).GetField(name, NP).GetValue(game);
     static void Log(string s) => Debug.Log("HEROSHOT " + s);
 
     public static void Run()
     {
-        old = System.Environment.GetEnvironmentVariable("HERO_OLD") == "1";
-        pre = old ? "Old" : "";
+        TestPrefs.Pin();   // a fresh player (the outfit and the riders' colours as the game starts them), put back on exit
+        pre = "";
         outDir = System.Environment.GetEnvironmentVariable("HERO_OUT") ?? "HeroShots";
         Directory.CreateDirectory(outDir);
-        if (!old) HeroBake.Bake();
-        RiderBody.UseHero = !old;
+        HeroBake.Bake();
+        // HERO_CHAR=buddy: start as the summit rider, swap to the buddy at the camp's rack, then everything as him
+        string heroChar = System.Environment.GetEnvironmentVariable("HERO_CHAR") ?? "";
+        bool buddy = heroChar == "buddy" || heroChar == "breanna" || heroChar == "paul";
+        bool paul = heroChar == "paul";
+        // (the closet's RIDER rows: 0 and 1 the summit rider, 2 Val, 3 Breanna, 4 Paul)
+        int pick = heroChar == "breanna" ? 3 : paul ? Wardrobe.PaulRow : 2;
+        Summit.Progress.Wear(Wardrobe.Cat.Rider, 0);
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop(); CampAssets.Ensure();
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
         game = Object.FindFirstObjectByType<SummitGame>();
@@ -47,7 +51,51 @@ public static class HeroShot
             atmo = Object.FindFirstObjectByType<Atmosphere>(); aLate = typeof(Atmosphere).GetMethod("LateUpdate", NP);
             tUpd = typeof(SlopeStreamer).GetMethod("Update", NP); fUpd = typeof(Forest).GetMethod("Update", NP);
             Stats();
+            if (buddy)
+            {
+                camp.SetNight(0f); camp.Teleport(-4f, -58f, 90f);   // (the camp moved 30 m closer)
+                for (int i = 0; i < 40; i++) CampStep(Vector2.zero);
+                campDir = Quaternion.Euler(0f, camp.WalkerYaw, 0f) * Vector3.forward;
+                CampFront(); Shoot("SwapBefore", cam, 720, 900);
+                // every rider in every set of clothes (the game hears each change and rebuilds the rider)
+                for (int who = 0; who < 5; who++)
+                    for (int wear = 0; wear < Wardrobe.OutfitCount; wear++)
+                    {
+                        Summit.Progress.Wear(Wardrobe.Cat.Rider, who); Summit.Progress.Wear(Wardrobe.Cat.Outfit, wear);
+                        for (int i = 0; i < 6; i++) CampStep(Vector2.zero);
+                        CampFront(); Shoot($"Look_{who}{wear}", cam, 540, 760);
+                        // close, front and back: head, collar, hood and hair, where one rider's clothes can cut into another's body
+                        if (body.Hero != null && body.Hero.Head != null)
+                        {
+                            var hp = body.Hero.Head.position - Vector3.up * 0.08f; var fd = Quaternion.Euler(0f, camp.WalkerYaw, 0f) * Vector3.forward;
+                            var sd = Vector3.Cross(Vector3.up, fd);
+                            Look(hp + fd * 1.1f + sd * 0.35f + Vector3.up * 0.05f, hp, 34f); Shoot($"Close_{who}{wear}", cam, 420, 420, false);
+                            Look(hp - fd * 1.1f - sd * 0.35f + Vector3.up * 0.10f, hp - Vector3.up * 0.10f, 34f); Shoot($"Back_{who}{wear}", cam, 420, 420, false);
+                        }
+                    }
+                // the closet's colours on each set of clothes, tried on as the closet does (nothing bought):
+                // a patterned jacket, patterned trousers, red boots; and the Nordic knit on the summit jacket
+                int[][] dye = { new[] { 2, 1, 16, 10, 4 }, new[] { 3, 2, 12, 9, 4 }, new[] { 0, 0, 18, 8, 3 }, new[] { 3, 0, 18, 10, 5 } };
+                foreach (var d in dye)
+                {
+                    var o = Wardrobe.Worn();
+                    o[(int)Wardrobe.Cat.Rider] = d[0]; o[(int)Wardrobe.Cat.Outfit] = d[1]; o[(int)Wardrobe.Cat.Jacket] = d[2];
+                    o[(int)Wardrobe.Cat.Pants] = d[3]; o[(int)Wardrobe.Cat.Boots] = d[4];
+                    body.Wear(o);
+                    for (int i = 0; i < 6; i++) CampStep(Vector2.zero);
+                    CampFront(); Shoot($"Dye_{d[0]}{d[1]}", cam, 540, 760);
+                }
+                Summit.Progress.Wear(Wardrobe.Cat.Rider, pick);
+                // HERO_OUTFIT=n: in that set of clothes (Paul's hoodie is 4)
+                if (int.TryParse(System.Environment.GetEnvironmentVariable("HERO_OUTFIT") ?? "", out int outfitN)) Summit.Progress.Wear(Wardrobe.Cat.Outfit, outfitN);
+                for (int i = 0; i < 20; i++) CampStep(Vector2.zero);
+                CampFront(); Shoot("SwapAfter", cam, 720, 900);
+                pre = pick == 3 ? "Breanna" : paul ? "Paul" : "Buddy";
+                Stats();
+            }
             Camp_();
+            if (paul) Night(() => { camp.Teleport(-4f, -58f, 90f); for (int i = 0; i < 60; i++) CampStep(new Vector2(0f, 0.5f)); CampSide(); Shoot("CampWalkNight", cam, 720, 900); Shoot("CampWalkNightGame", cam, 590, 1278); });
+            Log($"ride: {Summit.Progress.Ride} (the body rides {body.Ride})");
             typeof(SummitGame).GetMethod("ToReady", NP, null, new[] { typeof(bool) }, null).Invoke(game, new object[] { true });
             camp.SetNight(0f);
             Physics.simulationMode = SimulationMode.Script;
@@ -58,14 +106,25 @@ public static class HeroShot
             rider.input = null;
             Timing();
             Carve();
+            if (paul) Night(() => { Reset(Course.First + 40f, 16f); RideFor(1.5f, () => 0.6f); late.Invoke(chase, null); Shoot("CarveNightGame", cam, 590, 1278); Side(1); Shoot("CarveNight", cam, 720, 900); late.Invoke(chase, null); });
             Jump();
             Tube();
             Crash();
         }
         catch (System.Exception e) { Debug.LogError("HEROSHOT exception " + e); }
+        Summit.Progress.Wear(Wardrobe.Cat.Rider, 0);
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
+    }
+
+    /// <summary>Something done at night (the camp's lamps lit, the night sky), and back to day after.</summary>
+    static void Night(System.Action a)
+    {
+        var dn = Object.FindFirstObjectByType<DayNight>();
+        TimeOfDay.TestClock = 3.4f; if (dn != null) dn.ApplyNow(); camp.SetNight(1f);
+        try { a(); }
+        finally { TimeOfDay.TestClock = 1.4f; if (dn != null) dn.ApplyNow(); camp.SetNight(0f); }
     }
 
     // ---- what the hero is made of
@@ -79,22 +138,22 @@ public static class HeroShot
         }
         var b = new Bounds(); bool first = true;
         foreach (var r in body.GetComponentsInChildren<SkinnedMeshRenderer>(true)) { if (first) { b = r.bounds; first = false; } else b.Encapsulate(r.bounds); }
-        Log($"{(old ? "old rider" : "hero")}: {smrs} skinned meshes, {tris} tris, {verts} verts; height {b.size.y:0.00} m; materials: {body.MaterialNames()}");
+        Log($"hero: {smrs} skinned meshes, {tris} tris, {verts} verts; height {b.size.y:0.00} m; materials: {body.MaterialNames()}");
         if (body.Hero != null) Log($"hero clips: {body.Hero.ClipCount}");
     }
 
-    // ---- per frame cost of posing the body (editor, Mac: compare old vs new, not absolute iPhone numbers)
+    // ---- per frame cost of posing the body (editor, Mac: not absolute iPhone numbers)
     static void Timing()
     {
         RideFor(1.0f, () => Mathf.Sin(step * Dt * 2f));
-        var m = typeof(RiderBody).GetMethod(old ? "PoseRig" : "PoseHero", NP);
+        var m = typeof(RiderBody).GetMethod("PoseHero", NP);
         var args = new object[] { 1f / 60f };
         for (int i = 0; i < 200; i++) m.Invoke(body, args);
         var sw = System.Diagnostics.Stopwatch.StartNew();
         const int n = 3000;
         for (int i = 0; i < n; i++) { rider.Steer = Mathf.Sin(i * 0.01f); m.Invoke(body, args); }
         sw.Stop();
-        Log($"posing cost ({(old ? "old RiderRig" : "hero clips + procedural layer")}): {sw.Elapsed.TotalMilliseconds * 1000.0 / n:0.0} us per frame (editor, reflection call included)");
+        Log($"posing cost (hero clips + procedural layer): {sw.Elapsed.TotalMilliseconds * 1000.0 / n:0.0} us per frame (editor, reflection call included)");
     }
 
     // ---- riding: a slalom of heel- and toe-side carves, then a straight run into a tuck
@@ -124,7 +183,7 @@ public static class HeroShot
     static void Jump()
     {
         string[] grabs = { "Indy", "Melon", "Mute", "Method", "Stalefish", "TailGrab" };
-        for (int gi = 0; gi < (old ? 1 : 6); gi++)
+        for (int gi = 0; gi < 6; gi++)
         {
             Reset(Course.First + 110f, 18f);
             RideFor(1f, Hold);
@@ -138,13 +197,12 @@ public static class HeroShot
                 Step();
                 if (rider.Airborne && !wasAir)
                 {
-                    // a straight air with this grab (the game picks one at random)
-                    var tp = typeof(Rider);
-                    tp.GetProperty("TrickSpin").SetValue(rider, 0f); tp.GetProperty("TrickFlip").SetValue(rider, 0f);
-                    tp.GetProperty("TrickGrab").SetValue(rider, gi + 1); tp.GetProperty("TrickName").SetValue(rider, grabs[gi]);
+                    // a straight air with this grab, held (the player taps for it now: Rider.ForceGrab is the tap, for the tools)
+                    rider.ForceGrab(gi);
                     Log($"takeoff: {grabs[gi]} planned air {rider.TrickTime:0.00}s");
                 }
-                if (rider.Airborne && !shotPeak && rider.TrickProgress > 0.45f)
+                if (rider.Airborne) rider.GrabHeld = rider.AirTime < 0.75f * rider.TrickTime;
+                if (rider.Airborne && !shotPeak && rider.AirTime > 0.45f * rider.TrickTime)
                 {
                     shotPeak = true;
                     Side(gi % 2 == 0 ? 1 : -1, 4.2f); Shoot("Grab" + grabs[gi], cam, 720, 900);
@@ -157,7 +215,6 @@ public static class HeroShot
                 if (rider.Crashed) { Log("crashed on the jump"); break; }
             }
         }
-        if (old) return;
         // a spin and a flip, a frame each at the middle
         foreach (var (name, spin, flip) in new[] { ("Spin360", Mathf.PI * 2f, 0f), ("Backflip", 0f, -Mathf.PI * 2f) })
         {
@@ -170,9 +227,8 @@ public static class HeroShot
                 rider.Steer = 0f; Step();
                 if (rider.Airborne && !wasAir)
                 {
-                    var tp = typeof(Rider);
-                    tp.GetProperty("TrickSpin").SetValue(rider, spin); tp.GetProperty("TrickFlip").SetValue(rider, flip);
-                    tp.GetProperty("TrickGrab").SetValue(rider, 0); tp.GetProperty("TrickName").SetValue(rider, name);
+                    // (committed as the player's flicks would: Rider.ForceTrick, in half turns and whole flips)
+                    rider.ForceTrick(Mathf.RoundToInt(spin / Mathf.PI), Mathf.RoundToInt(flip / (Mathf.PI * 2f)));
                 }
                 wasAir = rider.Airborne;
                 if (rider.Airborne && rider.TrickProgress > 0.06f && rider.TrickProgress < 0.08f) { Side(1, 4.5f); Shoot(name + "Early", cam, 720, 900); }
@@ -226,10 +282,17 @@ public static class HeroShot
     {
         var aCam = typeof(Camp).GetMethod("CameraStep", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
         camp.SetNight(0f);
-        camp.Teleport(-4f, -88f, 90f);
+        camp.Teleport(-4f, -58f, 90f);
         for (int i = 0; i < 60; i++) CampStep(Vector2.zero);
         Shoot("CampStandGame", cam, 590, 1278);
         CampSide(); Shoot("CampStand", cam, 720, 900);
+        // the face, close (in the camp the goggles are up and any face cover down)
+        if (body.Hero != null && body.Hero.Head != null)
+        {
+            var hp = body.Hero.Head.position + Vector3.up * 0.08f; var fd = Quaternion.Euler(0f, camp.WalkerYaw, 0f) * Vector3.forward;
+            Look(hp + fd * 1.25f + Vector3.up * 0.06f, hp, 34f); Shoot("CampFace", cam, 720, 900);
+            Look(hp + Quaternion.Euler(0f, 35f, 0f) * fd * 7f + Vector3.up * 1.2f, hp - Vector3.up * 0.5f, 34f); Shoot("CampDistance", cam, 720, 900);
+        }
         var seq = Seq("camp");
         int f = 0;
         Vector3 prev = camp.WalkerPosition;
@@ -339,6 +402,14 @@ public static class HeroShot
         lastWalker = p;
     }
 
+    /// <summary>The camp camera in front of the walker, close (a portrait).</summary>
+    static void CampFront()
+    {
+        var p = camp.WalkerPosition;
+        var right = Vector3.Cross(Vector3.up, campDir).normalized;
+        Look(p + campDir * 3.0f + right * 1.0f + Vector3.up * 1.3f, p + Vector3.up * 0.95f, 34f);
+    }
+
     static void CampSide()
     {
         var p = camp.WalkerPosition;
@@ -360,7 +431,7 @@ public static class HeroShot
 
     static void Step()
     {
-        rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+        TestHarness.Step(rider, body, Dt);
         if (step % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
         if (step % 4 == 0)
         {

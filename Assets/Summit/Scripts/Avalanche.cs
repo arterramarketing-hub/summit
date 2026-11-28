@@ -134,7 +134,7 @@ namespace Summit
                 case Stage.Undercut:
                     // it flows on under you, faster than you are going
                     Speed = Mathf.MoveTowards(Speed, Mathf.Max(CaughtSpeed, r.Speed + 3f), 6f * dt);
-                    Z += Speed * dt;
+                    Z += Speed * dt * Slope.Squash(Z);   // (its pace is along the run: on a cliff band's traverse the run gains less ground down the hill)
                     Churn = Mathf.SmoothStep(0f, 1f, PhaseTime / 0.6f);
                     r.Undercut = Churn;
                     FlowX = Mathf.Lerp(FlowX, r.transform.position.x, 1f - Mathf.Exp(-dt / 0.25f));
@@ -167,7 +167,7 @@ namespace Summit
                 case Stage.Carried:
                     dip = Mathf.MoveTowards(dip, 0f, dt / 0.8f);   // and then it closes over                    // the slide runs out: it slows to a stop over a few seconds, with the body tumbling in it
                     Speed = Mathf.MoveTowards(Speed, 0f, Mathf.Lerp(3.5f, 7f, Mathf.Clamp01(PhaseTime / 3f)) * dt);
-                    Z += Speed * dt;
+                    Z += Speed * dt * Slope.Squash(Z);   // (its pace is along the run: on a cliff band's traverse the run gains less ground down the hill)
                     Churn = Mathf.MoveTowards(Churn, 0f, dt);
                     Shake = 0.9f * Mathf.Clamp01(Speed / Mathf.Max(CaughtSpeed, 1f)) + 0.1f;
                     Vector3 c = body != null ? body.RagdollCentre : r.transform.position;
@@ -279,15 +279,18 @@ namespace Summit
             // the pace you have been holding; a fall, and getting going again after it, do not count, so the
             // slide does not ease off just because you went down
             sinceDown = r.Crashed ? 0f : sinceDown + dt;
-            if (sinceDown > 6f) ema = Mathf.Lerp(ema, Mathf.Max(0f, r.Vz), 1f - Mathf.Exp(-dt / 8f));
+            // (the pace held along the run, not just down the hill: on a cliff band's traverse the rider makes a third of the
+            // ground down the hill, and the slide, pacing itself by that, would come down on them)
+            float vRun = r.Vz / Slope.Squash(r.Z);
+            if (sinceDown > 6f) ema = Mathf.Lerp(ema, Mathf.Max(0f, vRun), 1f - Mathf.Exp(-dt / 8f));
             float cruise = Mathf.Max(ema * Mathf.Lerp(0.93f, 0.985f, d), Mathf.Lerp(9f, 17f, d));
             float comfort = Mathf.Lerp(110f, 80f, d);                    // where it hangs back when you ride well
             float gap = Gap(r);
             float want = cruise + Mathf.Clamp((gap - comfort) * 0.12f, 0f, 14f);
-            want = Mathf.Min(want, Mathf.Max(r.Vz, 0f) + Mathf.Lerp(CreepEasy, CreepHard, d));
+            want = Mathf.Min(want, Mathf.Max(vRun, 0f) + Mathf.Lerp(CreepEasy, CreepHard, d));
             if (Elapsed < 8f) want = 8f;                                 // grace while you get going
             Speed = Mathf.MoveTowards(Speed, want, (want > Speed ? 5f : 9f) * dt);
-            Z += Speed * dt;
+            Z += Speed * dt * Slope.Squash(Z);   // (its pace is along the run: on a cliff band's traverse the run gains less ground down the hill)
         }
     }
 }

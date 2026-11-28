@@ -1,7 +1,7 @@
 # Cuts the player's snow-steps recording into single footsteps, so the camp can play one exactly when a foot lands.
 #   python3 Tools/CutSteps.py [--plot out.svg]
 #
-# Reads Assets/Summit/Resources/Audio/user_snow_steps.mp3 (left as the player gave it; decoded with ffmpeg), finds
+# Reads Tools/Source/user_snow_steps.mp3 (left as the player gave it; decoded with ffmpeg), finds
 # every step by its onset (where a burst of crunch first rises off the quiet floor, in 5 ms frames of high-passed
 # energy), and
 # writes each step from just before its onset to just before the next one (at most 0.42 s, faded out) as
@@ -12,7 +12,7 @@
 import array, math, os, struct, subprocess, sys, wave
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-SRC = os.path.join(ROOT, "Assets/Summit/Resources/Audio/user_snow_steps.mp3")
+SRC = os.path.join(ROOT, "Tools/Source/user_snow_steps.mp3")
 OUT = os.path.join(ROOT, "Assets/Summit/Resources/Audio/Steps")
 SR = 44100
 HOP = int(SR * 0.005)            # 5 ms analysis frames

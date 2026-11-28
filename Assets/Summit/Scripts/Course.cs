@@ -7,19 +7,18 @@ namespace Summit
     /// The run is a repeating cycle of designed sections, so it reads as a course rather than noise:
     ///   Cruise  - open piste with kickers through the trees
     ///   Park    - ride-on boxes and rails you grind automatically, and a jump line
-    ///   Danger  - long crevasses down the slope to steer between; a bear may come out of the trees
-    ///   Pipe    - a halfpipe cut into the slope (switched off: see HalfpipeOn)
-    ///   Ridge   - the piste narrows onto a crest with cliffs falling away beside it (in the pipe's old stretch: see Ridge)
+    ///   Danger  - the deadly cliff beside the piste; a bear may come out of the trees (crevasses lie on the glacier
+    ///             up the mountain, wherever it is: see Glacier)
+    ///   Ridge   - the piste narrows onto a crest with cliffs falling away beside it (from PipeAt, the stretch a halfpipe
+    ///             once had: see Ridge)
     /// Everything here is a pure function of position, like the rest of the mountain.
     /// </summary>
     public static class Course
     {
-        public enum Section { Start, Cruise, Park, Danger, Pipe, Ridge }
+        public enum Section { Start, Cruise, Park, Danger, Ridge, Band, Bowl }
         public const float First = 60f, Cycle = 900f;
-        /// <summary>The halfpipe is switched off: its stretch of each cycle is open cruising piste instead.</summary>
-        public const bool HalfpipeOn = false;
-        // where each section begins within a cycle
-        public const float ParkAt = 200f, DangerAt = 380f, PipeAt = 520f, PipeEnd = 760f;
+        // where each section begins within a cycle (PipeAt: where the halfpipe was, now the ridge's stretch or cruising piste)
+        public const float ParkAt = 200f, DangerAt = 380f, PipeAt = 520f;
 
         static float Local(float z) => Mathf.Repeat(z - First, Cycle);
         public static int CycleOf(float z) => Mathf.FloorToInt((z - First) / Cycle);
@@ -34,131 +33,215 @@ namespace Summit
             if (u < DangerAt) return Section.Park;
             if (u < PipeAt) return Section.Danger;
             if (Ridge.Has(z)) return Section.Ridge;
-            if (u < PipeEnd) return HalfpipeOn ? Section.Pipe : Section.Cruise;
+            if (CliffBand.Has(z)) return Section.Band;
+            if (Bowl.Has(z)) return Section.Bowl;
             return Section.Cruise;
         }
 
-        /// <summary>Distance to the start of the next section of a kind (for signs).</summary>
-        public static float NextStart(float z, Section s)
-        {
-            float at = s == Section.Park ? ParkAt : s == Section.Danger ? DangerAt : PipeAt;
-            float c = Mathf.Floor((z - First) / Cycle);
-            float z0 = First + c * Cycle + at;
-            if (z0 < z) z0 += Cycle;
-            return z0;
-        }
-
-        // ---------------------------------------------------------------- halfpipe
-
-        public const float PipeFlat = 6f, PipeR = 6f, PipeCap = 0.93f, PipeDeck = 5f, PipeRamp = 30f;
-        public static float PipeWallTop => PipeR - Mathf.Sqrt(PipeR * PipeR - (PipeCap * PipeR) * (PipeCap * PipeR));
-        public static float PipeHalfWidth => PipeFlat + PipeCap * PipeR;
-
-        /// <summary>0 outside the pipe, 1 inside, easing in and out at the ends.</summary>
         /// <summary>Nothing is built past here: the last stretch to the finish is a clean run.</summary>
         public static float ClearFrom => Slope.FinishZ - 260f;
 
-        public static float PipeWeight(float z)
+        // ---------------------------------------------------------------- crevasses: the glacier
+        // The upper mountain is glacier (GlacierTop..GlacierBottom, the open snow of the piste and its margins), and
+        // its crevasses lie the way real ones do (crevasses.md):
+        //   transverse - fields of cracks across the slope where the run steepens over a convex break: a varied count,
+        //                irregularly spaced, of varied length and width, gently bowed down the hill
+        //   chevron    - short cracks along the piste's edges, slanting in from the margin and up the hill
+        //   bergschrund- one long crack near the top, at the foot of the steep summit face
+        //   splaying   - now and then, a few cracks down the fall line, fanning out, where the run flattens
+        // No snow bridges (they read as slabs laid over the slot, not as snow): a crack is crossed by jumping it, by going
+        // round it, or where it pinches in to a slot a board carries across at speed (its pinches: Pinched).
+        // Every crack is a straight line in plan (bowed and wandering a little), with its own along (u) and across
+        // (w) axes; Opening gives its half-width and the line of its middle at a point along it.
+
+        public static void ResetCaches() { Slope.BeforeChange(); crevFor = int.MinValue; featCache.Clear(); Slope.ForgetDrops(); Cliffs.ForgetLedges(); CliffBand.Forget(); Bowl.Forget(); Lines.Forget(); }
+
+        public enum CrevasseKind { Transverse, Chevron, Bergschrund, Splay }
+
+        public struct Crevasse
         {
-            if (!HalfpipeOn || z < First) return 0f;
-            float pipeStart = z - Local(z) + PipeAt;
-            if (pipeStart + (PipeEnd - PipeAt) > ClearFrom) return 0f;   // a pipe that would run into the finish is not built
-            float u = Local(z);
-            if (u < PipeAt || u > PipeEnd) return 0f;
-            float w = Mathf.Min((u - PipeAt) / PipeRamp, (PipeEnd - u) / PipeRamp);
-            w = Mathf.Clamp01(w);
-            return w * w * (3f - 2f * w);
+            public CrevasseKind kind;
+            public float ax, az, dx, dz;   // the start of its line, and the unit direction along it (plan)
+            public float len, half, depth; // its length, its widest half-width, and how deep it is at its widest
+            public float bow, phase;       // how far its middle is bowed off the straight line (m, toward +w), its wander
+            public float b0, b1, c0, c1;   // up to two pinches, as spans along it where it narrows to PinchHalf (b1 <= b0: none)
+            public float x0, x1, z0, z1;   // its plan bounds, lips and all
+            public int id, field;          // its place in Crevasses, and the field it is part of (-1: none)
+            /// <summary>How far along its line a point is.</summary>
+            public float Along(float x, float z) => (x - ax) * dx + (z - az) * dz;
+            /// <summary>How far to the side of its straight line a point is (+ to the left of its direction).</summary>
+            public float Across(float x, float z) => -(x - ax) * dz + (z - az) * dx;
+            /// <summary>The point u along it and w across (the inverse of Along and Across), as (x, z).</summary>
+            public Vector2 Point(float u, float w) => new Vector2(ax + dx * u - dz * w, az + dz * u + dx * w);
+            /// <summary>Is u along it in one of its pinches?</summary>
+            public bool Pinched(float u) => (u > b0 && u < b1) || (u > c0 && u < c1);
+            public bool HasPinch => b1 > b0 || c1 > c0;
+            /// <summary>How far into a pinch u is: 1 inside one, easing to 0 over PinchEase either side.</summary>
+            public float PinchAt(float u)
+            {
+                float w = 0f;
+                if (b1 > b0) w = Mathf.Max(w, Mathf.Clamp01(1f - Mathf.Max(b0 - u, u - b1) / PinchEase));
+                if (c1 > c0) w = Mathf.Max(w, Mathf.Clamp01(1f - Mathf.Max(c0 - u, u - c1) / PinchEase));
+                return w * w * (3f - 2f * w);
+            }
         }
 
-        /// <summary>Height of the pipe's cross-section above its floor, at distance a from the centre line.</summary>
-        public static float PipeProfile(float a)
+        /// <summary>
+        /// The glacier: from the foot of the summit face (about 9,900 ft) down to about 6,500 ft, a third of the way down
+        /// the run, over the piste and its margins (the forest starts beyond them).
+        /// </summary>
+        public const float GlacierTop = 40f, GlacierBottom = 1480f, GlacierHalf = Slope.PisteHalf + 14f;
+        /// <summary>
+        /// How much deeper the cracks are than they were laid out at first (Glacier.Make): their walls go down three times
+        /// as far into the dark (60-90 m for the widest), so the bottom is never seen from the snow.
+        /// </summary>
+        public const float DepthScale = 3f;
+        /// <summary>A pinch's half-width: a slot 1.1 m wide, carried across from about 8 m/s (SkimTime), jumped slower.</summary>
+        public const float PinchHalf = 0.55f, PinchEase = 2.5f;
+        /// <summary>A crack no wider than twice this is carried across at a normal riding speed (the board flies on).</summary>
+        public const float CarryHalf = 1.4f;
+
+        public static bool InGlacier(float z) => z > GlacierTop - 10f && z < GlacierBottom + 10f;
+
+        static Crevasse[] crevs = new Crevasse[0];
+        static int[][] rows;                 // per 8 m of run: the cracks whose bounds reach into it
+        const float RowLen = 8f;
+        static int crevFor = int.MinValue;
+        static bool laying;
+        /// <summary>The crevasses are being laid out just now (Glacier.Build reads the snow: it reads it without the lifts' hills, LiftLine.HillHeight).</summary>
+        public static bool Laying => laying;
+
+        /// <summary>Every crevasse on today's mountain (laid out the first time it is asked for).</summary>
+        public static Crevasse[] Crevasses { get { Lay(); return crevs; } }
+
+        static void Lay()
         {
-            float d = Mathf.Abs(a) - PipeFlat;
-            if (d <= 0f) return 0f;
-            float cap = PipeCap * PipeR;
-            if (d < cap) return PipeR - Mathf.Sqrt(PipeR * PipeR - d * d);
-            return PipeWallTop;   // the deck
+            if (crevFor == Slope.Seed || laying) return;
+            laying = true;   // (while they are laid, nothing that asks about the ground sees half a glacier)
+            try
+            {
+                var list = new List<Crevasse>();
+                Glacier.Build(list);
+                for (int i = 0; i < list.Count; i++) { var c = list[i]; c.id = i; list[i] = c; }
+                crevs = list.ToArray();
+                int n = Mathf.CeilToInt((GlacierBottom + 60f - GlacierTop + 60f) / RowLen);
+                var rl = new List<int>[n];
+                for (int i = 0; i < crevs.Length; i++)
+                {
+                    int r0 = Mathf.Max(0, RowOf(crevs[i].z0)), r1 = Mathf.Min(n - 1, RowOf(crevs[i].z1));
+                    for (int r = r0; r <= r1; r++) (rl[r] ??= new List<int>()).Add(i);
+                }
+                rows = new int[n][];
+                for (int r = 0; r < n; r++) rows[r] = rl[r] != null ? rl[r].ToArray() : System.Array.Empty<int>();
+                crevFor = Slope.Seed;
+            }
+            finally { laying = false; }
         }
 
-        public static bool InPipe(float x, float z) => PipeWeight(z) > 0.15f && Mathf.Abs(x - Slope.Centre(z)) < PipeHalfWidth + 0.5f;
+        static int RowOf(float z) => Mathf.FloorToInt((z - (GlacierTop - 60f)) / RowLen);
 
-        // ---------------------------------------------------------------- crevasses
-        // Long narrow slots running down the fall line, to steer between: two to a danger stretch, one on each side
-        // of the piste and overlapping down most of it, so there is always a clear lane down the middle and one
-        // down each edge.
+        /// <summary>The cracks whose bounds reach the 8 m of run at z (none outside the glacier).</summary>
+        static int[] Near(float z)
+        {
+            if (!InGlacier(z)) return System.Array.Empty<int>();
+            Lay();
+            if (rows == null) return System.Array.Empty<int>();
+            int r = RowOf(z);
+            return r >= 0 && r < rows.Length ? rows[r] : System.Array.Empty<int>();
+        }
 
-        public static void ResetCaches() { crevCache.Clear(); featCache.Clear(); }
-
-        public struct Crevasse { public float x, z0, z1, half; }   // centre x at its middle, top and bottom z, half its width
-        public const float CrevasseDepth = 28f;
-        static readonly Dictionary<int, Crevasse[]> crevCache = new Dictionary<int, Crevasse[]>();
-
+        /// <summary>The crevasses of a course cycle (any part of them in it), for what is built cycle by cycle.</summary>
         public static Crevasse[] CrevassesOf(int cycle)
         {
-            if (crevCache.TryGetValue(cycle, out var list)) return list;
-            float zs = First + cycle * Cycle + DangerAt + 14f;
-            if (zs + 140f > ClearFrom) { list = new Crevasse[0]; crevCache[cycle] = list; return list; }
-            // the danger stretch has 120 m of room before the next section: 50 to 85 m long each (2-3 times what
-            // they were), the second starting part way down the first, so they overlap
-            const float room = 120f;
-            list = new Crevasse[Slope.Hash01(cycle, 9, 31) < 0.25f ? 1 : 2];
-            float first = Slope.Hash01(cycle, 9, 35) < 0.5f ? -1f : 1f;   // which side the first is on
-            for (int k = 0; k < list.Length; k++)
-            {
-                float h1 = Slope.Hash01(cycle, k, 31), h2 = Slope.Hash01(cycle, k, 32), h3 = Slope.Hash01(cycle, k, 33);
-                float z0 = zs + (k == 0 ? h1 * 8f : 22f + h1 * 14f);
-                float len = Mathf.Min(50f + h2 * 35f, zs + room - z0);
-                float half = 2.3f + h3 * 1.2f;
-                // well off the middle (7 to 11 m): at least 7 m of lane between the two, and 3.5 m or more to the
-                // piste's edge outside each
-                float side = (k == 0 ? first : -first) * (7f + Slope.Hash01(cycle, k, 34) * 4f);
-                float cx = Slope.Centre(z0 + len * 0.5f) + side;
-                list[k] = new Crevasse { x = cx, z0 = z0, z1 = z0 + len, half = half };
-            }
-            if (crevCache.Count > 64) crevCache.Clear();
-            crevCache[cycle] = list;
-            return list;
+            float a = First + cycle * Cycle, b = a + Cycle;
+            if (cycle == 0) a = float.MinValue;   // (the first cycle owns everything above it, the bergschrund too)
+            var all = Crevasses;
+            var list = new List<Crevasse>();
+            foreach (var c in all) { float zm = (c.z0 + c.z1) * 0.5f; if (zm >= a && zm < b) list.Add(c); }
+            return list.ToArray();
         }
 
-        /// <summary>Half the crevasse's width at z (it pinches shut at both ends), and its centre line there.</summary>
-        public static float Opening(Crevasse c, float z, out float cx)
+        /// <summary>
+        /// Half the crack's width at u along it (it runs out to a point at both ends), and how far its middle line is
+        /// to the side of its straight line there.
+        /// </summary>
+        public static float Opening(Crevasse c, float u, out float mid)
         {
-            // the crevasse wanders a little with the piste
-            cx = c.x + (Slope.Centre(z) - Slope.Centre((c.z0 + c.z1) * 0.5f));
-            if (z <= c.z0 || z >= c.z1) return 0f;
-            return c.half * Mathf.Sqrt(Mathf.Clamp01(Mathf.Min(z - c.z0, c.z1 - z) / 5f));
+            float s = Mathf.Clamp01(u / c.len);
+            mid = c.bow * Mathf.Sin(Mathf.PI * s) + 0.3f * Mathf.Min(1f, c.half) * Mathf.Sin(u * 0.29f + c.phase);
+            if (u <= 0f || u >= c.len) return 0f;
+            // pointed at both ends, the way a crack runs out to nothing (a rounded end read as a pool from up the hill)
+            float taper = Mathf.Min(9f, c.len * 0.38f);
+            float t = Mathf.Clamp01(Mathf.Min(u, c.len - u) / taper);
+            float o = c.half * t * (2f - t) * (0.82f + 0.18f * Mathf.Sin(u * 0.17f + c.phase * 1.3f));
+            // where it pinches in, no wider than PinchHalf
+            if (c.b1 > c.b0 || c.c1 > c.c0) o = Mathf.Lerp(o, Mathf.Min(o, PinchHalf), c.PinchAt(u));
+            return o;
         }
 
         /// <summary>How deep a crevasse cuts at (x, z): 0 almost everywhere.</summary>
         public static float CrevasseCut(float x, float z)
         {
-            if (At(z) != Section.Danger) return 0f;
-            foreach (var c in CrevassesOf(CycleOf(z)))
+            var near = Near(z);
+            float best = 0f;
+            for (int i = 0; i < near.Length; i++)
             {
-                if (z < c.z0 || z > c.z1) continue;
-                float open = Opening(c, z, out float cx);
+                ref var c = ref crevs[near[i]];
+                if (x < c.x0 || x > c.x1 || z < c.z0 || z > c.z1) continue;
+                float u = c.Along(x, z);
+                float open = Opening(c, u, out float mid);
                 if (open <= 0.01f) continue;
-                float dx = Mathf.Abs(x - cx) / open;
+                float dx = Mathf.Abs(c.Across(x, z) - mid) / open;
                 if (dx >= 1f) continue;
                 // sheer walls: full depth right up to the lip
                 float d2 = dx * dx, d4 = d2 * d2;
-                return CrevasseDepth * (1f - d4 * d4) * Mathf.Sqrt(open / c.half);
+                best = Mathf.Max(best, c.depth * (1f - d4 * d4) * Mathf.Sqrt(open / c.half));
             }
-            return 0f;
+            return best;
         }
 
-        /// <summary>The crevasse at or near a point (within margin of its full width), if any.</summary>
+        /// <summary>
+        /// Within r of a crack's opening (its pointed ends too)? For the terrain's mesh, which leaves a hole for any quad
+        /// that touches one: testing only its corners left the narrow ends covered, and the cracks looked cut off square.
+        /// </summary>
+        public static bool NearOpening(float x, float z, float r)
+        {
+            var near = Near(z);
+            for (int i = 0; i < near.Length; i++)
+            {
+                ref var c = ref crevs[near[i]];
+                if (x < c.x0 - r || x > c.x1 + r || z < c.z0 - r || z > c.z1 + r) continue;
+                float u = c.Along(x, z);
+                if (u < -r || u > c.len + r) continue;
+                float uc = Mathf.Clamp(u, 0f, c.len);
+                float open = Opening(c, uc, out float mid);
+                float du = u - uc, dw = Mathf.Max(0f, Mathf.Abs(c.Across(x, z) - mid) - open);
+                if (du * du + dw * dw < r * r) return true;
+            }
+            return false;
+        }
+
+        /// <summary>The crevasse at or near a point (within margin of its full width, pinched or not), if any.</summary>
         public static bool CrevasseNear(float x, float z, float margin, out Crevasse found)
         {
             found = default;
-            if (At(z) != Section.Danger && At(z - margin) != Section.Danger && At(z + margin) != Section.Danger) return false;
-            foreach (var c in CrevassesOf(CycleOf(z)))
+            if (laying || z < GlacierTop - 70f - margin || z > GlacierBottom + 70f + margin) return false;
+            Lay();
+            int r0 = Mathf.Max(0, RowOf(z - margin)), r1 = Mathf.Min(rows.Length - 1, RowOf(z + margin));
+            for (int r = r0; r <= r1; r++)
             {
-                if (z < c.z0 - margin || z > c.z1 + margin) continue;
-                Opening(c, z, out float cx);
-                if (Mathf.Abs(x - cx) > c.half + margin) continue;
-                found = c;
-                return true;
+                var near = rows[r];
+                for (int i = 0; i < near.Length; i++)
+                {
+                    ref var c = ref crevs[near[i]];
+                    if (x < c.x0 - margin || x > c.x1 + margin || z < c.z0 - margin || z > c.z1 + margin) continue;
+                    float u = c.Along(x, z);
+                    if (u < -margin || u > c.len + margin) continue;
+                    Opening(c, u, out float mid);
+                    if (Mathf.Abs(c.Across(x, z) - mid) > c.half + margin) continue;
+                    found = c;
+                    return true;
+                }
             }
             return false;
         }
@@ -166,32 +249,104 @@ namespace Summit
         public static bool CrevasseNear(float x, float z, float margin) => CrevasseNear(x, z, margin, out _);
 
         /// <summary>
-        /// How a body that rode into a crevasse goes in: a drop, not a throw. It keeps a little of its speed down
-        /// the crevasse, almost none across it, and none upward.
+        /// Is there snow to ride on at (x, z) at this speed? Everywhere but a crack's opening (one narrow enough for the
+        /// speed is skimmed: SkimTime: a pinch at speed, say).
+        /// </summary>
+        public static bool Solid(float x, float z, float speed) =>
+            CrevasseCut(x, z) <= 0.3f || 2f * OpenAt(x, z) < speed * SkimTime;
+
+        /// <summary>
+        /// A board crosses an opening it spans in less than this (s) without sinking into it more than a few
+        /// centimetres, so it skims it at the snow's level. (Flown, it sank a hand's width below the far lip and was
+        /// snapped back up onto it in one step: a jolt. Nothing it skims could have swallowed it: that takes 0.6 m.)
+        /// </summary>
+        public const float SkimTime = 0.14f;
+
+        /// <summary>The half-width of the opening at (x, z): 0 off every crack.</summary>
+        public static float OpenAt(float x, float z)
+        {
+            var near = Near(z);
+            float best = 0f;
+            for (int i = 0; i < near.Length; i++)
+            {
+                ref var c = ref crevs[near[i]];
+                if (x < c.x0 || x > c.x1 || z < c.z0 || z > c.z1) continue;
+                float u = c.Along(x, z);
+                float open = Opening(c, u, out float mid);
+                if (open > 0.01f && Mathf.Abs(c.Across(x, z) - mid) < open) best = Mathf.Max(best, open);
+            }
+            return best;
+        }
+
+        /// <summary>
+        /// How a body that rode into a crevasse goes in: a drop, not a throw. It keeps a little of its speed along
+        /// the crack, almost none across it, and none upward.
         /// </summary>
         public static Vector3 CrevasseDrop(Vector3 p, Vector3 v)
         {
-            if (!CrevasseNear(p.x, p.z, 1.5f)) return v * 0.4f;
-            return new Vector3(v.x * 0.05f, Mathf.Min(0f, v.y) * 0.4f, v.z * 0.4f);
+            if (!CrevasseNear(p.x, p.z, 1.5f, out var c)) return v * 0.4f;
+            var along = new Vector3(c.dx, 0f, c.dz);
+            var flat = new Vector3(v.x, 0f, v.z);
+            var a = along * Vector3.Dot(flat, along);
+            return a * 0.4f + (flat - a) * 0.05f + Vector3.up * Mathf.Min(0f, v.y) * 0.4f;
         }
 
-        /// <summary>The point on a crevasse's middle line level with p (its floor's deepest line).</summary>
+        /// <summary>
+        /// For the test tools: the widest crack on the glacier (or of one kind), and a point on its middle line on the
+        /// piste out of its pinches (where it is wide), as near its middle as there is one.
+        /// </summary>
+        public static bool WidestCrack(out Crevasse found, out Vector3 at, CrevasseKind? kind = null)
+        {
+            found = default; at = Vector3.zero;
+            int best = -1;
+            var all = Crevasses;
+            for (int i = 0; i < all.Length; i++)
+                if ((kind == null || all[i].kind == kind) && (best < 0 || all[i].half > all[best].half)) best = i;
+            if (best < 0) return false;
+            found = all[best];
+            at = CrackSpot(found);
+            return true;
+        }
+
+        /// <summary>A point on a crack's middle line, on the piste and out of its pinches, as near its middle as there is one.</summary>
+        public static Vector3 CrackSpot(Crevasse c)
+        {
+            float bestScore = float.MaxValue; Vector3 at = Vector3.zero;
+            for (float u = c.len * 0.15f; u <= c.len * 0.85f; u += 0.5f)
+            {
+                if (c.PinchAt(u) > 0f) continue;
+                Opening(c, u, out float mid);
+                var q = c.Point(u, mid);
+                float off = Mathf.Abs(q.x - Slope.Centre(q.y));
+                float score = off + Mathf.Abs(u - c.len * 0.5f) * 0.2f;
+                if (off < Slope.PisteHalf - 2f && score < bestScore) { bestScore = score; at = new Vector3(q.x, Slope.Surface(q.x, q.y), q.y); }
+            }
+            if (bestScore == float.MaxValue) { Opening(c, c.len * 0.5f, out float m); var q = c.Point(c.len * 0.5f, m); at = new Vector3(q.x, Slope.Surface(q.x, q.y), q.y); }
+            return at;
+        }
+
+        /// <summary>The point on a crevasse's middle line level with p (its floor's deepest line), y unchanged.</summary>
         public static Vector3 CrevasseMiddle(Crevasse c, Vector3 p)
         {
-            Opening(c, p.z, out float cx);
-            return new Vector3(cx, p.y, p.z);
+            float u = Mathf.Clamp(c.Along(p.x, p.z), 0f, c.len);
+            Opening(c, u, out float mid);
+            var q = c.Point(u, mid);
+            return new Vector3(q.x, p.y, q.y);
         }
 
         /// <summary>Out of a crevasse onto its nearer rim, `clear` metres back from the lip (y unchanged).</summary>
         public static Vector3 CrevasseRim(Crevasse c, Vector3 p, float clear)
         {
-            Opening(c, p.z, out float cx);
-            return new Vector3(cx + Mathf.Sign(p.x - cx + 0.01f) * (c.half + clear), p.y, p.z);
+            float u = Mathf.Clamp(c.Along(p.x, p.z), 0f, c.len);
+            Opening(c, u, out float mid);
+            float s = Mathf.Sign(c.Across(p.x, p.z) - mid + 0.01f);
+            var q = c.Point(u, mid + s * (c.half + clear));
+            return new Vector3(q.x, p.y, q.y);
         }
 
         // ---------------------------------------------------------------- park features
 
-        public enum Kind { Box, Rail }
+        public enum Kind { Box, Rail, Log }   // (a log: a fallen tree on a freeride line, slid like a rail: Lines)
         public struct Feature
         {
             public Kind kind;
@@ -213,14 +368,19 @@ namespace Summit
         static readonly float[] spotSide = { -7f, 7f, -7f, 7f };
         public static readonly float[] ParkKickers = { 78f, 166f };
         static readonly Dictionary<int, Feature[]> featCache = new Dictionary<int, Feature[]>();
+        [System.ThreadStatic] static List<Feature> lineJibsT;
+        static List<Feature> lineJibs => lineJibsT ??= new List<Feature>();
 
         public static Feature[] FeaturesOf(int cycle)
         {
             if (featCache.TryGetValue(cycle, out var list)) return list;
             float zs = First + cycle * Cycle + ParkAt;
-            if (zs + 180f > ClearFrom) { list = new Feature[0]; featCache[cycle] = list; return list; }
-            list = new Feature[spotAt.Length];
-            for (int i = 0; i < list.Length; i++)
+            // (and the feature lines' logs, boxes and rails after the park's: Lines)
+            lineJibs.Clear(); Lines.JibsOf(cycle, lineJibs);
+            if (zs + 180f > ClearFrom) { list = lineJibs.ToArray(); featCache[cycle] = list; return list; }
+            list = new Feature[spotAt.Length + lineJibs.Count];
+            for (int i = 0; i < lineJibs.Count; i++) list[spotAt.Length + i] = lineJibs[i];
+            for (int i = 0; i < spotAt.Length; i++)
             {
                 var k = spotKind[i];
                 float len = k == Kind.Box ? BoxLength : RailLength;
@@ -244,10 +404,15 @@ namespace Summit
         /// The top of a feature, t of the way along it (0..1). Straight in plan, it follows the snow at its height
         /// over it: a straight top 45 m long stood up to 5 m off a rolling slope, or buried itself in a bulge.
         /// </summary>
+        /// <summary>A roof's ridge (Roofs) is a feature numbered from here: clear of the course's own and the lifts' cables (negative).</summary>
+        public const int RoofIdBase = 1 << 20;
+
         public static Vector3 FeaturePoint(Feature f, float t)
         {
             t = Mathf.Clamp01(t);
             float x = Mathf.Lerp(f.a.x, f.b.x, t), z = Mathf.Lerp(f.a.z, f.b.z, t);
+            // (a roof's ridge is straight and stands where it was built: Roofs)
+            if (f.id >= RoofIdBase) return new Vector3(x, Mathf.Lerp(f.a.y, f.b.y, t) + f.height, z);
             return new Vector3(x, BaseHeight(x, z) + f.height, z);
         }
 
@@ -260,37 +425,52 @@ namespace Summit
 
         static float BaseHeight(float x, float z) => Slope.Height(x, z);
 
-        public static IEnumerable<Feature> FeaturesNear(float z)
+        /// <summary>
+        /// The park features within 60 m of z, into `into` (cleared first). A list the caller keeps, not an iterator:
+        /// the rider asks every physics step through the park, and an iterator was a new object each time.
+        /// </summary>
+        public static void FeaturesNear(float z, List<Feature> into)
         {
+            into.Clear();
             int c = CycleOf(z);
             for (int k = c - 1; k <= c + 1; k++)
             {
                 if (k < 0) continue;
                 foreach (var f in FeaturesOf(k))
-                    if (z > f.a.z - 60f && z < f.b.z + 60f) yield return f;
+                    if (Near(f, z)) into.Add(f);
             }
         }
+
+        static bool Near(Feature f, float z) => z > f.a.z - 60f && z < f.b.z + 60f;
 
         /// <summary>True where trees, rocks, pickups or kickers must stay away.</summary>
         public static bool Keep(float x, float z, float margin)
         {
-            if (PipeWeight(z) > 0f && Mathf.Abs(x - Slope.Centre(z)) < PipeHalfWidth + PipeDeck + 6f + margin) return true;
             if (CrevasseNear(x, z, margin + 2f)) return true;
             if (Ridge.Keep(x, z, margin)) return true;
             if (Cliffs.Keep(x, z, margin)) return true;
+            if (CliffBand.Keep(x, z, margin)) return true;
+            if (Bowl.Keep(x, z, margin)) return true;
+            if (Lines.Keep(x, z, margin)) return true;   // a feature line's lane
             return NearFeature(x, z, margin);
         }
 
         /// <summary>On or beside a park feature, or on the run-in to one.</summary>
         public static bool NearFeature(float x, float z, float margin)
         {
-            if (At(z) != Section.Park && At(z + 20f) != Section.Park) return false;
-            foreach (var f in FeaturesNear(z))
+            if (At(z) != Section.Park && At(z + 20f) != Section.Park && !Lines.JibNear(z)) return false;
+            int c = CycleOf(z);
+            for (int k = c - 1; k <= c + 1; k++)
             {
-                if (z < f.a.z - 12f - margin || z > f.b.z + 6f + margin) continue;
-                float t = Mathf.Clamp01((z - f.a.z) / (f.b.z - f.a.z));
-                float fx = Mathf.Lerp(f.a.x, f.b.x, t);
-                if (Mathf.Abs(x - fx) < 2.5f + f.halfWidth + margin) return true;
+                if (k < 0) continue;
+                foreach (var f in FeaturesOf(k))
+                {
+                    if (!Near(f, z)) continue;
+                    if (z < f.a.z - 12f - margin || z > f.b.z + 6f + margin) continue;
+                    float t = Mathf.Clamp01((z - f.a.z) / (f.b.z - f.a.z));
+                    float fx = Mathf.Lerp(f.a.x, f.b.x, t);
+                    if (Mathf.Abs(x - fx) < 2.5f + f.halfWidth + margin) return true;
+                }
             }
             return false;
         }

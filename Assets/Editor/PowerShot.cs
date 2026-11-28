@@ -26,9 +26,7 @@ public static class PowerShot
     public static void Run()
     {
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop();
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
+        game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
         rider = F<Rider>("rider"); body = F<RiderBody>("body"); terrain = F<SlopeStreamer>("terrain"); props = F<Forest>("props");
         smasher = F<Smasher>("smasher"); aura = F<PowerAura>("aura"); hud = F<Hud>("hud"); power = F<PowerUps>("power");
@@ -53,7 +51,7 @@ public static class PowerShot
         catch (System.Exception e) { Debug.LogError("POWER exception " + e); }
         ChaseCamera.TestDt = 0f;
         Physics.simulationMode = SimulationMode.FixedUpdate;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     // ---- the pickups, up close
@@ -145,7 +143,7 @@ public static class PowerShot
                 float wz = (cz + 0.5f) * Forest.Cell;
                 int ccx = Mathf.FloorToInt(Slope.Centre(wz) / Forest.Cell) + cx;
                 if (Forest.At(ccx, cz, out Vector3 p, out float size, out _) != want) continue;
-                if (Mathf.Abs(p.x - Slope.Centre(p.z)) > Slope.PisteHalf - 3f || Course.At(p.z) == Course.Section.Pipe) continue;
+                if (Mathf.Abs(p.x - Slope.Centre(p.z)) > Slope.PisteHalf - 3f) continue;
                 if (Course.CrevasseNear(p.x, p.z - 10f, 4f) || Mathf.Abs(Slope.Kicker(p.x, p.z - 10f)) > 0.01f) continue;
                 // on its own, so the shots show it and not its neighbours
                 bool alone = true;
@@ -211,7 +209,7 @@ public static class PowerShot
 
     static void Step()
     {
-        rider.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+        TestHarness.Step(rider, body, Dt);
         smasher.Step(Dt);
         if (step % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
         if (step % 4 == 0)

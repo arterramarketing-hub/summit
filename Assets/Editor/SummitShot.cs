@@ -27,8 +27,8 @@ public static class SummitShot
         var game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game, false);   // the game opens in the camp
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        body = Get<RiderBody>("body"); camp = Get<Camp>("camp"); meta = Get<MetaUi>("meta"); terrain = Get<SlopeStreamer>("terrain"); props = Get<Forest>("props");
-        var dayNight = Get<DayNight>("dayNight");
+        body = game.body; camp = game.camp; meta = game.meta; terrain = game.terrain; props = game.props;
+        var dayNight = game.dayNight;
         var slideView = Get<AvalancheView>("slideView");
         cam = Camera.main;
         tUpd = typeof(SlopeStreamer).GetMethod("Update", NP); fUpd = typeof(Forest).GetMethod("Update", NP);
@@ -41,40 +41,40 @@ public static class SummitShot
         var c0 = camp.ChaletPoint(0f, 0f, 0f);
         float cx = Slope.Centre(Slope.PadLip);
         Vector3 G(float dx, float z) => new Vector3(cx + dx, Slope.DrawnHeight(cx + dx, z), z);
-        Debug.Log($"SUMMIT heights: start pad {Slope.DrawnHeight(cx, Slope.StartZ):0.0}, gate {G(0f, -76f).y:0.0}, camp {G(0f, -100f).y:0.0}, edge {G(25f, -100f).y:0.0}, below the cliff {G(40f, -100f).y:0.0}, valley {G(150f, -100f).y:0.0}, left slope {G(-60f, -100f).y:0.0}, behind {G(0f, -180f).y:0.0}");
+        Debug.Log($"SUMMIT heights: start pad {Slope.DrawnHeight(cx, Slope.StartZ):0.0}, gate {G(0f, -76f).y:0.0}, camp {G(0f, -70f).y:0.0}, edge {G(25f, -70f).y:0.0}, below the cliff {G(40f, -70f).y:0.0}, valley {G(150f, -70f).y:0.0}, left slope {G(-60f, -70f).y:0.0}, behind {G(0f, -150f).y:0.0}");
 
         // 1: walking up to the railing
-        camp.Teleport(14f, -99f, 90f);
+        camp.Teleport(14f, -69f, 90f);
         Walk(new Vector2(0f, 0.8f), 2.2f); Settle(20);
         Shoot("Summit1_to_rail.png");
         // 2: looking over the edge and down the drop
-        var at = G(24f, -118f) + Vector3.up * 2.1f;
+        var at = G(24f, -88f) + Vector3.up * 2.1f;
         Aim(at, at + new Vector3(0.6f, -1f, 0.35f), 72f);
         Shoot("Summit2_over_edge.png");
         // 3: out from the summit, across the drop to the peaks
         Aim(at, at + new Vector3(1f, -0.16f, 0.2f), 62f);
         Shoot("Summit3_out.png");
         // 4, 5: the flags, day and night
-        var flagsFrom = G(12f, -104f) + Vector3.up * 1.6f;
-        Aim(flagsFrom, G(22.7f, -97.5f) + Vector3.up * 4.5f, 58f);
+        var flagsFrom = G(12f, -74f) + Vector3.up * 1.6f;
+        Aim(flagsFrom, G(22.7f, -67.5f) + Vector3.up * 4.5f, 58f);
         Shoot("Summit4_flags_day.png");
         for (int i = 0; i < 9; i++) { typeof(Camp).GetMethod("LateUpdate", NP).Invoke(camp, null); }   // the cloth moves on
-        Aim(flagsFrom, G(22.7f, -97.5f) + Vector3.up * 4.5f, 58f);
+        Aim(flagsFrom, G(22.7f, -67.5f) + Vector3.up * 4.5f, 58f);
         Shoot("Summit4b_flags_day_later.png");
         TimeOfDay.TestClock = 3.4f; dayNight.ApplyNow();
         Shoot("Summit5_flags_night.png");
-        camp.Teleport(14f, -99f, 90f); Walk(new Vector2(0f, 0.8f), 2.2f); Settle(20);
+        camp.Teleport(14f, -69f, 90f); Walk(new Vector2(0f, 0.8f), 2.2f); Settle(20);
         Shoot("Summit5b_rail_night.png");
         TimeOfDay.TestClock = 1.4f; dayNight.ApplyNow();
         // 6: up to the camp from the gate; 7: the whole summit from above and off to the side
-        camp.Teleport(0f, -86f, 180f); Settle(40);
+        camp.Teleport(0f, -56f, 180f); Settle(40);
         Shoot("Summit6_from_gate.png");
-        var over = G(0f, -100f) + new Vector3(-150f, 110f, 120f);
-        Aim(over, G(5f, -105f), 55f);
+        var over = G(0f, -70f) + new Vector3(-150f, 110f, 120f);
+        Aim(over, G(5f, -75f), 55f);
         Shoot("Summit7_from_above.png");
         // 9: the start pad and run ahead, with the camp behind (nothing of the avalanche)
-        var back = G(0f, -60f) + new Vector3(18f, 22f, 40f);
-        Aim(back, G(0f, -100f), 60f);
+        var back = G(0f, -30f) + new Vector3(18f, 22f, 40f);
+        Aim(back, G(0f, -70f), 60f);
         Shoot("Summit9_camp_from_the_run.png");
 
         // the edge giving way: past the railing's far end, walking out to the cliff
@@ -82,7 +82,7 @@ public static class SummitShot
         var vol = Object.FindFirstObjectByType<UnityEngine.Rendering.Volume>();
         if (vol != null && vol.profile.TryGet(out UnityEngine.Rendering.Universal.LensDistortion ld)) ld.intensity.Override(0f);
         Physics.simulationMode = SimulationMode.Script;
-        camp.Teleport(21.8f, -147f, 90f); Settle(30);
+        camp.Teleport(21.8f, -117f, 90f); Settle(30);
         Shoot("Summit10_edge_before.png");
         float walked = 0f;
         while (!camp.Falling && walked < 4f) { Step(new Vector2(0f, 0.45f)); walked += dt; }
@@ -111,7 +111,7 @@ public static class SummitShot
         TimeOfDay.TestClock = 1f + TimeOfDay.HeldAt; dayNight.ApplyNow();
         TimeOfDay.TestClock = -1f;
         QualitySettings.SetQualityLevel(quality, false);
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     /// <summary>Run a fall to its rescue, shooting at the given times (and once at rest, if rest is named).</summary>
@@ -120,11 +120,15 @@ public static class SummitShot
         float t = 0f; int shot = 0; bool rested = false;
         while (camp.Falling && t < 14f)
         {
+            // the fall waits for a tap (ResumeTap): tap once the last picture is taken
+            bool tap = shot >= times.Length && (rest == null || rested) && t > 0.2f;
+            Camp.TestTouches = tap && ((int)(t / dt)) % 8 < 3 ? new System.Collections.Generic.List<CampInput.Touch> { new CampInput.Touch(91, new Vector2(300f, 600f)) } : new System.Collections.Generic.List<CampInput.Touch>();
             camp.Step(dt, meta); Fall();
             t += dt;
             if (shot < times.Length && t >= times[shot]) { Shoot(names[shot]); Debug.Log($"SUMMIT fall {t:0.0}s body={body.RagdollCentre} moving={body.RagdollMoving}"); shot++; }
             if (rest != null && !rested && t > 1.2f && !body.RagdollMoving) { rested = true; Shoot(rest); Debug.Log($"SUMMIT at rest {t:0.0}s at {body.RagdollCentre}"); }
         }
+        Camp.TestTouches = null;
         Debug.Log($"SUMMIT rescued after {t:0.0}s: walker at {camp.WalkerPosition}");
         return t;
     }

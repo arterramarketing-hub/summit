@@ -11,8 +11,24 @@ public static class TestBoot
 {
     const BindingFlags NP = BindingFlags.NonPublic | BindingFlags.Instance;
 
+    /// <summary>
+    /// Switch to the test's own mountain the way the game does: the terrain, the forest and the start gate. (The
+    /// gate's caution tape is tied to trees planted for the mountain it was built on; left from the mountain the game
+    /// booted on, which Unity's random numbers pick, a tree could stand in the start line.)
+    /// </summary>
+    public static void NewMountain(SummitGame game, int seed, SlopeStreamer terrain, Forest props)
+    {
+        Slope.Init(seed);
+        terrain.Rebuild(); props.Rebuild();
+        typeof(SummitGame).GetMethod("RebuildGate", NP).Invoke(game, null);
+    }
+
     public static void Boot(SummitGame game, bool toStart = true)
     {
+        // every test rides a fresh player's settings, the ride included (TestPrefs; once a run, so a test's own
+        // choices made after its first boot stand). One that read whatever another run had left saved rode a car
+        // that takes no cable: LiftHillCheck, round 56
+        TestPrefs.PinOnce();
         // a fresh player: no camp upgrades (the editor keeps PlayerPrefs between runs, so HubShot's purchases
         // would otherwise give every later test better grip, a fourth fall and a longer avalanche head start)
         foreach (Progress.Up u in System.Enum.GetValues(typeof(Progress.Up))) PlayerPrefs.DeleteKey("summit_up_" + u);

@@ -7,8 +7,9 @@ namespace Summit
     /// halves, thick over the clothes (as wide as the sleeve or trouser leg really is, measured from the mesh), with
     /// gauze turns and cuffs at the ends, so two broken legs read as legs bandaged up from hip to boot. With gore on,
     /// blood has soaked through: dark red patches with a rusty edge, heaviest over the break; with gore off they
-    /// are clean white. The pause menu's switch changes them on the spot (RiderBodyLimbs.FollowGore). A limb that is
-    /// gone isn't wrapped (its stump keeps its cap). All of it goes in ResetVisual.
+    /// are clean white. The pause menu's switch changes them on the spot (RiderBodyLimbs.FollowGore). A limb torn
+    /// off and patched back on (RiderBodyLimbs) is soaked through over all it lost, and an arm's hand goes in a
+    /// bandaged mitten. All of it goes in ResetVisual.
     /// </summary>
     public partial class RiderBody
     {
@@ -18,6 +19,18 @@ namespace Summit
         void Bandage(Transform bone)
         {
             if (bone == null || bandaged.Contains(bone) || rig == null) return;
+            // the first-person view shrinks the head bone to nothing while the lens is in it, and the camera does
+            // that before the body is posed in the same frame (so on getting up, before these are made). A wrap
+            // fixed to the bone at that size would keep a scale a thousand times too big for it: the head is put
+            // back to its full size while the bandages are made, then hidden again
+            bool povWas = povHidden;
+            if (povWas) SetPovHead(false);
+            try { Wrapped(bone); }
+            finally { if (povWas) SetPovHead(true); }
+        }
+
+        void Wrapped(Transform bone)
+        {
             if (ragdoll != null && ragdoll.Gone(bone)) return;   // nothing left there to wrap
             BandageMats();
             bool limb = bone == rig.UpperL || bone == rig.LowerL || bone == rig.UpperR || bone == rig.LowerR
@@ -39,7 +52,7 @@ namespace Summit
                     if (r <= 0.02f) r = (leg ? (thigh ? 0.105f : 0.09f) : 0.07f) * 1.2f;   // (no mesh to measure)
                     r = r * 1.05f + 0.01f;                                               // over the cloth, not in it
                     bool shin = leg && !thigh;
-                    WrapLimb(seg, seg.position, child.position, r, shin ? 0.05f : 0.03f, shin ? 0.86f : 0.97f, seg == bone);
+                    WrapLimb(seg, seg.position, child.position, r, shin ? 0.05f : 0.03f, shin ? 0.86f : 0.97f, seg == bone || soaked.Contains(seg));
                     if (seg == top) rTop = r; else rLow = r;
                     wrapped++;
                 }
@@ -55,6 +68,23 @@ namespace Summit
                     g.transform.SetPositionAndRotation(mid.position, Quaternion.FromToRotation(Vector3.up, (ChildOf(mid).position - mid.position).normalized));
                     g.transform.localScale = new Vector3(r * 2f, r * 1.7f, r * 2f);
                     g.transform.SetParent(mid, true);
+                    bandages.Add(g);
+                }
+                // a hand torn off with its arm and patched back on: in a mitten of bandage, soaked through
+                var low = ChildOf(top);
+                var hand = low != null ? ChildOf(low) : null;
+                bool arm = top == rig.UpperL || top == rig.UpperR;
+                if (arm && hand != null && soaked.Contains(low))
+                {
+                    Vector3 dir = (hand.position - low.position).normalized;
+                    float r = Mathf.Max(0.042f, rLow > 0f ? rLow * 0.95f : 0.05f);
+                    var g = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                    Object.DestroyImmediate(g.GetComponent<Collider>());
+                    g.name = "BandageHeavy" + (Mathf.Abs(hand.GetInstanceID()) % 2);
+                    g.GetComponent<MeshRenderer>().sharedMaterial = BandageMat(g.name, blood != null && blood.On);
+                    g.transform.SetPositionAndRotation(hand.position + dir * 0.065f, Quaternion.FromToRotation(Vector3.up, dir));
+                    g.transform.localScale = new Vector3(r * 2.1f, 0.19f, r * 1.8f);
+                    g.transform.SetParent(hand, true);
                     bandages.Add(g);
                 }
                 return;
@@ -149,7 +179,7 @@ namespace Summit
         void BandageMats()
         {
             if (bandageMat != null) return;
-            var sh = jacketShader != null ? jacketShader : Shader.Find("Universal Render Pipeline/Lit");
+            var sh = jacketShader != null ? jacketShader : Mats.LitShader;
             bandageMat = new Material(sh) { name = "Bandage" }; bandageMat.SetColor("_BaseColor", new Color(0.97f, 0.96f, 0.91f)); bandageMat.SetFloat("_Smoothness", 0.08f);
             bandageLine = new Material(sh) { name = "BandageLine" }; bandageLine.SetColor("_BaseColor", new Color(0.88f, 0.86f, 0.80f)); bandageLine.SetFloat("_Smoothness", 0.05f);
             if (stainHeavy == null)

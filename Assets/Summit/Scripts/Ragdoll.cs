@@ -6,9 +6,17 @@ namespace Summit
     /// <summary>
     /// Throws the rider off the board in a crash: the skeleton becomes a chain of physics bodies
     /// (pelvis, chest, head, upper and lower arms and legs) joined at the bones, launched with the
-    /// speed you were carrying, and the board tumbles away on its own. The snow under them is a
-    /// slab that follows the slope beneath each one, since the slope itself has no collider.
-    /// When the crash is over everything is put back on the board.
+    /// speed you were carrying. A snowboard stays strapped to both feet (the bindings); skis, a sled or a
+    /// tube tumble away on their own. The snow under them is a slab that follows the slope beneath each
+    /// one, since the slope itself has no collider. When the crash is over everything is put back.
+    ///
+    /// The joints are a person's: each is set up when the crash starts from the pose the body is in then
+    /// (Anatomy), about the joint's real axis. A knee and an elbow are hinges that bend one way only, from
+    /// straight to fully bent, with a few degrees of play sideways; a hip swings the thigh forward a long way
+    /// and back a little, out to the side within a split's reach, and rolls it a little; the spine bends
+    /// forward more than back and twists a little; the neck nods and turns. Every joint has a little muscle
+    /// tone and friction (a weak, damped pull back toward the pose it was thrown in), so limbs swing and
+    /// flop like a person's, not a chain of loose sticks.
     /// </summary>
     public class Ragdoll
     {
@@ -16,21 +24,27 @@ namespace Summit
         {
             public Transform bone; public Rigidbody rb; public Collider col; public Joint joint;
             public Rigidbody parentRb; public Vector3 axis; public float twist, swing1, swing2;   // to rebuild the joint after a sever
+            public Kind kind;          // which joint joins it to the part above (see Anatomy)
             public bool free;          // torn off: its own piece (or a part hanging off one), no longer held to the body
             public bool gone;          // lost in an earlier crash this run: the rider rides on without it, so it stays asleep
                                        // (no collider, no joint) in every later crash until the run is reset (Reattach)
             public Rigidbody slab;     // the snow under a torn-off piece (on its root part only)
         }
 
+        /// <summary>The joint a part hangs from: what sort of joint it is decides its axes and limits (Anatomy).</summary>
+        public enum Kind { Pelvis, Spine, Neck, Shoulder, Elbow, Hip, Knee }
+
         readonly RiderRig rig;
         Transform board, boardHome;
+        bool bound;                // the board is strapped to the feet (a snowboard's bindings)
+        ConfigurableJoint bindL, bindR;
         readonly Collider riderCollider;
         readonly List<Part> parts = new List<Part>();
         readonly PhysicsMaterial snowFeel;
         Rigidbody boardRb; BoxCollider boardCol;
         Rigidbody groundBody, boardGroundBody;
         Transform modelHome;
-        Vector3 modelPos, boardPos; Quaternion modelRot, boardRot; Vector3 modelScale;
+        Vector3 modelPos, boardPos, boardScl = Vector3.one; Quaternion modelRot, boardRot; Vector3 modelScale;
         Quaternion footRelL, footRelR;
         public bool Active { get; private set; }
         public static float Plough = 2.2f;   // 1/s: how hard snow drags a body sliding through it
@@ -50,12 +64,19 @@ namespace Summit
         {
             foreach (var p in parts) if (!p.rb.isKinematic) p.rb.linearVelocity *= keep;
             if (boardRb != null && !boardRb.isKinematic) boardRb.linearVelocity *= keep;
+            foreach (var x in extras) if (x.rb != null) x.rb.linearVelocity *= keep;
         }
         /// <summary>The body's parts (for the test tools).</summary>
         public IEnumerable<Rigidbody> Bodies { get { foreach (var p in parts) yield return p.rb; } }
         /// <summary>Every physics step, each part ploughing through the snow: which bone, the way down into the snow, how hard (m/s).</summary>
         public System.Action<Transform, Vector3, float> Ploughed;
         public static float LimbMaxRel = 14f;   // m/s: the fastest a limb can swing past the pelvis (about its spin cap times its reach)
+        /// <summary>m: every part has at least the inertia of a solid ball this big.</summary>
+        public static float InertiaR = 0.13f;
+        /// <summary>rad/s: the fastest a part can turn against the part it hangs from (a joint, not a propeller).</summary>
+        public static float JointMaxSpin = 16f;
+        /// <summary>Energy (per kg) under which a still part sleeps: a body that has come to rest stops being simulated.</summary>
+        public static float SleepEnergy = 0.04f;
 
         /// <summary>Reports a ragdoll part's or the board's impacts, and its slides along the snow.</summary>
         /// <summary>Whether the latest hit (read during Hit) was against an object rather than the snow.</summary>
@@ -87,12 +108,14 @@ namespace Summit
             }
         }
         public Vector3 Centre => Active && parts.Count > 0 ? parts[0].rb.position : Vector3.zero;
+        /// <summary>Where the board is while thrown (the body's middle if it has none).</summary>
+        public Vector3 BoardCentre => boardRb != null ? boardRb.position : Centre;
         /// <summary>How fast the body (and the board) are still moving: the faster of the two.</summary>
-        public float Speed => !Active || parts.Count == 0 ? 0f : Mathf.Max(parts[0].rb.linearVelocity.magnitude, boardRb != null ? boardRb.linearVelocity.magnitude * 0.5f : 0f);
+        public float Speed => !Active || parts.Count == 0 || Frozen ? 0f : Mathf.Max(parts[0].rb.linearVelocity.magnitude, boardRb != null ? boardRb.linearVelocity.magnitude * 0.5f : 0f);
         public Vector3 Velocity => Active && parts.Count > 0 ? parts[0].rb.linearVelocity : Vector3.zero;
 
         /// <summary>How many solid shapes the thrown body has, its parts and then the board (see Capsule).</summary>
-        public int ShapeCount => Active ? parts.Count + (boardRb != null ? 1 : 0) : 0;
+        public int ShapeCount => Active ? parts.Count + (boardRb != null ? 1 : 0) + extras.Count : 0;
 
         /// <summary>
         /// One of the thrown body's shapes as a capsule, for pressing it into the snow: the ends of its core line,
@@ -105,8 +128,14 @@ namespace Summit
             Collider col; Rigidbody rb;
             if (!Active) return false;
             if (i < parts.Count) { if (parts[i].gone) return false; col = parts[i].col; rb = parts[i].rb; }
-            else if (boardRb != null && boardCol != null) { col = boardCol; rb = boardRb; }
-            else return false;
+            else if (i == parts.Count && boardRb != null && boardCol != null) { col = boardCol; rb = boardRb; }
+            else
+            {
+                // the rest of the loose gear (after the board, or in its place if there is none)
+                int k = i - parts.Count - (boardRb != null ? 1 : 0);
+                if (k < 0 || k >= extras.Count || extras[k].rb == null || extras[k].col == null) return false;
+                col = extras[k].col; rb = extras[k].rb;
+            }
             var t = col.transform;
             float s = Mathf.Abs(t.lossyScale.x);
             v = rb.linearVelocity; mass = rb.mass;
@@ -131,6 +160,88 @@ namespace Summit
 
         Vector3 boardSize = new Vector3(0.29f, 0.07f, 1.55f), boardCenter = new Vector3(0f, 0.04f, 0f);
 
+        // ---- more loose gear than the one board: the second ski and the two poles (RiderBodyRide). Each flies off
+        // on its own body like the board does. They are light and there can be several, so instead of a slab of
+        // snow each they are simply kept on top of the snow (LooseStep): they skid, tumble and come to rest on it.
+
+        /// <summary>A piece of gear that comes off in a crash: its transform (z down its length), and its box.</summary>
+        public class Loose
+        {
+            public Transform t; public Vector3 size, center; public float mass = 1.5f;
+            internal Transform home; internal Vector3 pos, scl; internal Quaternion rot; internal Rigidbody rb; internal BoxCollider col;
+        }
+        readonly List<Loose> extras = new List<Loose>();
+
+        /// <summary>The gear, beyond the board itself, that flies off with the rider (none on a snowboard).</summary>
+        public void SetExtras(IEnumerable<Loose> gear)
+        {
+            if (Active) End();
+            extras.Clear();
+            if (gear != null) extras.AddRange(gear);
+        }
+
+        void ThrowExtras(Vector3 velocity, Collider gCol, Collider bgCol)
+        {
+            foreach (var x in extras)
+            {
+                x.rb = null; x.col = null;
+                if (x.t == null || !x.t.gameObject.activeInHierarchy) continue;   // (a pole in a hand that is gone, say)
+                x.home = x.t.parent; x.pos = x.t.localPosition; x.rot = x.t.localRotation; x.scl = x.t.localScale;
+                x.t.SetParent(null, true);
+                x.rb = x.t.gameObject.AddComponent<Rigidbody>();
+                x.rb.mass = x.mass;
+                x.rb.maxAngularVelocity = 25f;
+                x.rb.maxDepenetrationVelocity = 2.5f;
+                x.rb.useGravity = true;
+                x.rb.interpolation = RigidbodyInterpolation.Interpolate;
+                x.rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+                x.col = x.t.gameObject.AddComponent<BoxCollider>();
+                x.col.center = x.center; x.col.size = x.size;
+                x.col.sharedMaterial = snowFeel;
+                var imp = x.t.gameObject.AddComponent<Impact>(); imp.owner = this; imp.board = true;
+                if (riderCollider != null) Physics.IgnoreCollision(x.col, riderCollider);
+                foreach (var p in parts) if (!p.gone) Physics.IgnoreCollision(x.col, p.col);
+                if (boardCol != null) Physics.IgnoreCollision(x.col, boardCol);
+                Physics.IgnoreCollision(x.col, gCol); Physics.IgnoreCollision(x.col, bgCol);
+                foreach (var y in extras) if (y != x && y.col != null) Physics.IgnoreCollision(x.col, y.col);
+                x.rb.linearVelocity = velocity * Random.Range(0.6f, 0.85f) + Vector3.up * Random.Range(2.5f, 4.5f) + Random.insideUnitSphere * 2.5f;
+                x.rb.angularVelocity = new Vector3(Random.Range(-10f, 10f), Random.Range(-5f, 5f), Random.Range(-10f, 10f));
+            }
+        }
+
+        /// <summary>Each physics step: the loose gear stays on top of the snow, skidding and losing its spin there.</summary>
+        void LooseStep()
+        {
+            foreach (var x in extras)
+            {
+                if (x.rb == null) continue;
+                Vector3 c = x.rb.worldCenterOfMass;
+                float floor = Slope.DrawnHeight(c.x, c.z) - Course.CrevasseCut(c.x, c.z) + 0.03f;
+                if (c.y >= floor) continue;
+                Vector3 v = x.rb.linearVelocity;
+                x.rb.position += Vector3.up * (floor - c.y);
+                if (v.y < 0f) v.y = -v.y * 0.25f;
+                float k = Mathf.Exp(-Time.fixedDeltaTime * 2.5f);
+                x.rb.linearVelocity = new Vector3(v.x * k, v.y, v.z * k);
+                x.rb.angularVelocity *= Mathf.Exp(-Time.fixedDeltaTime * 4f);
+            }
+        }
+
+        void EndExtras()
+        {
+            foreach (var x in extras)
+            {
+                if (x.rb == null || x.t == null) { x.rb = null; x.col = null; continue; }
+                Kill(x.t.GetComponent<Impact>());
+                x.col.enabled = false; Kill(x.col); Kill(x.rb); x.rb = null; x.col = null;
+                // back exactly as it was, scale and all: loose in the world it took on its parent's scale (a pole's
+                // parent is the hand bone, which the hero's file scales by 100), and SetParent(home, false) keeps
+                // that, so without this a pole came back 100 times bigger after every crash
+                x.t.SetParent(x.home, false);
+                x.t.localPosition = x.pos; x.t.localRotation = x.rot; x.t.localScale = x.scl;
+            }
+        }
+
         /// <summary>The thing that flies off with the rider: a board by default; a tube is a big flat ring.</summary>
         public Ragdoll(RiderRig rig, Transform board, Collider riderCollider, Vector3 size, Vector3 center) : this(rig, board, riderCollider)
         { boardSize = size; boardCenter = center; }
@@ -140,6 +251,7 @@ namespace Summit
             this.rig = rig;
             this.board = board;
             boardHome = board.parent;
+            bound = true;   // (the rider's own snowboard; SetBoard says otherwise for skis, a sled, a tube)
             this.riderCollider = riderCollider;
             // snow grabs a body: high friction (it tumbles rather than skates), a little give
             snowFeel = new PhysicsMaterial("RagdollSnow") { dynamicFriction = 1.1f, staticFriction = 1.3f, bounciness = 0.12f,
@@ -148,12 +260,20 @@ namespace Summit
             boardGroundBody = Slab("BoardGround");
         }
 
+        static readonly HashSet<Collider> slabs = new HashSet<Collider>();
+        /// <summary>Is this one of the slabs of snow laid under a thrown body, its board or a lost limb?</summary>
+        public static bool IsSlab(Collider c) => c != null && slabs.Contains(c);
+
         Rigidbody Slab(string name)
         {
             var g = new GameObject(name);
             var c = g.AddComponent<BoxCollider>();
-            c.size = new Vector3(14f, 2f, 14f);
-            c.center = new Vector3(0f, -1f, 0f);
+            slabs.Add(c);
+            // deep, so whatever is inside it is always pushed out of its top: the slab is teleported under the body every
+            // step, and on a steep face (the surface under it moving a metre a step) a part could end up more than half way
+            // into a 2 m slab, be pushed out of its bottom, and fall on through the mountain for good
+            c.size = new Vector3(14f, 20f, 14f);
+            c.center = new Vector3(0f, -10f, 0f);
             c.sharedMaterial = snowFeel;
             var rb = g.AddComponent<Rigidbody>();
             rb.isKinematic = true;
@@ -170,7 +290,7 @@ namespace Summit
             var model = rig.Root;
             modelHome = model.parent;
             modelPos = model.localPosition; modelRot = model.localRotation; modelScale = model.localScale;
-            boardPos = board.localPosition; boardRot = board.localRotation;
+            boardPos = board.localPosition; boardRot = board.localRotation; boardScl = board.localScale;
             footRelL = Quaternion.Inverse(rig.ShinL.rotation) * rig.FootL.rotation;
             footRelR = Quaternion.Inverse(rig.ShinR.rotation) * rig.FootR.rotation;
             model.SetParent(null, true);
@@ -179,7 +299,9 @@ namespace Summit
             if (parts.Count == 0) Prebuild();
             // switch the body over from posed to physical. Each joint first re-captures the pose the body is
             // in right now as its rest, so a crouched knee or a lowered arm is never "outside its limits"
+            Anatomy();
             foreach (var p in parts) if (p.joint != null) { var cb = p.joint.connectedBody; p.joint.connectedBody = null; p.joint.connectedBody = cb; }
+            sinceBegin = 0f; Drives(0f);   // the powered start (see PoweredTone)
             foreach (var p in parts)
             {
                 if (p.gone) continue;   // (a limb lost earlier in the run: nothing there to throw)
@@ -201,7 +323,7 @@ namespace Summit
             var spin = roll * spinRate + new Vector3(Random.Range(-1f, 1f), Random.Range(-1f, 1f), Random.Range(-1f, 1f)) * 2f;
             // as one rigid body: each part moves with the pelvis plus the spin about it, so no joint starts
             // out torn
-            Vector3 pivot = parts[0].rb.worldCenterOfMass, lin = velocity * 0.85f + Vector3.up * 2.5f;
+            Vector3 pivot = parts[0].rb.worldCenterOfMass, lin = Vector3.ClampMagnitude(velocity * 0.85f, MaxThrow) + Vector3.up * 2.5f;
             foreach (var p in parts)
             {
                 if (p.gone) continue;
@@ -211,9 +333,10 @@ namespace Summit
 
             // the board flies off on its own
             boardRb = board.gameObject.AddComponent<Rigidbody>();
-            boardRb.mass = 4f;
+            boardRb.mass = bound ? 3.5f : 4f;
             boardRb.maxAngularVelocity = 25f;
             boardRb.maxDepenetrationVelocity = 2.5f;
+            boardRb.sleepThreshold = SleepEnergy;
             boardRb.interpolation = RigidbodyInterpolation.Interpolate;
             boardRb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
             boardCol = board.gameObject.AddComponent<BoxCollider>();
@@ -234,10 +357,72 @@ namespace Summit
             Physics.IgnoreCollision(gCol, boardCol);
             foreach (var p in parts) if (!p.gone) Physics.IgnoreCollision(bgCol, p.col);
             if (riderCollider != null) { Physics.IgnoreCollision(gCol, riderCollider); Physics.IgnoreCollision(bgCol, riderCollider); }
-            boardRb.linearVelocity = velocity * 0.75f + Vector3.up * 3.5f + Random.insideUnitSphere * 2f;
-            boardRb.angularVelocity = new Vector3(Random.Range(-9f, 9f), Random.Range(-4f, 4f), Random.Range(-9f, 9f));
-
+            if (Strapped())
+            {
+                // strapped on: it goes with the feet, part of the one body thrown
+                boardRb.linearVelocity = lin + Vector3.Cross(spin, boardRb.worldCenterOfMass - pivot);
+                boardRb.angularVelocity = spin;
+                boardRb.solverIterations = 16; boardRb.solverVelocityIterations = 8;
+                boardRb.angularDamping = 0.6f;
+                bindL = Bind(rig.ShinL, rig.EndL);
+                bindR = Bind(rig.ShinR, rig.EndR);
+            }
+            else
+            {
+                boardRb.linearVelocity = Vector3.ClampMagnitude(velocity * 0.75f, MaxThrow) + Vector3.up * 3.5f + Random.insideUnitSphere * 2f;
+                boardRb.angularVelocity = new Vector3(Random.Range(-9f, 9f), Random.Range(-4f, 4f), Random.Range(-9f, 9f));
+            }
+            ThrowExtras(velocity, gCol, bgCol);   // the other ski and the poles, on skis
+            // never thrown from inside a corner: the board hit something, and the body above the board may already be in
+            // it. PhysX eases a part out of one thing by itself (a trunk, a post), so the body is only moved when it is
+            // in two at once (a chalet's wall and its landing) or deep in one
+            Physics.SyncTransforms();
+            Vector3 back = -flat;
+            if (back.sqrMagnitude < 0.01f) back = Vector3.back;
+            if (Cornered(false)) UnwedgeOne(back.normalized, true, false);
+            if (!Strapped() && Cornered(true)) UnwedgeOne(back.normalized, true, true);   // (the board on its own: it is its own body)
         }
+
+        /// <summary>Is the board strapped to the feet this crash (a snowboard, both legs still on)?</summary>
+        bool Strapped()
+        {
+            if (!bound || rig.ShinL == null || rig.ShinR == null || rig.EndL == null || rig.EndR == null) return false;
+            var l = PartOf(rig.ShinL); var r = PartOf(rig.ShinR);
+            return l != null && r != null && !l.gone && !r.gone && !l.free && !r.free;
+        }
+
+        /// <summary>A binding: the board held at the ankle (the shin's end), the ankle flexing a little in the boot.</summary>
+        ConfigurableJoint Bind(Transform shin, Transform ankle)
+        {
+            var srb = shin.GetComponent<Rigidbody>();
+            if (srb == null) return null;
+            var j = board.gameObject.AddComponent<ConfigurableJoint>();
+            j.connectedBody = srb;
+            j.autoConfigureConnectedAnchor = true;
+            j.anchor = board.InverseTransformPoint(ankle.position);
+            j.xMotion = j.yMotion = j.zMotion = ConfigurableJointMotion.Locked;
+            j.angularXMotion = j.angularYMotion = j.angularZMotion = ConfigurableJointMotion.Limited;
+            j.axis = Vector3.right; j.secondaryAxis = Vector3.up;   // (the board's across and up)
+            j.lowAngularXLimit = new SoftJointLimit { limit = -22f };
+            j.highAngularXLimit = new SoftJointLimit { limit = 22f };
+            j.angularYLimit = new SoftJointLimit { limit = 12f };
+            j.angularZLimit = new SoftJointLimit { limit = 14f };
+            j.projectionMode = JointProjectionMode.None;
+            j.enablePreprocessing = false;
+            j.rotationDriveMode = RotationDriveMode.Slerp;
+            j.slerpDrive = new JointDrive { positionSpring = 40f, positionDamper = 4f, maximumForce = float.MaxValue };
+            return j;
+        }
+
+        /// <summary>The bindings come off (a leg torn off, or the crash over).</summary>
+        void Unbind(Transform shin = null)
+        {
+            if (bindL != null && (shin == null || shin == rig.ShinL || (shin != null && rig.ShinL.IsChildOf(shin)))) { Kill(bindL); bindL = null; }
+            if (bindR != null && (shin == null || shin == rig.ShinR || (shin != null && rig.ShinR.IsChildOf(shin)))) { Kill(bindR); bindR = null; }
+        }
+
+        /// <summary>The board still held by a binding?</summary>
+        bool Held => bindL != null || bindR != null;
 
         /// <summary>
         /// Build the physical body once, on the skeleton at rest, like Unity's Ragdoll Wizard: every part a
@@ -251,17 +436,19 @@ namespace Summit
             // pelvis first: every later part hangs off the nearest part above it
             // the pelvis body goes on the top bone of the skeleton that moves (vertices are skinned to it
             // too: anything above it would stay behind and stretch the mesh back to where you crashed)
-            Add(rig.BodyBone != null ? rig.BodyBone : rig.Hips, null, 12f, Shape.Ball, 0.15f * s, 0f, 0f, 0f);
-            Add(rig.Chest, rig.Neck != null ? rig.Neck : rig.Head, 12f, Shape.Capsule, 0.15f * s, 30f, 35f, 25f, 1.6f);
-            Add(rig.Head, null, 5f, Shape.Head, 0.13f * s, 30f, 40f, 30f);
-            Add(rig.UpperL, rig.LowerL, 2.2f, Shape.Capsule, 0.055f * s, 25f, 80f, 60f);
-            Add(rig.LowerL, rig.HandL, 1.6f, Shape.Capsule, 0.05f * s, 10f, 80f, 10f, 1.35f);
-            Add(rig.UpperR, rig.LowerR, 2.2f, Shape.Capsule, 0.055f * s, 25f, 80f, 60f);
-            Add(rig.LowerR, rig.HandR, 1.6f, Shape.Capsule, 0.05f * s, 10f, 80f, 10f, 1.35f);
-            Add(rig.ThighL, rig.ShinL, 7f, Shape.Capsule, 0.08f * s, 15f, 60f, 35f);
-            Add(rig.ShinL, rig.EndL, 4f, Shape.Capsule, 0.065f * s, 5f, 75f, 5f, 1.1f);
-            Add(rig.ThighR, rig.ShinR, 7f, Shape.Capsule, 0.08f * s, 15f, 60f, 35f);
-            Add(rig.ShinR, rig.EndR, 4f, Shape.Capsule, 0.065f * s, 5f, 75f, 5f, 1.1f);
+            // a 70 kg person's shares (the shins carry the boots); the limits here are only until a crash sets up the
+            // real ones from the pose (Anatomy)
+            Add(rig.BodyBone != null ? rig.BodyBone : rig.Hips, null, 11f, Shape.Ball, 0.15f * s, 0f, 0f, 0f, Kind.Pelvis);
+            Add(rig.Chest, rig.Neck != null ? rig.Neck : rig.Head, 18f, Shape.Capsule, 0.15f * s, 30f, 35f, 25f, Kind.Spine, 1.6f);
+            Add(rig.Head, null, 5f, Shape.Head, 0.13f * s, 30f, 40f, 30f, Kind.Neck);
+            Add(rig.UpperL, rig.LowerL, 2.3f, Shape.Capsule, 0.055f * s, 25f, 80f, 60f, Kind.Shoulder);
+            Add(rig.LowerL, rig.HandL, 1.7f, Shape.Capsule, 0.05f * s, 10f, 80f, 10f, Kind.Elbow, 1.35f);
+            Add(rig.UpperR, rig.LowerR, 2.3f, Shape.Capsule, 0.055f * s, 25f, 80f, 60f, Kind.Shoulder);
+            Add(rig.LowerR, rig.HandR, 1.7f, Shape.Capsule, 0.05f * s, 10f, 80f, 10f, Kind.Elbow, 1.35f);
+            Add(rig.ThighL, rig.ShinL, 9f, Shape.Capsule, 0.08f * s, 15f, 60f, 35f, Kind.Hip);
+            Add(rig.ShinL, rig.EndL, 5f, Shape.Capsule, 0.065f * s, 5f, 75f, 5f, Kind.Knee, 1.1f);
+            Add(rig.ThighR, rig.ShinR, 9f, Shape.Capsule, 0.08f * s, 15f, 60f, 35f, Kind.Hip);
+            Add(rig.ShinR, rig.EndR, 5f, Shape.Capsule, 0.065f * s, 5f, 75f, 5f, Kind.Knee, 1.1f);
             foreach (var p in parts) Sleep(p);
         }
 
@@ -274,28 +461,29 @@ namespace Summit
         }
 
         /// <summary>Switch what flies off with the rider: the board, or the tube.</summary>
-        public void SetBoard(Transform b, Vector3 size, Vector3 center)
+        public void SetBoard(Transform b, Vector3 size, Vector3 center, bool strapped = false)
         {
             if (Active) End();
-            board = b; boardHome = b.parent; boardSize = size; boardCenter = center;
+            board = b; boardHome = b.parent; boardSize = size; boardCenter = center; bound = strapped;
         }
 
         enum Shape { Ball, Capsule, Head }
 
-        void Add(Transform bone, Transform child, float mass, Shape shape, float radius, float twist, float swing1, float swing2, float stretch = 1f)
+        void Add(Transform bone, Transform child, float mass, Shape shape, float radius, float twist, float swing1, float swing2, Kind kind, float stretch = 1f)
         {
             if (bone == null) return;
             float scale = Mathf.Max(1e-4f, bone.lossyScale.x);
             var rb = bone.gameObject.AddComponent<Rigidbody>();
             rb.mass = mass;
-            rb.linearDamping = 0.02f; rb.angularDamping = 0.45f;   // the snow does the slowing (see PhysicsStep)
+            rb.linearDamping = 0.02f; rb.angularDamping = 0.6f;   // the snow does the slowing (see PhysicsStep)
             rb.interpolation = RigidbodyInterpolation.Interpolate;
             rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
-            rb.solverIterations = 14;
-            rb.solverVelocityIterations = 6;
+            rb.solverIterations = 16;
+            rb.solverVelocityIterations = 8;
             // a human body cannot spin a limb a hundred times a second, nor be shot out of the snow
             rb.maxAngularVelocity = 18f;
             rb.maxDepenetrationVelocity = 2.5f;
+            rb.sleepThreshold = SleepEnergy;   // settled, it sleeps (and costs nothing) until something wakes it
             Collider col;
             Vector3 axisLocal = Vector3.up;
             if (shape == Shape.Capsule && child != null)
@@ -329,11 +517,12 @@ namespace Summit
                 var prb = t.GetComponent<Rigidbody>();
                 if (prb != null && parts.Exists(q => q.rb == prb)) parentRb = prb;
             }
-            var part = new Part { bone = bone, rb = rb, col = col, parentRb = parentRb, axis = axisLocal, twist = twist, swing1 = swing1, swing2 = swing2 };
+            var part = new Part { bone = bone, rb = rb, col = col, parentRb = parentRb, axis = axisLocal, twist = twist, swing1 = swing1, swing2 = swing2, kind = kind };
             MakeJoint(part);
             // thin limbs have almost no inertia about their length and the solver spins them wildly; give
-            // every part at least the inertia of a solid ball its size
-            float floorI = 0.4f * mass * 0.06f * 0.06f * 2.5f;
+            // every part at least the inertia of a solid ball its size (a forearm or a shin brushing the snow was
+            // jolted to 150-230 rad/s for a step with less)
+            float floorI = 0.4f * mass * InertiaR * InertiaR;
             var it = rb.inertiaTensor;
             rb.inertiaTensor = new Vector3(Mathf.Max(it.x, floorI), Mathf.Max(it.y, floorI), Mathf.Max(it.z, floorI));
             parts.Add(part);
@@ -342,21 +531,145 @@ namespace Summit
         static void MakeJoint(Part p)
         {
             if (p.parentRb == null || p.joint != null) return;
-            var j = p.bone.gameObject.AddComponent<CharacterJoint>();
+            var j = p.bone.gameObject.AddComponent<ConfigurableJoint>();
             j.connectedBody = p.parentRb;
             j.autoConfigureConnectedAnchor = true;
             j.anchor = Vector3.zero;
-            j.axis = p.axis;
-            j.swingAxis = Vector3.Cross(p.axis, Mathf.Abs(p.axis.y) < 0.9f ? Vector3.up : Vector3.right).normalized;
-            j.lowTwistLimit = new SoftJointLimit { limit = -p.twist };
-            j.highTwistLimit = new SoftJointLimit { limit = p.twist };
-            j.swing1Limit = new SoftJointLimit { limit = p.swing1 };
-            j.swing2Limit = new SoftJointLimit { limit = p.swing2 };
-            j.enableProjection = true;
-            j.projectionDistance = 0.02f;
-            j.projectionAngle = 20f;
+            j.xMotion = j.yMotion = j.zMotion = ConfigurableJointMotion.Locked;
+            j.angularXMotion = j.angularYMotion = j.angularZMotion = ConfigurableJointMotion.Limited;
+            Vector3 side = Vector3.Cross(p.axis, Mathf.Abs(p.axis.y) < 0.9f ? Vector3.up : Vector3.right).normalized;
+            Limits(j, p.axis, side, -p.twist, p.twist, p.swing1, p.swing2);
+            // no projection: PhysX's projection teleports a part back onto its joint, and the solver answered that
+            // with spins of hundreds of radians a second on the shins and forearms (the legs flailing)
+            j.projectionMode = JointProjectionMode.None;
             j.enablePreprocessing = false;
+            // a little muscle tone and a lot of friction: a weak, damped pull back toward the pose it was thrown in
+            j.rotationDriveMode = RotationDriveMode.Slerp;
+            float m = p.rb.mass;
+            j.slerpDrive = new JointDrive { positionSpring = Tone * m, positionDamper = Friction * m, maximumForce = float.MaxValue };
             p.joint = j;
+        }
+
+        /// <summary>Joint muscle tone and friction, per kg of the part (N m per radian, N m s per radian).</summary>
+        public static float Tone = 4f, Friction = 0.6f;
+        /// <summary>
+        /// A powered start: for the first moments of a crash every joint pulls hard toward the pose the rider was in
+        /// when it hit (its rest, taken then), easing off to the plain tone over PoweredTime seconds. So the fall starts
+        /// from the riding pose and the body goes limp through it, instead of snapping limp on the first step.
+        /// </summary>
+        public static float PoweredTone = 60f, PoweredFriction = 3f, PoweredTime = 0.4f;
+        /// <summary>m/s: the fastest a body is thrown when a crash starts (a crash at 200 km/h still throws it hard).</summary>
+        public static float MaxThrow = 40f;
+        float sinceBegin;
+
+        /// <summary>Every joint's drive for this moment of the crash: powered at the start, fading to the plain tone.</summary>
+        void Drives(float t)
+        {
+            float k = 1f - Mathf.Clamp01(t / Mathf.Max(1e-3f, PoweredTime));
+            k = k * k * (3f - 2f * k);
+            float tone = Mathf.Lerp(Tone, PoweredTone, k), fric = Mathf.Lerp(Friction, PoweredFriction, k);
+            foreach (var p in parts)
+            {
+                if (p.joint is not ConfigurableJoint j || p.gone) continue;
+                float m = p.rb.mass;
+                j.slerpDrive = new JointDrive { positionSpring = tone * m, positionDamper = fric * m, maximumForce = float.MaxValue };
+            }
+        }
+
+        /// <summary>A joint's frame and limits: it bends about `axis` from `low` to `high` degrees (the twist, X), and
+        /// swings `swingY` about `along` and `swingZ` about the third axis, each either way. Both axes in the part's
+        /// own space.</summary>
+        static void Limits(ConfigurableJoint j, Vector3 axis, Vector3 along, float low, float high, float swingY, float swingZ)
+        {
+            j.axis = axis;
+            j.secondaryAxis = along;
+            low = Mathf.Clamp(low, -177f, 176f); high = Mathf.Clamp(high, low + 1f, 177f);
+            j.lowAngularXLimit = new SoftJointLimit { limit = low };
+            j.highAngularXLimit = new SoftJointLimit { limit = high };
+            j.angularYLimit = new SoftJointLimit { limit = Mathf.Clamp(swingY, 1f, 177f) };
+            j.angularZLimit = new SoftJointLimit { limit = Mathf.Clamp(swingZ, 1f, 177f) };
+        }
+
+        /// <summary>PhysX measures a joint's X angle the other way round to Unity's AngleAxis about the same axis.</summary>
+        public static float TwistSign = -1f;
+
+        /// <summary>
+        /// Every joint's axes and limits from the pose the body is in as it is thrown (the joints then take that pose
+        /// as their rest). The body's own frame (right across the hips, up the spine, forward) and each hinge's real
+        /// axis (the plane a knee or elbow is bent in, or the way it would bend if straight) set where each joint
+        /// can go: the same knee bends the same way however the rider was crouched or twisted when it hit.
+        /// </summary>
+        void Anatomy()
+        {
+            Vector3 right = rig.ThighR.position - rig.ThighL.position;
+            if (right.sqrMagnitude < 1e-6f) return;
+            right.Normalize();
+            Vector3 up = Vector3.ProjectOnPlane(rig.Chest.position - rig.Hips.position, right);
+            if (up.sqrMagnitude < 1e-6f) return;
+            up.Normalize();
+            Vector3 fwd = Vector3.Cross(right, up);
+            foreach (var p in parts)
+            {
+                if (p.joint is not ConfigurableJoint j || p.gone) continue;
+                Transform b = p.bone;
+                switch (p.kind)
+                {
+                    case Kind.Spine: Set(p, right, up, 0f, -25f, 40f, 30f, 25f); break;
+                    case Kind.Neck: Set(p, right, up, 0f, -40f, 45f, 55f, 30f); break;
+                    case Kind.Shoulder:
+                    {
+                        // the shoulder is a ball: a roll about the arm and a wide cone round it
+                        Vector3 arm = (b == rig.UpperL ? rig.LowerL.position : rig.LowerR.position) - b.position;
+                        if (arm.sqrMagnitude < 1e-6f) break;
+                        Vector3 perp = Vector3.Cross(arm, Mathf.Abs(Vector3.Dot(arm.normalized, fwd)) < 0.9f ? fwd : up);
+                        Limits(j, b.InverseTransformDirection(arm.normalized), b.InverseTransformDirection(perp.normalized), -40f, 40f, 85f, 85f);
+                        break;
+                    }
+                    case Kind.Elbow:
+                    {
+                        Transform upper = b == rig.LowerL ? rig.UpperL : rig.UpperR, hand = b == rig.LowerL ? rig.HandL : rig.HandR;
+                        Hinge(p, b.position - upper.position, hand.position - b.position, fwd, up, 0f, 145f, 40f, 5f);
+                        break;
+                    }
+                    case Kind.Hip:
+                    {
+                        // flexion swings the thigh forward (about -right); how far it is flexed now
+                        Transform shin = b == rig.ThighL ? rig.ShinL : rig.ShinR;
+                        Vector3 t = shin.position - b.position;
+                        float cur = Vector3.SignedAngle(-up, Vector3.ProjectOnPlane(t, right), -right);
+                        Set(p, -right, t, cur, -20f, 125f, 35f, 38f);
+                        break;
+                    }
+                    case Kind.Knee:
+                    {
+                        Transform thigh = b == rig.ShinL ? rig.ThighL : rig.ThighR, end = b == rig.ShinL ? rig.EndL : rig.EndR;
+                        Hinge(p, b.position - thigh.position, end.position - b.position, -fwd, up, 0f, 150f, 8f, 4f);
+                        break;
+                    }
+                }
+            }
+        }
+
+        /// <summary>A hinge (knee, elbow) between the bone above (u) and this one (w): its axis is the plane they are bent
+        /// in now, or, near straight, the way it would bend (toward `bendWay`); it bends from `min` to `max` degrees.</summary>
+        void Hinge(Part p, Vector3 u, Vector3 w, Vector3 bendWay, Vector3 alt, float min, float max, float roll, float sideways)
+        {
+            float bent = Vector3.Angle(u, w);
+            Vector3 h = bent > 10f ? Vector3.Cross(u, w) : Vector3.Cross(u, Mathf.Abs(Vector3.Dot(u.normalized, bendWay)) < 0.95f ? bendWay : alt);
+            if (h.sqrMagnitude < 1e-8f) return;
+            Set(p, h.normalized, w, bent > 10f ? bent : 0f, min, max, roll, sideways);
+        }
+
+        /// <summary>One joint: it bends about the world axis `axisW` (positive = the way Unity's AngleAxis turns), is bent
+        /// `cur` degrees now, and may go from `min` to `max`; `along` (world) is the part's length, for its roll.</summary>
+        void Set(Part p, Vector3 axisW, Vector3 along, float cur, float min, float max, float roll, float sideways)
+        {
+            var j = (ConfigurableJoint)p.joint;
+            Vector3 a = axisW.normalized, l = Vector3.ProjectOnPlane(along, a);
+            if (l.sqrMagnitude < 1e-8f) l = Vector3.ProjectOnPlane(Mathf.Abs(a.y) < 0.9f ? Vector3.up : Vector3.right, a);
+            min = Mathf.Min(min, cur); max = Mathf.Max(max, cur);   // (never thrown from outside its own limits)
+            float lo = TwistSign * (min - cur), hi = TwistSign * (max - cur);
+            Limits(j, p.bone.InverseTransformDirection(a), p.bone.InverseTransformDirection(l.normalized), Mathf.Min(lo, hi), Mathf.Max(lo, hi), roll, sideways);
         }
 
         // ---- limbs torn off (see RiderBodyLimbs): the joint to the body goes, the piece tumbles away on its own
@@ -385,11 +698,12 @@ namespace Summit
         /// </summary>
         public bool Sever(Transform bone, Vector3 kick)
         {
-            if (!Active) return false;
+            if (!Active || Frozen) return false;
             var p = PartOf(bone);
             if (p == null || p.free || p.parentRb == null) return false;
             if (p.joint != null) Kill(p.joint);
             p.joint = null;
+            Unbind(bone);   // a leg torn off takes its binding with it (the board stays on the other foot)
             var piece = new List<Part>();
             foreach (var q in parts) if ((q.bone == bone || q.bone.IsChildOf(bone)) && !q.gone) { q.free = true; piece.Add(q); }
             // its own slab of snow, for it alone
@@ -446,6 +760,8 @@ namespace Summit
         public void Carry(Vector3 flow, float rate, float dt)
         {
             if (!Active) return;
+            CarriedFor = 0.5f;   // (an avalanche moves it: never settled, see Settle)
+            if (Frozen) Thaw();
             float k = 1f - Mathf.Exp(-rate * dt);
             foreach (var p in parts)
             {
@@ -454,12 +770,16 @@ namespace Summit
                 p.rb.angularVelocity += Random.insideUnitSphere * (6f * k);
             }
             if (boardRb != null) boardRb.linearVelocity = Vector3.Lerp(boardRb.linearVelocity, flow, k * 0.7f);
+            foreach (var x in extras) if (x.rb != null) x.rb.linearVelocity = Vector3.Lerp(x.rb.linearVelocity, flow, k * 0.7f);
         }
 
         /// <summary>Each physics step: keep a slab of snow under the body and under the board.</summary>
         public void PhysicsStep()
         {
             if (!Active) return;
+            CarriedFor -= Time.fixedDeltaTime;
+            if (Frozen) { LooseStep(); return; }   // laid to rest where it lay (Settle); the loose gear still keeps to the snow
+            if (sinceBegin <= PoweredTime) { sinceBegin += Time.fixedDeltaTime; Drives(sinceBegin); }
             // tumbling into a sign or a flag breaks it / knocks it down (see Breakables)
             if (parts.Count > 0) Breakable.Probe(parts[0].rb.position, parts[0].rb.position, 0.9f, parts[0].col);
             // tumbling into a young tree or a snag fast enough snaps it, and the body carries on through (TreeBreak)
@@ -496,7 +816,16 @@ namespace Summit
                 if (parts[i].free || parts[i].gone) continue;   // a torn-off limb goes where it was thrown
                 Vector3 rel = parts[i].rb.linearVelocity - pv;
                 if (rel.sqrMagnitude > LimbMaxRel * LimbMaxRel) parts[i].rb.linearVelocity = pv + rel * (LimbMaxRel / rel.magnitude);
+                // and turning against the part it hangs from: a contact can jolt a thin limb into a spin that PhysX's
+                // own cap (applied before contacts are solved) lets through; take it back before the next step
+                var par = parts[i].parentRb;
+                if (par != null)
+                {
+                    Vector3 wr = parts[i].rb.angularVelocity - par.angularVelocity;
+                    if (wr.sqrMagnitude > JointMaxSpin * JointMaxSpin) parts[i].rb.angularVelocity = par.angularVelocity + wr * (JointMaxSpin / wr.magnitude);
+                }
             }
+            { var w0 = parts[0].rb.angularVelocity; if (w0.sqrMagnitude > 18f * 18f) parts[0].rb.angularVelocity = w0 * (18f / w0.magnitude); }
             Guide(gp, gn);
             PlaceSlab(groundBody, FloorPoint(Centre), false);
             if (Buried > 0f)
@@ -506,6 +835,7 @@ namespace Summit
                 groundBody.position = lowered; groundBody.transform.position = lowered;
             }
             if (boardRb != null) PlaceSlab(boardGroundBody, FloorPoint(boardRb.position), false);
+            LooseStep();
             foreach (var p in parts) if (p.slab != null) PlaceSlab(p.slab, FloorPoint(p.rb.position), false);
         }
 
@@ -574,10 +904,12 @@ namespace Summit
         public void Bury(float depth, Vector3 vel)
         {
             if (!Active) return;
+            if (Frozen) Thaw();
             Buried = depth;
             Vector3 v = new Vector3(vel.x * 0.12f, -Mathf.Clamp(depth * 6f, 5f, 9f), vel.z * 0.12f);
             foreach (var p in parts) if (!p.gone) { p.rb.linearVelocity = v; p.rb.angularVelocity *= 0.3f; }
-            if (boardRb != null) boardRb.linearVelocity = boardRb.linearVelocity * 0.3f + Vector3.up * 4f;   // the board flies on
+            if (boardRb != null && Held) boardRb.linearVelocity = v;   // strapped on: down with the feet
+            else if (boardRb != null) boardRb.linearVelocity = boardRb.linearVelocity * 0.3f + Vector3.up * 4f;   // the board flies on
         }
 
         /// <summary>Every frame while thrown: the feet are separate bones, so carry them on the shins.</summary>
@@ -586,6 +918,14 @@ namespace Summit
             if (!Active) return;
             rig.FootL.SetPositionAndRotation(rig.EndL.position, rig.ShinL.rotation * footRelL);
             rig.FootR.SetPositionAndRotation(rig.EndR.position, rig.ShinR.rotation * footRelR);
+        }
+
+        /// <summary>Done with for good (the rider's model is being swapped for another): the snow slabs go too.</summary>
+        public void Dispose()
+        {
+            if (Active) End();
+            if (groundBody != null) Kill(groundBody.gameObject);
+            if (boardGroundBody != null) Kill(boardGroundBody.gameObject);
         }
 
         // immediately, never deferred: a new crash can start in the very next physics step, and a deferred
@@ -597,20 +937,198 @@ namespace Summit
         {
             if (!Active) return;
             Active = false;
+            Frozen = false; CarriedFor = 0f;
             var gc = groundBody.GetComponent<Collider>();
             foreach (var p in parts) if (p.free && p.col.enabled) Physics.IgnoreCollision(p.col, gc, false);   // (only while both are live)
             foreach (var p in parts) Sleep(p);   // back to posed: kept, not destroyed
+            Unbind();
             var bi = board.GetComponent<Impact>(); if (bi != null) Kill(bi);
             if (boardRb != null) { boardRb.isKinematic = true; boardCol.enabled = false; Kill(boardCol); Kill(boardRb); boardRb = null; }
             groundBody.gameObject.SetActive(false);
             boardGroundBody.gameObject.SetActive(false);
+            EndExtras();
             var model = rig.Root;
             model.SetParent(modelHome, false);
             model.localPosition = modelPos; model.localRotation = modelRot; model.localScale = modelScale;
             board.SetParent(boardHome, false);
-            board.localPosition = boardPos; board.localRotation = boardRot;
+            board.localPosition = boardPos; board.localRotation = boardRot; board.localScale = boardScl;   // (as the loose gear: see EndExtras)
             rig.RestoreBind();
             Rejoin();   // any limb torn off is back on, its joint rebuilt at rest
+        }
+
+        // ---- never stuck. The body is thrown from where the board hit something, so the posed body above the board
+        // can start out partly inside it: the torso over a chalet's landing as the board hits its step, say. PhysX
+        // pushes a part out of each solid shape on its own, and where two of them overlap (a chalet's wall and its
+        // landing, deck, stair or terrace boxes) it pushed the part out of one into the other: the body locked there
+        // inside the wall, twitching at a metre or two a second, never asleep, and the fall never ended (the game
+        // waits for the body to read as still). So the body never starts inside anything (Begin), one found pinned
+        // later is lifted clear (Unwedge), and one that will not come to rest is laid down where it is (Settle).
+
+        static readonly Collider[] nearBuf = new Collider[48];
+
+        /// <summary>A collider the body can be stuck in: solid, standing still, and not the body, its gear or its snow.</summary>
+        bool Solid(Collider c)
+        {
+            if (c == null || c.isTrigger || c == riderCollider) return false;
+            var rb = c.attachedRigidbody;
+            if (rb != null && (!rb.isKinematic || rb == groundBody || rb == boardGroundBody || limbSlabs.Contains(rb))) return false;
+            return Of(c) == null;
+        }
+
+        /// <summary>How deep a collider would be inside solid things, moved by offset (and the way out of them, summed).</summary>
+        float Inside(Collider col, Vector3 pos, Quaternion rot, Vector3 offset, ref Vector3 outSum, HashSet<Collider> what = null)
+        {
+            var b = col.bounds;
+            int n = Physics.OverlapBoxNonAlloc(b.center + offset, b.extents + Vector3.one * 0.02f, nearBuf, Quaternion.identity, ~0, QueryTriggerInteraction.Ignore);
+            float deepest = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                var o = nearBuf[i];
+                if (!Solid(o)) continue;
+                if (Physics.ComputePenetration(col, pos + offset, rot, o, o.transform.position, o.transform.rotation, out var dir, out float d))
+                {
+                    deepest = Mathf.Max(deepest, d);
+                    outSum += dir * d;
+                    if (what != null && d > 0.05f) what.Add(o);
+                }
+            }
+            return deepest;
+        }
+
+        /// <summary>How deep the deepest part (or the board) is inside something solid right now, and the way out.</summary>
+        public float Embedded(out Vector3 way)
+        {
+            way = Vector3.zero;
+            if (!Active) return 0f;
+            float deepest = 0f;
+            foreach (var p in parts)
+                if (!p.gone && !p.free && p.col.enabled) deepest = Mathf.Max(deepest, Inside(p.col, p.rb.position, p.rb.rotation, Vector3.zero, ref way));
+            if (boardRb != null) deepest = Mathf.Max(deepest, Inside(boardCol, boardRb.position, boardRb.rotation, Vector3.zero, ref way));
+            return deepest;
+        }
+
+        static readonly HashSet<Collider> touched = new HashSet<Collider>();
+
+        /// <summary>Just thrown, and in two things at once or deep in one (the body, or the board)?</summary>
+        bool Cornered(bool theBoard)
+        {
+            touched.Clear();
+            return InsideAt(Vector3.zero, true, theBoard, touched) > 0.25f || touched.Count >= 2;
+        }
+
+        float InsideAt(Vector3 offset, bool posed, bool theBoard, HashSet<Collider> what = null)
+        {
+            Vector3 ignore = Vector3.zero;
+            float deepest = 0f;
+            foreach (var p in parts)
+            {
+                if (theBoard) break;
+                if (p.gone || p.free || !p.col.enabled) continue;
+                var t = p.rb.transform;
+                deepest = Mathf.Max(deepest, Inside(p.col, posed ? t.position : p.rb.position, posed ? t.rotation : p.rb.rotation, offset, ref ignore, what));
+            }
+            if (theBoard && boardRb != null)
+                deepest = Mathf.Max(deepest, Inside(boardCol, posed ? board.position : boardRb.position, posed ? board.rotation : boardRb.rotation, offset, ref ignore, what));
+            return deepest;
+        }
+
+        /// <summary>
+        /// Lift the body clear of anything solid it is inside, as one, and the board on its own: the nearest spot back
+        /// along `away` (and a little up, or to either side) where it is at most a touch into one thing. posed: the body has just been switched
+        /// on and its bones still say where it is. False if it was clear already, or nowhere near was.
+        /// </summary>
+        public bool Unwedge(Vector3 away, bool posed)
+        {
+            if (!Active || !Unstick) return false;
+            bool body = UnwedgeOne(away, posed, false);
+            return (boardRb != null && !Held && UnwedgeOne(away, posed, true)) || body;
+        }
+
+        /// <summary>The body, or the board on its own: moved the least that clears it.</summary>
+        bool UnwedgeOne(Vector3 away, bool posed, bool theBoard)
+        {
+            touched.Clear();
+            if (!Active || !Unstick || (InsideAt(Vector3.zero, posed, theBoard, touched) < 0.1f && touched.Count < 2)) return false;
+            if (tries.Count == 0)
+            {
+                // every move to try, the smallest first (back the way it came before sideways, at the same length)
+                foreach (float up in new[] { 0f, 0.3f, 0.6f, 1f })
+                    foreach (float b in new[] { 0f, 0.15f, 0.3f, 0.45f, 0.6f, 0.8f, 1f, 1.3f, 1.6f, 2f })
+                        for (int d = 0; d < 5; d++)
+                            if (up > 0f || b > 0f) tries.Add(new Vector3(d, b, up));
+                tries.Sort((x, y) => (x.y * x.y + x.z * x.z + x.x * 0.001f).CompareTo(y.y * y.y + y.z * y.z + y.x * 0.001f));
+            }
+            Vector3 side = Vector3.Cross(Vector3.up, away).normalized;
+            Vector3[] dirs = { away, (away + side).normalized, (away - side).normalized, side, -side };
+            foreach (var t in tries)
+            {
+                Vector3 o = dirs[(int)t.x] * t.y + Vector3.up * t.z;
+                // clear enough: at most a touch into one thing, which PhysX eases it out of by itself (the least move)
+                touched.Clear();
+                if (InsideAt(o, posed, theBoard, touched) >= 0.1f || touched.Count >= 2) continue;
+                Shift(o, posed, theBoard);
+                Unwedged++; LastUnwedge = o.magnitude;
+                return true;
+            }
+            return false;
+        }
+        static readonly List<Vector3> tries = new List<Vector3>();   // (which way, how far back, how far up)
+
+        void Shift(Vector3 o, bool posed, bool theBoard)
+        {
+            if (posed)
+            {
+                // the bones are the truth until the next step: move the model (every bone with it), or the board
+                if (theBoard) board.position += o; else { rig.Root.position += o; if (Strapped()) board.position += o; }
+                Physics.SyncTransforms();
+                return;
+            }
+            if (theBoard) boardRb.position += o;
+            else
+            {
+                foreach (var p in parts) if (!p.gone && !p.free) p.rb.position += o;
+                if (Held && boardRb != null) boardRb.position += o;   // (strapped on: it comes too)
+            }
+        }
+
+        /// <summary>Off only for the test tools' before-and-after numbers: no lifting clear, no settling.</summary>
+        public static bool Unstick = true;
+        /// <summary>How many times a body has been lifted clear of something it was inside (for the test tools).</summary>
+        public static int Unwedged;
+        /// <summary>How far the last one was moved (m).</summary>
+        public static float LastUnwedge;
+        /// <summary>Moved by an avalanche lately (s left): never settled while it is.</summary>
+        public float CarriedFor { get; private set; }
+        /// <summary>Laid to rest where it lay: no more physics until it is put away or the snow moves it.</summary>
+        public bool Frozen { get; private set; }
+
+        /// <summary>
+        /// A body that will not come to rest by itself: slow every part (and the board) hard this step, and once
+        /// `freeze` lay it down where it is, every part still. Nothing an avalanche is carrying is touched.
+        /// </summary>
+        public void Settle(float dt, bool freeze)
+        {
+            if (!Active || Frozen || CarriedFor > 0f) return;
+            float k = Mathf.Exp(-dt * 8f);
+            foreach (var p in parts)
+            {
+                if (p.gone || p.rb.isKinematic) continue;
+                p.rb.linearVelocity *= k; p.rb.angularVelocity *= k;
+                if (freeze) { p.rb.linearVelocity = Vector3.zero; p.rb.angularVelocity = Vector3.zero; p.rb.isKinematic = true; }
+            }
+            if (boardRb != null && !boardRb.isKinematic)
+            {
+                boardRb.linearVelocity *= k; boardRb.angularVelocity *= k;
+                if (freeze) { boardRb.linearVelocity = Vector3.zero; boardRb.angularVelocity = Vector3.zero; boardRb.isKinematic = true; }
+            }
+            Frozen = freeze;
+        }
+
+        void Thaw()
+        {
+            Frozen = false;
+            foreach (var p in parts) if (!p.gone) p.rb.isKinematic = false;
+            if (boardRb != null) boardRb.isKinematic = false;
         }
     }
 }

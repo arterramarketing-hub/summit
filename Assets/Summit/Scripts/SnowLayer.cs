@@ -19,6 +19,11 @@ namespace Summit
     /// in view the layer is switched off altogether.
     ///
     /// Marks persist while they are in the patch and flatten away over its last metre and a half as it moves on.
+    ///
+    /// The snow a body has touched has lost its grooming for good: a churn mask (one byte a cell, in the buffers' own
+    /// wrapped layout: _SnowChurn) that the terrain's shader (SnowSurface) and this layer's both read, filtered and
+    /// broken up by noise, so the churned, scuffed patch has soft, uneven edges where it meets the corduroy, never the
+    /// grid's steps. On ice a body only scuffs: its cells churn far less (snow.w, the ice under them).
     /// </summary>
     public class SnowLayer : MonoBehaviour
     {
@@ -55,7 +60,10 @@ namespace Summit
         public System.Action<Vector3, Vector3, float> Pressed;
 
         Vector4[] ground = new Vector4[Slots * Slots];   // x: terrain height, y/z: terrain normal x/z, w: 1 snow, 0 rock or a hole
-        Vector4[] snow = new Vector4[Slots * Slots];     // x: height change (m), y: packed 0..1, z: stain 0..1
+        Vector4[] snow = new Vector4[Slots * Slots];     // x: height change (m), y: packed 0..1, z: stain 0..1, w: ice under it 0..1 (a scuff, not a churn)
+        byte[] churn = new byte[Slots * Slots];          // how churned each cell's snow is (its grooming gone), for the shaders
+        Texture2D churnTex;
+        bool churnDirty;
         GraphicsBuffer groundBuf, snowBuf;
         Material mat, look;
         MeshRenderer mr;
@@ -67,7 +75,8 @@ namespace Summit
         bool stale = true;                               // the patch's snow has not been laid where it now is
         // the shader reads these as globals: the SRP batcher only sends a material's own (cbuffer) values
         static readonly int IdGround = Shader.PropertyToID("_SnowBase"), IdSnow = Shader.PropertyToID("_SnowDyn"),
-            IdGrid = Shader.PropertyToID("_SnowGrid"), IdParams = Shader.PropertyToID("_SnowParams"), IdStain = Shader.PropertyToID("_SnowStain");
+            IdGrid = Shader.PropertyToID("_SnowGrid"), IdParams = Shader.PropertyToID("_SnowParams"), IdStain = Shader.PropertyToID("_SnowStain"),
+            IdChurn = Shader.PropertyToID("_SnowChurn"), IdChurnOn = Shader.PropertyToID("_SnowChurnOn");
 
         public static SnowLayer Create(Material terrainSnow)
         {
@@ -84,12 +93,18 @@ namespace Summit
             if (template == null || terrainSnow == null) { enabled = false; return; }
             mat = new Material(template);
             mat.CopyPropertiesFromMaterial(terrainSnow);
+            // the groove relief (parallax) is switched on the terrain's material alone: on there, on here
+            if (terrainSnow.IsKeywordEnabled("_PARALLAXMAP")) mat.EnableKeyword("_PARALLAXMAP"); else mat.DisableKeyword("_PARALLAXMAP");
             mat.name = "SnowLayer";
             groundBuf = new GraphicsBuffer(GraphicsBuffer.Target.Structured, Slots * Slots, 16);
             snowBuf = new GraphicsBuffer(GraphicsBuffer.Target.Structured, Slots * Slots, 16);
             Shader.SetGlobalBuffer(IdGround, groundBuf);
             Shader.SetGlobalBuffer(IdSnow, snowBuf);
             Shader.SetGlobalVector(IdParams, new Vector4(Cell, Lift, FadeCells, 0f));
+            churnTex = new Texture2D(Slots, Slots, TextureFormat.R8, false, true) { name = "SnowChurn", wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Bilinear, hideFlags = HideFlags.HideAndDontSave };
+            churnTex.SetPixelData(churn, 0); churnTex.Apply(false);
+            Shader.SetGlobalTexture(IdChurn, churnTex);
+            Shader.SetGlobalFloat(IdChurnOn, 0f);
 
             // the grid: cell indices in uv, metres in the position (the shader puts each point on the terrain)
             int n = Shown + 1;
@@ -125,6 +140,8 @@ namespace Summit
             RenderPipelineManager.beginContextRendering -= BeforeRender;
             groundBuf?.Release(); snowBuf?.Release();
             groundBuf = snowBuf = null;
+            if (churnTex != null) { if (Application.isPlaying) Destroy(churnTex); else DestroyImmediate(churnTex); }
+            Shader.SetGlobalFloat(IdChurnOn, 0f);
             if (Instance == this) Instance = null;
         }
 
@@ -137,6 +154,7 @@ namespace Summit
         {
             if (!built) return;
             System.Array.Clear(snow, 0, snow.Length);
+            System.Array.Clear(churn, 0, churn.Length); churnDirty = true;
             mx1 = dx1 = sx1 = -1; mx0 = dx0 = sx0 = 0;
             mr.enabled = false;
             stale = true;   // laid afresh when something next presses in
@@ -161,7 +179,7 @@ namespace Summit
             ox = nx; oz = nz;
             // every mark has scrolled away: nothing to draw, and nothing to lay until something presses in again
             // (so riding along with no marks about costs nothing)
-            if (mx1 < mx0 || mx1 < ox || mx0 > ox + Shown || mz1 < oz || mz0 > oz + Shown) { mx1 = -1; mx0 = 0; mr.enabled = false; stale = true; }
+            if (mx1 < mx0 || mx1 < ox || mx0 > ox + Shown || mz1 < oz || mz0 > oz + Shown) { mx1 = -1; mx0 = 0; mr.enabled = false; stale = true; System.Array.Clear(churn, 0, churn.Length); churnDirty = true; }
             else if (fresh) Fill(ox, oz, ox + Shown, oz + Shown);
             else
             {
@@ -184,6 +202,7 @@ namespace Summit
             if (stale)
             {
                 System.Array.Clear(snow, 0, snow.Length);
+                System.Array.Clear(churn, 0, churn.Length); churnDirty = true;
                 Fill(ox, oz, ox + Shown, oz + Shown);
                 stale = false;
             }
@@ -209,7 +228,7 @@ namespace Summit
             int gw = gi1 - gi0 + 1, gd = gj1 - gj0 + 1;
             if (gh.Length < gw * gd) { gh = new float[gw * gd]; gcut = new bool[gw * gd]; grock = new sbyte[gw * gd]; }
             bool danger = false;
-            for (int j = gj0; j <= gj1 && !danger; j++) danger = Course.At(j * q) == Course.Section.Danger;
+            danger = gj0 * q < Course.GlacierBottom + 20f && gj1 * q > Course.GlacierTop - 20f;   // (only the glacier has crevasses)
             for (int j = 0; j < gd; j++)
                 for (int i = 0; i < gw; i++)
                 {
@@ -269,6 +288,7 @@ namespace Summit
                     int s = row + Mod(cx);
                     ground[s] = new Vector4(y, nx * inv, nz * inv, hole ? -1f : rock ? 0f : 1f);   // (-1: the shader cuts the layer away over a hole)
                     snow[s] = Vector4.zero;
+                    if (churn[s] != 0) { churn[s] = 0; churnDirty = true; }
                 }
             }
             Upload(groundBuf, ground, cx0, cz0, cx1, cz1);
@@ -306,10 +326,45 @@ namespace Summit
         public void Flush()
         {
             if (!built || ox == int.MinValue) return;
-            if (dx1 >= dx0) { Upload(snowBuf, snow, dx0, dz0, dx1, dz1); dx1 = -1; dx0 = 0; }
+            if (dx1 >= dx0) { Churn(dx0, dz0, dx1, dz1); Upload(snowBuf, snow, dx0, dz0, dx1, dz1); dx1 = -1; dx0 = 0; }
+            if (churnDirty) { churnTex.SetPixelData(churn, 0); churnTex.Apply(false); churnDirty = false; }
+            Shader.SetGlobalFloat(IdChurnOn, mr.enabled ? 1f : 0f);
             // follow the terrain material, in case something retints the snow
             if (look != null) { mat.SetColor("_BaseColor", look.GetColor("_BaseColor")); mat.SetFloat("_Smoothness", look.GetFloat("_Smoothness")); }
             Shader.SetGlobalColor(IdStain, StainColour);
+        }
+
+        /// <summary>
+        /// The churn of cells cx0..cx1, cz0..cz1 from what has been done to them: any dent, heap or packing takes the
+        /// grooming away (a few millimetres of either is enough); on ice only a scuff.
+        /// </summary>
+        void Churn(int cx0, int cz0, int cx1, int cz1)
+        {
+            cx0 = Mathf.Max(cx0, ox); cx1 = Mathf.Min(cx1, ox + Shown); cz0 = Mathf.Max(cz0, oz); cz1 = Mathf.Min(cz1, oz + Shown);
+            for (int cz = cz0; cz <= cz1; cz++)
+                for (int cx = cx0; cx <= cx1; cx++)
+                {
+                    int s = Slot(cx, cz);
+                    var d = snow[s];
+                    float c = Mathf.Clamp01(Mathf.Abs(d.x) / 0.012f + d.y * 1.4f + d.z * 0.5f) * (1f - 0.7f * d.w);
+                    byte b = (byte)Mathf.RoundToInt(c * 255f);
+                    if (b > churn[s]) { churn[s] = b; churnDirty = true; }   // (churned for good: never groomed again)
+                }
+        }
+
+        /// <summary>The cells round (x, z) within r: the ice under them, so a body there scuffs rather than churns.</summary>
+        void Icy(float x, float z, float r, float ice)
+        {
+            if (ice <= 0.01f) return;
+            int cx0 = Mathf.FloorToInt((x - r) / Cell), cx1 = Mathf.CeilToInt((x + r) / Cell);
+            int cz0 = Mathf.FloorToInt((z - r) / Cell), cz1 = Mathf.CeilToInt((z + r) / Cell);
+            for (int cz = cz0; cz <= cz1; cz++)
+                for (int cx = cx0; cx <= cx1; cx++)
+                {
+                    if (!InPatch(cx, cz)) continue;
+                    int s = Slot(cx, cz);
+                    var d = snow[s]; if (ice > d.w) { d.w = ice; snow[s] = d; }
+                }
         }
 
         // ---------------------------------------------------------------- pressing in
@@ -551,6 +606,12 @@ namespace Summit
                 float hit = Mathf.Max(down, wasDown);
                 sink += Mathf.Min(MaxHitSink, Mathf.Max(0f, hit - 1.2f) * HitSink) * (0.6f + 0.4f * heavy);
                 float pack = Mathf.Clamp01(0.35f + flat * 0.05f + hit * 0.06f);
+                // the snow it is in: deep powder takes the body in (a crater with walls), ice barely gives (a scuff)
+                var mix = Surfaces.Surface(mid.x, mid.z);
+                float give = 1f + 2.2f * mix.Deep + 0.5f * (mix.powder - mix.Deep) + 0.4f * mix.crud + 0.3f * mix.slush - 0.85f * mix.ice;
+                sink *= Mathf.Max(0.1f, give);
+                pack *= 1f - 0.7f * mix.ice;   // (ice is already as hard as it gets: a body only polishes it)
+                Icy(mid.x, mid.z, r * 1.6f, mix.ice);
                 Press(a, b, r, rDown, v, sink, pack);
             }
             Slump();

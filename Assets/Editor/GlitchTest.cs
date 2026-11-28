@@ -1,4 +1,7 @@
+using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -14,30 +17,39 @@ public static class GlitchTest
     const float Dt = 1f / 120f;
     static int issues;
     static string lastCrash = "";
+    static bool diedOnRock;
+    static bool threw;
 
     public static void Run()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
+        var game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        var terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        var props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        var rider = game.rider;
+        var body = game.body;
+        var terrain = game.terrain;
+        var props = game.props;
         rider.input = null;
         rider.Crash += why => lastCrash = why;
+        // every death must be a fall of Rider.DeathFall or more (one rule, wherever it happens)
+        body.Killed += fell =>
+        {
+            if (fell < Rider.DeathFall) Report($"killed by a fall of only {fell:0} m (the rule is {Rider.DeathFall:0} m)");
+            Vector3 c = body.RagdollCentre;
+            diedOnRock = RockFace.IsRock(Slope.Normal(c.x, c.z), c.x, c.z);   // (killed on rock: nothing to bury it in, by design)
+        };
         // no course dressing in the rides (signs and flags can now be hit): it was built for the boot mountain, not
         // for the seeds ridden here; BreakableRides builds it for its own rides
         var dressing = Object.FindFirstObjectByType<CourseDressing>();
         if (dressing != null) { var tgt = dressing.target; dressing.target = null; dressing.Rebuild(); dressing.target = tgt; }
         try
         {
+            int onlySeed = int.TryParse(System.Environment.GetEnvironmentVariable("GLITCH_SEED"), out int os) ? os : -1;   // (one mountain only, to chase a report)
             for (int seed = 0; seed < 4; seed++)
             {
-                Slope.Init(1000 + seed * 77);
-                terrain.Rebuild(); props.Rebuild();
+                if (onlySeed >= 0 && seed != onlySeed) continue;
+                TestBoot.NewMountain(game, 1000 + seed * 77, terrain, props);
                 // the halfpipe: weave wall to wall at different speeds
+                if (traceEdge) { RidgeRides(seed, rider, body, terrain, props); break; }
                 foreach (float v0 in new[] { 14f, 22f, 30f })
                     Ride($"seed{seed} pipe v{v0}", rider, body, terrain, props, Course.First + Course.PipeAt + 40f, 0f, v0, 7f,
                          (t, r) => Mathf.Sin(t * 1.3f) * 0.9f);
@@ -99,27 +111,26 @@ public static class GlitchTest
                 BreakableRides(seed, game, rider, body, terrain, props);
             }
         }
-        catch (System.Exception e) { Debug.LogError("GLITCH exception " + e); issues++; }
+        catch (System.Exception e) { Debug.LogError("GLITCH exception " + e); issues++; threw = true; }
         Debug.Log($"GLITCH done: {issues} issue(s)");
+        bool pass = Judge(threw);
         Physics.simulationMode = SimulationMode.FixedUpdate;
-        EditorApplication.Exit(0);
+        TestPrefs.Restore();
+        TestHarness.Exit(pass);
     }
 
     /// <summary>One jump-cliff ride traced step by step ($TRACE_SEED, cycle $TRACE_C, jump $TRACE_K, speed $TRACE_V).</summary>
     public static void Trace()
     {
-        EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
-        var game = Object.FindFirstObjectByType<SummitGame>();
-        TestBoot.Boot(game);
+        var game = TestHarness.Boot();
         Physics.simulationMode = SimulationMode.Script;
-        var rider = (Rider)typeof(SummitGame).GetField("rider", NP).GetValue(game);
-        var body = (RiderBody)typeof(SummitGame).GetField("body", NP).GetValue(game);
-        var terrain = (SlopeStreamer)typeof(SummitGame).GetField("terrain", NP).GetValue(game);
-        var props = (Forest)typeof(SummitGame).GetField("props", NP).GetValue(game);
+        var rider = game.rider;
+        var body = game.body;
+        var terrain = game.terrain;
+        var props = game.props;
         rider.input = null;
         string E(string k, string d) => System.Environment.GetEnvironmentVariable(k) ?? d;
-        Slope.Init(int.Parse(E("TRACE_SEED", "1154")));
-        terrain.Rebuild(); props.Rebuild();
+        TestBoot.NewMountain(game, int.Parse(E("TRACE_SEED", "1154")), terrain, props);
         Cliffs.JumpOf(int.Parse(E("TRACE_C", "1")), int.Parse(E("TRACE_K", "1")), out var j);
         float v0 = float.Parse(E("TRACE_V", "10"));
         int n = 0;
@@ -134,7 +145,8 @@ public static class GlitchTest
                          Debug.Log($"TRACE near: {c.name} ({c.GetType().Name}) at {c.bounds.center} trigger={c.isTrigger} parent={(c.transform.parent != null ? c.transform.parent.name : "-")}");
                  if (n++ % 3 == 0) Debug.Log($"TRACE t={t:0.000} z={p.z:0.00} x-c={p.x - Slope.Centre(p.z):0.00} y-ground={p.y - Slope.DrawnHeight(p.x, p.z) - Rider.R:0.00} v=({v.x:0.0},{v.y:0.0},{v.z:0.0}) air={rr.Airborne} n.y={Slope.Normal(p.x, p.z).y:0.00} fine={Ridge.Fine(Mathf.FloorToInt(p.x / Slope.Quad), Mathf.FloorToInt(p.z / Slope.Quad))}");
              }, true);
-        EditorApplication.Exit(0);
+        TestPrefs.Restore();
+        TestHarness.Exit(0);
     }
 
     /// <summary>What else is near a ragdoll part (a tree, a rock...), besides the body, the board and the snow slabs.</summary>
@@ -149,7 +161,72 @@ public static class GlitchTest
         return s == "" ? "nothing" : s;
     }
 
-    static void Report(string what) { issues++; if (issues < 2000) Debug.Log("GLITCH " + what); }
+    static void Report(string what)
+    {
+        issues++; if (issues < 2000) Debug.Log("GLITCH " + what);
+        string k = Kind(what);
+        kinds.TryGetValue(k, out int n); kinds[k] = n + 1;
+    }
+
+    // ---------------------------------------------------------------- the baseline
+    // The run reports a few hundred known issues (mostly jerks on landings, kickers and the pipe), so a plain count can
+    // never pass. Each issue has a kind (the ride and what went wrong, numbers dropped: "jumps: jerk # m/s^#"), and
+    // GlitchBaseline.txt holds how many of each kind main had. The run fails (exit 1) on a kind main never had, on a
+    // kind that rises by more than half again (and at least 3), on a rise of more than a quarter in all, or on an
+    // exception. GLITCH_BASELINE=write puts this run's counts in the file instead (after a change is understood).
+
+    static readonly Dictionary<string, int> kinds = new Dictionary<string, int>();
+    const string BaselinePath = "Assets/Editor/GlitchBaseline.txt";
+
+    /// <summary>An issue's kind: the ride's first word ("jumps", "superjump", "pipe"...) and the message, numbers as #.</summary>
+    static string Kind(string what)
+    {
+        string s = Regex.Replace(what, @"^seed\d+ ", "");
+        int colon = s.IndexOf(": ");
+        string ride = colon < 0 ? "" : s.Substring(0, colon).Split(' ')[0];
+        string msg = colon < 0 ? s : s.Substring(colon + 2);
+        msg = Regex.Replace(msg, @"\(.*$|;.*$| at t=.*$| at z=.*$", "");
+        msg = Regex.Replace(msg, @"-?\d+(\.\d+)?", "#").Trim();
+        return ride.Length > 0 ? ride + ": " + msg : msg;
+    }
+
+    /// <summary>Compare this run's kinds with the baseline; true if it passes.</summary>
+    static bool Judge(bool crashed)
+    {
+        var lines = new List<string>();
+        foreach (var kv in kinds) lines.Add($"{kv.Value}\t{kv.Key}");
+        lines.Sort((a, b) => string.CompareOrdinal(a.Substring(a.IndexOf('\t')), b.Substring(b.IndexOf('\t'))));
+        foreach (var l in lines) Debug.Log("GLITCH-KIND " + l);
+        if (System.Environment.GetEnvironmentVariable("GLITCH_BASELINE") == "write")
+        {
+            File.WriteAllLines(BaselinePath, lines);
+            Debug.Log($"GLITCH baseline written: {kinds.Count} kinds, {issues} issues ({BaselinePath})");
+            return !crashed;
+        }
+        if (System.Environment.GetEnvironmentVariable("GLITCH_SEED") != null) { Debug.Log("GLITCH one mountain only: no baseline check"); return !crashed; }
+        var base0 = new Dictionary<string, int>(); int baseTotal = 0;
+        if (File.Exists(BaselinePath))
+            foreach (var l in File.ReadAllLines(BaselinePath))
+            {
+                int tab = l.IndexOf('\t');
+                if (tab <= 0 || !int.TryParse(l.Substring(0, tab), out int c)) continue;
+                base0[l.Substring(tab + 1)] = c; baseTotal += c;
+            }
+        else Debug.Log($"GLITCH no baseline at {BaselinePath}: every kind is new");
+        int bad = 0;
+        foreach (var kv in kinds)
+        {
+            base0.TryGetValue(kv.Key, out int b);
+            if (b == 0) { bad++; Debug.Log($"GLITCH-NEW {kv.Value}x {kv.Key}"); }
+            else if (kv.Value > Mathf.Max(b * 1.5f, b + 3)) { bad++; Debug.Log($"GLITCH-RISE {kv.Key}: {kv.Value}, baseline {b}"); }
+        }
+        if (issues > baseTotal * 1.25f + 3) { bad++; Debug.Log($"GLITCH-RISE in all: {issues}, baseline {baseTotal}"); }
+        foreach (var kv in base0) if (!kinds.ContainsKey(kv.Key)) Debug.Log($"GLITCH-GONE {kv.Key} (baseline {kv.Value})");
+        bool pass = bad == 0 && !crashed;
+        Debug.Log(pass ? $"GLITCH PASS: {issues} issue(s) against a baseline of {baseTotal}, no new kinds"
+                       : $"GLITCH FAIL: {bad} new or risen kind(s){(crashed ? ", and an exception" : "")}; {issues} issue(s) against a baseline of {baseTotal}");
+        return pass;
+    }
 
     /// <summary>Falling into a crevasse, onto rock or off a cliff is the mountain, not a glitch in a jump or a smash.</summary>
     static bool Fell(string why) => why == "Crevasse!" || why == "Hit the rocks!" || why == "Cliffed!";
@@ -157,7 +234,7 @@ public static class GlitchTest
     /// <summary>One physics step of everything a fall needs.</summary>
     static void Step(Rider r, RiderBody body, SlopeStreamer terrain, Forest props, int n)
     {
-        r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+        TestHarness.Step(r, body, Dt);
         if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
         if (n % 4 == 0 || r.Crashed) body.Apply(r.Crashed ? Dt : 4 * Dt);
     }
@@ -236,14 +313,21 @@ public static class GlitchTest
                     Step(r, body, terrain, props, n);
                     if (r.Crashed) midAir = r.transform.position.y - Slope.DrawnHeight(r.transform.position.x, r.Z) - Rider.R;
                 }
-                if (!r.Crashed) { Report($"{name}: rode on without going over (z={r.Z:0} off={r.transform.position.x - Slope.Centre(r.Z):0.0})"); continue; }
+                // (a wall shorter than Rider.DeathFall is a hard landing or a crash you get up from: it may be ridden out)
+                if (!r.Crashed)
+                {
+                    float offW = (r.transform.position.x - Slope.Centre(r.Z)) * w.side;
+                    if (offW < w.edge) Report($"{name}: rode on without going over (z={r.Z:0} off={offW:0.0})");
+                    else Debug.Log($"GLITCH-INFO {name}: went over the {w.height:0} m wall and rode on (off={offW:0.0})");
+                    continue;
+                }
                 string why = lastCrash;
                 float buried = PlayOut(name, r, body, terrain, props, ref n, 16f, out float tDead, out float sank);
                 Debug.Log($"GLITCH-INFO {name}: '{why}' {midAir:0.00} m off the ground, dead={body.Dead} after {tDead:0.0}s, lies {buried:0.00} m under the snow");
                 if (midAir > 1.2f) Report($"{name}: fell off the board in mid-air ({midAir:0.0} m up)");
-                if (!body.Dead) Report($"{name}: survived going over a {w.height:0} m cliff ('{why}')");
+                if (!body.Dead && w.height >= Rider.DeathFall + 5f) Report($"{name}: survived going over a {w.height:0} m cliff ('{why}')");
                 // (dead on the rocks at the wall's foot is a death too: only on snow does the body go under)
-                else if (buried < 0.6f && !RockFace.IsRock(Slope.Normal(body.RagdollCentre.x, body.RagdollCentre.z), body.RagdollCentre.x, body.RagdollCentre.z)) Report($"{name}: dead but not buried ({buried:0.00} m)");
+                else if (body.Dead && buried < 0.6f && !RockFace.IsRock(Slope.Normal(body.RagdollCentre.x, body.RagdollCentre.z), body.RagdollCentre.x, body.RagdollCentre.z)) Report($"{name}: dead but not buried ({buried:0.00} m)");
                 if (sank > 0.6f) Report($"{name}: ragdoll sank {sank:0.00} m into the rock");
             }
         }
@@ -266,7 +350,7 @@ public static class GlitchTest
         for (float t = 0f; t < secs; t += Dt, n++)
         {
             r.Steer = steer(t, r);
-            r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt);
+            TestHarness.Step(r, body, Dt);
             if (n % 24 == 0) { terrain.Prewarm(); props.Prewarm(); }
             if (n % 4 == 0) body.Apply(4 * Dt);
             Vector3 p = r.Body.position, v = r.Body.linearVelocity;
@@ -276,17 +360,17 @@ public static class GlitchTest
             // a jerk: velocity changing far faster than gravity, landings or grip could manage
             float acc = (v - vprev).magnitude / Dt;
             bool landing = wasAir && !r.Airborne;
-            if (acc > 400f && !landing && !popped) Report($"{name}: jerk {acc:0} m/s^2 at t={t:0.00} z={p.z:0} x-c={p.x - Slope.Centre(p.z):0.0} air={r.Airborne} pipe={Course.InPipe(p.x, p.z)} v={v} prev={vprev}");
+            if (acc > 400f && !landing && !popped) Report($"{name}: jerk {acc:0} m/s^2 at t={t:0.00} z={p.z:0} x-c={p.x - Slope.Centre(p.z):0.0} air={r.Airborne} v={v} prev={vprev}");
             // a flip: the board turning more than 60 degrees in one step
             float dh = Mathf.Abs(Mathf.DeltaAngle(h0 * Mathf.Rad2Deg, r.Heading * Mathf.Rad2Deg));
-            if (dh > 60f) Report($"{name}: heading jumped {dh:0} deg at t={t:0.00} z={p.z:0} air={r.Airborne} landing={landing} pipe={Course.InPipe(p.x, p.z)}");
+            if (dh > 60f) Report($"{name}: heading jumped {dh:0} deg at t={t:0.00} z={p.z:0} air={r.Airborne} landing={landing}");
             // backwards: moving up the hill while on the snow outside the pipe
-            if (!r.Airborne && v.z < -3f && !Course.InPipe(p.x, p.z)) Report($"{name}: travelling backwards vz={v.z:0.0} at t={t:0.00} z={p.z:0}");
+            if (!r.Airborne && v.z < -3f) Report($"{name}: travelling backwards vz={v.z:0.0} at t={t:0.00} z={p.z:0}");
             // board facing against travel
             if (r.Speed > 6f && !r.Airborne)
             {
                 float rel = Mathf.Abs(Mathf.DeltaAngle(r.Heading * Mathf.Rad2Deg, r.TravelHeading * Mathf.Rad2Deg));
-                if (rel > 100f) Report($"{name}: board facing backwards ({rel:0} deg off travel) at t={t:0.00} z={p.z:0} pipe={Course.InPipe(p.x, p.z)}");
+                if (rel > 100f) Report($"{name}: board facing backwards ({rel:0} deg off travel) at t={t:0.00} z={p.z:0}");
             }
             // a teleport
             if ((p - p1).magnitude > v.magnitude * Dt * 2f + 0.5f) Report($"{name}: jumped {(p - p1).magnitude:0.0} m in a step at t={t:0.00}");
@@ -421,6 +505,7 @@ public static class GlitchTest
     /// mid-air), then a tumble down the wall, and from its full height, dead and buried in the canyon's snow. Over
     /// the snow side of a one-sided ridge: ridden all the way down into the canyon.
     /// </summary>
+    static readonly bool traceEdge = System.Environment.GetEnvironmentVariable("GLITCH_EDGE") == "1";
     static void OffTheEdge(string name, Rider r, RiderBody body, SlopeStreamer terrain, Forest props, float z, float side)
     {
         var kind = Ridge.SideAt(z, side);
@@ -434,6 +519,7 @@ public static class GlitchTest
             // over the edge, or diagonally down the snow side toward the canyon floor
             r.Steer = t < 1.5f ? FollowCrest(r, 0f) : cliff ? side * 0.8f : Mathf.Clamp((side * 0.75f - r.Heading) * 2f, -1f, 1f);
             Step(r, body, terrain, props, n);
+            if (traceEdge && n % 20 == 0) { var q = r.transform.position; Debug.Log($"GLITCH-EDGE {name} t={t:0.00} z={q.z:0.0} off={q.x - Slope.Centre(q.z):0.0} v={r.Velocity} speed={r.Speed:0.0} head={r.Heading:0.00} steer={r.Steer:0.00} air={r.Airborne} n.y={Slope.Normal(q.x, q.z).y:0.00}"); }
             if (r.Airborne) airT += Dt;
             if (r.Crashed) midAir = r.transform.position.y - Slope.DrawnHeight(r.transform.position.x, r.Z) - Rider.R;
         }
@@ -450,8 +536,9 @@ public static class GlitchTest
         }
         if (kind == Ridge.Side.Wall)
         {
-            // into the wall: rock, a tumble back down to the floor, and up again there
-            if (!r.Crashed) { Report($"{name}: rode into the valley wall without a fall (10 s) at off={off:0.0}"); return; }
+            // into the wall: rock is ridden now (no fall for touching it); if it does throw you, a tumble back down to the
+            // floor, and up again there
+            if (!r.Crashed) { Debug.Log($"GLITCH-INFO {name} (wall side): rode into the valley wall without a fall, at off={off:0.0}"); return; }
             string hit = lastCrash;
             float tc = 0f;
             for (; tc < 20f && r.Crashed; tc += Dt, n++)
@@ -462,14 +549,15 @@ public static class GlitchTest
             Vector3 up = r.transform.position;
             float upOff = up.x - Slope.Centre(up.z);
             Debug.Log($"GLITCH-INFO {name} (wall side): '{hit}' {midAir:0.00} m off the ground, dead={body.Dead}, up after {tc:0.0}s at off={upOff:0.0} (floor half {Ridge.HalfWidth(up.z):0.0})");
-            if (hit != "Hit the rocks!") Report($"{name}: fell for '{hit}', not onto the wall's rock");
             if (midAir > 1.2f) Report($"{name}: fell off the board in mid-air ({midAir:0.0} m up)");
             if (body.Dead) Report($"{name}: killed riding into the valley wall");
             else if (r.Crashed) Report($"{name}: never got up (20 s)");
             else if (Mathf.Abs(upOff) > Ridge.HalfWidth(up.z) + 1f) Report($"{name}: got up on the wall at off={upOff:0.0}, not on the floor");
             return;
         }
-        if (!r.Crashed) { Report($"{name}: rode off the edge without a fall (14 s) at z={r.Z:0} off={off:0.0} {below:0} m below the crest air={r.Airborne} above={r.AboveGround:0.0} n.y={Slope.Normal(at.x, at.z).y:0.00} rock={RockFace.IsRock(Slope.Normal(at.x, at.z), at.x, at.z)}"); return; }
+        // (rock is rideable: a ledge part way down can stop the fall, and the rest of the cliff be ridden down; the rule
+        // that matters is that a fall of Rider.DeathFall kills, checked by Killed above)
+        if (!r.Crashed) { Debug.Log($"GLITCH-INFO {name}: rode off the edge without a fall (14 s) at z={r.Z:0} off={off:0.0} {below:0} m below the crest air={r.Airborne} above={r.AboveGround:0.0} n.y={Slope.Normal(at.x, at.z).y:0.00}"); return; }
         string why = lastCrash;
         float buried = PlayOut(name, r, body, terrain, props, ref n, 30f, out float tDead, out float sank);
         Vector3 c = body.RagdollCentre;
@@ -477,8 +565,8 @@ public static class GlitchTest
                   $"lies {Ridge.Top(c.z) - c.y:0} m below the crest and {buried:0.00} m under the snow");
         if (!Fell(why)) Report($"{name}: fell for '{why}', not onto the rock (or the canyon floor)");
         if (midAir > 1.2f) Report($"{name}: fell off the board in mid-air ({midAir:0.0} m up)");
-        if (!body.Dead) Report($"{name}: survived {Ridge.Top(c.z) - c.y:0} m down the cliff");
-        else if (buried < 0.6f) Report($"{name}: dead but not buried ({buried:0.00} m)");
+        if (!body.Dead && why == "Cliffed!") Report($"{name}: fell {Ridge.Top(c.z) - c.y:0} m for 'Cliffed!' and lived");
+        else if (body.Dead && buried < 0.6f && !diedOnRock) Report($"{name}: dead but not buried ({buried:0.00} m)");
         if (sank > 0.6f) Report($"{name}: ragdoll sank {sank:0.00} m into the rock");
     }
 
@@ -489,7 +577,7 @@ public static class GlitchTest
         r.ResetAt(Slope.Centre(z), z); body.ResetVisual(); r.Begin();
         r.Body.linearVelocity = Vector3.forward * v0;
         terrain.Prewarm(); props.Prewarm();
-        for (int i = 0; i < 30; i++) { r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt); }
+        for (int i = 0; i < 30; i++) { TestHarness.Step(r, body, Dt); body.Apply(Dt); }
         r.DoCrash("test");
         var rbs = new System.Collections.Generic.List<Rigidbody>();
         float maxV = 0f, maxW = 0f, maxSpread = 0f, maxBelow = 0f, stopT = -1f; string spinner = ""; int jitterFrames = 0, frames = 0;
@@ -497,8 +585,8 @@ public static class GlitchTest
         for (float t = 0f; t < 8f; t += Dt)
         {
             r.Steer = steer != null ? steer(t) : 0f;
-            if (r.CanGetUp) r.RequestUp = true;   // tap to get up as soon as the game allows
-            r.Tick(Dt); body.PhysicsStep(); Physics.Simulate(Dt); body.Apply(Dt);
+            if (r.CanGetUp && !body.RagdollMoving) r.RequestUp = true;   // tap to get up once the body has come to rest (a tap allowed mid-tumble would cut the fall short: the whole tumble is what's measured here)
+            TestHarness.Step(r, body, Dt); body.Apply(Dt);
             if (rbs.Count == 0) foreach (var rb in Object.FindObjectsByType<Rigidbody>(FindObjectsSortMode.None)) if (!rb.isKinematic && rb != r.Body) rbs.Add(rb);
             Vector3 c = body.RagdollCentre;
             foreach (var rb in rbs)
@@ -508,10 +596,14 @@ public static class GlitchTest
                 maxV = Mathf.Max(maxV, rb.linearVelocity.magnitude);
                 if (rb.angularVelocity.magnitude > maxW) { maxW = rb.angularVelocity.magnitude; spinner = rb.name; }
                 if (rb.angularVelocity.magnitude > 40f) jitterFrames++;
-                if (rb.name != "Board" && (rb.position - c).magnitude > maxSpread) { maxSpread = (rb.position - c).magnitude; if (maxSpread > 1.3f) spikeNote += $" | spread {rb.name} {maxSpread:0.00} at t={t:0.00} near {Near(rb.position, rbs)}"; }
+                // (only while thrown: on the step you get up the body is put away and the rider steps clear of the tree
+                // that stopped it, a few metres off, which is not the body coming apart)
+                if (r.Crashed && rb.name != "Board" && (rb.position - c).magnitude > maxSpread) { maxSpread = (rb.position - c).magnitude; if (maxSpread > 1.3f) spikeNote += $" | spread {rb.name} {maxSpread:0.00} at t={t:0.00} near {Near(rb.position, rbs)}"; }
                 if (float.IsNaN(rb.position.x)) { Report($"{name}: ragdoll NaN"); return; }
             }
             maxBelow = Mathf.Max(maxBelow, Slope.DrawnHeight(c.x, c.z) - c.y);
+            if (name == System.Environment.GetEnvironmentVariable("GLITCH_TRACE") && (frames % 30 == 0 || Slope.DrawnHeight(c.x, c.z) - c.y > 0.6f && frames % 6 == 0))
+                Debug.Log($"GLITCH-TRACE t={t:0.00} c={c} snow={Slope.DrawnHeight(c.x, c.z):0.00} x-c={c.x - Slope.Centre(c.z):0.0} crevasse={Course.CrevasseNear(c.x, c.z, 4f)} cut={Course.CrevasseCut(c.x, c.z):0.0} v={body.RagdollSpeed:0.0} moving={body.RagdollMoving} canUp={r.CanGetUp} hold={r.HoldCrash} pending={body.FallPending} dead={body.Dead} buried={body.RagdollBelowSnow:0.0} near {Near(c, rbs)}");
             if (r.Crashed) rest = c;
             frames++;
             if (!r.Crashed) { stopT = t; break; }

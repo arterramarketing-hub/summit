@@ -36,6 +36,7 @@ Shader "Summit/SignLit"
             #pragma multi_compile_fragment _ _SHADOWS_SOFT
             #pragma multi_compile_fog
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+            #include "../Shaders/Farview.hlsl"   // (it comes in through the world's far band, pixel by pixel)
             TEXTURE2D(_BaseMap); SAMPLER(sampler_BaseMap);
             // the headlamp (DayNight.Headlamp): position, aim, colour times strength, and its cone and reach
             float4 _LampPos;      // xyz; w 1 when on
@@ -61,6 +62,7 @@ Shader "Summit/SignLit"
             }
             half4 frag(Varyings i) : SV_Target
             {
+                FarviewClip(i.positionWS, i.positionCS);
                 half3 albedo = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, i.uv).rgb * _BaseColor.rgb;
                 float3 n = normalize(i.normalWS);
                 // the scene's light, as on any matte surface: sky light, the sun or moon, lamps

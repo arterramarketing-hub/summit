@@ -9,6 +9,10 @@
 // pressed in, the snow at the bottom is packed: a touch darker, cooler and smoother. Where it is thrown up, it is
 // fresh, bright and matte.
 //
+// The wind grooves have a little depth, as on the terrain: the snow material's height map shifts the texture lookup
+// with the view angle (parallax), by URP Lit's own function and the terrain's own values, so the two still agree.
+// It follows the terrain material's _PARALLAXMAP keyword (SnowLayer.cs): off there, off here.
+//
 // Holes go deeper than the terrain surface. The terrain would hide them, so their depth is written as if they sat
 // just above it (their colour still comes from where they really are): nothing that belongs above the snow is ever
 // hidden by this, and anything below the snow was hidden by the terrain anyway.
@@ -22,6 +26,8 @@ Shader "Summit/SnowLayer"
         _Metallic ("Metallic", Range(0, 1)) = 0
         _BumpScale ("Normal scale", Float) = 1
         [Normal] _BumpMap ("Normal map", 2D) = "bump" {}
+        _Parallax ("Groove depth (parallax)", Float) = 0
+        _ParallaxMap ("Groove height", 2D) = "black" {}
         _DetailMask ("Detail mask", 2D) = "white" {}
         _DetailAlbedoMapScale ("Detail albedo scale", Range(0, 2)) = 1
         _DetailAlbedoMap ("Detail albedo", 2D) = "linearGrey" {}
@@ -43,6 +49,7 @@ Shader "Summit/SnowLayer"
         float4 _SnowGrid;     // x/y: the patch's first cell (x, z), z: cells per side in the buffers, w: cells shown per side
         float4 _SnowParams;   // x: cell size (m), y: lift of disturbed snow over the terrain, z: fade-out band (cells)
         half4 _SnowStain;     // what a stain looks like; a: how strongly
+        #define SUMMIT_SNOWGRID_DECLARED 1
 
         uint SlotOf(int i, int j)
         {
@@ -70,6 +77,7 @@ Shader "Summit/SnowLayer"
             float3 positionWS;   // where the snow really is
             float3 depthWS;      // where it counts as being for depth (never below the terrain) and shadows
             float3 normalWS;
+            float3 groundWS;     // the terrain's own smooth normal, without the dents
             float4 mark;         // x: height change, y: packed, z: stain
             float hole;          // 1 over a hole in the terrain (a crevasse): nothing is drawn there
         };
@@ -87,6 +95,10 @@ Shader "Summit/SnowLayer"
             float h = d.x * f, k = d.y * f, st = d.z * f;
             // untouched snow is the terrain's job: tuck this layer out of sight under it
             bool untouched = abs(h) < 0.0015 && k < 0.01 && st < 0.01;
+            // the snow's shape rounded off a little with its neighbours': loose snow has no flat plates and sharp
+            // steps, which is what the 12.5 cm grid's own heights look like close to
+            float hr = HeightAt(i + 1, j), hl = HeightAt(i - 1, j), hu = HeightAt(i, j + 1), hd = HeightAt(i, j - 1);
+            h = lerp(h, (hr + hl + hu + hd) * 0.25, 0.45);
             float3 p = TransformObjectToWorld(positionOS);
             // disturbed snow sits a few millimetres proud of the terrain so the two never fight, but the barely
             // touched edge of a mark comes down to meet it: no step, nothing to show where the layer starts
@@ -97,11 +109,11 @@ Shader "Summit/SnowLayer"
             if (!untouched) o.depthWS.y = max(p.y, b.x + 0.004);
             // the terrain's own smooth normal, tilted by the slope of the dents and piles
             float c2 = 2.0 * _SnowParams.x;
-            float hr = HeightAt(i + 1, j), hl = HeightAt(i - 1, j), hu = HeightAt(i, j + 1), hd = HeightAt(i, j - 1);
             float hx = (hr - hl) / c2;
             float hz = (hu - hd) / c2;
             float3 nb = float3(b.y, sqrt(saturate(1.0 - b.y * b.y - b.z * b.z)), b.z);
             o.normalWS = normalize(nb / max(nb.y, 0.05) - float3(hx, 0, hz));
+            o.groundWS = nb;
             // how hollow (+) or crested (-) the snow is here: the floor and foot of a dent get less light from the
             // sky, the crest of a rim catches it
             o.mark = float4(h, k, st, (hr + hl + hu + hd) * 0.25 - h);
@@ -132,7 +144,10 @@ Shader "Summit/SnowLayer"
             #pragma multi_compile_fragment _ _ADDITIONAL_LIGHT_SHADOWS
             #pragma multi_compile_fragment _ _SHADOWS_SOFT
             #pragma multi_compile_fog
+            // the groove relief: both ways are always built, and SnowLayer.cs picks the one the terrain is using
+            #pragma multi_compile_local_fragment _ _PARALLAXMAP
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+            #include "SnowSurfaceLook.hlsl"
 
             struct Attributes { float4 positionOS : POSITION; float2 cell : TEXCOORD0; };
             struct Varyings
@@ -145,6 +160,7 @@ Shader "Summit/SnowLayer"
                 float4 mark : TEXCOORD4;
                 half fog : TEXCOORD5;
                 half hole : TEXCOORD6;
+                float3 groundWS : TEXCOORD7;
             };
 
             Varyings vert(Attributes v)
@@ -155,6 +171,7 @@ Shader "Summit/SnowLayer"
                 o.positionWS = s.positionWS;
                 o.shadowWS = s.depthWS;   // a hole below the terrain must not sit in the terrain's own shadow
                 o.normalWS = s.normalWS;
+                o.groundWS = s.groundWS;
                 // the terrain's mapping: metres / 9, then the material's tiling
                 float2 metres9 = s.positionWS.xz / 9.0;
                 o.uv = TRANSFORM_TEX(metres9, _BaseMap);
@@ -167,8 +184,24 @@ Shader "Summit/SnowLayer"
             half4 frag(Varyings i) : SV_Target
             {
                 clip(0.5 - i.hole);
+                float3 viewWS = GetWorldSpaceNormalizeViewDir(i.positionWS);
+                float2 uv = i.uv;
+            #if defined(_PARALLAXMAP)
+                // the grooves' depth, exactly as URP Lit gives it to the terrain: the same height map, the same
+                // depth and the same function, looked along in the terrain's own frame (its smooth normal, not the
+                // dented one, with the tangents of its mapping), so the lookup shifts the same way in both.
+                // The terrain can never be seen from behind; a steep patch edge must not be either.
+                float3 gn = normalize(i.groundWS);
+                float3 gt = normalize(float3(1, 0, 0) - gn * gn.x);
+                float3 gb = cross(gt, gn);
+                half3 viewTS = half3(dot(gt, viewWS), dot(gb, viewWS), max(dot(gn, viewWS), 0.0));
+                uv += ParallaxMapping(TEXTURE2D_ARGS(_ParallaxMap, sampler_ParallaxMap), viewTS, _Parallax, uv);
+            #endif
                 SurfaceData s;
-                InitializeStandardLitSurfaceData(i.uv, s);
+                InitializeStandardLitSurfaceData(uv, s);
+                // the snow underfoot exactly as the terrain draws it (its corduroy, ice, powder, crud and slush, and the
+                // churned snow where a body has been), so where the two meet they are the same snow
+                SnowSurface(i.positionWS, uv, s);
                 float h = i.mark.x;
                 half k = saturate(i.mark.y), st = saturate(i.mark.z);
                 half fresh = saturate(h / 0.05);
@@ -179,7 +212,7 @@ Shader "Summit/SnowLayer"
                 s.smoothness = lerp(s.smoothness, 0.55, k * 0.8);
                 s.normalTS = normalize(lerp(s.normalTS, half3(0, 0, 1), k * 0.75));
                 // snow thrown up on the rims: fresh, bright and matte
-                s.albedo = lerp(s.albedo, min(s.albedo * 1.14, 1.0), max(fresh, crest * 0.5 * saturate(h / 0.02)));
+                s.albedo = lerp(s.albedo, min(s.albedo * 1.07, 1.0), max(fresh, crest * 0.5 * saturate(h / 0.02)));
                 s.smoothness = lerp(s.smoothness, 0.16, fresh);
                 // a stain soaked into the snow (blood, say), wet and a little glossy
                 half sa = st * _SnowStain.a;
@@ -199,7 +232,7 @@ Shader "Summit/SnowLayer"
                 d.positionWS = i.positionWS;
                 d.positionCS = i.positionCS;
                 d.normalWS = nw;
-                d.viewDirectionWS = GetWorldSpaceNormalizeViewDir(i.positionWS);
+                d.viewDirectionWS = viewWS;
                 d.shadowCoord = TransformWorldToShadowCoord(i.shadowWS);
                 d.fogCoord = i.fog;
                 d.bakedGI = SampleSH(nw);

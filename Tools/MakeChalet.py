@@ -19,6 +19,9 @@
 
 import bpy, bmesh, math, sys
 from mathutils import Vector, Matrix, Euler
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # (Tools/blendkit.py)
+from blendkit import mat4, cube, cone
 
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 OUT = argv[0] if argv else "Chalet.fbx"
@@ -73,14 +76,10 @@ def add(src, mat, m, full_uv=False):
     src.free()
 
 
-def mat4(pos, size=(1, 1, 1), rot=(0, 0, 0)):
-    return Matrix.Translation(Vector(pos)) @ Euler([math.radians(a) for a in rot], "XYZ").to_matrix().to_4x4() @ Matrix.Diagonal(Vector((*size, 1)))
 
 
 def box(mat, pos, size, rot=(0, 0, 0)):
-    b = bmesh.new()
-    bmesh.ops.create_cube(b, size=1.0)
-    add(b, mat, mat4(pos, size, rot))
+    add(cube(), mat, mat4(pos, size, rot))
 
 
 def span(mat, a, b_, t):
@@ -88,15 +87,12 @@ def span(mat, a, b_, t):
     a, b_ = Vector(a), Vector(b_)
     d = b_ - a
     rot = d.to_track_quat("Z", "Y").to_matrix().to_4x4()
-    b = bmesh.new()
-    bmesh.ops.create_cube(b, size=1.0)
-    add(b, mat, Matrix.Translation((a + b_) / 2) @ rot @ Matrix.Diagonal(Vector((t, t, d.length, 1))))
+    add(cube(), mat, Matrix.Translation((a + b_) / 2) @ rot @ Matrix.Diagonal(Vector((t, t, d.length, 1))))
 
 
 def cyl(mat, pos, r, h, seg=12, r2=None, rot=(0, 0, 0)):
     """A cylinder (or cone) standing on pos along the game's up axis."""
-    b = bmesh.new()
-    bmesh.ops.create_cone(b, cap_ends=True, segments=seg, radius1=r, radius2=r if r2 is None else r2, depth=h)
+    b = cone(r, h, seg, r2)
     up = Matrix.Rotation(math.radians(-90), 4, "X")  # its Z along the game's y
     add(b, mat, mat4(pos, (1, 1, 1), rot) @ Matrix.Translation((0, h / 2, 0)) @ up)
 

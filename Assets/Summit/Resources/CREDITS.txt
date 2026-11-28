@@ -1,20 +1,36 @@
 Third-party assets are CC0 (public domain) unless marked otherwise below; credit is given with thanks.
 
-Trees (PineTree_Snow_1-5) and rocks (Rock_Snow_1-7): Ultimate Nature Pack by Quaternius
+Trees (PineTree_Snow_1-5): Ultimate Nature Pack by Quaternius
   https://opengameart.org/content/low-poly-nature-pack-1
+Rocks (ScanRocks/ScanRock_1-6): photo-scanned boulders, CC0, Poly Haven - "Namaqualand Boulder 04" by
+  Jenelle van Heerden, "Namaqualand Boulder 05" by Jenelle van Heerden (modeling) and Dario Barresi (photography),
+  "Namaqualand Boulder 06" by Jenelle van Heerden (modeling) and Greg Zaal (photography), "Boulder 01" by
+  Rico Cilliers, "Rock Moss Set 02" by Kless Gyzen
+  https://polyhaven.com/a/namaqualand_boulder_04  https://polyhaven.com/a/namaqualand_boulder_06
+  https://polyhaven.com/a/namaqualand_boulder_05  https://polyhaven.com/a/boulder_01  https://polyhaven.com/a/rock_moss_set_02
+  (cut down to 900 triangles each, re-baked into one atlas and graded grey by Tools/MakeScanRocks.py)
 Realistic trees (RealTrees/FirCards.png): fir twig and bark textures from "Fir Tree 01" by Rob Tuytel (photography)
   and Rico Cilliers (modeling), CC0, Poly Haven - https://polyhaven.com/a/fir_tree_01
   (twigs cut out, stamped into branch fronds, snowed on and packed into an atlas by Tools/MakeFirCards.swift)
+Pines and dead snags (RealTrees/PineCards.png): needle shoots and bark textures from "Pine Tree 01" by Rob Tuytel
+  (photography) and Rico Cilliers (modeling), CC0, Poly Haven - https://polyhaven.com/a/pine_tree_01
+  (shoots cut out, stamped into pads and boughs, snowed on and packed into an atlas by Tools/MakeTrees.py, which
+  also builds every tree's mesh: RealTrees/Trees.bytes)
 Former rider (replaced): Animated Human by Quaternius
   https://opengameart.org/content/animated-human-low-poly
 Rider: "Adventurer" from Ultimate Modular Men by Quaternius (CC0)
   https://poly.pizza/m/5EGWBMpuXq
 Bear: Running Brown Bear by Google Data Arts Team [CC-BY 3.0] (https://creativecommons.org/licenses/by/3.0/)
   via Poly Pizza (https://poly.pizza/m/Coppphok4P)
+Rock faces (Resources/RockTex/RockAlbedo.png, RockRelief.png): "Rock Face 03" by Dario Barresi (photography)
+  and Rico Cilliers (processing), CC0, Poly Haven - https://polyhaven.com/a/rock_face_03
+  (its detail regraded to the game's granite, its normal and height maps packed into one texture, by Tools/MakeRockScan.py)
 Sign and banner lettering rendered to textures by Tools/MakeSigns.swift
-All sounds are synthesised from scratch by Tools/MakeAudio.swift (no recordings)
+Sounds were first synthesised by Tools/MakeAudio.swift; most are recordings now (listed below)
 Backdrop photo: "Mount Rainier panorama" by Deathgleaner, stitched by Richardprins, public domain
   https://commons.wikimedia.org/wiki/File:Mount_Rainier_panorama.jpg (edited by hand to Tools/art/rainier-edit.jpg, then sky keyed out and colour graded by Tools/MakePhotoBand.swift)
+Crevasse ice (Resources/Ice/IceAlbedo.png, IceNormal.png): "Ice 004" by ambientCG (Lennart Demes), CC0
+  https://ambientcg.com/a/Ice004 (green taken out, height packed into the alpha and blocks tilted in the normal map by Tools/MakeIce.py)
 Avalanche powder puffs (Resources/Avalanche/PuffAtlas.png) painted procedurally by Tools/MakeAvalanche.swift
 Avalanche debris clods (Resources/Avalanche/DebrisClods.png) painted procedurally by Tools/MakeAvalanche.swift
 Skies (Resources/Sky/SkyMorning, SkyDay, SkyEvening, SkyNight): CC0 HDRIs from Poly Haven - https://polyhaven.com
@@ -23,3 +39,98 @@ Skies (Resources/Sky/SkyMorning, SkyDay, SkyEvening, SkyNight): CC0 HDRIs from P
   evening: "Belfast Sunset (Pure Sky)" by Greg Zaal, Dimitrios Savva and Jarod Guest - https://polyhaven.com/a/belfast_sunset_puresky
   night: "Kloppenheim 02 (Pure Sky)" by Greg Zaal and Jarod Guest - https://polyhaven.com/a/kloppenheim_02_puresky
   (turned to put each sun where the game's light is, the ground below the horizon replaced with haze, and stored as JPEG by Tools/MakeSkies.swift)
+
+Riders (Resources/Rider/Hero, HeroF, Buddy, Breanna, BreannaPJ, Paul, PaulB, and their palette, face and pyjama-print
+  pictures): made for Summit by Tools/MakeHero.py (Blender), nothing downloaded. Pajama Buddy Val, Breanna and Paul are
+  modelled from photos their owner supplied (the photos themselves are not part of the game or its files). Val's hair follows the usual build of stylised game hair (layered locks over a cap), worked out from
+  looking at reference pictures online; no model or texture was taken from them.
+
+Sound effects and music swapped in on 2026-11-20 (CC0 / free for commercial use; previews from each source):
+wind_low.wav: air_rush.wav (by ChemiCatz, id 267899) - Freesound - Creative Commons 0 - https://freesound.org/people/ChemiCatz/sounds/267899/
+wind_high.wav: air over mic.wav (by cognito perceptu, id 20108) - Freesound - Creative Commons 0 - https://freesound.org/people/cognito%20perceptu/sounds/20108/
+glide.wav: Snowboard_Slide_Loop_Mono_04.wav (by Nox_Sound, id 612662) - Freesound - Creative Commons 0 - https://freesound.org/people/Nox_Sound/sounds/612662/
+carve.wav: Snowboarding_snowboard_downhill_turning_carving_snow_ice_crunch_stop_jump_land_landing_jumps_01.wav - Sonniss GDC bundle - Sonniss GDC Bundle licence: royalty-free, commercial use, no attribution; AI/ML training prohibited (https://sonniss.com/gdc-bundle-license/) - https://sonniss.com/gameaudiogdc
+skid.wav: Skiing_ski_downhill_turning_carving_snow_ice_crunch_stop_01.wav - Sonniss GDC bundle - Sonniss GDC Bundle licence: royalty-free, commercial use, no attribution; AI/ML training prohibited (https://sonniss.com/gdc-bundle-license/) - https://sonniss.com/gameaudiogdc
+powder.wav: kastar snöklumpar 1.wav (by Ryding, id 94368) - Freesound - Creative Commons 0 - https://freesound.org/people/Ryding/sounds/94368/
+pop.wav: snöklump i snö 2.wav (by Ryding, id 94354) - Freesound - Creative Commons 0 - https://freesound.org/people/Ryding/sounds/94354/
+whoosh.wav: Woosh (by florianreichelt, id 683096) - Freesound - Creative Commons 0 - https://freesound.org/people/florianreichelt/sounds/683096/
+land_1.wav: snöklump i snö 2.wav (by Ryding, id 94354) - Freesound - Creative Commons 0 - https://freesound.org/people/Ryding/sounds/94354/
+land_2.wav: kastar snöklumpar 1.wav (by Ryding, id 94368) - Freesound - Creative Commons 0 - https://freesound.org/people/Ryding/sounds/94368/
+land_3.wav: kastar snöklumpar 1.wav (by Ryding, id 94368) - Freesound - Creative Commons 0 - https://freesound.org/people/Ryding/sounds/94368/
+crash.wav: Ski_skiing_downhill_fall_falling_03.wav - Sonniss GDC bundle - Sonniss GDC Bundle licence: royalty-free, commercial use, no attribution; AI/ML training prohibited (https://sonniss.com/gdc-bundle-license/) - https://sonniss.com/gameaudiogdc
+thump_1.wav: brottas i snö 2.wav (by Ryding, id 94366) - Freesound - Creative Commons 0 - https://freesound.org/people/Ryding/sounds/94366/
+thump_2.wav: brottas i snö 2.wav (by Ryding, id 94366) - Freesound - Creative Commons 0 - https://freesound.org/people/Ryding/sounds/94366/
+thump_3.wav: brottas i snö 2.wav (by Ryding, id 94366) - Freesound - Creative Commons 0 - https://freesound.org/people/Ryding/sounds/94366/
+hit_tree.wav: FXSaSc Wood Tree Trunk Impact Ground Forest 5 Variants (by Profispiesser, id 550918) - Freesound - Creative Commons 0 - https://freesound.org/people/Profispiesser/sounds/550918/
+smash_wood.wav: Crate Break 4.wav (by kevinkace, id 66780) - Freesound - Creative Commons 0 - https://freesound.org/people/kevinkace/sounds/66780/
+Trees breaking (Audio/TreeSfx/tree_*.wav, added 2026-11-26, cut, layered and pitched by hand from these three):
+  tree_twig_*, and the splinters in tree_limb_3 and tree_trunk_*: Twigs Breaking (by Elements-Library, id 683793) - Freesound - Creative Commons 0 - https://freesound.org/people/Elements-Library/sounds/683793/
+  tree_limb_*, and slowed and doubled in tree_trunk_*: Wood Break.wav (by Deathscyp, id 443293) - Freesound - Creative Commons 0 - https://freesound.org/people/Deathscyp/sounds/443293/
+  tree_snow_*, and its low end in tree_thud_* and tree_trunk_*: Snow falling from the trees 2-12-2010.mp3 (by Barbamiz, id 116136) - Freesound - Creative Commons 0 - https://freesound.org/people/Barbamiz/sounds/116136/
+tube_bounce_1..5.wav (the snow tube bouncing off things, added 2026-11-27, five single bounces cut from one take, hardest to softest): large ball bounce.wav (by impulse94, id 264127) - Freesound - Creative Commons 0 - https://freesound.org/people/impulse94/sounds/264127/
+bike_freewheel.wav (the mountain bike coasting, added 2026-11-27, a seamless loop cut from its steady fast stretch): Bike, back wheel coasting.wav (by SpliceSound, id 218302) - Freesound - Creative Commons 0 - https://freesound.org/people/SpliceSound/sounds/218302/
+smash_rock.wav: Rock Smash (by NeoSpica, id 512243) - Freesound - Creative Commons 0 - https://freesound.org/people/NeoSpica/sounds/512243/
+clack.wav: impactPlank_medium_000.ogg (Kenney Impact Sounds; file 11 of 15 named: impactWood_light_000.ogg .. impactWood_light_004.ogg (also impactWood_medium_000..004, impactPlank_medium_000..004)) - Kenney - Creative Commons CC0 - https://kenney.nl/assets/impact-sounds
+clank.wav: impactMetal_light_003.ogg (Kenney Impact Sounds; file 4 of 15 named: impactMetal_light_000.ogg .. impactMetal_light_004.ogg (also impactMetal_medium_000..004, impactPlate_light_000..004)) - Kenney - Creative Commons CC0 - https://kenney.nl/assets/impact-sounds
+bone_1.wav: bone break_1.wav (by Vinni_R, id 630593) - Freesound - Creative Commons 0 - https://freesound.org/people/Vinni_R/sounds/630593/
+bone_2.wav: bone break_2.wav (by Vinni_R, id 630592) - Freesound - Creative Commons 0 - https://freesound.org/people/Vinni_R/sounds/630592/
+bone_3.wav: bone break_3.wav (by Vinni_R, id 630591) - Freesound - Creative Commons 0 - https://freesound.org/people/Vinni_R/sounds/630591/
+bone_leg_1.wav: bone break_5.wav (by Vinni_R, id 630594) - Freesound - Creative Commons 0 - https://freesound.org/people/Vinni_R/sounds/630594/
+bone_leg_2.wav: bone break_5.wav (by Vinni_R, id 630594) - Freesound - Creative Commons 0 - https://freesound.org/people/Vinni_R/sounds/630594/
+bone_back_1.wav: MrM_CeleryBreaking.wav (by mrmccormack, id 116595) - Freesound - Creative Commons 0 - https://freesound.org/people/mrmccormack/sounds/116595/
+bone_back_2.wav: MrM_CeleryBreaking.wav (by mrmccormack, id 116595) - Freesound - Creative Commons 0 - https://freesound.org/people/mrmccormack/sounds/116595/
+bone_neck_1.wav: BreakingNeck.wav (by cinevid, id 144159) - Freesound - Creative Commons 0 - https://freesound.org/people/cinevid/sounds/144159/
+bone_neck_2.wav: Necksnap_build.wav (by danielrutterfilms, id 134025) - Freesound - Creative Commons 0 - https://freesound.org/people/danielrutterfilms/sounds/134025/
+lift_hum.wav: remontée mécanique ski moteur.wav (by indieground, id 223829) - Freesound - Creative Commons 0 - https://freesound.org/people/indieground/sounds/223829/
+lift_clack.wav: Passing Chairlift Tower (by andriiperevodchyk, id 519459) - Freesound - Creative Commons 0 - https://freesound.org/people/andriiperevodchyk/sounds/519459/
+ambience.wav: forest light wind through bare trees winter GREAT FOR FALLING SNOW.flac (by kyles, id 637566) - Freesound - Creative Commons 0 - https://freesound.org/people/kyles/sounds/637566/
+avalanche_near.wav: rockfall2a.wav (by AlanCat, id 389303) - Freesound - Creative Commons 0 - https://freesound.org/people/AlanCat/sounds/389303/
+slide_crack.wav: Ice cracking (by timbreknight, id 342546) - Freesound - Creative Commons 0 - https://freesound.org/people/timbreknight/sounds/342546/
+buried.wav: Snow - Collapse and fall (by Vrymaa, id 775014) - Freesound - Creative Commons 0 - https://freesound.org/people/Vrymaa/sounds/775014/
+crow_1.wav: Common Raven - Yellowstone National Park (by Nivatius, id 519591) - Freesound - Creative Commons 0 - https://freesound.org/people/Nivatius/sounds/519591/
+crow_2.wav: CrowOrRaven1.wav (by iwanPlays, id 512781) - Freesound - Creative Commons 0 - https://freesound.org/people/iwanPlays/sounds/512781/
+flap.wav: Pigeons flying (by mcmikai, id 532180) - Freesound - Creative Commons 0 - https://freesound.org/people/mcmikai/sounds/532180/
+chirp_1.wav: Black Capped Chickadee bird call (by nfrae, id 703254) - Freesound - Creative Commons 0 - https://freesound.org/people/nfrae/sounds/703254/
+chirp_2.wav: titmouse call (by seth-m, id 271150) - Freesound - Creative Commons 0 - https://freesound.org/people/seth-m/sounds/271150/
+chirp_3.wav: Black Capped Chickadee bird call (by nfrae, id 703254) - Freesound - Creative Commons 0 - https://freesound.org/people/nfrae/sounds/703254/
+bear_growl.wav: Bear Angry Growl (by celldroid, id 763026) - Freesound - Creative Commons 0 - https://freesound.org/people/celldroid/sounds/763026/
+bear_roar.wav: Grizzly Bear growl eating (by Nivatius, id 519599) - Freesound - Creative Commons 0 - https://freesound.org/people/Nivatius/sounds/519599/
+bear_steps.wav: running grizzly.mp3 (by Nivatius, id 519600) - Freesound - Creative Commons 0 - https://freesound.org/people/Nivatius/sounds/519600/
+grunt_1.wav: Voice_AdultMale_PainGrunts_01.wav (by MrFossy, id 547203) - Freesound - Creative Commons 0 - https://freesound.org/people/MrFossy/sounds/547203/
+grunt_2.wav: Voice_AdultMale_PainGrunts_02.wav (by MrFossy, id 547202) - Freesound - Creative Commons 0 - https://freesound.org/people/MrFossy/sounds/547202/
+grunt_3.wav: Voice_AdultMale_PainGrunts_03.wav (by MrFossy, id 547201) - Freesound - Creative Commons 0 - https://freesound.org/people/MrFossy/sounds/547201/
+grunt_4.wav: Voice_AdultMale_PainGrunts_04.wav (by MrFossy, id 547200) - Freesound - Creative Commons 0 - https://freesound.org/people/MrFossy/sounds/547200/
+yelp_1.wav: Hurt 2 - (Male) (by Christopherderp, id 342230) - Freesound - Creative Commons 0 - https://freesound.org/people/Christopherderp/sounds/342230/
+yelp_2.wav: Hurt  1 - (Male) (by Christopherderp, id 342229) - Freesound - Creative Commons 0 - https://freesound.org/people/Christopherderp/sounds/342229/
+groan.wav: groans.wav (by iggy1345, id 103072) - Freesound - Creative Commons 0 - https://freesound.org/people/iggy1345/sounds/103072/
+click.wav: click3.ogg (Kenney UI Audio; file 3 of 5 named: click1.ogg .. click5.ogg) - Kenney - Creative Commons CC0 - https://kenney.nl/assets/ui-audio
+play.wav: confirmation_001.ogg (Kenney Interface Sounds; file 1 of 4 named: confirmation_001.ogg .. confirmation_004.ogg) - Kenney - Creative Commons CC0 - https://kenney.nl/assets/interface-sounds
+trick.wav: glass_004.ogg (Kenney Interface Sounds; file 4 of 6 named: glass_001.ogg .. glass_006.ogg) - Kenney - Creative Commons CC0 - https://kenney.nl/assets/interface-sounds
+trick_big.wav: Ui sounds - Shimmering success (by Philip_Berger, id 648212) - Freesound - Creative Commons 0 - https://freesound.org/people/Philip_Berger/sounds/648212/
+close_call.wav: Whoosh (by qubodup, id 60013) - Freesound - Creative Commons 0 - https://freesound.org/people/qubodup/sounds/60013/
+boost.wav: MAGIC AIR Large Whoosh, Swirl, Wind Gust, Foliage 01.wav - Sonniss GDC bundle - Sonniss GDC Bundle licence: royalty-free, commercial use, no attribution; AI/ML training prohibited (https://sonniss.com/gdc-bundle-license/) - https://sonniss.com/gameaudiogdc
+power_jump.wav: phaseJump4.ogg (Kenney Digital Audio; file 4 of 5 named: phaseJump1.ogg .. phaseJump5.ogg) - Kenney - Creative Commons CC0 - https://kenney.nl/assets/digital-audio
+power_star.wav: powerUp9.ogg (Kenney Digital Audio; file 9 of 12 named: powerUp1.ogg .. powerUp12.ogg) - Kenney - Creative Commons CC0 - https://kenney.nl/assets/digital-audio
+power_short.wav: powerUp9.ogg (Kenney Digital Audio; file 9 of 12 named: powerUp1.ogg .. powerUp12.ogg) - Kenney - Creative Commons CC0 - https://kenney.nl/assets/digital-audio
+shield_get.wav: forceField_002.ogg (Kenney Sci-fi Sounds; file 3 of 5 named: forceField_000.ogg .. forceField_004.ogg) - Kenney - Creative Commons CC0 - https://kenney.nl/assets/sci-fi-sounds
+shield_hit.wav: Hard Glass Impact (by deleted_user_3656686, id 418194) - Freesound - Creative Commons 0 - https://freesound.org/people/deleted_user_3656686/sounds/418194/
+soda.wav: Opening a can of soda (by michorvath, id 386887) - Freesound - Creative Commons 0 - https://freesound.org/people/michorvath/sounds/386887/
+Ice sounds added on 2026-11-26 (Freesound HQ previews; cut, filtered and looped by Tools/MakeIceScrape.py):
+ice_scrape.wav, ice_hiss.wav, ice_skid.wav: skate fx.mp3 (by splodge123, id 249833) - Freesound - Creative Commons 0 - https://freesound.org/people/splodge123/sounds/249833/
+ice_squeal.wav: Ice_BreakScrapeIce.wav (by Pipppo89, id 665109) - Freesound - Creative Commons 0 - https://freesound.org/people/Pipppo89/sounds/665109/
+ice_chatter.wav: ski_04.wav (by blaukreuz, id 52151) - Freesound - Creative Commons 0 - https://freesound.org/people/blaukreuz/sounds/52151/
+snow_gun.wav: LUMEKAHUR (by inspire153, id 842656; a snow cannon at the Tallinn Song Festival Grounds) - Freesound - Creative Commons 0 - https://freesound.org/people/inspire153/sounds/842656/ (16 s of it from 40 s, high-passed, brightened and looped: Tools/audio-sources/snowgun/README.md)
+music_hub.wav: Chill Out Theme (Komiku, "It's time for adventure ! vol 2") - Free Music Archive - CC0 1.0 Universal License - https://freemusicarchive.org/music/Komiku/Its_time_for_adventure__vol_2/Komiku_-_Its_time_for_adventure_vol_2_-_02_Chill_Out_Theme/
+music_run.wav: Fight, run, breath deeply (Komiku, "It's time for adventure ! vol 2") - Free Music Archive - CC0 1.0 Universal License - https://freemusicarchive.org/music/Komiku/Its_time_for_adventure__vol_2/Komiku_-_Its_time_for_adventure_vol_2_-_13_Fight_run_breath_deeply/
+Lodge surfaces (Camp/LodgeTex: colour, normal and roughness/occlusion maps; graded, resized and packed for the phone by
+  Tools/MakeLodgeTex.py, the materials by Assets/Editor/LodgeTex.cs), all CC0:
+  "Oak Veneer 01" by Jenelle van Heerden, Poly Haven - https://polyhaven.com/a/oak_veneer_01 (glulam, oak, the café's counter)
+  "Hinoki Planks" by Charlotte Baglioni, Poly Haven - https://polyhaven.com/a/hinoki_planks (wall lining, ceiling boards, floorboards)
+  "Black Painted Planks" by Dimitrios Savva, Poly Haven - https://polyhaven.com/a/black_painted_planks (the cladding)
+  "Smooth Concrete Floor" by Dimitrios Savva, Poly Haven - https://polyhaven.com/a/smooth_concrete_floor (the floor, the terrace)
+  "Stacked Stone Wall" by Dimitrios Savva, Poly Haven - https://polyhaven.com/a/stacked_stone_wall (the fire's hearth)
+  "Poly Wool Herringbone" by colormass (photography) and Rico Cilliers (processing), Poly Haven -
+    https://polyhaven.com/a/poly_wool_herringbone (the sofas, cushions, the runner)
+  "Wool Boucle" by colormass (photography) and Rico Cilliers (processing), Poly Haven - https://polyhaven.com/a/wool_boucle (the rugs)
+  "Fabric Leather 02" by Rob Tuytel, Poly Haven - https://polyhaven.com/a/fabric_leather_02 (the leather armchairs and sofas)
+  "Metal 027" from ambientCG.com (CC0) - https://ambientcg.com/a/Metal027 (the black powder-coated steel)

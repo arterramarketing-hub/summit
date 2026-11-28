@@ -117,6 +117,11 @@
    "loop": true
   },
   {
+   "name": "Stand_Val",
+   "frames": 150,
+   "loop": true
+  },
+  {
    "name": "Walk",
    "frames": 30,
    "loop": true
@@ -135,6 +140,391 @@
    "name": "CampRoll",
    "frames": 24,
    "loop": false
+  },
+  {
+   "name": "Ski_Idle",
+   "frames": 120,
+   "loop": true
+  },
+  {
+   "name": "Ski_Ride",
+   "frames": 60,
+   "loop": true
+  },
+  {
+   "name": "Ski_TurnL",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Ski_TurnR",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Ski_Tuck",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Ski_PlantL",
+   "frames": 14,
+   "loop": false
+  },
+  {
+   "name": "Ski_PlantR",
+   "frames": 14,
+   "loop": false
+  },
+  {
+   "name": "Ski_Pop",
+   "frames": 16,
+   "loop": false
+  },
+  {
+   "name": "Ski_Air",
+   "frames": 40,
+   "loop": true
+  },
+  {
+   "name": "Ski_Land",
+   "frames": 20,
+   "loop": false
+  },
+  {
+   "name": "Ski_Grab_Safety",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Ski_Grab_Mute",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Ski_Grab_Tail",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Ski_WindL",
+   "frames": 2,
+   "loop": false
+  },
+  {
+   "name": "Ski_WindR",
+   "frames": 2,
+   "loop": false
+  },
+  {
+   "name": "Ski_SpinL",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Ski_SpinR",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Ski_Flip",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Sled_Idle",
+   "frames": 120,
+   "loop": true
+  },
+  {
+   "name": "Sled_Ride",
+   "frames": 60,
+   "loop": true
+  },
+  {
+   "name": "Sled_LeanL",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Sled_LeanR",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Sled_Tuck",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Sled_Air",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Sled_NoHands",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Sled_Bump",
+   "frames": 14,
+   "loop": false
+  },
+  {
+   "name": "Grab_NoseGrab",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Grab_Japan",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Grab_RoastBeef",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Grab_Crail",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Grab_TruckDriver",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Ski_Grab_Japan",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Ski_Grab_Octograb",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Ski_Grab_Daffy",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Ski_Grab_IronCross",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Ski_Grab_SpreadEagle",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Sled_Superman",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Sled_Stand",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Tube_Starfish",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Tube_HandsUp",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Kayak_Idle",
+   "frames": 120,
+   "loop": true
+  },
+  {
+   "name": "Kayak_Ride",
+   "frames": 60,
+   "loop": true
+  },
+  {
+   "name": "Kayak_StrokeL",
+   "frames": 22,
+   "loop": false
+  },
+  {
+   "name": "Kayak_StrokeR",
+   "frames": 22,
+   "loop": false
+  },
+  {
+   "name": "Kayak_LeanL",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Kayak_LeanR",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Kayak_Tuck",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Kayak_Air",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Kayak_PaddleUp",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Car_Idle",
+   "frames": 120,
+   "loop": true
+  },
+  {
+   "name": "Car_Drive",
+   "frames": 60,
+   "loop": true
+  },
+  {
+   "name": "Car_SteerL",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Car_SteerR",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Car_Air",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Car_Wave",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Car_Bump",
+   "frames": 14,
+   "loop": false
+  },
+  {
+   "name": "Bear_Idle",
+   "frames": 120,
+   "loop": true
+  },
+  {
+   "name": "Bear_Ride",
+   "frames": 60,
+   "loop": true
+  },
+  {
+   "name": "Bear_LeanL",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Bear_LeanR",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Bear_Tuck",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Bear_Air",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Bear_Rodeo",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Bear_Bump",
+   "frames": 14,
+   "loop": false
+  },
+  {
+   "name": "Bike_Idle",
+   "frames": 120,
+   "loop": true
+  },
+  {
+   "name": "Bike_Ride",
+   "frames": 60,
+   "loop": true
+  },
+  {
+   "name": "Bike_Pedal",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Bike_LeanL",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Bike_LeanR",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Bike_Tuck",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Bike_Air",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Bike_Bump",
+   "frames": 14,
+   "loop": false
+  },
+  {
+   "name": "Bike_Tabletop",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Bike_Whip",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Bike_Superman",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Bike_NoHander",
+   "frames": 30,
+   "loop": true
+  },
+  {
+   "name": "Bike_Barspin",
+   "frames": 30,
+   "loop": true
   }
  ]
 }

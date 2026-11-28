@@ -23,7 +23,8 @@ namespace Summit
         class Fallen
         {
             public List<Forest.Piece> parts;
-            public Vector3 origin, pivot, axis, slide; public float angle, spin, maxAngle, t, height; public bool landed;
+            public Vector3 origin, pivot, axis, slide; public float angle, spin, maxAngle, t, height, snow; public bool landed;
+            public MaterialPropertyBlock props;   // its buried part hidden, held still against the wind, its snow going
         }
         class Chunk { public Forest.Piece part; public Vector3 centre, pos, vel, spinAxis; public float scale, spin, angle, t; }
         readonly List<Fallen> fallen = new List<Fallen>();
@@ -33,7 +34,7 @@ namespace Summit
         {
             fx = snow; forest = trees; wild = animals;
             // splinters: thin streaks of pale broken wood and dark bark
-            splinters = System("Splinters", soft, 300);
+            splinters = System("Splinters", soft, 500);   // (and the twigs and needles torn out of branches: Twigs)
             var sm = splinters.main;
             sm.startLifetime = new ParticleSystem.MinMaxCurve(0.7f, 1.4f);
             sm.startSize = new ParticleSystem.MinMaxCurve(0.08f, 0.17f);
@@ -88,15 +89,20 @@ namespace Summit
             // that follows a few metres behind you along the same line
             dir = Quaternion.Euler(0f, (Random.value < 0.5f ? -1f : 1f) * Random.Range(70f, 88f), 0f) * dir;
             float h = 8.5f * size;
+            var props = new MaterialPropertyBlock();
+            float cut = pieces.Count > 0 ? pieces[0].cut : 0f;
+            props.SetFloat(CutY, cut > 0.01f ? cut : -10000f);
+            props.SetFloat(Sway, 0f); props.SetFloat(SnowLeft, 1f);
             fallen.Add(new Fallen
             {
                 parts = new List<Forest.Piece>(pieces), origin = basePos, pivot = basePos, axis = Vector3.Cross(Vector3.up, dir).normalized,
                 slide = dir * Mathf.Min(6f, flat.magnitude * 0.25f), spin = 0.6f + flat.magnitude * 0.05f,
-                maxAngle = 84f * Mathf.Deg2Rad, height = h
+                maxAngle = 84f * Mathf.Deg2Rad, height = h, snow = 1f, props = props
             });
-            // the branches dump their snow, and the trunk bursts into splinters where you hit it
+            // the branches dump their snow (a heap of it left where it stood), and the trunk bursts into splinters
             Vector3 hit = new Vector3(basePos.x, Mathf.Max(at.y, basePos.y + 0.6f), basePos.z);
-            fx?.TreeShake(basePos, 16f);
+            fx?.TreeDump(basePos, h, Mathf.Max(1f, h * 0.17f), 16f);
+            TreeBreak.Instance?.AddHeap(basePos, Mathf.Max(0.4f, h * 0.025f));
             fx?.Impact(hit, 10f, flat * 0.2f);
             Burst(splinters, hit, dir, 110, flat.magnitude);
         }
@@ -119,6 +125,22 @@ namespace Summit
             }
             fx?.Impact(centre, 14f, flat * 0.3f);
             Burst(grit, centre, dir, 90, flat.magnitude);
+        }
+
+        /// <summary>Twigs and needles torn out of a tree's branches (TreeBreak): dark green and brown, thrown along with you.</summary>
+        public void Twigs(Vector3 at, Vector3 dir, int n, float speed)
+        {
+            if (splinters == null) return;
+            var ep = new ParticleSystem.EmitParams();
+            for (int i = 0; i < n; i++)
+            {
+                ep.position = at + Random.insideUnitSphere * 0.5f;
+                ep.velocity = (Random.insideUnitSphere * 1.2f + Vector3.up * 0.6f + dir * 0.5f).normalized * Random.Range(1.5f, 5f) + dir * speed * Random.Range(0.15f, 0.45f);
+                float r = Random.value;
+                ep.startColor = r < 0.55f ? new Color(0.11f, 0.17f, 0.11f) : r < 0.85f ? new Color(0.20f, 0.27f, 0.15f) : new Color(0.30f, 0.21f, 0.14f);
+                ep.startSize = Random.Range(0.05f, 0.12f);
+                splinters.Emit(ep, 1);
+            }
         }
 
         /// <summary>Splinters of broken wood (a sign ridden through).</summary>
@@ -155,10 +177,19 @@ namespace Summit
                     if (f.angle >= f.maxAngle)
                     {
                         f.angle = f.maxAngle; f.landed = true;
-                        Vector3 crown = f.pivot + Quaternion.AngleAxis(f.angle * Mathf.Rad2Deg, f.axis) * Vector3.up * f.height * 0.7f;
-                        fx?.TreeShake(crown, 14f);
-                        fx?.Impact(crown, 12f, Vector3.zero);
+                        Vector3 tipL = f.pivot + Quaternion.AngleAxis(f.angle * Mathf.Rad2Deg, f.axis) * Vector3.up * f.height;
+                        fx?.TopLands(f.pivot, tipL, 14f);
                     }
+                }
+                // the snow lets go as it goes over: shed along the crown, a curtain of powder behind it (SnowFX)
+                if (f.snow > 0.12f)
+                {
+                    Vector3 up = Quaternion.AngleAxis(f.angle * Mathf.Rad2Deg, f.axis) * Vector3.up;
+                    Vector3 tip = f.pivot + up * f.height;
+                    Vector3 tipVel = Vector3.Cross(f.axis, up) * (f.landed ? 0f : f.spin * f.height);
+                    fx?.TreeTrail(f.pivot + up * f.height * 0.15f, tip, tipVel, dt, f.snow);
+                    f.snow = Mathf.Max(0.12f, f.snow - dt / (f.landed ? 0.4f : 1.4f));
+                    f.props.SetFloat(SnowLeft, f.snow);
                 }
                 // the snapped base skids a little way on
                 f.pivot += f.slide * dt;
@@ -192,14 +223,19 @@ namespace Summit
             {
                 var rot = Matrix4x4.TRS(f.pivot, Quaternion.AngleAxis(f.angle * Mathf.Rad2Deg, f.axis), Vector3.one);
                 // (the pieces' own matrices put them at the tree's original spot; take that out, turn, put back)
-                foreach (var p in f.parts) Render(p, rot * Matrix4x4.Translate(-f.origin) * p.m);
+                foreach (var p in f.parts) Render(p, rot * Matrix4x4.Translate(-f.origin) * p.m, f.props);
             }
             foreach (var c in chunks)
                 Render(c.part, Matrix4x4.TRS(c.pos, Quaternion.AngleAxis(c.angle, c.spinAxis), Vector3.one * c.scale) * Matrix4x4.Translate(-c.centre) * c.part.m);
         }
 
         static MaterialPropertyBlock cutProps;
-        static readonly int CutY = Shader.PropertyToID("_CutY");
+        static readonly int CutY = Shader.PropertyToID("_CutY"), Sway = Shader.PropertyToID("_Sway"), SnowLeft = Shader.PropertyToID("_Snow");
+
+        static void Render(Forest.Piece p, Matrix4x4 m, MaterialPropertyBlock props)
+        {
+            Graphics.RenderMesh(new RenderParams(p.mat) { shadowCastingMode = ShadowCastingMode.On, receiveShadows = true, matProps = props }, p.mesh, p.sub, m);
+        }
 
         static void Render(Forest.Piece p, Matrix4x4 m)
         {

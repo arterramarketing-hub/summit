@@ -21,13 +21,14 @@ public static class TreeVarietyShot
     {
         SummitImport.EnsureSnowTextures(); SummitImport.EnsureSky(); SummitImport.EnsureBackdrop(); SummitImport.EnsureRealTrees();
         EditorSceneManager.OpenScene("Assets/Summit/Summit.unity");
+        TestPrefs.Pin();   // (before the tree look is set: the boot pins only once)
         PlayerPrefs.SetInt(Forest.TreesPref, 1);
         var game = Object.FindFirstObjectByType<SummitGame>();
         TestBoot.Boot(game);
         Physics.simulationMode = SimulationMode.Script;
         T Get<T>(string f) => (T)typeof(SummitGame).GetField(f, NP).GetValue(game);
-        var rider = Get<Rider>("rider"); var body = Get<RiderBody>("body");
-        var terrain = Get<SlopeStreamer>("terrain"); var props = Get<Forest>("props"); var fx = Get<SnowFX>("fx");
+        var rider = game.rider; var body = game.body;
+        var terrain = game.terrain; var props = game.props; var fx = Get<SnowFX>("fx");
         var dress = Object.FindFirstObjectByType<CourseDressing>();
         var atmo = Object.FindFirstObjectByType<Atmosphere>();
         var cam = Camera.main; var chase = cam.GetComponent<ChaseCamera>();
@@ -76,7 +77,7 @@ public static class TreeVarietyShot
         Shoot(cam, props, file);
         Debug.Log($"TREES {want[0]} {want[1]} z={z:0} alt={Slope.AltitudeFeet(z):0}ft low={Forest.Low(z):0.00} trees+rocks={inst} draws={draws} tris={tris} shadowDraws={sDraws} shadowTris={sTris}");
         Physics.simulationMode = SimulationMode.FixedUpdate;
-        EditorApplication.Exit(0);
+        TestHarness.Exit(0);
     }
 
     static readonly MethodInfo draw = typeof(Forest).GetMethod("Draw", NP);
